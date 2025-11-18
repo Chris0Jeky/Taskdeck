@@ -106,8 +106,8 @@ dotnet test /p:CollectCoverage=true
 
 **Current Status:**
 - ✅ Domain Tests: 42/42 passing (100%)
-- ✅ Application Tests: 82/82 passing (100%)
-- ✅ Backend Total: 124/124 tests passing (100%)
+- ✅ Application Tests: 87/87 passing (100%)
+- ✅ Backend Total: 129/129 tests passing (100%)
 
 ### Frontend Tests
 
@@ -137,8 +137,8 @@ npm run test:ui
 - ✅ Frontend Total: 70/70 tests passing (100%)
 
 **Overall Test Status:**
-- ✅ **194/194 tests passing (100%)**
-  - Backend: 124 tests (Domain: 42, Application: 82)
+- ✅ **199/199 tests passing (100%)**
+  - Backend: 129 tests (Domain: 42, Application: 87)
   - Frontend: 70 tests (Store: 14, Components: 56)
 
 See **[TESTING.md](./TESTING.md)** for comprehensive testing guide and best practices.
