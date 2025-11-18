@@ -542,12 +542,12 @@ public class CardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var card1 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 1", position: 0);
-        var card2 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 2", position: 1);
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do", wipLimit: 2);
 
-        var column = TestDataBuilder.CreateColumnWithCards(board.Id, "To Do", new[] { card1, card2 }, wipLimit: 2);
+        var card1 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 1", position: 0);
+        var card2 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 2", position: 1);
 
-        var dto = new MoveCardDto(column.Id, 1); // Move card1 to position 1
+        var dto = new MoveCardDto(column.Id, 1); // Move card1 to position 1 within same column
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card1.Id, default))
             .ReturnsAsync(card1);
