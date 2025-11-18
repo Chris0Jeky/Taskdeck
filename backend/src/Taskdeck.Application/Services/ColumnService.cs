@@ -84,6 +84,59 @@ public class ColumnService
         return Result.Success();
     }
 
+    public async Task<Result<IEnumerable<ColumnDto>>> ReorderColumnsAsync(Guid boardId, ReorderColumnsDto dto, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Verify board exists
+            var board = await _unitOfWork.Boards.GetByIdAsync(boardId, cancellationToken);
+            if (board == null)
+                return Result.Failure<IEnumerable<ColumnDto>>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+
+            // Get all columns for the board
+            var allColumns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId, cancellationToken);
+            var columnsList = allColumns.ToList();
+
+            // Validate that all column IDs in the request exist and belong to this board
+            var columnDict = columnsList.ToDictionary(c => c.Id);
+            foreach (var columnId in dto.ColumnIds)
+            {
+                if (!columnDict.ContainsKey(columnId))
+                    return Result.Failure<IEnumerable<ColumnDto>>(ErrorCodes.NotFound, $"Column with ID {columnId} not found in board {boardId}");
+            }
+
+            // Validate that all columns in the board are included in the request
+            if (dto.ColumnIds.Count != columnsList.Count)
+                return Result.Failure<IEnumerable<ColumnDto>>(ErrorCodes.ValidationError, "Reorder request must include all columns in the board");
+
+            // Two-phase update to avoid UNIQUE constraint violations:
+            // Phase 1: Set all positions to temporary negative values
+            for (int i = 0; i < dto.ColumnIds.Count; i++)
+            {
+                var column = columnDict[dto.ColumnIds[i]];
+                column.Update(null, null, -(i + 1));
+            }
+
+            // Phase 2: Set correct positive positions
+            for (int i = 0; i < dto.ColumnIds.Count; i++)
+            {
+                var column = columnDict[dto.ColumnIds[i]];
+                column.Update(null, null, i);
+            }
+
+            // Save all changes in a single transaction
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Return reordered columns
+            var reorderedColumns = dto.ColumnIds.Select(id => MapToDto(columnDict[id]));
+            return Result.Success(reorderedColumns);
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<IEnumerable<ColumnDto>>(ex.ErrorCode, ex.Message);
+        }
+    }
+
     private static ColumnDto MapToDto(Column column)
     {
         return new ColumnDto(
