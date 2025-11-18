@@ -99,18 +99,18 @@ public class Card : Entity
         Touch();
     }
 
-    // Navigation properties management
-    internal void AddLabel(CardLabel cardLabel)
+    // Label management (called by application services)
+    public void AddLabel(CardLabel cardLabel)
     {
         _cardLabels.Add(cardLabel);
     }
 
-    internal void RemoveLabel(CardLabel cardLabel)
+    public void RemoveLabel(CardLabel cardLabel)
     {
         _cardLabels.Remove(cardLabel);
     }
 
-    internal void ClearLabels()
+    public void ClearLabels()
     {
         _cardLabels.Clear();
     }
