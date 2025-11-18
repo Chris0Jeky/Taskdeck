@@ -7,6 +7,13 @@ import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
 import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 
+export interface CardFilters {
+  searchText: string
+  labelIds: string[]
+  dueDateFilter: 'all' | 'overdue' | 'due-today' | 'due-week' | 'no-date'
+  showBlockedOnly: boolean
+}
+
 export const useBoardStore = defineStore('board', () => {
   // Toast notifications
   const toast = useToastStore()
@@ -18,6 +25,14 @@ export const useBoardStore = defineStore('board', () => {
   const currentBoardLabels = ref<Label[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  // Filter state
+  const filters = ref<CardFilters>({
+    searchText: '',
+    labelIds: [],
+    dueDateFilter: 'all',
+    showBlockedOnly: false
+  })
 
   const updateColumnCardCount = (columnId: string, delta: number) => {
     if (!currentBoard.value) return
