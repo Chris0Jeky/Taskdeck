@@ -25,3 +25,4 @@ frontend/*/.env.*.local
 .DS_Store
 Thumbs.db
 /backend/src/Taskdeck.Api/obj
+/backend/src/Taskdeck.Api
