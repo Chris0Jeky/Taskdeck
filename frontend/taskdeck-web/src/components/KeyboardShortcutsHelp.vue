@@ -113,14 +113,14 @@ const categories: ShortcutCategory[] = [
                 >
                   <span class="text-gray-700">{{ shortcut.description }}</span>
                   <div class="flex items-center gap-1">
-                    <kbd
-                      v-for="(key, keyIndex) in shortcut.keys"
-                      :key="keyIndex"
-                      class="px-2 py-1 text-sm font-semibold text-gray-800 bg-gray-100 border border-gray-300 rounded shadow-sm min-w-[2rem] text-center"
-                    >
-                      {{ key }}
-                    </kbd>
-                    <span v-if="keyIndex < shortcut.keys.length - 1" class="text-gray-400 text-sm">or</span>
+                    <template v-for="(key, keyIndex) in shortcut.keys" :key="keyIndex">
+                      <kbd
+                        class="px-2 py-1 text-sm font-semibold text-gray-800 bg-gray-100 border border-gray-300 rounded shadow-sm min-w-[2rem] text-center"
+                      >
+                        {{ key }}
+                      </kbd>
+                      <span v-if="keyIndex < shortcut.keys.length - 1" class="text-gray-400 text-sm">or</span>
+                    </template>
                   </div>
                 </div>
               </div>
