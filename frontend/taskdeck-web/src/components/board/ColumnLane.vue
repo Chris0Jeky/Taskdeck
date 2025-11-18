@@ -58,11 +58,11 @@ const isWipLimitExceeded = () => {
 }
 
 function handleCardDragStart(card: Card) {
-  draggedCard.value = card
+  emit('card-drag-start', card)
 }
 
 function handleCardDragEnd() {
-  draggedCard.value = null
+  emit('card-drag-end')
   isDragOver.value = false
 }
 
