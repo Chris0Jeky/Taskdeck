@@ -68,10 +68,10 @@ function handleCardDragEnd() {
 
 function handleDragOver(event: DragEvent) {
   event.preventDefault()
-  if (!draggedCard.value) return
+  if (!props.draggedCard) return
 
   // Don't show drop indicator if card is already in this column
-  if (draggedCard.value.columnId === props.column.id) {
+  if (props.draggedCard.columnId === props.column.id) {
     isDragOver.value = false
     return
   }
@@ -90,10 +90,10 @@ async function handleDrop(event: DragEvent) {
   event.preventDefault()
   isDragOver.value = false
 
-  if (!draggedCard.value) return
+  if (!props.draggedCard) return
 
   // Don't move if dropping in the same column
-  if (draggedCard.value.columnId === props.column.id) {
+  if (props.draggedCard.columnId === props.column.id) {
     return
   }
 
@@ -102,7 +102,7 @@ async function handleDrop(event: DragEvent) {
     const targetPosition = props.cards.length
     await boardStore.moveCard(
       props.boardId,
-      draggedCard.value.id,
+      props.draggedCard.id,
       props.column.id,
       targetPosition
     )
@@ -116,10 +116,10 @@ async function handleCardDrop(targetCard: Card, event: DragEvent) {
   event.preventDefault()
   event.stopPropagation()
 
-  if (!draggedCard.value) return
+  if (!props.draggedCard) return
 
   // Don't drop on self
-  if (draggedCard.value.id === targetCard.id) return
+  if (props.draggedCard.id === targetCard.id) return
 
   try {
     // Calculate the target position
@@ -127,13 +127,13 @@ async function handleCardDrop(targetCard: Card, event: DragEvent) {
 
     // If dropping in the same column and the dragged card is before the target,
     // we need to account for the removal of the dragged card
-    if (draggedCard.value.columnId === props.column.id && draggedCard.value.position < targetCard.position) {
+    if (props.draggedCard.columnId === props.column.id && props.draggedCard.position < targetCard.position) {
       targetPosition--
     }
 
     await boardStore.moveCard(
       props.boardId,
-      draggedCard.value.id,
+      props.draggedCard.id,
       props.column.id,
       targetPosition
     )
