@@ -82,3 +82,4 @@ TestResults/
 # Logs
 *.log
 logs/
+SESSION_SUMMARY.md
