@@ -29,11 +29,13 @@
 - **Vue Router** - Client-side routing
 - **TailwindCSS** - Utility-first CSS framework
 - **Axios** - HTTP client
+- **Vitest + @vue/test-utils** - Testing framework
 
 ## 📚 Documentation
 
 - **[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)** - Complete project status, roadmap, and memory for development sessions
-- **[TEST_SUITE_PLAN.md](./TEST_SUITE_PLAN.md)** - Comprehensive testing strategy and test coverage plan
+- **[TESTING.md](./TESTING.md)** - Comprehensive testing guide for backend and frontend
+- **[TEST_SUITE_PLAN.md](./TEST_SUITE_PLAN.md)** - Testing strategy and test coverage plan
 - **[CLAUDE.md](./CLAUDE.md)** - Development guidelines for Claude Code (AI coding assistant)
 - **[Technical Design Document](./filesAndResources/taskdeck_technical_design_document.md)** - Original design specifications
 
@@ -91,7 +93,7 @@ The frontend will be available at `http://localhost:5173`.
 
 ### Backend Tests
 
-Run domain and application tests:
+Run all tests:
 ```bash
 cd backend
 dotnet test
@@ -104,12 +106,36 @@ dotnet test /p:CollectCoverage=true
 
 **Current Status:**
 - ✅ Domain Tests: 42/42 passing (100%)
-- ✅ Application Tests: 73/82 passing (89%)
-- ✅ **Total: 115/124 tests passing (93%)**
+- ✅ Application Tests: 82/82 passing (100%)
+- ✅ **Total: 124/124 tests passing (100%)**
 
-9 tests have minor mock setup issues (not production bugs).
+### Frontend Tests
 
-See [TEST_SUITE_PLAN.md](./TEST_SUITE_PLAN.md) for comprehensive testing strategy.
+Run tests in watch mode:
+```bash
+cd frontend/taskdeck-web
+npm run test
+```
+
+Run tests with coverage:
+```bash
+npm run test:coverage
+```
+
+Run tests with UI:
+```bash
+npm run test:ui
+```
+
+**Current Status:**
+- ✅ Store Tests: Complete coverage of all Pinia actions
+- ✅ Component Tests: Complete coverage of all modal components
+  - CardModal
+  - BoardSettingsModal
+  - ColumnEditModal
+  - LabelManagerModal
+
+See **[TESTING.md](./TESTING.md)** for comprehensive testing guide and best practices.
 
 ## 📐 Architecture
 
@@ -264,12 +290,16 @@ dotnet ef database update -p src/Taskdeck.Infrastructure/Taskdeck.Infrastructure
 - ✅ API integration layer
 - ✅ Basic CRUD operations via UI
 
-### 🚧 Phase 3: UX Improvements (IN PROGRESS)
-- [ ] Card modal for detailed editing
-- [ ] Drag-and-drop for cards and columns
-- [ ] Keyboard shortcuts
-- [ ] Advanced filtering UI
-- [ ] Better error and loading states
+### ✅ Phase 3: UX Improvements (COMPLETED)
+- ✅ Card modal for detailed editing
+- ✅ Board settings modal
+- ✅ Column management modal
+- ✅ Label manager modal
+- ✅ Complete CRUD operations for all entities
+- ✅ Frontend tests with Vitest
+- [ ] Drag-and-drop for cards and columns (deferred to Phase 4)
+- [ ] Keyboard shortcuts (deferred to Phase 4)
+- [ ] Advanced filtering UI (deferred to Phase 4)
 
 ### Phase 4: Advanced Features (PLANNED)
 - [ ] Time tracking per card
