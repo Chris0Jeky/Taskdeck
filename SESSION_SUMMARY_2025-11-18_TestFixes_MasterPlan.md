@@ -739,3 +739,303 @@ The project is in excellent shape with:
 **Total Tests:** 194/194 passing (100%)
 **Documentation Status:** Fully updated ✅
 **Next Priority:** Manual testing + Complete Phase 3
+
+---
+
+## Session 6: Drag-and-Drop Bug Fixes (2025-11-18)
+
+### Issues Resolved
+
+#### 1. Column Reorder UNIQUE Constraint Violation
+
+**Symptom:**
+Error 500 when dragging columns to reorder them. Backend returned:
+```
+System.InvalidOperationException: Unable to save changes because a circular dependency was detected in the data to be saved: 'Column [Modified] <- Index { 'BoardId', 'Position' } Column [Modified]'
+```
+
+**Root Cause:**
+Entity Framework Core detected circular dependency when trying to update multiple columns with the same (BoardId, Position) UNIQUE index. Even with a two-phase negative/positive update strategy, EF batched all changes in a single SaveChanges call, causing the circular dependency detection.
+
+**Solution:**
+Implemented atomic column reordering with two separate `SaveChangesAsync()` calls:
+1. **Phase 1**: Update all positions to temporary negative values (`-(i + 1)`), then SaveChanges
+2. **Phase 2**: Update all positions to final positive values (`i`), then SaveChanges
+
+**Files Modified:**
+- `backend/src/Taskdeck.Application/Services/ColumnService.cs` (lines 112-131)
+  - Added `ReorderColumnsAsync` method with two-phase update logic
+- `backend/src/Taskdeck.Application/DTOs/ColumnDto.cs`
+  - Added `ReorderColumnsDto(List<Guid> ColumnIds)`
+- `backend/src/Taskdeck.Api/Controllers/ColumnsController.cs` (lines 81-97)
+  - Added `POST /api/boards/{boardId}/columns/reorder` endpoint
+- `backend/tests/Taskdeck.Application.Tests/Services/ColumnServiceTests.cs` (lines 363-501)
+  - Added 5 comprehensive tests for ReorderColumnsAsync
+- `frontend/taskdeck-web/src/api/columnsApi.ts` (lines 24-29)
+  - Added `reorderColumns` API method
+- `frontend/taskdeck-web/src/store/boardStore.ts` (lines 227-247)
+  - Added `reorderColumns` action with toast notifications
+
+**Result:**
+✅ Columns can now be reordered without UNIQUE constraint violations
+✅ Atomic operation ensures data consistency
+✅ 5 new tests added (129 total backend tests)
+✅ Toast notifications confirm successful reorder
+
+---
+
+#### 2. Card Drag Triggering Column Reorder
+
+**Symptom:**
+When dragging a card, the column reorder endpoint was being called instead of the card move endpoint. User saw toast notification "Columns reordered successfully" when trying to move a card.
+
+**Root Cause:**
+Card's `dragstart` event was bubbling up to the parent column element (which is also `draggable="true"`), triggering the column's drag handler instead of the card's drag handler.
+
+**Solution:**
+Added `event.stopPropagation()` in CardItem's `handleDragStart` function to prevent the drag event from bubbling up to parent elements.
+
+**Files Modified:**
+- `frontend/taskdeck-web/src/components/board/CardItem.vue` (line 19)
+  ```typescript
+  function handleDragStart(event: DragEvent) {
+    // Stop propagation to prevent parent column from being dragged
+    event.stopPropagation()
+
+    isDragging.value = true
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', props.card.id)
+    }
+    emit('dragstart', props.card)
+  }
+  ```
+
+**Result:**
+✅ Card dragging now works independently from column dragging
+✅ Both card and column drag-drop work correctly
+✅ No more unintended column reordering when dragging cards
+
+---
+
+#### 3. Cards Not Moving Between Columns
+
+**Symptom:**
+After fixing the event bubbling issue, columns could be reordered successfully, but cards still wouldn't move between columns. User reported: "The columns change order just fine, but the cards don't change at all".
+
+**Root Cause:**
+Each `ColumnLane` component had its own local `draggedCard` ref. When dragging from Column A to Column B:
+- Column A set its local `draggedCard` to the card being dragged
+- Column B's local `draggedCard` was null/undefined
+- When dropped on Column B, it couldn't perform the move because it didn't know which card was being dragged
+
+**Solution:**
+Lifted `draggedCard` state up to the parent `BoardView` component to share state across all columns:
+
+1. **Removed local state from ColumnLane:**
+   ```typescript
+   // REMOVED: const draggedCard = ref<Card | null>(null)
+   ```
+
+2. **Added state to BoardView:**
+   ```typescript
+   const draggedCard = ref<Card | null>(null)
+
+   function handleCardDragStart(card: Card) {
+     draggedCard.value = card
+   }
+
+   function handleCardDragEnd() {
+     draggedCard.value = null
+   }
+   ```
+
+3. **Updated ColumnLane props and emits:**
+   ```typescript
+   const props = defineProps<{
+     column: Column
+     cards: Card[]
+     labels: Label[]
+     boardId: string
+     draggedCard: Card | null  // NEW: Receives from parent
+   }>()
+
+   const emit = defineEmits<{
+     (e: 'card-drag-start', card: Card): void  // NEW
+     (e: 'card-drag-end'): void  // NEW
+   }>()
+   ```
+
+4. **Updated all references:**
+   - Changed from `draggedCard.value` to `props.draggedCard` (9 occurrences)
+   - Changed handlers to emit events instead of updating local state
+
+**Files Modified:**
+- `frontend/taskdeck-web/src/views/BoardView.vue` (line 20, lines 112-118, lines 244-246)
+  - Added `draggedCard` state
+  - Added `handleCardDragStart` and `handleCardDragEnd` handlers
+  - Passed `draggedCard` as prop to ColumnLane
+  - Connected emit handlers
+- `frontend/taskdeck-web/src/components/board/ColumnLane.vue` (lines 9-20, 60-66, 71-139)
+  - Added `draggedCard` prop
+  - Added `card-drag-start` and `card-drag-end` emits
+  - Removed local `draggedCard` state
+  - Updated all references to use `props.draggedCard`
+
+**Result:**
+✅ Cards now move correctly between columns
+✅ Shared state architecture enables cross-column operations
+✅ Drag-and-drop fully functional for both cards and columns
+✅ Professional, polished user experience
+
+---
+
+### Tests Added
+
+**ColumnServiceTests.cs** - 5 new tests for `ReorderColumnsAsync`:
+1. `ReorderColumnsAsync_ShouldReorderColumns_Successfully`
+2. `ReorderColumnsAsync_ShouldReturnNotFound_WhenBoardDoesNotExist`
+3. `ReorderColumnsAsync_ShouldReturnValidationError_WhenColumnCountMismatch`
+4. `ReorderColumnsAsync_ShouldReturnValidationError_WhenColumnNotInBoard`
+5. `ReorderColumnsAsync_ShouldReturnNotFound_WhenColumnDoesNotExist`
+
+All tests verify:
+- Successful reordering with correct position updates
+- Error handling for invalid board/column IDs
+- Validation of column count and ownership
+- Two-phase SaveChanges calls (verified with `Times.Exactly(2)`)
+
+**Test Results:**
+- Backend: 129/129 passing (100%) - **+5 new tests**
+  - Domain: 42/42 (100%)
+  - Application: 87/87 (100%)
+- Frontend: 70/70 passing (100%)
+  - Store: 14/14 (100%)
+  - Components: 56/56 (100%)
+- **Total: 199/199 tests passing (100%)**
+
+---
+
+### Features Now Working
+
+- ✅ **Drag columns to reorder** - Workflow stages can be reordered visually
+- ✅ **Drag cards between columns** - Cards move between workflow stages (with WIP limit validation)
+- ✅ **Drag cards within columns** - Priority reordering within a column
+- ✅ **Visual feedback** - Opacity changes, highlights, and smooth transitions during all drag operations
+- ✅ **Toast notifications** - Success and error messages for all operations
+- ✅ **Event isolation** - Card drag doesn't trigger column drag, and vice versa
+- ✅ **Shared state** - Drag state properly shared across all columns
+
+---
+
+### Technical Details
+
+**Two-Phase Update Pattern:**
+```csharp
+// Phase 1: Set all positions to temporary negative values
+for (int i = 0; i < dto.ColumnIds.Count; i++)
+{
+    var column = columnDict[dto.ColumnIds[i]];
+    column.Update(null, null, -(i + 1));
+}
+await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+// Phase 2: Set correct positive positions
+for (int i = 0; i < dto.ColumnIds.Count; i++)
+{
+    var column = columnDict[dto.ColumnIds[i]];
+    column.Update(null, null, i);
+}
+await _unitOfWork.SaveChangesAsync(cancellationToken);
+```
+
+**State Lifting Pattern:**
+- **Before**: Each child component had its own state (state not shared)
+- **After**: Parent component owns the state, passes down as props
+- **Benefits**:
+  - State is shared across all child components
+  - Single source of truth
+  - Enables cross-component operations
+
+**Event Propagation Fix:**
+- **Problem**: Events bubble up the DOM tree by default
+- **Solution**: `event.stopPropagation()` prevents bubbling
+- **Result**: Child element handles its own events without triggering parent handlers
+
+---
+
+### Impact Assessment
+
+**Phase 4: UX Enhancements** - ✅ **100% COMPLETE**
+
+All planned features delivered:
+1. ✅ Toast notification system
+2. ✅ Drag-and-drop for cards
+3. ✅ Drag-and-drop for columns
+
+**Code Quality:**
+- Zero technical debt introduced
+- All code follows existing patterns
+- Comprehensive test coverage maintained
+- Clean separation of concerns
+
+**User Experience:**
+- Professional, polished drag-and-drop interactions
+- Clear visual feedback during all operations
+- Immediate toast notifications
+- Smooth, responsive UI
+
+---
+
+### Next Steps
+
+**Phase 5: Enhanced UX & Accessibility** (0% COMPLETE)
+
+Planned features:
+1. Keyboard shortcuts
+   - Navigation (j/k for cards, h/l for columns)
+   - Operations (n create, e edit, d delete)
+   - Modal shortcuts (Esc close, Enter save)
+   - Help modal (?)
+
+2. Advanced filtering UI
+   - Search by title/description
+   - Filter by label
+   - Filter by column
+   - Filter by status
+   - Combined filters
+
+**Documentation:**
+- ✅ IMPLEMENTATION_STATUS.md updated with Session 6
+- ✅ README.md updated with test counts and Phase 4 completion
+- ✅ SESSION_SUMMARY updated with drag-and-drop fixes
+
+---
+
+### Conclusion
+
+**Status:** ✅ **SESSION 6 COMPLETE - ALL OBJECTIVES ACHIEVED**
+
+Session 6 successfully:
+1. ✅ Fixed critical drag-and-drop bugs (3 issues)
+2. ✅ Added atomic column reordering backend endpoint
+3. ✅ Achieved 100% test pass rate (199/199 tests)
+4. ✅ Completed Phase 4: UX Enhancements
+5. ✅ Updated all documentation
+
+**Project Health:** ⭐⭐⭐⭐⭐ **EXCELLENT**
+
+The project now has:
+- Fully functional drag-and-drop for both cards and columns
+- 199 comprehensive tests (100% pass rate)
+- Professional user experience with visual feedback
+- Clear roadmap for next phase (keyboard shortcuts + filtering)
+
+**Ready for:** ✅ Phase 5 implementation
+
+---
+
+**Session 6 End Time:** 2025-11-18
+**Total Tests:** 199/199 passing (100%)
+**Phase 4 Status:** 100% COMPLETE ✅
+**Next Priority:** Keyboard shortcuts implementation
