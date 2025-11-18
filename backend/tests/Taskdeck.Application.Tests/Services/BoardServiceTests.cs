@@ -6,6 +6,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -105,7 +106,7 @@ public class BoardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard("Original Name");
-        var dto = new UpdateBoardDto { Name = "Updated Name" };
+        var dto = new UpdateBoardDto(Name: "Updated Name", Description: null, IsArchived: null);
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -124,7 +125,7 @@ public class BoardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var dto = new UpdateBoardDto { Description = "New description" };
+        var dto = new UpdateBoardDto(Name: null, Description: "New description", IsArchived: null);
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -142,7 +143,7 @@ public class BoardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var dto = new UpdateBoardDto { IsArchived = true };
+        var dto = new UpdateBoardDto(Name: null, Description: null, IsArchived: true);
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -160,7 +161,7 @@ public class BoardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard(isArchived: true);
-        var dto = new UpdateBoardDto { IsArchived = false };
+        var dto = new UpdateBoardDto(Name: null, Description: null, IsArchived: false);
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -178,7 +179,7 @@ public class BoardServiceTests
     {
         // Arrange
         var boardId = Guid.NewGuid();
-        var dto = new UpdateBoardDto { Name = "Updated" };
+        var dto = new UpdateBoardDto(Name: "Updated", Description: null, IsArchived: null);
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default))
             .ReturnsAsync((Board?)null);
@@ -197,12 +198,11 @@ public class BoardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var dto = new UpdateBoardDto
-        {
-            Name = "New Name",
-            Description = "New Description",
-            IsArchived = true
-        };
+        var dto = new UpdateBoardDto(
+            Name: "New Name",
+            Description: "New Description",
+            IsArchived: true
+        );
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
