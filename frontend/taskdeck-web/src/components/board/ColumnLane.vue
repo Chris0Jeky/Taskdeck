@@ -12,6 +12,7 @@ const props = defineProps<{
   labels: Label[]
   boardId: string
   draggedCard: Card | null
+  selectedCardId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -236,6 +237,7 @@ function handleCardDragOver(event: DragEvent) {
       >
         <CardItem
           :card="card"
+          :is-selected="card.id === selectedCardId"
           @click="handleCardClick"
           @dragstart="handleCardDragStart"
           @dragend="handleCardDragEnd"
