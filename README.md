@@ -107,7 +107,7 @@ dotnet test /p:CollectCoverage=true
 **Current Status:**
 - ✅ Domain Tests: 42/42 passing (100%)
 - ✅ Application Tests: 82/82 passing (100%)
-- ✅ **Total: 124/124 tests passing (100%)**
+- ✅ Backend Total: 124/124 tests passing (100%)
 
 ### Frontend Tests
 
@@ -128,12 +128,18 @@ npm run test:ui
 ```
 
 **Current Status:**
-- ✅ Store Tests: Complete coverage of all Pinia actions
-- ✅ Component Tests: Complete coverage of all modal components
-  - CardModal
-  - BoardSettingsModal
-  - ColumnEditModal
-  - LabelManagerModal
+- ✅ Store Tests: 14/14 passing (100%) - Complete coverage of boardStore
+- ✅ Component Tests: 56/56 passing (100%) - All modal components
+  - CardModal (12 tests)
+  - BoardSettingsModal (12 tests)
+  - ColumnEditModal (15 tests)
+  - LabelManagerModal (17 tests)
+- ✅ Frontend Total: 70/70 tests passing (100%)
+
+**Overall Test Status:**
+- ✅ **194/194 tests passing (100%)**
+  - Backend: 124 tests (Domain: 42, Application: 82)
+  - Frontend: 70 tests (Store: 14, Components: 56)
 
 See **[TESTING.md](./TESTING.md)** for comprehensive testing guide and best practices.
 
