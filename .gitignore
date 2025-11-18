@@ -26,3 +26,8 @@ frontend/*/.env.*.local
 Thumbs.db
 /backend/src/Taskdeck.Api/obj
 /backend/src/Taskdeck.Api
+/backend/src/Taskdeck.Domain
+/backend/src/Taskdeck.Application
+/backend/src/Taskdeck.Infrastructure
+/backend/tests/Taskdeck.Application.Tests
+/backend/tests/Taskdeck.Domain.Tests
