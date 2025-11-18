@@ -117,12 +117,10 @@ public class CardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var column = TestDataBuilder.CreateColumn(board.Id, "In Progress", wipLimit: 2);
-
-        // Add 2 cards to reach WIP limit
-        var card1 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 1", position: 0);
-        var card2 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 2", position: 1);
-        column.GetType().GetProperty("Cards")!.SetValue(column, new List<Card> { card1, card2 });
+        // Create cards and add them to column to reach WIP limit
+        var card1 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 1", position: 0);
+        var card2 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 2", position: 1);
+        var column = TestDataBuilder.CreateColumnWithCards(board.Id, "In Progress", new[] { card1, card2 }, wipLimit: 2);
 
         var dto = new CreateCardDto(board.Id, column.Id, "Card 3", null, null, null);
 
@@ -167,16 +165,15 @@ public class CardServiceTests
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync((Guid id, CancellationToken ct) =>
             {
-                var card = TestDataBuilder.CreateCard(board.Id, column.Id, dto.Title);
-                var cardLabel1 = TestDataBuilder.CreateCardLabel(card.Id, label1.Id);
-                var cardLabel2 = TestDataBuilder.CreateCardLabel(card.Id, label2.Id);
+                var cardLabel1 = TestDataBuilder.CreateCardLabelWithLabel(Guid.NewGuid(), label1);
+                var cardLabel2 = TestDataBuilder.CreateCardLabelWithLabel(Guid.NewGuid(), label2);
 
-                // Use reflection to set the Label navigation property
-                cardLabel1.GetType().GetProperty("Label")!.SetValue(cardLabel1, label1);
-                cardLabel2.GetType().GetProperty("Label")!.SetValue(cardLabel2, label2);
+                var card = TestDataBuilder.CreateCardWithLabels(
+                    board.Id,
+                    column.Id,
+                    dto.Title,
+                    new[] { cardLabel1, cardLabel2 });
 
-                card.AddLabel(cardLabel1);
-                card.AddLabel(cardLabel2);
                 return card;
             });
 
@@ -216,11 +213,13 @@ public class CardServiceTests
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync((Guid id, CancellationToken ct) =>
             {
-                var card = TestDataBuilder.CreateCard(board.Id, column.Id, dto.Title);
-                var cardLabel = TestDataBuilder.CreateCardLabel(card.Id, validLabel.Id);
+                var cardLabel = TestDataBuilder.CreateCardLabelWithLabel(Guid.NewGuid(), validLabel);
 
-                cardLabel.GetType().GetProperty("Label")!.SetValue(cardLabel, validLabel);
-                card.AddLabel(cardLabel);
+                var card = TestDataBuilder.CreateCardWithLabels(
+                    board.Id,
+                    column.Id,
+                    dto.Title,
+                    new[] { cardLabel });
 
                 return card;
             });
@@ -239,12 +238,11 @@ public class CardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
 
         // Add existing cards
-        var card1 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 1", position: 0);
-        var card2 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 2", position: 1);
-        column.GetType().GetProperty("Cards")!.SetValue(column, new List<Card> { card1, card2 });
+        var card1 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 1", position: 0);
+        var card2 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 2", position: 1);
+        var column = TestDataBuilder.CreateColumnWithCards(board.Id, "To Do", new[] { card1, card2 });
 
         var dto = new CreateCardDto(board.Id, column.Id, "New Card", null, null, null);
 
@@ -517,12 +515,10 @@ public class CardServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var sourceColumn = TestDataBuilder.CreateColumn(board.Id, "To Do");
-        var targetColumn = TestDataBuilder.CreateColumn(board.Id, "In Progress", wipLimit: 1);
-
         var card = TestDataBuilder.CreateCard(board.Id, sourceColumn.Id, "Task to Move");
-        var existingCard = TestDataBuilder.CreateCard(board.Id, targetColumn.Id, "Existing Task");
+        var existingCard = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Existing Task");
 
-        targetColumn.GetType().GetProperty("Cards")!.SetValue(targetColumn, new List<Card> { existingCard });
+        var targetColumn = TestDataBuilder.CreateColumnWithCards(board.Id, "In Progress", new[] { existingCard }, wipLimit: 1);
 
         var dto = new MoveCardDto(targetColumn.Id, 0);
 
@@ -546,12 +542,10 @@ public class CardServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var column = TestDataBuilder.CreateColumn(board.Id, "To Do", wipLimit: 2);
+        var card1 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 1", position: 0);
+        var card2 = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Card 2", position: 1);
 
-        var card1 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 1", position: 0);
-        var card2 = TestDataBuilder.CreateCard(board.Id, column.Id, "Card 2", position: 1);
-
-        column.GetType().GetProperty("Cards")!.SetValue(column, new List<Card> { card1, card2 });
+        var column = TestDataBuilder.CreateColumnWithCards(board.Id, "To Do", new[] { card1, card2 }, wipLimit: 2);
 
         var dto = new MoveCardDto(column.Id, 1); // Move card1 to position 1
 

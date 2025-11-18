@@ -4,7 +4,7 @@ import { boardsApi } from '../api/boardsApi'
 import { columnsApi } from '../api/columnsApi'
 import { cardsApi } from '../api/cardsApi'
 import { labelsApi } from '../api/labelsApi'
-import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto } from '../types/board'
+import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto } from '../types/board'
 
 export const useBoardStore = defineStore('board', () => {
   // State
@@ -145,6 +145,43 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  async function updateCard(boardId: string, cardId: string, card: UpdateCardDto) {
+    try {
+      loading.value = true
+      error.value = null
+      const updatedCard = await cardsApi.updateCard(boardId, cardId, card)
+
+      // Update the card in the store
+      const index = currentBoardCards.value.findIndex((c) => c.id === cardId)
+      if (index !== -1) {
+        currentBoardCards.value[index] = updatedCard
+      }
+
+      return updatedCard
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to update card'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteCard(boardId: string, cardId: string) {
+    try {
+      loading.value = true
+      error.value = null
+      await cardsApi.deleteCard(boardId, cardId)
+
+      // Remove the card from the store
+      currentBoardCards.value = currentBoardCards.value.filter((c) => c.id !== cardId)
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to delete card'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function moveCard(boardId: string, cardId: string, targetColumnId: string, targetPosition: number) {
     try {
       loading.value = true
@@ -185,6 +222,8 @@ export const useBoardStore = defineStore('board', () => {
     createColumn,
     createCard,
     createLabel,
+    updateCard,
+    deleteCard,
     fetchCards,
     fetchLabels,
     moveCard,
