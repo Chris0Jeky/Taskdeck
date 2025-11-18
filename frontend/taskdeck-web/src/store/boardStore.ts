@@ -514,6 +514,20 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  // Filter actions
+  const updateFilters = (newFilters: CardFilters) => {
+    filters.value = { ...newFilters }
+  }
+
+  const clearFilters = () => {
+    filters.value = {
+      searchText: '',
+      labelIds: [],
+      dueDateFilter: 'all',
+      showBlockedOnly: false
+    }
+  }
+
   return {
     // State
     boards,
@@ -522,9 +536,12 @@ export const useBoardStore = defineStore('board', () => {
     currentBoardLabels,
     loading,
     error,
+    filters,
 
     // Computed
     cardsByColumn,
+    filteredCardCount,
+    totalCardCount,
 
     // Actions
     fetchBoards,
@@ -542,6 +559,8 @@ export const useBoardStore = defineStore('board', () => {
     createLabel,
     updateLabel,
     deleteLabel,
+    updateFilters,
+    clearFilters,
     fetchCards,
     fetchLabels,
     moveCard,
