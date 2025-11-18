@@ -359,6 +359,7 @@ useKeyboardShortcuts([
             :labels="boardStore.currentBoardLabels"
             :board-id="boardId"
             :dragged-card="draggedCard"
+            :selected-card-id="selectedCardId"
             @card-drag-start="handleCardDragStart"
             @card-drag-end="handleCardDragEnd"
           />
