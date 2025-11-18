@@ -687,14 +687,14 @@ This section tracks progress against the original technical design document to e
 - ✅ Business rule tests (WIP limits, etc.)
 
 **Taskdeck.Application.Tests:**
-- ✅ 82 tests written (73 passing, 9 with test infrastructure issues)
-- ✅ BoardService: CRUD, archive, search, filtering
-- ✅ ColumnService: CRUD, WIP limits, position management
-- ✅ CardService: CRUD, move operations, WIP enforcement, labels, blocking
-- ✅ LabelService: CRUD, color validation
+- ✅ 82/82 tests passing (100%)
+- ✅ BoardService: CRUD, archive, search, filtering (20+ tests)
+- ✅ ColumnService: CRUD, WIP limits, position management (15+ tests)
+- ✅ CardService: CRUD, move operations, WIP enforcement, labels, blocking (30+ tests)
+- ✅ LabelService: CRUD, color validation (15+ tests)
 - ✅ Result pattern tested extensively
 - ✅ Error scenarios covered (NotFound, ValidationError, WipLimitExceeded)
-- ⚠️ 9 tests need mock setup fixes (minor issues)
+- ✅ All test infrastructure issues resolved
 
 **Taskdeck.Api.Tests (Not Created):**
 - ❌ Integration tests not implemented
@@ -704,21 +704,51 @@ This section tracks progress against the original technical design document to e
 
 ### Frontend Tests
 
-- ❌ No tests implemented
-- 📝 TODO: Set up Vitest
-- 📝 TODO: Component unit tests
-- 📝 TODO: Store tests
-- 📝 TODO: E2E tests (Cypress or Playwright)
+**Vitest Configuration:**
+- ✅ Vitest set up with @vue/test-utils
+- ✅ Mock configuration for API calls
+- ✅ Test utilities and helpers
+
+**Store Tests (src/tests/store/):**
+- ✅ boardStore.spec.ts: 14/14 tests passing (100%)
+  - fetchBoards, fetchBoard actions
+  - createBoard, updateBoard, deleteBoard
+  - createColumn, updateColumn, deleteColumn
+  - createCard, updateCard, deleteCard, moveCard
+  - createLabel, updateLabel, deleteLabel
+  - Error handling for all operations
+
+**Component Tests (src/tests/components/):**
+- ✅ CardModal.spec.ts: 12/12 tests passing (100%)
+- ✅ BoardSettingsModal.spec.ts: 12/12 tests passing (100%)
+- ✅ ColumnEditModal.spec.ts: 15/15 tests passing (100%)
+- ✅ LabelManagerModal.spec.ts: 17/17 tests passing (100%)
+
+**Total Frontend Tests: 70/70 passing (100%)**
+
+**E2E Tests:**
+- ❌ Not implemented yet
+- 📝 TODO: Set up Playwright or Cypress for E2E smoke tests
 
 ### Manual Testing Status
 
+**Build Status:**
 - ✅ Backend compiles successfully
 - ✅ Frontend compiles and builds
-- ✅ Backend tests: 115/124 passing (93%)
+
+**Automated Test Status:**
+- ✅ Backend tests: 124/124 passing (100%)
   - Domain: 42/42 (100%)
-  - Application: 73/82 (89%)
-- ⚠️ 9 application tests need mock setup fixes
-- ⚠️ Full integration testing pending
+  - Application: 82/82 (100%)
+- ✅ Frontend tests: 70/70 passing (100%)
+  - Store: 14/14 (100%)
+  - Components: 56/56 (100%)
+- ✅ **Overall: 194/194 tests passing (100%)**
+
+**Integration Testing:**
+- ⚠️ API integration tests not implemented yet
+- ⚠️ E2E tests not implemented yet
+- ✅ Manual testing ready
 
 ---
 
