@@ -20,4 +20,11 @@ export const columnsApi = {
   async deleteColumn(boardId: string, columnId: string): Promise<void> {
     await http.delete(`/boards/${boardId}/columns/${columnId}`)
   },
+
+  async reorderColumns(boardId: string, columnIds: string[]): Promise<Column[]> {
+    const { data } = await http.post<Column[]>(`/boards/${boardId}/columns/reorder`, {
+      columnIds,
+    })
+    return data
+  },
 }
