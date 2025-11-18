@@ -388,8 +388,8 @@ public class CardServiceTests
         var oldLabel = TestDataBuilder.CreateLabel(board.Id, "Old", "#FF0000");
         var newLabel = TestDataBuilder.CreateLabel(board.Id, "New", "#00FF00");
 
-        // Add old label
-        var oldCardLabel = TestDataBuilder.CreateCardLabel(card.Id, oldLabel.Id);
+        // Add old label with Label navigation property set
+        var oldCardLabel = TestDataBuilder.CreateCardLabelWithLabel(card.Id, oldLabel);
         card.AddLabel(oldCardLabel);
 
         var dto = new UpdateCardDto(
