@@ -11,6 +11,12 @@ const props = defineProps<{
   cards: Card[]
   labels: Label[]
   boardId: string
+  draggedCard: Card | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'card-drag-start', card: Card): void
+  (e: 'card-drag-end'): void
 }>()
 
 const boardStore = useBoardStore()
