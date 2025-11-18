@@ -1,16 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet test:*)",
-      "Bash(npm run build:*)",
-      "Bash(npm install)",
-      "Bash(dotnet build:*)",
-      "Bash(git rm:*)",
-      "Bash(for file in *ServiceTests.cs)",
-      "Bash(do if ! grep -q \"using Taskdeck.Domain.Exceptions\" \"$file\")",
-      "Bash(then sed -i '1i using Taskdeck.Domain.Exceptions;' \"$file\")",
-      "Bash(fi)",
-      "Bash(done)"
+      "Bash(dotnet --version:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)",
+      "Bash(dotnet tool uninstall:*)",
+      "Bash(dotnet nuget:*)",
+      "Bash(dotnet tool install:*)",
+      "Bash(dotnet ef database update:*)",
+      "Bash(dotnet ef migrations add:*)"
     ],
     "deny": [],
     "ask": []
