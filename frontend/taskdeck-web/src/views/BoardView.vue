@@ -2,10 +2,11 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
+import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import ColumnLane from '../components/board/ColumnLane.vue'
 import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
 import LabelManagerModal from '../components/board/LabelManagerModal.vue'
-import type { Column } from '../types/board'
+import type { Column, Card } from '../types/board'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,10 @@ const showLabelManager = ref(false)
 const draggedColumn = ref<Column | null>(null)
 const dragOverColumnId = ref<string | null>(null)
 const draggedCard = ref<Card | null>(null)
+
+// Card selection state for keyboard navigation
+const selectedCardId = ref<string | null>(null)
+const selectedColumnIndex = ref<number>(0)
 
 const boardId = ref(route.params.id as string)
 
@@ -116,6 +121,118 @@ function handleCardDragStart(card: Card) {
 function handleCardDragEnd() {
   draggedCard.value = null
 }
+
+// Keyboard navigation functions
+function selectNextCard() {
+  const columns = sortedColumns.value
+  if (columns.length === 0) return
+
+  const currentColumn = columns[selectedColumnIndex.value]
+  if (!currentColumn) return
+
+  const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+  if (cards.length === 0) return
+
+  if (!selectedCardId.value) {
+    // Select first card in current column
+    selectedCardId.value = cards[0].id
+    return
+  }
+
+  const currentIndex = cards.findIndex(c => c.id === selectedCardId.value)
+  if (currentIndex < cards.length - 1) {
+    selectedCardId.value = cards[currentIndex + 1].id
+  }
+}
+
+function selectPreviousCard() {
+  const columns = sortedColumns.value
+  if (columns.length === 0) return
+
+  const currentColumn = columns[selectedColumnIndex.value]
+  if (!currentColumn) return
+
+  const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+  if (cards.length === 0) return
+
+  if (!selectedCardId.value) {
+    // Select last card in current column
+    selectedCardId.value = cards[cards.length - 1].id
+    return
+  }
+
+  const currentIndex = cards.findIndex(c => c.id === selectedCardId.value)
+  if (currentIndex > 0) {
+    selectedCardId.value = cards[currentIndex - 1].id
+  }
+}
+
+function selectNextColumn() {
+  const columns = sortedColumns.value
+  if (columns.length === 0) return
+
+  if (selectedColumnIndex.value < columns.length - 1) {
+    selectedColumnIndex.value++
+    // Select first card in new column
+    const newColumn = columns[selectedColumnIndex.value]
+    const cards = boardStore.cardsByColumn.get(newColumn.id) || []
+    selectedCardId.value = cards.length > 0 ? cards[0].id : null
+  }
+}
+
+function selectPreviousColumn() {
+  const columns = sortedColumns.value
+  if (columns.length === 0) return
+
+  if (selectedColumnIndex.value > 0) {
+    selectedColumnIndex.value--
+    // Select first card in new column
+    const newColumn = columns[selectedColumnIndex.value]
+    const cards = boardStore.cardsByColumn.get(newColumn.id) || []
+    selectedCardId.value = cards.length > 0 ? cards[0].id : null
+  }
+}
+
+function openSelectedCard() {
+  if (!selectedCardId.value) return
+  const columns = sortedColumns.value
+  const currentColumn = columns[selectedColumnIndex.value]
+  if (!currentColumn) return
+
+  const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+  const card = cards.find(c => c.id === selectedCardId.value)
+  if (card) {
+    // TODO: Open card modal - will be implemented when integrating
+    console.log('Opening card:', card)
+  }
+}
+
+function createCardInSelectedColumn() {
+  const columns = sortedColumns.value
+  if (columns.length === 0) return
+  const currentColumn = columns[selectedColumnIndex.value]
+  if (!currentColumn) return
+
+  // TODO: Open create card form - will be implemented when integrating
+  console.log('Creating card in column:', currentColumn.name)
+}
+
+// Setup keyboard shortcuts
+useKeyboardShortcuts([
+  // Navigation
+  { key: 'j', description: 'Next card', action: selectNextCard },
+  { key: 'ArrowDown', description: 'Next card', action: selectNextCard },
+  { key: 'k', description: 'Previous card', action: selectPreviousCard },
+  { key: 'ArrowUp', description: 'Previous card', action: selectPreviousCard },
+  { key: 'h', description: 'Previous column', action: selectPreviousColumn },
+  { key: 'ArrowLeft', description: 'Previous column', action: selectPreviousColumn },
+  { key: 'l', description: 'Next column', action: selectNextColumn },
+  { key: 'ArrowRight', description: 'Next column', action: selectNextColumn },
+
+  // Actions
+  { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
+  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn },
+])
 </script>
 
 <template>
