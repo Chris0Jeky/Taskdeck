@@ -29,7 +29,9 @@ watch(() => props.card, (newCard) => {
   if (newCard) {
     title.value = newCard.title
     description.value = newCard.description || ''
-    dueDate.value = newCard.dueDate ? new Date(newCard.dueDate).toISOString().split('T')[0] : ''
+    dueDate.value = newCard.dueDate
+      ? new Date(newCard.dueDate).toISOString().split('T')[0] ?? ''
+      : ''
     isBlocked.value = newCard.isBlocked
     blockReason.value = newCard.blockReason || ''
     selectedLabelIds.value = newCard.labels.map(l => l.id)

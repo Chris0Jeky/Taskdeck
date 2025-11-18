@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import ColumnLane from '../components/board/ColumnLane.vue'
 import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
 import LabelManagerModal from '../components/board/LabelManagerModal.vue'
+import type { Column } from '../types/board'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,8 +15,16 @@ const newColumnName = ref('')
 const showColumnForm = ref(false)
 const showBoardSettings = ref(false)
 const showLabelManager = ref(false)
+const draggedColumn = ref<Column | null>(null)
+const dragOverColumnId = ref<string | null>(null)
 
 const boardId = ref(route.params.id as string)
+
+// Sort columns by position
+const sortedColumns = computed(() => {
+  if (!boardStore.currentBoard) return []
+  return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
+})
 
 onMounted(async () => {
   try {
@@ -41,6 +50,72 @@ async function createColumn() {
 
 function goBack() {
   router.push('/boards')
+}
+
+function handleColumnDragStart(column: Column, event: DragEvent) {
+  draggedColumn.value = column
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', column.id)
+  }
+}
+
+function handleColumnDragEnd() {
+  draggedColumn.value = null
+  dragOverColumnId.value = null
+}
+
+function handleColumnDragOver(column: Column, event: DragEvent) {
+  event.preventDefault()
+  if (!draggedColumn.value || draggedColumn.value.id === column.id) {
+    dragOverColumnId.value = null
+    return
+  }
+  dragOverColumnId.value = column.id
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function handleColumnDragLeave() {
+  dragOverColumnId.value = null
+}
+
+async function handleColumnDrop(targetColumn: Column, event: DragEvent) {
+  event.preventDefault()
+  dragOverColumnId.value = null
+
+  if (!draggedColumn.value || !boardStore.currentBoard) return
+  if (draggedColumn.value.id === targetColumn.id) return
+
+  try {
+    const columns = sortedColumns.value
+    const draggedIndex = columns.findIndex((c) => c.id === draggedColumn.value!.id)
+    const targetIndex = columns.findIndex((c) => c.id === targetColumn.id)
+
+    if (draggedIndex === -1 || targetIndex === -1) return
+
+    // Reorder locally first for immediate feedback
+    const reordered = [...columns]
+    const [removed] = reordered.splice(draggedIndex, 1)
+    reordered.splice(targetIndex, 0, removed)
+
+    // Update positions for all affected columns
+    const updates = reordered.map((col, index) => {
+      if (col.position !== index) {
+        return boardStore.updateColumn(boardId.value, col.id, {
+          name: null,
+          wipLimit: null,
+          position: index,
+        })
+      }
+      return Promise.resolve()
+    })
+
+    await Promise.all(updates)
+  } catch (error) {
+    console.error('Failed to reorder columns:', error)
+  }
 }
 </script>
 
@@ -147,14 +222,28 @@ function goBack() {
     <!-- Board Content -->
     <div v-else-if="boardStore.currentBoard" class="h-[calc(100vh-120px)] overflow-x-auto">
       <div class="flex gap-4 p-6 min-h-full">
-        <ColumnLane
-          v-for="column in boardStore.currentBoard.columns"
+        <div
+          v-for="column in sortedColumns"
           :key="column.id"
-          :column="column"
-          :cards="boardStore.cardsByColumn.get(column.id) || []"
-          :labels="boardStore.currentBoardLabels"
-          :board-id="boardId"
-        />
+          draggable="true"
+          :class="[
+            'transition-all',
+            draggedColumn?.id === column.id ? 'opacity-50' : '',
+            dragOverColumnId === column.id ? 'transform scale-105' : ''
+          ]"
+          @dragstart="handleColumnDragStart(column, $event)"
+          @dragend="handleColumnDragEnd"
+          @dragover="handleColumnDragOver(column, $event)"
+          @dragleave="handleColumnDragLeave"
+          @drop="handleColumnDrop(column, $event)"
+        >
+          <ColumnLane
+            :column="column"
+            :cards="boardStore.cardsByColumn.get(column.id) || []"
+            :labels="boardStore.currentBoardLabels"
+            :board-id="boardId"
+          />
+        </div>
 
         <!-- Empty State -->
         <div

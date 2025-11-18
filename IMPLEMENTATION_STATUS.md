@@ -252,13 +252,49 @@ This document serves as the **comprehensive project memory** for Taskdeck develo
 
 **Phase 3 Core Features:** 100% COMPLETE ✅
 
-**Remaining (moved to Phase 4):**
-- ⚠️ Advanced filtering UI - Backend ready, needs UI
-- ❌ Keyboard shortcuts
-- ❌ Drag-and-drop
-- ❌ Better error states (toast notifications)
+### 🚧 Phase 4: UX Enhancements (IN PROGRESS - 60% COMPLETE)
 
-### ❌ Phase 4: Advanced Features (NOT STARTED)
+**Completed Features:**
+
+- ✅ **Toast Notification System** (Session 5 - 2025-11-18)
+  - Toast store with Pinia (success, error, info, warning types)
+  - ToastContainer component with animations
+  - Auto-dismiss with configurable duration
+  - Manual dismiss with close button
+  - Integrated into all CRUD operations
+  - Visual feedback for all user actions
+
+- ✅ **Drag-and-Drop for Cards** (Session 5 - 2025-11-18)
+  - Drag cards between columns (workflow progression)
+  - Drag cards within columns (priority reordering)
+  - Visual feedback during drag (opacity, scale)
+  - Drop zones on columns and cards
+  - Smart position calculation
+  - Toast notifications for moves
+
+- ✅ **Drag-and-Drop for Columns** (Session 5 - 2025-11-18)
+  - Drag columns to reorder workflow stages
+  - Visual feedback (opacity, scale)
+  - Parallel position updates
+  - Maintains card associations
+  - Toast notifications for reorder
+
+**Remaining Features:**
+
+- ❌ **Keyboard Shortcuts**
+  - Navigation (j/k for cards, h/l for columns)
+  - Operations (c create, e edit, d delete)
+  - Modal shortcuts (Esc close, Enter save)
+  - Help modal (?)
+
+- ❌ **Advanced Filtering UI**
+  - Search by title/description
+  - Filter by label
+  - Filter by column
+  - Filter by status
+  - Combined filters
+
+### ❌ Phase 5: Advanced Features (PLANNED)
 
 - ❌ Time tracking
 - ❌ Recurring tasks
@@ -266,6 +302,7 @@ This document serves as the **comprehensive project memory** for Taskdeck develo
 - ❌ CLI client
 - ❌ Multi-user support
 - ❌ Remote sync
+- ❌ Dark mode
 
 ---
 
@@ -857,6 +894,85 @@ Taskdeck/
 - Complete feature parity for board/column/card/label management
 - Professional application ready for user feedback
 - Foundation for Phase 4 advanced features
+
+### 2025-11-18 - Session 5: Phase 4 - Toast Notifications & Drag-and-Drop
+
+**Toast Notification System:**
+- Created toastStore.ts (66 lines) - Pinia store for toast management
+  * 4 toast types: success, error, info, warning
+  * Auto-dismiss with configurable duration
+  * Manual dismiss capability
+  * Methods: show(), success(), error(), info(), warning(), remove(), clear()
+- Created ToastContainer.vue (140 lines)
+  * Fixed position in top-right corner
+  * Animated slide-in/slide-out transitions
+  * Color-coded with icons for each type
+  * Stacked toast display
+- Integrated into App.vue root component
+- Added toasts to ALL CRUD operations in boardStore.ts (~20 toast calls)
+  * Success toasts for create/update/delete operations
+  * Error toasts with specific error messages
+  * Immediate visual feedback for all user actions
+
+**Drag-and-Drop for Cards:**
+- Updated CardItem.vue with drag functionality
+  * Made cards draggable with HTML5 drag API
+  * Visual feedback during drag (opacity, scale)
+  * Emits dragstart and dragend events
+  * Cursor changes to move cursor
+- Updated ColumnLane.vue with drop zones
+  * Drop on column - appends to end
+  * Drop on card - inserts before target
+  * Smart position calculation for reordering
+  * Visual drop indicators (blue highlight)
+  * Calls moveCard() with correct position
+  * Handles same-column and cross-column moves
+
+**Drag-and-Drop for Columns:**
+- Updated BoardView.vue with column reordering
+  * sortedColumns computed property
+  * Wraps each column in draggable container
+  * Visual feedback (opacity, scale up on target)
+  * Reorder logic with array splicing
+  * Parallel position updates with Promise.all
+  * Only updates columns with changed positions
+  * Maintains card associations during reorder
+
+**Files Created:**
+- frontend/taskdeck-web/src/store/toastStore.ts (66 lines)
+- frontend/taskdeck-web/src/components/common/ToastContainer.vue (140 lines)
+- SESSION_SUMMARY_2025-11-18_Phase4_DragDrop_Toasts.md (comprehensive)
+
+**Files Modified:**
+- frontend/taskdeck-web/src/App.vue (added ToastContainer)
+- frontend/taskdeck-web/src/store/boardStore.ts (integrated toasts)
+- frontend/taskdeck-web/src/components/board/CardItem.vue (drag support)
+- frontend/taskdeck-web/src/components/board/ColumnLane.vue (drop zones)
+- frontend/taskdeck-web/src/views/BoardView.vue (column reordering)
+
+**Achievement:**
+- Phase 4 UX Enhancements: 60% COMPLETE (3 of 5 features)
+- ~700 lines of new/modified code
+- Zero external dependencies (native HTML5 drag API)
+- Professional, polished user experience
+- No technical debt introduced
+
+**Impact:**
+- Immediate visual feedback for all user operations
+- Intuitive drag-and-drop for workflow management
+- Easy priority reordering within columns
+- Customizable workflow with column reordering
+- Transforms Taskdeck into a truly interactive Kanban board
+
+**Remaining Phase 4:**
+- ❌ Keyboard shortcuts (for accessibility and power users)
+- ❌ Advanced filtering UI (search and filter controls)
+
+**Next Steps:**
+- Implement keyboard shortcuts for navigation and operations
+- Create advanced filtering UI with search/filter controls
+- Consider adding touch device support for drag-and-drop
+- Consider keyboard accessibility for drag-and-drop
 
 ---
 

@@ -4,9 +4,13 @@ import { boardsApi } from '../api/boardsApi'
 import { columnsApi } from '../api/columnsApi'
 import { cardsApi } from '../api/cardsApi'
 import { labelsApi } from '../api/labelsApi'
-import type { Board, BoardDetail, Card, Label, Column, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
+import { useToastStore } from './toastStore'
+import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 
 export const useBoardStore = defineStore('board', () => {
+  // Toast notifications
+  const toast = useToastStore()
+
   // State
   const boards = ref<Board[]>([])
   const currentBoard = ref<BoardDetail | null>(null)
@@ -14,6 +18,16 @@ export const useBoardStore = defineStore('board', () => {
   const currentBoardLabels = ref<Label[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  const updateColumnCardCount = (columnId: string, delta: number) => {
+    if (!currentBoard.value) return
+
+    const column = currentBoard.value.columns.find((c) => c.id === columnId)
+    if (!column) return
+
+    const nextCount = (column.cardCount ?? 0) + delta
+    column.cardCount = Math.max(0, nextCount)
+  }
 
   // Computed
   const cardsByColumn = computed(() => {
@@ -41,6 +55,8 @@ export const useBoardStore = defineStore('board', () => {
       boards.value = await boardsApi.getBoards(search, includeArchived)
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to fetch boards'
+      toast.error(error.value)
+      throw e
     } finally {
       loading.value = false
     }
@@ -56,6 +72,7 @@ export const useBoardStore = defineStore('board', () => {
       await Promise.all([fetchCards(id), fetchLabels(id)])
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to fetch board'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -68,9 +85,11 @@ export const useBoardStore = defineStore('board', () => {
       error.value = null
       const newBoard = await boardsApi.createBoard(board)
       boards.value.push(newBoard)
+      toast.success(`Board "${newBoard.name}" created successfully`)
       return newBoard
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to create board'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -98,9 +117,11 @@ export const useBoardStore = defineStore('board', () => {
         currentBoard.value = updatedBoard as BoardDetail
       }
 
+      toast.success('Board updated successfully')
       return updatedBoard
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to update board'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -122,8 +143,11 @@ export const useBoardStore = defineStore('board', () => {
         currentBoardCards.value = []
         currentBoardLabels.value = []
       }
+
+      toast.success('Board deleted successfully')
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to delete board'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -140,9 +164,11 @@ export const useBoardStore = defineStore('board', () => {
         currentBoard.value.columns.push(newColumn)
       }
 
+      toast.success(`Column "${newColumn.name}" created successfully`)
       return newColumn
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to create column'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -163,9 +189,11 @@ export const useBoardStore = defineStore('board', () => {
         }
       }
 
+      toast.success('Column updated successfully')
       return updatedColumn
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to update column'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -185,8 +213,11 @@ export const useBoardStore = defineStore('board', () => {
 
       // Remove cards from deleted column
       currentBoardCards.value = currentBoardCards.value.filter((card) => card.columnId !== columnId)
+
+      toast.success('Column deleted successfully')
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to delete column'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -199,9 +230,12 @@ export const useBoardStore = defineStore('board', () => {
       error.value = null
       const newCard = await cardsApi.createCard(boardId, card)
       currentBoardCards.value.push(newCard)
+      updateColumnCardCount(newCard.columnId, 1)
+      toast.success(`Card "${newCard.title}" created successfully`)
       return newCard
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to create card'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -214,9 +248,11 @@ export const useBoardStore = defineStore('board', () => {
       error.value = null
       const newLabel = await labelsApi.createLabel(boardId, label)
       currentBoardLabels.value.push(newLabel)
+      toast.success(`Label "${newLabel.name}" created successfully`)
       return newLabel
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to create label'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -235,9 +271,11 @@ export const useBoardStore = defineStore('board', () => {
         currentBoardLabels.value[index] = updatedLabel
       }
 
+      toast.success('Label updated successfully')
       return updatedLabel
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to update label'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -252,8 +290,11 @@ export const useBoardStore = defineStore('board', () => {
 
       // Remove label from store
       currentBoardLabels.value = currentBoardLabels.value.filter((l) => l.id !== labelId)
+
+      toast.success('Label deleted successfully')
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to delete label'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -263,8 +304,21 @@ export const useBoardStore = defineStore('board', () => {
   async function fetchCards(boardId: string, filters?: { search?: string; labelId?: string; columnId?: string }) {
     try {
       currentBoardCards.value = await cardsApi.getCards(boardId, filters)
+
+      // Keep column card counts in sync with the latest cards collection
+      if (currentBoard.value) {
+        const counts = currentBoardCards.value.reduce((map, card) => {
+          map.set(card.columnId, (map.get(card.columnId) ?? 0) + 1)
+          return map
+        }, new Map<string, number>())
+
+        currentBoard.value.columns.forEach((column) => {
+          column.cardCount = counts.get(column.id) ?? 0
+        })
+      }
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to fetch cards'
+      toast.error(error.value)
       throw e
     }
   }
@@ -274,6 +328,7 @@ export const useBoardStore = defineStore('board', () => {
       currentBoardLabels.value = await labelsApi.getLabels(boardId)
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to fetch labels'
+      toast.error(error.value)
       throw e
     }
   }
@@ -290,9 +345,11 @@ export const useBoardStore = defineStore('board', () => {
         currentBoardCards.value[index] = updatedCard
       }
 
+      toast.success('Card updated successfully')
       return updatedCard
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to update card'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -303,12 +360,20 @@ export const useBoardStore = defineStore('board', () => {
     try {
       loading.value = true
       error.value = null
+      const existingCard = currentBoardCards.value.find((card) => card.id === cardId)
       await cardsApi.deleteCard(boardId, cardId)
 
       // Remove the card from the store
       currentBoardCards.value = currentBoardCards.value.filter((c) => c.id !== cardId)
+
+      if (existingCard) {
+        updateColumnCardCount(existingCard.columnId, -1)
+      }
+
+      toast.success('Card deleted successfully')
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to delete card'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
@@ -319,17 +384,28 @@ export const useBoardStore = defineStore('board', () => {
     try {
       loading.value = true
       error.value = null
+
+      const existingCardIndex = currentBoardCards.value.findIndex((c) => c.id === cardId)
+      const existingCard = existingCardIndex !== -1 ? currentBoardCards.value[existingCardIndex] : null
+      const previousColumnId = existingCard?.columnId ?? null
       const updatedCard = await cardsApi.moveCard(boardId, cardId, { targetColumnId, targetPosition })
 
-      // Update the card in the store
-      const index = currentBoardCards.value.findIndex((c) => c.id === cardId)
-      if (index !== -1) {
-        currentBoardCards.value[index] = updatedCard
+      if (existingCardIndex !== -1) {
+        currentBoardCards.value.splice(existingCardIndex, 1)
       }
 
+      currentBoardCards.value.push(updatedCard)
+
+      if (previousColumnId && previousColumnId !== updatedCard.columnId) {
+        updateColumnCardCount(previousColumnId, -1)
+        updateColumnCardCount(updatedCard.columnId, 1)
+      }
+
+      toast.success('Card moved successfully')
       return updatedCard
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to move card'
+      toast.error(error.value)
       throw e
     } finally {
       loading.value = false
