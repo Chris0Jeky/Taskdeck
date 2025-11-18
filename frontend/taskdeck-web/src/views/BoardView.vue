@@ -138,12 +138,14 @@ function selectNextCard() {
   if (!selectedCardId.value) {
     // Select first card in current column
     selectedCardId.value = cards[0]?.id || null
+    console.log('Selected first card:', selectedCardId.value)
     return
   }
 
   const currentIndex = cards.findIndex(c => c.id === selectedCardId.value)
   if (currentIndex < cards.length - 1) {
     selectedCardId.value = cards[currentIndex + 1]?.id || null
+    console.log('Selected next card:', selectedCardId.value)
   }
 }
 
