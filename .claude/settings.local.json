@@ -12,7 +12,8 @@
       "Bash(dotnet ef migrations add:*)",
       "Bash(git log:*)",
       "Bash(npm run test)",
-      "Bash(npm run test:*)"
+      "Bash(npm run test:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []
