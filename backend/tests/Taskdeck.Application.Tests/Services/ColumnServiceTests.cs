@@ -6,6 +6,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -164,7 +165,7 @@ public class ColumnServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
-        var dto = new UpdateColumnDto { Name = "Backlog" };
+        var dto = new UpdateColumnDto(Name: "Backlog", Position: null, WipLimit: null);
 
         _columnRepoMock.Setup(r => r.GetByIdAsync(column.Id, default))
             .ReturnsAsync(column);
@@ -184,7 +185,7 @@ public class ColumnServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var column = TestDataBuilder.CreateColumn(board.Id, "In Progress", wipLimit: 2);
-        var dto = new UpdateColumnDto { WipLimit = 5 };
+        var dto = new UpdateColumnDto(Name: null, Position: null, WipLimit: 5);
 
         _columnRepoMock.Setup(r => r.GetByIdAsync(column.Id, default))
             .ReturnsAsync(column);
@@ -203,7 +204,7 @@ public class ColumnServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var column = TestDataBuilder.CreateColumn(board.Id, "In Progress", wipLimit: 3);
-        var dto = new UpdateColumnDto { WipLimit = null };
+        var dto = new UpdateColumnDto(Name: null, Position: null, WipLimit: null);
 
         _columnRepoMock.Setup(r => r.GetByIdAsync(column.Id, default))
             .ReturnsAsync(column);
@@ -222,7 +223,7 @@ public class ColumnServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do", position: 0);
-        var dto = new UpdateColumnDto { Position = 2 };
+        var dto = new UpdateColumnDto(Name: null, Position: 2, WipLimit: null);
 
         _columnRepoMock.Setup(r => r.GetByIdAsync(column.Id, default))
             .ReturnsAsync(column);
@@ -240,7 +241,7 @@ public class ColumnServiceTests
     {
         // Arrange
         var columnId = Guid.NewGuid();
-        var dto = new UpdateColumnDto { Name = "Updated" };
+        var dto = new UpdateColumnDto(Name: "Updated", Position: null, WipLimit: null);
 
         _columnRepoMock.Setup(r => r.GetByIdAsync(columnId, default))
             .ReturnsAsync((Column?)null);
