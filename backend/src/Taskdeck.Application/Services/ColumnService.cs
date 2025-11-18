@@ -117,6 +117,9 @@ public class ColumnService
                 column.Update(null, null, -(i + 1));
             }
 
+            // Save Phase 1 changes - moves all columns to negative positions
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             // Phase 2: Set correct positive positions
             for (int i = 0; i < dto.ColumnIds.Count; i++)
             {
@@ -124,7 +127,7 @@ public class ColumnService
                 column.Update(null, null, i);
             }
 
-            // Save all changes in a single transaction
+            // Save Phase 2 changes - moves columns to final positions
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // Return reordered columns
