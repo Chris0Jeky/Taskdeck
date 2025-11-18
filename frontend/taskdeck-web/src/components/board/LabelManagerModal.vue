@@ -220,18 +220,6 @@ function handleClose() {
           </div>
         </div>
 
-        <!-- Create Button -->
-        <button
-          v-if="!showLabelForm"
-          @click="startCreating"
-          class="w-full mb-4 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 border border-blue-300 rounded-md transition-colors flex items-center justify-center gap-2"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Create New Label
-        </button>
-
         <!-- Labels List -->
         <div class="space-y-2 max-h-96 overflow-y-auto">
           <div v-if="sortedLabels.length === 0" class="text-center py-8 text-gray-400">
@@ -275,6 +263,18 @@ function handleClose() {
             </div>
           </div>
         </div>
+
+        <!-- Create Button -->
+        <button
+          v-if="!showLabelForm"
+          @click="startCreating"
+          class="w-full mb-4 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 border border-blue-300 rounded-md transition-colors flex items-center justify-center gap-2"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Create New Label
+        </button>
 
         <!-- Footer -->
         <div class="mt-6 pt-4 border-t border-gray-200">

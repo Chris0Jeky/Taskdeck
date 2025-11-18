@@ -203,7 +203,7 @@ describe('ColumnEditModal', () => {
     expect((saveButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('should disable delete button when column has cards', () => {
+  it('should visually disable delete button when column has cards', () => {
     const columnWithCards = {
       ...column,
       cardCount: 3,
@@ -221,7 +221,8 @@ describe('ColumnEditModal', () => {
       .findAll('button')
       .find((btn) => btn.text().includes('Delete Column'))
 
-    expect((deleteButton?.element as HTMLButtonElement).disabled).toBe(true)
+    expect(deleteButton?.classes()).toContain('opacity-50')
+    expect((deleteButton?.element as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('should show alert when trying to delete column with cards', async () => {
