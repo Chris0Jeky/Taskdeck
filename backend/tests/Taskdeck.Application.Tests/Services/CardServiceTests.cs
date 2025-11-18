@@ -402,7 +402,18 @@ public class CardServiceTests
         );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
-            .ReturnsAsync(card);
+            .ReturnsAsync(() =>
+            {
+                // Ensure CardLabels have Label navigation property populated
+                foreach (var cl in card.CardLabels)
+                {
+                    if (cl.LabelId == newLabel.Id)
+                        cl.Label = newLabel;
+                    else if (cl.LabelId == oldLabel.Id)
+                        cl.Label = oldLabel;
+                }
+                return card;
+            });
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(board.Id, default))
             .ReturnsAsync(new List<Label> { oldLabel, newLabel });
 
@@ -436,11 +447,18 @@ public class CardServiceTests
         );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
-            .ReturnsAsync(card);
+            .ReturnsAsync(() =>
+            {
+                // Ensure CardLabels have Label navigation property populated
+                foreach (var cl in card.CardLabels)
+                {
+                    if (cl.LabelId == validLabel.Id)
+                        cl.Label = validLabel;
+                }
+                return card;
+            });
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(board.Id, default))
             .ReturnsAsync(new List<Label> { validLabel });
-        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
-            .ReturnsAsync(card);
 
         // Act
         var result = await _service.UpdateCardAsync(card.Id, dto);
