@@ -27,7 +27,7 @@ public class BoardRepository : Repository<Board>, IBoardRepository
         }
 
         return await query
-            .OrderByDescending(b => b.CreatedAt)
+            .OrderByDescending(b => b.CreatedAt.Ticks)
             .ToListAsync(cancellationToken);
     }
 
