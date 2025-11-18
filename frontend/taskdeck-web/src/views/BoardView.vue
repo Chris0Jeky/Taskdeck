@@ -87,11 +87,11 @@ function handleColumnDragLeave() {
   dragOverColumnId.value = null
 }
 
-async function handleColumnDrop(targetColumn: Column, event: DragEvent) {
+async function handleColumnDrop(targetColumn: Column | undefined, event: DragEvent) {
   event.preventDefault()
   dragOverColumnId.value = null
 
-  if (!draggedColumn.value || !boardStore.currentBoard) return
+  if (!draggedColumn.value || !boardStore.currentBoard || !targetColumn) return
   if (draggedColumn.value.id === targetColumn.id) return
 
   try {
@@ -135,13 +135,13 @@ function selectNextCard() {
 
   if (!selectedCardId.value) {
     // Select first card in current column
-    selectedCardId.value = cards[0].id
+    selectedCardId.value = cards[0]?.id || null
     return
   }
 
   const currentIndex = cards.findIndex(c => c.id === selectedCardId.value)
   if (currentIndex < cards.length - 1) {
-    selectedCardId.value = cards[currentIndex + 1].id
+    selectedCardId.value = cards[currentIndex + 1]?.id || null
   }
 }
 
@@ -157,13 +157,13 @@ function selectPreviousCard() {
 
   if (!selectedCardId.value) {
     // Select last card in current column
-    selectedCardId.value = cards[cards.length - 1].id
+    selectedCardId.value = cards[cards.length - 1]?.id || null
     return
   }
 
   const currentIndex = cards.findIndex(c => c.id === selectedCardId.value)
   if (currentIndex > 0) {
-    selectedCardId.value = cards[currentIndex - 1].id
+    selectedCardId.value = cards[currentIndex - 1]?.id || null
   }
 }
 
