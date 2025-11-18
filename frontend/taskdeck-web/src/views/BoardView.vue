@@ -7,7 +7,9 @@ import ColumnLane from '../components/board/ColumnLane.vue'
 import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
 import LabelManagerModal from '../components/board/LabelManagerModal.vue'
 import KeyboardShortcutsHelp from '../components/KeyboardShortcutsHelp.vue'
+import FilterPanel from '../components/board/FilterPanel.vue'
 import type { Column, Card } from '../types/board'
+import type { CardFilters } from '../store/boardStore'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +20,7 @@ const showColumnForm = ref(false)
 const showBoardSettings = ref(false)
 const showLabelManager = ref(false)
 const showKeyboardHelp = ref(false)
+const showFilterPanel = ref(false)
 const draggedColumn = ref<Column | null>(null)
 const dragOverColumnId = ref<string | null>(null)
 const draggedCard = ref<Card | null>(null)
@@ -229,6 +232,14 @@ function toggleKeyboardHelp() {
   showKeyboardHelp.value = !showKeyboardHelp.value
 }
 
+function toggleFilterPanel() {
+  showFilterPanel.value = !showFilterPanel.value
+}
+
+function handleFiltersUpdate(newFilters: CardFilters) {
+  boardStore.updateFilters(newFilters)
+}
+
 // Setup keyboard shortcuts
 useKeyboardShortcuts([
   // Navigation
@@ -247,6 +258,7 @@ useKeyboardShortcuts([
 
   // Help
   { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp },
+  { key: 'f', description: 'Toggle filter panel', action: toggleFilterPanel },
 ])
 </script>
 
