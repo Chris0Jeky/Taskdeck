@@ -26,7 +26,6 @@ const selectedCard = ref<Card | null>(null)
 const showCardModal = ref(false)
 const showColumnEdit = ref(false)
 const isDragOver = ref(false)
-const draggedCard = ref<Card | null>(null)
 
 function handleCardClick(card: Card) {
   selectedCard.value = card
