@@ -95,22 +95,14 @@ async function handleColumnDrop(targetColumn: Column, event: DragEvent) {
 
     if (draggedIndex === -1 || targetIndex === -1) return
 
-    // Reorder locally first for immediate feedback
+    // Reorder locally to get the new order
     const reordered = [...columns]
     const [removed] = reordered.splice(draggedIndex, 1)
     reordered.splice(targetIndex, 0, removed)
 
-    // Update positions for all affected columns (sequentially to avoid UNIQUE constraint conflicts)
-    for (let i = 0; i < reordered.length; i++) {
-      const col = reordered[i]
-      if (col.position !== i) {
-        await boardStore.updateColumn(boardId.value, col.id, {
-          name: null,
-          wipLimit: null,
-          position: i,
-        })
-      }
-    }
+    // Use atomic reorder endpoint to update all positions in a single transaction
+    const columnIds = reordered.map((col) => col.id)
+    await boardStore.reorderColumns(boardId.value, columnIds)
   } catch (error) {
     console.error('Failed to reorder columns:', error)
   }
