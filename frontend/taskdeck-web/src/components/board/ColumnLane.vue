@@ -19,6 +19,8 @@ const showCardForm = ref(false)
 const selectedCard = ref<Card | null>(null)
 const showCardModal = ref(false)
 const showColumnEdit = ref(false)
+const isDragOver = ref(false)
+const draggedCard = ref<Card | null>(null)
 
 function handleCardClick(card: Card) {
   selectedCard.value = card
@@ -49,10 +51,111 @@ async function createCard() {
 const isWipLimitExceeded = () => {
   return props.column.wipLimit !== null && props.cards.length > props.column.wipLimit
 }
+
+function handleCardDragStart(card: Card) {
+  draggedCard.value = card
+}
+
+function handleCardDragEnd() {
+  draggedCard.value = null
+  isDragOver.value = false
+}
+
+function handleDragOver(event: DragEvent) {
+  event.preventDefault()
+  if (!draggedCard.value) return
+
+  // Don't show drop indicator if card is already in this column
+  if (draggedCard.value.columnId === props.column.id) {
+    isDragOver.value = false
+    return
+  }
+
+  isDragOver.value = true
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function handleDragLeave() {
+  isDragOver.value = false
+}
+
+async function handleDrop(event: DragEvent) {
+  event.preventDefault()
+  isDragOver.value = false
+
+  if (!draggedCard.value) return
+
+  // Don't move if dropping in the same column
+  if (draggedCard.value.columnId === props.column.id) {
+    return
+  }
+
+  try {
+    // Move to end of target column
+    const targetPosition = props.cards.length
+    await boardStore.moveCard(
+      props.boardId,
+      draggedCard.value.id,
+      props.column.id,
+      targetPosition
+    )
+  } catch (error) {
+    console.error('Failed to move card:', error)
+  }
+}
+
+// Handle drop between cards for reordering within a column or between columns
+async function handleCardDrop(targetCard: Card, event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (!draggedCard.value) return
+
+  // Don't drop on self
+  if (draggedCard.value.id === targetCard.id) return
+
+  try {
+    // Calculate the target position
+    let targetPosition = targetCard.position
+
+    // If dropping in the same column and the dragged card is before the target,
+    // we need to account for the removal of the dragged card
+    if (draggedCard.value.columnId === props.column.id && draggedCard.value.position < targetCard.position) {
+      targetPosition--
+    }
+
+    await boardStore.moveCard(
+      props.boardId,
+      draggedCard.value.id,
+      props.column.id,
+      targetPosition
+    )
+  } catch (error) {
+    console.error('Failed to move card:', error)
+  }
+}
+
+function handleCardDragOver(event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
 </script>
 
 <template>
-  <div class="flex-shrink-0 w-80 bg-gray-100 rounded-lg p-4">
+  <div
+    :class="[
+      'flex-shrink-0 w-80 rounded-lg p-4 transition-all',
+      isDragOver ? 'bg-blue-50 ring-2 ring-blue-400' : 'bg-gray-100'
+    ]"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
     <!-- Column Header -->
     <div class="mb-4">
       <div class="flex items-center justify-between mb-2">
@@ -119,13 +222,20 @@ const isWipLimitExceeded = () => {
     </div>
 
     <!-- Cards List -->
-    <div class="space-y-2 overflow-y-auto max-h-[calc(100vh-280px)]">
-      <CardItem
+    <div class="space-y-2 overflow-y-auto max-h-[calc(100vh-280px)] min-h-[100px]">
+      <div
         v-for="card in cards"
         :key="card.id"
-        :card="card"
-        @click="handleCardClick"
-      />
+        @dragover="handleCardDragOver"
+        @drop="handleCardDrop(card, $event)"
+      >
+        <CardItem
+          :card="card"
+          @click="handleCardClick"
+          @dragstart="handleCardDragStart"
+          @dragend="handleCardDragEnd"
+        />
+      </div>
 
       <!-- Empty State -->
       <div v-if="cards.length === 0 && !showCardForm" class="text-center py-8 text-gray-400 text-sm">
