@@ -294,6 +294,21 @@ useKeyboardShortcuts([
 
           <div class="flex items-center gap-2">
             <button
+              @click="toggleFilterPanel"
+              :class="[
+                'p-2 border border-gray-300 rounded-lg transition-colors',
+                showFilterPanel ? 'bg-blue-100 text-blue-700 border-blue-400' : 'text-gray-600 hover:bg-gray-100'
+              ]"
+              title="Filter Cards (Press f)"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <span v-if="boardStore.filteredCardCount < boardStore.totalCardCount" class="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                {{ boardStore.filteredCardCount }}
+              </span>
+            </button>
+            <button
               @click="showKeyboardHelp = true"
               class="p-2 text-gray-600 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
               title="Keyboard Shortcuts (Press ?)"
@@ -358,6 +373,15 @@ useKeyboardShortcuts([
         </div>
       </div>
     </div>
+
+    <!-- Filter Panel -->
+    <FilterPanel
+      :is-open="showFilterPanel"
+      :labels="boardStore.currentBoardLabels"
+      :active-filters="boardStore.filters"
+      @update:filters="handleFiltersUpdate"
+      @toggle="toggleFilterPanel"
+    />
 
     <!-- Loading State -->
     <div v-if="boardStore.loading && !boardStore.currentBoard" class="flex justify-center items-center py-12">
