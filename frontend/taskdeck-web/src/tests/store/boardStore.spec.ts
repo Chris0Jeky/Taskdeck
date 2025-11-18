@@ -1,17 +1,49 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBoardStore } from '../../store/boardStore'
-import * as boardsApi from '../../api/boardsApi'
-import * as cardsApi from '../../api/cardsApi'
-import * as columnsApi from '../../api/columnsApi'
-import * as labelsApi from '../../api/labelsApi'
+import { boardsApi } from '../../api/boardsApi'
+import { cardsApi } from '../../api/cardsApi'
+import { columnsApi } from '../../api/columnsApi'
+import { labelsApi } from '../../api/labelsApi'
 import type { Board, Card, Column, Label } from '../../types/board'
 
 // Mock all API modules
-vi.mock('../../api/boardsApi')
-vi.mock('../../api/cardsApi')
-vi.mock('../../api/columnsApi')
-vi.mock('../../api/labelsApi')
+vi.mock('../../api/boardsApi', () => ({
+  boardsApi: {
+    getBoards: vi.fn(),
+    getBoard: vi.fn(),
+    createBoard: vi.fn(),
+    updateBoard: vi.fn(),
+    deleteBoard: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/cardsApi', () => ({
+  cardsApi: {
+    getCards: vi.fn(),
+    createCard: vi.fn(),
+    updateCard: vi.fn(),
+    moveCard: vi.fn(),
+    deleteCard: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/columnsApi', () => ({
+  columnsApi: {
+    createColumn: vi.fn(),
+    updateColumn: vi.fn(),
+    deleteColumn: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/labelsApi', () => ({
+  labelsApi: {
+    getLabels: vi.fn(),
+    createLabel: vi.fn(),
+    updateLabel: vi.fn(),
+    deleteLabel: vi.fn(),
+  },
+}))
 
 describe('boardStore', () => {
   let store: ReturnType<typeof useBoardStore>
@@ -45,7 +77,7 @@ describe('boardStore', () => {
         },
       ]
 
-      vi.mocked(boardsApi.getAllBoards).mockResolvedValue(mockBoards)
+      vi.mocked(boardsApi.getBoards).mockResolvedValue(mockBoards)
 
       await store.fetchBoards()
 
@@ -56,7 +88,7 @@ describe('boardStore', () => {
 
     it('should handle errors when fetching boards', async () => {
       const errorMessage = 'Failed to fetch boards'
-      vi.mocked(boardsApi.getAllBoards).mockRejectedValue(new Error(errorMessage))
+      vi.mocked(boardsApi.getBoards).mockRejectedValue(new Error(errorMessage))
 
       await store.fetchBoards()
 

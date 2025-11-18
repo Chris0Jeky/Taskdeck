@@ -41,7 +41,6 @@ export const useBoardStore = defineStore('board', () => {
       boards.value = await boardsApi.getBoards(search, includeArchived)
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to fetch boards'
-      throw e
     } finally {
       loading.value = false
     }
@@ -91,8 +90,12 @@ export const useBoardStore = defineStore('board', () => {
       }
 
       // Update current board if it's the one being edited
-      if (currentBoard.value && currentBoard.value.id === boardId) {
-        currentBoard.value = { ...currentBoard.value, ...updatedBoard }
+      if (currentBoard.value) {
+        if (currentBoard.value.id === boardId) {
+          currentBoard.value = { ...currentBoard.value, ...updatedBoard }
+        }
+      } else {
+        currentBoard.value = updatedBoard as BoardDetail
       }
 
       return updatedBoard
