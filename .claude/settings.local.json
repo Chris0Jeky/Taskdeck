@@ -5,7 +5,12 @@
       "Bash(npm run build:*)",
       "Bash(npm install)",
       "Bash(dotnet build:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(for file in *ServiceTests.cs)",
+      "Bash(do if ! grep -q \"using Taskdeck.Domain.Exceptions\" \"$file\")",
+      "Bash(then sed -i '1i using Taskdeck.Domain.Exceptions;' \"$file\")",
+      "Bash(fi)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []
