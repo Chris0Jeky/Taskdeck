@@ -1,33 +1,84 @@
-# Backend
+# Backend (.NET)
 backend/src/*/bin/
 backend/src/*/obj/
 backend/tests/*/bin/
 backend/tests/*/obj/
+backend/*.user
+backend/*.suo
+backend/.vs/
 *.db
 *.db-shm
 *.db-wal
 
-# Frontend
+# .NET Build Results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Frontend (Vue/Node)
 frontend/*/node_modules/
 frontend/*/dist/
+frontend/*/dist-ssr/
 frontend/*/.env.local
 frontend/*/.env.*.local
+frontend/*/coverage/
+frontend/*/.vitest/
+frontend/*/.playwright/
+frontend/*/.cache/
 
-# IDEs
+# Package managers
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDEs and Editors
 .vs/
 .vscode/
 .idea/
+.fleet/
 *.swp
 *.swo
 *~
+*.code-workspace
+.vscode-test
 
-# OS
+# OS Files
 .DS_Store
 Thumbs.db
-/backend/src/Taskdeck.Api/obj
-/backend/src/Taskdeck.Api
-/backend/src/Taskdeck.Domain
-/backend/src/Taskdeck.Application
-/backend/src/Taskdeck.Infrastructure
-/backend/tests/Taskdeck.Application.Tests
-/backend/tests/Taskdeck.Domain.Tests
+Desktop.ini
+$RECYCLE.BIN/
+
+# Test Results
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Backup files
+*.bak
+*.tmp
+*.temp
+*~
+
+# Logs
+*.log
+logs/
