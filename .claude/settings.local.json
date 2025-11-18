@@ -7,7 +7,8 @@
       "Bash(npm --version:*)",
       "Bash(dotnet tool uninstall:*)",
       "Bash(dotnet nuget:*)",
-      "Bash(dotnet tool install:*)"
+      "Bash(dotnet tool install:*)",
+      "Bash(dotnet ef database update:*)"
     ],
     "deny": [],
     "ask": []
