@@ -30,6 +30,13 @@
 - **TailwindCSS** - Utility-first CSS framework
 - **Axios** - HTTP client
 
+## 📚 Documentation
+
+- **[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)** - Complete project status, roadmap, and memory for development sessions
+- **[TEST_SUITE_PLAN.md](./TEST_SUITE_PLAN.md)** - Comprehensive testing strategy and test coverage plan
+- **[CLAUDE.md](./CLAUDE.md)** - Development guidelines for Claude Code (AI coding assistant)
+- **[Technical Design Document](./filesAndResources/taskdeck_technical_design_document.md)** - Original design specifications
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -94,6 +101,10 @@ Run tests with coverage:
 ```bash
 dotnet test /p:CollectCoverage=true
 ```
+
+**Current Status:** ✅ 42 domain tests passing
+
+See [TEST_SUITE_PLAN.md](./TEST_SUITE_PLAN.md) for comprehensive testing strategy.
 
 ## 📐 Architecture
 
@@ -232,27 +243,39 @@ dotnet ef database update -p src/Taskdeck.Infrastructure/Taskdeck.Infrastructure
 
 ## 📈 Roadmap
 
-### Phase 1 (Complete)
-- ✅ Core domain model
+### ✅ Phase 1: Core Data Model & API (COMPLETED)
+- ✅ Domain entities with validation (Board, Column, Card, Label)
+- ✅ Clean Architecture implementation
 - ✅ CRUD operations for all entities
 - ✅ WIP limit enforcement
-- ✅ Basic Vue 3 frontend
-- ✅ API integration
+- ✅ Result pattern for error handling
+- ✅ REST API with Swagger documentation
+- ✅ 42 passing domain tests
 
-### Phase 2 (Planned)
-- [ ] Drag-and-drop for cards and columns
+### ✅ Phase 2: Basic Web UI (COMPLETED)
+- ✅ Vue 3 + TypeScript + Pinia setup
+- ✅ Boards list view
+- ✅ Board view with columns and cards
+- ✅ API integration layer
+- ✅ Basic CRUD operations via UI
+
+### 🚧 Phase 3: UX Improvements (IN PROGRESS)
 - [ ] Card modal for detailed editing
-- [ ] Time tracking per card
+- [ ] Drag-and-drop for cards and columns
 - [ ] Keyboard shortcuts
-- [ ] Search and filtering UI
+- [ ] Advanced filtering UI
+- [ ] Better error and loading states
 
-### Phase 3 (Future)
+### Phase 4: Advanced Features (PLANNED)
+- [ ] Time tracking per card
 - [ ] CLI client
 - [ ] Recurring tasks
 - [ ] Analytics dashboard
 - [ ] Dark mode
 - [ ] Multi-user support (optional)
 - [ ] Sync to remote server (optional)
+
+**Detailed roadmap:** See [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)
 
 ## 🤝 Contributing
 
