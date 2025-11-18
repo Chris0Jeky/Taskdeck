@@ -190,6 +190,50 @@ public class CardServiceTests
     }
 
     [Fact]
+    public async Task CreateCardAsync_ShouldIgnoreLabelsNotBelongingToBoard()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var validLabel = TestDataBuilder.CreateLabel(board.Id, "Backend", "#123456");
+        var externalLabelId = Guid.NewGuid();
+
+        var dto = new CreateCardDto(
+            board.Id,
+            column.Id,
+            "Card with mixed labels",
+            null,
+            null,
+            new[] { validLabel.Id, externalLabelId });
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default))
+            .ReturnsAsync(column);
+        _labelRepoMock.Setup(r => r.GetByBoardIdAsync(board.Id, default))
+            .ReturnsAsync(new List<Label> { validLabel });
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync((Guid id, CancellationToken ct) =>
+            {
+                var card = TestDataBuilder.CreateCard(board.Id, column.Id, dto.Title);
+                var cardLabel = TestDataBuilder.CreateCardLabel(card.Id, validLabel.Id);
+
+                cardLabel.GetType().GetProperty("Label")!.SetValue(cardLabel, validLabel);
+                card.AddLabel(cardLabel);
+
+                return card;
+            });
+
+        // Act
+        var result = await _service.CreateCardAsync(dto);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Labels.Should().HaveCount(1);
+        result.Value.Labels.Single().Name.Should().Be("Backend");
+    }
+
+    [Fact]
     public async Task CreateCardAsync_ShouldAssignPositionAtBottom()
     {
         // Arrange
@@ -357,6 +401,38 @@ public class CardServiceTests
         result.IsSuccess.Should().BeTrue();
         card.CardLabels.Should().HaveCount(1);
         card.CardLabels.First().LabelId.Should().Be(newLabel.Id);
+    }
+
+    [Fact]
+    public async Task UpdateCardAsync_ShouldIgnoreInvalidLabelIds()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Task");
+
+        var validLabel = TestDataBuilder.CreateLabel(board.Id, "QA", "#00FF00");
+        var externalLabelId = Guid.NewGuid();
+
+        var dto = new UpdateCardDto
+        {
+            LabelIds = new[] { validLabel.Id, externalLabelId }
+        };
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
+            .ReturnsAsync(card);
+        _labelRepoMock.Setup(r => r.GetByBoardIdAsync(board.Id, default))
+            .ReturnsAsync(new List<Label> { validLabel });
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
+            .ReturnsAsync(card);
+
+        // Act
+        var result = await _service.UpdateCardAsync(card.Id, dto);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Labels.Should().HaveCount(1);
+        result.Value.Labels.Single().Name.Should().Be("QA");
     }
 
     [Fact]
