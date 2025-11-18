@@ -4,7 +4,8 @@
       "Bash(dotnet test:*)",
       "Bash(npm run build:*)",
       "Bash(npm install)",
-      "Bash(dotnet build:*)"
+      "Bash(dotnet build:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
