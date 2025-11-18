@@ -1,13 +1,32 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { Card } from '../../types/board'
 
-defineProps<{
+const props = defineProps<{
   card: Card
 }>()
 
 const emit = defineEmits<{
   (e: 'click', card: Card): void
+  (e: 'dragstart', card: Card): void
+  (e: 'dragend'): void
 }>()
+
+const isDragging = ref(false)
+
+function handleDragStart(event: DragEvent) {
+  isDragging.value = true
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', props.card.id)
+  }
+  emit('dragstart', props.card)
+}
+
+function handleDragEnd() {
+  isDragging.value = false
+  emit('dragend')
+}
 
 function formatDate(dateString: string | null): string {
   if (!dateString) return ''
@@ -23,8 +42,14 @@ function isOverdue(dateString: string | null): boolean {
 
 <template>
   <div
-    class="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-200"
-    @click="emit('click', card)"
+    draggable="true"
+    :class="[
+      'bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-move border border-gray-200',
+      isDragging ? 'opacity-50 scale-95' : ''
+    ]"
+    @click.stop="emit('click', card)"
+    @dragstart="handleDragStart"
+    @dragend="handleDragEnd"
   >
     <!-- Blocked Badge -->
     <div v-if="card.isBlocked" class="mb-2">
