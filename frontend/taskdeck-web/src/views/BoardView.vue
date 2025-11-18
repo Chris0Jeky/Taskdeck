@@ -17,6 +17,7 @@ const showBoardSettings = ref(false)
 const showLabelManager = ref(false)
 const draggedColumn = ref<Column | null>(null)
 const dragOverColumnId = ref<string | null>(null)
+const draggedCard = ref<Card | null>(null)
 
 const boardId = ref(route.params.id as string)
 
@@ -106,6 +107,14 @@ async function handleColumnDrop(targetColumn: Column, event: DragEvent) {
   } catch (error) {
     console.error('Failed to reorder columns:', error)
   }
+}
+
+function handleCardDragStart(card: Card) {
+  draggedCard.value = card
+}
+
+function handleCardDragEnd() {
+  draggedCard.value = null
 }
 </script>
 
@@ -232,6 +241,9 @@ async function handleColumnDrop(targetColumn: Column, event: DragEvent) {
             :cards="boardStore.cardsByColumn.get(column.id) || []"
             :labels="boardStore.currentBoardLabels"
             :board-id="boardId"
+            :dragged-card="draggedCard"
+            @card-drag-start="handleCardDragStart"
+            @card-drag-end="handleCardDragEnd"
           />
         </div>
 
