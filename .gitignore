@@ -1,0 +1,26 @@
+# Backend
+backend/src/*/bin/
+backend/src/*/obj/
+backend/tests/*/bin/
+backend/tests/*/obj/
+*.db
+*.db-shm
+*.db-wal
+
+# Frontend
+frontend/*/node_modules/
+frontend/*/dist/
+frontend/*/.env.local
+frontend/*/.env.*.local
+
+# IDEs
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
