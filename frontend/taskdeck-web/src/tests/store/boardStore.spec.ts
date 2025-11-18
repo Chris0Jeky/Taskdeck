@@ -90,7 +90,8 @@ describe('boardStore', () => {
       const errorMessage = 'Failed to fetch boards'
       vi.mocked(boardsApi.getBoards).mockRejectedValue(new Error(errorMessage))
 
-      await store.fetchBoards()
+      // The store rethrows the error after setting error state
+      await expect(store.fetchBoards()).rejects.toThrow(errorMessage)
 
       expect(store.boards).toEqual([])
       expect(store.error).toBe(errorMessage)
