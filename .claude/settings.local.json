@@ -9,7 +9,9 @@
       "Bash(dotnet nuget:*)",
       "Bash(dotnet tool install:*)",
       "Bash(dotnet ef database update:*)",
-      "Bash(dotnet ef migrations add:*)"
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(git log:*)",
+      "Bash(npm run test)"
     ],
     "deny": [],
     "ask": []
