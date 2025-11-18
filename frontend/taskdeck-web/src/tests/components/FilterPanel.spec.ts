@@ -347,7 +347,12 @@ describe('FilterPanel', () => {
         props: {
           isOpen: true,
           labels: mockLabels,
-          activeFilters: defaultFilters
+          activeFilters: {
+            searchText: '',
+            labelIds: [],
+            dueDateFilter: 'all',
+            showBlockedOnly: false
+          }
         }
       })
 
