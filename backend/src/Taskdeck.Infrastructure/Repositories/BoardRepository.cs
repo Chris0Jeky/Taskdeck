@@ -26,9 +26,9 @@ public class BoardRepository : Repository<Board>, IBoardRepository
                                     (b.Description != null && b.Description.Contains(searchText)));
         }
 
-        return await query
-            .OrderByDescending(b => b.CreatedAt.Ticks)
-            .ToListAsync(cancellationToken);
+        // Load from database first, then order in memory (SQLite doesn't support DateTimeOffset in ORDER BY)
+        var boards = await query.ToListAsync(cancellationToken);
+        return boards.OrderByDescending(b => b.CreatedAt);
     }
 
     public async Task<Board?> GetByIdWithDetailsAsync(Guid id, CancellationToken cancellationToken = default)
