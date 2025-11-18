@@ -6,6 +6,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -140,7 +141,7 @@ public class LabelServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var label = TestDataBuilder.CreateLabel(board.Id, "Bug", "#FF0000");
-        var dto = new UpdateLabelDto { Name = "Critical Bug" };
+        var dto = new UpdateLabelDto(Name: "Critical Bug", ColorHex: null);
 
         _labelRepoMock.Setup(r => r.GetByIdAsync(label.Id, default))
             .ReturnsAsync(label);
@@ -160,7 +161,7 @@ public class LabelServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var label = TestDataBuilder.CreateLabel(board.Id, "Bug", "#FF0000");
-        var dto = new UpdateLabelDto { ColorHex = "#00FF00" };
+        var dto = new UpdateLabelDto(Name: null, ColorHex: "#00FF00");
 
         _labelRepoMock.Setup(r => r.GetByIdAsync(label.Id, default))
             .ReturnsAsync(label);
@@ -179,11 +180,10 @@ public class LabelServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var label = TestDataBuilder.CreateLabel(board.Id, "Bug", "#FF0000");
-        var dto = new UpdateLabelDto
-        {
-            Name = "Feature",
-            ColorHex = "#0000FF"
-        };
+        var dto = new UpdateLabelDto(
+            Name: "Feature",
+            ColorHex: "#0000FF"
+        );
 
         _labelRepoMock.Setup(r => r.GetByIdAsync(label.Id, default))
             .ReturnsAsync(label);
@@ -202,7 +202,7 @@ public class LabelServiceTests
     {
         // Arrange
         var labelId = Guid.NewGuid();
-        var dto = new UpdateLabelDto { Name = "Updated" };
+        var dto = new UpdateLabelDto(Name: "Updated", ColorHex: null);
 
         _labelRepoMock.Setup(r => r.GetByIdAsync(labelId, default))
             .ReturnsAsync((Label?)null);
@@ -221,7 +221,7 @@ public class LabelServiceTests
         // Arrange
         var board = TestDataBuilder.CreateBoard();
         var label = TestDataBuilder.CreateLabel(board.Id, "Bug", "#FF0000");
-        var dto = new UpdateLabelDto { ColorHex = "not-a-color" };
+        var dto = new UpdateLabelDto(Name: null, ColorHex: "not-a-color");
 
         _labelRepoMock.Setup(r => r.GetByIdAsync(label.Id, default))
             .ReturnsAsync(label);
