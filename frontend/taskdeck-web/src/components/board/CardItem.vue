@@ -15,6 +15,9 @@ const emit = defineEmits<{
 const isDragging = ref(false)
 
 function handleDragStart(event: DragEvent) {
+  // Stop propagation to prevent parent column from being dragged
+  event.stopPropagation()
+
   isDragging.value = true
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
