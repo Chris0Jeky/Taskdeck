@@ -89,15 +89,6 @@ function handleClose() {
   emit('close')
 }
 
-function toggleLabel(labelId: string) {
-  const index = selectedLabelIds.value.indexOf(labelId)
-  if (index > -1) {
-    selectedLabelIds.value.splice(index, 1)
-  } else {
-    selectedLabelIds.value.push(labelId)
-  }
-}
-
 function clearDueDate() {
   dueDate.value = ''
 }
@@ -190,21 +181,21 @@ function clearDueDate() {
           <div class="border border-gray-200 rounded-md p-4">
             <div class="flex items-center mb-2">
               <input
-                id="card-blocked"
+                id="card-is-blocked"
                 v-model="isBlocked"
                 type="checkbox"
                 class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
-              <label for="card-blocked" class="ml-2 text-sm font-medium text-gray-700">
+              <label for="card-is-blocked" class="ml-2 text-sm font-medium text-gray-700">
                 Mark as blocked
               </label>
             </div>
             <div v-if="isBlocked">
-              <label for="block-reason" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="card-block-reason" class="block text-sm font-medium text-gray-700 mb-1">
                 Block Reason *
               </label>
               <textarea
-                id="block-reason"
+                id="card-block-reason"
                 v-model="blockReason"
                 rows="2"
                 required
@@ -219,20 +210,25 @@ function clearDueDate() {
             <label class="block text-sm font-medium text-gray-700 mb-2">
               Labels
             </label>
-            <div v-if="labels.length > 0" class="flex flex-wrap gap-2">
-              <button
+            <div v-if="labels.length > 0" class="flex flex-col gap-2">
+              <label
                 v-for="label in labels"
                 :key="label.id"
-                @click="toggleLabel(label.id)"
-                type="button"
-                class="px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer"
                 :class="selectedLabelIds.includes(label.id)
                   ? 'text-white ring-2 ring-offset-2 ring-blue-500'
                   : 'text-gray-700 bg-gray-100 hover:bg-gray-200'"
                 :style="selectedLabelIds.includes(label.id) ? { backgroundColor: label.colorHex } : {}"
               >
-                {{ label.name }}
-              </button>
+                <input
+                  :id="`label-${label.id}`"
+                  v-model="selectedLabelIds"
+                  type="checkbox"
+                  :value="label.id"
+                  class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span>{{ label.name }}</span>
+              </label>
             </div>
             <p v-else class="text-sm text-gray-500 italic">No labels available</p>
           </div>
