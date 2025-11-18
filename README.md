@@ -128,18 +128,19 @@ npm run test:ui
 ```
 
 **Current Status:**
-- ✅ Store Tests: 14/14 passing (100%) - Complete coverage of boardStore
-- ✅ Component Tests: 56/56 passing (100%) - All modal components
+- ✅ Store Tests: 34/34 passing (100%) - boardStore + filtering logic
+- ✅ Component Tests: 77/77 passing (100%) - All components
   - CardModal (12 tests)
   - BoardSettingsModal (12 tests)
   - ColumnEditModal (15 tests)
   - LabelManagerModal (17 tests)
-- ✅ Frontend Total: 70/70 tests passing (100%)
+  - FilterPanel (21 tests)
+- ✅ Frontend Total: 111/111 tests passing (100%)
 
 **Overall Test Status:**
-- ✅ **199/199 tests passing (100%)**
+- ✅ **240/240 tests passing (100%)**
   - Backend: 129 tests (Domain: 42, Application: 87)
-  - Frontend: 70 tests (Store: 14, Components: 56)
+  - Frontend: 111 tests (Store: 34, Components: 77)
 
 See **[TESTING.md](./TESTING.md)** for comprehensive testing guide and best practices.
 
