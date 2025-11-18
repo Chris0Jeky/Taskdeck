@@ -324,10 +324,9 @@ public class ColumnServiceTests
     {
         // Arrange
         var board = TestDataBuilder.CreateBoard();
-        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
-        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Task");
+        var card = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Task");
 
-        column.GetType().GetProperty("Cards")!.SetValue(column, new List<Card> { card });
+        var column = TestDataBuilder.CreateColumnWithCards(board.Id, "To Do", new[] { card });
 
         _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default))
             .ReturnsAsync(column);

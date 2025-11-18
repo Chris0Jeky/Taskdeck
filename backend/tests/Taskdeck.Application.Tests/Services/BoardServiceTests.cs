@@ -269,8 +269,7 @@ public class BoardServiceTests
         var column2 = TestDataBuilder.CreateColumn(board.Id, "Done", position: 1);
 
         // Set up columns collection
-        var columns = new List<Column> { column1, column2 };
-        board.GetType().GetProperty("Columns")!.SetValue(board, columns);
+        board = TestDataBuilder.CreateBoardWithColumns(board.Name, new[] { column1, column2 }, board.Description);
 
         _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -293,8 +292,7 @@ public class BoardServiceTests
         var column2 = TestDataBuilder.CreateColumn(board.Id, "To Do", position: 0);
         var column3 = TestDataBuilder.CreateColumn(board.Id, "In Progress", position: 1);
 
-        var columns = new List<Column> { column1, column2, column3 };
-        board.GetType().GetProperty("Columns")!.SetValue(board, columns);
+        board = TestDataBuilder.CreateBoardWithColumns(board.Name, new[] { column1, column2, column3 }, board.Description);
 
         _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(board.Id, default))
             .ReturnsAsync(board);
