@@ -51,7 +51,7 @@ public class CardServiceTests
         _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default))
             .ReturnsAsync(column);
         _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), default))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((Card c, CancellationToken ct) => c);
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync((Guid id, CancellationToken ct) =>
             {
