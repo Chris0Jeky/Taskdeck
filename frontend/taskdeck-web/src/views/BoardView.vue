@@ -175,8 +175,10 @@ function selectNextColumn() {
     selectedColumnIndex.value++
     // Select first card in new column
     const newColumn = columns[selectedColumnIndex.value]
-    const cards = boardStore.cardsByColumn.get(newColumn.id) || []
-    selectedCardId.value = cards.length > 0 ? cards[0].id : null
+    if (newColumn) {
+      const cards = boardStore.cardsByColumn.get(newColumn.id) || []
+      selectedCardId.value = cards.length > 0 ? (cards[0]?.id || null) : null
+    }
   }
 }
 
@@ -188,8 +190,10 @@ function selectPreviousColumn() {
     selectedColumnIndex.value--
     // Select first card in new column
     const newColumn = columns[selectedColumnIndex.value]
-    const cards = boardStore.cardsByColumn.get(newColumn.id) || []
-    selectedCardId.value = cards.length > 0 ? cards[0].id : null
+    if (newColumn) {
+      const cards = boardStore.cardsByColumn.get(newColumn.id) || []
+      selectedCardId.value = cards.length > 0 ? (cards[0]?.id || null) : null
+    }
   }
 }
 
