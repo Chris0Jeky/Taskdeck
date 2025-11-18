@@ -5,6 +5,10 @@ defineProps<{
   card: Card
 }>()
 
+const emit = defineEmits<{
+  (e: 'click', card: Card): void
+}>()
+
 function formatDate(dateString: string | null): string {
   if (!dateString) return ''
   const date = new Date(dateString)
@@ -18,7 +22,10 @@ function isOverdue(dateString: string | null): boolean {
 </script>
 
 <template>
-  <div class="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-200">
+  <div
+    class="bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-200"
+    @click="emit('click', card)"
+  >
     <!-- Blocked Badge -->
     <div v-if="card.isBlocked" class="mb-2">
       <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">

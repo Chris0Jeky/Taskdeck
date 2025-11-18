@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import CardItem from './CardItem.vue'
+import CardModal from './CardModal.vue'
 import type { Column, Card, Label } from '../../types/board'
 
 const props = defineProps<{
@@ -14,6 +15,18 @@ const props = defineProps<{
 const boardStore = useBoardStore()
 const newCardTitle = ref('')
 const showCardForm = ref(false)
+const selectedCard = ref<Card | null>(null)
+const showCardModal = ref(false)
+
+function handleCardClick(card: Card) {
+  selectedCard.value = card
+  showCardModal.value = true
+}
+
+function handleModalClose() {
+  showCardModal.value = false
+  selectedCard.value = null
+}
 
 async function createCard() {
   if (!newCardTitle.value.trim()) return
@@ -99,6 +112,7 @@ const isWipLimitExceeded = () => {
         v-for="card in cards"
         :key="card.id"
         :card="card"
+        @click="handleCardClick"
       />
 
       <!-- Empty State -->
@@ -106,5 +120,15 @@ const isWipLimitExceeded = () => {
         No cards yet
       </div>
     </div>
+
+    <!-- Card Modal -->
+    <CardModal
+      v-if="selectedCard"
+      :card="selectedCard"
+      :is-open="showCardModal"
+      :labels="labels"
+      @close="handleModalClose"
+      @updated="handleModalClose"
+    />
   </div>
 </template>
