@@ -36,7 +36,7 @@ public class BoardServiceTests
         var dto = new CreateBoardDto("Test Board", "Test description");
 
         _boardRepoMock.Setup(r => r.AddAsync(It.IsAny<Board>(), default))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((Board b, CancellationToken ct) => b);
 
         // Act
         var result = await _service.CreateBoardAsync(dto);
@@ -86,7 +86,7 @@ public class BoardServiceTests
         var dto = new CreateBoardDto("Test Board", null);
 
         _boardRepoMock.Setup(r => r.AddAsync(It.IsAny<Board>(), default))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((Board b, CancellationToken ct) => b);
 
         // Act
         var result = await _service.CreateBoardAsync(dto);
