@@ -4,7 +4,7 @@ import { boardsApi } from '../api/boardsApi'
 import { columnsApi } from '../api/columnsApi'
 import { cardsApi } from '../api/cardsApi'
 import { labelsApi } from '../api/labelsApi'
-import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto } from '../types/board'
+import type { Board, BoardDetail, Card, Label, Column, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 
 export const useBoardStore = defineStore('board', () => {
   // State
@@ -78,6 +78,55 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  async function updateBoard(boardId: string, board: UpdateBoardDto) {
+    try {
+      loading.value = true
+      error.value = null
+      const updatedBoard = await boardsApi.updateBoard(boardId, board)
+
+      // Update in boards list
+      const index = boards.value.findIndex((b) => b.id === boardId)
+      if (index !== -1) {
+        boards.value[index] = updatedBoard
+      }
+
+      // Update current board if it's the one being edited
+      if (currentBoard.value && currentBoard.value.id === boardId) {
+        currentBoard.value = { ...currentBoard.value, ...updatedBoard }
+      }
+
+      return updatedBoard
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to update board'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteBoard(boardId: string) {
+    try {
+      loading.value = true
+      error.value = null
+      await boardsApi.deleteBoard(boardId)
+
+      // Remove from boards list
+      boards.value = boards.value.filter((b) => b.id !== boardId)
+
+      // Clear current board if it's the one being deleted
+      if (currentBoard.value && currentBoard.value.id === boardId) {
+        currentBoard.value = null
+        currentBoardCards.value = []
+        currentBoardLabels.value = []
+      }
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to delete board'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function createColumn(boardId: string, column: CreateColumnDto) {
     try {
       loading.value = true
@@ -91,6 +140,50 @@ export const useBoardStore = defineStore('board', () => {
       return newColumn
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to create column'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function updateColumn(boardId: string, columnId: string, column: UpdateColumnDto) {
+    try {
+      loading.value = true
+      error.value = null
+      const updatedColumn = await columnsApi.updateColumn(boardId, columnId, column)
+
+      // Update column in current board
+      if (currentBoard.value && currentBoard.value.id === boardId) {
+        const index = currentBoard.value.columns.findIndex((c) => c.id === columnId)
+        if (index !== -1) {
+          currentBoard.value.columns[index] = updatedColumn
+        }
+      }
+
+      return updatedColumn
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to update column'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteColumn(boardId: string, columnId: string) {
+    try {
+      loading.value = true
+      error.value = null
+      await columnsApi.deleteColumn(boardId, columnId)
+
+      // Remove column from current board
+      if (currentBoard.value && currentBoard.value.id === boardId) {
+        currentBoard.value.columns = currentBoard.value.columns.filter((c) => c.id !== columnId)
+      }
+
+      // Remove cards from deleted column
+      currentBoardCards.value = currentBoardCards.value.filter((card) => card.columnId !== columnId)
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to delete column'
       throw e
     } finally {
       loading.value = false
@@ -121,6 +214,43 @@ export const useBoardStore = defineStore('board', () => {
       return newLabel
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to create label'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function updateLabel(boardId: string, labelId: string, label: UpdateLabelDto) {
+    try {
+      loading.value = true
+      error.value = null
+      const updatedLabel = await labelsApi.updateLabel(boardId, labelId, label)
+
+      // Update label in store
+      const index = currentBoardLabels.value.findIndex((l) => l.id === labelId)
+      if (index !== -1) {
+        currentBoardLabels.value[index] = updatedLabel
+      }
+
+      return updatedLabel
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to update label'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteLabel(boardId: string, labelId: string) {
+    try {
+      loading.value = true
+      error.value = null
+      await labelsApi.deleteLabel(boardId, labelId)
+
+      // Remove label from store
+      currentBoardLabels.value = currentBoardLabels.value.filter((l) => l.id !== labelId)
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to delete label'
       throw e
     } finally {
       loading.value = false
@@ -219,11 +349,17 @@ export const useBoardStore = defineStore('board', () => {
     fetchBoards,
     fetchBoard,
     createBoard,
+    updateBoard,
+    deleteBoard,
     createColumn,
+    updateColumn,
+    deleteColumn,
     createCard,
-    createLabel,
     updateCard,
     deleteCard,
+    createLabel,
+    updateLabel,
+    deleteLabel,
     fetchCards,
     fetchLabels,
     moveCard,
