@@ -156,7 +156,7 @@ public class CardServiceTests
             "Card with labels",
             null,
             null,
-            new[] { label1.Id, label2.Id });
+            new List<Guid> { label1.Id, label2.Id });
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -205,7 +205,7 @@ public class CardServiceTests
             "Card with mixed labels",
             null,
             null,
-            new[] { validLabel.Id, externalLabelId });
+            new List<Guid> { validLabel.Id, externalLabelId });
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -298,12 +298,14 @@ public class CardServiceTests
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Original Title");
         var newDueDate = DateTimeOffset.UtcNow.AddDays(7);
 
-        var dto = new UpdateCardDto
-        {
-            Title = "Updated Title",
-            Description = "Updated Description",
-            DueDate = newDueDate
-        };
+        var dto = new UpdateCardDto(
+            Title: "Updated Title",
+            Description: "Updated Description",
+            DueDate: newDueDate,
+            IsBlocked: null,
+            BlockReason: null,
+            LabelIds: null
+        );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
             .ReturnsAsync(card);
