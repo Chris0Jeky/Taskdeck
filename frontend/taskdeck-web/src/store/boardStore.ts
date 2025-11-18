@@ -4,7 +4,7 @@ import { boardsApi } from '../api/boardsApi'
 import { columnsApi } from '../api/columnsApi'
 import { cardsApi } from '../api/cardsApi'
 import { labelsApi } from '../api/labelsApi'
-import type { Board, BoardDetail, Card, Label, Column, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
+import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 
 export const useBoardStore = defineStore('board', () => {
   // State
@@ -14,6 +14,16 @@ export const useBoardStore = defineStore('board', () => {
   const currentBoardLabels = ref<Label[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  const updateColumnCardCount = (columnId: string, delta: number) => {
+    if (!currentBoard.value) return
+
+    const column = currentBoard.value.columns.find((c) => c.id === columnId)
+    if (!column) return
+
+    const nextCount = (column.cardCount ?? 0) + delta
+    column.cardCount = Math.max(0, nextCount)
+  }
 
   // Computed
   const cardsByColumn = computed(() => {
@@ -196,6 +206,7 @@ export const useBoardStore = defineStore('board', () => {
       error.value = null
       const newCard = await cardsApi.createCard(boardId, card)
       currentBoardCards.value.push(newCard)
+      updateColumnCardCount(newCard.columnId, 1)
       return newCard
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to create card'
@@ -260,6 +271,18 @@ export const useBoardStore = defineStore('board', () => {
   async function fetchCards(boardId: string, filters?: { search?: string; labelId?: string; columnId?: string }) {
     try {
       currentBoardCards.value = await cardsApi.getCards(boardId, filters)
+
+      // Keep column card counts in sync with the latest cards collection
+      if (currentBoard.value) {
+        const counts = currentBoardCards.value.reduce((map, card) => {
+          map.set(card.columnId, (map.get(card.columnId) ?? 0) + 1)
+          return map
+        }, new Map<string, number>())
+
+        currentBoard.value.columns.forEach((column) => {
+          column.cardCount = counts.get(column.id) ?? 0
+        })
+      }
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to fetch cards'
       throw e
@@ -300,10 +323,15 @@ export const useBoardStore = defineStore('board', () => {
     try {
       loading.value = true
       error.value = null
+      const existingCard = currentBoardCards.value.find((card) => card.id === cardId)
       await cardsApi.deleteCard(boardId, cardId)
 
       // Remove the card from the store
       currentBoardCards.value = currentBoardCards.value.filter((c) => c.id !== cardId)
+
+      if (existingCard) {
+        updateColumnCardCount(existingCard.columnId, -1)
+      }
     } catch (e: any) {
       error.value = e.response?.data?.message || e.message || 'Failed to delete card'
       throw e
@@ -316,12 +344,21 @@ export const useBoardStore = defineStore('board', () => {
     try {
       loading.value = true
       error.value = null
+
+      const existingCardIndex = currentBoardCards.value.findIndex((c) => c.id === cardId)
+      const existingCard = existingCardIndex !== -1 ? currentBoardCards.value[existingCardIndex] : null
+      const previousColumnId = existingCard?.columnId ?? null
       const updatedCard = await cardsApi.moveCard(boardId, cardId, { targetColumnId, targetPosition })
 
-      // Update the card in the store
-      const index = currentBoardCards.value.findIndex((c) => c.id === cardId)
-      if (index !== -1) {
-        currentBoardCards.value[index] = updatedCard
+      if (existingCardIndex !== -1) {
+        currentBoardCards.value.splice(existingCardIndex, 1)
+      }
+
+      currentBoardCards.value.push(updatedCard)
+
+      if (previousColumnId && previousColumnId !== updatedCard.columnId) {
+        updateColumnCardCount(previousColumnId, -1)
+        updateColumnCardCount(updatedCard.columnId, 1)
       }
 
       return updatedCard
