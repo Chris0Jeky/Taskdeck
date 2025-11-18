@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import ColumnLane from '../components/board/ColumnLane.vue'
 import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
 import LabelManagerModal from '../components/board/LabelManagerModal.vue'
+import KeyboardShortcutsHelp from '../components/KeyboardShortcutsHelp.vue'
 import type { Column, Card } from '../types/board'
 
 const route = useRoute()
@@ -16,6 +17,7 @@ const newColumnName = ref('')
 const showColumnForm = ref(false)
 const showBoardSettings = ref(false)
 const showLabelManager = ref(false)
+const showKeyboardHelp = ref(false)
 const draggedColumn = ref<Column | null>(null)
 const dragOverColumnId = ref<string | null>(null)
 const draggedCard = ref<Card | null>(null)
@@ -221,6 +223,10 @@ function createCardInSelectedColumn() {
   console.log('Creating card in column:', currentColumn.name)
 }
 
+function toggleKeyboardHelp() {
+  showKeyboardHelp.value = !showKeyboardHelp.value
+}
+
 // Setup keyboard shortcuts
 useKeyboardShortcuts([
   // Navigation
@@ -236,6 +242,9 @@ useKeyboardShortcuts([
   // Actions
   { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
   { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn },
+
+  // Help
+  { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp },
 ])
 </script>
 
@@ -270,6 +279,15 @@ useKeyboardShortcuts([
           </div>
 
           <div class="flex items-center gap-2">
+            <button
+              @click="showKeyboardHelp = true"
+              class="p-2 text-gray-600 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              title="Keyboard Shortcuts (Press ?)"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
             <button
               @click="showLabelManager = true"
               class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
@@ -409,6 +427,12 @@ useKeyboardShortcuts([
       :labels="boardStore.currentBoardLabels"
       @close="showLabelManager = false"
       @updated="() => {}"
+    />
+
+    <!-- Keyboard Shortcuts Help -->
+    <KeyboardShortcutsHelp
+      :is-open="showKeyboardHelp"
+      @close="showKeyboardHelp = false"
     />
   </div>
 </template>
