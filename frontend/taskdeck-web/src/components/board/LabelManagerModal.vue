@@ -47,7 +47,7 @@ const isFormValid = () => {
 function startCreating() {
   editingLabelId.value = null
   labelName.value = ''
-  labelColor.value = colorPalette[0]
+  labelColor.value = colorPalette[0] ?? '#3B82F6'
   showLabelForm.value = true
 }
 
