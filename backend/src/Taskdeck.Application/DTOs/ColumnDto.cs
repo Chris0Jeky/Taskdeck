@@ -23,3 +23,7 @@ public record UpdateColumnDto(
     int? Position,
     int? WipLimit
 );
+
+public record ReorderColumnsDto(
+    List<Guid> ColumnIds
+);
