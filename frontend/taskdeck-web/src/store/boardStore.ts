@@ -44,10 +44,67 @@ export const useBoardStore = defineStore('board', () => {
     column.cardCount = Math.max(0, nextCount)
   }
 
+  // Helper function to check if a card matches current filters
+  const cardMatchesFilters = (card: Card): boolean => {
+    // Search text filter
+    if (filters.value.searchText) {
+      const searchLower = filters.value.searchText.toLowerCase()
+      const matchesTitle = card.title.toLowerCase().includes(searchLower)
+      const matchesDescription = card.description?.toLowerCase().includes(searchLower)
+      if (!matchesTitle && !matchesDescription) return false
+    }
+
+    // Label filter
+    if (filters.value.labelIds.length > 0) {
+      const cardLabelIds = card.labels.map(l => l.id)
+      const hasMatchingLabel = filters.value.labelIds.some(id => cardLabelIds.includes(id))
+      if (!hasMatchingLabel) return false
+    }
+
+    // Due date filter
+    if (filters.value.dueDateFilter !== 'all') {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const weekFromNow = new Date(today)
+      weekFromNow.setDate(weekFromNow.getDate() + 7)
+
+      switch (filters.value.dueDateFilter) {
+        case 'overdue':
+          if (!card.dueDate || new Date(card.dueDate) >= today) return false
+          break
+        case 'due-today':
+          if (!card.dueDate) return false
+          const dueDate = new Date(card.dueDate)
+          const dueDateDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+          if (dueDateDay.getTime() !== today.getTime()) return false
+          break
+        case 'due-week':
+          if (!card.dueDate) return false
+          const due = new Date(card.dueDate)
+          if (due < today || due > weekFromNow) return false
+          break
+        case 'no-date':
+          if (card.dueDate) return false
+          break
+      }
+    }
+
+    // Blocked status filter
+    if (filters.value.showBlockedOnly && !card.isBlocked) {
+      return false
+    }
+
+    return true
+  }
+
   // Computed
   const cardsByColumn = computed(() => {
     const map = new Map<string, Card[]>()
-    currentBoardCards.value.forEach((card) => {
+
+    // Filter cards first
+    const filteredCards = currentBoardCards.value.filter(cardMatchesFilters)
+
+    filteredCards.forEach((card) => {
       if (!map.has(card.columnId)) {
         map.set(card.columnId, [])
       }
@@ -60,6 +117,14 @@ export const useBoardStore = defineStore('board', () => {
     })
 
     return map
+  })
+
+  const filteredCardCount = computed(() => {
+    return currentBoardCards.value.filter(cardMatchesFilters).length
+  })
+
+  const totalCardCount = computed(() => {
+    return currentBoardCards.value.length
   })
 
   // Actions
