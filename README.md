@@ -303,11 +303,20 @@ dotnet ef database update -p src/Taskdeck.Infrastructure/Taskdeck.Infrastructure
 - ✅ Label manager modal
 - ✅ Complete CRUD operations for all entities
 - ✅ Frontend tests with Vitest
-- [ ] Drag-and-drop for cards and columns (deferred to Phase 4)
-- [ ] Keyboard shortcuts (deferred to Phase 4)
-- [ ] Advanced filtering UI (deferred to Phase 4)
 
-### Phase 4: Advanced Features (PLANNED)
+### ✅ Phase 4: UX Enhancements (COMPLETED)
+- ✅ Toast notification system
+- ✅ Drag-and-drop for cards
+- ✅ Drag-and-drop for columns
+- ✅ Visual feedback for all operations
+- ✅ Atomic column reordering with two-phase updates
+
+### 🚧 Phase 5: Enhanced UX & Accessibility (NEXT)
+- [ ] Keyboard shortcuts (navigation and operations)
+- [ ] Advanced filtering UI
+- [ ] Help modal and documentation
+
+### Phase 6: Advanced Features (PLANNED)
 - [ ] Time tracking per card
 - [ ] CLI client
 - [ ] Recurring tasks
