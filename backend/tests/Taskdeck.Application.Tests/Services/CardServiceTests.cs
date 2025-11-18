@@ -6,6 +6,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -326,11 +327,14 @@ public class CardServiceTests
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Task");
 
-        var dto = new UpdateCardDto
-        {
-            IsBlocked = true,
-            BlockReason = "Waiting for API"
-        };
+        var dto = new UpdateCardDto(
+            Title: null,
+            Description: null,
+            DueDate: null,
+            IsBlocked: true,
+            BlockReason: "Waiting for API",
+            LabelIds: null
+        );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
             .ReturnsAsync(card);
@@ -352,10 +356,14 @@ public class CardServiceTests
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Task", isBlocked: true, blockReason: "Waiting");
 
-        var dto = new UpdateCardDto
-        {
-            IsBlocked = false
-        };
+        var dto = new UpdateCardDto(
+            Title: null,
+            Description: null,
+            DueDate: null,
+            IsBlocked: false,
+            BlockReason: null,
+            LabelIds: null
+        );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
             .ReturnsAsync(card);
@@ -384,10 +392,14 @@ public class CardServiceTests
         var oldCardLabel = TestDataBuilder.CreateCardLabel(card.Id, oldLabel.Id);
         card.AddLabel(oldCardLabel);
 
-        var dto = new UpdateCardDto
-        {
-            LabelIds = new[] { newLabel.Id }
-        };
+        var dto = new UpdateCardDto(
+            Title: null,
+            Description: null,
+            DueDate: null,
+            IsBlocked: null,
+            BlockReason: null,
+            LabelIds: new List<Guid> { newLabel.Id }
+        );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
             .ReturnsAsync(card);
@@ -414,10 +426,14 @@ public class CardServiceTests
         var validLabel = TestDataBuilder.CreateLabel(board.Id, "QA", "#00FF00");
         var externalLabelId = Guid.NewGuid();
 
-        var dto = new UpdateCardDto
-        {
-            LabelIds = new[] { validLabel.Id, externalLabelId }
-        };
+        var dto = new UpdateCardDto(
+            Title: null,
+            Description: null,
+            DueDate: null,
+            IsBlocked: null,
+            BlockReason: null,
+            LabelIds: new List<Guid> { validLabel.Id, externalLabelId }
+        );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
             .ReturnsAsync(card);
@@ -440,7 +456,14 @@ public class CardServiceTests
     {
         // Arrange
         var cardId = Guid.NewGuid();
-        var dto = new UpdateCardDto { Title = "Updated" };
+        var dto = new UpdateCardDto(
+            Title: "Updated",
+            Description: null,
+            DueDate: null,
+            IsBlocked: null,
+            BlockReason: null,
+            LabelIds: null
+        );
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(cardId, default))
             .ReturnsAsync((Card?)null);
