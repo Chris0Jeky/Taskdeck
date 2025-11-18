@@ -3,6 +3,8 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import ColumnLane from '../components/board/ColumnLane.vue'
+import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
+import LabelManagerModal from '../components/board/LabelManagerModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,6 +12,8 @@ const boardStore = useBoardStore()
 
 const newColumnName = ref('')
 const showColumnForm = ref(false)
+const showBoardSettings = ref(false)
+const showLabelManager = ref(false)
 
 const boardId = ref(route.params.id as string)
 
@@ -70,12 +74,34 @@ function goBack() {
             </div>
           </div>
 
-          <button
-            @click="showColumnForm = !showColumnForm"
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            + Add Column
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              @click="showLabelManager = true"
+              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              title="Manage Labels"
+            >
+              <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              Labels
+            </button>
+            <button
+              @click="showBoardSettings = true"
+              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              title="Board Settings"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+            <button
+              @click="showColumnForm = !showColumnForm"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              + Add Column
+            </button>
+          </div>
         </div>
 
         <!-- Create Column Form -->
@@ -153,5 +179,23 @@ function goBack() {
         </div>
       </div>
     </div>
+
+    <!-- Board Settings Modal -->
+    <BoardSettingsModal
+      v-if="boardStore.currentBoard"
+      :board="boardStore.currentBoard"
+      :is-open="showBoardSettings"
+      @close="showBoardSettings = false"
+      @updated="() => { showBoardSettings = false }"
+    />
+
+    <!-- Label Manager Modal -->
+    <LabelManagerModal
+      :is-open="showLabelManager"
+      :board-id="boardId"
+      :labels="boardStore.currentBoardLabels"
+      @close="showLabelManager = false"
+      @updated="() => {}"
+    />
   </div>
 </template>
