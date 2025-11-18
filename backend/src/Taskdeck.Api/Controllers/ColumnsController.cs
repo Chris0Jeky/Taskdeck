@@ -77,4 +77,22 @@ public class ColumnsController : ControllerBase
 
         return NoContent();
     }
+
+    [HttpPost("reorder")]
+    public async Task<IActionResult> ReorderColumns(Guid boardId, [FromBody] ReorderColumnsDto dto)
+    {
+        var result = await _columnService.ReorderColumnsAsync(boardId, dto);
+
+        if (!result.IsSuccess)
+        {
+            return result.ErrorCode switch
+            {
+                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                _ => Problem(result.ErrorMessage, statusCode: 500)
+            };
+        }
+
+        return Ok(result.Value);
+    }
 }
