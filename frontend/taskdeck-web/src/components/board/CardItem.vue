@@ -48,8 +48,8 @@ function isOverdue(dateString: string | null): boolean {
   <div
     draggable="true"
     :class="[
-      'bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-move border',
-      isSelected ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' : 'border-gray-200',
+      'rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-move border-2',
+      isSelected ? 'border-blue-600 ring-4 ring-blue-300 shadow-xl bg-blue-50 scale-105' : 'bg-white border-gray-200',
       isDragging ? 'opacity-50 scale-95' : ''
     ]"
     @click.stop="emit('click', card)"
