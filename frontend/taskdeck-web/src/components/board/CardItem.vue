@@ -4,6 +4,7 @@ import type { Card } from '../../types/board'
 
 const props = defineProps<{
   card: Card
+  isSelected?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -47,7 +48,8 @@ function isOverdue(dateString: string | null): boolean {
   <div
     draggable="true"
     :class="[
-      'bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-move border border-gray-200',
+      'bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-move border',
+      isSelected ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' : 'border-gray-200',
       isDragging ? 'opacity-50 scale-95' : ''
     ]"
     @click.stop="emit('click', card)"
