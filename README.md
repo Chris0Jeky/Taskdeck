@@ -312,12 +312,12 @@ dotnet ef database update -p src/Taskdeck.Infrastructure/Taskdeck.Infrastructure
 - ✅ Visual feedback for all operations
 - ✅ Atomic column reordering with two-phase updates
 
-### 🚧 Phase 5: Enhanced UX & Accessibility (NEXT)
-- [ ] Keyboard shortcuts (navigation and operations)
-- [ ] Advanced filtering UI
-- [ ] Help modal and documentation
+### ✅ Phase 5: Enhanced UX & Accessibility (COMPLETED)
+- ✅ Keyboard shortcuts (navigation and operations)
+- ✅ Advanced filtering UI
+- ✅ Help modal and documentation
 
-### Phase 6: Advanced Features (PLANNED)
+### 🚧 Phase 6: Advanced Features (NEXT)
 - [ ] Time tracking per card
 - [ ] CLI client
 - [ ] Recurring tasks
