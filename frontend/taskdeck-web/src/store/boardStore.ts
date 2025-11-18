@@ -224,6 +224,28 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  async function reorderColumns(boardId: string, columnIds: string[]) {
+    try {
+      loading.value = true
+      error.value = null
+      const reorderedColumns = await columnsApi.reorderColumns(boardId, columnIds)
+
+      // Update columns in current board with reordered list
+      if (currentBoard.value && currentBoard.value.id === boardId) {
+        currentBoard.value.columns = reorderedColumns
+      }
+
+      toast.success('Columns reordered successfully')
+      return reorderedColumns
+    } catch (e: any) {
+      error.value = e.response?.data?.message || e.message || 'Failed to reorder columns'
+      toast.error(error.value)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function createCard(boardId: string, card: CreateCardDto) {
     try {
       loading.value = true
@@ -433,6 +455,7 @@ export const useBoardStore = defineStore('board', () => {
     createColumn,
     updateColumn,
     deleteColumn,
+    reorderColumns,
     createCard,
     updateCard,
     deleteCard,
