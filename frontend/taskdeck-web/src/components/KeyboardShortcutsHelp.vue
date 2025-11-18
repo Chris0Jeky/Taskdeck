@@ -62,6 +62,7 @@ const categories: ShortcutCategory[] = [
     title: 'General',
     shortcuts: [
       { keys: ['?'], description: 'Toggle this help dialog' },
+      { keys: ['f'], description: 'Toggle filter panel' },
       { keys: ['Esc'], description: 'Close dialog or cancel action' },
     ]
   }
