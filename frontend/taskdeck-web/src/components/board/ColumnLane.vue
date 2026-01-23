@@ -154,6 +154,7 @@ function handleCardDragOver(event: DragEvent) {
 
 <template>
   <div
+    :data-column-id="column.id"
     :class="[
       'flex-shrink-0 w-80 rounded-lg p-4 transition-all',
       isDragOver ? 'bg-blue-50 ring-2 ring-blue-400' : 'bg-gray-100'
@@ -191,6 +192,7 @@ function handleCardDragOver(event: DragEvent) {
       </div>
 
       <button
+        data-action="toggle-add-card"
         @click="showCardForm = !showCardForm"
         class="w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 rounded transition-colors flex items-center justify-center gap-1"
       >
@@ -202,6 +204,7 @@ function handleCardDragOver(event: DragEvent) {
       <div v-if="showCardForm" class="mt-3 bg-white rounded-lg p-3 shadow-sm">
         <form @submit.prevent="createCard">
           <textarea
+            data-action="add-card-input"
             v-model="newCardTitle"
             placeholder="Enter card title..."
             class="w-full px-3 py-2 border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
