@@ -18,13 +18,13 @@ test('board to card workflow smoke test', async ({ page }) => {
   await page.getByPlaceholder('Column name').fill(columnName)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
 
-  await expect(page.getByText(columnName)).toBeVisible()
+  await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Add Card' }).first().click()
   await page.getByPlaceholder('Enter card title...').fill(cardTitle)
-  await page.getByRole('button', { name: 'Add' }).click()
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
 
-  await expect(page.getByText(cardTitle)).toBeVisible()
+  await expect(page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
 })
 
 test('filter panel shortcut should toggle panel', async ({ page }) => {
