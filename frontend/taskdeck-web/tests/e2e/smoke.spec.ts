@@ -9,14 +9,14 @@ test('board to card workflow smoke test', async ({ page }) => {
 
   await page.getByRole('button', { name: '+ New Board' }).click()
   await page.getByPlaceholder('Board name').fill(boardName)
-  await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
 
   await expect(page).toHaveURL(/\/boards\/[a-f0-9-]+$/)
   await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
 
   await page.getByRole('button', { name: '+ Add Column' }).click()
   await page.getByPlaceholder('Column name').fill(columnName)
-  await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
 
   await expect(page.getByText(columnName)).toBeVisible()
 
@@ -34,7 +34,7 @@ test('filter panel shortcut should toggle panel', async ({ page }) => {
 
   await page.getByRole('button', { name: '+ New Board' }).click()
   await page.getByPlaceholder('Board name').fill(boardName)
-  await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page).toHaveURL(/\/boards\/[a-f0-9-]+$/)
 
   await page.keyboard.press('f')
