@@ -65,6 +65,7 @@ $RECYCLE.BIN/
 TestResults/
 [Tt]est[Rr]esult*/
 test-results/
+playwright-report/
 *.trx
 *.coverage
 *.coveragexml
