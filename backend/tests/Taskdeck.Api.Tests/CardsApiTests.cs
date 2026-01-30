@@ -65,6 +65,56 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         movedCard.Position.Should().Be(0);
     }
 
+    [Fact]
+    public async Task MoveCard_ShouldReturnBadRequest_WhenTargetColumnWipLimitExceeded()
+    {
+        var board = await CreateBoardAsync();
+        var sourceColumn = await CreateColumnAsync(board.Id, "To Do", wipLimit: null);
+        var limitedTargetColumn = await CreateColumnAsync(board.Id, "In Progress", wipLimit: 1);
+
+        await CreateCardAsync(board.Id, limitedTargetColumn.Id, "Existing target card");
+        var cardToMove = await CreateCardAsync(board.Id, sourceColumn.Id, "Card to move");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/cards/{cardToMove.Id}/move",
+            new MoveCardDto(limitedTargetColumn.Id, 1));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("WipLimitExceeded");
+    }
+
+    [Fact]
+    public async Task UpdateCard_ShouldReturnBadRequest_WhenTitleIsEmpty()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "To Do", wipLimit: null);
+        var card = await CreateCardAsync(board.Id, column.Id, "Valid title");
+
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/boards/{board.Id}/cards/{card.Id}",
+            new UpdateCardDto(string.Empty, null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public async Task DeleteCard_ShouldReturnNotFound_WhenCardDoesNotExist()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.DeleteAsync($"/api/boards/{board.Id}/cards/{Guid.NewGuid()}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         var response = await _client.PostAsJsonAsync(
@@ -87,5 +137,17 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         var column = await response.Content.ReadFromJsonAsync<ColumnDto>();
         column.Should().NotBeNull();
         return column!;
+    }
+
+    private async Task<CardDto> CreateCardAsync(Guid boardId, Guid columnId, string title)
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, columnId, title, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = await response.Content.ReadFromJsonAsync<CardDto>();
+        card.Should().NotBeNull();
+        return card!;
     }
 }
