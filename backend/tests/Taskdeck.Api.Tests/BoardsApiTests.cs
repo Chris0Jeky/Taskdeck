@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Xunit;
@@ -66,5 +67,42 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         var allBoards = await fullListResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
         allBoards.Should().NotBeNull();
         allBoards.Should().ContainSingle(b => b.Id == createdBoard.Id && b.IsArchived);
+    }
+
+    [Fact]
+    public async Task GetBoard_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    {
+        var response = await _client.GetAsync($"/api/boards/{Guid.NewGuid()}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task CreateBoard_ShouldReturnBadRequest_WhenNameIsEmpty()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/boards",
+            new CreateBoardDto(string.Empty, "Invalid board"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public async Task UpdateBoard_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    {
+        var response = await _client.PutAsJsonAsync(
+            $"/api/boards/{Guid.NewGuid()}",
+            new UpdateBoardDto("Renamed", null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
     }
 }
