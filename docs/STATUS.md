@@ -6,38 +6,42 @@ Authoritative Scope: Current implementation, verified test execution, and active
 
 ## Project Summary
 
-Taskdeck is a personal, developer-focused Kanban application with a .NET 8 backend and Vue 3 frontend.
-Core domain supports boards, columns, cards, labels, WIP limits, blocking, filtering, and drag-and-drop workflows.
+Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 frontend.
+Current implementation supports boards, columns, cards, labels, WIP rules, filtering, keyboard workflows, drag/drop, and toasts.
 
 ## Current Implementation Snapshot
 
 ### Backend
 
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
-- API: REST endpoints for boards, columns, cards, labels
+- API: REST controllers for boards, columns, cards, and labels
 - Persistence: EF Core + SQLite
 - Test layers:
-  - domain tests
-  - application/service tests
-  - API integration tests (`Taskdeck.Api.Tests`) using `WebApplicationFactory`
-- CLI bootstrap added: `backend/src/Taskdeck.Cli`
-  - `boards list|create`
-  - `columns list`
-  - `cards add|move`
+  - domain unit tests
+  - application/service unit tests
+  - API integration tests (`Taskdeck.Api.Tests`) with `WebApplicationFactory`
+- CLI track (`backend/src/Taskdeck.Cli`) expanded to:
+  - `boards list|create|update`
+  - `columns list|create`
+  - `cards add|move|list`
 
 ### Frontend
 
 - Stack: Vue 3 + TypeScript + Pinia + Vue Router + Vite
-- Views: boards list and board detail
-- UX features implemented:
-  - CRUD flows for board/column/card/label
-  - card edit modal, board settings, column edit, label manager
-  - filter panel (text, label, due-date windows, blocked-only)
-  - keyboard shortcuts + shortcut help modal
-  - drag-and-drop cards and columns
+- Views: board list and board detail
+- UX capabilities:
+  - board/column/card/label CRUD
+  - card edit modal, column edit modal, board settings modal, label manager
+  - text/label/due-date/blocked filtering
+  - keyboard shortcuts and shortcut help
+  - card and column drag-and-drop
   - toast notifications
-- E2E baseline added:
-  - Playwright smoke suite (`frontend/taskdeck-web/tests/e2e/smoke.spec.ts`)
+- E2E smoke suite expanded to critical journeys:
+  - board-column-card happy flow
+  - filter panel toggle shortcut
+  - WIP rejection flow
+  - card move between columns
+  - board settings lifecycle (rename, archive/unarchive, delete)
 
 ## Phase Progress (Reconciled)
 
@@ -46,15 +50,16 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
 1. Phase 1 - Core Data Model and API: COMPLETE (100%)
 2. Phase 2 - Basic Web UI: COMPLETE (100%)
 3. Phase 3 - UX Improvements: COMPLETE (100%)
-4. Phase 4 - Advanced Features: STARTED (40%)
+4. Phase 4 - Advanced Features: IN PROGRESS (50%)
    Completed:
-   - drag-and-drop for cards and columns
-   - CLI track bootstrap (`Taskdeck.Cli`)
+   - card and column drag/drop
+   - CLI primary track started and expanded
+   - CI quality gates for backend unit, API integration, frontend unit, and E2E smoke
    Pending:
    - time tracking
    - analytics dashboard
    - recurring tasks
-   - optional sync and multi-user tracks
+   - optional sync/multi-user tracks
 
 ## Test Status (Reconciled and Verified)
 
@@ -68,8 +73,8 @@ Command:
 Result:
 - Domain: 42/42 passing
 - Application: 87/87 passing
-- API integration: 5/5 passing
-- Backend Total: 134/134 passing
+- API integration: 17/17 passing
+- Backend Total: 146/146 passing
 
 ### Frontend Unit (Executed)
 
@@ -87,25 +92,41 @@ Command:
 - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test`
 
 Result:
-- E2E smoke tests: 2/2 passing
+- E2E smoke tests: 5/5 passing
 
 ### Total
 
-- Combined automated total: 247/247 passing
+- Combined automated total: 262/262 passing
 
 ## CI Status
 
-- CI workflow added: `.github/workflows/ci.yml`
-- Gates included:
-  - backend unit + integration (`dotnet test backend/Taskdeck.sln`)
-  - frontend unit (`npx vitest run`)
-  - E2E smoke (`npx playwright test`)
+- CI workflow: `.github/workflows/ci.yml`
+- Gates and job split:
+  - Backend Unit (domain + application)
+  - API Integration
+  - Frontend Unit
+  - E2E Smoke (depends on all prior gates)
+- Hardening:
+  - unit/integration gates run on Ubuntu and Windows matrices
+  - E2E smoke remains Ubuntu-targeted
+  - stale E2E DB cleanup is cross-platform safe (`node` file removal)
+
+## Strategic Direction (LLM Automation)
+
+Planned end goal is an AI-agent-compatible board that supports tool-driven automation:
+
+- Local LLM agent can create/update/move/archive board items via stable interfaces.
+- Input modes include direct text and voice transcript driven instructions.
+- Proposed actions must support human review before apply (accept/edit/reject).
+- Change visibility should include clear diff-style previews for proposed board mutations.
+- Security and fallback controls are required before autonomous execution modes.
 
 ## Known Gaps and Risks
 
-- API integration suite exists but is still minimal; coverage should expand to all critical error/edge flows.
-- E2E suite currently smoke-level only; key business journeys still need deeper coverage.
-- Frontend tooling warns about `baseline-browser-mapping` freshness; not blocking but should be cleaned up.
+- API integration coverage is now broader but still not exhaustive across all negative paths.
+- E2E suite is still smoke-level; depth/performance/regression scenarios remain to be added.
+- CLI behavior is implemented but lacks dedicated CLI-focused automated tests.
+- Agent-compatible safety model (proposal queue, approvals, audit trail, rollback) is design-stage only.
 
 ## Canonical Documentation Policy
 
