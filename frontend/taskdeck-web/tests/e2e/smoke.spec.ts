@@ -117,7 +117,7 @@ test('board settings lifecycle should support rename archive unarchive and delet
   await expect(page.getByRole('heading', { name: renamedBoardName })).toBeVisible()
 
   await page.goto('/boards')
-  await expect(page.locator('text=' + renamedBoardName)).toHaveCount(0)
+  await expect(page.getByText(renamedBoardName)).toHaveCount(0)
 
   await page.goto(boardUrl)
   await page.locator('button[title="Board Settings"]').click()
@@ -125,7 +125,7 @@ test('board settings lifecycle should support rename archive unarchive and delet
   await page.getByRole('button', { name: 'Save Changes' }).click()
 
   await page.goto('/boards')
-  await expect(page.locator('text=' + renamedBoardName).first()).toBeVisible()
+  await expect(page.getByText(renamedBoardName).first()).toBeVisible()
 
   await page.goto(boardUrl)
   await page.locator('button[title="Board Settings"]').click()
@@ -133,5 +133,5 @@ test('board settings lifecycle should support rename archive unarchive and delet
   await page.getByRole('button', { name: 'Delete Board' }).click()
 
   await expect(page).toHaveURL(/\/boards$/)
-  await expect(page.locator('text=' + renamedBoardName)).toHaveCount(0)
+  await expect(page.getByText(renamedBoardName)).toHaveCount(0)
 })
