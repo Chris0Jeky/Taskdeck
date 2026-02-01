@@ -109,6 +109,15 @@ public class CardService
         }
     }
 
+    public async Task<Result<CardDto>> UpdateCardAsync(Guid boardId, Guid id, UpdateCardDto dto, CancellationToken cancellationToken = default)
+    {
+        var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
+        if (card == null || card.BoardId != boardId)
+            return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found in board {boardId}");
+
+        return await UpdateCardAsync(id, dto, cancellationToken);
+    }
+
     public async Task<Result<CardDto>> MoveCardAsync(Guid id, MoveCardDto dto, CancellationToken cancellationToken = default)
     {
         try
@@ -154,6 +163,19 @@ public class CardService
         }
     }
 
+    public async Task<Result<CardDto>> MoveCardAsync(Guid boardId, Guid id, MoveCardDto dto, CancellationToken cancellationToken = default)
+    {
+        var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
+        if (card == null || card.BoardId != boardId)
+            return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found in board {boardId}");
+
+        var targetColumn = await _unitOfWork.Columns.GetByIdAsync(dto.TargetColumnId, cancellationToken);
+        if (targetColumn == null || targetColumn.BoardId != boardId)
+            return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.TargetColumnId} not found in board {boardId}");
+
+        return await MoveCardAsync(id, dto, cancellationToken);
+    }
+
     public async Task<Result<IEnumerable<CardDto>>> SearchCardsAsync(
         Guid boardId,
         string? searchText = null,
@@ -175,6 +197,15 @@ public class CardService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
+    }
+
+    public async Task<Result> DeleteCardAsync(Guid boardId, Guid id, CancellationToken cancellationToken = default)
+    {
+        var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
+        if (card == null || card.BoardId != boardId)
+            return Result.Failure(ErrorCodes.NotFound, $"Card with ID {id} not found in board {boardId}");
+
+        return await DeleteCardAsync(id, cancellationToken);
     }
 
     private static CardDto MapToDto(Card card)
