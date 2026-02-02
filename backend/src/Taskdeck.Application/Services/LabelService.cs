@@ -54,6 +54,15 @@ public class LabelService
         }
     }
 
+    public async Task<Result<LabelDto>> UpdateLabelAsync(Guid boardId, Guid id, UpdateLabelDto dto, CancellationToken cancellationToken = default)
+    {
+        var label = await _unitOfWork.Labels.GetByIdAsync(id, cancellationToken);
+        if (label == null || label.BoardId != boardId)
+            return Result.Failure<LabelDto>(ErrorCodes.NotFound, $"Label with ID {id} not found in board {boardId}");
+
+        return await UpdateLabelAsync(id, dto, cancellationToken);
+    }
+
     public async Task<Result<IEnumerable<LabelDto>>> GetLabelsByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
     {
         var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId, cancellationToken);
@@ -70,6 +79,15 @@ public class LabelService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
+    }
+
+    public async Task<Result> DeleteLabelAsync(Guid boardId, Guid id, CancellationToken cancellationToken = default)
+    {
+        var label = await _unitOfWork.Labels.GetByIdAsync(id, cancellationToken);
+        if (label == null || label.BoardId != boardId)
+            return Result.Failure(ErrorCodes.NotFound, $"Label with ID {id} not found in board {boardId}");
+
+        return await DeleteLabelAsync(id, cancellationToken);
     }
 
     private static LabelDto MapToDto(Label label)
