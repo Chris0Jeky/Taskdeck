@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Label } from '../../types/board'
 
 const props = defineProps<{
@@ -105,6 +106,8 @@ function handleClose() {
   cancelForm()
   emit('close')
 }
+
+useEscapeToClose(() => props.isOpen, handleClose)
 </script>
 
 <template>
