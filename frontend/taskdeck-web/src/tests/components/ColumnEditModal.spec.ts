@@ -114,6 +114,21 @@ describe('ColumnEditModal', () => {
     expect(wrapper.emitted('close')).toBeTruthy()
   })
 
+  it('should emit close event when Escape key is pressed', async () => {
+    const wrapper = mount(ColumnEditModal, {
+      props: {
+        column,
+        isOpen: true,
+        boardId: 'board-1',
+      },
+    })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
   it('should call updateColumn when save is clicked', async () => {
     const wrapper = mount(ColumnEditModal, {
       props: {
