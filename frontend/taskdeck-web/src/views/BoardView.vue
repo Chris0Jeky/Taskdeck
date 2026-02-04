@@ -141,14 +141,12 @@ function selectNextCard() {
   if (!selectedCardId.value) {
     // Select first card in current column
     selectedCardId.value = cards[0]?.id || null
-    console.log('Selected first card:', selectedCardId.value)
     return
   }
 
   const currentIndex = cards.findIndex(c => c.id === selectedCardId.value)
   if (currentIndex < cards.length - 1) {
     selectedCardId.value = cards[currentIndex + 1]?.id || null
-    console.log('Selected next card:', selectedCardId.value)
   }
 }
 
@@ -273,6 +271,38 @@ function handleFiltersUpdate(newFilters: CardFilters) {
   boardStore.updateFilters(newFilters)
 }
 
+function closeOpenUi() {
+  if (showKeyboardHelp.value) {
+    showKeyboardHelp.value = false
+    return
+  }
+
+  if (showLabelManager.value) {
+    showLabelManager.value = false
+    return
+  }
+
+  if (showBoardSettings.value) {
+    showBoardSettings.value = false
+    return
+  }
+
+  if (showFilterPanel.value) {
+    showFilterPanel.value = false
+    return
+  }
+
+  if (showColumnForm.value) {
+    showColumnForm.value = false
+    return
+  }
+
+  const cancelAddCardButton = document.querySelector(
+    '[data-action="cancel-add-card"]'
+  ) as HTMLButtonElement | null
+  cancelAddCardButton?.click()
+}
+
 // Setup keyboard shortcuts
 useKeyboardShortcuts([
   // Navigation
@@ -288,6 +318,7 @@ useKeyboardShortcuts([
   // Actions
   { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
   { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn },
+  { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
 
   // Help
   { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp },
