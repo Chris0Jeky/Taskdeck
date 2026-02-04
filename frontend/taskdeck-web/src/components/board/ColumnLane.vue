@@ -201,7 +201,11 @@ function handleCardDragOver(event: DragEvent) {
       </button>
 
       <!-- Create Card Form -->
-      <div v-if="showCardForm" class="mt-3 bg-white rounded-lg p-3 shadow-sm">
+      <div
+        v-if="showCardForm"
+        data-action="add-card-form"
+        class="mt-3 bg-white rounded-lg p-3 shadow-sm"
+      >
         <form @submit.prevent="createCard">
           <textarea
             data-action="add-card-input"
@@ -220,6 +224,7 @@ function handleCardDragOver(event: DragEvent) {
             </button>
             <button
               type="button"
+              data-action="cancel-add-card"
               @click="showCardForm = false"
               class="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300 transition-colors"
             >
