@@ -99,6 +99,20 @@ describe('BoardSettingsModal', () => {
     expect(wrapper.emitted('close')).toBeTruthy()
   })
 
+  it('should emit close event when Escape key is pressed', async () => {
+    const wrapper = mount(BoardSettingsModal, {
+      props: {
+        board,
+        isOpen: true,
+      },
+    })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
   it('should call updateBoard when save is clicked', async () => {
     const wrapper = mount(BoardSettingsModal, {
       props: {
