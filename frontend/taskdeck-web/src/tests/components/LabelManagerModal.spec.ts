@@ -132,6 +132,21 @@ describe('LabelManagerModal', () => {
     expect(wrapper.emitted('close')).toBeTruthy()
   })
 
+  it('should emit close event when Escape key is pressed', async () => {
+    const wrapper = mount(LabelManagerModal, {
+      props: {
+        isOpen: true,
+        boardId: 'board-1',
+        labels,
+      },
+    })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
   it('should emit close when Done button is clicked', async () => {
     const wrapper = mount(LabelManagerModal, {
       props: {
