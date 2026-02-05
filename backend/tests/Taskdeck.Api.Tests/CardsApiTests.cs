@@ -115,6 +115,74 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
     }
 
+    [Fact]
+    public async Task CreateCard_ShouldReturnNotFound_WhenColumnDoesNotExist()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, Guid.NewGuid(), "Missing column", null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task UpdateCard_ShouldReturnNotFound_WhenCardBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "To Do", wipLimit: null);
+        var boardBCard = await CreateCardAsync(boardB.Id, boardBColumn.Id, "Card in board B");
+
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/boards/{boardA.Id}/cards/{boardBCard.Id}",
+            new UpdateCardDto("Updated", null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task MoveCard_ShouldReturnNotFound_WhenTargetColumnBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardAColumn = await CreateColumnAsync(boardA.Id, "To Do", wipLimit: null);
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "Other board", wipLimit: null);
+        var boardACard = await CreateCardAsync(boardA.Id, boardAColumn.Id, "Card in board A");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardA.Id}/cards/{boardACard.Id}/move",
+            new MoveCardDto(boardBColumn.Id, 0));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task DeleteCard_ShouldReturnNotFound_WhenCardBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "To Do", wipLimit: null);
+        var boardBCard = await CreateCardAsync(boardB.Id, boardBColumn.Id, "Card in board B");
+
+        var response = await _client.DeleteAsync($"/api/boards/{boardA.Id}/cards/{boardBCard.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         var response = await _client.PostAsJsonAsync(
