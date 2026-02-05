@@ -85,6 +85,84 @@ public class LabelsApiTests : IClassFixture<TestWebApplicationFactory>
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
     }
 
+    [Fact]
+    public async Task CreateLabel_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    {
+        var missingBoardId = Guid.NewGuid();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{missingBoardId}/labels",
+            new CreateLabelDto(missingBoardId, "Priority", "#3366FF"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task UpdateLabel_ShouldReturnBadRequest_WhenColorIsInvalid()
+    {
+        var board = await CreateBoardAsync();
+        var createResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "Priority", "#3366FF"));
+        createResponse.EnsureSuccessStatusCode();
+        var label = await createResponse.Content.ReadFromJsonAsync<LabelDto>();
+        label.Should().NotBeNull();
+
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/boards/{board.Id}/labels/{label!.Id}",
+            new UpdateLabelDto("Priority", "invalid"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public async Task UpdateLabel_ShouldReturnNotFound_WhenLabelBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var createOnBResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardB.Id}/labels",
+            new CreateLabelDto(boardB.Id, "Board B Label", "#10B981"));
+        createOnBResponse.EnsureSuccessStatusCode();
+        var boardBLabel = await createOnBResponse.Content.ReadFromJsonAsync<LabelDto>();
+        boardBLabel.Should().NotBeNull();
+
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/boards/{boardA.Id}/labels/{boardBLabel!.Id}",
+            new UpdateLabelDto("Updated", "#EF4444"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task DeleteLabel_ShouldReturnNotFound_WhenLabelBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var createOnBResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardB.Id}/labels",
+            new CreateLabelDto(boardB.Id, "Board B Label", "#10B981"));
+        createOnBResponse.EnsureSuccessStatusCode();
+        var boardBLabel = await createOnBResponse.Content.ReadFromJsonAsync<LabelDto>();
+        boardBLabel.Should().NotBeNull();
+
+        var response = await _client.DeleteAsync($"/api/boards/{boardA.Id}/labels/{boardBLabel!.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         var response = await _client.PostAsJsonAsync(
