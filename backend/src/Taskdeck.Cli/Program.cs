@@ -43,7 +43,7 @@ using (var startupScope = host.Services.CreateScope())
 
 return await RunAsync(host.Services, args);
 
-static async Task<int> RunAsync(IServiceProvider rootServices, string[] args)
+async Task<int> RunAsync(IServiceProvider rootServices, string[] args)
 {
     if (args.Length == 0)
     {
@@ -69,7 +69,7 @@ static async Task<int> RunAsync(IServiceProvider rootServices, string[] args)
     };
 }
 
-static async Task<int> HandleBoardsAsync(BoardService boardService, string command, string[] args)
+async Task<int> HandleBoardsAsync(BoardService boardService, string command, string[] args)
 {
     switch (command)
     {
@@ -194,7 +194,7 @@ static async Task<int> HandleBoardsAsync(BoardService boardService, string comma
     }
 }
 
-static async Task<int> HandleColumnsAsync(ColumnService columnService, string command, string[] args)
+async Task<int> HandleColumnsAsync(ColumnService columnService, string command, string[] args)
 {
     switch (command)
     {
@@ -314,7 +314,7 @@ static async Task<int> HandleColumnsAsync(ColumnService columnService, string co
     }
 }
 
-static async Task<int> HandleCardsAsync(CardService cardService, string command, string[] args)
+async Task<int> HandleCardsAsync(CardService cardService, string command, string[] args)
 {
     switch (command)
     {
@@ -499,12 +499,12 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
     }
 }
 
-static bool HasFlag(IReadOnlyList<string> args, string optionName)
+bool HasFlag(IReadOnlyList<string> args, string optionName)
 {
     return args.Any(arg => string.Equals(arg, optionName, StringComparison.OrdinalIgnoreCase));
 }
 
-static string? GetOption(IReadOnlyList<string> args, string optionName)
+string? GetOption(IReadOnlyList<string> args, string optionName)
 {
     for (var i = 0; i < args.Count - 1; i++)
     {
@@ -517,38 +517,38 @@ static string? GetOption(IReadOnlyList<string> args, string optionName)
     return null;
 }
 
-static bool TryParseGuid(string? text, out Guid value)
+bool TryParseGuid(string? text, out Guid value)
 {
     return Guid.TryParse(text, out value);
 }
 
-static int PrintUsageError(string message, string usage)
+int PrintUsageError(string message, string usage)
 {
     Console.Error.WriteLine(message);
     Console.Error.WriteLine($"Usage: {usage}");
     return ExitUsage;
 }
 
-static int PrintFailure(string errorCode, string errorMessage)
+int PrintFailure(string errorCode, string errorMessage)
 {
     Console.Error.WriteLine($"Error [{errorCode}]: {errorMessage}");
     return ExitFailure;
 }
 
-static int ReturnUnknownCommand(string commandGroup)
+int ReturnUnknownCommand(string commandGroup)
 {
     Console.Error.WriteLine($"Unknown command group: '{commandGroup}'.");
     PrintHelp();
     return ExitUsage;
 }
 
-static int ReturnHelp()
+int ReturnHelp()
 {
     PrintHelp();
     return ExitSuccess;
 }
 
-static void PrintHelp()
+void PrintHelp()
 {
     Console.WriteLine(
         """
@@ -573,7 +573,7 @@ static void PrintHelp()
         """);
 }
 
-static void WriteJson<T>(T value, JsonSerializerOptions options)
+void WriteJson<T>(T value, JsonSerializerOptions options)
 {
     Console.WriteLine(JsonSerializer.Serialize(value, options));
 }
