@@ -17,6 +17,13 @@ function columnByName(page: Page, columnName: string) {
     .first()
 }
 
+function columnDndByName(page: Page, columnName: string) {
+  return page
+    .locator('[data-column-dnd-id]')
+    .filter({ has: page.getByRole('heading', { name: columnName, exact: true }) })
+    .first()
+}
+
 async function addColumn(page: Page, columnName: string) {
   await page.getByRole('button', { name: '+ Add Column' }).click()
   await page.getByPlaceholder('Column name').fill(columnName)
@@ -134,4 +141,81 @@ test('board settings lifecycle should support rename archive unarchive and delet
 
   await expect(page).toHaveURL(/\/boards$/)
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
+})
+
+test('column drag and drop should reorder columns', async ({ page }) => {
+  const boardName = `Reorder Board ${Date.now()}`
+  const firstColumn = `First ${Date.now()}`
+  const secondColumn = `Second ${Date.now()}`
+  const thirdColumn = `Third ${Date.now()}`
+
+  await createBoard(page, boardName)
+  await addColumn(page, firstColumn)
+  await addColumn(page, secondColumn)
+  await addColumn(page, thirdColumn)
+
+  await expect(page.locator('[data-column-dnd-id] h3').first()).toHaveText(firstColumn)
+
+  const first = columnDndByName(page, firstColumn)
+  const third = columnDndByName(page, thirdColumn)
+  await first.dragTo(third)
+
+  await expect(page.locator('[data-column-dnd-id] h3').first()).toHaveText(secondColumn)
+  await expect(page.locator('[data-column-dnd-id] h3').nth(1)).toHaveText(thirdColumn)
+  await expect(page.locator('[data-column-dnd-id] h3').nth(2)).toHaveText(firstColumn)
+})
+
+test('keyboard flow should open card and escape should close modal and inline forms', async ({ page }) => {
+  const boardName = `Keyboard Board ${Date.now()}`
+  const columnName = `To Do ${Date.now()}`
+  const cardTitle = `Keyboard Card ${Date.now()}`
+
+  await createBoard(page, boardName)
+  await addColumn(page, columnName)
+  await addCard(page, columnName, cardTitle)
+
+  await page.locator('body').click()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('heading', { name: 'Edit Card' })).not.toBeVisible()
+
+  await page.keyboard.press('n')
+  await expect(page.getByPlaceholder('Enter card title...')).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByPlaceholder('Enter card title...')).toHaveCount(0)
+})
+
+test('filter state should persist while panel is toggled in-session', async ({ page }) => {
+  const boardName = `Filter Persist Board ${Date.now()}`
+  const columnName = `To Do ${Date.now()}`
+  const matchingCard = `Alpha ${Date.now()}`
+  const hiddenCard = `Beta ${Date.now()}`
+
+  await createBoard(page, boardName)
+  await addColumn(page, columnName)
+  await addCard(page, columnName, matchingCard)
+  await addCard(page, columnName, hiddenCard)
+
+  await page.keyboard.press('f')
+  await expect(page.getByRole('heading', { name: 'Filter Cards' })).toBeVisible()
+
+  const searchInput = page.getByPlaceholder('Search cards...')
+  await searchInput.fill(matchingCard)
+
+  await expect(page.locator('[data-card-id]:visible')).toHaveCount(1)
+  await expect(page.locator('[data-card-id]').filter({ hasText: matchingCard })).toBeVisible()
+  await expect(page.locator('[data-card-id]').filter({ hasText: hiddenCard })).toHaveCount(0)
+
+  await page.keyboard.press('f')
+  await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
+
+  await page.keyboard.press('f')
+  await expect(page.getByRole('heading', { name: 'Filter Cards' })).toBeVisible()
+  await expect(searchInput).toHaveValue(matchingCard)
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
 })
