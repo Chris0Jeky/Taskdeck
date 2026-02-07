@@ -38,6 +38,9 @@ jobs:
       - name: Run application tests
         run: dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj --configuration Release --no-restore
 
+      - name: Run CLI contract tests
+        run: dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj --configuration Release --no-restore
+
   api-integration:
     name: API Integration (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
