@@ -209,6 +209,7 @@ test('filter state should persist while panel is toggled in-session', async ({ p
   await expect(page.locator('[data-card-id]').filter({ hasText: matchingCard })).toBeVisible()
   await expect(page.locator('[data-card-id]').filter({ hasText: hiddenCard })).toHaveCount(0)
 
+  await page.locator('body').click()
   await page.keyboard.press('f')
   await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
 
