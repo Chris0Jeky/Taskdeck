@@ -12,7 +12,11 @@ using Taskdeck.Infrastructure.Persistence;
 const int ExitSuccess = 0;
 const int ExitFailure = 1;
 const int ExitUsage = 2;
-var jsonOptions = new JsonSerializerOptions { WriteIndented = false };
+var jsonOptions = new JsonSerializerOptions
+{
+    WriteIndented = false,
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+};
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
