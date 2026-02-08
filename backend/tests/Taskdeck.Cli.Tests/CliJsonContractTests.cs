@@ -93,11 +93,11 @@ public class CliJsonContractTests
 
         public async Task<CliCommandResult> RunAsync(string arguments)
         {
-            var projectPath = Path.Combine(_repoRoot, "backend", "src", "Taskdeck.Cli", "Taskdeck.Cli.csproj");
+            var cliDllPath = ResolveCliDllPath(_repoRoot);
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = $"run --project \"{projectPath}\" -- {arguments}",
+                Arguments = $"\"{cliDllPath}\" {arguments}",
                 WorkingDirectory = _repoRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -150,6 +150,24 @@ public class CliJsonContractTests
             }
 
             throw new InvalidOperationException("Could not locate repository root from test execution directory.");
+        }
+
+        private static string ResolveCliDllPath(string repoRoot)
+        {
+            var cliProjectBin = Path.Combine(repoRoot, "backend", "src", "Taskdeck.Cli", "bin");
+            var debugPath = Path.Combine(cliProjectBin, "Debug", "net8.0", "Taskdeck.Cli.dll");
+            if (File.Exists(debugPath))
+            {
+                return debugPath;
+            }
+
+            var releasePath = Path.Combine(cliProjectBin, "Release", "net8.0", "Taskdeck.Cli.dll");
+            if (File.Exists(releasePath))
+            {
+                return releasePath;
+            }
+
+            throw new FileNotFoundException("Taskdeck.Cli.dll was not found in Debug or Release output directories.");
         }
     }
 
