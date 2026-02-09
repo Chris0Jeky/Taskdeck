@@ -10,6 +10,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Forward-looking roadmap and execution plan for upcoming weeks.
 - `TESTING_GUIDE.md`
   - How to run and write tests.
+- `MANUAL_TEST_CHECKLIST.md`
+  - End-to-end manual validation checklist with expected outcomes.
 - `DEVELOPMENT_HISTORY.md`
   - Complete development journey from conception to current state, with phase breakdown, milestones, and lessons learned.
 
