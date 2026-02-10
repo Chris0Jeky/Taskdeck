@@ -9,6 +9,7 @@ public class Board : Entity
     private readonly List<Column> _columns = new();
     private readonly List<Card> _cards = new();
     private readonly List<Label> _labels = new();
+    private readonly List<BoardAccess> _boardAccesses = new();
 
     public string Name
     {
@@ -27,18 +28,21 @@ public class Board : Entity
 
     public string? Description { get; private set; }
     public bool IsArchived { get; private set; }
+    public Guid? OwnerId { get; private set; }
 
     public IReadOnlyCollection<Column> Columns => _columns.AsReadOnly();
     public IReadOnlyCollection<Card> Cards => _cards.AsReadOnly();
     public IReadOnlyCollection<Label> Labels => _labels.AsReadOnly();
+    public IReadOnlyCollection<BoardAccess> BoardAccesses => _boardAccesses.AsReadOnly();
 
     private Board() : base() { }
 
-    public Board(string name, string? description = null) : base()
+    public Board(string name, string? description = null, Guid? ownerId = null) : base()
     {
         Name = name;
         Description = description;
         IsArchived = false;
+        OwnerId = ownerId;
     }
 
     public void Update(string? name = null, string? description = null)
@@ -61,6 +65,15 @@ public class Board : Entity
     public void Unarchive()
     {
         IsArchived = false;
+        Touch();
+    }
+
+    public void TransferOwnership(Guid newOwnerId)
+    {
+        if (newOwnerId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "New owner ID cannot be empty");
+
+        OwnerId = newOwnerId;
         Touch();
     }
 
@@ -93,5 +106,15 @@ public class Board : Entity
     internal void RemoveLabel(Label label)
     {
         _labels.Remove(label);
+    }
+
+    internal void AddBoardAccess(BoardAccess boardAccess)
+    {
+        _boardAccesses.Add(boardAccess);
+    }
+
+    internal void RemoveBoardAccess(BoardAccess boardAccess)
+    {
+        _boardAccesses.Remove(boardAccess);
     }
 }
