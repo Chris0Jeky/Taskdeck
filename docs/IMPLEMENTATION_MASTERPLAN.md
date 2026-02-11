@@ -1,109 +1,118 @@
-﻿# Taskdeck Implementation Masterplan
+# Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-11
-Planning Horizon: Next 8 to 12 weeks
+Last Updated: 2026-02-11  
+Planning Horizon: Next 8 to 12 weeks  
 Companion Status Doc: `docs/STATUS.md`
 
 ## Purpose
 
-This plan is the active execution guide for implementation decisions, priorities, and sequencing.
-It is designed to prevent context loss across future coding sessions.
+This is the active execution guide for implementation sequencing.
+It should be updated at the end of each meaningful implementation cycle.
 
 ## Planning Principles
 
-- Keep `docs/STATUS.md` authoritative for reality.
-- Prioritize test-backed delivery over feature volume.
-- Finish incomplete UX behavior before adding broad new surface area.
-- Maintain Clean Architecture boundaries.
+- Keep `docs/STATUS.md` authoritative for reality and test numbers.
+- Ship only with tests for changed behavior.
+- Grow Phase 4 in one primary track at a time.
+- Keep CI gates aligned with local commands.
 
-## Outcome Targets (12 Weeks)
+## Current Sprint Outcome (Completed)
 
-1. Stable quality gates (unit + integration + E2E smoke in CI)
-2. Phase 3 completion to 100 percent
-3. Phase 4 progress on one major feature track (CLI or time tracking)
-4. Reduced documentation drift via one status file + archive discipline
+All requested items were implemented:
+
+1. Keyboard shortcut TODO handlers finished in `frontend/taskdeck-web/src/views/BoardView.vue`.
+2. Backend API integration tests added in `backend/tests/Taskdeck.Api.Tests`.
+3. Playwright E2E smoke tests added in `frontend/taskdeck-web/tests/e2e/smoke.spec.ts`.
+4. CI gates added in `.github/workflows/ci.yml` for backend, frontend, and E2E smoke.
+5. Phase 4 CLI track started via `backend/src/Taskdeck.Cli`.
 
 ## Roadmap by Horizon
 
-### Horizon A (Week 1 to 2): Stabilize and Close Gaps
+### Horizon A (Week 1 to 2): Consolidate New Quality Gates
 
-- Finish keyboard shortcut TODO handlers in `BoardView`
-- Add backend API integration test project (`Taskdeck.Api.Tests`) with core CRUD + WIP scenarios
-- Add minimal E2E smoke suite for critical flow
-  - create board
-  - create column and card
-  - move card respecting WIP
-
-Exit Criteria:
-- all current tests passing
-- API integration tests introduced and green
-- at least 2 E2E smoke tests green locally
-
-### Horizon B (Week 3 to 6): Reliability and Developer Workflow
-
-- Wire CI pipeline for backend unit, frontend unit, API integration, E2E smoke
-- Add coverage reporting artifacts
-- Add quality gates to block merges on failed suites
-- Address any flaky tests and stabilize deterministic fixtures
+- Validate first CI runs and fix cross-platform failures quickly.
+- Expand API integration test suite beyond current smoke/business-rule baseline.
+- Expand E2E smoke suite to include:
+  - card move between columns
+  - WIP-limit rejection path
+  - board settings update/delete flow
 
 Exit Criteria:
-- CI green on main branch
-- repeatable local and CI runs
-- no unresolved flaky tests in active suites
+- CI stable on main.
+- API integration tests cover core CRUD + error paths.
+- E2E smoke includes at least 5 stable, critical flows.
 
-### Horizon C (Week 7 to 12): Phase 4 Feature Progress
+### Horizon B (Week 3 to 6): Deepen Reliability and Coverage
 
-Choose one primary track and complete first slice end-to-end.
-
-Track Option 1: CLI client (recommended first for fast value)
-- Add `Taskdeck.Cli` project
-- Implement board/card list, quick card create, move card command
-- Reuse application services and shared DTO contracts
-
-Track Option 2: Time tracking
-- Extend domain model for time entries
-- Add API endpoints and UI controls
-- Add minimal reporting summary
+- Add coverage artifacts and optional thresholds in CI.
+- Harden flaky areas (test data isolation, deterministic dates, retry strategy).
+- Address dependency/tooling warnings (e.g., baseline browser mapping freshness).
 
 Exit Criteria:
-- one Phase 4 track available behind stable tests
-- documented usage and migration notes
+- repeatable local and CI runs with low flake rate
+- clear quality dashboard of unit/integration/E2E status
+
+### Horizon C (Week 7 to 12): Phase 4 Feature Delivery
+
+Primary Track (already started): CLI
+
+- Expand CLI commands:
+  - boards update/delete/archive
+  - columns create/update/delete/reorder
+  - cards list/update/delete/search
+  - labels list/create/update/delete
+- Improve CLI UX:
+  - consistent output formatting
+  - clear error messages and exit codes
+  - help for each subcommand
+
+Secondary Track (after CLI milestone): time tracking
+
+Exit Criteria:
+- CLI provides end-to-end utility for daily task operations.
+- CLI behavior is covered by focused unit/integration tests.
 
 ## Active Backlog (Prioritized)
 
-1. P0: Keyboard shortcut TODO completion in `frontend/taskdeck-web/src/views/BoardView.vue`
-2. P0: Add `backend/tests/Taskdeck.Api.Tests` integration coverage
-3. P0: Add frontend E2E smoke tests in `frontend/taskdeck-web`
-4. P1: CI orchestration for all active suites
-5. P1: Baseline browser mapping dependency refresh warning cleanup
-6. P2: Start CLI track or time-tracking track
+1. P0: Expand API integration tests for full controller surface and error mapping.
+2. P0: Expand Playwright smoke tests to cover drag-and-drop and WIP-limit failure.
+3. P0: Verify and stabilize CI on first runs; fix platform/environment drift.
+4. P1: CLI command surface expansion and structured output.
+5. P1: baseline-browser-mapping warning cleanup.
+6. P2: Start time-tracking design spike after CLI milestone.
 
-## Next Best Steps (Current Sprint)
+## Next Best Steps (Updated)
 
-These are the immediate recommended actions and are now part of this masterplan:
+1. Add at least 3 new API integration tests:
+   - labels CRUD happy path
+   - card update/delete paths
+   - not-found and validation error response mapping
+2. Add at least 3 new E2E tests:
+   - move card between columns
+   - WIP limit enforcement message
+   - board settings rename/archive flow
+3. Add first CLI follow-up commands:
+   - `boards update`
+   - `columns create`
+   - `cards list`
+4. Run CI workflow after merge and close any platform-specific failures.
 
-1. Implement keyboard shortcut open/create actions to remove Phase 3 partial status.
-2. Create backend API integration tests for boards, cards, and WIP-limit error paths.
-3. Add a minimal Playwright E2E smoke layer for end-to-end confidence.
-4. Configure CI to run backend unit + frontend unit + API integration + E2E smoke.
-5. Select and start one primary Phase 4 track (CLI preferred for quickest utility).
-
-## Weekly Operating Cadence
+## Weekly Cadence
 
 - Start of week:
-  - refresh `docs/STATUS.md` if implementation reality changed
-  - confirm top 3 backlog priorities
+  - sync `docs/STATUS.md` with repo reality
+  - pick top 3 backlog items
 - During week:
-  - feature delivery with tests in same change set
-  - keep archive-only docs untouched unless explicitly referenced
+  - ship in vertical slices with tests
+  - avoid creating new top-level planning docs
 - End of week:
-  - update this file with completed milestones and next sprint priorities
+  - update this file with completed work and next-best-step reorder
 
 ## Risk Register
 
-- Risk: documentation drift reappears
-  - Mitigation: update only `STATUS.md` for status; archive all narrative notes
-- Risk: integration/E2E adoption slows feature velocity
-  - Mitigation: keep smoke scope intentionally small first
-- Risk: Phase 4 sprawl without finishing one slice
-  - Mitigation: one-track-at-a-time rule for Horizon C
+- Risk: CI instability after introducing multi-stack jobs
+  - Mitigation: keep test setup deterministic; isolate DB/test artifacts
+- Risk: Phase 4 scope sprawl
+  - Mitigation: finish CLI milestone before opening another major track
+- Risk: Documentation drift
+  - Mitigation: only `STATUS.md` and this file are authoritative
