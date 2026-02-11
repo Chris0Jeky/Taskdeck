@@ -54,6 +54,11 @@ public class LlmRequest : Entity
 
     public void MarkAsProcessing()
     {
+        if (Status == RequestStatus.Processing)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                "Request is already processing");
+
         if (Status == RequestStatus.Completed || Status == RequestStatus.Cancelled)
             throw new DomainException(
                 ErrorCodes.ValidationError,
@@ -65,6 +70,11 @@ public class LlmRequest : Entity
 
     public void MarkAsCompleted()
     {
+        if (Status != RequestStatus.Processing)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                "Can only complete requests that are processing");
+
         Status = RequestStatus.Completed;
         ProcessedAt = DateTimeOffset.UtcNow;
         Touch();
@@ -74,6 +84,11 @@ public class LlmRequest : Entity
     {
         if (string.IsNullOrWhiteSpace(errorMessage))
             throw new DomainException(ErrorCodes.ValidationError, "Error message cannot be empty");
+
+        if (Status == RequestStatus.Completed || Status == RequestStatus.Cancelled)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"Cannot fail request in {Status} status");
 
         Status = RequestStatus.Failed;
         ErrorMessage = errorMessage;
@@ -88,6 +103,11 @@ public class LlmRequest : Entity
             throw new DomainException(
                 ErrorCodes.ValidationError,
                 "Cannot cancel request that is currently processing");
+
+        if (Status == RequestStatus.Completed)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                "Cannot cancel request that is already completed");
 
         Status = RequestStatus.Cancelled;
         Touch();
