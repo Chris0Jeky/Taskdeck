@@ -44,7 +44,7 @@ public class LabelsController : ControllerBase
     [HttpPatch("{labelId}")]
     public async Task<IActionResult> UpdateLabel(Guid boardId, Guid labelId, [FromBody] UpdateLabelDto dto)
     {
-        var result = await _labelService.UpdateLabelAsync(labelId, dto);
+        var result = await _labelService.UpdateLabelAsync(boardId, labelId, dto);
 
         if (!result.IsSuccess)
         {
@@ -62,7 +62,7 @@ public class LabelsController : ControllerBase
     [HttpDelete("{labelId}")]
     public async Task<IActionResult> DeleteLabel(Guid boardId, Guid labelId)
     {
-        var result = await _labelService.DeleteLabelAsync(labelId);
+        var result = await _labelService.DeleteLabelAsync(boardId, labelId);
 
         if (!result.IsSuccess)
         {
