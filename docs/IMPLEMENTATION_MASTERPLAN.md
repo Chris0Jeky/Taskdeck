@@ -22,17 +22,20 @@ Update this file at the end of each meaningful delivery cycle.
 Delivered in this cycle:
 
 1. API integration suite expanded across happy/error paths for boards, columns, cards, and labels.
-2. E2E smoke suite expanded from 2 to 5 tests:
-   - WIP rejection
-   - card move flow
-   - board settings lifecycle
-3. CLI expanded:
+2. Nested-route board ownership checks added for cards, columns, and labels.
+3. E2E smoke suite expanded from 5 to 8 tests:
+   - column reorder
+   - keyboard-only open/close flow
+   - filter persistence in-session
+4. Escape-key closure behavior fixed across major modals and inline add-card forms.
+5. CLI expanded and hardened:
    - `boards update`
    - `columns create`
    - `cards list`
-   - improved usage/error handling and exit code semantics
-4. CI gate split and hardening completed:
-   - backend unit
+   - `--json` output mode (camelCase)
+6. CLI contract tests added (`backend/tests/Taskdeck.Cli.Tests`).
+7. CI gate hardening completed:
+   - backend unit (including CLI contract tests)
    - API integration
    - frontend unit
    - E2E smoke
@@ -40,17 +43,17 @@ Delivered in this cycle:
 
 ## Roadmap by Horizon
 
-### Horizon A (Week 1 to 2): Stabilize and Close Test Coverage Gaps
+### Horizon A (Week 1 to 2): CI and Reliability Consolidation
 
-- Add remaining API integration negative paths (cross-resource not-found, validation edge cases, conflict variants).
-- Expand E2E from smoke to reliability checks for drag/drop ordering and modal validation states.
-- Add dedicated tests for CLI command parsing and behavior contracts.
-- Monitor first CI matrix runs and close platform-specific drift quickly.
+- Validate first real GitHub matrix runs and patch drift quickly.
+- Add residual API negative-path cases not yet covered.
+- Extend E2E beyond smoke to multi-step long-session regressions.
+- Expand CLI JSON contract to more commands and error payloads.
 
 Exit Criteria:
 - CI matrix consistently green.
 - API integration + E2E suites cover key regressions and primary failures.
-- CLI changes are test-backed.
+- CLI automation contracts are test-backed.
 
 ### Horizon B (Week 3 to 6): Complete CLI Primary Track
 
@@ -59,7 +62,6 @@ Exit Criteria:
   - columns: update/delete/reorder
   - cards: update/delete/search refinements
   - labels: list/create/update/delete
-- Add structured output mode (`--json`) to support machine automation.
 - Improve CLI UX:
   - consistent formatting
   - explicit error categorization
@@ -99,9 +101,9 @@ Exit Criteria:
 
 ## Active Backlog (Prioritized)
 
-1. P0: Add API integration tests for remaining edge/error mappings.
-2. P0: Add 3 to 5 additional E2E tests for highest-risk board interactions.
-3. P0: Add CLI automated tests and start `--json` output mode.
+1. P0: Monitor first GitHub CI matrix runs and patch platform drift.
+2. P0: Extend CLI JSON to include structured error payloads.
+3. P0: Add remaining low-frequency API edge/error mappings.
 4. P1: Finish core CLI command parity for columns/cards/labels.
 5. P1: Define action proposal schema for future LLM tool-calling integration.
 6. P1: Draft approval/diff UX spec for agent-proposed changes.
@@ -109,18 +111,10 @@ Exit Criteria:
 
 ## Next Best Steps (Updated)
 
-1. Add API integration tests for:
-   - `PATCH` not-found paths across cards/columns/labels where still missing
-   - validation edge cases (empty names, invalid positions, invalid colors)
-   - conflict mappings tied to constrained delete/move operations
-2. Add E2E tests for:
-   - intra-column reorder behavior
-   - board filter combinations + persistence expectations
-   - keyboard-only card open/create flow regression checks
-3. Add CLI contract tests and implement `--json` for:
-   - `boards list`
-   - `cards list`
-4. Create an initial agent action proposal spec:
+1. Verify and monitor first GitHub matrix runs in repository Actions UI.
+2. Implement structured JSON error output for CLI (`code`, `message`, `usageHint`).
+3. Add long-session E2E regression slice (multi-edit, reorder, filter, refresh persistence).
+4. Create initial agent action proposal spec:
    - operation envelope
    - dry-run preview response
    - approval token flow
@@ -139,10 +133,10 @@ Exit Criteria:
 ## Risk Register
 
 - Risk: CI matrix instability or flaky browser tests
-  - Mitigation: deterministic test setup, pinned versions, and quick flake triage
+  - Mitigation: deterministic test setup, pinned versions, and fast flake triage
 - Risk: CLI scope broadens before reliability hardening
-  - Mitigation: test-first additions and `--json` contract discipline
+  - Mitigation: test-first additions and strict JSON contract discipline
 - Risk: Unsafe autonomous agent operations
-  - Mitigation: proposal-first flow, explicit approvals, diff visibility, and rollback path
+  - Mitigation: proposal-first flow, explicit approvals, diff visibility, rollback path
 - Risk: Documentation drift
   - Mitigation: keep only `STATUS.md` + this file authoritative
