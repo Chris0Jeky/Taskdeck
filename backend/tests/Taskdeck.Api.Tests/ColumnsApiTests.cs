@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
+using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
