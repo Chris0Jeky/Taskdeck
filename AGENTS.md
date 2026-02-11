@@ -7,7 +7,7 @@ This document is a concise contributor guide for the Taskdeck repository. Its sc
 - Backend (.NET): `backend/Taskdeck.sln` with layered projects under `backend/src` (`Taskdeck.Api`, `Taskdeck.Application`, `Taskdeck.Domain`, `Taskdeck.Infrastructure`).
 - Backend tests: `backend/tests` with project-per-layer test suites.
 - Frontend (Vue 3 + Vite): `frontend/taskdeck-web` with app source in `src`, static assets in `public`.
-- Docs and planning: Top-level `README.md`, `IMPLEMENTATION_STATUS.md`, `TEST_SUITE_PLAN.md`, and related files describe roadmap and test strategy.
+- Docs and planning: Start with `docs/STATUS.md` (source of truth), `docs/IMPLEMENTATION_MASTERPLAN.md` (active roadmap), and `docs/TESTING_GUIDE.md` (test operations). Historical context lives under `docs/archive/`.
 
 ## Build, Test & Run
 
@@ -35,4 +35,3 @@ This document is a concise contributor guide for the Taskdeck repository. Its sc
 - Commits: Use clear, present-tense messages (e.g., `Add booking validation to application layer`). Group related changes; avoid large mixed-topic commits.
 - Pull requests: Provide a short summary, key implementation notes, and testing evidence (commands run, screenshots for UI changes). Link related issues or tasks where applicable.
 - Keep PRs focused and small when possible; prefer follow-up PRs for refactors or additional cleanup.
-
