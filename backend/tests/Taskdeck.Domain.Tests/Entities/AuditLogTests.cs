@@ -50,4 +50,16 @@ public class AuditLogTests
             .WithMessage("User ID cannot be empty")
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
     }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenActionIsInvalid()
+    {
+        // Act
+        var act = () => new AuditLog("Board", Guid.NewGuid(), (AuditAction)999);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Audit action value is invalid")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
 }
