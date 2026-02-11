@@ -16,6 +16,7 @@ Update this file at the end of each meaningful delivery cycle.
 - Keep CI gates aligned with local commands.
 - Prioritize one primary Phase 4 track at a time to avoid scope sprawl.
 - Build stable interfaces that can later be safely used by an LLM agent.
+- Keep scaffolding tracks as side work unless explicitly promoted to the primary track.
 
 ## Current Cycle Outcome (Completed)
 
@@ -40,6 +41,13 @@ Delivered in this cycle:
    - frontend unit
    - E2E smoke
    - Ubuntu/Windows matrix for non-E2E gates
+8. Parallel scaffolding package delivered for future multi-user/export-import/history/queue tracks:
+   - domain entities, repository contracts, service interfaces
+   - infrastructure repositories and migration
+   - foundational domain tests
+
+Note:
+- Item 8 is intentional side-track prep and does not replace the primary roadmap sequence below.
 
 ## Roadmap by Horizon
 
@@ -99,6 +107,21 @@ Exit Criteria:
 - Mutation diffs and audit trail exist for all agent-originated changes.
 - Core operations are consumable through automation-compatible interfaces.
 
+## Parallel Track (Sidecar): Scaffolding Activation Plan
+
+This track remains sidecar until primary Horizon A/B stability goals are met.
+
+Prepared foundations:
+- Multi-user roles and board-level access model
+- Export/import interfaces for board/database portability
+- LLM queue entities/contracts for offline submission and later processing
+- Audit/history foundations
+
+Activation gates:
+1. Horizon A exit criteria are met.
+2. CLI reliability and JSON contract work is stable.
+3. Explicit roadmap re-prioritization is approved.
+
 ## Active Backlog (Prioritized)
 
 1. P0: Monitor first GitHub CI matrix runs and patch platform drift.
@@ -107,7 +130,8 @@ Exit Criteria:
 4. P1: Finish core CLI command parity for columns/cards/labels.
 5. P1: Define action proposal schema for future LLM tool-calling integration.
 6. P1: Draft approval/diff UX spec for agent-proposed changes.
-7. P2: Start time-tracking design spike after CLI milestone lock.
+7. P2: Prepare implementation sequence for scaffolding services (auth, permissions, export/import, queue) without promoting them to primary track yet.
+8. P2: Start time-tracking design spike after CLI milestone lock.
 
 ## Next Best Steps (Updated)
 
@@ -118,6 +142,7 @@ Exit Criteria:
    - operation envelope
    - dry-run preview response
    - approval token flow
+5. Document scaffolding activation checklist so future work can start quickly when promoted.
 
 ## Weekly Cadence
 
@@ -138,5 +163,7 @@ Exit Criteria:
   - Mitigation: test-first additions and strict JSON contract discipline
 - Risk: Unsafe autonomous agent operations
   - Mitigation: proposal-first flow, explicit approvals, diff visibility, rollback path
+- Risk: Side-track scaffolding displaces primary delivery goals
+  - Mitigation: activation gates and explicit re-prioritization before promotion
 - Risk: Documentation drift
   - Mitigation: keep only `STATUS.md` + this file authoritative

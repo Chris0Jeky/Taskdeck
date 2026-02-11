@@ -103,4 +103,44 @@ public class BoardTests
         // Assert
         board.IsArchived.Should().BeFalse();
     }
+
+    [Fact]
+    public void Constructor_ShouldSetOwnerId_WhenProvided()
+    {
+        // Arrange
+        var ownerId = Guid.NewGuid();
+
+        // Act
+        var board = new Board("Team", ownerId: ownerId);
+
+        // Assert
+        board.OwnerId.Should().Be(ownerId);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenOwnerIdIsEmpty()
+    {
+        // Act
+        var act = () => new Board("Team", ownerId: Guid.Empty);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Owner ID cannot be empty")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void TransferOwnership_ShouldSetOwnerId()
+    {
+        // Arrange
+        var originalOwnerId = Guid.NewGuid();
+        var newOwnerId = Guid.NewGuid();
+        var board = new Board("Team", ownerId: originalOwnerId);
+
+        // Act
+        board.TransferOwnership(newOwnerId);
+
+        // Assert
+        board.OwnerId.Should().Be(newOwnerId);
+    }
 }

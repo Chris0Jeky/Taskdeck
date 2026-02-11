@@ -21,6 +21,10 @@ public static class DependencyInjection
         services.AddScoped<IColumnRepository, ColumnRepository>();
         services.AddScoped<ICardRepository, CardRepository>();
         services.AddScoped<ILabelRepository, LabelRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IBoardAccessRepository, BoardAccessRepository>();
+        services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+        services.AddScoped<ILlmQueueRepository, LlmQueueRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;
