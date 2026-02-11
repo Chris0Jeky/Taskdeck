@@ -7,7 +7,7 @@ namespace Taskdeck.Application.Tests.TestUtilities;
 /// </summary>
 public static class TestDataBuilder
 {
-    public static Board CreateBoard(string name = "Test Board", string description = "Test description", bool isArchived = false)
+    public static Board CreateBoard(string name = "Test Board", string? description = "Test description", bool isArchived = false)
     {
         var board = new Board(name, description);
         if (isArchived)
@@ -79,7 +79,7 @@ public static class TestDataBuilder
     public static Board CreateBoardWithColumns(
         string name,
         IEnumerable<Column> columns,
-        string description = "Test description",
+        string? description = "Test description",
         bool isArchived = false)
     {
         var board = CreateBoard(name, description, isArchived);
