@@ -64,6 +64,7 @@ $RECYCLE.BIN/
 # Test Results
 TestResults/
 [Tt]est[Rr]esult*/
+test-results/
 *.trx
 *.coverage
 *.coveragexml
