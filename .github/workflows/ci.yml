@@ -11,9 +11,15 @@ permissions:
   contents: read
 
 jobs:
-  backend-tests:
-    name: Backend Unit + Integration
-    runs-on: ubuntu-latest
+  backend-unit:
+    name: Backend Unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,12 +32,45 @@ jobs:
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln
 
-      - name: Run backend tests
-        run: dotnet test backend/Taskdeck.sln --configuration Release --no-restore
+      - name: Run domain tests
+        run: dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj --configuration Release --no-restore
 
-  frontend-tests:
-    name: Frontend Unit
-    runs-on: ubuntu-latest
+      - name: Run application tests
+        run: dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj --configuration Release --no-restore
+
+  api-integration:
+    name: API Integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Run API integration tests
+        run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore
+
+  frontend-unit:
+    name: Frontend Unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,8 +93,9 @@ jobs:
   e2e-smoke:
     name: E2E Smoke
     needs:
-      - backend-tests
-      - frontend-tests
+      - backend-unit
+      - api-integration
+      - frontend-unit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -86,7 +126,7 @@ jobs:
 
       - name: Remove stale E2E database
         working-directory: frontend/taskdeck-web
-        run: rm -f taskdeck.e2e.ci.db
+        run: node -e "require('fs').rmSync('taskdeck.e2e.ci.db',{force:true});"
 
       - name: Run Playwright smoke tests
         working-directory: frontend/taskdeck-web
