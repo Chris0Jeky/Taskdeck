@@ -39,6 +39,9 @@ public class AuditLog : Entity
         if (userId.HasValue && userId.Value == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "User ID cannot be empty");
 
+        if (!Enum.IsDefined(action))
+            throw new DomainException(ErrorCodes.ValidationError, "Audit action value is invalid");
+
         EntityType = entityType;
         EntityId = entityId;
         Action = action;
