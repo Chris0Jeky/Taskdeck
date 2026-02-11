@@ -47,6 +47,7 @@ function isOverdue(dateString: string | null): boolean {
 <template>
   <div
     draggable="true"
+    :data-card-id="card.id"
     :class="[
       'rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-move border-2',
       isSelected ? 'border-blue-600 ring-4 ring-blue-300 shadow-xl bg-blue-50 scale-105' : 'bg-white border-gray-200',
