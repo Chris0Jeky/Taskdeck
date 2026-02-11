@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Api.Tests;
@@ -29,6 +30,11 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
+            services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
+            services.RemoveAll<TaskdeckDbContext>();
+            services.AddDbContext<TaskdeckDbContext>(options =>
+                options.UseSqlite($"Data Source={_dbPath}"));
+
             using var scope = services.BuildServiceProvider().CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             dbContext.Database.EnsureDeleted();
@@ -45,9 +51,16 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             return;
         }
 
-        if (File.Exists(_dbPath))
+        try
         {
-            File.Delete(_dbPath);
+            if (File.Exists(_dbPath))
+            {
+                File.Delete(_dbPath);
+            }
+        }
+        catch (IOException)
+        {
+            // Cleanup failure should not fail test teardown.
         }
     }
 }
