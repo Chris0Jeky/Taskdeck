@@ -8,6 +8,7 @@ Authoritative Scope: Current implementation, verified test execution, and active
 
 Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 frontend.
 Current implementation supports boards, columns, cards, labels, WIP rules, filters, keyboard workflows, drag/drop, toasts, and automation-oriented CLI output.
+Recent scaffolding for multi-user/export-import/history/LLM queue is present as a parallel foundation, not yet promoted to the primary runtime track.
 
 ## Current Implementation Snapshot
 
@@ -21,11 +22,16 @@ Current implementation supports boards, columns, cards, labels, WIP rules, filte
   - application/service unit tests
   - API integration tests (`Taskdeck.Api.Tests`)
   - CLI contract tests (`Taskdeck.Cli.Tests`)
-- CLI track (`backend/src/Taskdeck.Cli`) now includes:
+- CLI track (`backend/src/Taskdeck.Cli`) includes:
   - `boards list|create|update`
   - `columns list|create`
   - `cards add|move|list`
   - `--json` mode (camelCase output) for automation callers
+- Parallel scaffolding delivered (not active runtime behavior yet):
+  - domain entities: `User`, `BoardAccess`, `AuditLog`, `LlmRequest`
+  - board ownership field: `Board.OwnerId`
+  - repository/service contracts for permissions, export/import, history, queue
+  - infrastructure repositories and migration: `20260211082334_AddUserPermissionsAuditQueue`
 
 ### Frontend
 
@@ -39,7 +45,7 @@ Current implementation supports boards, columns, cards, labels, WIP rules, filte
   - card and column drag-and-drop
   - toast notifications
   - consistent `Escape` handling across modals and inline card forms
-- E2E smoke suite now includes:
+- E2E smoke suite includes:
   - board-column-card happy flow
   - filter panel toggle
   - WIP rejection flow
@@ -63,11 +69,17 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
    - CLI JSON output foundation
    - CI quality gates for backend unit, API integration, frontend unit, and E2E smoke
    - broader negative-path integration coverage
-   Pending:
+   - side-track scaffolding for multi-user/export-import/history/LLM queue
+   Pending (primary track):
+   - CI drift monitoring and reliability follow-through
+   - CLI parity and JSON contract hardening
    - time tracking
    - analytics dashboard
    - recurring tasks
-   - optional sync/multi-user tracks
+   Pending (side-track activation):
+   - authentication/authorization implementation and enforcement
+   - export/import behavior implementation
+   - queue processing and audit/history runtime integration
 
 ## Test Status (Reconciled and Verified)
 
@@ -80,9 +92,9 @@ Commands:
 - `dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj`
 
 Result:
-- Domain: 42/42 passing
+- Domain: 68/68 passing
 - Application: 87/87 passing
-- Backend Unit Total: 129/129 passing
+- Backend Unit Total: 155/155 passing
 
 ### Backend Integration + CLI Contracts (Executed)
 
@@ -115,7 +127,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 287/287 passing
+- Combined automated total: 313/313 passing
 
 ## CI Status
 
@@ -140,15 +152,21 @@ Planned end goal is an AI-agent-compatible board with safe tool-driven automatio
 - Board should provide diff-like previews for proposed mutations.
 - Security and fallback controls are required before autonomous execution modes.
 
+Current state:
+- proposal/approval/diff safety model remains primary design objective.
+- queue/audit scaffolding exists but is not yet wired into active automation flows.
+
 ## Known Gaps and Risks
 
 - CI first-run monitoring is partially blocked locally (`gh` CLI unavailable in this environment).
 - E2E remains smoke-level; deeper regression/performance paths still need coverage.
 - Agent-compatible safety model (proposal queue, approvals, audit trail, rollback) is still design-stage.
+- Scaffolding track is not yet enforced in runtime behavior and should not be treated as shipped feature behavior.
 
 ## Canonical Documentation Policy
 
 - This file is the single source of truth for status and test numbers.
 - `docs/IMPLEMENTATION_MASTERPLAN.md` is the single source for forward execution planning.
 - `docs/MANUAL_TEST_CHECKLIST.md` is the canonical manual verification script.
+- Deep-dive support docs (permissions, export/import, queue, scaffolding summary) are informational and must not override this file or the masterplan.
 - Historical session and superseded planning notes live under `docs/archive/`.

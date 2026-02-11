@@ -14,6 +14,10 @@ public class TaskdeckDbContext : DbContext
     public DbSet<Card> Cards => Set<Card>();
     public DbSet<Label> Labels => Set<Label>();
     public DbSet<CardLabel> CardLabels => Set<CardLabel>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<BoardAccess> BoardAccesses => Set<BoardAccess>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<LlmRequest> LlmRequests => Set<LlmRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

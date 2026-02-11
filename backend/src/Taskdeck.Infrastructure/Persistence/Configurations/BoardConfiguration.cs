@@ -25,11 +25,18 @@ public class BoardConfiguration : IEntityTypeConfiguration<Board>
         builder.Property(b => b.IsArchived)
             .IsRequired();
 
+        builder.Property(b => b.OwnerId);
+
         builder.Property(b => b.CreatedAt)
             .IsRequired();
 
         builder.Property(b => b.UpdatedAt)
             .IsRequired();
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(b => b.OwnerId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasMany(b => b.Columns)
             .WithOne(c => c.Board)
@@ -45,5 +52,13 @@ public class BoardConfiguration : IEntityTypeConfiguration<Board>
             .WithOne(l => l.Board)
             .HasForeignKey(l => l.BoardId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(b => b.BoardAccesses)
+            .WithOne(ba => ba.Board)
+            .HasForeignKey(ba => ba.BoardId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Index on OwnerId for efficient ownership queries
+        builder.HasIndex(b => b.OwnerId);
     }
 }
