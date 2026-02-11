@@ -14,19 +14,31 @@ public class UnitOfWork : IUnitOfWork
         IBoardRepository boards,
         IColumnRepository columns,
         ICardRepository cards,
-        ILabelRepository labels)
+        ILabelRepository labels,
+        IUserRepository users,
+        IBoardAccessRepository boardAccesses,
+        IAuditLogRepository auditLogs,
+        ILlmQueueRepository llmQueue)
     {
         _context = context;
         Boards = boards;
         Columns = columns;
         Cards = cards;
         Labels = labels;
+        Users = users;
+        BoardAccesses = boardAccesses;
+        AuditLogs = auditLogs;
+        LlmQueue = llmQueue;
     }
 
     public IBoardRepository Boards { get; }
     public IColumnRepository Columns { get; }
     public ICardRepository Cards { get; }
     public ILabelRepository Labels { get; }
+    public IUserRepository Users { get; }
+    public IBoardAccessRepository BoardAccesses { get; }
+    public IAuditLogRepository AuditLogs { get; }
+    public ILlmQueueRepository LlmQueue { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
