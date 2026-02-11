@@ -369,6 +369,14 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Board", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.BoardAccess", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.Board", "Board")
