@@ -88,17 +88,17 @@ See `docs/TESTING_GUIDE.md` for full details and troubleshooting.
 
 As of 2026-02-11:
 
-- Backend tests: 134/134 passing
+- Backend tests: 146/146 passing
 - Frontend unit tests: 111/111 passing
-- Frontend E2E smoke tests: 2/2 passing
-- Total automated: 247/247 passing
+- Frontend E2E smoke tests: 5/5 passing
+- Total automated: 262/262 passing
 
 Phase progress (original roadmap aligned):
 
 1. Phase 1 (Core Data Model and API): 100%
 2. Phase 2 (Basic Web UI): 100%
 3. Phase 3 (UX Improvements): 100%
-4. Phase 4 (Advanced Features): 40%
+4. Phase 4 (Advanced Features): 50%
 
 ## CLI (Phase 4 Bootstrap)
 
@@ -107,6 +107,9 @@ Initial CLI commands are available in `backend/src/Taskdeck.Cli`.
 ```bash
 dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj help
 dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj boards list
+dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj boards update --board <id> --name "Renamed Board"
+dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj columns create --board <id> --name "In Progress" --wip 3
+dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj cards list --board <id>
 ```
 
 ## Documentation
