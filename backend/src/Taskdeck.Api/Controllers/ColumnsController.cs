@@ -45,7 +45,7 @@ public class ColumnsController : ControllerBase
     [HttpPatch("{columnId}")]
     public async Task<IActionResult> UpdateColumn(Guid boardId, Guid columnId, [FromBody] UpdateColumnDto dto)
     {
-        var result = await _columnService.UpdateColumnAsync(columnId, dto);
+        var result = await _columnService.UpdateColumnAsync(boardId, columnId, dto);
 
         if (!result.IsSuccess)
         {
@@ -63,7 +63,7 @@ public class ColumnsController : ControllerBase
     [HttpDelete("{columnId}")]
     public async Task<IActionResult> DeleteColumn(Guid boardId, Guid columnId)
     {
-        var result = await _columnService.DeleteColumnAsync(columnId);
+        var result = await _columnService.DeleteColumnAsync(boardId, columnId);
 
         if (!result.IsSuccess)
         {
