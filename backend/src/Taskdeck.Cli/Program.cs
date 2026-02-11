@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure;
@@ -11,6 +12,7 @@ using Taskdeck.Infrastructure.Persistence;
 const int ExitSuccess = 0;
 const int ExitFailure = 1;
 const int ExitUsage = 2;
+var jsonOptions = new JsonSerializerOptions { WriteIndented = false };
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
@@ -83,7 +85,20 @@ static async Task<int> HandleBoardsAsync(BoardService boardService, string comma
             var boards = result.Value.ToList();
             if (boards.Count == 0)
             {
-                Console.WriteLine("No boards found.");
+                if (HasFlag(args, "--json"))
+                {
+                    WriteJson(Array.Empty<BoardDto>(), jsonOptions);
+                }
+                else
+                {
+                    Console.WriteLine("No boards found.");
+                }
+                return ExitSuccess;
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(boards, jsonOptions);
                 return ExitSuccess;
             }
 
@@ -114,7 +129,14 @@ static async Task<int> HandleBoardsAsync(BoardService boardService, string comma
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            Console.WriteLine($"Created board: {result.Value.Id} | {result.Value.Name}");
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(result.Value, jsonOptions);
+            }
+            else
+            {
+                Console.WriteLine($"Created board: {result.Value.Id} | {result.Value.Name}");
+            }
             return ExitSuccess;
         }
         case "update":
@@ -154,8 +176,15 @@ static async Task<int> HandleBoardsAsync(BoardService boardService, string comma
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            var archivedMarker = result.Value.IsArchived ? "archived" : "active";
-            Console.WriteLine($"Updated board: {result.Value.Id} | {result.Value.Name} | {archivedMarker}");
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(result.Value, jsonOptions);
+            }
+            else
+            {
+                var archivedMarker = result.Value.IsArchived ? "archived" : "active";
+                Console.WriteLine($"Updated board: {result.Value.Id} | {result.Value.Name} | {archivedMarker}");
+            }
             return ExitSuccess;
         }
         default:
@@ -188,7 +217,20 @@ static async Task<int> HandleColumnsAsync(ColumnService columnService, string co
             var columns = result.Value.ToList();
             if (columns.Count == 0)
             {
-                Console.WriteLine("No columns found.");
+                if (HasFlag(args, "--json"))
+                {
+                    WriteJson(Array.Empty<ColumnDto>(), jsonOptions);
+                }
+                else
+                {
+                    Console.WriteLine("No columns found.");
+                }
+                return ExitSuccess;
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(columns, jsonOptions);
                 return ExitSuccess;
             }
 
@@ -254,8 +296,15 @@ static async Task<int> HandleColumnsAsync(ColumnService columnService, string co
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            var wip = result.Value.WipLimit.HasValue ? result.Value.WipLimit.Value.ToString() : "none";
-            Console.WriteLine($"Created column: {result.Value.Id} | {result.Value.Name} | pos={result.Value.Position} | wip={wip}");
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(result.Value, jsonOptions);
+            }
+            else
+            {
+                var wip = result.Value.WipLimit.HasValue ? result.Value.WipLimit.Value.ToString() : "none";
+                Console.WriteLine($"Created column: {result.Value.Id} | {result.Value.Name} | pos={result.Value.Position} | wip={wip}");
+            }
             return ExitSuccess;
         }
         default:
@@ -311,7 +360,14 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            Console.WriteLine($"Created card: {result.Value.Id} | {result.Value.Title}");
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(result.Value, jsonOptions);
+            }
+            else
+            {
+                Console.WriteLine($"Created card: {result.Value.Id} | {result.Value.Title}");
+            }
             return ExitSuccess;
         }
         case "move":
@@ -347,7 +403,14 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            Console.WriteLine($"Moved card: {result.Value.Id} -> column {result.Value.ColumnId} @ position {result.Value.Position}");
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(result.Value, jsonOptions);
+            }
+            else
+            {
+                Console.WriteLine($"Moved card: {result.Value.Id} -> column {result.Value.ColumnId} @ position {result.Value.Position}");
+            }
             return ExitSuccess;
         }
         case "list":
@@ -403,7 +466,20 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
 
             if (cards.Count == 0)
             {
-                Console.WriteLine("No cards found.");
+                if (HasFlag(args, "--json"))
+                {
+                    WriteJson(Array.Empty<CardDto>(), jsonOptions);
+                }
+                else
+                {
+                    Console.WriteLine("No cards found.");
+                }
+                return ExitSuccess;
+            }
+
+            if (HasFlag(args, "--json"))
+            {
+                WriteJson(cards, jsonOptions);
                 return ExitSuccess;
             }
 
@@ -495,4 +571,9 @@ static void PrintHelp()
           1 command failed
           2 usage error
         """);
+}
+
+static void WriteJson<T>(T value, JsonSerializerOptions options)
+{
+    Console.WriteLine(JsonSerializer.Serialize(value, options));
 }
