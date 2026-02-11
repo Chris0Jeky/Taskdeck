@@ -50,6 +50,36 @@ public class LlmRequestTests
     }
 
     [Fact]
+    public void MarkAsCompleted_ShouldThrow_WhenRequestIsNotProcessing()
+    {
+        // Arrange
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+
+        // Act
+        var act = () => request.MarkAsCompleted();
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Can only complete requests that are processing")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void MarkAsCompleted_ShouldSetCompletedState_WhenProcessing()
+    {
+        // Arrange
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+
+        // Act
+        request.MarkAsCompleted();
+
+        // Assert
+        request.Status.Should().Be(RequestStatus.Completed);
+        request.ProcessedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public void ResetForRetry_ShouldSetRequestBackToPending()
     {
         // Arrange
@@ -78,6 +108,56 @@ public class LlmRequestTests
         // Assert
         act.Should().Throw<DomainException>()
             .WithMessage("Cannot cancel request that is currently processing")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void MarkAsProcessing_ShouldThrow_WhenAlreadyProcessing()
+    {
+        // Arrange
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+
+        // Act
+        var act = () => request.MarkAsProcessing();
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Request is already processing")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Cancel_ShouldThrow_WhenRequestIsCompleted()
+    {
+        // Arrange
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+        request.MarkAsCompleted();
+
+        // Act
+        var act = () => request.Cancel();
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot cancel request that is already completed")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void MarkAsFailed_ShouldThrow_WhenRequestIsCompleted()
+    {
+        // Arrange
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+        request.MarkAsCompleted();
+
+        // Act
+        var act = () => request.MarkAsFailed("error");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot fail request in Completed status")
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
     }
 }
