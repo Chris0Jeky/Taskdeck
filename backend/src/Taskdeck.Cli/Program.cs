@@ -75,11 +75,16 @@ async Task<int> RunAsync(IServiceProvider rootServices, string[] args)
 
 async Task<int> HandleBoardsAsync(BoardService boardService, string command, string[] args)
 {
+    var outputJson = HasFlag(args, "--json");
+    var normalizedArgs = args
+        .Where(arg => !string.Equals(arg, "--json", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
     switch (command)
     {
         case "list":
         {
-            var includeArchived = HasFlag(args, "--include-archived");
+            var includeArchived = HasFlag(normalizedArgs, "--include-archived");
             var result = await boardService.ListBoardsAsync(includeArchived: includeArchived);
             if (!result.IsSuccess)
             {
@@ -89,7 +94,7 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
             var boards = result.Value.ToList();
             if (boards.Count == 0)
             {
-                if (HasFlag(args, "--json"))
+                if (outputJson)
                 {
                     WriteJson(Array.Empty<BoardDto>(), jsonOptions);
                 }
@@ -100,7 +105,7 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
                 return ExitSuccess;
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(boards, jsonOptions);
                 return ExitSuccess;
@@ -117,15 +122,15 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
         }
         case "create":
         {
-            if (args.Length < 1)
+            if (normalizedArgs.Length < 1)
             {
                 return PrintUsageError(
                     "Missing board name.",
                     "taskdeck boards create <name> [description]");
             }
 
-            var name = args[0];
-            var description = args.Length > 1 ? string.Join(' ', args.Skip(1)) : null;
+            var name = normalizedArgs[0];
+            var description = normalizedArgs.Length > 1 ? string.Join(' ', normalizedArgs.Skip(1)) : null;
             var result = await boardService.CreateBoardAsync(new CreateBoardDto(name, description));
 
             if (!result.IsSuccess)
@@ -133,7 +138,7 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(result.Value, jsonOptions);
             }
@@ -145,7 +150,7 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
         }
         case "update":
         {
-            var boardIdText = GetOption(args, "--board");
+            var boardIdText = GetOption(normalizedArgs, "--board");
             if (!TryParseGuid(boardIdText, out var boardId))
             {
                 return PrintUsageError(
@@ -153,10 +158,10 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
                     "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
             }
 
-            var name = GetOption(args, "--name");
-            var description = GetOption(args, "--description");
-            var archiveFlag = HasFlag(args, "--archive");
-            var unarchiveFlag = HasFlag(args, "--unarchive");
+            var name = GetOption(normalizedArgs, "--name");
+            var description = GetOption(normalizedArgs, "--description");
+            var archiveFlag = HasFlag(normalizedArgs, "--archive");
+            var unarchiveFlag = HasFlag(normalizedArgs, "--unarchive");
 
             if (archiveFlag && unarchiveFlag)
             {
@@ -180,7 +185,7 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(result.Value, jsonOptions);
             }
@@ -200,11 +205,16 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
 
 async Task<int> HandleColumnsAsync(ColumnService columnService, string command, string[] args)
 {
+    var outputJson = HasFlag(args, "--json");
+    var normalizedArgs = args
+        .Where(arg => !string.Equals(arg, "--json", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
     switch (command)
     {
         case "list":
         {
-            var boardIdText = GetOption(args, "--board");
+            var boardIdText = GetOption(normalizedArgs, "--board");
             if (!TryParseGuid(boardIdText, out var boardId))
             {
                 return PrintUsageError(
@@ -221,7 +231,7 @@ async Task<int> HandleColumnsAsync(ColumnService columnService, string command, 
             var columns = result.Value.ToList();
             if (columns.Count == 0)
             {
-                if (HasFlag(args, "--json"))
+                if (outputJson)
                 {
                     WriteJson(Array.Empty<ColumnDto>(), jsonOptions);
                 }
@@ -232,7 +242,7 @@ async Task<int> HandleColumnsAsync(ColumnService columnService, string command, 
                 return ExitSuccess;
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(columns, jsonOptions);
                 return ExitSuccess;
@@ -249,10 +259,10 @@ async Task<int> HandleColumnsAsync(ColumnService columnService, string command, 
         }
         case "create":
         {
-            var boardIdText = GetOption(args, "--board");
-            var name = GetOption(args, "--name");
-            var positionText = GetOption(args, "--position");
-            var wipText = GetOption(args, "--wip");
+            var boardIdText = GetOption(normalizedArgs, "--board");
+            var name = GetOption(normalizedArgs, "--name");
+            var positionText = GetOption(normalizedArgs, "--position");
+            var wipText = GetOption(normalizedArgs, "--wip");
 
             if (!TryParseGuid(boardIdText, out var boardId))
             {
@@ -300,7 +310,7 @@ async Task<int> HandleColumnsAsync(ColumnService columnService, string command, 
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(result.Value, jsonOptions);
             }
@@ -320,14 +330,19 @@ async Task<int> HandleColumnsAsync(ColumnService columnService, string command, 
 
 async Task<int> HandleCardsAsync(CardService cardService, string command, string[] args)
 {
+    var outputJson = HasFlag(args, "--json");
+    var normalizedArgs = args
+        .Where(arg => !string.Equals(arg, "--json", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
     switch (command)
     {
         case "add":
         {
-            var boardIdText = GetOption(args, "--board");
-            var columnIdText = GetOption(args, "--column");
-            var title = GetOption(args, "--title");
-            var description = GetOption(args, "--description");
+            var boardIdText = GetOption(normalizedArgs, "--board");
+            var columnIdText = GetOption(normalizedArgs, "--column");
+            var title = GetOption(normalizedArgs, "--title");
+            var description = GetOption(normalizedArgs, "--description");
 
             if (!TryParseGuid(boardIdText, out var boardId))
             {
@@ -364,7 +379,7 @@ async Task<int> HandleCardsAsync(CardService cardService, string command, string
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(result.Value, jsonOptions);
             }
@@ -376,9 +391,9 @@ async Task<int> HandleCardsAsync(CardService cardService, string command, string
         }
         case "move":
         {
-            var cardIdText = GetOption(args, "--card");
-            var targetColumnIdText = GetOption(args, "--target-column");
-            var positionText = GetOption(args, "--position") ?? "0";
+            var cardIdText = GetOption(normalizedArgs, "--card");
+            var targetColumnIdText = GetOption(normalizedArgs, "--target-column");
+            var positionText = GetOption(normalizedArgs, "--position") ?? "0";
 
             if (!TryParseGuid(cardIdText, out var cardId))
             {
@@ -407,7 +422,7 @@ async Task<int> HandleCardsAsync(CardService cardService, string command, string
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(result.Value, jsonOptions);
             }
@@ -419,10 +434,10 @@ async Task<int> HandleCardsAsync(CardService cardService, string command, string
         }
         case "list":
         {
-            var boardIdText = GetOption(args, "--board");
-            var search = GetOption(args, "--search");
-            var columnIdText = GetOption(args, "--column");
-            var labelIdText = GetOption(args, "--label");
+            var boardIdText = GetOption(normalizedArgs, "--board");
+            var search = GetOption(normalizedArgs, "--search");
+            var columnIdText = GetOption(normalizedArgs, "--column");
+            var labelIdText = GetOption(normalizedArgs, "--label");
 
             if (!TryParseGuid(boardIdText, out var boardId))
             {
@@ -470,7 +485,7 @@ async Task<int> HandleCardsAsync(CardService cardService, string command, string
 
             if (cards.Count == 0)
             {
-                if (HasFlag(args, "--json"))
+                if (outputJson)
                 {
                     WriteJson(Array.Empty<CardDto>(), jsonOptions);
                 }
@@ -481,7 +496,7 @@ async Task<int> HandleCardsAsync(CardService cardService, string command, string
                 return ExitSuccess;
             }
 
-            if (HasFlag(args, "--json"))
+            if (outputJson)
             {
                 WriteJson(cards, jsonOptions);
                 return ExitSuccess;
