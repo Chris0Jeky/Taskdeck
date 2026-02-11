@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Card, Label } from '../../types/board'
 
 const props = defineProps<{
@@ -94,6 +95,8 @@ function handleClose() {
 function clearDueDate() {
   dueDate.value = ''
 }
+
+useEscapeToClose(() => props.isOpen, handleClose)
 </script>
 
 <template>
