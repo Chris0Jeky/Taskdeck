@@ -7,7 +7,7 @@ Authoritative Scope: Current implementation, verified test execution, and active
 ## Project Summary
 
 Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 frontend.
-Current implementation supports boards, columns, cards, labels, WIP rules, filters, keyboard workflows, drag/drop, toasts, and automation-oriented CLI output.
+The current cycle added backend scaffolding for multi-user permissions, export/import, audit history, and LLM request queuing.
 
 ## Current Implementation Snapshot
 
@@ -16,12 +16,14 @@ Current implementation supports boards, columns, cards, labels, WIP rules, filte
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - API: REST controllers for boards, columns, cards, and labels
 - Persistence: EF Core + SQLite
-- Test layers:
-  - domain unit tests
-  - application/service unit tests
-  - API integration tests (`Taskdeck.Api.Tests`)
-  - CLI contract tests (`Taskdeck.Cli.Tests`)
-- CLI track (`backend/src/Taskdeck.Cli`) now includes:
+- Multi-user and automation scaffolding delivered:
+  - domain entities: `User`, `BoardAccess`, `AuditLog`, `LlmRequest`
+  - board ownership field: `Board.OwnerId`
+  - new enums: `UserRole`, `AuditAction`, `RequestStatus`
+  - repository contracts and implementations for users/access/history/queue
+  - service contracts for authentication, authorization, export/import, history, and LLM queue
+  - database migration: `20260211082334_AddUserPermissionsAuditQueue`
+- CLI track (`backend/src/Taskdeck.Cli`) includes:
   - `boards list|create|update`
   - `columns list|create`
   - `cards add|move|list`
@@ -39,7 +41,7 @@ Current implementation supports boards, columns, cards, labels, WIP rules, filte
   - card and column drag-and-drop
   - toast notifications
   - consistent `Escape` handling across modals and inline card forms
-- E2E smoke suite now includes:
+- E2E smoke suite includes:
   - board-column-card happy flow
   - filter panel toggle
   - WIP rejection flow
@@ -56,18 +58,19 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
 1. Phase 1 - Core Data Model and API: COMPLETE (100%)
 2. Phase 2 - Basic Web UI: COMPLETE (100%)
 3. Phase 3 - UX Improvements: COMPLETE (100%)
-4. Phase 4 - Advanced Features: IN PROGRESS (60%)
+4. Phase 4 - Advanced Features: IN PROGRESS (68%)
    Completed:
    - card and column drag/drop
-   - CLI primary track expansion
-   - CLI JSON output foundation
+   - CLI primary track expansion and JSON output foundation
    - CI quality gates for backend unit, API integration, frontend unit, and E2E smoke
    - broader negative-path integration coverage
+   - multi-user/export-import/history/LLM queue backend scaffolding (contracts + migration)
    Pending:
-   - time tracking
-   - analytics dashboard
-   - recurring tasks
-   - optional sync/multi-user tracks
+   - authentication and authorization enforcement
+   - export/import service implementations and endpoints
+   - audit/history service implementation and API exposure
+   - LLM queue processing service + worker integration
+   - time tracking, analytics dashboard, recurring tasks
 
 ## Test Status (Reconciled and Verified)
 
@@ -80,9 +83,9 @@ Commands:
 - `dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj`
 
 Result:
-- Domain: 42/42 passing
+- Domain: 62/62 passing
 - Application: 87/87 passing
-- Backend Unit Total: 129/129 passing
+- Backend Unit Total: 149/149 passing
 
 ### Backend Integration + CLI Contracts (Executed)
 
@@ -115,7 +118,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 287/287 passing
+- Combined automated total: 307/307 passing
 
 ## CI Status
 
@@ -140,15 +143,21 @@ Planned end goal is an AI-agent-compatible board with safe tool-driven automatio
 - Board should provide diff-like previews for proposed mutations.
 - Security and fallback controls are required before autonomous execution modes.
 
+Current state of this track:
+- foundational queue and audit entities/contracts are in place
+- implementation of processing, approvals, and rollback behavior is still pending
+
 ## Known Gaps and Risks
 
+- New multi-user/export/import/history/queue work is scaffold-only and not yet wired into API endpoints.
+- Permission enforcement is not yet active in existing board/column/card/label workflows.
+- Queue and history tables exist, but no background processor or audit interceptor is implemented yet.
 - CI first-run monitoring is partially blocked locally (`gh` CLI unavailable in this environment).
-- E2E remains smoke-level; deeper regression/performance paths still need coverage.
-- Agent-compatible safety model (proposal queue, approvals, audit trail, rollback) is still design-stage.
 
 ## Canonical Documentation Policy
 
 - This file is the single source of truth for status and test numbers.
 - `docs/IMPLEMENTATION_MASTERPLAN.md` is the single source for forward execution planning.
 - `docs/MANUAL_TEST_CHECKLIST.md` is the canonical manual verification script.
+- Deep-dive support docs (permissions, export/import, queue) are informational and must not override this file or the masterplan.
 - Historical session and superseded planning notes live under `docs/archive/`.
