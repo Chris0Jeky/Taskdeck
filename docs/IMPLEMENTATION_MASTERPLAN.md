@@ -6,113 +6,143 @@ Companion Status Doc: `docs/STATUS.md`
 
 ## Purpose
 
-This is the active execution guide for implementation sequencing.
-It should be updated at the end of each meaningful implementation cycle.
+This is the active execution guide for sequencing implementation.
+Update this file at the end of each meaningful delivery cycle.
 
 ## Planning Principles
 
-- Keep `docs/STATUS.md` authoritative for reality and test numbers.
-- Ship only with tests for changed behavior.
-- Grow Phase 4 in one primary track at a time.
+- `docs/STATUS.md` is authoritative for current reality and test totals.
+- Every behavior change ships with tests.
 - Keep CI gates aligned with local commands.
+- Prioritize one primary Phase 4 track at a time to avoid scope sprawl.
+- Build stable interfaces that can later be safely used by an LLM agent.
 
-## Current Sprint Outcome (Completed)
+## Current Cycle Outcome (Completed)
 
-All requested items were implemented:
+Delivered in this cycle:
 
-1. Keyboard shortcut TODO handlers finished in `frontend/taskdeck-web/src/views/BoardView.vue`.
-2. Backend API integration tests added in `backend/tests/Taskdeck.Api.Tests`.
-3. Playwright E2E smoke tests added in `frontend/taskdeck-web/tests/e2e/smoke.spec.ts`.
-4. CI gates added in `.github/workflows/ci.yml` for backend, frontend, and E2E smoke.
-5. Phase 4 CLI track started via `backend/src/Taskdeck.Cli`.
-
-## Roadmap by Horizon
-
-### Horizon A (Week 1 to 2): Consolidate New Quality Gates
-
-- Validate first CI runs and fix cross-platform failures quickly.
-- Expand API integration test suite beyond current smoke/business-rule baseline.
-- Expand E2E smoke suite to include:
-  - card move between columns
-  - WIP-limit rejection path
-  - board settings update/delete flow
-
-Exit Criteria:
-- CI stable on main.
-- API integration tests cover core CRUD + error paths.
-- E2E smoke includes at least 5 stable, critical flows.
-
-### Horizon B (Week 3 to 6): Deepen Reliability and Coverage
-
-- Add coverage artifacts and optional thresholds in CI.
-- Harden flaky areas (test data isolation, deterministic dates, retry strategy).
-- Address dependency/tooling warnings (e.g., baseline browser mapping freshness).
-
-Exit Criteria:
-- repeatable local and CI runs with low flake rate
-- clear quality dashboard of unit/integration/E2E status
-
-### Horizon C (Week 7 to 12): Phase 4 Feature Delivery
-
-Primary Track (already started): CLI
-
-- Expand CLI commands:
-  - boards update/delete/archive
-  - columns create/update/delete/reorder
-  - cards list/update/delete/search
-  - labels list/create/update/delete
-- Improve CLI UX:
-  - consistent output formatting
-  - clear error messages and exit codes
-  - help for each subcommand
-
-Secondary Track (after CLI milestone): time tracking
-
-Exit Criteria:
-- CLI provides end-to-end utility for daily task operations.
-- CLI behavior is covered by focused unit/integration tests.
-
-## Active Backlog (Prioritized)
-
-1. P0: Expand API integration tests for full controller surface and error mapping.
-2. P0: Expand Playwright smoke tests to cover drag-and-drop and WIP-limit failure.
-3. P0: Verify and stabilize CI on first runs; fix platform/environment drift.
-4. P1: CLI command surface expansion and structured output.
-5. P1: baseline-browser-mapping warning cleanup.
-6. P2: Start time-tracking design spike after CLI milestone.
-
-## Next Best Steps (Updated)
-
-1. Add at least 3 new API integration tests:
-   - labels CRUD happy path
-   - card update/delete paths
-   - not-found and validation error response mapping
-2. Add at least 3 new E2E tests:
-   - move card between columns
-   - WIP limit enforcement message
-   - board settings rename/archive flow
-3. Add first CLI follow-up commands:
+1. API integration suite expanded across happy/error paths for boards, columns, cards, and labels.
+2. E2E smoke suite expanded from 2 to 5 tests:
+   - WIP rejection
+   - card move flow
+   - board settings lifecycle
+3. CLI expanded:
    - `boards update`
    - `columns create`
    - `cards list`
-4. Run CI workflow after merge and close any platform-specific failures.
+   - improved usage/error handling and exit code semantics
+4. CI gate split and hardening completed:
+   - backend unit
+   - API integration
+   - frontend unit
+   - E2E smoke
+   - Ubuntu/Windows matrix for non-E2E gates
+
+## Roadmap by Horizon
+
+### Horizon A (Week 1 to 2): Stabilize and Close Test Coverage Gaps
+
+- Add remaining API integration negative paths (cross-resource not-found, validation edge cases, conflict variants).
+- Expand E2E from smoke to reliability checks for drag/drop ordering and modal validation states.
+- Add dedicated tests for CLI command parsing and behavior contracts.
+- Monitor first CI matrix runs and close platform-specific drift quickly.
+
+Exit Criteria:
+- CI matrix consistently green.
+- API integration + E2E suites cover key regressions and primary failures.
+- CLI changes are test-backed.
+
+### Horizon B (Week 3 to 6): Complete CLI Primary Track
+
+- Expand CLI command surface toward full board operations:
+  - boards: archive/unarchive ergonomics, optional delete path handling
+  - columns: update/delete/reorder
+  - cards: update/delete/search refinements
+  - labels: list/create/update/delete
+- Add structured output mode (`--json`) to support machine automation.
+- Improve CLI UX:
+  - consistent formatting
+  - explicit error categorization
+  - deterministic exit behavior
+
+Exit Criteria:
+- CLI can perform end-to-end daily task operations.
+- CLI supports both human-readable and automation-friendly output.
+
+### Horizon C (Week 7 to 12): Agent-Compatible Automation Foundation
+
+Target end state:
+- Local LLM agent can act on the board through tool calls driven by text and voice transcript inputs.
+
+Required foundation work:
+1. Action Proposal Layer
+   - agent proposes operations, does not auto-apply by default.
+   - operations represented as explicit, typed mutation intents.
+2. Review and Approval UX
+   - pending action queue in UI.
+   - user can accept, edit, or reject proposed mutations.
+3. Diff Visibility
+   - show before/after snapshots for board, column, and card mutations.
+   - expose concise audit entries for what changed and why.
+4. Security and Fallback
+   - policy gates for destructive actions.
+   - scoped permissions for tool calls.
+   - rollback or compensating action path for failed/undesired mutations.
+5. Interface Contract
+   - stable API and CLI command contracts suitable for automated callers.
+   - idempotency and conflict handling defined for repeated agent actions.
+
+Exit Criteria:
+- Agent action flow is safe-by-default and reviewable.
+- Mutation diffs and audit trail exist for all agent-originated changes.
+- Core operations are consumable through automation-compatible interfaces.
+
+## Active Backlog (Prioritized)
+
+1. P0: Add API integration tests for remaining edge/error mappings.
+2. P0: Add 3 to 5 additional E2E tests for highest-risk board interactions.
+3. P0: Add CLI automated tests and start `--json` output mode.
+4. P1: Finish core CLI command parity for columns/cards/labels.
+5. P1: Define action proposal schema for future LLM tool-calling integration.
+6. P1: Draft approval/diff UX spec for agent-proposed changes.
+7. P2: Start time-tracking design spike after CLI milestone lock.
+
+## Next Best Steps (Updated)
+
+1. Add API integration tests for:
+   - `PATCH` not-found paths across cards/columns/labels where still missing
+   - validation edge cases (empty names, invalid positions, invalid colors)
+   - conflict mappings tied to constrained delete/move operations
+2. Add E2E tests for:
+   - intra-column reorder behavior
+   - board filter combinations + persistence expectations
+   - keyboard-only card open/create flow regression checks
+3. Add CLI contract tests and implement `--json` for:
+   - `boards list`
+   - `cards list`
+4. Create an initial agent action proposal spec:
+   - operation envelope
+   - dry-run preview response
+   - approval token flow
 
 ## Weekly Cadence
 
 - Start of week:
-  - sync `docs/STATUS.md` with repo reality
-  - pick top 3 backlog items
+  - reconcile `docs/STATUS.md`
+  - select top 3 backlog items
 - During week:
-  - ship in vertical slices with tests
-  - avoid creating new top-level planning docs
+  - ship vertical slices with tests
+  - avoid creating extra top-level planning documents
 - End of week:
-  - update this file with completed work and next-best-step reorder
+  - update this file with completed items and reprioritized next steps
 
 ## Risk Register
 
-- Risk: CI instability after introducing multi-stack jobs
-  - Mitigation: keep test setup deterministic; isolate DB/test artifacts
-- Risk: Phase 4 scope sprawl
-  - Mitigation: finish CLI milestone before opening another major track
+- Risk: CI matrix instability or flaky browser tests
+  - Mitigation: deterministic test setup, pinned versions, and quick flake triage
+- Risk: CLI scope broadens before reliability hardening
+  - Mitigation: test-first additions and `--json` contract discipline
+- Risk: Unsafe autonomous agent operations
+  - Mitigation: proposal-first flow, explicit approvals, diff visibility, and rollback path
 - Risk: Documentation drift
-  - Mitigation: only `STATUS.md` and this file are authoritative
+  - Mitigation: keep only `STATUS.md` + this file authoritative
