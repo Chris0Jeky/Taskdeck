@@ -205,27 +205,60 @@ function selectPreviousColumn() {
 }
 
 function openSelectedCard() {
-  if (!selectedCardId.value) return
   const columns = sortedColumns.value
+  if (columns.length === 0) return
+
   const currentColumn = columns[selectedColumnIndex.value]
   if (!currentColumn) return
 
   const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
-  const card = cards.find(c => c.id === selectedCardId.value)
-  if (card) {
-    // TODO: Open card modal - will be implemented when integrating
-    console.log('Opening card:', card)
+  if (cards.length === 0) return
+
+  // If nothing is selected yet, default to first card in the selected column.
+  if (!selectedCardId.value) {
+    selectedCardId.value = cards[0]?.id || null
   }
+
+  const card = cards.find(c => c.id === selectedCardId.value)
+  if (!card) return
+
+  const cardElement = document.querySelector(
+    `[data-card-id="${card.id}"]`
+  ) as HTMLElement | null
+
+  if (!cardElement) return
+
+  cardElement.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  cardElement.click()
 }
 
 function createCardInSelectedColumn() {
   const columns = sortedColumns.value
   if (columns.length === 0) return
+
   const currentColumn = columns[selectedColumnIndex.value]
   if (!currentColumn) return
 
-  // TODO: Open create card form - will be implemented when integrating
-  console.log('Creating card in column:', currentColumn.name)
+  const columnElement = document.querySelector(
+    `[data-column-id="${currentColumn.id}"]`
+  ) as HTMLElement | null
+
+  if (!columnElement) return
+
+  const toggleButton = columnElement.querySelector(
+    '[data-action="toggle-add-card"]'
+  ) as HTMLButtonElement | null
+
+  if (!toggleButton) return
+
+  toggleButton.click()
+
+  window.setTimeout(() => {
+    const cardInput = columnElement.querySelector(
+      '[data-action="add-card-input"]'
+    ) as HTMLTextAreaElement | null
+    cardInput?.focus()
+  }, 0)
 }
 
 function toggleKeyboardHelp() {
