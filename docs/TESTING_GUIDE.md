@@ -1,67 +1,81 @@
-﻿# Testing Guide
+# Testing Guide
 
 This is the active testing guide for Taskdeck.
 
 ## Current Verified Totals (2026-02-11)
 
-- Backend: 129/129 passing
+- Backend: 134/134 passing
   - Domain: 42
   - Application: 87
-- Frontend: 111/111 passing
+  - API integration: 5
+- Frontend unit: 111/111 passing
   - Store: 34
   - Components: 77
-- Combined: 240/240 passing
+- Frontend E2E smoke: 2/2 passing
+- Combined automated total: 247/247 passing
 
 ## Backend
 
 Run all backend tests:
 
 ```bash
-cd backend
-dotnet test Taskdeck.sln
+dotnet test backend/Taskdeck.sln
 ```
 
 Run coverage:
 
 ```bash
-dotnet test Taskdeck.sln /p:CollectCoverage=true
+dotnet test backend/Taskdeck.sln /p:CollectCoverage=true
 ```
 
-## Frontend
-
-Run Vitest:
+## Frontend Unit (Vitest)
 
 ```bash
 cd frontend/taskdeck-web
-npm run test -- --run
+npx vitest run
 ```
 
-If aggregate execution hangs in your local environment, run per file:
-
-```bash
-npx vitest run src/tests/components/BoardSettingsModal.spec.ts --reporter=basic
-npx vitest run src/tests/components/CardModal.spec.ts --reporter=basic
-npx vitest run src/tests/components/ColumnEditModal.spec.ts --reporter=basic
-npx vitest run src/tests/components/FilterPanel.spec.ts --reporter=basic
-npx vitest run src/tests/components/LabelManagerModal.spec.ts --reporter=basic
-npx vitest run src/tests/store/boardStore.filtering.spec.ts --reporter=basic
-npx vitest run src/tests/store/boardStore.spec.ts --reporter=basic
-```
-
-List all discovered frontend tests:
+List discovered Vitest test cases:
 
 ```bash
 npx vitest list
 ```
 
-## Gaps to Close
+## Frontend E2E Smoke (Playwright)
 
-- API integration test project (`Taskdeck.Api.Tests`) not yet present
-- E2E automation (Playwright/Cypress) not yet present
+Install browser once:
+
+```bash
+cd frontend/taskdeck-web
+npx playwright install chromium
+```
+
+Run smoke tests:
+
+```bash
+cd frontend/taskdeck-web
+TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test
+```
+
+## CI Gates
+
+Workflow: `.github/workflows/ci.yml`
+
+- Backend unit + API integration:
+  - `dotnet test backend/Taskdeck.sln`
+- Frontend unit:
+  - `npx vitest run`
+- E2E smoke:
+  - `npx playwright test`
+
+## Current Gaps
+
+- API integration coverage is still minimal and should expand to more error and edge paths.
+- E2E tests are currently smoke-level and should grow to cover high-risk flows (WIP, drag/drop, settings lifecycle).
 
 ## Test Writing Conventions
 
-- Backend: xUnit + FluentAssertions + AAA pattern
-- Frontend: Vitest + Vue Test Utils
-- Name tests for behavior, not implementation details
-- Cover both success and failure paths, especially WIP rules and validation
+- Backend: xUnit + FluentAssertions + AAA pattern.
+- Frontend unit: Vitest + Vue Test Utils.
+- E2E: Playwright with deterministic selectors and resilient waits.
+- Cover both success and failure paths, especially WIP and validation rules.
