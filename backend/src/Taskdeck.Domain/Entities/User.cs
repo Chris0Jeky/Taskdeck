@@ -69,6 +69,9 @@ public class User : Entity
     public User(string username, string email, string passwordHash, UserRole defaultRole = UserRole.Editor)
         : base()
     {
+        if (!Enum.IsDefined(defaultRole))
+            throw new DomainException(ErrorCodes.ValidationError, "Default role value is invalid");
+
         Username = username;
         Email = email;
         PasswordHash = passwordHash;
@@ -98,6 +101,9 @@ public class User : Entity
 
     public void UpdateDefaultRole(UserRole role)
     {
+        if (!Enum.IsDefined(role))
+            throw new DomainException(ErrorCodes.ValidationError, "Default role value is invalid");
+
         DefaultRole = role;
         Touch();
     }

@@ -41,6 +41,9 @@ public class LlmRequest : Entity
         if (string.IsNullOrWhiteSpace(payload))
             throw new DomainException(ErrorCodes.ValidationError, "Payload cannot be empty");
 
+        if (boardId.HasValue && boardId.Value == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Board ID cannot be empty");
+
         UserId = userId;
         RequestType = requestType;
         Payload = payload;
