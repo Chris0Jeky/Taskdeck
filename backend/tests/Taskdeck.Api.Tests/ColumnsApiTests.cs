@@ -87,6 +87,72 @@ public class ColumnsApiTests : IClassFixture<TestWebApplicationFactory>
         errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
     }
 
+    [Fact]
+    public async Task UpdateColumn_ShouldReturnNotFound_WhenColumnBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "Other board column");
+
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/boards/{boardA.Id}/columns/{boardBColumn.Id}",
+            new UpdateColumnDto("Renamed", null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task UpdateColumn_ShouldReturnBadRequest_WhenWipLimitIsInvalid()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "To Do");
+
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/boards/{board.Id}/columns/{column.Id}",
+            new UpdateColumnDto(null, null, 0));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public async Task DeleteColumn_ShouldReturnNotFound_WhenColumnBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "Other board column");
+
+        var response = await _client.DeleteAsync($"/api/boards/{boardA.Id}/columns/{boardBColumn.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task ReorderColumns_ShouldReturnNotFound_WhenRequestContainsForeignColumn()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardAColumn = await CreateColumnAsync(boardA.Id, "A1");
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "B1");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardA.Id}/columns/reorder",
+            new ReorderColumnsDto(new List<Guid> { boardAColumn.Id, boardBColumn.Id }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         var response = await _client.PostAsJsonAsync(
