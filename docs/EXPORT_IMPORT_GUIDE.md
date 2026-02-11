@@ -1,6 +1,6 @@
 # Export/Import & Database Sharing Guide
 
-**Status:** Scaffolding Complete - Implementation Pending  
+**Status:** Scaffolding Complete - Implementation Pending
 **Last Updated:** 2026-02-11
 
 ## Overview
