@@ -7,6 +7,10 @@ using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 
+const int ExitSuccess = 0;
+const int ExitFailure = 1;
+const int ExitUsage = 2;
+
 var builder = Host.CreateApplicationBuilder(args);
 
 var fallbackConnectionString = Environment.GetEnvironmentVariable("TASKDECK_CONNECTION_STRING")
@@ -40,7 +44,7 @@ static async Task<int> RunAsync(IServiceProvider rootServices, string[] args)
     if (args.Length == 0)
     {
         PrintHelp();
-        return 1;
+        return ExitUsage;
     }
 
     using var scope = rootServices.CreateScope();
@@ -74,22 +78,29 @@ static async Task<int> HandleBoardsAsync(BoardService boardService, string comma
                 return PrintFailure(result.ErrorCode, result.ErrorMessage);
             }
 
+            var boards = result.Value.ToList();
+            if (boards.Count == 0)
+            {
+                Console.WriteLine("No boards found.");
+                return ExitSuccess;
+            }
+
             Console.WriteLine("Boards");
-            foreach (var board in result.Value)
+            foreach (var board in boards)
             {
                 var archivedMarker = board.IsArchived ? " [archived]" : string.Empty;
                 Console.WriteLine($"- {board.Id} | {board.Name}{archivedMarker}");
             }
 
-            return 0;
+            return ExitSuccess;
         }
         case "create":
         {
             if (args.Length < 1)
             {
-                Console.Error.WriteLine("Missing board name.");
-                Console.Error.WriteLine("Usage: taskdeck boards create <name> [description]");
-                return 1;
+                return PrintUsageError(
+                    "Missing board name.",
+                    "taskdeck boards create <name> [description]");
             }
 
             var name = args[0];
@@ -102,45 +113,154 @@ static async Task<int> HandleBoardsAsync(BoardService boardService, string comma
             }
 
             Console.WriteLine($"Created board: {result.Value.Id} | {result.Value.Name}");
-            return 0;
+            return ExitSuccess;
+        }
+        case "update":
+        {
+            var boardIdText = GetOption(args, "--board");
+            if (!TryParseGuid(boardIdText, out var boardId))
+            {
+                return PrintUsageError(
+                    "Invalid or missing --board <board-id>.",
+                    "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+            }
+
+            var name = GetOption(args, "--name");
+            var description = GetOption(args, "--description");
+            var archiveFlag = HasFlag(args, "--archive");
+            var unarchiveFlag = HasFlag(args, "--unarchive");
+
+            if (archiveFlag && unarchiveFlag)
+            {
+                return PrintUsageError(
+                    "Cannot use --archive and --unarchive together.",
+                    "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+            }
+
+            bool? isArchived = archiveFlag ? true : unarchiveFlag ? false : null;
+
+            if (name is null && description is null && isArchived is null)
+            {
+                return PrintUsageError(
+                    "No update values supplied.",
+                    "taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]");
+            }
+
+            var result = await boardService.UpdateBoardAsync(boardId, new UpdateBoardDto(name, description, isArchived));
+            if (!result.IsSuccess)
+            {
+                return PrintFailure(result.ErrorCode, result.ErrorMessage);
+            }
+
+            var archivedMarker = result.Value.IsArchived ? "archived" : "active";
+            Console.WriteLine($"Updated board: {result.Value.Id} | {result.Value.Name} | {archivedMarker}");
+            return ExitSuccess;
         }
         default:
-            Console.Error.WriteLine($"Unknown boards command: '{command}'.");
-            Console.Error.WriteLine("Usage: taskdeck boards [list|create]");
-            return 1;
+            return PrintUsageError(
+                $"Unknown boards command: '{command}'.",
+                "taskdeck boards [list|create|update]");
     }
 }
 
 static async Task<int> HandleColumnsAsync(ColumnService columnService, string command, string[] args)
 {
-    if (command != "list")
+    switch (command)
     {
-        Console.Error.WriteLine($"Unknown columns command: '{command}'.");
-        Console.Error.WriteLine("Usage: taskdeck columns list --board <board-id>");
-        return 1;
-    }
+        case "list":
+        {
+            var boardIdText = GetOption(args, "--board");
+            if (!TryParseGuid(boardIdText, out var boardId))
+            {
+                return PrintUsageError(
+                    "Invalid or missing --board <board-id>.",
+                    "taskdeck columns list --board <board-id>");
+            }
 
-    var boardIdText = GetOption(args, "--board");
-    if (!TryParseGuid(boardIdText, out var boardId))
-    {
-        Console.Error.WriteLine("Invalid or missing --board <board-id>.");
-        return 1;
-    }
+            var result = await columnService.GetColumnsByBoardIdAsync(boardId);
+            if (!result.IsSuccess)
+            {
+                return PrintFailure(result.ErrorCode, result.ErrorMessage);
+            }
 
-    var result = await columnService.GetColumnsByBoardIdAsync(boardId);
-    if (!result.IsSuccess)
-    {
-        return PrintFailure(result.ErrorCode, result.ErrorMessage);
-    }
+            var columns = result.Value.ToList();
+            if (columns.Count == 0)
+            {
+                Console.WriteLine("No columns found.");
+                return ExitSuccess;
+            }
 
-    Console.WriteLine("Columns");
-    foreach (var column in result.Value)
-    {
-        var wipText = column.WipLimit.HasValue ? $"WIP {column.WipLimit.Value}" : "WIP none";
-        Console.WriteLine($"- {column.Id} | {column.Position} | {column.Name} | {wipText}");
-    }
+            Console.WriteLine("Columns");
+            foreach (var column in columns)
+            {
+                var wipText = column.WipLimit.HasValue ? $"WIP {column.WipLimit.Value}" : "WIP none";
+                Console.WriteLine($"- {column.Id} | {column.Position} | {column.Name} | {wipText}");
+            }
 
-    return 0;
+            return ExitSuccess;
+        }
+        case "create":
+        {
+            var boardIdText = GetOption(args, "--board");
+            var name = GetOption(args, "--name");
+            var positionText = GetOption(args, "--position");
+            var wipText = GetOption(args, "--wip");
+
+            if (!TryParseGuid(boardIdText, out var boardId))
+            {
+                return PrintUsageError(
+                    "Invalid or missing --board <board-id>.",
+                    "taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]");
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return PrintUsageError(
+                    "Missing --name <name>.",
+                    "taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]");
+            }
+
+            int? position = null;
+            if (positionText is not null)
+            {
+                if (!int.TryParse(positionText, out var parsedPosition) || parsedPosition < 0)
+                {
+                    return PrintUsageError(
+                        "Invalid --position value. Position must be a non-negative integer.",
+                        "taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]");
+                }
+
+                position = parsedPosition;
+            }
+
+            int? wipLimit = null;
+            if (wipText is not null)
+            {
+                if (!int.TryParse(wipText, out var parsedWip) || parsedWip <= 0)
+                {
+                    return PrintUsageError(
+                        "Invalid --wip value. WIP limit must be greater than 0.",
+                        "taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]");
+                }
+
+                wipLimit = parsedWip;
+            }
+
+            var result = await columnService.CreateColumnAsync(new CreateColumnDto(boardId, name, position, wipLimit));
+            if (!result.IsSuccess)
+            {
+                return PrintFailure(result.ErrorCode, result.ErrorMessage);
+            }
+
+            var wip = result.Value.WipLimit.HasValue ? result.Value.WipLimit.Value.ToString() : "none";
+            Console.WriteLine($"Created column: {result.Value.Id} | {result.Value.Name} | pos={result.Value.Position} | wip={wip}");
+            return ExitSuccess;
+        }
+        default:
+            return PrintUsageError(
+                $"Unknown columns command: '{command}'.",
+                "taskdeck columns [list|create]");
+    }
 }
 
 static async Task<int> HandleCardsAsync(CardService cardService, string command, string[] args)
@@ -156,20 +276,23 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
 
             if (!TryParseGuid(boardIdText, out var boardId))
             {
-                Console.Error.WriteLine("Invalid or missing --board <board-id>.");
-                return 1;
+                return PrintUsageError(
+                    "Invalid or missing --board <board-id>.",
+                    "taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]");
             }
 
             if (!TryParseGuid(columnIdText, out var columnId))
             {
-                Console.Error.WriteLine("Invalid or missing --column <column-id>.");
-                return 1;
+                return PrintUsageError(
+                    "Invalid or missing --column <column-id>.",
+                    "taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]");
             }
 
             if (string.IsNullOrWhiteSpace(title))
             {
-                Console.Error.WriteLine("Missing --title <title>.");
-                return 1;
+                return PrintUsageError(
+                    "Missing --title <title>.",
+                    "taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]");
             }
 
             var createRequest = new CreateCardDto(
@@ -187,7 +310,7 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
             }
 
             Console.WriteLine($"Created card: {result.Value.Id} | {result.Value.Title}");
-            return 0;
+            return ExitSuccess;
         }
         case "move":
         {
@@ -197,20 +320,23 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
 
             if (!TryParseGuid(cardIdText, out var cardId))
             {
-                Console.Error.WriteLine("Invalid or missing --card <card-id>.");
-                return 1;
+                return PrintUsageError(
+                    "Invalid or missing --card <card-id>.",
+                    "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
             }
 
             if (!TryParseGuid(targetColumnIdText, out var targetColumnId))
             {
-                Console.Error.WriteLine("Invalid or missing --target-column <column-id>.");
-                return 1;
+                return PrintUsageError(
+                    "Invalid or missing --target-column <column-id>.",
+                    "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
             }
 
             if (!int.TryParse(positionText, out var position) || position < 0)
             {
-                Console.Error.WriteLine("Invalid --position value. Position must be a non-negative integer.");
-                return 1;
+                return PrintUsageError(
+                    "Invalid --position value. Position must be a non-negative integer.",
+                    "taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]");
             }
 
             var result = await cardService.MoveCardAsync(cardId, new MoveCardDto(targetColumnId, position));
@@ -220,12 +346,78 @@ static async Task<int> HandleCardsAsync(CardService cardService, string command,
             }
 
             Console.WriteLine($"Moved card: {result.Value.Id} -> column {result.Value.ColumnId} @ position {result.Value.Position}");
-            return 0;
+            return ExitSuccess;
+        }
+        case "list":
+        {
+            var boardIdText = GetOption(args, "--board");
+            var search = GetOption(args, "--search");
+            var columnIdText = GetOption(args, "--column");
+            var labelIdText = GetOption(args, "--label");
+
+            if (!TryParseGuid(boardIdText, out var boardId))
+            {
+                return PrintUsageError(
+                    "Invalid or missing --board <board-id>.",
+                    "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
+            }
+
+            Guid? columnId = null;
+            if (columnIdText is not null)
+            {
+                if (!TryParseGuid(columnIdText, out var parsedColumnId))
+                {
+                    return PrintUsageError(
+                        "Invalid --column <column-id>.",
+                        "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
+                }
+
+                columnId = parsedColumnId;
+            }
+
+            Guid? labelId = null;
+            if (labelIdText is not null)
+            {
+                if (!TryParseGuid(labelIdText, out var parsedLabelId))
+                {
+                    return PrintUsageError(
+                        "Invalid --label <label-id>.",
+                        "taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]");
+                }
+
+                labelId = parsedLabelId;
+            }
+
+            var result = await cardService.SearchCardsAsync(boardId, search, labelId, columnId);
+            if (!result.IsSuccess)
+            {
+                return PrintFailure(result.ErrorCode, result.ErrorMessage);
+            }
+
+            var cards = result.Value
+                .OrderBy(c => c.ColumnId)
+                .ThenBy(c => c.Position)
+                .ToList();
+
+            if (cards.Count == 0)
+            {
+                Console.WriteLine("No cards found.");
+                return ExitSuccess;
+            }
+
+            Console.WriteLine("Cards");
+            foreach (var card in cards)
+            {
+                var blocked = card.IsBlocked ? " [blocked]" : string.Empty;
+                Console.WriteLine($"- {card.Id} | column={card.ColumnId} pos={card.Position} | {card.Title}{blocked}");
+            }
+
+            return ExitSuccess;
         }
         default:
-            Console.Error.WriteLine($"Unknown cards command: '{command}'.");
-            Console.Error.WriteLine("Usage: taskdeck cards [add|move]");
-            return 1;
+            return PrintUsageError(
+                $"Unknown cards command: '{command}'.",
+                "taskdeck cards [add|move|list]");
     }
 }
 
@@ -252,36 +444,53 @@ static bool TryParseGuid(string? text, out Guid value)
     return Guid.TryParse(text, out value);
 }
 
+static int PrintUsageError(string message, string usage)
+{
+    Console.Error.WriteLine(message);
+    Console.Error.WriteLine($"Usage: {usage}");
+    return ExitUsage;
+}
+
 static int PrintFailure(string errorCode, string errorMessage)
 {
     Console.Error.WriteLine($"Error [{errorCode}]: {errorMessage}");
-    return 1;
+    return ExitFailure;
 }
 
 static int ReturnUnknownCommand(string commandGroup)
 {
     Console.Error.WriteLine($"Unknown command group: '{commandGroup}'.");
     PrintHelp();
-    return 1;
+    return ExitUsage;
 }
 
 static int ReturnHelp()
 {
     PrintHelp();
-    return 0;
+    return ExitSuccess;
 }
 
 static void PrintHelp()
 {
     Console.WriteLine(
         """
-        Taskdeck CLI (Phase 4 bootstrap)
+        Taskdeck CLI
 
         Usage:
           taskdeck boards list [--include-archived]
           taskdeck boards create <name> [description]
+          taskdeck boards update --board <board-id> [--name <name>] [--description <description>] [--archive|--unarchive]
+
           taskdeck columns list --board <board-id>
+          taskdeck columns create --board <board-id> --name <name> [--position <position>] [--wip <limit>]
+
           taskdeck cards add --board <board-id> --column <column-id> --title <title> [--description <description>]
           taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]
+          taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]
+
+        Exit codes:
+          0 success
+          1 command failed
+          2 usage error
         """);
 }
