@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure;
@@ -12,6 +13,7 @@ const int ExitFailure = 1;
 const int ExitUsage = 2;
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
 
 var fallbackConnectionString = Environment.GetEnvironmentVariable("TASKDECK_CONNECTION_STRING")
     ?? "Data Source=taskdeck.db";
