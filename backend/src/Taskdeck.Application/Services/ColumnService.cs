@@ -63,6 +63,15 @@ public class ColumnService
         }
     }
 
+    public async Task<Result<ColumnDto>> UpdateColumnAsync(Guid boardId, Guid id, UpdateColumnDto dto, CancellationToken cancellationToken = default)
+    {
+        var column = await _unitOfWork.Columns.GetByIdAsync(id, cancellationToken);
+        if (column == null || column.BoardId != boardId)
+            return Result.Failure<ColumnDto>(ErrorCodes.NotFound, $"Column with ID {id} not found in board {boardId}");
+
+        return await UpdateColumnAsync(id, dto, cancellationToken);
+    }
+
     public async Task<Result<IEnumerable<ColumnDto>>> GetColumnsByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
     {
         var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId, cancellationToken);
@@ -82,6 +91,15 @@ public class ColumnService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
+    }
+
+    public async Task<Result> DeleteColumnAsync(Guid boardId, Guid id, CancellationToken cancellationToken = default)
+    {
+        var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(id, cancellationToken);
+        if (column == null || column.BoardId != boardId)
+            return Result.Failure(ErrorCodes.NotFound, $"Column with ID {id} not found in board {boardId}");
+
+        return await DeleteColumnAsync(id, cancellationToken);
     }
 
     public async Task<Result<IEnumerable<ColumnDto>>> ReorderColumnsAsync(Guid boardId, ReorderColumnsDto dto, CancellationToken cancellationToken = default)
