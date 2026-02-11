@@ -128,6 +128,14 @@ namespace Taskdeck.Infrastructure.Migrations
                 table: "Boards",
                 column: "OwnerId");
 
+            migrationBuilder.AddForeignKey(
+                name: "FK_Boards_Users_OwnerId",
+                table: "Boards",
+                column: "OwnerId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_EntityType_EntityId",
                 table: "AuditLogs",
@@ -190,6 +198,10 @@ namespace Taskdeck.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropForeignKey(
+                name: "FK_Boards_Users_OwnerId",
+                table: "Boards");
+
             migrationBuilder.DropTable(
                 name: "AuditLogs");
 
