@@ -41,6 +41,16 @@ public class BoardAccessRepository : Repository<BoardAccess>, IBoardAccessReposi
 
     public async Task<bool> HasAccessAsync(Guid boardId, Guid userId, UserRole? minimumRole = null, CancellationToken cancellationToken = default)
     {
+        var hasOwnerAccess = await _context.Boards
+            .AnyAsync(
+                b => b.Id == boardId &&
+                    b.OwnerId == userId &&
+                    (!minimumRole.HasValue || UserRole.Owner <= minimumRole.Value),
+                cancellationToken);
+
+        if (hasOwnerAccess)
+            return true;
+
         var query = _context.BoardAccesses
             .Where(ba => ba.BoardId == boardId && ba.UserId == userId);
 
