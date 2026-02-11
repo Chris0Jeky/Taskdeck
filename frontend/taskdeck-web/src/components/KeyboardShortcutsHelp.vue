@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { useEscapeToClose } from '../composables/useEscapeToClose'
 
 const props = defineProps<{
   isOpen: boolean
@@ -9,21 +9,7 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-// Close on Escape key
-watch(() => props.isOpen, (isOpen) => {
-  if (isOpen) {
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        emit('close')
-      }
-    }
-    window.addEventListener('keydown', handleEscape)
-
-    return () => {
-      window.removeEventListener('keydown', handleEscape)
-    }
-  }
-})
+useEscapeToClose(() => props.isOpen, () => emit('close'))
 
 function handleBackdropClick(event: MouseEvent) {
   if (event.target === event.currentTarget) {
@@ -45,10 +31,10 @@ const categories: ShortcutCategory[] = [
   {
     title: 'Navigation',
     shortcuts: [
-      { keys: ['j', '↓'], description: 'Select next card' },
-      { keys: ['k', '↑'], description: 'Select previous card' },
-      { keys: ['h', '←'], description: 'Move to previous column' },
-      { keys: ['l', '→'], description: 'Move to next column' },
+      { keys: ['j', 'ArrowDown'], description: 'Select next card' },
+      { keys: ['k', 'ArrowUp'], description: 'Select previous card' },
+      { keys: ['h', 'ArrowLeft'], description: 'Move to previous column' },
+      { keys: ['l', 'ArrowRight'], description: 'Move to next column' },
     ]
   },
   {
