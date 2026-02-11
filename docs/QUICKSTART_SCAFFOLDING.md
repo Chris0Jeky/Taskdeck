@@ -24,7 +24,7 @@ dotnet ef database update -p src/Taskdeck.Infrastructure -s src/Taskdeck.Api
 ### New Database Tables
 - `Users` - User accounts
 - `BoardAccesses` - Board permissions
-- `AuditLogs` - Change history  
+- `AuditLogs` - Change history
 - `LlmRequests` - LLM queue
 - `Boards` - Added `OwnerId` column
 
@@ -94,9 +94,9 @@ Implement change tracking
 
 ## Build & Test Status
 
-✅ **Solution builds:** `dotnet build backend/Taskdeck.sln`  
-✅ **Domain tests pass:** 42/42 passing  
-✅ **Migration created:** `20260211082334_AddUserPermissionsAuditQueue`  
+✅ **Solution builds:** `dotnet build backend/Taskdeck.sln`
+✅ **Domain tests pass:** 42/42 passing
+✅ **Migration created:** `20260211082334_AddUserPermissionsAuditQueue`
 ✅ **No breaking changes:** Existing code unaffected
 
 ## Next Steps
@@ -118,6 +118,6 @@ Implement change tracking
 
 ---
 
-**Built:** 2026-02-11  
-**Files Created:** 41 new + 5 updated  
+**Built:** 2026-02-11
+**Files Created:** 41 new + 5 updated
 **Ready for:** Incremental implementation
