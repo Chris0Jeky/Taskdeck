@@ -34,6 +34,9 @@ public class BoardAccess : Entity
         if (grantedBy == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "GrantedBy user ID cannot be empty");
 
+        if (!Enum.IsDefined(role))
+            throw new DomainException(ErrorCodes.ValidationError, "Role value is invalid");
+
         BoardId = boardId;
         UserId = userId;
         Role = role;
@@ -45,6 +48,9 @@ public class BoardAccess : Entity
     {
         if (updatedBy == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "UpdatedBy user ID cannot be empty");
+
+        if (!Enum.IsDefined(newRole))
+            throw new DomainException(ErrorCodes.ValidationError, "Role value is invalid");
 
         Role = newRole;
         GrantedBy = updatedBy;

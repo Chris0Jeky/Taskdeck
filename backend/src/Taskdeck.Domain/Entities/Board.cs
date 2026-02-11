@@ -39,6 +39,9 @@ public class Board : Entity
 
     public Board(string name, string? description = null, Guid? ownerId = null) : base()
     {
+        if (ownerId.HasValue && ownerId.Value == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Owner ID cannot be empty");
+
         Name = name;
         Description = description;
         IsArchived = false;
