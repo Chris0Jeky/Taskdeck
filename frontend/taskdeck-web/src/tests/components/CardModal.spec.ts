@@ -139,6 +139,21 @@ describe('CardModal', () => {
     expect(wrapper.emitted('close')).toBeTruthy()
   })
 
+  it('should emit close event when Escape key is pressed', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
   it('should call updateCard when form is submitted', async () => {
     const wrapper = mount(CardModal, {
       props: {
