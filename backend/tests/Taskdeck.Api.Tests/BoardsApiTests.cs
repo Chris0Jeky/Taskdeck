@@ -105,4 +105,35 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
     }
+
+    [Fact]
+    public async Task UpdateBoard_ShouldReturnBadRequest_WhenNameIsEmpty()
+    {
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/boards",
+            new CreateBoardDto($"Board-{Guid.NewGuid():N}", null));
+        createResponse.EnsureSuccessStatusCode();
+        var board = await createResponse.Content.ReadFromJsonAsync<BoardDto>();
+        board.Should().NotBeNull();
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/boards/{board!.Id}",
+            new UpdateBoardDto(string.Empty, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public async Task DeleteBoard_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    {
+        var response = await _client.DeleteAsync($"/api/boards/{Guid.NewGuid()}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
 }
