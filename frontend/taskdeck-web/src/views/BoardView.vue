@@ -465,6 +465,7 @@ useKeyboardShortcuts([
         <div
           v-for="column in sortedColumns"
           :key="column.id"
+          :data-column-dnd-id="column.id"
           draggable="true"
           :class="[
             'transition-all',
