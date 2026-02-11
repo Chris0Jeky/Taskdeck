@@ -33,6 +33,11 @@ public class BoardConfiguration : IEntityTypeConfiguration<Board>
         builder.Property(b => b.UpdatedAt)
             .IsRequired();
 
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(b => b.OwnerId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasMany(b => b.Columns)
             .WithOne(c => c.Board)
             .HasForeignKey(c => c.BoardId)
