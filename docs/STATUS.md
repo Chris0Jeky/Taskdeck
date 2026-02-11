@@ -83,9 +83,9 @@ Commands:
 - `dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj`
 
 Result:
-- Domain: 62/62 passing
+- Domain: 68/68 passing
 - Application: 87/87 passing
-- Backend Unit Total: 149/149 passing
+- Backend Unit Total: 155/155 passing
 
 ### Backend Integration + CLI Contracts (Executed)
 
@@ -118,7 +118,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 307/307 passing
+- Combined automated total: 313/313 passing
 
 ## CI Status
 
