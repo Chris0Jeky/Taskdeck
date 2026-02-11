@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Column } from '../../types/board'
 
 const props = defineProps<{
@@ -73,6 +74,8 @@ async function handleDelete() {
 function handleClose() {
   emit('close')
 }
+
+useEscapeToClose(() => props.isOpen, handleClose)
 </script>
 
 <template>
