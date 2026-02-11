@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
+import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Board } from '../../types/board'
 
 const props = defineProps<{
@@ -67,6 +68,8 @@ async function handleDelete() {
 function handleClose() {
   emit('close')
 }
+
+useEscapeToClose(() => props.isOpen, handleClose)
 </script>
 
 <template>
