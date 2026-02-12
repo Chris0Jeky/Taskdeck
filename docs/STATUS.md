@@ -54,7 +54,8 @@ Multi-user/permissions, export-import, history/audit, and LLM queue capabilities
 ### Frontend
 
 - Stack: Vue 3 + TypeScript + Pinia + Vue Router + Vite
-- Views: board list and board detail
+- Architecture: App shell with sidebar navigation, 19 routes, auth guards, feature flags
+- Views: login, register, board list, board detail, settings/profile, board access, activity, automation queue, ops console, export/import, archive
 - UX capabilities:
   - board/column/card/label CRUD
   - card edit modal, column edit modal, board settings modal, label manager
@@ -63,6 +64,24 @@ Multi-user/permissions, export-import, history/audit, and LLM queue capabilities
   - card and column drag-and-drop
   - toast notifications
   - consistent `Escape` handling across modals and inline card forms
+  - app shell with collapsible sidebar navigation
+  - command palette (Ctrl/Cmd+K) with navigation commands
+  - keyboard shortcuts help overlay (? key)
+  - login/register/logout session management with JWT
+  - route guards redirecting unauthenticated users to login
+  - board access management panel (grant/revoke/role change)
+  - audit timeline views (board/entity/user history)
+  - LLM queue management (submit/cancel/process/stats)
+  - automation proposals placeholder (pending backend)
+  - ops console: CLI runner, endpoint explorer, logs viewer
+  - board export (copy/download JSON) and import wizard
+  - archive recovery placeholder (pending backend)
+  - feature flags panel for enabling/disabling surfaces
+  - design tokens (CSS custom properties) for consistent styling
+  - ARIA landmarks and focus ring accessibility baseline
+  - API request correlation IDs (`X-Request-Id`) for traceability
+- API modules: boards, columns, cards, labels, auth, users, boardAccess, audit, queue, exportImport
+- Pinia stores: board, toast, session, permissions, audit, queue, featureFlags
 - E2E smoke suite includes:
   - board-column-card happy flow
   - filter panel toggle
@@ -101,7 +120,15 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
    - API error handling consistency: all GET endpoints now map error codes to proper HTTP status codes
    - domain validation hardening: description length limits (Card 2000, Board 1000 chars), duplicate label guard
    - SQLite DateTimeOffset ordering fix in AuditLogRepository and LlmQueueRepository with bounded SQL-side ordering/limits
-   - comprehensive test expansion: +25 domain, +23 API integration, +40 frontend unit tests
+   - comprehensive test expansion: +25 domain, +23 API integration, +73 frontend unit tests
+   - frontend overhaul implementation:
+     - app shell with sidebar navigation and command palette
+     - auth views (login/register) and session management with JWT
+     - 19-route workspace with auth guards and legacy redirects
+     - board access management, audit timeline, queue management, ops console, export/import, archive UIs
+     - design tokens, ARIA landmarks, feature flags system
+     - 9 new type files, 6 new API modules, 5 new stores, 2 new composables
+     - 73 new frontend unit tests (228 total frontend)
    Pending (primary track):
    - CI drift monitoring and reliability follow-through
    - CLI parity and JSON contract hardening
@@ -110,9 +137,9 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
    - recurring tasks
    Pending (side-track activation):
    - authentication/authorization enforcement on existing endpoints
-   - frontend integration with auth/permissions
    - queue processing background service
    - audit logging integration into existing service operations
+   - backend endpoints for archive recovery, CLI bridge, log streaming, and automation proposals
 
 ## Test Status (Reconciled and Verified)
 
@@ -145,10 +172,11 @@ Command:
 
 Result:
 - Component tests: 81/81 passing
-- Store tests: 48/48 passing (boardStore 14, boardStore.filtering 20, toastStore 14)
-- API layer tests: 17/17 passing (boardsApi 8, cardsApi 9)
+- Store tests: 80/80 passing (boardStore 14, boardStore.filtering 20, toastStore 14, sessionStore 7, featureFlagStore 7, permissionsStore 18)
+- API layer tests: 37/37 passing (boardsApi 8, cardsApi 9, authApi 3, queueApi 6, boardAccessApi 4, auditApi 3, exportImportApi 4)
 - Composable tests: 9/9 passing (useKeyboardShortcuts)
-- Frontend Unit Total: 155/155 passing
+- Utility tests: 21/21 passing (jwt 4, queue 5, roles 5, requestId 3, navigation 4)
+- Frontend Unit Total: 228/228 passing
 
 ### Frontend E2E Smoke (Executed)
 
@@ -160,7 +188,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 479/479 passing
+- Combined automated total: 552/552 passing
 
 ## CI Status
 
