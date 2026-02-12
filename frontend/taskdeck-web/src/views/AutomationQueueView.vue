@@ -16,13 +16,21 @@ const submitting = ref(false)
 const statusTabs = ['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled']
 
 onMounted(() => {
-  queue.fetchByStatus(statusFilter.value)
-  queue.fetchStats()
+  queue.fetchByStatus(statusFilter.value).catch(() => {
+    // Store handles toast + error state.
+  })
+  queue.fetchStats().catch(() => {
+    // Store handles toast + error state.
+  })
 })
 
 async function handleStatusChange(status: string) {
   statusFilter.value = status
-  await queue.fetchByStatus(status)
+  try {
+    await queue.fetchByStatus(status)
+  } catch {
+    // Store handles toast + error state.
+  }
 }
 
 async function handleSubmitRequest() {
@@ -43,14 +51,30 @@ async function handleSubmitRequest() {
 
 async function handleCancel(requestId: string) {
   if (confirm('Cancel this request?')) {
-    await queue.cancelRequest(requestId)
+    try {
+      await queue.cancelRequest(requestId)
+    } catch {
+      // Store handles toast + error state.
+    }
   }
 }
 
 async function handleProcessNext() {
-  await queue.processNext()
-  await queue.fetchByStatus(statusFilter.value)
-  await queue.fetchStats()
+  try {
+    await queue.processNext()
+  } catch {
+    // Store handles toast + error state.
+  }
+  try {
+    await queue.fetchByStatus(statusFilter.value)
+  } catch {
+    // Store handles toast + error state.
+  }
+  try {
+    await queue.fetchStats()
+  } catch {
+    // Store handles toast + error state.
+  }
 }
 
 function formatDate(d: string | null): string {
