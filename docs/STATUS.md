@@ -265,5 +265,6 @@ Current state:
 - This file is the single source of truth for status and test numbers.
 - `docs/IMPLEMENTATION_MASTERPLAN.md` is the single source for forward execution planning.
 - `docs/MANUAL_TEST_CHECKLIST.md` is the canonical manual verification script.
+- `docs/backend/*` and `docs/frontend/*` packs are implementation planning artifacts and do not imply shipped behavior unless reflected above in this file.
 - Deep-dive support docs (permissions, export/import, queue, scaffolding summary) are informational and must not override this file or the masterplan.
 - Historical session and superseded planning notes live under `docs/archive/`.
