@@ -1,4 +1,5 @@
 export type QueueStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed' | 'Cancelled'
+export type QueueStatusValue = QueueStatus | number
 export type ProposalStatus = 'pending-review' | 'approved' | 'rejected' | 'applied' | 'failed'
 export type ProposalOrigin = 'manual' | 'voice' | 'transcript' | 'agent'
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
@@ -6,13 +7,13 @@ export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 export interface QueueRequest {
   id: string
   userId: string
+  boardId: string | null
   requestType: string
-  payload: string
-  status: QueueStatus
-  result: string | null
+  status: QueueStatusValue
   errorMessage: string | null
   createdAt: string
   processedAt: string | null
+  retryCount: number
 }
 
 export interface CreateQueueRequestDto {
@@ -21,12 +22,10 @@ export interface CreateQueueRequestDto {
 }
 
 export interface QueueStats {
-  pending: number
-  processing: number
-  completed: number
-  failed: number
-  cancelled: number
-  total: number
+  pendingCount: number
+  processingCount: number
+  completedCount: number
+  failedCount: number
 }
 
 export interface AutomationProposal {
