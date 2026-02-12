@@ -45,7 +45,7 @@ public class Card : Entity
         BoardId = boardId;
         ColumnId = columnId;
         Title = title;
-        Description = description ?? string.Empty;
+        SetDescription(description ?? string.Empty);
         DueDate = dueDate;
         Position = position;
         IsBlocked = false;
@@ -58,13 +58,21 @@ public class Card : Entity
             Title = title;
 
         if (description != null)
-            Description = description;
+            SetDescription(description);
 
         // Allow explicitly setting to null
         if (dueDate.HasValue)
             DueDate = dueDate.Value;
 
         Touch();
+    }
+
+    private void SetDescription(string description)
+    {
+        if (description.Length > 2000)
+            throw new DomainException(ErrorCodes.ValidationError, "Card description cannot exceed 2000 characters");
+
+        Description = description;
     }
 
     public void SetPosition(int position)
@@ -102,6 +110,9 @@ public class Card : Entity
     // Label management (called by application services)
     public void AddLabel(CardLabel cardLabel)
     {
+        if (_cardLabels.Any(cl => cl.LabelId == cardLabel.LabelId))
+            throw new DomainException(ErrorCodes.ValidationError, "Label is already assigned to this card");
+
         _cardLabels.Add(cardLabel);
     }
 

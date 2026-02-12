@@ -43,7 +43,7 @@ public class Board : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Owner ID cannot be empty");
 
         Name = name;
-        Description = description;
+        SetDescription(description);
         IsArchived = false;
         OwnerId = ownerId;
     }
@@ -54,9 +54,17 @@ public class Board : Entity
             Name = name;
 
         if (description != null)
-            Description = description;
+            SetDescription(description);
 
         Touch();
+    }
+
+    private void SetDescription(string? description)
+    {
+        if (description != null && description.Length > 1000)
+            throw new DomainException(ErrorCodes.ValidationError, "Board description cannot exceed 1000 characters");
+
+        Description = description;
     }
 
     public void Archive()

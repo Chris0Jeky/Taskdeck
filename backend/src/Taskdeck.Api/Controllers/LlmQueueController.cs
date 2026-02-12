@@ -41,7 +41,15 @@ public class LlmQueueController : ControllerBase
     public async Task<IActionResult> GetUserQueue(Guid userId)
     {
         var result = await _llmQueueService.GetUserQueueAsync(userId);
-        return result.IsSuccess ? Ok(result.Value) : Problem(result.ErrorMessage, statusCode: 500);
+        if (result.IsSuccess)
+            return Ok(result.Value);
+
+        return result.ErrorCode switch
+        {
+            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            _ => Problem(result.ErrorMessage, statusCode: 500)
+        };
     }
 
     [HttpGet("status/{status}")]
@@ -51,7 +59,15 @@ public class LlmQueueController : ControllerBase
             return BadRequest(new { errorCode = "ValidationError", message = $"Invalid status value: {status}" });
 
         var result = await _llmQueueService.GetQueueByStatusAsync(parsedStatus);
-        return result.IsSuccess ? Ok(result.Value) : Problem(result.ErrorMessage, statusCode: 500);
+        if (result.IsSuccess)
+            return Ok(result.Value);
+
+        return result.ErrorCode switch
+        {
+            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            _ => Problem(result.ErrorMessage, statusCode: 500)
+        };
     }
 
     [HttpPost("{requestId}/cancel")]
@@ -100,6 +116,14 @@ public class LlmQueueController : ControllerBase
     public async Task<IActionResult> GetQueueStats()
     {
         var result = await _llmQueueService.GetQueueStatsAsync();
-        return result.IsSuccess ? Ok(result.Value) : Problem(result.ErrorMessage, statusCode: 500);
+        if (result.IsSuccess)
+            return Ok(result.Value);
+
+        return result.ErrorCode switch
+        {
+            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            _ => Problem(result.ErrorMessage, statusCode: 500)
+        };
     }
 }
