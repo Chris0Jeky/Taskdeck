@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-11  
+Last Updated: 2026-02-12  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 
@@ -8,7 +8,7 @@ Authoritative Scope: Current implementation, verified test execution, and active
 
 Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 frontend.
 Current implementation supports boards, columns, cards, labels, WIP rules, filters, keyboard workflows, drag/drop, toasts, and automation-oriented CLI output.
-Recent scaffolding for multi-user/export-import/history/LLM queue is present as a parallel foundation, not yet promoted to the primary runtime track.
+Multi-user/permissions, export-import, history/audit, and LLM queue capabilities are implemented as side-track service/API slices with JWT infrastructure, while full runtime enforcement and UI activation remain pending.
 
 ## Current Implementation Snapshot
 
@@ -32,6 +32,22 @@ Recent scaffolding for multi-user/export-import/history/LLM queue is present as 
   - board ownership field: `Board.OwnerId`
   - repository/service contracts for permissions, export/import, history, queue
   - infrastructure repositories and migration: `20260211082334_AddUserPermissionsAuditQueue`
+- Service implementations delivered:
+  - `UserService` - user CRUD with BCrypt password hashing
+  - `AuthenticationService` - JWT login/register/validate with configuration safety checks
+  - `AuthorizationService` - role-based permission checking with backward compatibility
+  - `BoardAccessService` - board access grant/revoke/list with board-route and permission validation
+  - `HistoryService` - audit log queries and action logging with limit/input validation
+  - `LlmQueueService` - queue management and processing
+  - `ExportImportService` - board export/import via JSON with export-shape import compatibility
+- API controllers delivered:
+  - `AuthController` - `/api/auth/login`, `/api/auth/register`, `/api/auth/change-password`
+  - `UsersController` - `/api/users` CRUD endpoints
+  - `BoardAccessController` - `/api/boards/{boardId}/access` management with board-bound access checks
+  - `ExportController` - `/api/export/boards/{boardId}`, `/api/import/boards`
+  - `LlmQueueController` - `/api/llm-queue` management
+  - `AuditController` - `/api/audit` history endpoints
+- JWT Bearer authentication middleware configured in Program.cs
 
 ### Frontend
 
@@ -62,7 +78,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
 1. Phase 1 - Core Data Model and API: COMPLETE (100%)
 2. Phase 2 - Basic Web UI: COMPLETE (100%)
 3. Phase 3 - UX Improvements: COMPLETE (100%)
-4. Phase 4 - Advanced Features: IN PROGRESS (60%)
+4. Phase 4 - Advanced Features: IN PROGRESS (70%)
    Completed:
    - card and column drag/drop
    - CLI primary track expansion
@@ -70,6 +86,16 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
    - CI quality gates for backend unit, API integration, frontend unit, and E2E smoke
    - broader negative-path integration coverage
    - side-track scaffolding for multi-user/export-import/history/LLM queue
+   - service implementations for authentication, authorization, board access, history, LLM queue, export/import
+   - API controllers for all new services
+   - JWT authentication middleware
+   - unit tests for new service implementations (51 new tests)
+   - merge-readiness hardening pass:
+     - board-route scope checks for board access update/revoke
+     - export/import JSON compatibility and permission checks
+     - JWT configuration guards and inactive-user password-change protection
+     - history and queue input validation hardening
+   - additional automated coverage (+20 tests: 17 application, 3 API integration)
    Pending (primary track):
    - CI drift monitoring and reliability follow-through
    - CLI parity and JSON contract hardening
@@ -77,35 +103,34 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
    - analytics dashboard
    - recurring tasks
    Pending (side-track activation):
-   - authentication/authorization implementation and enforcement
-   - export/import behavior implementation
-   - queue processing and audit/history runtime integration
+   - authentication/authorization enforcement on existing endpoints
+   - frontend integration with auth/permissions
+   - queue processing background service
+   - audit logging integration into existing service operations
 
 ## Test Status (Reconciled and Verified)
 
-Verification Date: 2026-02-11
+Verification Date: 2026-02-12
 
 ### Backend Unit (Executed)
 
 Commands:
-- `dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj`
-- `dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj`
+- `dotnet test backend/Taskdeck.sln`
 
 Result:
 - Domain: 68/68 passing
-- Application: 87/87 passing
-- Backend Unit Total: 155/155 passing
+- Application: 155/155 passing
+- Backend Unit Total: 223/223 passing
 
 ### Backend Integration + CLI Contracts (Executed)
 
 Commands:
-- `dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj`
-- `dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj`
+- `dotnet test backend/Taskdeck.sln`
 
 Result:
-- API integration: 31/31 passing
+- API integration: 34/34 passing
 - CLI contract: 4/4 passing
-- Integration/Contract Total: 35/35 passing
+- Integration/Contract Total: 38/38 passing
 
 ### Frontend Unit (Executed)
 
@@ -127,7 +152,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 313/313 passing
+- Combined automated total: 384/384 passing
 
 ## CI Status
 
@@ -161,7 +186,12 @@ Current state:
 - CI first-run monitoring is partially blocked locally (`gh` CLI unavailable in this environment).
 - E2E remains smoke-level; deeper regression/performance paths still need coverage.
 - Agent-compatible safety model (proposal queue, approvals, audit trail, rollback) is still design-stage.
-- Scaffolding track is not yet enforced in runtime behavior and should not be treated as shipped feature behavior.
+- JWT authentication is configured but not yet enforced across existing board/column/card/label endpoints.
+- Current side-track endpoints still accept actor/user IDs via query/body; claim-based identity enforcement is pending full auth rollout.
+- Boards created through legacy create-board flow still default to `OwnerId = null` for backward compatibility.
+- Export/import database-level operations (ExportDatabaseAsync, ImportDatabaseAsync) are stubbed.
+- LLM queue background processor is not yet implemented (manual ProcessNextRequestAsync available).
+- Audit logging is not yet automatically integrated into existing board/card/column operations.
 
 ## Canonical Documentation Policy
 

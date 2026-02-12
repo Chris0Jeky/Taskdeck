@@ -36,6 +36,8 @@ public class BoardRepository : Repository<Board>, IBoardRepository
         return await _dbSet
             .Include(b => b.Columns)
                 .ThenInclude(c => c.Cards)
+                    .ThenInclude(card => card.CardLabels)
+                        .ThenInclude(cardLabel => cardLabel.Label)
             .Include(b => b.Labels)
             .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
     }
