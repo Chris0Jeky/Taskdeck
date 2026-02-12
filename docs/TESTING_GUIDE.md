@@ -125,6 +125,22 @@ Notes:
 
 Use `docs/MANUAL_TEST_CHECKLIST.md` for a complete manual action-by-action script with expected outcomes.
 
+## Development Sandbox Mode
+
+For local agility testing, you can enable authorization bypass mode in development only.
+
+1. Edit `backend/src/Taskdeck.Api/appsettings.Development.json`:
+   - `"DevelopmentSandbox": { "Enabled": true }`
+2. Run API in Development environment (`dotnet run` from `Taskdeck.Api` uses this by default locally).
+3. Sandbox bypass effects:
+   - board authorization checks return allow in `AuthorizationService`
+   - board access manage checks are bypassed in `BoardAccessService`
+   - board export read checks are bypassed in `ExportImportService`
+   - LLM queue cancel ownership check is bypassed in `LlmQueueService`
+4. Safety boundary:
+   - bypass is forced off outside Development
+   - validation and data integrity checks are still enforced
+
 ## Current Gaps
 
 - CI run monitoring from local shell is limited here because `gh` CLI is unavailable.

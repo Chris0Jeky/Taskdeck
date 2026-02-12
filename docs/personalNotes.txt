@@ -1,0 +1,6 @@
+﻿Ability to take back stuff from the archive
+UI/UX for multi user and LLM usage
+Version Control interactions
+CLI exposure to Front-end
+LOGS implementation and handling
+Ability to expose everything to front-end for better feedback during testing
