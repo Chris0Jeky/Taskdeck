@@ -18,7 +18,12 @@ public class UnitOfWork : IUnitOfWork
         IUserRepository users,
         IBoardAccessRepository boardAccesses,
         IAuditLogRepository auditLogs,
-        ILlmQueueRepository llmQueue)
+        ILlmQueueRepository llmQueue,
+        IAutomationProposalRepository automationProposals,
+        IArchiveItemRepository archiveItems,
+        IChatSessionRepository chatSessions,
+        IChatMessageRepository chatMessages,
+        ICommandRunRepository commandRuns)
     {
         _context = context;
         Boards = boards;
@@ -29,6 +34,11 @@ public class UnitOfWork : IUnitOfWork
         BoardAccesses = boardAccesses;
         AuditLogs = auditLogs;
         LlmQueue = llmQueue;
+        AutomationProposals = automationProposals;
+        ArchiveItems = archiveItems;
+        ChatSessions = chatSessions;
+        ChatMessages = chatMessages;
+        CommandRuns = commandRuns;
     }
 
     public IBoardRepository Boards { get; }
@@ -39,6 +49,11 @@ public class UnitOfWork : IUnitOfWork
     public IBoardAccessRepository BoardAccesses { get; }
     public IAuditLogRepository AuditLogs { get; }
     public ILlmQueueRepository LlmQueue { get; }
+    public IAutomationProposalRepository AutomationProposals { get; }
+    public IArchiveItemRepository ArchiveItems { get; }
+    public IChatSessionRepository ChatSessions { get; }
+    public IChatMessageRepository ChatMessages { get; }
+    public ICommandRunRepository CommandRuns { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
