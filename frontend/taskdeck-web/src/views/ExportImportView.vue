@@ -1,22 +1,21 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { exportImportApi } from '../api/exportImportApi'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 import { useSessionStore } from '../store/sessionStore'
 import { useToastStore } from '../store/toastStore'
-import { exportImportApi } from '../api/exportImportApi'
 
 const session = useSessionStore()
 const toast = useToastStore()
 
 const activeTab = ref<'export' | 'import'>('export')
 
-// Export state
 const exportBoardId = ref('')
 const exportResult = ref<string | null>(null)
 const exporting = ref(false)
 
-// Import state
 const importJson = ref('')
-const importResult = ref<{ success: boolean; message: string } | null>(null)
+const importResult = ref<{ success: boolean; message: string; summary: string | null } | null>(null)
 const importing = ref(false)
 const importStep = ref(1)
 
@@ -25,14 +24,15 @@ async function handleExport() {
     toast.warning('Please enter a board ID.')
     return
   }
+
   try {
     exporting.value = true
-    const uid = session.userId ?? ''
-    const data = await exportImportApi.exportBoardJson(exportBoardId.value.trim(), uid)
+    const userId = session.requireUserId('export/import')
+    const data = await exportImportApi.exportBoardJson(exportBoardId.value.trim(), userId)
     exportResult.value = JSON.stringify(data, null, 2)
     toast.success('Board exported successfully')
-  } catch (e: unknown) {
-    toast.error('Export failed. Check board ID and permissions.')
+  } catch (err: unknown) {
+    toast.error(getErrorDisplay(err, 'Export failed. Check board ID and permissions.').message)
     exportResult.value = null
   } finally {
     exporting.value = false
@@ -40,22 +40,24 @@ async function handleExport() {
 }
 
 function handleCopyExport() {
-  if (exportResult.value) {
-    navigator.clipboard.writeText(exportResult.value)
-    toast.success('Copied to clipboard')
-  }
+  if (!exportResult.value) return
+
+  navigator.clipboard.writeText(exportResult.value).then(
+    () => toast.success('Copied to clipboard'),
+    () => toast.error('Failed to copy export payload')
+  )
 }
 
 function handleDownloadExport() {
-  if (exportResult.value) {
-    const blob = new Blob([exportResult.value], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `board-${exportBoardId.value}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  if (!exportResult.value) return
+
+  const blob = new Blob([exportResult.value], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `board-${exportBoardId.value}.json`
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 async function handleImport() {
@@ -63,16 +65,34 @@ async function handleImport() {
     toast.warning('Please enter or paste JSON data.')
     return
   }
+
   try {
     importing.value = true
-    const uid = session.userId ?? ''
-    await exportImportApi.importBoardJson(importJson.value.trim(), uid)
-    importResult.value = { success: true, message: 'Board imported successfully' }
-    toast.success('Board imported successfully')
+    const userId = session.requireUserId('export/import')
+    const result = await exportImportApi.importBoardJson(importJson.value.trim(), userId)
+
+    if (result.success) {
+      importResult.value = {
+        success: true,
+        message: 'Board imported successfully',
+        summary: `Columns: ${result.columnsImported}, Cards: ${result.cardsImported}, Labels: ${result.labelsImported}`,
+      }
+      toast.success('Board imported successfully')
+    } else {
+      importResult.value = {
+        success: false,
+        message: result.errorMessage ?? 'Import failed. Check your JSON data.',
+        summary: null,
+      }
+      toast.error(importResult.value.message)
+    }
+
     importStep.value = 3
-  } catch (e: unknown) {
-    importResult.value = { success: false, message: 'Import failed. Check your JSON data.' }
-    toast.error('Import failed')
+  } catch (err: unknown) {
+    const message = getErrorDisplay(err, 'Import failed. Check your JSON data.').message
+    importResult.value = { success: false, message, summary: null }
+    toast.error(message)
+    importStep.value = 3
   } finally {
     importing.value = false
   }
@@ -89,13 +109,11 @@ function resetImport() {
   <div class="td-export-import">
     <h1 class="td-page-title">Export / Import</h1>
 
-    <!-- Tab Bar -->
     <div class="td-tabs">
       <button :class="['td-tab', { 'td-tab--active': activeTab === 'export' }]" @click="activeTab = 'export'">Export</button>
       <button :class="['td-tab', { 'td-tab--active': activeTab === 'import' }]" @click="activeTab = 'import'">Import</button>
     </div>
 
-    <!-- Export Tab -->
     <div v-if="activeTab === 'export'" class="td-panel">
       <h2 class="td-section-title">Export Board</h2>
       <p class="td-section-desc">Export a board to JSON for backup or sharing.</p>
@@ -105,54 +123,51 @@ function resetImport() {
           <label for="export-board" class="td-label">Board ID</label>
           <input id="export-board" v-model="exportBoardId" type="text" class="td-input" placeholder="Enter board ID" />
         </div>
-        <button class="td-btn td-btn--primary" @click="handleExport" :disabled="exporting">
+        <button class="td-btn td-btn--primary" :disabled="exporting" @click="handleExport">
           {{ exporting ? 'Exporting...' : 'Export JSON' }}
         </button>
       </div>
 
       <div v-if="exportResult" class="td-export-result">
         <div class="td-result-actions">
-          <button class="td-btn td-btn--secondary td-btn--sm" @click="handleCopyExport">📋 Copy</button>
-          <button class="td-btn td-btn--secondary td-btn--sm" @click="handleDownloadExport">⬇ Download</button>
+          <button class="td-btn td-btn--secondary td-btn--sm" @click="handleCopyExport">Copy</button>
+          <button class="td-btn td-btn--secondary td-btn--sm" @click="handleDownloadExport">Download</button>
         </div>
         <pre class="td-json-viewer">{{ exportResult }}</pre>
       </div>
     </div>
 
-    <!-- Import Tab -->
     <div v-if="activeTab === 'import'" class="td-panel">
       <h2 class="td-section-title">Import Board</h2>
 
-      <!-- Step 1: Input -->
       <div v-if="importStep === 1">
         <p class="td-section-desc">Paste board JSON data to import.</p>
         <div class="td-form-group">
           <label class="td-label">Board JSON</label>
           <textarea v-model="importJson" class="td-textarea td-textarea--lg" rows="10" placeholder="Paste JSON here..."></textarea>
         </div>
-        <button class="td-btn td-btn--primary" @click="importStep = 2" :disabled="!importJson.trim()">
+        <button class="td-btn td-btn--primary" :disabled="!importJson.trim()" @click="importStep = 2">
           Validate & Preview
         </button>
       </div>
 
-      <!-- Step 2: Preview -->
       <div v-if="importStep === 2">
         <p class="td-section-desc">Review the data before importing.</p>
         <pre class="td-json-viewer td-json-viewer--sm">{{ importJson.substring(0, 500) }}{{ importJson.length > 500 ? '...' : '' }}</pre>
         <div class="td-step-actions">
-          <button class="td-btn td-btn--secondary" @click="importStep = 1">← Back</button>
-          <button class="td-btn td-btn--primary" @click="handleImport" :disabled="importing">
+          <button class="td-btn td-btn--secondary" @click="importStep = 1">Back</button>
+          <button class="td-btn td-btn--primary" :disabled="importing" @click="handleImport">
             {{ importing ? 'Importing...' : 'Import Board' }}
           </button>
         </div>
       </div>
 
-      <!-- Step 3: Result -->
       <div v-if="importStep === 3 && importResult">
         <div :class="['td-import-result', importResult.success ? 'td-import-result--success' : 'td-import-result--error']">
-          <span>{{ importResult.success ? '✓' : '✕' }}</span>
+          <span>{{ importResult.success ? 'OK' : 'ERR' }}</span>
           <span>{{ importResult.message }}</span>
         </div>
+        <p v-if="importResult.summary" class="td-import-summary">{{ importResult.summary }}</p>
         <button class="td-btn td-btn--secondary" @click="resetImport">Import Another</button>
       </div>
     </div>
@@ -191,4 +206,5 @@ function resetImport() {
 .td-import-result { display: flex; align-items: center; gap: var(--td-space-3); padding: var(--td-space-4); border-radius: var(--td-radius-md); margin-bottom: var(--td-space-4); font-size: var(--td-font-sm); }
 .td-import-result--success { background: var(--td-color-success-light); color: var(--td-color-success); }
 .td-import-result--error { background: var(--td-color-error-light); color: var(--td-color-error); }
+.td-import-summary { margin-bottom: var(--td-space-4); color: var(--td-text-secondary); font-size: var(--td-font-sm); }
 </style>
