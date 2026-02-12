@@ -143,4 +143,100 @@ public class BoardTests
         // Assert
         board.OwnerId.Should().Be(newOwnerId);
     }
+
+    [Fact]
+    public void Constructor_ShouldSetDescriptionToNull_WhenNotProvided()
+    {
+        // Arrange & Act
+        var board = new Board("Personal");
+
+        // Assert
+        board.Description.Should().BeNull();
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenDescriptionTooLong()
+    {
+        // Arrange
+        var longDescription = new string('a', 1001);
+
+        // Act
+        var act = () => new Board("Personal", longDescription);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Board description cannot exceed 1000 characters");
+    }
+
+    [Fact]
+    public void Update_ShouldThrow_WhenDescriptionTooLong()
+    {
+        // Arrange
+        var board = new Board("Personal");
+        var longDescription = new string('a', 1001);
+
+        // Act
+        var act = () => board.Update(description: longDescription);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Board description cannot exceed 1000 characters");
+    }
+
+    [Fact]
+    public void Update_ShouldNotChangeName_WhenNameIsNull()
+    {
+        // Arrange
+        var board = new Board("Personal");
+
+        // Act
+        board.Update(name: null, description: "New description");
+
+        // Assert
+        board.Name.Should().Be("Personal");
+    }
+
+    [Fact]
+    public void Update_ShouldNotChangeDescription_WhenDescriptionIsNull()
+    {
+        // Arrange
+        var board = new Board("Personal", "Original Description");
+
+        // Act
+        board.Update(name: "Updated", description: null);
+
+        // Assert
+        board.Description.Should().Be("Original Description");
+    }
+
+    [Fact]
+    public void TransferOwnership_ShouldThrow_WhenNewOwnerIdIsEmpty()
+    {
+        // Arrange
+        var board = new Board("Team", ownerId: Guid.NewGuid());
+
+        // Act
+        var act = () => board.TransferOwnership(Guid.Empty);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("New owner ID cannot be empty")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void Archive_ThenUnarchive_ShouldRestoreState()
+    {
+        // Arrange
+        var board = new Board("Personal");
+        board.IsArchived.Should().BeFalse();
+
+        // Act
+        board.Archive();
+        board.IsArchived.Should().BeTrue();
+        board.Unarchive();
+
+        // Assert
+        board.IsArchived.Should().BeFalse();
+    }
 }

@@ -19,7 +19,15 @@ public class BoardsController : ControllerBase
     public async Task<IActionResult> GetBoards([FromQuery] string? search, [FromQuery] bool includeArchived = false)
     {
         var result = await _boardService.ListBoardsAsync(search, includeArchived);
-        return result.IsSuccess ? Ok(result.Value) : Problem(result.ErrorMessage, statusCode: 500);
+        if (result.IsSuccess)
+            return Ok(result.Value);
+
+        return result.ErrorCode switch
+        {
+            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            _ => Problem(result.ErrorMessage, statusCode: 500)
+        };
     }
 
     [HttpGet("{id}")]

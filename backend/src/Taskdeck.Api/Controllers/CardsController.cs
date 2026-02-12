@@ -23,7 +23,15 @@ public class CardsController : ControllerBase
         [FromQuery] Guid? columnId)
     {
         var result = await _cardService.SearchCardsAsync(boardId, search, labelId, columnId);
-        return result.IsSuccess ? Ok(result.Value) : Problem(result.ErrorMessage, statusCode: 500);
+        if (result.IsSuccess)
+            return Ok(result.Value);
+
+        return result.ErrorCode switch
+        {
+            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+            _ => Problem(result.ErrorMessage, statusCode: 500)
+        };
     }
 
     [HttpPost]
