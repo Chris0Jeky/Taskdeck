@@ -45,9 +45,29 @@ Delivered in this cycle:
    - domain entities, repository contracts, service interfaces
    - infrastructure repositories and migration
    - foundational domain tests
+9. Scaffolding service implementations completed:
+   - UserService with BCrypt password hashing
+   - AuthenticationService with JWT token generation/validation
+   - AuthorizationService with role-based permission checks and backward compatibility
+   - BoardAccessService for board-level permission management
+   - HistoryService for audit log queries and action logging
+   - LlmQueueService for offline request queue management
+   - ExportImportService for board export/import via JSON
+10. API controllers added for all new services:
+    - AuthController, UsersController, BoardAccessController
+    - ExportController, LlmQueueController, AuditController
+11. JWT Bearer authentication middleware configured in Program.cs
+12. Unit tests added for new service implementations (51 new tests, 241 total backend tests)
+13. Merge-readiness hardening for side-track implementation:
+    - board-access update/revoke now enforce route-board scoping
+    - board-access grant/update/revoke validate acting user and manage-access permission
+    - export/import hardened with board read-permission checks and export-shape JSON import compatibility
+    - JWT configuration safety checks added to auth service and API startup wiring
+    - history limit/input validation added and wired to HTTP 400 mappings
+    - additional automated coverage: +17 application tests and +3 API integration tests
 
 Note:
-- Item 8 is intentional side-track prep and does not replace the primary roadmap sequence below.
+- Items 8-13 are intentional side-track prep and do not replace the primary roadmap sequence below.
 
 ## Roadmap by Horizon
 
@@ -109,18 +129,24 @@ Exit Criteria:
 
 ## Parallel Track (Sidecar): Scaffolding Activation Plan
 
-This track remains sidecar until primary Horizon A/B stability goals are met.
+This track has progressed from pure scaffolding to functional service implementations.
 
-Prepared foundations:
-- Multi-user roles and board-level access model
-- Export/import interfaces for board/database portability
-- LLM queue entities/contracts for offline submission and later processing
-- Audit/history foundations
+Completed foundations:
+- Multi-user roles and board-level access model (entities + services + API)
+- Export/import interfaces and service for board/database portability
+- LLM queue entities/contracts/service for offline submission and later processing
+- Audit/history service with API endpoints
+- JWT authentication infrastructure with configurable settings
+- Unit tests covering new service implementations
+- Merge-readiness hardening and regression tests for side-track correctness paths
 
-Activation gates:
-1. Horizon A exit criteria are met.
-2. CLI reliability and JSON contract work is stable.
-3. Explicit roadmap re-prioritization is approved.
+Remaining activation work:
+1. Enforce authentication on existing API endpoints (add [Authorize] attributes) using the endpoint matrix in `docs/PR_MERGE_READINESS_REPORT_2026-02-12.md`.
+2. Wire authorization checks into existing BoardService, CardService, ColumnService, LabelService per the defined read/write/delete role model.
+3. Implement LLM queue background processor (IHostedService).
+4. Add automatic audit logging to existing service operations.
+5. Implement database-level export/import (SQLite file copy).
+6. Frontend integration with login/register and permission-aware UI.
 
 ## Active Backlog (Prioritized)
 
