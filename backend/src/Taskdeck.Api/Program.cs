@@ -28,6 +28,15 @@ builder.Services.AddScoped<BoardAccessService>();
 builder.Services.AddScoped<ExportImportService>();
 builder.Services.AddScoped<LlmQueueService>();
 builder.Services.AddScoped<HistoryService>();
+builder.Services.AddScoped<IAutomationProposalService, AutomationProposalService>();
+builder.Services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
+builder.Services.AddScoped<AutomationPlannerService>();
+builder.Services.AddScoped<AutomationExecutorService>();
+builder.Services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
+
+// Add IUserContext for claim-based identity
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdeck.Infrastructure.Identity.UserContext>();
 
 // Add JwtSettings (required by AuthenticationService)
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
