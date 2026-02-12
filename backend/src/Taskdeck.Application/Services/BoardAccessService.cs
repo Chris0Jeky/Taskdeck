@@ -131,6 +131,18 @@ public class BoardAccessService : IBoardAccessService
         if (board.OwnerId == actingUserId)
             return Result.Success();
 
+        if (board.OwnerId is null)
+        {
+            // Transitional bootstrap for legacy ownerless boards:
+            // first manager claim assigns ownership to the acting user.
+            var existingAccesses = await _unitOfWork.BoardAccesses.GetByBoardIdAsync(board.Id);
+            if (!existingAccesses.Any())
+            {
+                board.TransferOwnership(actingUserId);
+                return Result.Success();
+            }
+        }
+
         var actingAccess = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(board.Id, actingUserId);
         if (actingAccess == null || !actingAccess.CanManageAccess())
             return Result.Failure(ErrorCodes.Forbidden, "You do not have permission to manage board access");
