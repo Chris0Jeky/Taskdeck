@@ -51,20 +51,42 @@ async function fetchHistory() {
   }
 }
 
+async function fetchHistorySafe() {
+  try {
+    await fetchHistory()
+  } catch {
+    // Store handles toast + error state.
+  }
+}
+
 function syncFromRouteAndFetch() {
   if (typeof route.params.boardId === 'string') {
     viewMode.value = 'board'
     boardId.value = route.params.boardId
+    entityType.value = ''
+    entityId.value = ''
+    userId.value = ''
   } else if (typeof route.params.entityType === 'string' && typeof route.params.entityId === 'string') {
     viewMode.value = 'entity'
     entityType.value = route.params.entityType
     entityId.value = route.params.entityId
+    boardId.value = ''
+    userId.value = ''
   } else if (typeof route.params.userId === 'string') {
     viewMode.value = 'user'
     userId.value = route.params.userId
+    boardId.value = ''
+    entityType.value = ''
+    entityId.value = ''
+  } else {
+    viewMode.value = 'board'
+    boardId.value = ''
+    entityType.value = ''
+    entityId.value = ''
+    userId.value = ''
   }
 
-  fetchHistory()
+  fetchHistorySafe()
 }
 
 onMounted(syncFromRouteAndFetch)
@@ -98,7 +120,7 @@ watch(() => route.params, syncFromRouteAndFetch, { deep: true })
           <option :value="100">100</option>
         </select>
 
-        <button class="td-btn td-btn--primary td-btn--sm" @click="fetchHistory">Fetch</button>
+        <button class="td-btn td-btn--primary td-btn--sm" @click="fetchHistorySafe">Fetch</button>
       </div>
     </div>
 
