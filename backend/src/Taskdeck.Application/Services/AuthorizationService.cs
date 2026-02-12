@@ -8,10 +8,12 @@ namespace Taskdeck.Application.Services;
 public class AuthorizationService : IAuthorizationService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly DevelopmentSandboxSettings _sandboxSettings;
 
-    public AuthorizationService(IUnitOfWork unitOfWork)
+    public AuthorizationService(IUnitOfWork unitOfWork, DevelopmentSandboxSettings? sandboxSettings = null)
     {
         _unitOfWork = unitOfWork;
+        _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
     public async Task<Result<bool>> CanReadBoardAsync(Guid userId, Guid boardId)
@@ -19,6 +21,9 @@ public class AuthorizationService : IAuthorizationService
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+
+        if (_sandboxSettings.Enabled)
+            return Result.Success(true);
 
         if (board.OwnerId is null || board.OwnerId == userId)
             return Result.Success(true);
@@ -33,6 +38,9 @@ public class AuthorizationService : IAuthorizationService
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
+        if (_sandboxSettings.Enabled)
+            return Result.Success(true);
+
         if (board.OwnerId is null || board.OwnerId == userId)
             return Result.Success(true);
 
@@ -45,6 +53,9 @@ public class AuthorizationService : IAuthorizationService
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+
+        if (_sandboxSettings.Enabled)
+            return Result.Success(true);
 
         if (board.OwnerId is null || board.OwnerId == userId)
             return Result.Success(true);
@@ -59,6 +70,9 @@ public class AuthorizationService : IAuthorizationService
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
+        if (_sandboxSettings.Enabled)
+            return Result.Success(true);
+
         if (board.OwnerId is null || board.OwnerId == userId)
             return Result.Success(true);
 
@@ -71,6 +85,9 @@ public class AuthorizationService : IAuthorizationService
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
         if (board is null)
             return Result.Failure<UserRole?>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
+
+        if (_sandboxSettings.Enabled)
+            return Result.Success<UserRole?>(UserRole.Owner);
 
         if (board.OwnerId is null || board.OwnerId == userId)
             return Result.Success<UserRole?>(UserRole.Owner);
