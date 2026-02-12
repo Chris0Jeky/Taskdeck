@@ -10,14 +10,14 @@ This is the active testing guide for Taskdeck.
 - Backend integration/contracts: 61/61 passing
   - API integration: 57
   - CLI contract: 4
-- Frontend unit: 221/221 passing
+- Frontend unit: 228/228 passing
   - Store: 80 (boardStore 14, boardStore.filtering 20, toastStore 14, sessionStore 7, featureFlagStore 7, permissionsStore 18)
   - Components: 81
   - API layer: 37 (boardsApi 8, cardsApi 9, authApi 3, queueApi 6, boardAccessApi 4, auditApi 3, exportImportApi 4)
   - Composables: 9 (useKeyboardShortcuts)
-  - Utilities: 14 (jwt 4, queue 5, roles 5)
+  - Utilities: 21 (jwt 4, queue 5, roles 5, requestId 3, navigation 4)
 - Frontend E2E smoke: 8/8 passing
-- Combined automated total: 545/545 passing
+- Combined automated total: 552/552 passing
 
 ## Backend Commands
 
