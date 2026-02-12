@@ -4,3 +4,7 @@ Version Control interactions
 CLI exposure to Front-end
 LOGS implementation and handling
 Ability to expose everything to front-end for better feedback during testing
+
+Shortcuts for navigating (with the keyboard) the creation and editing of cards, columns and projects. For example I should be able to move from editing the description to editing the checklist with my keyboard, and actually typing within the description without having to use my mouse to click on the description.
+
+I should describe every end-point, entry-point for a total front-end implementation that allows me to use pretty much every major part of the product. I should be able to interact with pretty much everything and target every functionality. I should also be able to inject or intercept things that will be automated. A thorough plan, diagram and description for this is required so that I can have a roadmap and clear direction, which should be done after a complete analysis of everything that the project is currently capable of doing, that should be doing, and that will be doing, so that the front-end can take all of this into account, and even for things that aren't implemented already I can start developing the entry points for user input and then it's just a matter of wiring things up, while this can be, at the very least, used for better understanding of directions and needed additions.
