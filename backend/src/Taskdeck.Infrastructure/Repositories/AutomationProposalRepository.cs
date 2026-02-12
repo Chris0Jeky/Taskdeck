@@ -20,7 +20,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(string boardId, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .Where(p => p.BoardId == boardId)
@@ -28,7 +28,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(string userId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .Where(p => p.RequestedByUserId == userId)

@@ -11,7 +11,7 @@ public class CommandRunRepository : Repository<CommandRun>, ICommandRunRepositor
     {
     }
 
-    public async Task<IEnumerable<CommandRun>> GetByUserIdAsync(string userId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<CommandRun>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .Where(c => c.RequestedByUserId == userId)

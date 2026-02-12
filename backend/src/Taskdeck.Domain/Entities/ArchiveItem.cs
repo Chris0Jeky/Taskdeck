@@ -6,25 +6,25 @@ namespace Taskdeck.Domain.Entities;
 public class ArchiveItem : Entity
 {
     public string EntityType { get; private set; }
-    public string EntityId { get; private set; }
-    public string BoardId { get; private set; }
+    public Guid EntityId { get; private set; }
+    public Guid BoardId { get; private set; }
     public string Name { get; private set; }
-    public string ArchivedByUserId { get; private set; }
+    public Guid ArchivedByUserId { get; private set; }
     public DateTime ArchivedAt { get; private set; }
     public string? Reason { get; private set; }
     public string SnapshotJson { get; private set; }
     public RestoreStatus RestoreStatus { get; private set; }
     public DateTime? RestoredAt { get; private set; }
-    public string? RestoredByUserId { get; private set; }
+    public Guid? RestoredByUserId { get; private set; }
 
     private ArchiveItem() { } // EF Core
 
     public ArchiveItem(
         string entityType,
-        string entityId,
-        string boardId,
+        Guid entityId,
+        Guid boardId,
         string name,
-        string archivedByUserId,
+        Guid archivedByUserId,
         string snapshotJson,
         string? reason = null)
     {
@@ -32,15 +32,15 @@ public class ArchiveItem : Entity
             throw new DomainException(ErrorCodes.ValidationError, "EntityType cannot be empty");
         if (entityType != "board" && entityType != "column" && entityType != "card")
             throw new DomainException(ErrorCodes.ValidationError, "EntityType must be 'board', 'column', or 'card'");
-        if (string.IsNullOrWhiteSpace(entityId))
+        if (entityId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "EntityId cannot be empty");
-        if (string.IsNullOrWhiteSpace(boardId))
+        if (boardId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "BoardId cannot be empty");
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException(ErrorCodes.ValidationError, "Name cannot be empty");
         if (name.Length > 200)
             throw new DomainException(ErrorCodes.ValidationError, "Name cannot exceed 200 characters");
-        if (string.IsNullOrWhiteSpace(archivedByUserId))
+        if (archivedByUserId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "ArchivedByUserId cannot be empty");
         if (string.IsNullOrWhiteSpace(snapshotJson))
             throw new DomainException(ErrorCodes.ValidationError, "SnapshotJson cannot be empty");
@@ -56,9 +56,9 @@ public class ArchiveItem : Entity
         RestoreStatus = RestoreStatus.Available;
     }
 
-    public void MarkAsRestored(string restoredByUserId)
+    public void MarkAsRestored(Guid restoredByUserId)
     {
-        if (string.IsNullOrWhiteSpace(restoredByUserId))
+        if (restoredByUserId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "RestoredByUserId cannot be empty");
         if (RestoreStatus != RestoreStatus.Available)
             throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot restore archive item with status {RestoreStatus}");

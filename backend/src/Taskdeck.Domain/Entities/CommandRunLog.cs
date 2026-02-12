@@ -5,7 +5,7 @@ namespace Taskdeck.Domain.Entities;
 
 public class CommandRunLog : Entity
 {
-    public string CommandRunId { get; private set; }
+    public Guid CommandRunId { get; private set; }
     public DateTime Timestamp { get; private set; }
     public string Level { get; private set; }
     public string Source { get; private set; }
@@ -18,13 +18,13 @@ public class CommandRunLog : Entity
     private CommandRunLog() { } // EF Core
 
     public CommandRunLog(
-        string commandRunId,
+        Guid commandRunId,
         string level,
         string source,
         string message,
         string? metadata = null)
     {
-        if (string.IsNullOrWhiteSpace(commandRunId))
+        if (commandRunId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "CommandRunId cannot be empty");
         if (string.IsNullOrWhiteSpace(level))
             throw new DomainException(ErrorCodes.ValidationError, "Level cannot be empty");

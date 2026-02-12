@@ -5,7 +5,7 @@ namespace Taskdeck.Domain.Entities;
 
 public class AutomationProposalOperation : Entity
 {
-    public string ProposalId { get; private set; }
+    public Guid ProposalId { get; private set; }
     public int Sequence { get; private set; }
     public string ActionType { get; private set; }
     public string TargetType { get; private set; }
@@ -20,7 +20,7 @@ public class AutomationProposalOperation : Entity
     private AutomationProposalOperation() { } // EF Core
 
     public AutomationProposalOperation(
-        string proposalId,
+        Guid proposalId,
         int sequence,
         string actionType,
         string targetType,
@@ -29,7 +29,7 @@ public class AutomationProposalOperation : Entity
         string? targetId = null,
         string? expectedVersion = null)
     {
-        if (string.IsNullOrWhiteSpace(proposalId))
+        if (proposalId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "ProposalId cannot be empty");
         if (sequence < 0)
             throw new DomainException(ErrorCodes.ValidationError, "Sequence must be non-negative");
