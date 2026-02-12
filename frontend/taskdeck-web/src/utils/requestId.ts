@@ -5,7 +5,10 @@ interface RequestIdSources {
 }
 
 export function createRequestId(sources: RequestIdSources = {}): string {
-  const randomUUID = sources.randomUUID ?? globalThis.crypto?.randomUUID?.bind(globalThis.crypto)
+  const hasExplicitRandomUUID = Object.prototype.hasOwnProperty.call(sources, 'randomUUID')
+  const randomUUID = hasExplicitRandomUUID
+    ? sources.randomUUID
+    : globalThis.crypto?.randomUUID?.bind(globalThis.crypto)
   if (typeof randomUUID === 'function') {
     return randomUUID()
   }
