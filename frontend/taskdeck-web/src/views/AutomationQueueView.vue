@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useQueueStore } from '../store/queueStore'
+import { getQueueTotal, normalizeQueueStatus } from '../utils/queue'
 
 const queue = useQueueStore()
 
@@ -56,7 +57,8 @@ function formatDate(d: string | null): string {
   return new Date(d).toLocaleString()
 }
 
-function statusColor(status: string): string {
+function statusColor(status: string | number): string {
+  const normalized = normalizeQueueStatus(status)
   const colors: Record<string, string> = {
     Pending: 'var(--td-color-warning)',
     Processing: 'var(--td-color-info)',
@@ -64,7 +66,7 @@ function statusColor(status: string): string {
     Failed: 'var(--td-color-error)',
     Cancelled: 'var(--td-text-tertiary)',
   }
-  return colors[status] ?? 'var(--td-text-secondary)'
+  return colors[normalized] ?? 'var(--td-text-secondary)'
 }
 </script>
 
@@ -75,23 +77,23 @@ function statusColor(status: string): string {
     <!-- Stats Cards -->
     <div v-if="queue.stats" class="td-stats-grid">
       <div class="td-stat-card">
-        <div class="td-stat-value">{{ queue.stats.pending }}</div>
+        <div class="td-stat-value">{{ queue.stats.pendingCount }}</div>
         <div class="td-stat-label">Pending</div>
       </div>
       <div class="td-stat-card">
-        <div class="td-stat-value">{{ queue.stats.processing }}</div>
+        <div class="td-stat-value">{{ queue.stats.processingCount }}</div>
         <div class="td-stat-label">Processing</div>
       </div>
       <div class="td-stat-card">
-        <div class="td-stat-value">{{ queue.stats.completed }}</div>
+        <div class="td-stat-value">{{ queue.stats.completedCount }}</div>
         <div class="td-stat-label">Completed</div>
       </div>
       <div class="td-stat-card">
-        <div class="td-stat-value">{{ queue.stats.failed }}</div>
+        <div class="td-stat-value">{{ queue.stats.failedCount }}</div>
         <div class="td-stat-label">Failed</div>
       </div>
       <div class="td-stat-card">
-        <div class="td-stat-value">{{ queue.stats.total }}</div>
+        <div class="td-stat-value">{{ getQueueTotal(queue.stats) }}</div>
         <div class="td-stat-label">Total</div>
       </div>
     </div>
@@ -154,7 +156,7 @@ function statusColor(status: string): string {
           <div class="td-request-header">
             <span class="td-request-type">{{ req.requestType }}</span>
             <span class="td-status-badge" :style="{ color: statusColor(req.status), borderColor: statusColor(req.status) }">
-              {{ req.status }}
+              {{ normalizeQueueStatus(req.status) }}
             </span>
           </div>
           <div class="td-request-meta">
@@ -164,7 +166,7 @@ function statusColor(status: string): string {
           <div v-if="req.errorMessage" class="td-request-error">{{ req.errorMessage }}</div>
           <div class="td-request-actions">
             <button
-              v-if="req.status === 'Pending'"
+              v-if="normalizeQueueStatus(req.status) === 'Pending'"
               class="td-btn td-btn--danger td-btn--sm"
               @click="handleCancel(req.id)"
             >Cancel</button>
