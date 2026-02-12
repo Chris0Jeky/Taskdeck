@@ -10,6 +10,11 @@ public interface IUnitOfWork
     IBoardAccessRepository BoardAccesses { get; }
     IAuditLogRepository AuditLogs { get; }
     ILlmQueueRepository LlmQueue { get; }
+    IAutomationProposalRepository AutomationProposals { get; }
+    IArchiveItemRepository ArchiveItems { get; }
+    IChatSessionRepository ChatSessions { get; }
+    IChatMessageRepository ChatMessages { get; }
+    ICommandRunRepository CommandRuns { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
