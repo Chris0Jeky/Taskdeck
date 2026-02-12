@@ -4,6 +4,8 @@ import { boardAccessApi } from '../api/boardAccessApi'
 import { useToastStore } from './toastStore'
 import { useSessionStore } from './sessionStore'
 import type { BoardAccess, BoardRole, GrantAccessDto, UpdateAccessDto } from '../types/access'
+import { normalizeBoardRole } from '../utils/roles'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 
 export const usePermissionsStore = defineStore('permissions', () => {
   const toast = useToastStore()
@@ -18,7 +20,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
       const accessList = boardAccess.value.get(boardId)
       if (!accessList || !session.userId) return null
       const entry = accessList.find(a => a.userId === session.userId)
-      return entry?.role ?? null
+      if (!entry) return null
+      return normalizeBoardRole(entry.role)
     }
   })
 
@@ -63,14 +66,14 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       loading.value = true
       error.value = null
-      const grantedBy = session.userId ?? ''
+      const grantedBy = session.requireUserId('board access management')
       const access = await boardAccessApi.grantAccess(boardId, dto, grantedBy)
       const existing = boardAccess.value.get(boardId) ?? []
       boardAccess.value.set(boardId, [...existing, access])
       toast.success('Access granted')
       return access
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to grant access')
+      const msg = getErrorDisplay(e, 'Failed to grant access').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -83,7 +86,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       loading.value = true
       error.value = null
-      const updatedBy = session.userId ?? ''
+      const updatedBy = session.requireUserId('board access management')
       const updated = await boardAccessApi.updateAccess(boardId, accessId, dto, updatedBy)
       const existing = boardAccess.value.get(boardId) ?? []
       const index = existing.findIndex(a => a.id === accessId)
@@ -94,7 +97,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       toast.success('Access updated')
       return updated
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to update access')
+      const msg = getErrorDisplay(e, 'Failed to update access').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -107,13 +110,13 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       loading.value = true
       error.value = null
-      const revokedBy = session.userId ?? ''
+      const revokedBy = session.requireUserId('board access management')
       await boardAccessApi.revokeAccess(boardId, accessId, revokedBy)
       const existing = boardAccess.value.get(boardId) ?? []
       boardAccess.value.set(boardId, existing.filter(a => a.id !== accessId))
       toast.success('Access revoked')
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to revoke access')
+      const msg = getErrorDisplay(e, 'Failed to revoke access').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -121,16 +124,6 @@ export const usePermissionsStore = defineStore('permissions', () => {
       loading.value = false
     }
   }
-
-  function getErrorMessage(err: unknown, fallback: string): string {
-    if (typeof err !== 'object' || err === null) return fallback
-    const typed = err as { response?: { data?: { message?: unknown } }; message?: unknown }
-    const responseMessage = typed.response?.data?.message
-    if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage
-    if (typeof typed.message === 'string' && typed.message.trim().length > 0) return typed.message
-    return fallback
-  }
-
   return {
     boardAccess,
     loading,
