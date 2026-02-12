@@ -7,6 +7,13 @@ const roleByValue: Record<number, BoardRole> = {
   3: 'Viewer',
 }
 
+const roleByName: Record<string, BoardRole> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  editor: 'Editor',
+  viewer: 'Viewer',
+}
+
 const valueByRole: Record<BoardRole, number> = {
   Owner: 0,
   Admin: 1,
@@ -19,11 +26,8 @@ export function normalizeBoardRole(role: BoardRoleValue): BoardRole {
     return roleByValue[role] ?? 'Viewer'
   }
 
-  if (role in valueByRole) {
-    return role
-  }
-
-  return 'Viewer'
+  const normalized = role.trim().toLowerCase()
+  return roleByName[normalized] ?? 'Viewer'
 }
 
 export function toBoardRoleValue(role: BoardRoleValue): number {
