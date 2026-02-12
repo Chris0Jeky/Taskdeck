@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuditStore } from '../store/auditStore'
 
@@ -13,56 +13,68 @@ const entityId = ref('')
 const userId = ref('')
 const limit = ref(50)
 
-onMounted(() => {
-  if (route.params.boardId) {
-    viewMode.value = 'board'
-    boardId.value = route.params.boardId as string
-    fetchHistory()
-  }
-})
+function formatTimestamp(ts: string): string {
+  return new Date(ts).toLocaleString()
+}
 
-watch(() => route.params, (params) => {
-  if (params.boardId && (params.boardId !== boardId.value || viewMode.value !== 'board')) {
-    viewMode.value = 'board'
-    boardId.value = params.boardId as string
-    fetchHistory()
-  } else if (params.entityType && params.entityId &&
-    (params.entityType !== entityType.value || params.entityId !== entityId.value || viewMode.value !== 'entity')) {
-    viewMode.value = 'entity'
-    entityType.value = params.entityType as string
-    entityId.value = params.entityId as string
-    fetchHistory()
-  } else if (params.userId && (params.userId !== userId.value || viewMode.value !== 'user')) {
-    viewMode.value = 'user'
-    userId.value = params.userId as string
-    fetchHistory()
+function formatAction(action: string | number): string {
+  if (typeof action === 'string') return action
+
+  const map: Record<number, string> = {
+    0: 'Created',
+    1: 'Updated',
+    2: 'Deleted',
+    3: 'Archived',
+    4: 'Unarchived',
+    5: 'Moved',
+    6: 'PermissionGranted',
+    7: 'PermissionRevoked',
+    8: 'OwnershipTransferred',
   }
-})
+
+  return map[action] ?? String(action)
+}
 
 async function fetchHistory() {
   if (viewMode.value === 'board' && boardId.value) {
     await audit.fetchBoardHistory(boardId.value, limit.value)
-  } else if (viewMode.value === 'entity' && entityType.value && entityId.value) {
+    return
+  }
+
+  if (viewMode.value === 'entity' && entityType.value && entityId.value) {
     await audit.fetchEntityHistory(entityType.value, entityId.value, limit.value)
-  } else if (viewMode.value === 'user' && userId.value) {
+    return
+  }
+
+  if (viewMode.value === 'user' && userId.value) {
     await audit.fetchUserHistory(userId.value, limit.value)
   }
 }
 
-function handleManualFetch() {
+function syncFromRouteAndFetch() {
+  if (typeof route.params.boardId === 'string') {
+    viewMode.value = 'board'
+    boardId.value = route.params.boardId
+  } else if (typeof route.params.entityType === 'string' && typeof route.params.entityId === 'string') {
+    viewMode.value = 'entity'
+    entityType.value = route.params.entityType
+    entityId.value = route.params.entityId
+  } else if (typeof route.params.userId === 'string') {
+    viewMode.value = 'user'
+    userId.value = route.params.userId
+  }
+
   fetchHistory()
 }
 
-function formatTimestamp(ts: string): string {
-  return new Date(ts).toLocaleString()
-}
+onMounted(syncFromRouteAndFetch)
+watch(() => route.params, syncFromRouteAndFetch, { deep: true })
 </script>
 
 <template>
   <div class="td-activity">
     <h1 class="td-page-title">Activity</h1>
 
-    <!-- Manual query form -->
     <div class="td-activity__controls">
       <div class="td-form-row">
         <select v-model="viewMode" class="td-input">
@@ -72,10 +84,12 @@ function formatTimestamp(ts: string): string {
         </select>
 
         <input v-if="viewMode === 'board'" v-model="boardId" type="text" class="td-input" placeholder="Board ID" />
+
         <template v-if="viewMode === 'entity'">
           <input v-model="entityType" type="text" class="td-input" placeholder="Entity Type" />
           <input v-model="entityId" type="text" class="td-input" placeholder="Entity ID" />
         </template>
+
         <input v-if="viewMode === 'user'" v-model="userId" type="text" class="td-input" placeholder="User ID" />
 
         <select v-model.number="limit" class="td-input td-input--sm">
@@ -84,28 +98,26 @@ function formatTimestamp(ts: string): string {
           <option :value="100">100</option>
         </select>
 
-        <button class="td-btn td-btn--primary td-btn--sm" @click="handleManualFetch">Fetch</button>
+        <button class="td-btn td-btn--primary td-btn--sm" @click="fetchHistory">Fetch</button>
       </div>
     </div>
 
-    <!-- Loading -->
     <div v-if="audit.loading" class="td-loading">Loading activity...</div>
 
-    <!-- Timeline -->
     <div v-else class="td-timeline">
       <div v-if="audit.entries.length === 0" class="td-empty">No activity entries found.</div>
       <div v-for="entry in audit.entries" :key="entry.id" class="td-timeline__entry">
         <div class="td-timeline__dot"></div>
         <div class="td-timeline__content">
           <div class="td-timeline__header">
-            <span class="td-timeline__action">{{ entry.action }}</span>
+            <span class="td-timeline__action">{{ formatAction(entry.action) }}</span>
             <span class="td-timeline__time">{{ formatTimestamp(entry.timestamp) }}</span>
           </div>
           <div class="td-timeline__details">
             <span class="td-timeline__entity">{{ entry.entityType }} · {{ entry.entityId }}</span>
-            <span v-if="entry.actorName" class="td-timeline__actor">by {{ entry.actorName }}</span>
+            <span v-if="entry.userName" class="td-timeline__actor">by {{ entry.userName }}</span>
           </div>
-          <div v-if="entry.details" class="td-timeline__message">{{ entry.details }}</div>
+          <div v-if="entry.changes" class="td-timeline__message">{{ entry.changes }}</div>
         </div>
       </div>
     </div>
