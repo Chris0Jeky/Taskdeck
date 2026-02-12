@@ -100,7 +100,7 @@ describe('cardsApi', () => {
       const movedCard = { id: 'card-1', columnId: 'col-2', position: 0 }
       vi.mocked(http.post).mockResolvedValue({ data: movedCard })
 
-      const moveData = { targetColumnId: 'col-2', position: 0 }
+      const moveData = { targetColumnId: 'col-2', targetPosition: 0 }
       const result = await cardsApi.moveCard('board-1', 'card-1', moveData)
 
       expect(http.post).toHaveBeenCalledWith('/boards/board-1/cards/card-1/move', moveData)
