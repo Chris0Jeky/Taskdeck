@@ -28,20 +28,28 @@ public class AuthenticationService : IAuthenticationService
             if (!TryValidateJwtSettings(out var jwtValidationError))
                 return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
 
-            var user = await _unitOfWork.Users.GetByUsernameAsync(dto.UsernameOrEmail);
-            user ??= await _unitOfWork.Users.GetByEmailAsync(dto.UsernameOrEmail);
-
-            if (user == null)
+            var users = await ResolveLoginCandidatesAsync(dto.UsernameOrEmail);
+            if (users.Count == 0)
                 return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Invalid username/email or password");
 
-            if (!user.IsActive)
-                return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+            User? authenticatedUser = null;
+            foreach (var candidate in users)
+            {
+                if (!BCrypt.Net.BCrypt.Verify(dto.Password, candidate.PasswordHash))
+                    continue;
 
-            if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+                if (!candidate.IsActive)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+                authenticatedUser = candidate;
+                break;
+            }
+
+            if (authenticatedUser == null)
                 return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Invalid username/email or password");
 
-            var token = GenerateJwtToken(user);
-            return Result.Success(new AuthResultDto(token, MapToDto(user)));
+            var token = GenerateJwtToken(authenticatedUser);
+            return Result.Success(new AuthResultDto(token, MapToDto(authenticatedUser)));
         }
         catch (DomainException ex)
         {
@@ -225,6 +233,27 @@ public class AuthenticationService : IAuthenticationService
 
         errorMessage = string.Empty;
         return true;
+    }
+
+    private async Task<List<User>> ResolveLoginCandidatesAsync(string usernameOrEmail)
+    {
+        var userByUsername = await _unitOfWork.Users.GetByUsernameAsync(usernameOrEmail);
+        var userByEmail = await _unitOfWork.Users.GetByEmailAsync(usernameOrEmail);
+
+        var orderedCandidates = usernameOrEmail.Contains('@')
+            ? new[] { userByEmail, userByUsername }
+            : new[] { userByUsername, userByEmail };
+
+        var unique = new List<User>();
+        foreach (var candidate in orderedCandidates)
+        {
+            if (candidate is null || unique.Any(u => u.Id == candidate.Id))
+                continue;
+
+            unique.Add(candidate);
+        }
+
+        return unique;
     }
 
     private static UserDto MapToDto(User user)
