@@ -35,7 +35,8 @@ export const useSessionStore = defineStore('session', () => {
     username.value = data.username
     email.value = data.email
     try {
-      const payload = JSON.parse(atob(data.token.split('.')[1]))
+      const parts = data.token.split('.')
+      const payload = JSON.parse(atob(parts[1] ?? ''))
       expiresAt.value = payload.exp ? new Date(payload.exp * 1000).toISOString() : null
     } catch {
       expiresAt.value = null
@@ -68,7 +69,8 @@ export const useSessionStore = defineStore('session', () => {
         userId.value = session.userId
         username.value = session.username
         email.value = session.email
-        const payload = JSON.parse(atob(savedToken.split('.')[1]))
+        const parts = savedToken.split('.')
+        const payload = JSON.parse(atob(parts[1] ?? ''))
         expiresAt.value = payload.exp ? new Date(payload.exp * 1000).toISOString() : null
         if (payload.exp && Date.now() / 1000 > payload.exp) {
           clearSession()

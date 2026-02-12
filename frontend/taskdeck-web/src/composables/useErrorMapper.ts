@@ -11,7 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 }
 
 export function mapErrorToMessage(error: ApiError): string {
-  return error.message || ERROR_MESSAGES[error.errorCode] || ERROR_MESSAGES.UnexpectedError
+  return error.message || ERROR_MESSAGES[error.errorCode] || ERROR_MESSAGES.UnexpectedError || 'An unexpected error occurred.'
 }
 
 export function parseApiError(err: unknown): ApiError | null {
