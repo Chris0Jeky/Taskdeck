@@ -30,7 +30,6 @@ function makeAccess(overrides: Partial<BoardAccess> = {}): BoardAccess {
     role: 'Editor',
     grantedBy: 'owner-1',
     grantedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     ...overrides,
   }
 }
@@ -124,6 +123,15 @@ describe('permissionsStore', () => {
 
       expect(store.canEdit('board-1')).toBe(expected)
     })
+
+    it('normalizes numeric role values from backend', () => {
+      sessionStore.userId = 'user-1'
+      store.boardAccess.set('board-1', [makeAccess({ userId: 'user-1', role: 1 })])
+
+      expect(store.canEdit('board-1')).toBe(true)
+      expect(store.canAdmin('board-1')).toBe(true)
+      expect(store.isOwner('board-1')).toBe(false)
+    })
   })
 
   describe('canAdmin', () => {
@@ -151,6 +159,15 @@ describe('permissionsStore', () => {
       store.boardAccess.set('board-1', [makeAccess({ userId: 'user-1', role })])
 
       expect(store.isOwner('board-1')).toBe(expected)
+    })
+  })
+
+  describe('guardrails', () => {
+    it('throws if grantAccess is called without a session user', async () => {
+      await expect(store.grantAccess('board-1', { userId: 'user-2', role: 'Viewer' }))
+        .rejects
+        .toThrow('You must be logged in to use board access management.')
+      expect(boardAccessApi.grantAccess).not.toHaveBeenCalled()
     })
   })
 })
