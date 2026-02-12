@@ -29,10 +29,11 @@
 - Board-access:
   - Added board-route scope enforcement in update/revoke service methods.
   - Added acting-user existence checks.
-  - Added manage-access permission checks (owner/admin path; legacy ownerless-board compatibility preserved).
+  - Added manage-access permission checks (owner/admin path) with transitional ownerless-board bootstrap (first successful grant claims ownership).
   - Added board existence checks to list access by board and user existence checks to list boards by user.
 - Export/import:
   - Added requester existence/read-permission checks for export.
+  - Removed null-owner implicit read bypass for export authorization.
   - Added importer existence checks.
   - Added export-shape JSON -> import DTO conversion path for true export/import round-trip compatibility.
   - Added duplicate/invalid reference validation (duplicate labels/columns, unknown column/label references).
@@ -58,8 +59,10 @@
   - `backend/tests/Taskdeck.Api.Tests/AdvancedFeaturesApiTests.cs`
 - Revised:
   - `backend/tests/Taskdeck.Application.Tests/Services/BoardAccessServiceTests.cs`
+  - `backend/tests/Taskdeck.Application.Tests/Services/ExportImportServiceTests.cs`
   - `backend/tests/Taskdeck.Application.Tests/Services/HistoryServiceTests.cs`
   - `backend/tests/Taskdeck.Application.Tests/Services/UserServiceTests.cs`
+  - `backend/tests/Taskdeck.Api.Tests/AdvancedFeaturesApiTests.cs`
 
 ## Vision Preservation Check (Docs Diff Intent)
 
@@ -152,7 +155,7 @@ Scope in this pass is design-only for existing endpoints; no authorization rollo
   - `dotnet test backend/Taskdeck.sln`
   - Result:
     - Domain: 68/68
-    - Application: 155/155
+    - Application: 162/162
     - API integration: 34/34
     - CLI contract: 4/4
 - Frontend:
@@ -161,7 +164,7 @@ Scope in this pass is design-only for existing endpoints; no authorization rollo
   - `cd frontend/taskdeck-web; $env:TASKDECK_E2E_DB='taskdeck.e2e.local.db'; npx playwright test`
     - 8/8 passing
 
-Combined automated total after this pass: **384/384 passing**.
+Combined automated total after this pass: **391/391 passing**.
 
 ## Remaining Risks (Not Claimed as Solved Here)
 

@@ -7,13 +7,16 @@ Use this checklist to manually validate current Taskdeck behavior on `main`.
 - In scope:
   - Boards, columns, cards, labels, filters, keyboard workflows, drag and drop, toasts.
   - CLI commands for boards, columns, and cards.
+  - Active side-track APIs on `main`: auth/users/board-access/export-import/LLM-queue/audit.
 - Out of scope on current `main`:
-  - Auth/login/register endpoints and permission-enforced runtime flows.
-  - Export/import API endpoints.
-  - LLM queue and audit/history runtime API endpoints.
+  - Full claim-based auth enforcement on legacy board/column/card/label endpoints (`[Authorize]` rollout is still pending).
+  - Queue background worker automation (manual `process-next` only).
+  - Database file export/import operations (still stubbed).
 
 Expected boundary behavior right now:
-- `GET /api/auth/login` and similar side-track endpoints should return `404` because those controllers are not active on `main`.
+- Side-track controllers are active and should return real responses (not `404`).
+- Ownerless boards created via `POST /api/boards` are bootstrapped on first access-management action:
+  - first successful grant assigns board ownership to `grantedBy`.
 
 ## Preconditions
 
@@ -222,21 +225,77 @@ Expected boundary behavior right now:
 
 Assume API at `http://localhost:5000`.
 
+### Auth + Users
+
+1. Register user:
+   - `Invoke-RestMethod http://localhost:5000/api/auth/register -Method Post -ContentType application/json -Body '{"username":"manual_user","email":"manual_user@example.com","password":"password123"}'`
+   - Expected: `200` with `token` and `user.id`.
+2. Login:
+   - `Invoke-RestMethod http://localhost:5000/api/auth/login -Method Post -ContentType application/json -Body '{"username":"manual_user","password":"password123"}'`
+   - Expected: `200` and JWT token string.
+3. Change password (correct current password):
+   - `Invoke-WebRequest "http://localhost:5000/api/auth/change-password" -Method Post -ContentType application/json -Body '{"userId":"<userId>","currentPassword":"password123","newPassword":"password1234"}'`
+   - Expected: `204`.
+4. Invalid login:
+   - same login request with wrong password.
+   - Expected: `401`.
+5. Users list:
+   - `Invoke-RestMethod http://localhost:5000/api/users`
+   - Expected: array response, `200`.
+
+### Boards + Board Access
+
 1. List boards:
    - `Invoke-RestMethod http://localhost:5000/api/boards`
    - Expected: array response, `200`.
-2. Create board:
+2. Create board (legacy path):
    - `Invoke-RestMethod http://localhost:5000/api/boards -Method Post -ContentType application/json -Body '{"name":"Manual API Board"}'`
    - Expected: created board object, `201`.
-3. Board not found:
-   - `Invoke-WebRequest http://localhost:5000/api/boards/00000000-0000-0000-0000-000000000001`
-   - Expected: `404` and JSON with `errorCode`.
-4. Reorder columns validation:
-   - send incomplete column ID set to `/api/boards/{boardId}/columns/reorder`.
+3. Ownerless board access bootstraps ownership:
+   - `Invoke-WebRequest "http://localhost:5000/api/boards/<boardId>/access?grantedBy=<userId>" -Method Post -ContentType application/json -Body '{"boardId":"<boardId>","userId":"<targetUserId>","role":3}'`
+   - Expected: `200` and board owner bootstrap to `<userId>`.
+4. Create owned board through import:
+   - `Invoke-RestMethod "http://localhost:5000/api/import/boards?userId=<userId>" -Method Post -ContentType application/json -Body '{"name":"Owned Board","description":null,"columns":[],"cards":[],"labels":[]}'`
+   - Expected: `200` with `success=true` and non-null `boardId`.
+5. Grant access on owned board as owner:
+   - `Invoke-RestMethod "http://localhost:5000/api/boards/<ownedBoardId>/access?grantedBy=<userId>" -Method Post -ContentType application/json -Body '{"boardId":"<ownedBoardId>","userId":"<targetUserId>","role":3}'`
+   - Expected: `200`.
+6. Mismatched route board and access id:
+   - attempt `PUT /api/boards/<otherBoardId>/access/<accessId>?updatedBy=<ownerId>`.
+   - Expected: `404 NotFound`.
+
+### Export + Import
+
+1. Export board as DTO:
+   - `Invoke-RestMethod "http://localhost:5000/api/export/boards/<ownedBoardId>?userId=<ownerId>"`
+   - Expected: `200` with `board`, `columns`, `cards`, `labels`, `accesses`.
+2. Export board as JSON:
+   - `Invoke-WebRequest "http://localhost:5000/api/export/boards/<ownedBoardId>/json?userId=<ownerId>"`
+   - Expected: `200`, `Content-Type: application/json`.
+3. Export forbidden for unrelated user:
+   - call export with user lacking board access.
+   - Expected: `403`.
+4. Import card with duplicate labels on same card:
+   - POST `/api/import/boards?userId=<userId>` with one card labels `["Bug","bug","BUG"]` and one label definition `"Bug"`.
+   - Expected: `200` (deduplicated, no DB conflict).
+5. Import card with empty label reference:
+   - same payload but include `""` in card labels.
    - Expected: `400 ValidationError`.
-5. Side-track endpoint absence on current main:
-   - `Invoke-WebRequest http://localhost:5000/api/auth/login`
-   - Expected: `404`.
+
+### LLM Queue + Audit
+
+1. Queue request:
+   - `Invoke-RestMethod http://localhost:5000/api/llm-queue -Method Post -ContentType application/json -Body '{"userId":"<userId>","requestType":"BoardSummary","payload":"{}","boardId":"<ownedBoardId>"}'`
+   - Expected: `200` with request ID and `status: Pending`.
+2. Invalid queue status filter:
+   - `Invoke-WebRequest http://localhost:5000/api/llm-queue/status/not-a-real-status`
+   - Expected: `400 ValidationError`.
+3. Process next queue item:
+   - `Invoke-RestMethod http://localhost:5000/api/llm-queue/process-next -Method Post`
+   - Expected: `200` when queue has pending item; `404` when empty.
+4. Audit invalid limit:
+   - `Invoke-WebRequest "http://localhost:5000/api/audit/boards/<ownedBoardId>?limit=0"`
+   - Expected: `400 ValidationError`.
 
 ## CLI Manual Checks
 

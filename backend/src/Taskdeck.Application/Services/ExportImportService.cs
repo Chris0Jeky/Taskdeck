@@ -157,9 +157,20 @@ public class ExportImportService : IExportImportService
                     throw new DomainException(ErrorCodes.ValidationError, $"Column '{importCard.ColumnName}' referenced by card '{importCard.Title}' was not found");
 
                 var card = new Card(board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
+                var uniqueCardLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var labelName in importCard.Labels ?? Enumerable.Empty<string>())
                 {
+                    if (string.IsNullOrWhiteSpace(labelName))
+                    {
+                        throw new DomainException(
+                            ErrorCodes.ValidationError,
+                            $"Card '{importCard.Title}' contains an empty label reference");
+                    }
+
+                    if (!uniqueCardLabelNames.Add(labelName))
+                        continue;
+
                     if (!labelsByName.TryGetValue(labelName, out var label))
                     {
                         throw new DomainException(
@@ -231,7 +242,7 @@ public class ExportImportService : IExportImportService
 
     private async Task<bool> CanUserReadBoardAsync(Board board, Guid userId)
     {
-        if (board.OwnerId is null || board.OwnerId == userId)
+        if (board.OwnerId == userId)
             return true;
 
         var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(board.Id, userId);
@@ -282,8 +293,14 @@ public class ExportImportService : IExportImportService
             .ToList()
             ?? new List<ImportLabelDto>();
 
-        var columnNameById = (exportDto.Columns ?? Enumerable.Empty<ColumnDto>())
-            .ToDictionary(c => c.Id, c => c.Name);
+        var columnNameById = new Dictionary<Guid, string>();
+        foreach (var column in exportDto.Columns ?? Enumerable.Empty<ColumnDto>())
+        {
+            if (!columnNameById.TryAdd(column.Id, column.Name))
+            {
+                throw new JsonException($"Export payload contains duplicate column ID '{column.Id}'");
+            }
+        }
 
         var cards = new List<ImportCardDto>();
         foreach (var card in exportDto.Cards ?? Enumerable.Empty<CardDto>())

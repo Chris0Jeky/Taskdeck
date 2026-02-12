@@ -39,6 +39,23 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task LoginAsync_ShouldAuthenticateEmailOwner_WhenUsernameEmailCollisionExists()
+    {
+        const string collision = "collision@example.com";
+        var usernameOwner = new User(collision, "owner1@example.com", BCrypt.Net.BCrypt.HashPassword("password-a"));
+        var emailOwner = new User("email_owner", collision, BCrypt.Net.BCrypt.HashPassword("password-b"));
+        var service = CreateService();
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync(collision, default)).ReturnsAsync(usernameOwner);
+        _userRepoMock.Setup(r => r.GetByEmailAsync(collision, default)).ReturnsAsync(emailOwner);
+
+        var result = await service.LoginAsync(new LoginDto(collision, "password-b"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.User.Id.Should().Be(emailOwner.Id);
+    }
+
+    [Fact]
     public async Task LoginAsync_ShouldReturnUnexpectedError_WhenJwtConfigIsInvalid()
     {
         var service = CreateService(new JwtSettings
