@@ -33,6 +33,11 @@ builder.Services.AddScoped<HistoryService>();
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
 builder.Services.AddSingleton(jwtSettings);
 
+// Development sandbox bypass settings (dev environment only)
+var sandboxSettings = builder.Configuration.GetSection("DevelopmentSandbox").Get<DevelopmentSandboxSettings>() ?? new DevelopmentSandboxSettings();
+sandboxSettings.Enabled = sandboxSettings.Enabled && builder.Environment.IsDevelopment();
+builder.Services.AddSingleton(sandboxSettings);
+
 // Add JWT Authentication
 if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
     jwtSettings.SecretKey.Length >= 32 &&
