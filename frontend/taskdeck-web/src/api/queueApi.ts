@@ -25,8 +25,20 @@ export const queueApi = {
   },
 
   async processNext(): Promise<QueueRequest | null> {
-    const { data } = await http.post<QueueRequest | null>('/llm-queue/process-next')
-    return data
+    try {
+      const { data } = await http.post<QueueRequest | null>('/llm-queue/process-next')
+      return data ? normalizeQueueRequest(data) : null
+    } catch (err: unknown) {
+      if (typeof err === 'object' && err !== null) {
+        const typed = err as { response?: { status?: number; data?: { errorCode?: string } } }
+        const status = typed.response?.status
+        const code = typed.response?.data?.errorCode
+        if (status === 404 || code === 'NotFound') {
+          return null
+        }
+      }
+      throw err
+    }
   },
 
   async getStats(): Promise<QueueStats> {
