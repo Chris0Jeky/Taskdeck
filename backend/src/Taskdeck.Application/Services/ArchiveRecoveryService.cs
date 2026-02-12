@@ -1,0 +1,501 @@
+using System.Text.Json;
+using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
+
+namespace Taskdeck.Application.Services;
+
+public class ArchiveRecoveryService : IArchiveRecoveryService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuthorizationService? _authorizationService;
+
+    public ArchiveRecoveryService(
+        IUnitOfWork unitOfWork,
+        IAuthorizationService? authorizationService = null)
+    {
+        _unitOfWork = unitOfWork;
+        _authorizationService = authorizationService;
+    }
+
+    public async Task<Result<ArchiveItemDto>> CreateArchiveItemAsync(
+        CreateArchiveItemDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var archiveItem = new ArchiveItem(
+                dto.EntityType,
+                dto.EntityId,
+                dto.BoardId,
+                dto.Name,
+                dto.ArchivedByUserId,
+                dto.SnapshotJson,
+                dto.Reason);
+
+            await _unitOfWork.ArchiveItems.AddAsync(archiveItem, cancellationToken);
+
+            // Create audit log
+            var auditLog = new AuditLog(
+                "ArchiveItem",
+                archiveItem.Id,
+                AuditAction.Created,
+                dto.ArchivedByUserId,
+                $"Archived {dto.EntityType} '{dto.Name}' (ID: {dto.EntityId})");
+            await _unitOfWork.AuditLogs.AddAsync(auditLog, cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success(MapToDto(archiveItem));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<ArchiveItemDto>(ex.ErrorCode, ex.Message);
+        }
+    }
+
+    public async Task<Result<IEnumerable<ArchiveItemDto>>> GetArchiveItemsAsync(
+        string? entityType = null,
+        Guid? boardId = null,
+        RestoreStatus? status = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            IEnumerable<ArchiveItem> items;
+
+            if (entityType != null && boardId != null && status != null)
+            {
+                // Combined filter - need to implement custom query
+                var allItems = await _unitOfWork.ArchiveItems.GetAllAsync(cancellationToken);
+                items = allItems
+                    .Where(i => i.EntityType == entityType 
+                        && i.BoardId == boardId 
+                        && i.RestoreStatus == status.Value)
+                    .Take(limit);
+            }
+            else if (entityType != null)
+            {
+                items = await _unitOfWork.ArchiveItems.GetByEntityTypeAsync(entityType, limit, cancellationToken);
+            }
+            else if (boardId != null)
+            {
+                items = await _unitOfWork.ArchiveItems.GetByBoardIdAsync(boardId.Value, limit, cancellationToken);
+            }
+            else if (status != null)
+            {
+                items = await _unitOfWork.ArchiveItems.GetByStatusAsync(status.Value, limit, cancellationToken);
+            }
+            else
+            {
+                var allItems = await _unitOfWork.ArchiveItems.GetAllAsync(cancellationToken);
+                items = allItems.Take(limit);
+            }
+
+            // Apply additional filters if needed
+            if (entityType != null && boardId == null && status != null)
+            {
+                items = items.Where(i => i.RestoreStatus == status.Value);
+            }
+            else if (entityType == null && boardId != null && status != null)
+            {
+                items = items.Where(i => i.RestoreStatus == status.Value);
+            }
+            else if (entityType != null && boardId != null && status == null)
+            {
+                items = items.Where(i => i.BoardId == boardId.Value);
+            }
+
+            return Result.Success(items.Select(MapToDto));
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                ErrorCodes.UnexpectedError, 
+                $"Failed to retrieve archive items: {ex.Message}");
+        }
+    }
+
+    public async Task<Result<ArchiveItemDto>> GetArchiveItemByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var archiveItem = await _unitOfWork.ArchiveItems.GetByIdAsync(id, cancellationToken);
+        if (archiveItem == null)
+            return Result.Failure<ArchiveItemDto>(ErrorCodes.NotFound, $"Archive item with ID {id} not found");
+
+        return Result.Success(MapToDto(archiveItem));
+    }
+
+    public async Task<Result<RestoreResult>> RestoreArchiveItemAsync(
+        Guid id,
+        RestoreArchiveItemDto dto,
+        Guid restoredByUserId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1. Get archive item
+            var archiveItem = await _unitOfWork.ArchiveItems.GetByIdAsync(id, cancellationToken);
+            if (archiveItem == null)
+                return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Archive item with ID {id} not found");
+
+            if (archiveItem.RestoreStatus != RestoreStatus.Available)
+                return Result.Failure<RestoreResult>(
+                    ErrorCodes.InvalidOperation, 
+                    $"Cannot restore archive item with status {archiveItem.RestoreStatus}");
+
+            // 2. Determine target board
+            var targetBoardId = dto.TargetBoardId ?? archiveItem.BoardId;
+
+            // 3. Check permissions
+            if (_authorizationService != null)
+            {
+                var canWriteResult = await _authorizationService.CanWriteBoardAsync(restoredByUserId, targetBoardId);
+                if (canWriteResult.IsSuccess && !canWriteResult.Value)
+                {
+                    return Result.Failure<RestoreResult>(
+                        ErrorCodes.Forbidden, 
+                        "User does not have permission to restore to target board");
+                }
+            }
+
+            // 4. Validate target board exists
+            var targetBoard = await _unitOfWork.Boards.GetByIdAsync(targetBoardId, cancellationToken);
+            if (targetBoard == null)
+                return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Target board with ID {targetBoardId} not found");
+
+            if (targetBoard.IsArchived)
+                return Result.Failure<RestoreResult>(
+                    ErrorCodes.InvalidOperation, 
+                    "Cannot restore to an archived board");
+
+            // 5. Validate and restore based on entity type
+            Result<RestoreResult> restoreResult;
+            switch (archiveItem.EntityType)
+            {
+                case "board":
+                    restoreResult = await RestoreBoardAsync(archiveItem, dto, restoredByUserId, cancellationToken);
+                    break;
+                case "column":
+                    restoreResult = await RestoreColumnAsync(archiveItem, targetBoardId, dto, restoredByUserId, cancellationToken);
+                    break;
+                case "card":
+                    restoreResult = await RestoreCardAsync(archiveItem, targetBoardId, dto, restoredByUserId, cancellationToken);
+                    break;
+                default:
+                    return Result.Failure<RestoreResult>(
+                        ErrorCodes.ValidationError, 
+                        $"Unknown entity type: {archiveItem.EntityType}");
+            }
+
+            if (!restoreResult.IsSuccess)
+                return restoreResult;
+
+            // 6. Mark archive item as restored
+            archiveItem.MarkAsRestored(restoredByUserId);
+
+            // 7. Create audit log
+            var auditLog = new AuditLog(
+                "ArchiveItem",
+                archiveItem.Id,
+                AuditAction.Updated,
+                restoredByUserId,
+                $"Restored {archiveItem.EntityType} '{restoreResult.Value.ResolvedName ?? archiveItem.Name}' " +
+                $"(Original ID: {archiveItem.EntityId}, Restored ID: {restoreResult.Value.RestoredEntityId})");
+            await _unitOfWork.AuditLogs.AddAsync(auditLog, cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return restoreResult;
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<RestoreResult>(ex.ErrorCode, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure<RestoreResult>(
+                ErrorCodes.UnexpectedError, 
+                $"Failed to restore archive item: {ex.Message}");
+        }
+    }
+
+    private async Task<Result<RestoreResult>> RestoreBoardAsync(
+        ArchiveItem archiveItem,
+        RestoreArchiveItemDto dto,
+        Guid restoredByUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Deserialize snapshot
+            var snapshot = JsonSerializer.Deserialize<BoardSnapshot>(archiveItem.SnapshotJson);
+            if (snapshot == null)
+                return Result.Failure<RestoreResult>(
+                    ErrorCodes.ValidationError, 
+                    "Failed to deserialize board snapshot");
+
+            // Check for naming conflicts
+            var existingBoards = await _unitOfWork.Boards.SearchAsync(snapshot.Name, includeArchived: false, cancellationToken);
+            var conflictExists = existingBoards.Any(b => b.Name == snapshot.Name);
+
+            string resolvedName = snapshot.Name;
+            if (conflictExists)
+            {
+                if (dto.ConflictStrategy == ConflictStrategy.Fail)
+                {
+                    return Result.Failure<RestoreResult>(
+                        ErrorCodes.Conflict, 
+                        $"A board with name '{snapshot.Name}' already exists");
+                }
+                else if (dto.ConflictStrategy == ConflictStrategy.Rename)
+                {
+                    resolvedName = $"{snapshot.Name} (Restored)";
+                }
+                else if (dto.ConflictStrategy == ConflictStrategy.AppendSuffix)
+                {
+                    resolvedName = $"{snapshot.Name} - {DateTime.UtcNow:yyyyMMdd-HHmmss}";
+                }
+            }
+
+            // For InPlace mode, unarchive existing board if it's archived
+            if (dto.RestoreMode == RestoreMode.InPlace)
+            {
+                var existingBoard = await _unitOfWork.Boards.GetByIdAsync(archiveItem.EntityId, cancellationToken);
+                if (existingBoard != null && existingBoard.IsArchived)
+                {
+                    existingBoard.Unarchive();
+                    existingBoard.Update(resolvedName, snapshot.Description);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    
+                    return Result.Success(new RestoreResult(
+                        true,
+                        existingBoard.Id,
+                        null,
+                        resolvedName));
+                }
+            }
+
+            // Create new board (Copy mode or InPlace when original doesn't exist)
+            var newBoard = new Board(resolvedName, snapshot.Description, restoredByUserId);
+            await _unitOfWork.Boards.AddAsync(newBoard, cancellationToken);
+
+            return Result.Success(new RestoreResult(
+                true,
+                newBoard.Id,
+                null,
+                resolvedName));
+        }
+        catch (JsonException ex)
+        {
+            return Result.Failure<RestoreResult>(
+                ErrorCodes.ValidationError, 
+                $"Invalid snapshot format: {ex.Message}");
+        }
+    }
+
+    private async Task<Result<RestoreResult>> RestoreColumnAsync(
+        ArchiveItem archiveItem,
+        Guid targetBoardId,
+        RestoreArchiveItemDto dto,
+        Guid restoredByUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Deserialize snapshot
+            var snapshot = JsonSerializer.Deserialize<ColumnSnapshot>(archiveItem.SnapshotJson);
+            if (snapshot == null)
+                return Result.Failure<RestoreResult>(
+                    ErrorCodes.ValidationError, 
+                    "Failed to deserialize column snapshot");
+
+            // Get board and existing columns
+            var board = await _unitOfWork.Boards.GetByIdWithDetailsAsync(targetBoardId, cancellationToken);
+            if (board == null)
+                return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Board with ID {targetBoardId} not found");
+
+            // Check for naming conflicts
+            var conflictExists = board.Columns.Any(c => c.Name == snapshot.Name);
+
+            string resolvedName = snapshot.Name;
+            if (conflictExists)
+            {
+                if (dto.ConflictStrategy == ConflictStrategy.Fail)
+                {
+                    return Result.Failure<RestoreResult>(
+                        ErrorCodes.Conflict, 
+                        $"A column with name '{snapshot.Name}' already exists");
+                }
+                else if (dto.ConflictStrategy == ConflictStrategy.Rename)
+                {
+                    resolvedName = $"{snapshot.Name} (Restored)";
+                }
+                else if (dto.ConflictStrategy == ConflictStrategy.AppendSuffix)
+                {
+                    resolvedName = $"{snapshot.Name} - {DateTime.UtcNow:yyyyMMdd-HHmmss}";
+                }
+            }
+
+            // Determine position (add to end)
+            var maxPosition = board.Columns.Any() ? board.Columns.Max(c => c.Position) : -1;
+            var newPosition = maxPosition + 1;
+
+            // Create new column
+            var newColumn = new Column(targetBoardId, resolvedName, newPosition, snapshot.WipLimit);
+            await _unitOfWork.Columns.AddAsync(newColumn, cancellationToken);
+
+            return Result.Success(new RestoreResult(
+                true,
+                newColumn.Id,
+                null,
+                resolvedName));
+        }
+        catch (JsonException ex)
+        {
+            return Result.Failure<RestoreResult>(
+                ErrorCodes.ValidationError, 
+                $"Invalid snapshot format: {ex.Message}");
+        }
+    }
+
+    private async Task<Result<RestoreResult>> RestoreCardAsync(
+        ArchiveItem archiveItem,
+        Guid targetBoardId,
+        RestoreArchiveItemDto dto,
+        Guid restoredByUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Deserialize snapshot
+            var snapshot = JsonSerializer.Deserialize<CardSnapshot>(archiveItem.SnapshotJson);
+            if (snapshot == null)
+                return Result.Failure<RestoreResult>(
+                    ErrorCodes.ValidationError, 
+                    "Failed to deserialize card snapshot");
+
+            // Get board with details
+            var board = await _unitOfWork.Boards.GetByIdWithDetailsAsync(targetBoardId, cancellationToken);
+            if (board == null)
+                return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Board with ID {targetBoardId} not found");
+
+            // Find target column
+            Column? targetColumn = null;
+            if (snapshot.ColumnId != Guid.Empty)
+            {
+                targetColumn = board.Columns.FirstOrDefault(c => c.Id == snapshot.ColumnId);
+            }
+
+            // If original column doesn't exist, use first available column
+            if (targetColumn == null)
+            {
+                targetColumn = board.Columns.OrderBy(c => c.Position).FirstOrDefault();
+                if (targetColumn == null)
+                    return Result.Failure<RestoreResult>(
+                        ErrorCodes.InvalidOperation, 
+                        "Target board has no columns to restore card to");
+            }
+
+            // Get column with cards to check WIP limit and position
+            var columnWithCards = await _unitOfWork.Columns.GetByIdWithCardsAsync(targetColumn.Id, cancellationToken);
+            if (columnWithCards == null)
+                return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Column with ID {targetColumn.Id} not found");
+
+            // Check WIP limit
+            if (columnWithCards.WouldExceedWipLimitIfAdded())
+                return Result.Failure<RestoreResult>(
+                    ErrorCodes.WipLimitExceeded, 
+                    $"Cannot restore card, column '{columnWithCards.Name}' has reached its WIP limit");
+
+            // Check for title conflicts
+            var existingCards = columnWithCards.Cards.ToList();
+            var conflictExists = existingCards.Any(c => c.Title == snapshot.Title);
+
+            string resolvedTitle = snapshot.Title;
+            if (conflictExists)
+            {
+                if (dto.ConflictStrategy == ConflictStrategy.Fail)
+                {
+                    return Result.Failure<RestoreResult>(
+                        ErrorCodes.Conflict, 
+                        $"A card with title '{snapshot.Title}' already exists in the target column");
+                }
+                else if (dto.ConflictStrategy == ConflictStrategy.Rename)
+                {
+                    resolvedTitle = $"{snapshot.Title} (Restored)";
+                }
+                else if (dto.ConflictStrategy == ConflictStrategy.AppendSuffix)
+                {
+                    resolvedTitle = $"{snapshot.Title} - {DateTime.UtcNow:yyyyMMdd-HHmmss}";
+                }
+            }
+
+            // Determine position (add to bottom)
+            var maxPosition = existingCards.Any() ? existingCards.Max(c => c.Position) : -1;
+            var newPosition = maxPosition + 1;
+
+            // Create new card
+            var newCard = new Card(
+                targetBoardId,
+                columnWithCards.Id,
+                resolvedTitle,
+                snapshot.Description,
+                snapshot.DueDate,
+                newPosition);
+
+            if (snapshot.IsBlocked && !string.IsNullOrEmpty(snapshot.BlockReason))
+            {
+                newCard.Block(snapshot.BlockReason);
+            }
+
+            await _unitOfWork.Cards.AddAsync(newCard, cancellationToken);
+
+            return Result.Success(new RestoreResult(
+                true,
+                newCard.Id,
+                null,
+                resolvedTitle));
+        }
+        catch (JsonException ex)
+        {
+            return Result.Failure<RestoreResult>(
+                ErrorCodes.ValidationError, 
+                $"Invalid snapshot format: {ex.Message}");
+        }
+    }
+
+    private static ArchiveItemDto MapToDto(ArchiveItem item)
+    {
+        return new ArchiveItemDto(
+            item.Id,
+            item.EntityType,
+            item.EntityId,
+            item.BoardId,
+            item.Name,
+            item.ArchivedByUserId,
+            item.ArchivedAt,
+            item.Reason,
+            item.RestoreStatus,
+            item.RestoredAt,
+            item.RestoredByUserId,
+            item.CreatedAt,
+            item.UpdatedAt);
+    }
+}
+
+// Snapshot DTOs for deserialization
+internal record BoardSnapshot(string Name, string? Description);
+internal record ColumnSnapshot(string Name, int Position, int? WipLimit);
+internal record CardSnapshot(
+    string Title, 
+    string? Description, 
+    DateTimeOffset? DueDate, 
+    bool IsBlocked, 
+    string? BlockReason,
+    Guid ColumnId);
