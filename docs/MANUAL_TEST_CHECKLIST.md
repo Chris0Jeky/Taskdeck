@@ -15,7 +15,8 @@ Use this checklist to manually validate current Taskdeck behavior on `main`.
 
 Expected boundary behavior right now:
 - Side-track controllers are active and should return real responses (not `404`).
-- Ownerless boards created via `POST /api/boards` do not grant implicit access-management permissions.
+- Ownerless boards created via `POST /api/boards` are bootstrapped on first access-management action:
+  - first successful grant assigns board ownership to `grantedBy`.
 
 ## Preconditions
 
@@ -250,14 +251,14 @@ Assume API at `http://localhost:5000`.
 2. Create board (legacy path):
    - `Invoke-RestMethod http://localhost:5000/api/boards -Method Post -ContentType application/json -Body '{"name":"Manual API Board"}'`
    - Expected: created board object, `201`.
-3. Ownerless board access management is blocked:
-   - `Invoke-WebRequest "http://localhost:5000/api/boards/<boardId>/access?grantedBy=<userId>" -Method Post -ContentType application/json -Body '{"boardId":"<boardId>","userId":"<targetUserId>","role":"Viewer"}'`
-   - Expected: `403 Forbidden`.
+3. Ownerless board access bootstraps ownership:
+   - `Invoke-WebRequest "http://localhost:5000/api/boards/<boardId>/access?grantedBy=<userId>" -Method Post -ContentType application/json -Body '{"boardId":"<boardId>","userId":"<targetUserId>","role":3}'`
+   - Expected: `200` and board owner bootstrap to `<userId>`.
 4. Create owned board through import:
    - `Invoke-RestMethod "http://localhost:5000/api/import/boards?userId=<userId>" -Method Post -ContentType application/json -Body '{"name":"Owned Board","description":null,"columns":[],"cards":[],"labels":[]}'`
    - Expected: `200` with `success=true` and non-null `boardId`.
 5. Grant access on owned board as owner:
-   - `Invoke-RestMethod "http://localhost:5000/api/boards/<ownedBoardId>/access?grantedBy=<userId>" -Method Post -ContentType application/json -Body '{"boardId":"<ownedBoardId>","userId":"<targetUserId>","role":"Viewer"}'`
+   - `Invoke-RestMethod "http://localhost:5000/api/boards/<ownedBoardId>/access?grantedBy=<userId>" -Method Post -ContentType application/json -Body '{"boardId":"<ownedBoardId>","userId":"<targetUserId>","role":3}'`
    - Expected: `200`.
 6. Mismatched route board and access id:
    - attempt `PUT /api/boards/<otherBoardId>/access/<accessId>?updatedBy=<ownerId>`.
@@ -267,7 +268,7 @@ Assume API at `http://localhost:5000`.
 
 1. Export board as DTO:
    - `Invoke-RestMethod "http://localhost:5000/api/export/boards/<ownedBoardId>?userId=<ownerId>"`
-   - Expected: `200` with `board`, `columns`, `cards`, `labels`, `accessList`.
+   - Expected: `200` with `board`, `columns`, `cards`, `labels`, `accesses`.
 2. Export board as JSON:
    - `Invoke-WebRequest "http://localhost:5000/api/export/boards/<ownedBoardId>/json?userId=<ownerId>"`
    - Expected: `200`, `Content-Type: application/json`.
