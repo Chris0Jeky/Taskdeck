@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { isTokenExpired } from '../utils/jwt'
 
 const TOKEN_KEY = 'taskdeck_token'
 
@@ -14,7 +15,12 @@ http.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem(TOKEN_KEY)
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      if (isTokenExpired(token)) {
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem('taskdeck_session')
+      } else {
+        config.headers.Authorization = `Bearer ${token}`
+      }
     }
     return config
   },
@@ -32,7 +38,7 @@ http.interceptors.response.use(
       if (error.response.status === 401) {
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem('taskdeck_session')
-        const currentPath = window.location.pathname
+        const currentPath = `${window.location.pathname}${window.location.search}`
         if (currentPath !== '/login' && currentPath !== '/register') {
           window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
         }
