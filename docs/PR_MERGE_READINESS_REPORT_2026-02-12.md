@@ -29,7 +29,7 @@
 - Board-access:
   - Added board-route scope enforcement in update/revoke service methods.
   - Added acting-user existence checks.
-  - Added manage-access permission checks (owner/admin path; removed null-owner implicit bypass).
+  - Added manage-access permission checks (owner/admin path) with transitional ownerless-board bootstrap (first successful grant claims ownership).
   - Added board existence checks to list access by board and user existence checks to list boards by user.
 - Export/import:
   - Added requester existence/read-permission checks for export.
