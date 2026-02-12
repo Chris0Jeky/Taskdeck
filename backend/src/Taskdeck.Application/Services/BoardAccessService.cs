@@ -128,8 +128,7 @@ public class BoardAccessService : IBoardAccessService
 
     private async Task<Result> EnsureCanManageBoardAccessAsync(Board board, Guid actingUserId)
     {
-        // Backward compatibility: legacy boards without owner remain open.
-        if (board.OwnerId is null || board.OwnerId == actingUserId)
+        if (board.OwnerId == actingUserId)
             return Result.Success();
 
         var actingAccess = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(board.Id, actingUserId);
