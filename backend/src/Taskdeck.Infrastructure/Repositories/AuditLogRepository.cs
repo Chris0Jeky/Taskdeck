@@ -16,31 +16,37 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
 
     public async Task<IEnumerable<AuditLog>> GetByEntityAsync(string entityType, Guid entityId, int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _context.AuditLogs
+        var logs = await _context.AuditLogs
             .Include(al => al.User)
             .Where(al => al.EntityType == entityType && al.EntityId == entityId)
-            .OrderByDescending(al => al.Timestamp)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return logs
+            .OrderByDescending(al => al.Timestamp)
+            .Take(limit);
     }
 
     public async Task<IEnumerable<AuditLog>> GetByUserAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _context.AuditLogs
+        var logs = await _context.AuditLogs
             .Include(al => al.User)
             .Where(al => al.UserId == userId)
-            .OrderByDescending(al => al.Timestamp)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return logs
+            .OrderByDescending(al => al.Timestamp)
+            .Take(limit);
     }
 
     public async Task<IEnumerable<AuditLog>> GetByBoardAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _context.AuditLogs
+        var logs = await _context.AuditLogs
             .Include(al => al.User)
             .Where(al => al.EntityType == "Board" && al.EntityId == boardId)
-            .OrderByDescending(al => al.Timestamp)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return logs
+            .OrderByDescending(al => al.Timestamp)
+            .Take(limit);
     }
 }

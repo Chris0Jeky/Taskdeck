@@ -17,14 +17,13 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetBoardHistory_ShouldReturnSuccessOrHandleDbLimitation_ForNewBoard()
+    public async Task GetBoardHistory_ShouldReturnOk_ForNewBoard()
     {
         var board = await CreateBoardAsync();
 
         var response = await _client.GetAsync($"/api/audit/boards/{board.Id}");
 
-        // The endpoint should not return a client error; 200 or 500 (SQLite DateTimeOffset sort limitation) are acceptable.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -41,25 +40,23 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetEntityHistory_ShouldReturnSuccessOrHandleDbLimitation_ForAnyEntity()
+    public async Task GetEntityHistory_ShouldReturnOk_ForAnyEntity()
     {
         var entityId = Guid.NewGuid();
 
         var response = await _client.GetAsync($"/api/audit/entities/Card/{entityId}");
 
-        // The endpoint should not return a client error; 200 or 500 (SQLite DateTimeOffset sort limitation) are acceptable.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
-    public async Task GetUserHistory_ShouldReturnSuccessOrHandleDbLimitation_ForRegisteredUser()
+    public async Task GetUserHistory_ShouldReturnOk_ForRegisteredUser()
     {
         var (_, _, _, userId) = await RegisterUserAsync("audituser");
 
         var response = await _client.GetAsync($"/api/audit/users/{userId}");
 
-        // The endpoint should not return a client error; 200 or 500 (SQLite DateTimeOffset sort limitation) are acceptable.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private async Task<BoardDto> CreateBoardAsync()
