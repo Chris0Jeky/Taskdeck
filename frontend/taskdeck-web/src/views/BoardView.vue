@@ -109,6 +109,7 @@ async function handleColumnDrop(targetColumn: Column | undefined, event: DragEve
     // Reorder locally to get the new order
     const reordered = [...columns]
     const [removed] = reordered.splice(draggedIndex, 1)
+    if (!removed) return
     reordered.splice(targetIndex, 0, removed)
 
     // Use atomic reorder endpoint to update all positions in a single transaction
