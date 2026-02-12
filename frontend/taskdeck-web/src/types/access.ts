@@ -1,20 +1,20 @@
 export type BoardRole = 'Owner' | 'Admin' | 'Editor' | 'Viewer'
+export type BoardRoleValue = BoardRole | number
 
 export interface BoardAccess {
   id: string
   boardId: string
   userId: string
-  role: BoardRole
+  role: BoardRoleValue
   grantedBy: string
   grantedAt: string
-  updatedAt: string
 }
 
 export interface GrantAccessDto {
   userId: string
-  role: BoardRole
+  role: BoardRoleValue
 }
 
 export interface UpdateAccessDto {
-  role: BoardRole
+  role: BoardRoleValue
 }
