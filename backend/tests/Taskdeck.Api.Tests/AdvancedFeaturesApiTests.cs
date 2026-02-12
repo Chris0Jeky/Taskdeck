@@ -80,18 +80,18 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var (_, _, _, granterId) = await RegisterUserAsync("granter");
         var (_, _, _, targetUserId) = await RegisterUserAsync("target");
-        var board1 = await CreateBoardAsync("board1");
-        var board2 = await CreateBoardAsync("board2");
+        var board1Id = await CreateOwnedBoardAsync("board1", granterId);
+        var board2Id = await CreateOwnedBoardAsync("board2", granterId);
 
         var grantResponse = await _client.PostAsJsonAsync(
-            $"/api/boards/{board2.Id}/access?grantedBy={granterId}",
-            new GrantAccessDto(board2.Id, targetUserId, UserRole.Viewer));
+            $"/api/boards/{board2Id}/access?grantedBy={granterId}",
+            new GrantAccessDto(board2Id, targetUserId, UserRole.Viewer));
         grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var createdAccess = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
         createdAccess.Should().NotBeNull();
 
         var updateResponse = await _client.PutAsJsonAsync(
-            $"/api/boards/{board1.Id}/access/{createdAccess!.Id}?updatedBy={granterId}",
+            $"/api/boards/{board1Id}/access/{createdAccess!.Id}?updatedBy={granterId}",
             new UpdateAccessDto(UserRole.Editor));
 
         updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -117,15 +117,22 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
         return (username, email, password, payload!.User.Id);
     }
 
-    private async Task<BoardDto> CreateBoardAsync(string stem)
+    private async Task<Guid> CreateOwnedBoardAsync(string stem, Guid ownerId)
     {
         var response = await _client.PostAsJsonAsync(
-            "/api/boards",
-            new CreateBoardDto($"{stem}-{Guid.NewGuid():N}", null));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+            $"/api/import/boards?userId={ownerId}",
+            new ImportBoardDto(
+                $"{stem}-{Guid.NewGuid():N}",
+                null,
+                Array.Empty<ImportColumnDto>(),
+                Array.Empty<ImportCardDto>(),
+                Array.Empty<ImportLabelDto>()));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var board = await response.Content.ReadFromJsonAsync<BoardDto>();
-        board.Should().NotBeNull();
-        return board!;
+        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
+        result.Should().NotBeNull();
+        result!.Success.Should().BeTrue();
+        result.BoardId.Should().NotBeNull();
+        return result.BoardId!.Value;
     }
 }
