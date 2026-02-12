@@ -119,7 +119,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
    - API error handling consistency: all GET endpoints now map error codes to proper HTTP status codes
    - domain validation hardening: description length limits (Card 2000, Board 1000 chars), duplicate label guard
    - SQLite DateTimeOffset ordering fix in AuditLogRepository and LlmQueueRepository with bounded SQL-side ordering/limits
-   - comprehensive test expansion: +25 domain, +23 API integration, +40 frontend unit tests
+   - comprehensive test expansion: +25 domain, +23 API integration, +66 frontend unit tests
    - frontend overhaul implementation:
      - app shell with sidebar navigation and command palette
      - auth views (login/register) and session management with JWT
@@ -127,7 +127,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
      - board access management, audit timeline, queue management, ops console, export/import, archive UIs
      - design tokens, ARIA landmarks, feature flags system
      - 9 new type files, 6 new API modules, 5 new stores, 2 new composables
-     - 39 new frontend unit tests (194 total frontend)
+     - 66 new frontend unit tests (221 total frontend)
    Pending (primary track):
    - CI drift monitoring and reliability follow-through
    - CLI parity and JSON contract hardening
@@ -171,10 +171,11 @@ Command:
 
 Result:
 - Component tests: 81/81 passing
-- Store tests: 78/78 passing (boardStore 14, boardStore.filtering 20, toastStore 14, sessionStore 7, featureFlagStore 7, permissionsStore 16)
-- API layer tests: 26/26 passing (boardsApi 8, cardsApi 9, authApi 3, queueApi 6)
+- Store tests: 80/80 passing (boardStore 14, boardStore.filtering 20, toastStore 14, sessionStore 7, featureFlagStore 7, permissionsStore 18)
+- API layer tests: 37/37 passing (boardsApi 8, cardsApi 9, authApi 3, queueApi 6, boardAccessApi 4, auditApi 3, exportImportApi 4)
 - Composable tests: 9/9 passing (useKeyboardShortcuts)
-- Frontend Unit Total: 194/194 passing
+- Utility tests: 14/14 passing (jwt 4, queue 5, roles 5)
+- Frontend Unit Total: 221/221 passing
 
 ### Frontend E2E Smoke (Executed)
 
@@ -186,7 +187,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 518/518 passing
+- Combined automated total: 545/545 passing
 
 ## CI Status
 
