@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '../store/sessionStore'
+import { sanitizeInternalRedirect } from '../utils/navigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,7 +23,7 @@ async function handleSubmit() {
     submitting.value = true
     await session.login({ usernameOrEmail: username.value.trim(), password: password.value })
     const redirectRaw = (route.query.redirect as string) || '/workspace/boards'
-    const redirect = redirectRaw.startsWith('/') ? redirectRaw : '/workspace/boards'
+    const redirect = sanitizeInternalRedirect(redirectRaw)
     router.push(redirect)
   } catch {
     formError.value = session.error || 'Login failed. Please try again.'
