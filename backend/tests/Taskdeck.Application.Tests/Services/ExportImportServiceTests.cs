@@ -166,6 +166,40 @@ public class ExportImportServiceTests
     }
 
     [Fact]
+    public async Task ImportBoardFromJsonAsync_ShouldReturnValidationError_WhenExportShapeHasDuplicateColumnIds()
+    {
+        var importingUser = CreateUser("importer");
+        var duplicateColumnId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var exportPayload = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Board", null, false, now, now),
+            new[]
+            {
+                new ColumnDto(duplicateColumnId, Guid.NewGuid(), "Todo", 0, null, 0, now, now),
+                new ColumnDto(duplicateColumnId, Guid.NewGuid(), "Doing", 1, null, 0, now, now)
+            },
+            Array.Empty<CardDto>(),
+            Array.Empty<LabelDto>(),
+            Array.Empty<BoardAccessDto>(),
+            now,
+            "tester");
+
+        var json = JsonSerializer.Serialize(exportPayload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(importingUser.Id, default)).ReturnsAsync(importingUser);
+
+        var result = await _service.ImportBoardFromJsonAsync(json, importingUser.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("duplicate column ID");
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task ImportBoardAsync_ShouldReturnNotFound_WhenImportingUserDoesNotExist()
     {
         var userId = Guid.NewGuid();
@@ -245,6 +279,38 @@ public class ExportImportServiceTests
         importedCard!.CardLabels.Should().HaveCount(1);
         _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Once);
         _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportBoardAsync_ShouldReturnValidationErrorAndRollback_WhenCardContainsEmptyLabelReference()
+    {
+        var user = CreateUser("importer");
+        var dto = new ImportBoardDto(
+            "Board",
+            "Description",
+            new[] { new ImportColumnDto("Todo", 0, null) },
+            new[]
+            {
+                new ImportCardDto("Card", null, "Todo", 0, null, new[] { "Bug", "   " })
+            },
+            new[] { new ImportLabelDto("Bug", "#FF0000") });
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.AddAsync(It.IsAny<Board>(), default))
+            .ReturnsAsync((Board b, CancellationToken ct) => b);
+        _columnRepoMock.Setup(r => r.AddAsync(It.IsAny<Column>(), default))
+            .ReturnsAsync((Column c, CancellationToken ct) => c);
+        _labelRepoMock.Setup(r => r.AddAsync(It.IsAny<Label>(), default))
+            .ReturnsAsync((Label l, CancellationToken ct) => l);
+
+        var result = await _service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("empty label reference");
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Never);
     }
 
     private static User CreateUser(string stem)
