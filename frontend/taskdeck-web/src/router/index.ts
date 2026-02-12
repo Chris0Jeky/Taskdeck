@@ -4,11 +4,13 @@ import BoardView from '../views/BoardView.vue'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import ProfileSettingsView from '../views/ProfileSettingsView.vue'
+import BoardAccessView from '../views/BoardAccessView.vue'
 import ActivityView from '../views/ActivityView.vue'
 import AutomationQueueView from '../views/AutomationQueueView.vue'
 import OpsConsoleView from '../views/OpsConsoleView.vue'
 import ExportImportView from '../views/ExportImportView.vue'
 import ArchiveView from '../views/ArchiveView.vue'
+import { isTokenExpired } from '../utils/jwt'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -124,9 +126,12 @@ const router = createRouter({
       meta: { requiresShell: true },
     },
     {
-      path: '/workspace/settings/access',
+      path: '/workspace/settings/access/:boardId?',
       name: 'workspace-settings-access',
-      component: ProfileSettingsView,
+      component: BoardAccessView,
+      props: (route) => ({
+        boardId: typeof route.params.boardId === 'string' ? route.params.boardId : null,
+      }),
       meta: { requiresShell: true },
     },
     {
@@ -150,12 +155,18 @@ const router = createRouter({
 router.beforeEach((to) => {
   const isPublic = to.meta.public === true
   const token = localStorage.getItem('taskdeck_token')
+  const tokenValid = !!token && !isTokenExpired(token)
 
-  if (!isPublic && !token && to.path.startsWith('/workspace')) {
+  if (token && !tokenValid) {
+    localStorage.removeItem('taskdeck_token')
+    localStorage.removeItem('taskdeck_session')
+  }
+
+  if (!isPublic && !tokenValid && to.path.startsWith('/workspace')) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
 
-  if (isPublic && token && (to.path === '/login' || to.path === '/register')) {
+  if (isPublic && tokenValid && (to.path === '/login' || to.path === '/register')) {
     return { path: '/workspace/boards' }
   }
 })
