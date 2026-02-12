@@ -36,7 +36,6 @@ watch(
   { deep: true }
 )
 
-// Update filters
 const updateFilters = () => {
   emit('update:filters', {
     ...localFilters.value,
@@ -112,7 +111,6 @@ const hasActiveFilters = computed(() => {
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Search Input -->
         <div class="space-y-2">
           <label class="block text-sm font-medium text-gray-700">Search</label>
           <input
@@ -124,7 +122,6 @@ const hasActiveFilters = computed(() => {
           />
         </div>
 
-        <!-- Due Date Filter -->
         <div class="space-y-2">
           <label class="block text-sm font-medium text-gray-700">Due Date</label>
           <select
@@ -140,7 +137,6 @@ const hasActiveFilters = computed(() => {
           </select>
         </div>
 
-        <!-- Blocked Status Filter -->
         <div class="space-y-2">
           <label class="block text-sm font-medium text-gray-700">Status</label>
           <label class="flex items-center px-3 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
@@ -154,7 +150,6 @@ const hasActiveFilters = computed(() => {
           </label>
         </div>
 
-        <!-- Labels Filter -->
         <div class="space-y-2">
           <label class="block text-sm font-medium text-gray-700">
             Labels
@@ -188,20 +183,19 @@ const hasActiveFilters = computed(() => {
         </div>
       </div>
 
-      <!-- Active Filters Summary -->
       <div v-if="hasActiveFilters" class="mt-4 flex items-center gap-2 flex-wrap">
         <span class="text-sm text-gray-600">Active filters:</span>
         <span v-if="localFilters.searchText" class="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
           Search: "{{ localFilters.searchText }}"
-          <button @click="localFilters.searchText = ''; updateFilters()" class="hover:text-blue-900">×</button>
+          <button @click="localFilters.searchText = ''; updateFilters()" class="hover:text-blue-900">&times;</button>
         </span>
         <span v-if="localFilters.dueDateFilter !== 'all'" class="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
           {{ localFilters.dueDateFilter }}
-          <button @click="localFilters.dueDateFilter = 'all'; updateFilters()" class="hover:text-blue-900">×</button>
+          <button @click="localFilters.dueDateFilter = 'all'; updateFilters()" class="hover:text-blue-900">&times;</button>
         </span>
         <span v-if="localFilters.showBlockedOnly" class="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
           Blocked only
-          <button @click="localFilters.showBlockedOnly = false; updateFilters()" class="hover:text-blue-900">×</button>
+          <button @click="localFilters.showBlockedOnly = false; updateFilters()" class="hover:text-blue-900">&times;</button>
         </span>
         <span
           v-for="labelId in localFilters.labelIds"
@@ -209,7 +203,7 @@ const hasActiveFilters = computed(() => {
           class="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded"
         >
           {{ labels.find(l => l.id === labelId)?.name }}
-          <button @click="toggleLabel(labelId)" class="hover:text-blue-900">×</button>
+          <button @click="toggleLabel(labelId)" class="hover:text-blue-900">&times;</button>
         </span>
       </div>
     </div>
