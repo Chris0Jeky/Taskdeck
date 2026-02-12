@@ -10,10 +10,12 @@ namespace Taskdeck.Application.Services;
 public class LlmQueueService : ILlmQueueService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly DevelopmentSandboxSettings _sandboxSettings;
 
-    public LlmQueueService(IUnitOfWork unitOfWork)
+    public LlmQueueService(IUnitOfWork unitOfWork, DevelopmentSandboxSettings? sandboxSettings = null)
     {
         _unitOfWork = unitOfWork;
+        _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
     public async Task<Result<LlmRequestDto>> AddToQueueAsync(CreateLlmRequestDto dto)
@@ -63,7 +65,7 @@ public class LlmQueueService : ILlmQueueService
             if (request == null)
                 return Result.Failure(ErrorCodes.NotFound, $"Request with ID {requestId} not found");
 
-            if (request.UserId != userId)
+            if (!_sandboxSettings.Enabled && request.UserId != userId)
                 return Result.Failure(ErrorCodes.Forbidden, "You do not have permission to cancel this request");
 
             request.Cancel();

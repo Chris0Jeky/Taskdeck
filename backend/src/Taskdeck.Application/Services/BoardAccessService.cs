@@ -9,10 +9,12 @@ namespace Taskdeck.Application.Services;
 public class BoardAccessService : IBoardAccessService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly DevelopmentSandboxSettings _sandboxSettings;
 
-    public BoardAccessService(IUnitOfWork unitOfWork)
+    public BoardAccessService(IUnitOfWork unitOfWork, DevelopmentSandboxSettings? sandboxSettings = null)
     {
         _unitOfWork = unitOfWork;
+        _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
     public async Task<Result<BoardAccessDto>> GrantAccessAsync(GrantAccessDto dto, Guid grantedBy)
@@ -128,6 +130,9 @@ public class BoardAccessService : IBoardAccessService
 
     private async Task<Result> EnsureCanManageBoardAccessAsync(Board board, Guid actingUserId)
     {
+        if (_sandboxSettings.Enabled)
+            return Result.Success();
+
         if (board.OwnerId == actingUserId)
             return Result.Success();
 

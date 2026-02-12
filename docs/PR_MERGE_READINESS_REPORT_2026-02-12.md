@@ -155,7 +155,7 @@ Scope in this pass is design-only for existing endpoints; no authorization rollo
   - `dotnet test backend/Taskdeck.sln`
   - Result:
     - Domain: 68/68
-    - Application: 162/162
+    - Application: 166/166
     - API integration: 34/34
     - CLI contract: 4/4
 - Frontend:
@@ -164,7 +164,7 @@ Scope in this pass is design-only for existing endpoints; no authorization rollo
   - `cd frontend/taskdeck-web; $env:TASKDECK_E2E_DB='taskdeck.e2e.local.db'; npx playwright test`
     - 8/8 passing
 
-Combined automated total after this pass: **391/391 passing**.
+Combined automated total after this pass: **395/395 passing**.
 
 ## Remaining Risks (Not Claimed as Solved Here)
 
