@@ -1,16 +1,22 @@
 import http from './http'
 import type { ImportResult } from '../types/export-import'
 
+function encodePathSegment(value: string): string {
+  return encodeURIComponent(value)
+}
+
 export const exportImportApi = {
   async exportBoard(boardId: string, userId: string): Promise<unknown> {
+    const pathBoardId = encodePathSegment(boardId)
     const queryUserId = encodeURIComponent(userId)
-    const { data } = await http.get(`/export/boards/${boardId}?userId=${queryUserId}`)
+    const { data } = await http.get(`/export/boards/${pathBoardId}?userId=${queryUserId}`)
     return data
   },
 
   async exportBoardJson(boardId: string, userId: string): Promise<unknown> {
+    const pathBoardId = encodePathSegment(boardId)
     const queryUserId = encodeURIComponent(userId)
-    const { data } = await http.get(`/export/boards/${boardId}/json?userId=${queryUserId}`)
+    const { data } = await http.get(`/export/boards/${pathBoardId}/json?userId=${queryUserId}`)
     return data
   },
 
