@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { queueApi } from '../../api/queueApi'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import http from '../../api/http'
+import { queueApi } from '../../api/queueApi'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -16,91 +16,91 @@ describe('queueApi', () => {
     vi.clearAllMocks()
   })
 
-  describe('createRequest', () => {
-    it('should send POST with request data and userId', async () => {
-      const mockRequest = {
-        id: 'req-1',
-        userId: 'user-1',
-        requestType: 'generate',
-        payload: '{"prompt":"hello"}',
-        status: 'Pending',
-        result: null,
-        errorMessage: null,
-        createdAt: new Date().toISOString(),
-        processedAt: null,
-      }
-      vi.mocked(http.post).mockResolvedValue({ data: mockRequest })
+  it('createRequest sends payload with userId and normalizes status', async () => {
+    const mockRequest = {
+      id: 'req-1',
+      userId: 'user-1',
+      boardId: null,
+      requestType: 'generate',
+      status: 0,
+      errorMessage: null,
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+    }
+    vi.mocked(http.post).mockResolvedValue({ data: mockRequest })
 
-      const dto = { requestType: 'generate', payload: '{"prompt":"hello"}' }
-      const result = await queueApi.createRequest(dto, 'user-1')
+    const dto = { requestType: 'generate', payload: '{"prompt":"hello"}' }
+    const result = await queueApi.createRequest(dto, 'user-1')
 
-      expect(http.post).toHaveBeenCalledWith('/llm-queue', { ...dto, userId: 'user-1' })
-      expect(result).toEqual(mockRequest)
-    })
+    expect(http.post).toHaveBeenCalledWith('/llm-queue', { ...dto, userId: 'user-1' })
+    expect(result.status).toBe('Pending')
   })
 
-  describe('getUserRequests', () => {
-    it('should send GET with userId', async () => {
-      const mockRequests = [{ id: 'req-1' }]
-      vi.mocked(http.get).mockResolvedValue({ data: mockRequests })
-
-      const result = await queueApi.getUserRequests('user-1')
-
-      expect(http.get).toHaveBeenCalledWith('/llm-queue/user/user-1')
-      expect(result).toEqual(mockRequests)
+  it('getUserRequests encodes userId and normalizes statuses', async () => {
+    vi.mocked(http.get).mockResolvedValue({
+      data: [
+        {
+          id: 'req-1',
+          userId: 'user/1',
+          boardId: null,
+          requestType: 'generate',
+          status: 2,
+          errorMessage: null,
+          createdAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          retryCount: 1,
+        },
+      ],
     })
+
+    const result = await queueApi.getUserRequests('user/1')
+
+    expect(http.get).toHaveBeenCalledWith('/llm-queue/user/user%2F1')
+    expect(result[0]?.status).toBe('Completed')
   })
 
-  describe('getRequestsByStatus', () => {
-    it('should send GET with status', async () => {
-      const mockRequests = [{ id: 'req-1', status: 'Pending' }]
-      vi.mocked(http.get).mockResolvedValue({ data: mockRequests })
+  it('getRequestsByStatus sends GET with status', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
 
-      const result = await queueApi.getRequestsByStatus('Pending')
+    await queueApi.getRequestsByStatus('Pending')
 
-      expect(http.get).toHaveBeenCalledWith('/llm-queue/status/Pending')
-      expect(result).toEqual(mockRequests)
-    })
+    expect(http.get).toHaveBeenCalledWith('/llm-queue/status/Pending')
   })
 
-  describe('cancelRequest', () => {
-    it('should send POST to cancel endpoint', async () => {
-      vi.mocked(http.post).mockResolvedValue({})
+  it('cancelRequest encodes userId query parameter', async () => {
+    vi.mocked(http.post).mockResolvedValue({})
 
-      await queueApi.cancelRequest('req-1', 'user-1')
+    await queueApi.cancelRequest('req-1', 'user/1')
 
-      expect(http.post).toHaveBeenCalledWith('/llm-queue/req-1/cancel?userId=user-1')
-    })
+    expect(http.post).toHaveBeenCalledWith('/llm-queue/req-1/cancel?userId=user%2F1')
   })
 
-  describe('processNext', () => {
-    it('should send POST to process-next', async () => {
-      const mockRequest = { id: 'req-1', status: 'Processing' }
-      vi.mocked(http.post).mockResolvedValue({ data: mockRequest })
-
-      const result = await queueApi.processNext()
-
-      expect(http.post).toHaveBeenCalledWith('/llm-queue/process-next')
-      expect(result).toEqual(mockRequest)
+  it('processNext returns null when API responds with NotFound', async () => {
+    vi.mocked(http.post).mockRejectedValue({
+      response: {
+        status: 404,
+        data: { errorCode: 'NotFound' },
+      },
     })
+
+    const result = await queueApi.processNext()
+
+    expect(result).toBeNull()
   })
 
-  describe('getStats', () => {
-    it('should send GET to stats endpoint', async () => {
-      const mockStats = {
-        pending: 5,
-        processing: 2,
-        completed: 10,
-        failed: 1,
-        cancelled: 0,
-        total: 18,
-      }
-      vi.mocked(http.get).mockResolvedValue({ data: mockStats })
+  it('getStats returns queue stats payload', async () => {
+    const mockStats = {
+      pendingCount: 5,
+      processingCount: 2,
+      completedCount: 10,
+      failedCount: 1,
+    }
+    vi.mocked(http.get).mockResolvedValue({ data: mockStats })
 
-      const result = await queueApi.getStats()
+    const result = await queueApi.getStats()
 
-      expect(http.get).toHaveBeenCalledWith('/llm-queue/stats')
-      expect(result).toEqual(mockStats)
-    })
+    expect(http.get).toHaveBeenCalledWith('/llm-queue/stats')
+    expect(result).toEqual(mockStats)
   })
 })
