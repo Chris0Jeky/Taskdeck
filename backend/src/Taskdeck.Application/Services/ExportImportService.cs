@@ -10,6 +10,7 @@ namespace Taskdeck.Application.Services;
 public class ExportImportService : IExportImportService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly DevelopmentSandboxSettings _sandboxSettings;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -17,9 +18,10 @@ public class ExportImportService : IExportImportService
         WriteIndented = true
     };
 
-    public ExportImportService(IUnitOfWork unitOfWork)
+    public ExportImportService(IUnitOfWork unitOfWork, DevelopmentSandboxSettings? sandboxSettings = null)
     {
         _unitOfWork = unitOfWork;
+        _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
     public async Task<Result<ExportBoardDto>> ExportBoardAsync(Guid boardId, Guid userId)
@@ -242,6 +244,9 @@ public class ExportImportService : IExportImportService
 
     private async Task<bool> CanUserReadBoardAsync(Board board, Guid userId)
     {
+        if (_sandboxSettings.Enabled)
+            return true;
+
         if (board.OwnerId == userId)
             return true;
 
