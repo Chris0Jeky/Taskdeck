@@ -157,9 +157,20 @@ public class ExportImportService : IExportImportService
                     throw new DomainException(ErrorCodes.ValidationError, $"Column '{importCard.ColumnName}' referenced by card '{importCard.Title}' was not found");
 
                 var card = new Card(board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
+                var uniqueCardLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var labelName in importCard.Labels ?? Enumerable.Empty<string>())
                 {
+                    if (string.IsNullOrWhiteSpace(labelName))
+                    {
+                        throw new DomainException(
+                            ErrorCodes.ValidationError,
+                            $"Card '{importCard.Title}' contains an empty label reference");
+                    }
+
+                    if (!uniqueCardLabelNames.Add(labelName))
+                        continue;
+
                     if (!labelsByName.TryGetValue(labelName, out var label))
                     {
                         throw new DomainException(
