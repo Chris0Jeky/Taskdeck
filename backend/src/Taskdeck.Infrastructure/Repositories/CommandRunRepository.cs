@@ -14,7 +14,7 @@ public class CommandRunRepository : Repository<CommandRun>, ICommandRunRepositor
     public async Task<IEnumerable<CommandRun>> GetByUserIdAsync(string userId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
-            .Where(c => c.UserId == userId)
+            .Where(c => c.RequestedByUserId == userId)
             .OrderByDescending(c => c.CreatedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);
