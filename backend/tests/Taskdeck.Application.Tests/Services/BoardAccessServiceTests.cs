@@ -155,6 +155,32 @@ public class BoardAccessServiceTests
     }
 
     [Fact]
+    public async Task GrantAccessAsync_ShouldBypassManageChecks_WhenSandboxModeIsEnabled()
+    {
+        var owner = CreateUser("owner");
+        var granter = CreateUser("granter");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var dto = new GrantAccessDto(board.Id, targetUser.Id, UserRole.Editor);
+        var sandboxService = new BoardAccessService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = true });
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByIdAsync(targetUser.Id, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, targetUser.Id, default))
+            .ReturnsAsync((BoardAccess?)null);
+        _boardAccessRepoMock.Setup(r => r.AddAsync(It.IsAny<BoardAccess>(), default))
+            .ReturnsAsync((BoardAccess a, CancellationToken _) => a);
+
+        var result = await sandboxService.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
     public async Task UpdateAccessAsync_ShouldReturnSuccess_WhenUpdatingRole()
     {
         var owner = CreateUser("owner");
