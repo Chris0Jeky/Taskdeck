@@ -38,6 +38,7 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 
 **HTTP Client Enhancement**
 - Request interceptor for `Authorization: Bearer <token>` header injection
+- Request correlation ID header (`X-Request-Id`) on outbound API calls
 - Response interceptor for 401 detection with automatic session clear and login redirect
 - Backward compatible — existing board/column/card/label APIs unaffected
 
@@ -54,9 +55,11 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 
 **Contract/Guardrail Hardening**
 - Base64url-safe JWT parsing added for expiry checks in router guards, session restore, and HTTP interceptor
+- Correlation IDs added to API requests to improve traceability and logs diagnostics
 - Role/status normalization supports numeric enum payloads and case-insensitive string payloads
 - Dynamic path and query values are encoded across board access, queue, audit, and export/import API calls
 - Store-level `requireUserId` guardrails prevent anonymous actor-id submissions for protected flows
+- Login redirect handling now sanitizes protocol-relative or external redirect attempts
 
 ### 1.3 App Shell
 
@@ -117,7 +120,7 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 
 ### 1.6 Tests
 
-**66 new tests** added across 11 test files:
+**73 new tests** added across 13 test files:
 - `sessionStore.spec.ts` (7 tests) — login/register/logout/restore/clear
 - `featureFlagStore.spec.ts` (7 tests) — defaults/toggle/reset/persist/restore
 - `permissionsStore.spec.ts` (18 tests) — access CRUD, role selectors, enum normalization, session guardrail
@@ -129,8 +132,10 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 - `jwt.spec.ts` (4 tests) — base64url payload decoding and expiry helpers
 - `queue.spec.ts` (5 tests) — status normalization and queue total utility coverage
 - `roles.spec.ts` (5 tests) — role normalization and enum mapping coverage
+- `requestId.spec.ts` (3 tests) — correlation ID generation behavior
+- `navigation.spec.ts` (4 tests) — redirect sanitization behavior
 
-**Total test count: 221/221 passing** (155 existing + 66 new, zero regressions)
+**Total test count: 228/228 passing** (155 existing + 73 new, zero regressions)
 
 ## 2. Current Capabilities
 
@@ -184,7 +189,7 @@ The HTTP client's 401 interceptor clears the session and redirects to login. Thi
 | `05_AUTOMATION_REVIEW_FLOW_SPEC` | ✅ Queue UI complete, proposals placeholder (pending backend endpoints) |
 | `06_OPS_CONSOLE_LOGS_SPEC` | ✅ CLI runner, endpoint explorer, logs viewer (pending backend endpoints) |
 | `07_ARCHIVE_EXPORT_IMPORT_SPEC` | ✅ Export/import UI complete, archive placeholder (pending backend endpoints) |
-| `08_TESTING_ACCEPTANCE_ROLLOUT_PLAYBOOK` | ✅ 66 new tests, build verification, backward compatibility |
+| `08_TESTING_ACCEPTANCE_ROLLOUT_PLAYBOOK` | ✅ 73 new tests, build verification, backward compatibility |
 
 ## 5. Future Directions
 
@@ -269,8 +274,8 @@ The HTTP client's 401 interceptor clears the session and redirects to login. Thi
 **Design** (1 file):
 `design-tokens.css`
 
-**Tests** (11 files):
-`tests/store/sessionStore.spec.ts`, `tests/store/featureFlagStore.spec.ts`, `tests/store/permissionsStore.spec.ts`, `tests/api/authApi.spec.ts`, `tests/api/queueApi.spec.ts`, `tests/api/boardAccessApi.spec.ts`, `tests/api/auditApi.spec.ts`, `tests/api/exportImportApi.spec.ts`, `tests/utils/jwt.spec.ts`, `tests/utils/queue.spec.ts`, `tests/utils/roles.spec.ts`
+**Tests** (13 files):
+`tests/store/sessionStore.spec.ts`, `tests/store/featureFlagStore.spec.ts`, `tests/store/permissionsStore.spec.ts`, `tests/api/authApi.spec.ts`, `tests/api/queueApi.spec.ts`, `tests/api/boardAccessApi.spec.ts`, `tests/api/auditApi.spec.ts`, `tests/api/exportImportApi.spec.ts`, `tests/utils/jwt.spec.ts`, `tests/utils/queue.spec.ts`, `tests/utils/roles.spec.ts`, `tests/utils/requestId.spec.ts`, `tests/utils/navigation.spec.ts`
 
 ### Modified Files
 
