@@ -119,8 +119,8 @@ Commands:
 
 Result:
 - Domain: 68/68 passing
-- Application: 158/158 passing
-- Backend Unit Total: 226/226 passing
+- Application: 162/162 passing
+- Backend Unit Total: 230/230 passing
 
 ### Backend Integration + CLI Contracts (Executed)
 
@@ -152,7 +152,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 387/387 passing
+- Combined automated total: 391/391 passing
 
 ## CI Status
 
