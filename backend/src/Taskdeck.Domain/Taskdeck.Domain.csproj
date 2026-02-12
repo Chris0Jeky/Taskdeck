@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Taskdeck.Application.Tests" />
+    <InternalsVisibleTo Include="Taskdeck.Domain.Tests" />
   </ItemGroup>
 
 </Project>
