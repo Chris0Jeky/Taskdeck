@@ -26,6 +26,34 @@ export const useBoardStore = defineStore('board', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  const getErrorMessage = (err: unknown, fallback: string): string => {
+    if (typeof err !== 'object' || err === null) {
+      return fallback
+    }
+
+    const typedError = err as {
+      response?: { data?: { message?: unknown } }
+      message?: unknown
+    }
+
+    const responseMessage = typedError.response?.data?.message
+    if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) {
+      return responseMessage
+    }
+
+    if (typeof typedError.message === 'string' && typedError.message.trim().length > 0) {
+      return typedError.message
+    }
+
+    return fallback
+  }
+
+  const handleApiError = (err: unknown, fallback: string) => {
+    const message = getErrorMessage(err, fallback)
+    error.value = message
+    toast.error(message)
+  }
+
   // Filter state
   const filters = ref<CardFilters>({
     searchText: '',
@@ -133,9 +161,8 @@ export const useBoardStore = defineStore('board', () => {
       loading.value = true
       error.value = null
       boards.value = await boardsApi.getBoards(search, includeArchived)
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to fetch boards'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to fetch boards')
       throw e
     } finally {
       loading.value = false
@@ -150,9 +177,8 @@ export const useBoardStore = defineStore('board', () => {
 
       // Fetch cards and labels for the board
       await Promise.all([fetchCards(id), fetchLabels(id)])
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to fetch board'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to fetch board')
       throw e
     } finally {
       loading.value = false
@@ -167,9 +193,8 @@ export const useBoardStore = defineStore('board', () => {
       boards.value.push(newBoard)
       toast.success(`Board "${newBoard.name}" created successfully`)
       return newBoard
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to create board'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to create board')
       throw e
     } finally {
       loading.value = false
@@ -199,9 +224,8 @@ export const useBoardStore = defineStore('board', () => {
 
       toast.success('Board updated successfully')
       return updatedBoard
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to update board'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to update board')
       throw e
     } finally {
       loading.value = false
@@ -225,9 +249,8 @@ export const useBoardStore = defineStore('board', () => {
       }
 
       toast.success('Board deleted successfully')
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to delete board'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to delete board')
       throw e
     } finally {
       loading.value = false
@@ -246,9 +269,8 @@ export const useBoardStore = defineStore('board', () => {
 
       toast.success(`Column "${newColumn.name}" created successfully`)
       return newColumn
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to create column'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to create column')
       throw e
     } finally {
       loading.value = false
@@ -271,9 +293,8 @@ export const useBoardStore = defineStore('board', () => {
 
       toast.success('Column updated successfully')
       return updatedColumn
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to update column'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to update column')
       throw e
     } finally {
       loading.value = false
@@ -295,9 +316,8 @@ export const useBoardStore = defineStore('board', () => {
       currentBoardCards.value = currentBoardCards.value.filter((card) => card.columnId !== columnId)
 
       toast.success('Column deleted successfully')
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to delete column'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to delete column')
       throw e
     } finally {
       loading.value = false
@@ -317,9 +337,8 @@ export const useBoardStore = defineStore('board', () => {
 
       toast.success('Columns reordered successfully')
       return reorderedColumns
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to reorder columns'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to reorder columns')
       throw e
     } finally {
       loading.value = false
@@ -335,9 +354,8 @@ export const useBoardStore = defineStore('board', () => {
       updateColumnCardCount(newCard.columnId, 1)
       toast.success(`Card "${newCard.title}" created successfully`)
       return newCard
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to create card'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to create card')
       throw e
     } finally {
       loading.value = false
@@ -352,9 +370,8 @@ export const useBoardStore = defineStore('board', () => {
       currentBoardLabels.value.push(newLabel)
       toast.success(`Label "${newLabel.name}" created successfully`)
       return newLabel
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to create label'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to create label')
       throw e
     } finally {
       loading.value = false
@@ -375,9 +392,8 @@ export const useBoardStore = defineStore('board', () => {
 
       toast.success('Label updated successfully')
       return updatedLabel
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to update label'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to update label')
       throw e
     } finally {
       loading.value = false
@@ -394,9 +410,8 @@ export const useBoardStore = defineStore('board', () => {
       currentBoardLabels.value = currentBoardLabels.value.filter((l) => l.id !== labelId)
 
       toast.success('Label deleted successfully')
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to delete label'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to delete label')
       throw e
     } finally {
       loading.value = false
@@ -418,9 +433,8 @@ export const useBoardStore = defineStore('board', () => {
           column.cardCount = counts.get(column.id) ?? 0
         })
       }
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to fetch cards'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to fetch cards')
       throw e
     }
   }
@@ -428,9 +442,8 @@ export const useBoardStore = defineStore('board', () => {
   async function fetchLabels(boardId: string) {
     try {
       currentBoardLabels.value = await labelsApi.getLabels(boardId)
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to fetch labels'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to fetch labels')
       throw e
     }
   }
@@ -449,9 +462,8 @@ export const useBoardStore = defineStore('board', () => {
 
       toast.success('Card updated successfully')
       return updatedCard
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to update card'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to update card')
       throw e
     } finally {
       loading.value = false
@@ -473,9 +485,8 @@ export const useBoardStore = defineStore('board', () => {
       }
 
       toast.success('Card deleted successfully')
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to delete card'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to delete card')
       throw e
     } finally {
       loading.value = false
@@ -505,9 +516,8 @@ export const useBoardStore = defineStore('board', () => {
 
       toast.success('Card moved successfully')
       return updatedCard
-    } catch (e: any) {
-      error.value = e.response?.data?.message || e.message || 'Failed to move card'
-      toast.error(error.value)
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to move card')
       throw e
     } finally {
       loading.value = false
