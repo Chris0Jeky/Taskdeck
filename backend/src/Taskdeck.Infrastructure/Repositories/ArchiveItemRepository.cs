@@ -32,7 +32,7 @@ public class ArchiveItemRepository : Repository<ArchiveItem>, IArchiveItemReposi
     public async Task<IEnumerable<ArchiveItem>> GetByStatusAsync(RestoreStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
-            .Where(a => a.Status == status)
+            .Where(a => a.RestoreStatus == status)
             .OrderByDescending(a => a.ArchivedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);
