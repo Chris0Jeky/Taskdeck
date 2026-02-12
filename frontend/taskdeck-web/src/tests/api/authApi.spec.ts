@@ -20,13 +20,19 @@ describe('authApi', () => {
     it('should send POST to /auth/login with credentials', async () => {
       const mockResponse = {
         token: 'jwt-token',
-        userId: 'user-1',
-        username: 'testuser',
-        email: 'test@example.com',
+        user: {
+          id: 'user-1',
+          username: 'testuser',
+          email: 'test@example.com',
+          defaultRole: 2,
+          isActive: true,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
       }
       vi.mocked(http.post).mockResolvedValue({ data: mockResponse })
 
-      const credentials = { username: 'testuser', password: 'pass123' }
+      const credentials = { usernameOrEmail: 'testuser', password: 'pass123' }
       const result = await authApi.login(credentials)
 
       expect(http.post).toHaveBeenCalledWith('/auth/login', credentials)
@@ -38,9 +44,15 @@ describe('authApi', () => {
     it('should send POST to /auth/register with request', async () => {
       const mockResponse = {
         token: 'jwt-token',
-        userId: 'user-2',
-        username: 'newuser',
-        email: 'new@example.com',
+        user: {
+          id: 'user-2',
+          username: 'newuser',
+          email: 'new@example.com',
+          defaultRole: 2,
+          isActive: true,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
       }
       vi.mocked(http.post).mockResolvedValue({ data: mockResponse })
 
