@@ -8,11 +8,21 @@ const statusByValue: Record<number, QueueStatus> = {
   4: 'Cancelled',
 }
 
+const statusByName: Record<string, QueueStatus> = {
+  pending: 'Pending',
+  processing: 'Processing',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
+
 export function normalizeQueueStatus(status: QueueStatusValue): QueueStatus {
   if (typeof status === 'number') {
     return statusByValue[status] ?? 'Pending'
   }
-  return status
+
+  const normalized = status.trim().toLowerCase()
+  return statusByName[normalized] ?? 'Pending'
 }
 
 export function normalizeQueueRequest(request: QueueRequest): QueueRequest {
