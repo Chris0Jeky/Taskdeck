@@ -43,13 +43,13 @@ async function handleSubmit() {
         </div>
 
         <div class="td-form-group">
-          <label for="login-username" class="td-label">Username</label>
+          <label for="login-username" class="td-label">Username or Email</label>
           <input
             id="login-username"
             v-model="username"
             type="text"
             class="td-input"
-            placeholder="Enter your username"
+            placeholder="Enter your username or email"
             autocomplete="username"
             required
           />
