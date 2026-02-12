@@ -18,6 +18,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Consolidated audit artifact covering PR findings, corrections, tests, and remaining risks.
 - `frontend/README.md`
   - Frontend overhaul documentation pack index and usage guide.
+- `backend/README.md`
+  - Backend activation documentation pack index and usage guide.
 
 ## Frontend Overhaul Pack
 
@@ -31,6 +33,22 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `frontend/08_TESTING_ACCEPTANCE_ROLLOUT_PLAYBOOK.md`
 - `frontend/IMPLEMENTATION_SUMMARY.md`
   - Complete implementation summary documenting what was built, current capabilities, future directions, limitations, and tradeoffs.
+
+## Backend Activation Pack
+
+- `backend/01_BACKEND_ACTIVATION_ARCHITECTURE.md`
+- `backend/02_FRONTEND_BACKEND_TRACEABILITY_MATRIX.md`
+- `backend/03_AUTHN_AUTHZ_ENFORCEMENT_SPEC.md`
+- `backend/04_AUTOMATION_FRAMEWORK_SPEC.md`
+- `backend/05_LLM_CHAT_COMMAND_EXECUTION_SPEC.md`
+- `backend/06_OPS_CLI_LOGS_OBSERVABILITY_SPEC.md`
+- `backend/07_ARCHIVE_RECOVERY_SPEC.md`
+- `backend/08_BACKGROUND_WORKERS_RELIABILITY_SPEC.md`
+- `backend/09_TESTING_E2E_EXPANSION_PLAYBOOK.md`
+- `backend/10_SECURITY_GUARDRAILS_POLICY_SPEC.md`
+- `backend/11_AUTOMATION_EXAMPLES_CATALOG.md`
+- `backend/IMPLEMENTATION_SUMMARY.md`
+  - Complete backend activation package covering endpoint activation, automation framework, chat orchestration, reliability, and test rollout.
 
 ## Reference Material
 
