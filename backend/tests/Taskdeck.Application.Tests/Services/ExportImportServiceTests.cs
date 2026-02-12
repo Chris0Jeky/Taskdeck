@@ -62,6 +62,23 @@ public class ExportImportServiceTests
     }
 
     [Fact]
+    public async Task ExportBoardAsync_ShouldReturnForbidden_WhenBoardHasNoOwnerAndUserHasNoAccess()
+    {
+        var requester = CreateUser("requester");
+        var board = new Board("Legacy Ownerless Board");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(requester.Id, default)).ReturnsAsync(requester);
+        _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(board.Id, default)).ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, requester.Id, default))
+            .ReturnsAsync((BoardAccess?)null);
+
+        var result = await _service.ExportBoardAsync(board.Id, requester.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
     public async Task ExportBoardAsync_ShouldIncludeCardLabels_WhenDataIsAvailable()
     {
         var owner = CreateUser("owner");
