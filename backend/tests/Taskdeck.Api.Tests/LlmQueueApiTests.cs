@@ -64,14 +64,13 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetUserQueue_ShouldReturnSuccessOrHandleDbLimitation_WhenNoRequests()
+    public async Task GetUserQueue_ShouldReturnOk_WhenNoRequests()
     {
         var (_, _, _, userId) = await RegisterUserAsync("llmempty");
 
         var response = await _client.GetAsync($"/api/llm-queue/user/{userId}");
 
-        // 200 or 500 (SQLite DateTimeOffset sort limitation) are acceptable.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -86,21 +85,19 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetByStatus_ShouldReturnSuccessOrHandleDbLimitation_WithValidStatus()
+    public async Task GetByStatus_ShouldReturnOk_WithValidStatus()
     {
         var response = await _client.GetAsync("/api/llm-queue/status/Pending");
 
-        // 200 or 500 (SQLite DateTimeOffset sort limitation) are acceptable.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
-    public async Task GetQueueStats_ShouldReturnSuccessOrHandleDbLimitation()
+    public async Task GetQueueStats_ShouldReturnOk()
     {
         var response = await _client.GetAsync("/api/llm-queue/stats");
 
-        // 200 or 500 (SQLite DateTimeOffset sort limitation) are acceptable.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

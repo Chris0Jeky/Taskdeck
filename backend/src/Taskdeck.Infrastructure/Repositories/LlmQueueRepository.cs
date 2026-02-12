@@ -17,41 +17,50 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
     public async Task<IEnumerable<LlmRequest>> GetPendingAsync(int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _context.LlmRequests
+        var requests = await _context.LlmRequests
             .Include(lr => lr.User)
             .Include(lr => lr.Board)
             .Where(lr => lr.Status == RequestStatus.Pending)
-            .OrderBy(lr => lr.CreatedAt)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return requests
+            .OrderBy(lr => lr.CreatedAt)
+            .Take(limit);
     }
 
     public async Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        return await _context.LlmRequests
+        var requests = await _context.LlmRequests
             .Include(lr => lr.Board)
             .Where(lr => lr.UserId == userId)
-            .OrderByDescending(lr => lr.CreatedAt)
             .ToListAsync(cancellationToken);
+
+        return requests
+            .OrderByDescending(lr => lr.CreatedAt);
     }
 
     public async Task<IEnumerable<LlmRequest>> GetByStatusAsync(RequestStatus status, CancellationToken cancellationToken = default)
     {
-        return await _context.LlmRequests
+        var requests = await _context.LlmRequests
             .Include(lr => lr.User)
             .Include(lr => lr.Board)
             .Where(lr => lr.Status == status)
-            .OrderByDescending(lr => lr.CreatedAt)
             .ToListAsync(cancellationToken);
+
+        return requests
+            .OrderByDescending(lr => lr.CreatedAt);
     }
 
     public async Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
     {
-        return await _context.LlmRequests
+        var requests = await _context.LlmRequests
             .Include(lr => lr.User)
             .Include(lr => lr.Board)
             .Where(lr => lr.Status == RequestStatus.Pending)
+            .ToListAsync(cancellationToken);
+
+        return requests
             .OrderBy(lr => lr.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefault();
     }
 }
