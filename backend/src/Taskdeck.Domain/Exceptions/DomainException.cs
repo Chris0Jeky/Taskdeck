@@ -26,4 +26,5 @@ public static class ErrorCodes
     public const string Unauthorized = "Unauthorized";
     public const string Forbidden = "Forbidden";
     public const string AuthenticationFailed = "AuthenticationFailed";
+    public const string InvalidOperation = "InvalidOperation";
 }
