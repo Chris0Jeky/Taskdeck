@@ -128,6 +128,26 @@ public class AuthorizationServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
     }
 
+    [Fact]
+    public async Task CanReadBoardAsync_ShouldReturnTrue_WhenSandboxModeIsEnabled()
+    {
+        var ownerId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = new Board("Test Board", ownerId: ownerId);
+        var sandboxService = new AuthorizationService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = true });
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
+
+        var result = await sandboxService.CanReadBoardAsync(userId, board.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
+        _boardAccessRepoMock.Verify(r => r.GetByBoardAndUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), default), Times.Never);
+    }
+
     #endregion
 
     #region CanWriteBoardAsync Tests
