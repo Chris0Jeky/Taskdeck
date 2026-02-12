@@ -208,6 +208,29 @@ Current state:
 - **SQLite DateTimeOffset ordering**: AuditLogRepository and LlmQueueRepository now perform in-memory ordering after database filtering to avoid SQLite's `NotSupportedException` for DateTimeOffset ORDER BY clauses.
 - **API GET endpoint error handling**: All GET endpoints previously returned generic 500 for any error; now properly map error codes to HTTP status codes (404, 400, etc.).
 - **Domain validation gaps**: Card descriptions now validate max length (2000 chars), Board descriptions validate max length (1000 chars), and duplicate label assignment on cards is prevented at the domain level.
+- **Frontend build readiness**: Production frontend build now passes with strict app type-check (`npm run typecheck`) plus bundling (`npm run build`), and source-level nullability guards were added in board drag/drop and board store error handling.
+
+## Practical Decisions and Tradeoffs (2026-02-12)
+
+- **Decision**: Exclude `frontend/taskdeck-web/src/tests/**` from production `tsconfig.app.json` type-check scope.
+  - **Why now**: keeps the merge gate focused on shipping code correctness while preserving runtime test validation via Vitest.
+  - **Tradeoff**: TypeScript strictness for test fixtures is not currently enforced during `npm run build`.
+  - **Future revision**: add a dedicated test type-check pipeline (`tsconfig.tests.json` + CI job), then ratchet test typing issues down incrementally.
+
+- **Decision**: Centralize frontend API error message normalization in `boardStore` (`getErrorMessage`/`handleApiError`).
+  - **Why now**: resolves repeated nullability issues and standardizes toast/error behavior quickly.
+  - **Tradeoff**: parsing still uses lightweight shape checks, not a shared typed HTTP error abstraction.
+  - **Future revision**: introduce a reusable API client error utility (or interceptor) used across all stores/modules.
+
+- **Decision**: Keep SQLite DateTimeOffset ordering workaround in repositories (in-memory sort after DB filtering).
+  - **Why now**: avoids runtime `ORDER BY DateTimeOffset` failures on SQLite while preserving endpoint behavior.
+  - **Tradeoff**: memory/CPU overhead grows with result-set size before `Take(limit)` is applied.
+  - **Future revision**: cap query windows server-side or migrate timestamp storage/indexing strategy for true DB-side ordered pagination.
+
+- **Decision**: Keep existing frontend/browser data warnings non-blocking (`baseline-browser-mapping` staleness, local Node `22.11.0` vs Vite recommended `22.12+`).
+  - **Why now**: no functional breakage in build/test outcomes.
+  - **Tradeoff**: environment drift risk remains.
+  - **Future revision**: pin/upgrade Node in dev+CI and add scheduled dependency hygiene updates.
 
 ## Canonical Documentation Policy
 
