@@ -57,7 +57,7 @@ Delivered in this cycle:
     - AuthController, UsersController, BoardAccessController
     - ExportController, LlmQueueController, AuditController
 11. JWT Bearer authentication middleware configured in Program.cs
-12. Unit tests added for new service implementations (51 new tests, 241 total backend tests)
+12. Unit tests added for new service implementations and follow-up hardening regressions.
 13. Merge-readiness hardening for side-track implementation:
     - board-access update/revoke now enforce route-board scoping
     - board-access grant/update/revoke validate acting user and manage-access permission
