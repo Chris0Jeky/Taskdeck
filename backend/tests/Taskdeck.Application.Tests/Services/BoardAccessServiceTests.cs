@@ -81,6 +81,27 @@ public class BoardAccessServiceTests
     }
 
     [Fact]
+    public async Task GrantAccessAsync_ShouldReturnForbidden_WhenBoardHasNoOwnerAndNoManageAccess()
+    {
+        var granter = CreateUser("granter");
+        var targetUser = CreateUser("target");
+        var board = new Board("Legacy Board");
+        var dto = new GrantAccessDto(board.Id, targetUser.Id, UserRole.Editor);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByIdAsync(targetUser.Id, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, granter.Id, default))
+            .ReturnsAsync((BoardAccess?)null);
+
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task GrantAccessAsync_ShouldReturnConflict_WhenAccessAlreadyExists()
     {
         var granter = CreateUser("granter");
