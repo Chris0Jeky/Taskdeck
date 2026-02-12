@@ -35,6 +35,8 @@ export interface ImportEntitySummary {
 export interface ImportResult {
   success: boolean
   boardId: string | null
-  message: string
-  entitySummary: ImportEntitySummary
+  errorMessage: string | null
+  columnsImported: number
+  cardsImported: number
+  labelsImported: number
 }
