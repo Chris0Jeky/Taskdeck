@@ -100,7 +100,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
    - additional automated coverage (+23 tests: 20 application, 3 API integration)
    - API error handling consistency: all GET endpoints now map error codes to proper HTTP status codes
    - domain validation hardening: description length limits (Card 2000, Board 1000 chars), duplicate label guard
-   - SQLite DateTimeOffset ordering fix in AuditLogRepository and LlmQueueRepository
+   - SQLite DateTimeOffset ordering fix in AuditLogRepository and LlmQueueRepository with bounded SQL-side ordering/limits
    - comprehensive test expansion: +25 domain, +23 API integration, +40 frontend unit tests
    Pending (primary track):
    - CI drift monitoring and reliability follow-through
@@ -205,7 +205,7 @@ Current state:
 
 ## Recently Resolved Issues
 
-- **SQLite DateTimeOffset ordering**: AuditLogRepository and LlmQueueRepository now perform in-memory ordering after database filtering to avoid SQLite's `NotSupportedException` for DateTimeOffset ORDER BY clauses.
+- **SQLite DateTimeOffset ordering**: AuditLogRepository and LlmQueueRepository now use SQLite-targeted raw SQL with `ORDER BY` + `LIMIT` to preserve queue/history ordering without full in-memory scans.
 - **API GET endpoint error handling**: All GET endpoints previously returned generic 500 for any error; now properly map error codes to HTTP status codes (404, 400, etc.).
 - **Domain validation gaps**: Card descriptions now validate max length (2000 chars), Board descriptions validate max length (1000 chars), and duplicate label assignment on cards is prevented at the domain level.
 - **Frontend build readiness**: Production frontend build now passes with strict app type-check (`npm run typecheck`) plus bundling (`npm run build`), and source-level nullability guards were added in board drag/drop and board store error handling.
@@ -222,10 +222,10 @@ Current state:
   - **Tradeoff**: parsing still uses lightweight shape checks, not a shared typed HTTP error abstraction.
   - **Future revision**: introduce a reusable API client error utility (or interceptor) used across all stores/modules.
 
-- **Decision**: Keep SQLite DateTimeOffset ordering workaround in repositories (in-memory sort after DB filtering).
-  - **Why now**: avoids runtime `ORDER BY DateTimeOffset` failures on SQLite while preserving endpoint behavior.
-  - **Tradeoff**: memory/CPU overhead grows with result-set size before `Take(limit)` is applied.
-  - **Future revision**: cap query windows server-side or migrate timestamp storage/indexing strategy for true DB-side ordered pagination.
+- **Decision**: Use provider-gated SQLite raw SQL in queue/history repositories to keep ordering/limits at the database layer.
+  - **Why now**: avoids runtime DateTimeOffset translation issues and removes O(n) dequeue/history scans.
+  - **Tradeoff**: repository code now has provider-specific SQL branches (less portable than pure LINQ).
+  - **Future revision**: converge on provider-agnostic LINQ by introducing a durable timestamp sort key/value converter strategy that translates cleanly across providers.
 
 - **Decision**: Keep existing frontend/browser data warnings non-blocking (`baseline-browser-mapping` staleness, local Node `22.11.0` vs Vite recommended `22.12+`).
   - **Why now**: no functional breakage in build/test outcomes.
