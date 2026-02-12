@@ -114,4 +114,116 @@ public class ColumnTests
         column.WipLimit.Should().Be(3);
         column.Position.Should().Be(1);
     }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenNameTooLong()
+    {
+        // Arrange
+        var longName = new string('a', 51);
+
+        // Act
+        var act = () => new Column(_boardId, longName, 0);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Column name cannot exceed 50 characters");
+    }
+
+    [Fact]
+    public void Update_ShouldNotChangeName_WhenNameIsNull()
+    {
+        // Arrange
+        var column = new Column(_boardId, "To Do", 0);
+
+        // Act
+        column.Update(name: null, wipLimit: 3);
+
+        // Assert
+        column.Name.Should().Be("To Do");
+    }
+
+    [Fact]
+    public void WouldExceedWipLimitIfAdded_ShouldReturnFalse_WhenNoWipLimit()
+    {
+        // Arrange
+        var column = new Column(_boardId, "To Do", 0);
+
+        // Act
+        var result = column.WouldExceedWipLimitIfAdded();
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void WouldExceedWipLimitIfAdded_ShouldReturnFalse_WhenUnderLimit()
+    {
+        // Arrange
+        var column = new Column(_boardId, "To Do", 0, wipLimit: 3);
+        column.AddCard(new Card(_boardId, column.Id, "Card 1"));
+
+        // Act
+        var result = column.WouldExceedWipLimitIfAdded();
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void WouldExceedWipLimitIfAdded_ShouldReturnTrue_WhenAtLimit()
+    {
+        // Arrange
+        var column = new Column(_boardId, "To Do", 0, wipLimit: 2);
+        column.AddCard(new Card(_boardId, column.Id, "Card 1"));
+        column.AddCard(new Card(_boardId, column.Id, "Card 2"));
+
+        // Act
+        var result = column.WouldExceedWipLimitIfAdded();
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsWipLimitExceeded_ShouldReturnFalse_WhenNoWipLimit()
+    {
+        // Arrange
+        var column = new Column(_boardId, "To Do", 0);
+
+        // Act
+        var result = column.IsWipLimitExceeded();
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsWipLimitExceeded_ShouldReturnFalse_WhenUnderOrAtLimit()
+    {
+        // Arrange
+        var column = new Column(_boardId, "To Do", 0, wipLimit: 2);
+        column.AddCard(new Card(_boardId, column.Id, "Card 1"));
+        column.AddCard(new Card(_boardId, column.Id, "Card 2"));
+
+        // Act
+        var result = column.IsWipLimitExceeded();
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsWipLimitExceeded_ShouldReturnTrue_WhenOverLimit()
+    {
+        // Arrange
+        var column = new Column(_boardId, "To Do", 0, wipLimit: 1);
+        column.AddCard(new Card(_boardId, column.Id, "Card 1"));
+        column.AddCard(new Card(_boardId, column.Id, "Card 2"));
+
+        // Act
+        var result = column.IsWipLimitExceeded();
+
+        // Assert
+        result.Should().BeTrue();
+    }
 }

@@ -152,4 +152,147 @@ public class CardTests
         act.Should().Throw<DomainException>()
             .WithMessage("Position cannot be negative");
     }
+
+    [Fact]
+    public void Constructor_ShouldSetDefaultDescription_WhenNotProvided()
+    {
+        // Arrange & Act
+        var card = new Card(_boardId, _columnId, "Task");
+
+        // Assert
+        card.Description.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenDescriptionTooLong()
+    {
+        // Arrange
+        var longDescription = new string('a', 2001);
+
+        // Act
+        var act = () => new Card(_boardId, _columnId, "Task", longDescription);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Card description cannot exceed 2000 characters");
+    }
+
+    [Fact]
+    public void Update_ShouldThrow_WhenDescriptionTooLong()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Task");
+        var longDescription = new string('a', 2001);
+
+        // Act
+        var act = () => card.Update(description: longDescription);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Card description cannot exceed 2000 characters");
+    }
+
+    [Fact]
+    public void Update_ShouldNotChangeTitle_WhenTitleIsNull()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Original Title");
+
+        // Act
+        card.Update(title: null, description: "New desc");
+
+        // Assert
+        card.Title.Should().Be("Original Title");
+    }
+
+    [Fact]
+    public void Update_ShouldNotChangeDescription_WhenDescriptionIsNull()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Task", "Original Description");
+
+        // Act
+        card.Update(title: "New Title", description: null);
+
+        // Assert
+        card.Description.Should().Be("Original Description");
+    }
+
+    [Fact]
+    public void MoveToColumn_ShouldThrow_WhenPositionIsNegative()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Task");
+        var newColumnId = Guid.NewGuid();
+
+        // Act
+        var act = () => card.MoveToColumn(newColumnId, -1);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Position cannot be negative");
+    }
+
+    [Fact]
+    public void AddLabel_ShouldThrow_WhenDuplicateLabelAdded()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Task");
+        var labelId = Guid.NewGuid();
+        var cardLabel = new CardLabel(card.Id, labelId);
+        card.AddLabel(cardLabel);
+
+        // Act
+        var duplicateLabel = new CardLabel(card.Id, labelId);
+        var act = () => card.AddLabel(duplicateLabel);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Label is already assigned to this card");
+    }
+
+    [Fact]
+    public void AddLabel_ShouldAddLabel_WhenLabelNotAlreadyAdded()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Task");
+        var cardLabel = new CardLabel(card.Id, Guid.NewGuid());
+
+        // Act
+        card.AddLabel(cardLabel);
+
+        // Assert
+        card.CardLabels.Should().ContainSingle()
+            .Which.Should().Be(cardLabel);
+    }
+
+    [Fact]
+    public void RemoveLabel_ShouldRemoveLabel()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Task");
+        var cardLabel = new CardLabel(card.Id, Guid.NewGuid());
+        card.AddLabel(cardLabel);
+
+        // Act
+        card.RemoveLabel(cardLabel);
+
+        // Assert
+        card.CardLabels.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ClearLabels_ShouldRemoveAllLabels()
+    {
+        // Arrange
+        var card = new Card(_boardId, _columnId, "Task");
+        card.AddLabel(new CardLabel(card.Id, Guid.NewGuid()));
+        card.AddLabel(new CardLabel(card.Id, Guid.NewGuid()));
+
+        // Act
+        card.ClearLabels();
+
+        // Assert
+        card.CardLabels.Should().BeEmpty();
+    }
 }
