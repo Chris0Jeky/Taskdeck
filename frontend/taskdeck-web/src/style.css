@@ -1,3 +1,5 @@
+@import './design-tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,5 +7,17 @@
 @layer base {
   body {
     @apply bg-gray-50 text-gray-900;
+  }
+
+  /* Focus ring utility */
+  *:focus-visible {
+    outline: none;
+    box-shadow: var(--td-focus-ring);
+    border-radius: var(--td-radius-sm);
+  }
+
+  /* Accessibility: aria-live region for toast announcements */
+  [aria-live] {
+    position: relative;
   }
 }
