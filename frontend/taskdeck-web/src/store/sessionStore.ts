@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '../api/authApi'
 import { useToastStore } from './toastStore'
-import type { LoginRequest, RegisterRequest, ChangePasswordRequest, SessionState } from '../types/auth'
+import type { LoginRequest, RegisterRequest, ChangePasswordRequest, SessionState, AuthResponse } from '../types/auth'
+import { getTokenExpiryIso, isTokenExpired } from '../utils/jwt'
 
 const TOKEN_KEY = 'taskdeck_token'
 const SESSION_KEY = 'taskdeck_session'
@@ -18,7 +19,10 @@ export const useSessionStore = defineStore('session', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  const isAuthenticated = computed(() => !!token.value)
+  const isAuthenticated = computed(() => {
+    if (!token.value) return false
+    return !isTokenExpired(token.value)
+  })
 
   const sessionState = computed<SessionState>(() => ({
     token: token.value,
@@ -29,23 +33,18 @@ export const useSessionStore = defineStore('session', () => {
     expiresAt: expiresAt.value,
   }))
 
-  function setSession(data: { token: string; userId: string; username: string; email: string }) {
+  function setSession(data: AuthResponse) {
     token.value = data.token
-    userId.value = data.userId
-    username.value = data.username
-    email.value = data.email
-    try {
-      const parts = data.token.split('.')
-      const payload = JSON.parse(atob(parts[1] ?? ''))
-      expiresAt.value = payload.exp ? new Date(payload.exp * 1000).toISOString() : null
-    } catch {
-      expiresAt.value = null
-    }
+    userId.value = data.user.id
+    username.value = data.user.username
+    email.value = data.user.email
+    expiresAt.value = getTokenExpiryIso(data.token)
+
     localStorage.setItem(TOKEN_KEY, data.token)
     localStorage.setItem(SESSION_KEY, JSON.stringify({
-      userId: data.userId,
-      username: data.username,
-      email: data.email,
+      userId: data.user.id,
+      username: data.user.username,
+      email: data.user.email,
     }))
   }
 
@@ -69,10 +68,8 @@ export const useSessionStore = defineStore('session', () => {
         userId.value = session.userId
         username.value = session.username
         email.value = session.email
-        const parts = savedToken.split('.')
-        const payload = JSON.parse(atob(parts[1] ?? ''))
-        expiresAt.value = payload.exp ? new Date(payload.exp * 1000).toISOString() : null
-        if (payload.exp && Date.now() / 1000 > payload.exp) {
+        expiresAt.value = getTokenExpiryIso(savedToken)
+        if (isTokenExpired(savedToken)) {
           clearSession()
         }
       } catch {
@@ -138,6 +135,13 @@ export const useSessionStore = defineStore('session', () => {
     toast.info('Logged out')
   }
 
+  function requireUserId(context = 'this action'): string {
+    if (userId.value) return userId.value
+    const message = `You must be logged in to use ${context}.`
+    error.value = message
+    throw new Error(message)
+  }
+
   function getErrorMessage(err: unknown, fallback: string): string {
     if (typeof err !== 'object' || err === null) return fallback
     const typed = err as { response?: { data?: { message?: unknown } }; message?: unknown }
@@ -163,5 +167,6 @@ export const useSessionStore = defineStore('session', () => {
     logout,
     restoreSession,
     clearSession,
+    requireUserId,
   }
 })
