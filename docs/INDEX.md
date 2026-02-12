@@ -29,6 +29,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `frontend/06_OPS_CONSOLE_LOGS_SPEC.md`
 - `frontend/07_ARCHIVE_EXPORT_IMPORT_SPEC.md`
 - `frontend/08_TESTING_ACCEPTANCE_ROLLOUT_PLAYBOOK.md`
+- `frontend/IMPLEMENTATION_SUMMARY.md`
+  - Complete implementation summary documenting what was built, current capabilities, future directions, limitations, and tradeoffs.
 
 ## Reference Material
 

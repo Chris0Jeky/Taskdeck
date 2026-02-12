@@ -100,6 +100,7 @@ jobs:
       - api-integration
       - frontend-unit
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -132,11 +133,12 @@ jobs:
         run: node -e "require('fs').rmSync('taskdeck.e2e.ci.db',{force:true});"
 
       - name: Run Playwright smoke tests
+        timeout-minutes: 12
         working-directory: frontend/taskdeck-web
         env:
           CI: "true"
           TASKDECK_E2E_DB: taskdeck.e2e.ci.db
-        run: npx playwright test
+        run: npx playwright test --reporter=line
 
       - name: Upload Playwright report
         if: failure()
@@ -144,4 +146,12 @@ jobs:
         with:
           name: playwright-report
           path: frontend/taskdeck-web/playwright-report
+          if-no-files-found: ignore
+
+      - name: Upload Playwright test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: frontend/taskdeck-web/test-results
           if-no-files-found: ignore

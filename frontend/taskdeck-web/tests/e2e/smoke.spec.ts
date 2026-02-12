@@ -1,12 +1,59 @@
-import type { Page } from '@playwright/test'
+import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+interface AuthUser {
+  id: string
+  username: string
+  email: string
+}
+
+interface AuthResult {
+  token: string
+  user: AuthUser
+}
+
+const API_BASE_URL = 'http://localhost:5000/api'
+
+async function bootstrapAuthenticatedSession(page: Page, request: APIRequestContext) {
+  const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const username = `e2e-${unique}`
+  const email = `${username}@taskdeck.local`
+  const password = 'E2ePassword123!'
+
+  const response = await request.post(`${API_BASE_URL}/auth/register`, {
+    data: { username, email, password },
+  })
+  expect(response.ok()).toBeTruthy()
+
+  const auth = await response.json() as AuthResult
+  await page.addInitScript((payload: { token: string; session: { userId: string; username: string; email: string } }) => {
+    localStorage.setItem('taskdeck_token', payload.token)
+    localStorage.setItem('taskdeck_session', JSON.stringify(payload.session))
+  }, {
+    token: auth.token,
+    session: {
+      userId: auth.user.id,
+      username: auth.user.username,
+      email: auth.user.email,
+    },
+  })
+}
+
+async function gotoBoardsWorkspace(page: Page) {
+  await page.goto('/workspace/boards')
+  await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
+}
+
+test.beforeEach(async ({ page, request }) => {
+  await bootstrapAuthenticatedSession(page, request)
+})
+
 async function createBoard(page: Page, boardName: string) {
-  await page.goto('/boards')
+  await gotoBoardsWorkspace(page)
   await page.getByRole('button', { name: '+ New Board' }).click()
   await page.getByPlaceholder('Board name').fill(boardName)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page).toHaveURL(/\/boards\/[a-f0-9-]+$/)
+  await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
   await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
 }
 
@@ -53,12 +100,12 @@ test('board to card workflow smoke test', async ({ page }) => {
 test('filter panel shortcut should toggle panel', async ({ page }) => {
   const boardName = `Filter Board ${Date.now()}`
 
-  await page.goto('/boards')
+  await gotoBoardsWorkspace(page)
 
   await page.getByRole('button', { name: '+ New Board' }).click()
   await page.getByPlaceholder('Board name').fill(boardName)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page).toHaveURL(/\/boards\/[a-f0-9-]+$/)
+  await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
 
   await page.keyboard.press('f')
   await expect(page.getByRole('heading', { name: 'Filter Cards' })).toBeVisible()
@@ -123,7 +170,7 @@ test('board settings lifecycle should support rename archive unarchive and delet
 
   await expect(page.getByRole('heading', { name: renamedBoardName })).toBeVisible()
 
-  await page.goto('/boards')
+  await page.goto('/workspace/boards')
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
 
   await page.goto(boardUrl)
@@ -131,7 +178,7 @@ test('board settings lifecycle should support rename archive unarchive and delet
   await page.locator('#board-archived').uncheck()
   await page.getByRole('button', { name: 'Save Changes' }).click()
 
-  await page.goto('/boards')
+  await page.goto('/workspace/boards')
   await expect(page.getByText(renamedBoardName).first()).toBeVisible()
 
   await page.goto(boardUrl)
@@ -139,7 +186,7 @@ test('board settings lifecycle should support rename archive unarchive and delet
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Delete Board' }).click()
 
-  await expect(page).toHaveURL(/\/boards$/)
+  await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
 })
 
