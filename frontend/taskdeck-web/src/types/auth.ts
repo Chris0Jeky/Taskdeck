@@ -1,5 +1,5 @@
 export interface LoginRequest {
-  username: string
+  usernameOrEmail: string
   password: string
 }
 
@@ -17,9 +17,17 @@ export interface ChangePasswordRequest {
 
 export interface AuthResponse {
   token: string
-  userId: string
+  user: AuthUser
+}
+
+export interface AuthUser {
+  id: string
   username: string
   email: string
+  defaultRole: number
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface SessionState {
