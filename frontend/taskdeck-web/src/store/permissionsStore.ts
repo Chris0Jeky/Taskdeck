@@ -53,7 +53,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       const access = await boardAccessApi.getAccess(boardId)
       boardAccess.value.set(boardId, access)
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to fetch board access')
+      const msg = getErrorDisplay(e, 'Failed to fetch board access').message
       error.value = msg
       toast.error(msg)
       throw e

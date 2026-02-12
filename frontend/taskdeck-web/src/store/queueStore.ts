@@ -37,7 +37,7 @@ export const useQueueStore = defineStore('queue', () => {
       error.value = null
       requests.value = await queueApi.getRequestsByStatus(status)
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to fetch requests by status')
+      const msg = getErrorDisplay(e, 'Failed to fetch requests by status').message
       error.value = msg
       toast.error(msg)
       throw e

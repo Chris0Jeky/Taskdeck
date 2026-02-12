@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useQueueStore } from '../store/queueStore'
 import { getQueueTotal, normalizeQueueStatus } from '../utils/queue'
+import type { QueueStatus } from '../types/queue'
 
 const queue = useQueueStore()
 
@@ -57,7 +58,7 @@ function formatDate(d: string | null): string {
   return new Date(d).toLocaleString()
 }
 
-function statusColor(status: string | number): string {
+function statusColor(status: QueueStatus | number): string {
   const normalized = normalizeQueueStatus(status)
   const colors: Record<string, string> = {
     Pending: 'var(--td-color-warning)',
