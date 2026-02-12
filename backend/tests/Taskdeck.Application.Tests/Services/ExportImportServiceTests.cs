@@ -79,6 +79,26 @@ public class ExportImportServiceTests
     }
 
     [Fact]
+    public async Task ExportBoardAsync_ShouldSucceed_WhenSandboxModeIsEnabled()
+    {
+        var owner = CreateUser("owner");
+        var requester = CreateUser("requester");
+        var board = new Board("Secure Board", ownerId: owner.Id);
+        var sandboxService = new ExportImportService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = true });
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(requester.Id, default)).ReturnsAsync(requester);
+        _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(board.Id, default)).ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardIdAsync(board.Id, default))
+            .ReturnsAsync(Array.Empty<BoardAccess>());
+
+        var result = await sandboxService.ExportBoardAsync(board.Id, requester.Id);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ExportBoardAsync_ShouldIncludeCardLabels_WhenDataIsAvailable()
     {
         var owner = CreateUser("owner");

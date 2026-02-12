@@ -177,6 +177,25 @@ public class LlmQueueServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
+    [Fact]
+    public async Task CancelRequestAsync_ShouldSucceed_WhenSandboxModeIsEnabled()
+    {
+        var ownerId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var request = new LlmRequest(ownerId, "voicenote", "payload text");
+        var sandboxService = new LlmQueueService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = true });
+
+        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(request.Id, default))
+            .ReturnsAsync(request);
+
+        var result = await sandboxService.CancelRequestAsync(request.Id, otherUserId);
+
+        result.IsSuccess.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
     #endregion
 
     #region ProcessNextRequestAsync Tests
