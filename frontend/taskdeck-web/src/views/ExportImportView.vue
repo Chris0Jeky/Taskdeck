@@ -41,6 +41,10 @@ async function handleExport() {
 
 function handleCopyExport() {
   if (!exportResult.value) return
+  if (!navigator.clipboard?.writeText) {
+    toast.error('Clipboard API is not available in this browser context')
+    return
+  }
 
   navigator.clipboard.writeText(exportResult.value).then(
     () => toast.success('Copied to clipboard'),
