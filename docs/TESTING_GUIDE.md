@@ -4,9 +4,9 @@ This is the active testing guide for Taskdeck.
 
 ## Current Verified Totals (2026-02-12)
 
-- Backend unit: 230/230 passing
+- Backend unit: 234/234 passing
   - Domain: 68
-  - Application: 162
+  - Application: 166
 - Backend integration/contracts: 38/38 passing
   - API integration: 34
   - CLI contract: 4
@@ -14,7 +14,7 @@ This is the active testing guide for Taskdeck.
   - Store: 34
   - Components: 81
 - Frontend E2E smoke: 8/8 passing
-- Combined automated total: 391/391 passing
+- Combined automated total: 395/395 passing
 
 ## Backend Commands
 
@@ -105,6 +105,22 @@ Notes:
 ## Manual Verification
 
 Use `docs/MANUAL_TEST_CHECKLIST.md` for a complete manual action-by-action script with expected outcomes.
+
+## Development Sandbox Mode
+
+For local agility testing, you can enable authorization bypass mode in development only.
+
+1. Edit `backend/src/Taskdeck.Api/appsettings.Development.json`:
+   - `"DevelopmentSandbox": { "Enabled": true }`
+2. Run API in Development environment (`dotnet run` from `Taskdeck.Api` uses this by default locally).
+3. Sandbox bypass effects:
+   - board authorization checks return allow in `AuthorizationService`
+   - board access manage checks are bypassed in `BoardAccessService`
+   - board export read checks are bypassed in `ExportImportService`
+   - LLM queue cancel ownership check is bypassed in `LlmQueueService`
+4. Safety boundary:
+   - bypass is forced off outside Development
+   - validation and data integrity checks are still enforced
 
 ## Current Gaps
 
