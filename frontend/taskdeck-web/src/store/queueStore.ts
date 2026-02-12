@@ -4,6 +4,7 @@ import { queueApi } from '../api/queueApi'
 import { useToastStore } from './toastStore'
 import { useSessionStore } from './sessionStore'
 import type { QueueRequest, CreateQueueRequestDto, QueueStats } from '../types/queue'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 
 export const useQueueStore = defineStore('queue', () => {
   const toast = useToastStore()
@@ -18,10 +19,10 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       loading.value = true
       error.value = null
-      const uid = session.userId ?? ''
+      const uid = session.requireUserId('queue operations')
       requests.value = await queueApi.getUserRequests(uid)
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to fetch queue requests')
+      const msg = getErrorDisplay(e, 'Failed to fetch queue requests').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -49,13 +50,13 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       loading.value = true
       error.value = null
-      const uid = session.userId ?? ''
+      const uid = session.requireUserId('queue operations')
       const request = await queueApi.createRequest(dto, uid)
       requests.value.push(request)
       toast.success('Request submitted')
       return request
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to submit request')
+      const msg = getErrorDisplay(e, 'Failed to submit request').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -68,12 +69,12 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       loading.value = true
       error.value = null
-      const uid = session.userId ?? ''
+      const uid = session.requireUserId('queue operations')
       await queueApi.cancelRequest(requestId, uid)
       requests.value = requests.value.filter(r => r.id !== requestId)
       toast.success('Request cancelled')
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to cancel request')
+      const msg = getErrorDisplay(e, 'Failed to cancel request').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -94,7 +95,7 @@ export const useQueueStore = defineStore('queue', () => {
       }
       return result
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to process request')
+      const msg = getErrorDisplay(e, 'Failed to process request').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -109,7 +110,7 @@ export const useQueueStore = defineStore('queue', () => {
       error.value = null
       stats.value = await queueApi.getStats()
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to fetch queue stats')
+      const msg = getErrorDisplay(e, 'Failed to fetch queue stats').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -117,16 +118,6 @@ export const useQueueStore = defineStore('queue', () => {
       loading.value = false
     }
   }
-
-  function getErrorMessage(err: unknown, fallback: string): string {
-    if (typeof err !== 'object' || err === null) return fallback
-    const typed = err as { response?: { data?: { message?: unknown } }; message?: unknown }
-    const responseMessage = typed.response?.data?.message
-    if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage
-    if (typeof typed.message === 'string' && typed.message.trim().length > 0) return typed.message
-    return fallback
-  }
-
   return {
     requests,
     stats,
