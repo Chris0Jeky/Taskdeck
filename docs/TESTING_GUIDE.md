@@ -4,17 +4,19 @@ This is the active testing guide for Taskdeck.
 
 ## Current Verified Totals (2026-02-12)
 
-- Backend unit: 230/230 passing
-  - Domain: 68
+- Backend unit: 255/255 passing
+  - Domain: 93
   - Application: 162
-- Backend integration/contracts: 38/38 passing
-  - API integration: 34
+- Backend integration/contracts: 61/61 passing
+  - API integration: 57
   - CLI contract: 4
-- Frontend unit: 115/115 passing
-  - Store: 34
+- Frontend unit: 155/155 passing
+  - Store: 48 (boardStore 14, boardStore.filtering 20, toastStore 14)
   - Components: 81
+  - API layer: 17 (boardsApi 8, cardsApi 9)
+  - Composables: 9 (useKeyboardShortcuts)
 - Frontend E2E smoke: 8/8 passing
-- Combined automated total: 391/391 passing
+- Combined automated total: 479/479 passing
 
 ## Backend Commands
 
@@ -91,14 +93,18 @@ Notes:
 
 - Domain rules and invariants:
   - `backend/tests/Taskdeck.Domain.Tests`
+  - Covers: entity validation (name/title/description length, WIP limits, position bounds, hex color format), state transitions (block/unblock, archive/unarchive), duplicate label guards, ownership validation
 - Application service logic and branch coverage:
   - `backend/tests/Taskdeck.Application.Tests`
+  - Covers: all 11 services (Board, Card, Column, Label, User, Auth, Authorization, BoardAccess, ExportImport, History, LlmQueue)
 - HTTP contracts and error mapping:
   - `backend/tests/Taskdeck.Api.Tests`
+  - Covers: Boards, Cards, Columns, Labels, Users, Audit, Export/Import, LlmQueue, BoardAccess endpoints
 - CLI automation contracts and JSON output:
   - `backend/tests/Taskdeck.Cli.Tests`
 - Frontend component/state behaviors:
   - `frontend/taskdeck-web/src/tests`
+  - Covers: store actions, filtering, API modules (boardsApi, cardsApi), composables (useKeyboardShortcuts), toast notifications, modals (Card, Column, Board, Label, Filter)
 - End-to-end critical journeys:
   - `frontend/taskdeck-web/tests/e2e`
 

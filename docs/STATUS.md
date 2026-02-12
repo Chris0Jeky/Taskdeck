@@ -15,8 +15,10 @@ Multi-user/permissions, export-import, history/audit, and LLM queue capabilities
 ### Backend
 
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
-- API: REST controllers for boards, columns, cards, and labels
+- API: REST controllers for boards, columns, cards, labels, users, audit, export/import, LLM queue, board access, and authentication
 - Persistence: EF Core + SQLite
+- Domain validation: entity-level rules for name/title/description lengths, WIP limits, duplicate label guards, position bounds, hex color formats
+- API error handling: consistent error code mapping across all controllers (NotFound → 404, ValidationError → 400, WipLimitExceeded → 400, AuthenticationFailed → 401, Forbidden → 403, Conflict → 409)
 - Test layers:
   - domain unit tests
   - application/service unit tests
@@ -78,7 +80,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
 1. Phase 1 - Core Data Model and API: COMPLETE (100%)
 2. Phase 2 - Basic Web UI: COMPLETE (100%)
 3. Phase 3 - UX Improvements: COMPLETE (100%)
-4. Phase 4 - Advanced Features: IN PROGRESS (70%)
+4. Phase 4 - Advanced Features: IN PROGRESS (80%)
    Completed:
    - card and column drag/drop
    - CLI primary track expansion
@@ -96,6 +98,10 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
      - JWT configuration guards and inactive-user password-change protection
      - history and queue input validation hardening
    - additional automated coverage (+23 tests: 20 application, 3 API integration)
+   - API error handling consistency: all GET endpoints now map error codes to proper HTTP status codes
+   - domain validation hardening: description length limits (Card 2000, Board 1000 chars), duplicate label guard
+   - SQLite DateTimeOffset ordering fix in AuditLogRepository and LlmQueueRepository
+   - comprehensive test expansion: +25 domain, +23 API integration, +40 frontend unit tests
    Pending (primary track):
    - CI drift monitoring and reliability follow-through
    - CLI parity and JSON contract hardening
@@ -118,9 +124,9 @@ Commands:
 - `dotnet test backend/Taskdeck.sln`
 
 Result:
-- Domain: 68/68 passing
+- Domain: 93/93 passing
 - Application: 162/162 passing
-- Backend Unit Total: 230/230 passing
+- Backend Unit Total: 255/255 passing
 
 ### Backend Integration + CLI Contracts (Executed)
 
@@ -128,9 +134,9 @@ Commands:
 - `dotnet test backend/Taskdeck.sln`
 
 Result:
-- API integration: 34/34 passing
+- API integration: 57/57 passing
 - CLI contract: 4/4 passing
-- Integration/Contract Total: 38/38 passing
+- Integration/Contract Total: 61/61 passing
 
 ### Frontend Unit (Executed)
 
@@ -139,8 +145,10 @@ Command:
 
 Result:
 - Component tests: 81/81 passing
-- Store tests: 34/34 passing
-- Frontend Unit Total: 115/115 passing
+- Store tests: 48/48 passing (boardStore 14, boardStore.filtering 20, toastStore 14)
+- API layer tests: 17/17 passing (boardsApi 8, cardsApi 9)
+- Composable tests: 9/9 passing (useKeyboardShortcuts)
+- Frontend Unit Total: 155/155 passing
 
 ### Frontend E2E Smoke (Executed)
 
@@ -152,7 +160,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 391/391 passing
+- Combined automated total: 479/479 passing
 
 ## CI Status
 
@@ -194,6 +202,12 @@ Current state:
 - Export/import database-level operations (ExportDatabaseAsync, ImportDatabaseAsync) are stubbed.
 - LLM queue background processor is not yet implemented (manual ProcessNextRequestAsync available).
 - Audit logging is not yet automatically integrated into existing board/card/column operations.
+
+## Recently Resolved Issues
+
+- **SQLite DateTimeOffset ordering**: AuditLogRepository and LlmQueueRepository now perform in-memory ordering after database filtering to avoid SQLite's `NotSupportedException` for DateTimeOffset ORDER BY clauses.
+- **API GET endpoint error handling**: All GET endpoints previously returned generic 500 for any error; now properly map error codes to HTTP status codes (404, 400, etc.).
+- **Domain validation gaps**: Card descriptions now validate max length (2000 chars), Board descriptions validate max length (1000 chars), and duplicate label assignment on cards is prevented at the domain level.
 
 ## Canonical Documentation Policy
 
