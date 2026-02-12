@@ -48,8 +48,11 @@ public class AuditController : ControllerBase
     {
         return errorCode switch
         {
-            "ValidationError" => BadRequest(new { errorCode, message }),
             "NotFound" => NotFound(new { errorCode, message }),
+            "ValidationError" => BadRequest(new { errorCode, message }),
+            "AuthenticationFailed" => Unauthorized(new { errorCode, message }),
+            "Forbidden" => StatusCode(403, new { errorCode, message }),
+            "Conflict" => Conflict(new { errorCode, message }),
             _ => Problem(message, statusCode: 500)
         };
     }
