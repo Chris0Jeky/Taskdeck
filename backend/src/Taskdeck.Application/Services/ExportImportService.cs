@@ -242,7 +242,7 @@ public class ExportImportService : IExportImportService
 
     private async Task<bool> CanUserReadBoardAsync(Board board, Guid userId)
     {
-        if (board.OwnerId is null || board.OwnerId == userId)
+        if (board.OwnerId == userId)
             return true;
 
         var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(board.Id, userId);
