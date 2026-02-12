@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { auditApi } from '../api/auditApi'
 import { useToastStore } from './toastStore'
 import type { AuditEntry } from '../types/audit'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 
 export const useAuditStore = defineStore('audit', () => {
   const toast = useToastStore()
@@ -11,13 +12,19 @@ export const useAuditStore = defineStore('audit', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  function clampLimit(limit: number): number {
+    if (limit < 1) return 1
+    if (limit > 100) return 100
+    return limit
+  }
+
   async function fetchBoardHistory(boardId: string, limit = 50) {
     try {
       loading.value = true
       error.value = null
-      entries.value = await auditApi.getBoardHistory(boardId, limit)
+      entries.value = await auditApi.getBoardHistory(boardId, clampLimit(limit))
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to fetch board history')
+      const msg = getErrorDisplay(e, 'Failed to fetch board history').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -30,9 +37,9 @@ export const useAuditStore = defineStore('audit', () => {
     try {
       loading.value = true
       error.value = null
-      entries.value = await auditApi.getEntityHistory(entityType, entityId, limit)
+      entries.value = await auditApi.getEntityHistory(entityType, entityId, clampLimit(limit))
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to fetch entity history')
+      const msg = getErrorDisplay(e, 'Failed to fetch entity history').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -45,9 +52,9 @@ export const useAuditStore = defineStore('audit', () => {
     try {
       loading.value = true
       error.value = null
-      entries.value = await auditApi.getUserHistory(userId, limit)
+      entries.value = await auditApi.getUserHistory(userId, clampLimit(limit))
     } catch (e: unknown) {
-      const msg = getErrorMessage(e, 'Failed to fetch user history')
+      const msg = getErrorDisplay(e, 'Failed to fetch user history').message
       error.value = msg
       toast.error(msg)
       throw e
@@ -55,16 +62,6 @@ export const useAuditStore = defineStore('audit', () => {
       loading.value = false
     }
   }
-
-  function getErrorMessage(err: unknown, fallback: string): string {
-    if (typeof err !== 'object' || err === null) return fallback
-    const typed = err as { response?: { data?: { message?: unknown } }; message?: unknown }
-    const responseMessage = typed.response?.data?.message
-    if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage
-    if (typeof typed.message === 'string' && typed.message.trim().length > 0) return typed.message
-    return fallback
-  }
-
   return {
     entries,
     loading,
