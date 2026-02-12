@@ -20,8 +20,9 @@ async function handleSubmit() {
   }
   try {
     submitting.value = true
-    await session.login({ username: username.value.trim(), password: password.value })
-    const redirect = (route.query.redirect as string) || '/workspace/boards'
+    await session.login({ usernameOrEmail: username.value.trim(), password: password.value })
+    const redirectRaw = (route.query.redirect as string) || '/workspace/boards'
+    const redirect = redirectRaw.startsWith('/') ? redirectRaw : '/workspace/boards'
     router.push(redirect)
   } catch {
     formError.value = session.error || 'Login failed. Please try again.'
