@@ -84,13 +84,21 @@ async function handleGrant() {
 async function handleRoleChange(accessId: string, role: string) {
   if (!activeBoardId.value.trim()) return
   const normalizedRole = normalizeBoardRole(role as BoardRole)
-  await permissions.updateAccess(activeBoardId.value.trim(), accessId, { role: normalizedRole })
+  try {
+    await permissions.updateAccess(activeBoardId.value.trim(), accessId, { role: normalizedRole })
+  } catch {
+    // Store handles toast + error state.
+  }
 }
 
 async function handleRevoke(accessId: string) {
   if (!activeBoardId.value.trim()) return
   if (confirm('Are you sure you want to revoke this access?')) {
-    await permissions.revokeAccess(activeBoardId.value.trim(), accessId)
+    try {
+      await permissions.revokeAccess(activeBoardId.value.trim(), accessId)
+    } catch {
+      // Store handles toast + error state.
+    }
   }
 }
 </script>
