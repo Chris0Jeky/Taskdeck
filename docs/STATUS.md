@@ -189,7 +189,7 @@ Current state:
 - JWT authentication is configured but not yet enforced across existing board/column/card/label endpoints.
 - Current side-track endpoints still accept actor/user IDs via query/body; claim-based identity enforcement is pending full auth rollout.
 - Boards created through legacy create-board flow still default to `OwnerId = null` for backward compatibility.
-- Ownerless boards no longer allow implicit board-access management; explicit owner/admin access is required.
+- Ownerless boards use transitional access bootstrap: first successful access grant claims ownership for `grantedBy`.
 - Ownerless boards no longer allow implicit export reads; explicit board access is required.
 - Export/import database-level operations (ExportDatabaseAsync, ImportDatabaseAsync) are stubbed.
 - LLM queue background processor is not yet implemented (manual ProcessNextRequestAsync available).
