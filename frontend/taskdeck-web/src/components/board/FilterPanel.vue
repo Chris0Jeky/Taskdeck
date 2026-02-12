@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { Label } from '../../types/board'
 
 export interface CardFilters {
@@ -20,16 +20,28 @@ const emit = defineEmits<{
   (e: 'toggle'): void
 }>()
 
-const localFilters = ref<CardFilters>({ ...props.activeFilters })
+const localFilters = ref<CardFilters>({
+  ...props.activeFilters,
+  labelIds: [...props.activeFilters.labelIds],
+})
 
-// Sync local filters with props when they change
-const syncFilters = () => {
-  localFilters.value = { ...props.activeFilters }
-}
+watch(
+  () => props.activeFilters,
+  (nextFilters) => {
+    localFilters.value = {
+      ...nextFilters,
+      labelIds: [...nextFilters.labelIds],
+    }
+  },
+  { deep: true }
+)
 
 // Update filters
 const updateFilters = () => {
-  emit('update:filters', { ...localFilters.value })
+  emit('update:filters', {
+    ...localFilters.value,
+    labelIds: [...localFilters.value.labelIds],
+  })
 }
 
 const toggleLabel = (labelId: string) => {
