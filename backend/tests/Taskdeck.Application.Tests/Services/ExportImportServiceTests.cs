@@ -194,6 +194,42 @@ public class ExportImportServiceTests
         _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Never);
     }
 
+    [Fact]
+    public async Task ImportBoardAsync_ShouldDeduplicateCardLabels_PerCardCaseInsensitive()
+    {
+        var user = CreateUser("importer");
+        var dto = new ImportBoardDto(
+            "Board",
+            "Description",
+            new[] { new ImportColumnDto("Todo", 0, null) },
+            new[]
+            {
+                new ImportCardDto("Card", null, "Todo", 0, null, new[] { "Bug", "bug", "BUG" })
+            },
+            new[] { new ImportLabelDto("Bug", "#FF0000") });
+
+        Card? importedCard = null;
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.AddAsync(It.IsAny<Board>(), default))
+            .ReturnsAsync((Board b, CancellationToken ct) => b);
+        _columnRepoMock.Setup(r => r.AddAsync(It.IsAny<Column>(), default))
+            .ReturnsAsync((Column c, CancellationToken ct) => c);
+        _labelRepoMock.Setup(r => r.AddAsync(It.IsAny<Label>(), default))
+            .ReturnsAsync((Label l, CancellationToken ct) => l);
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), default))
+            .Callback<Card, CancellationToken>((card, _) => importedCard = card)
+            .ReturnsAsync((Card c, CancellationToken ct) => c);
+
+        var result = await _service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        importedCard.Should().NotBeNull();
+        importedCard!.CardLabels.Should().HaveCount(1);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Never);
+    }
+
     private static User CreateUser(string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
