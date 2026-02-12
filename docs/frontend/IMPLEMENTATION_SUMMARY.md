@@ -60,7 +60,7 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 
 ### 1.3 App Shell
 
-- **Sidebar navigation** with collapsible state, 6 sections (Boards, Automations, Activity, Ops, Settings, Archive)
+- **Sidebar navigation** with collapsible state, 7 sections (Boards, Automations, Activity, Ops, Settings, Access, Archive)
 - **Feature-flag-gated navigation** — nav items appear/hide based on flag state
 - **Top bar** with command palette trigger and user session display
 - **Command palette** (`Ctrl/Cmd+K`) with navigation commands
@@ -98,7 +98,7 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 - `ProfileSettingsView` — user profile display, change password form, feature flags panel
 
 **Board Access**
-- `BoardAccessView` — member list, grant form, role change dropdown, revoke with confirmation
+- `BoardAccessView` — member list, board selector, grant form, role change dropdown, revoke with confirmation
 
 **Activity**
 - `ActivityView` — audit timeline with board/entity/user modes, limit control, timestamp formatting
@@ -263,7 +263,7 @@ The HTTP client's 401 interceptor clears the session and redirects to login. Thi
 **Shell** (1 file):
 `components/shell/AppShell.vue`
 
-**Views** (8 files):
+**Views** (9 files):
 `views/LoginView.vue`, `views/RegisterView.vue`, `views/ProfileSettingsView.vue`, `views/BoardAccessView.vue`, `views/ActivityView.vue`, `views/AutomationQueueView.vue`, `views/OpsConsoleView.vue`, `views/ExportImportView.vue`, `views/ArchiveView.vue`
 
 **Design** (1 file):
