@@ -293,8 +293,14 @@ public class ExportImportService : IExportImportService
             .ToList()
             ?? new List<ImportLabelDto>();
 
-        var columnNameById = (exportDto.Columns ?? Enumerable.Empty<ColumnDto>())
-            .ToDictionary(c => c.Id, c => c.Name);
+        var columnNameById = new Dictionary<Guid, string>();
+        foreach (var column in exportDto.Columns ?? Enumerable.Empty<ColumnDto>())
+        {
+            if (!columnNameById.TryAdd(column.Id, column.Name))
+            {
+                throw new JsonException($"Export payload contains duplicate column ID '{column.Id}'");
+            }
+        }
 
         var cards = new List<ImportCardDto>();
         foreach (var card in exportDto.Cards ?? Enumerable.Empty<CardDto>())
