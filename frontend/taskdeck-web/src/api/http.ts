@@ -1,4 +1,4 @@
-import axios, { type InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 import { isTokenExpired } from '../utils/jwt'
 import { createRequestId } from '../utils/requestId'
 
@@ -7,29 +7,11 @@ const SESSION_KEY = 'taskdeck_session'
 const REQUEST_ID_HEADER = 'X-Request-Id'
 
 function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
-  const headers = config.headers
-  const hasExisting = (() => {
-    if (!headers) return false
-    if (typeof (headers as { get?: unknown }).get === 'function') {
-      const get = (headers as { get: (name: string) => string | undefined }).get
-      return !!get(REQUEST_ID_HEADER)
-    }
-    const plain = headers as Record<string, unknown>
-    return typeof plain[REQUEST_ID_HEADER] === 'string' || typeof plain['x-request-id'] === 'string'
-  })()
-
-  if (hasExisting) return
-
-  if (headers && typeof (headers as { set?: unknown }).set === 'function') {
-    const set = (headers as { set: (name: string, value: string) => void }).set
-    set(REQUEST_ID_HEADER, createRequestId())
-    return
+  const headers = AxiosHeaders.from(config.headers)
+  if (!headers.get(REQUEST_ID_HEADER)) {
+    headers.set(REQUEST_ID_HEADER, createRequestId())
   }
-
-  config.headers = {
-    ...(headers ?? {}),
-    [REQUEST_ID_HEADER]: createRequestId(),
-  }
+  config.headers = headers
 }
 
 const http = axios.create({
