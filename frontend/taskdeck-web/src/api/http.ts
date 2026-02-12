@@ -1,6 +1,7 @@
 import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 import { isTokenExpired } from '../utils/jwt'
 import { createRequestId } from '../utils/requestId'
+import { isAuthRoutePath } from '../utils/navigation'
 
 const TOKEN_KEY = 'taskdeck_token'
 const SESSION_KEY = 'taskdeck_session'
@@ -51,8 +52,9 @@ http.interceptors.response.use(
       if (error.response.status === 401) {
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem(SESSION_KEY)
-        const currentPath = `${window.location.pathname}${window.location.search}`
-        if (currentPath !== '/login' && currentPath !== '/register') {
+        const pathname = window.location.pathname
+        const currentPath = `${pathname}${window.location.search}`
+        if (!isAuthRoutePath(pathname)) {
           window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
         }
       }
