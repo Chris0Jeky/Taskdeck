@@ -4,13 +4,16 @@ const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  forbidOnly: !!process.env.CI,
   fullyParallel: false,
+  maxFailures: process.env.CI ? 1 : undefined,
+  globalTimeout: process.env.CI ? 12 * 60_000 : undefined,
   timeout: 60_000,
   expect: {
     timeout: 10_000,
   },
-  retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  retries: process.env.CI ? 0 : 0,
+  reporter: process.env.CI ? [['line'], ['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'retain-on-failure',
