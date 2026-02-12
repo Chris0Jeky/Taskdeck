@@ -50,6 +50,19 @@ cd frontend/taskdeck-web
 npx vitest run
 ```
 
+## Frontend Typecheck and Build
+
+```bash
+cd frontend/taskdeck-web
+npm run typecheck
+npm run build
+```
+
+Notes:
+- `npm run typecheck` currently targets shipping app code (`tsconfig.app.json`).
+- `src/tests/**` is intentionally excluded from production type-check scope for this phase; behavior remains validated by Vitest.
+- Follow-up for scalability/quality: add a dedicated strict test type-check config and CI gate.
+
 List discovered Vitest tests:
 
 ```bash
