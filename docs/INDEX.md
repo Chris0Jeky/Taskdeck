@@ -14,6 +14,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - End-to-end manual validation checklist with expected outcomes.
 - `DEVELOPMENT_HISTORY.md`
   - Complete development journey from conception to current state, with phase breakdown, milestones, and lessons learned.
+- `PR_MERGE_READINESS_REPORT_2026-02-12.md`
+  - Consolidated audit artifact covering PR findings, corrections, tests, and remaining risks.
 
 ## Reference Material
 

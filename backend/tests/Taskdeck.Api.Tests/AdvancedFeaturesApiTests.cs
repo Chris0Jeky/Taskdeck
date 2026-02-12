@@ -1,0 +1,131 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using FluentAssertions;
+using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Enums;
+using Xunit;
+
+namespace Taskdeck.Api.Tests;
+
+public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
+{
+    private readonly HttpClient _client;
+
+    public AdvancedFeaturesApiTests(TestWebApplicationFactory factory)
+    {
+        _client = factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task Login_ShouldReturnToken_ForRegisteredUser()
+    {
+        var (username, email, password, _) = await RegisterUserAsync("authlogin");
+
+        var response = await _client.PostAsJsonAsync("/api/auth/login", new LoginDto(username, password));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Token.Should().NotBeNullOrWhiteSpace();
+        payload.User.Email.Should().Be(email);
+    }
+
+    [Fact]
+    public async Task ImportBoardFromJson_ShouldAcceptExportPayloadShape()
+    {
+        var (_, _, _, importingUserId) = await RegisterUserAsync("importer");
+        var now = DateTimeOffset.UtcNow;
+        var boardId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+        var labelId = Guid.NewGuid();
+
+        var exportPayload = new ExportBoardDto(
+            new BoardDto(boardId, "Imported from Export", "description", false, now, now),
+            new[] { new ColumnDto(columnId, boardId, "Todo", 0, null, 1, now, now) },
+            new[]
+            {
+                new CardDto(
+                    Guid.NewGuid(),
+                    boardId,
+                    columnId,
+                    "Imported Card",
+                    string.Empty,
+                    null,
+                    false,
+                    null,
+                    0,
+                    new List<LabelDto> { new LabelDto(labelId, boardId, "Bug", "#FF0000", now, now) },
+                    now,
+                    now)
+            },
+            new[] { new LabelDto(labelId, boardId, "Bug", "#FF0000", now, now) },
+            new List<BoardAccessDto>(),
+            now,
+            "exporter");
+
+        var response = await _client.PostAsJsonAsync($"/api/import/boards/json?userId={importingUserId}", exportPayload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var importResult = await response.Content.ReadFromJsonAsync<ImportResultDto>();
+        importResult.Should().NotBeNull();
+        importResult!.Success.Should().BeTrue();
+        importResult.ColumnsImported.Should().Be(1);
+        importResult.CardsImported.Should().Be(1);
+        importResult.LabelsImported.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateAccess_ShouldReturnNotFound_WhenAccessBelongsToDifferentBoard()
+    {
+        var (_, _, _, granterId) = await RegisterUserAsync("granter");
+        var (_, _, _, targetUserId) = await RegisterUserAsync("target");
+        var board1 = await CreateBoardAsync("board1");
+        var board2 = await CreateBoardAsync("board2");
+
+        var grantResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board2.Id}/access?grantedBy={granterId}",
+            new GrantAccessDto(board2.Id, targetUserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var createdAccess = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        createdAccess.Should().NotBeNull();
+
+        var updateResponse = await _client.PutAsJsonAsync(
+            $"/api/boards/{board1.Id}/access/{createdAccess!.Id}?updatedBy={granterId}",
+            new UpdateAccessDto(UserRole.Editor));
+
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorPayload = await updateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    private async Task<(string Username, string Email, string Password, Guid UserId)> RegisterUserAsync(string stem)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var username = $"{stem}_{suffix}";
+        var email = $"{stem}_{suffix}@example.com";
+        const string password = "password123";
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/auth/register",
+            new CreateUserDto(username, email, password));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
+        payload.Should().NotBeNull();
+
+        return (username, email, password, payload!.User.Id);
+    }
+
+    private async Task<BoardDto> CreateBoardAsync(string stem)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/boards",
+            new CreateBoardDto($"{stem}-{Guid.NewGuid():N}", null));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var board = await response.Content.ReadFromJsonAsync<BoardDto>();
+        board.Should().NotBeNull();
+        return board!;
+    }
+}
