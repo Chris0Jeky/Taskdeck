@@ -6,7 +6,7 @@ namespace Taskdeck.Domain.Entities;
 public class CommandRun : Entity
 {
     public string TemplateName { get; private set; }
-    public string RequestedByUserId { get; private set; }
+    public Guid RequestedByUserId { get; private set; }
     public CommandRunStatus Status { get; private set; }
     public DateTime? StartedAt { get; private set; }
     public DateTime? CompletedAt { get; private set; }
@@ -23,12 +23,12 @@ public class CommandRun : Entity
 
     public CommandRun(
         string templateName,
-        string requestedByUserId,
+        Guid requestedByUserId,
         string correlationId)
     {
         if (string.IsNullOrWhiteSpace(templateName))
             throw new DomainException(ErrorCodes.ValidationError, "TemplateName cannot be empty");
-        if (string.IsNullOrWhiteSpace(requestedByUserId))
+        if (requestedByUserId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "RequestedByUserId cannot be empty");
         if (string.IsNullOrWhiteSpace(correlationId))
             throw new DomainException(ErrorCodes.ValidationError, "CorrelationId cannot be empty");

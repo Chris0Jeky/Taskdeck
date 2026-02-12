@@ -7,8 +7,8 @@ public class AutomationProposal : Entity
 {
     public ProposalSourceType SourceType { get; private set; }
     public string? SourceReferenceId { get; private set; }
-    public string? BoardId { get; private set; }
-    public string RequestedByUserId { get; private set; }
+    public Guid? BoardId { get; private set; }
+    public Guid RequestedByUserId { get; private set; }
     public ProposalStatus Status { get; private set; }
     public RiskLevel RiskLevel { get; private set; }
     public string Summary { get; private set; }
@@ -16,7 +16,7 @@ public class AutomationProposal : Entity
     public string? ValidationIssues { get; private set; }
     public DateTime ExpiresAt { get; private set; }
     public DateTime? DecidedAt { get; private set; }
-    public string? DecidedByUserId { get; private set; }
+    public Guid? DecidedByUserId { get; private set; }
     public DateTime? AppliedAt { get; private set; }
     public string? FailureReason { get; private set; }
     public string CorrelationId { get; private set; }
@@ -28,15 +28,15 @@ public class AutomationProposal : Entity
 
     public AutomationProposal(
         ProposalSourceType sourceType,
-        string requestedByUserId,
+        Guid requestedByUserId,
         string summary,
         RiskLevel riskLevel,
         string correlationId,
-        string? boardId = null,
+        Guid? boardId = null,
         string? sourceReferenceId = null,
         int expiryMinutes = 1440)
     {
-        if (string.IsNullOrWhiteSpace(requestedByUserId))
+        if (requestedByUserId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "RequestedByUserId cannot be empty");
         if (string.IsNullOrWhiteSpace(summary))
             throw new DomainException(ErrorCodes.ValidationError, "Summary cannot be empty");
@@ -67,9 +67,9 @@ public class AutomationProposal : Entity
         Touch();
     }
 
-    public void Approve(string decidedByUserId)
+    public void Approve(Guid decidedByUserId)
     {
-        if (string.IsNullOrWhiteSpace(decidedByUserId))
+        if (decidedByUserId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "DecidedByUserId cannot be empty");
         if (Status != ProposalStatus.PendingReview)
             throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot approve proposal in status {Status}");
@@ -82,9 +82,9 @@ public class AutomationProposal : Entity
         Touch();
     }
 
-    public void Reject(string decidedByUserId, string? reason = null)
+    public void Reject(Guid decidedByUserId, string? reason = null)
     {
-        if (string.IsNullOrWhiteSpace(decidedByUserId))
+        if (decidedByUserId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "DecidedByUserId cannot be empty");
         if (Status != ProposalStatus.PendingReview)
             throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot reject proposal in status {Status}");

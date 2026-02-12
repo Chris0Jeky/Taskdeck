@@ -11,7 +11,7 @@ public class ArchiveItemRepository : Repository<ArchiveItem>, IArchiveItemReposi
     {
     }
 
-    public async Task<IEnumerable<ArchiveItem>> GetByBoardIdAsync(string boardId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ArchiveItem>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .Where(a => a.BoardId == boardId)
@@ -38,13 +38,13 @@ public class ArchiveItemRepository : Repository<ArchiveItem>, IArchiveItemReposi
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<ArchiveItem?> GetByEntityAsync(string entityType, string entityId, CancellationToken cancellationToken = default)
+    public async Task<ArchiveItem?> GetByEntityAsync(string entityType, Guid entityId, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .FirstOrDefaultAsync(a => a.EntityType == entityType && a.EntityId == entityId, cancellationToken);
     }
 
-    public async Task<IEnumerable<ArchiveItem>> GetByUserIdAsync(string userId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ArchiveItem>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .Where(a => a.ArchivedByUserId == userId)

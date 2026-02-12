@@ -11,7 +11,7 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
     {
     }
 
-    public async Task<IEnumerable<ChatSession>> GetByUserIdAsync(string userId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ChatSession>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .Where(s => s.UserId == userId)
@@ -20,7 +20,7 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<ChatSession>> GetByBoardIdAsync(string boardId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ChatSession>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await _dbSet
             .Where(s => s.BoardId == boardId)

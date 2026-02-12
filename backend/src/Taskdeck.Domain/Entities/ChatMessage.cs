@@ -5,11 +5,11 @@ namespace Taskdeck.Domain.Entities;
 
 public class ChatMessage : Entity
 {
-    public string SessionId { get; private set; }
+    public Guid SessionId { get; private set; }
     public ChatMessageRole Role { get; private set; }
     public string Content { get; private set; }
     public string MessageType { get; private set; }
-    public string? ProposalId { get; private set; }
+    public Guid? ProposalId { get; private set; }
     public int? TokenUsage { get; private set; }
 
     // Navigation
@@ -18,14 +18,14 @@ public class ChatMessage : Entity
     private ChatMessage() { } // EF Core
 
     public ChatMessage(
-        string sessionId,
+        Guid sessionId,
         ChatMessageRole role,
         string content,
         string messageType = "text",
-        string? proposalId = null,
+        Guid? proposalId = null,
         int? tokenUsage = null)
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
+        if (sessionId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "SessionId cannot be empty");
         if (string.IsNullOrWhiteSpace(content))
             throw new DomainException(ErrorCodes.ValidationError, "Content cannot be empty");
@@ -53,9 +53,9 @@ public class ChatMessage : Entity
         Touch();
     }
 
-    public void SetProposalId(string proposalId)
+    public void SetProposalId(Guid proposalId)
     {
-        if (string.IsNullOrWhiteSpace(proposalId))
+        if (proposalId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "ProposalId cannot be empty");
 
         ProposalId = proposalId;

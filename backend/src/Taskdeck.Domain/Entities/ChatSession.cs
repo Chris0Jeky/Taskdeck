@@ -5,8 +5,8 @@ namespace Taskdeck.Domain.Entities;
 
 public class ChatSession : Entity
 {
-    public string UserId { get; private set; }
-    public string? BoardId { get; private set; }
+    public Guid UserId { get; private set; }
+    public Guid? BoardId { get; private set; }
     public string Title { get; private set; }
     public ChatSessionStatus Status { get; private set; }
 
@@ -16,11 +16,11 @@ public class ChatSession : Entity
     private ChatSession() { } // EF Core
 
     public ChatSession(
-        string userId,
+        Guid userId,
         string title,
-        string? boardId = null)
+        Guid? boardId = null)
     {
-        if (string.IsNullOrWhiteSpace(userId))
+        if (userId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "UserId cannot be empty");
         if (string.IsNullOrWhiteSpace(title))
             throw new DomainException(ErrorCodes.ValidationError, "Title cannot be empty");
