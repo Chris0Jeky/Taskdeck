@@ -1,24 +1,27 @@
 import http from './http'
 import type { QueueRequest, CreateQueueRequestDto, QueueStats } from '../types/queue'
+import { normalizeQueueRequest } from '../utils/queue'
 
 export const queueApi = {
   async createRequest(request: CreateQueueRequestDto, userId: string): Promise<QueueRequest> {
     const { data } = await http.post<QueueRequest>('/llm-queue', { ...request, userId })
-    return data
+    return normalizeQueueRequest(data)
   },
 
   async getUserRequests(userId: string): Promise<QueueRequest[]> {
-    const { data } = await http.get<QueueRequest[]>(`/llm-queue/user/${userId}`)
-    return data
+    const queryUserId = encodeURIComponent(userId)
+    const { data } = await http.get<QueueRequest[]>(`/llm-queue/user/${queryUserId}`)
+    return data.map(normalizeQueueRequest)
   },
 
   async getRequestsByStatus(status: string): Promise<QueueRequest[]> {
     const { data } = await http.get<QueueRequest[]>(`/llm-queue/status/${status}`)
-    return data
+    return data.map(normalizeQueueRequest)
   },
 
   async cancelRequest(requestId: string, userId: string): Promise<void> {
-    await http.post(`/llm-queue/${requestId}/cancel?userId=${userId}`)
+    const queryUserId = encodeURIComponent(userId)
+    await http.post(`/llm-queue/${requestId}/cancel?userId=${queryUserId}`)
   },
 
   async processNext(): Promise<QueueRequest | null> {
