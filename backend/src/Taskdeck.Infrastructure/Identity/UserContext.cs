@@ -21,7 +21,7 @@ public class UserContext : IUserContext
         get
         {
             var user = _httpContextAccessor.HttpContext?.User;
-            if (user == null || !user.Identity?.IsAuthenticated == true)
+            if (user == null || user.Identity?.IsAuthenticated != true)
                 return null;
 
             // Try both 'sub' (standard JWT claim) and 'nameid' (alternative)
