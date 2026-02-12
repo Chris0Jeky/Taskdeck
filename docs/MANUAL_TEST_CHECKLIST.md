@@ -7,13 +7,15 @@ Use this checklist to manually validate current Taskdeck behavior on `main`.
 - In scope:
   - Boards, columns, cards, labels, filters, keyboard workflows, drag and drop, toasts.
   - CLI commands for boards, columns, and cards.
+  - Active side-track APIs on `main`: auth/users/board-access/export-import/LLM-queue/audit.
 - Out of scope on current `main`:
-  - Auth/login/register endpoints and permission-enforced runtime flows.
-  - Export/import API endpoints.
-  - LLM queue and audit/history runtime API endpoints.
+  - Full claim-based auth enforcement on legacy board/column/card/label endpoints (`[Authorize]` rollout is still pending).
+  - Queue background worker automation (manual `process-next` only).
+  - Database file export/import operations (still stubbed).
 
 Expected boundary behavior right now:
-- `GET /api/auth/login` and similar side-track endpoints should return `404` because those controllers are not active on `main`.
+- Side-track controllers are active and should return real responses (not `404`).
+- Ownerless boards created via `POST /api/boards` do not grant implicit access-management permissions.
 
 ## Preconditions
 
