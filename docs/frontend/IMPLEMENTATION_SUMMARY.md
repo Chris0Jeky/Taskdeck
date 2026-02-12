@@ -1,7 +1,7 @@
 # Frontend Overhaul Implementation Summary
 
 Last Updated: 2026-02-12
-Status: Phase 1 implementation complete (foundation + all UI surfaces)
+Status: Phase 1 implementation complete (foundation + all UI surfaces + contract-hardening pass)
 
 ## 1. What Was Done
 
@@ -31,10 +31,10 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 **API Modules (6 new)**
 - `authApi` — login, register, change-password
 - `usersApi` — CRUD, activate/deactivate, username lookup
-- `boardAccessApi` — grant, update, revoke access with transitional actor-id parameters
+- `boardAccessApi` — grant, update, revoke access with transitional actor-id parameters and enum normalization
 - `auditApi` — board, entity, and user history queries
-- `queueApi` — request lifecycle, stats, process-next
-- `exportImportApi` — board export (blob/JSON), import (structured/JSON)
+- `queueApi` — request lifecycle, stats, process-next with normalized statuses and empty-queue handling
+- `exportImportApi` — board export/import JSON with encoded actor context and guarded JSON parsing
 
 **HTTP Client Enhancement**
 - Request interceptor for `Authorization: Bearer <token>` header injection
@@ -51,6 +51,12 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 **Composables (2 new)**
 - `useErrorMapper` — API error parsing, error code to user message mapping, display extraction
 - `useShortcutContext` — keyboard shortcut context stack, context registration, typing safety
+
+**Contract/Guardrail Hardening**
+- Base64url-safe JWT parsing added for expiry checks in router guards, session restore, and HTTP interceptor
+- Role/status normalization supports numeric enum payloads and case-insensitive string payloads
+- Dynamic path and query values are encoded across board access, queue, audit, and export/import API calls
+- Store-level `requireUserId` guardrails prevent anonymous actor-id submissions for protected flows
 
 ### 1.3 App Shell
 
@@ -70,7 +76,7 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 - Activity: `/workspace/activity`, `/workspace/activity/board/:boardId`, `/workspace/activity/entity/:entityType/:entityId`, `/workspace/activity/user/:userId`
 - Automations: `/workspace/automations/queue`, `/workspace/automations/proposals`
 - Ops: `/workspace/ops/cli`, `/workspace/ops/endpoints`, `/workspace/ops/logs`
-- Settings: `/workspace/settings/profile`, `/workspace/settings/access`, `/workspace/settings/export-import`
+- Settings: `/workspace/settings/profile`, `/workspace/settings/access/:boardId?`, `/workspace/settings/export-import`
 - Archive: `/workspace/archive`
 
 **Backward compatibility**
@@ -79,6 +85,7 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 
 **Auth guard**
 - Unauthenticated users on `/workspace/**` redirected to `/login?redirect=<path>`
+- Expired tokens are cleared before navigation decisions
 - Authenticated users on `/login` or `/register` redirected to `/workspace/boards`
 
 ### 1.5 Views Implemented
@@ -110,14 +117,20 @@ The frontend was restructured from a simple 2-route board app to a full workspac
 
 ### 1.6 Tests
 
-**39 new tests** added across 5 test files:
+**66 new tests** added across 11 test files:
 - `sessionStore.spec.ts` (7 tests) — login/register/logout/restore/clear
 - `featureFlagStore.spec.ts` (7 tests) — defaults/toggle/reset/persist/restore
-- `permissionsStore.spec.ts` (16 tests) — access CRUD, role-based selectors for all 4 roles
+- `permissionsStore.spec.ts` (18 tests) — access CRUD, role selectors, enum normalization, session guardrail
 - `authApi.spec.ts` (3 tests) — login/register/changePassword endpoint calls
-- `queueApi.spec.ts` (6 tests) — all queue API endpoints
+- `queueApi.spec.ts` (6 tests) — queue API endpoints with normalization and encoding checks
+- `boardAccessApi.spec.ts` (4 tests) — role normalization and encoded path/query behavior
+- `auditApi.spec.ts` (3 tests) — encoded board/entity/user route calls
+- `exportImportApi.spec.ts` (4 tests) — encoded actor context and JSON parse behavior
+- `jwt.spec.ts` (4 tests) — base64url payload decoding and expiry helpers
+- `queue.spec.ts` (5 tests) — status normalization and queue total utility coverage
+- `roles.spec.ts` (5 tests) — role normalization and enum mapping coverage
 
-**Total test count: 194/194 passing** (155 existing + 39 new, zero regressions)
+**Total test count: 221/221 passing** (155 existing + 66 new, zero regressions)
 
 ## 2. Current Capabilities
 
@@ -171,7 +184,7 @@ The HTTP client's 401 interceptor clears the session and redirects to login. Thi
 | `05_AUTOMATION_REVIEW_FLOW_SPEC` | ✅ Queue UI complete, proposals placeholder (pending backend endpoints) |
 | `06_OPS_CONSOLE_LOGS_SPEC` | ✅ CLI runner, endpoint explorer, logs viewer (pending backend endpoints) |
 | `07_ARCHIVE_EXPORT_IMPORT_SPEC` | ✅ Export/import UI complete, archive placeholder (pending backend endpoints) |
-| `08_TESTING_ACCEPTANCE_ROLLOUT_PLAYBOOK` | ✅ 39 new tests, build verification, backward compatibility |
+| `08_TESTING_ACCEPTANCE_ROLLOUT_PLAYBOOK` | ✅ 66 new tests, build verification, backward compatibility |
 
 ## 5. Future Directions
 
@@ -222,7 +235,7 @@ The HTTP client's 401 interceptor clears the session and redirects to login. Thi
 **Rationale**: Current views are moderately complex. Further decomposition is warranted when views grow beyond ~300 lines or need shared sub-components.
 
 ### Tradeoff: Client-side auth guard only
-**Decision**: Route guards check localStorage token, not server-validated claims.
+**Decision**: Route guards and interceptors validate local token presence/expiry, not server-validated claims.
 **Alternative**: Validate token with server on each navigation.
 **Rationale**: Server validation on every route change would add latency. The 401 interceptor provides server-side enforcement for actual API calls.
 
@@ -256,8 +269,8 @@ The HTTP client's 401 interceptor clears the session and redirects to login. Thi
 **Design** (1 file):
 `design-tokens.css`
 
-**Tests** (5 files):
-`tests/store/sessionStore.spec.ts`, `tests/store/featureFlagStore.spec.ts`, `tests/store/permissionsStore.spec.ts`, `tests/api/authApi.spec.ts`, `tests/api/queueApi.spec.ts`
+**Tests** (11 files):
+`tests/store/sessionStore.spec.ts`, `tests/store/featureFlagStore.spec.ts`, `tests/store/permissionsStore.spec.ts`, `tests/api/authApi.spec.ts`, `tests/api/queueApi.spec.ts`, `tests/api/boardAccessApi.spec.ts`, `tests/api/auditApi.spec.ts`, `tests/api/exportImportApi.spec.ts`, `tests/utils/jwt.spec.ts`, `tests/utils/queue.spec.ts`, `tests/utils/roles.spec.ts`
 
 ### Modified Files
 
