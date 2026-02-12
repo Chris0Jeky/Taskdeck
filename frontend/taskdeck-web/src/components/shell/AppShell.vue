@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useSessionStore } from '../../store/sessionStore'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
+import { useSessionStore } from '../../store/sessionStore'
 
 const router = useRouter()
 const route = useRoute()
@@ -12,18 +12,19 @@ const featureFlags = useFeatureFlagStore()
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
 const showKeyboardHelp = ref(false)
-const paletteInput = ref<HTMLInputElement | null>(null)
 
 const navItems = computed(() => {
   const items = [
-    { label: 'Boards', icon: '📋', path: '/workspace/boards', flag: null as string | null },
-    { label: 'Automations', icon: '⚡', path: '/workspace/automations/queue', flag: 'newAutomation' as string | null },
-    { label: 'Activity', icon: '📊', path: '/workspace/activity', flag: 'newActivity' as string | null },
-    { label: 'Ops', icon: '🔧', path: '/workspace/ops/cli', flag: 'newOps' as string | null },
-    { label: 'Settings', icon: '⚙️', path: '/workspace/settings/profile', flag: 'newAuth' as string | null },
-    { label: 'Archive', icon: '📦', path: '/workspace/archive', flag: 'newArchive' as string | null },
+    { label: 'Boards', icon: 'B', path: '/workspace/boards', flag: null as string | null },
+    { label: 'Automations', icon: 'A', path: '/workspace/automations/queue', flag: 'newAutomation' as string | null },
+    { label: 'Activity', icon: 'T', path: '/workspace/activity', flag: 'newActivity' as string | null },
+    { label: 'Ops', icon: 'O', path: '/workspace/ops/cli', flag: 'newOps' as string | null },
+    { label: 'Settings', icon: 'S', path: '/workspace/settings/profile', flag: 'newAuth' as string | null },
+    { label: 'Access', icon: 'R', path: '/workspace/settings/access', flag: 'newAccess' as string | null },
+    { label: 'Archive', icon: 'H', path: '/workspace/archive', flag: 'newArchive' as string | null },
   ]
-  return items.filter(item => {
+
+  return items.filter((item) => {
     if (!item.flag) return true
     return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
   })
@@ -43,19 +44,38 @@ function handleLogout() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+  if (e.key === 'Escape') {
+    if (showCommandPalette.value) {
+      showCommandPalette.value = false
+      return
+    }
+    if (showKeyboardHelp.value) {
+      showKeyboardHelp.value = false
+      return
+    }
+  }
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     showCommandPalette.value = !showCommandPalette.value
   }
+
   if (e.key === '?' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
     showKeyboardHelp.value = !showKeyboardHelp.value
   }
 }
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <template>
-  <div class="td-shell" @keydown="handleKeydown">
-    <!-- Sidebar Navigation -->
+  <div class="td-shell">
     <aside
       class="td-sidebar"
       :class="{ 'td-sidebar--collapsed': sidebarCollapsed }"
@@ -66,10 +86,10 @@ function handleKeydown(e: KeyboardEvent) {
         <h1 v-if="!sidebarCollapsed" class="td-sidebar__title">Taskdeck</h1>
         <button
           class="td-sidebar__toggle"
-          @click="toggleSidebar"
           :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          @click="toggleSidebar"
         >
-          {{ sidebarCollapsed ? '→' : '←' }}
+          {{ sidebarCollapsed ? '>' : '<' }}
         </button>
       </div>
 
@@ -91,26 +111,24 @@ function handleKeydown(e: KeyboardEvent) {
         <button
           v-if="!sidebarCollapsed"
           class="td-nav-item td-nav-item--help"
-          @click="showKeyboardHelp = true"
           aria-label="Keyboard shortcuts help"
+          @click="showKeyboardHelp = true"
         >
-          <span class="td-nav-item__icon">❓</span>
+          <span class="td-nav-item__icon">?</span>
           <span class="td-nav-item__label">Shortcuts (?)</span>
         </button>
       </div>
     </aside>
 
-    <!-- Main Content -->
     <div class="td-main-container">
-      <!-- Top Bar -->
       <header class="td-topbar" role="banner">
         <div class="td-topbar__left">
           <button
             class="td-topbar__palette-trigger"
-            @click="showCommandPalette = true"
             aria-label="Open command palette (Ctrl+K)"
+            @click="showCommandPalette = true"
           >
-            <span class="td-topbar__search-icon">🔍</span>
+            <span class="td-topbar__search-icon">/</span>
             <span class="td-topbar__search-text">Search or command... (Ctrl+K)</span>
           </button>
         </div>
@@ -122,38 +140,35 @@ function handleKeydown(e: KeyboardEvent) {
           <button
             v-if="session.isAuthenticated"
             class="td-topbar__logout"
-            @click="handleLogout"
             aria-label="Log out"
+            @click="handleLogout"
           >
             Logout
           </button>
         </div>
       </header>
 
-      <!-- Main Content Area -->
       <main class="td-content" role="main">
         <router-view />
       </main>
     </div>
 
-    <!-- Command Palette Overlay -->
     <Teleport to="body">
       <div
         v-if="showCommandPalette"
         class="td-overlay"
-        @click.self="showCommandPalette = false"
         role="dialog"
         aria-label="Command palette"
         aria-modal="true"
+        @click.self="showCommandPalette = false"
       >
         <div class="td-command-palette">
           <input
-            ref="paletteInput"
             type="text"
             class="td-command-palette__input"
             placeholder="Type a command or search..."
-            @keydown.escape="showCommandPalette = false"
             autofocus
+            @keydown.escape="showCommandPalette = false"
           />
           <div class="td-command-palette__results">
             <div class="td-command-palette__group">
@@ -173,20 +188,19 @@ function handleKeydown(e: KeyboardEvent) {
       </div>
     </Teleport>
 
-    <!-- Keyboard Help Overlay -->
     <Teleport to="body">
       <div
         v-if="showKeyboardHelp"
         class="td-overlay"
-        @click.self="showKeyboardHelp = false"
         role="dialog"
         aria-label="Keyboard shortcuts"
         aria-modal="true"
+        @click.self="showKeyboardHelp = false"
       >
         <div class="td-keyboard-help">
           <div class="td-keyboard-help__header">
             <h2>Keyboard Shortcuts</h2>
-            <button @click="showKeyboardHelp = false" aria-label="Close">✕</button>
+            <button aria-label="Close" @click="showKeyboardHelp = false">X</button>
           </div>
           <div class="td-keyboard-help__content">
             <div class="td-keyboard-help__section">
@@ -197,10 +211,10 @@ function handleKeydown(e: KeyboardEvent) {
             </div>
             <div class="td-keyboard-help__section">
               <h3>Board Navigation</h3>
-              <div class="td-shortcut-row"><kbd>h / ←</kbd><span>Previous column</span></div>
-              <div class="td-shortcut-row"><kbd>l / →</kbd><span>Next column</span></div>
-              <div class="td-shortcut-row"><kbd>j / ↓</kbd><span>Next card</span></div>
-              <div class="td-shortcut-row"><kbd>k / ↑</kbd><span>Previous card</span></div>
+              <div class="td-shortcut-row"><kbd>h / Left</kbd><span>Previous column</span></div>
+              <div class="td-shortcut-row"><kbd>l / Right</kbd><span>Next column</span></div>
+              <div class="td-shortcut-row"><kbd>j / Down</kbd><span>Next card</span></div>
+              <div class="td-shortcut-row"><kbd>k / Up</kbd><span>Previous card</span></div>
               <div class="td-shortcut-row"><kbd>Enter</kbd><span>Open card</span></div>
               <div class="td-shortcut-row"><kbd>n</kbd><span>New card</span></div>
               <div class="td-shortcut-row"><kbd>Shift+N</kbd><span>New column</span></div>
