@@ -2,10 +2,10 @@
 
 This is the active testing guide for Taskdeck.
 
-## Current Verified Totals (2026-02-11)
+## Current Verified Totals (2026-02-12)
 
-- Backend unit: 129/129 passing
-  - Domain: 42
+- Backend unit: 155/155 passing
+  - Domain: 68
   - Application: 87
 - Backend integration/contracts: 35/35 passing
   - API integration: 31
@@ -14,7 +14,7 @@ This is the active testing guide for Taskdeck.
   - Store: 34
   - Components: 81
 - Frontend E2E smoke: 8/8 passing
-- Combined automated total: 287/287 passing
+- Combined automated total: 313/313 passing
 
 ## Backend Commands
 
