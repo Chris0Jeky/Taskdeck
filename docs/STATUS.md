@@ -95,7 +95,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
      - export/import JSON compatibility and permission checks
      - JWT configuration guards and inactive-user password-change protection
      - history and queue input validation hardening
-   - additional automated coverage (+22 tests: 19 application, 3 API integration)
+   - additional automated coverage (+23 tests: 20 application, 3 API integration)
    Pending (primary track):
    - CI drift monitoring and reliability follow-through
    - CLI parity and JSON contract hardening
@@ -119,8 +119,8 @@ Commands:
 
 Result:
 - Domain: 68/68 passing
-- Application: 157/157 passing
-- Backend Unit Total: 225/225 passing
+- Application: 158/158 passing
+- Backend Unit Total: 226/226 passing
 
 ### Backend Integration + CLI Contracts (Executed)
 
@@ -152,7 +152,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 386/386 passing
+- Combined automated total: 387/387 passing
 
 ## CI Status
 
@@ -190,6 +190,7 @@ Current state:
 - Current side-track endpoints still accept actor/user IDs via query/body; claim-based identity enforcement is pending full auth rollout.
 - Boards created through legacy create-board flow still default to `OwnerId = null` for backward compatibility.
 - Ownerless boards no longer allow implicit board-access management; explicit owner/admin access is required.
+- Ownerless boards no longer allow implicit export reads; explicit board access is required.
 - Export/import database-level operations (ExportDatabaseAsync, ImportDatabaseAsync) are stubbed.
 - LLM queue background processor is not yet implemented (manual ProcessNextRequestAsync available).
 - Audit logging is not yet automatically integrated into existing board/card/column operations.

@@ -33,6 +33,7 @@
   - Added board existence checks to list access by board and user existence checks to list boards by user.
 - Export/import:
   - Added requester existence/read-permission checks for export.
+  - Removed null-owner implicit read bypass for export authorization.
   - Added importer existence checks.
   - Added export-shape JSON -> import DTO conversion path for true export/import round-trip compatibility.
   - Added duplicate/invalid reference validation (duplicate labels/columns, unknown column/label references).
@@ -154,7 +155,7 @@ Scope in this pass is design-only for existing endpoints; no authorization rollo
   - `dotnet test backend/Taskdeck.sln`
   - Result:
     - Domain: 68/68
-    - Application: 157/157
+    - Application: 158/158
     - API integration: 34/34
     - CLI contract: 4/4
 - Frontend:
@@ -163,7 +164,7 @@ Scope in this pass is design-only for existing endpoints; no authorization rollo
   - `cd frontend/taskdeck-web; $env:TASKDECK_E2E_DB='taskdeck.e2e.local.db'; npx playwright test`
     - 8/8 passing
 
-Combined automated total after this pass: **386/386 passing**.
+Combined automated total after this pass: **387/387 passing**.
 
 ## Remaining Risks (Not Claimed as Solved Here)
 
