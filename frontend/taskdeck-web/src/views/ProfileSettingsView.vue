@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useSessionStore } from '../store/sessionStore'
 import { useFeatureFlagStore } from '../store/featureFlagStore'
 import type { FeatureFlags } from '../types/feature-flags'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
@@ -31,8 +32,9 @@ async function handleChangePassword() {
   }
   try {
     submitting.value = true
+    const userId = session.requireUserId('password changes')
     await session.changePassword({
-      userId: session.userId ?? '',
+      userId,
       currentPassword: currentPassword.value,
       newPassword: newPassword.value,
     })
@@ -40,8 +42,8 @@ async function handleChangePassword() {
     currentPassword.value = ''
     newPassword.value = ''
     confirmNewPassword.value = ''
-  } catch {
-    passwordError.value = session.error || 'Failed to change password.'
+  } catch (e: unknown) {
+    passwordError.value = getErrorDisplay(e, session.error || 'Failed to change password.').message
   } finally {
     submitting.value = false
   }
