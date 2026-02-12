@@ -60,20 +60,20 @@ describe('queueApi', () => {
     expect(result[0]?.status).toBe('Completed')
   })
 
-  it('getRequestsByStatus sends GET with status', async () => {
+  it('getRequestsByStatus encodes status in path segment', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: [] })
 
-    await queueApi.getRequestsByStatus('Pending')
+    await queueApi.getRequestsByStatus('Pending Review')
 
-    expect(http.get).toHaveBeenCalledWith('/llm-queue/status/Pending')
+    expect(http.get).toHaveBeenCalledWith('/llm-queue/status/Pending%20Review')
   })
 
-  it('cancelRequest encodes userId query parameter', async () => {
+  it('cancelRequest encodes requestId and userId', async () => {
     vi.mocked(http.post).mockResolvedValue({})
 
-    await queueApi.cancelRequest('req-1', 'user/1')
+    await queueApi.cancelRequest('req/1', 'user/1')
 
-    expect(http.post).toHaveBeenCalledWith('/llm-queue/req-1/cancel?userId=user%2F1')
+    expect(http.post).toHaveBeenCalledWith('/llm-queue/req%2F1/cancel?userId=user%2F1')
   })
 
   it('processNext returns null when API responds with NotFound', async () => {

@@ -2,6 +2,10 @@ import http from './http'
 import type { QueueRequest, CreateQueueRequestDto, QueueStats } from '../types/queue'
 import { normalizeQueueRequest } from '../utils/queue'
 
+function encodePathSegment(value: string): string {
+  return encodeURIComponent(value)
+}
+
 export const queueApi = {
   async createRequest(request: CreateQueueRequestDto, userId: string): Promise<QueueRequest> {
     const { data } = await http.post<QueueRequest>('/llm-queue', { ...request, userId })
@@ -15,13 +19,15 @@ export const queueApi = {
   },
 
   async getRequestsByStatus(status: string): Promise<QueueRequest[]> {
-    const { data } = await http.get<QueueRequest[]>(`/llm-queue/status/${status}`)
+    const pathStatus = encodePathSegment(status)
+    const { data } = await http.get<QueueRequest[]>(`/llm-queue/status/${pathStatus}`)
     return data.map(normalizeQueueRequest)
   },
 
   async cancelRequest(requestId: string, userId: string): Promise<void> {
+    const pathRequestId = encodePathSegment(requestId)
     const queryUserId = encodeURIComponent(userId)
-    await http.post(`/llm-queue/${requestId}/cancel?userId=${queryUserId}`)
+    await http.post(`/llm-queue/${pathRequestId}/cancel?userId=${queryUserId}`)
   },
 
   async processNext(): Promise<QueueRequest | null> {
