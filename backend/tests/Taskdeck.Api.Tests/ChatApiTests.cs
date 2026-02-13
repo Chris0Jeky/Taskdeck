@@ -38,7 +38,7 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
         assistant.Should().NotBeNull();
-        assistant!.MessageType.Should().Be("text");
+        assistant!.MessageType.Should().Be("status");
 
         var actionableResponse = await _client.PostAsJsonAsync(
             $"/api/llm/chat/sessions/{session.Id}/messages",
