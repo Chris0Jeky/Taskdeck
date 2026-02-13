@@ -39,7 +39,6 @@ public class OpsCliServiceTests
     {
         var userId = Guid.NewGuid();
         var editorUser = new User("editor", "editor@example.com", "hash", UserRole.Editor);
-        typeof(Taskdeck.Domain.Common.Entity).GetProperty("Id")!.SetValue(editorUser, userId);
 
         _userRepoMock
             .Setup(r => r.GetByIdAsync(userId, default))
@@ -56,7 +55,6 @@ public class OpsCliServiceTests
     {
         var userId = Guid.NewGuid();
         var editorUser = new User("editor", "editor2@example.com", "hash", UserRole.Editor);
-        typeof(Taskdeck.Domain.Common.Entity).GetProperty("Id")!.SetValue(editorUser, userId);
 
         _userRepoMock
             .Setup(r => r.GetByIdAsync(userId, default))
@@ -73,7 +71,6 @@ public class OpsCliServiceTests
     {
         var userId = Guid.NewGuid();
         var editorUser = new User("editor", "editor3@example.com", "hash", UserRole.Editor);
-        typeof(Taskdeck.Domain.Common.Entity).GetProperty("Id")!.SetValue(editorUser, userId);
 
         _userRepoMock
             .Setup(r => r.GetByIdAsync(userId, default))
