@@ -1,7 +1,10 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -9,14 +12,22 @@ namespace Taskdeck.Api.Controllers;
 /// API endpoints for managing automation proposals and their lifecycle.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/automation/proposals")]
 public class AutomationProposalsController : ControllerBase
 {
     private readonly IAutomationProposalService _proposalService;
+    private readonly IAutomationExecutorService _executorService;
+    private readonly IUserContext _userContext;
 
-    public AutomationProposalsController(IAutomationProposalService proposalService)
+    public AutomationProposalsController(
+        IAutomationProposalService proposalService,
+        IAutomationExecutorService executorService,
+        IUserContext userContext)
     {
         _proposalService = proposalService;
+        _executorService = executorService;
+        _userContext = userContext;
     }
 
     /// <summary>
@@ -82,7 +93,15 @@ public class AutomationProposalsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateProposal([FromBody] CreateProposalDto dto, CancellationToken cancellationToken = default)
     {
-        var result = await _proposalService.CreateProposalAsync(dto, cancellationToken);
+        if (!TryGetCurrentUserId(out var requestedByUserId, out var errorResult))
+            return errorResult!;
+
+        var createDto = dto with
+        {
+            RequestedByUserId = requestedByUserId
+        };
+
+        var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
 
         if (!result.IsSuccess)
         {
@@ -90,6 +109,9 @@ public class AutomationProposalsController : ControllerBase
             {
                 "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Unauthorized" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 _ => Problem(result.ErrorMessage, statusCode: 500)
             };
         }
@@ -101,15 +123,16 @@ public class AutomationProposalsController : ControllerBase
     /// Approves a pending automation proposal.
     /// </summary>
     /// <param name="id">Proposal ID</param>
-    /// <param name="decidedByUserId">User ID approving the proposal</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated proposal</returns>
     [HttpPost("{id}/approve")]
     public async Task<IActionResult> ApproveProposal(
         Guid id,
-        [FromQuery] Guid decidedByUserId,
         CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentUserId(out var decidedByUserId, out var errorResult))
+            return errorResult!;
+
         var result = await _proposalService.ApproveProposalAsync(id, decidedByUserId, cancellationToken);
 
         if (!result.IsSuccess)
@@ -119,6 +142,10 @@ public class AutomationProposalsController : ControllerBase
                 "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                ErrorCodes.InvalidOperation => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Unauthorized" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 _ => Problem(result.ErrorMessage, statusCode: 500)
             };
         }
@@ -130,17 +157,18 @@ public class AutomationProposalsController : ControllerBase
     /// Rejects a pending automation proposal.
     /// </summary>
     /// <param name="id">Proposal ID</param>
-    /// <param name="decidedByUserId">User ID rejecting the proposal</param>
     /// <param name="dto">Rejection details (reason required for High/Critical risk)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Updated proposal</returns>
     [HttpPost("{id}/reject")]
     public async Task<IActionResult> RejectProposal(
         Guid id,
-        [FromQuery] Guid decidedByUserId,
         [FromBody] UpdateProposalStatusDto dto,
         CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentUserId(out var decidedByUserId, out var errorResult))
+            return errorResult!;
+
         var result = await _proposalService.RejectProposalAsync(id, decidedByUserId, dto, cancellationToken);
 
         if (!result.IsSuccess)
@@ -150,6 +178,10 @@ public class AutomationProposalsController : ControllerBase
                 "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                ErrorCodes.InvalidOperation => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Unauthorized" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 _ => Problem(result.ErrorMessage, statusCode: 500)
             };
         }
@@ -158,7 +190,7 @@ public class AutomationProposalsController : ControllerBase
     }
 
     /// <summary>
-    /// Executes an approved automation proposal by marking it as applied.
+    /// Executes an approved automation proposal through the automation executor.
     /// </summary>
     /// <param name="id">Proposal ID</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -166,7 +198,33 @@ public class AutomationProposalsController : ControllerBase
     [HttpPost("{id}/execute")]
     public async Task<IActionResult> ExecuteProposal(Guid id, CancellationToken cancellationToken = default)
     {
-        var result = await _proposalService.MarkAsAppliedAsync(id, cancellationToken);
+        if (!Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyHeader) ||
+            string.IsNullOrWhiteSpace(idempotencyHeader))
+        {
+            return BadRequest(new
+            {
+                errorCode = ErrorCodes.ValidationError,
+                message = "Idempotency-Key header is required"
+            });
+        }
+
+        var executionResult = await _executorService.ExecuteProposalAsync(id, idempotencyHeader.ToString(), cancellationToken);
+        if (!executionResult.IsSuccess)
+        {
+            return executionResult.ErrorCode switch
+            {
+                "NotFound" => NotFound(new { errorCode = executionResult.ErrorCode, message = executionResult.ErrorMessage }),
+                "ValidationError" => BadRequest(new { errorCode = executionResult.ErrorCode, message = executionResult.ErrorMessage }),
+                "Conflict" => Conflict(new { errorCode = executionResult.ErrorCode, message = executionResult.ErrorMessage }),
+                ErrorCodes.InvalidOperation => Conflict(new { errorCode = executionResult.ErrorCode, message = executionResult.ErrorMessage }),
+                "AuthenticationFailed" => Unauthorized(new { errorCode = executionResult.ErrorCode, message = executionResult.ErrorMessage }),
+                "Unauthorized" => Unauthorized(new { errorCode = executionResult.ErrorCode, message = executionResult.ErrorMessage }),
+                "Forbidden" => StatusCode(403, new { errorCode = executionResult.ErrorCode, message = executionResult.ErrorMessage }),
+                _ => Problem(executionResult.ErrorMessage, statusCode: 500)
+            };
+        }
+
+        var result = await _proposalService.GetProposalByIdAsync(id, cancellationToken);
 
         if (!result.IsSuccess)
         {
@@ -175,6 +233,10 @@ public class AutomationProposalsController : ControllerBase
                 "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                ErrorCodes.InvalidOperation => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Unauthorized" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 _ => Problem(result.ErrorMessage, statusCode: 500)
             };
         }
@@ -201,5 +263,33 @@ public class AutomationProposalsController : ControllerBase
         }
 
         return Ok(new { diff = result.Value });
+    }
+
+    private bool TryGetCurrentUserId(out Guid userId, out IActionResult? errorResult)
+    {
+        userId = Guid.Empty;
+        errorResult = null;
+
+        if (!_userContext.IsAuthenticated || string.IsNullOrWhiteSpace(_userContext.UserId))
+        {
+            errorResult = Unauthorized(new
+            {
+                errorCode = ErrorCodes.AuthenticationFailed,
+                message = "Authenticated user context is required"
+            });
+            return false;
+        }
+
+        if (!Guid.TryParse(_userContext.UserId, out userId))
+        {
+            errorResult = Unauthorized(new
+            {
+                errorCode = ErrorCodes.AuthenticationFailed,
+                message = "Authenticated user id claim is invalid"
+            });
+            return false;
+        }
+
+        return true;
     }
 }
