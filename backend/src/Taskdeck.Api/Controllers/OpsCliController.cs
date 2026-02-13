@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -42,13 +43,7 @@ public class OpsCliController : AuthenticatedControllerBase
             return result.ToErrorActionResult();
 
         if (result.Value.RequestedByUserId != userId)
-        {
-            return StatusCode(403, new
-            {
-                errorCode = ErrorCodes.Forbidden,
-                message = "You do not have access to this command run"
-            });
-        }
+            return ForbiddenCommandRunAccess();
 
         return Ok(result.Value);
     }
@@ -65,13 +60,7 @@ public class OpsCliController : AuthenticatedControllerBase
             return runResult.ToErrorActionResult();
 
         if (runResult.Value.RequestedByUserId != userId)
-        {
-            return StatusCode(403, new
-            {
-                errorCode = ErrorCodes.Forbidden,
-                message = "You do not have access to this command run"
-            });
-        }
+            return ForbiddenCommandRunAccess();
 
         var result = await _opsCliService.GetCommandRunLogsAsync(id, ct);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
@@ -82,5 +71,12 @@ public class OpsCliController : AuthenticatedControllerBase
     {
         var result = _opsCliService.GetAvailableTemplates();
         return Ok(result.Value);
+    }
+
+    private IActionResult ForbiddenCommandRunAccess()
+    {
+        return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(
+            ErrorCodes.Forbidden,
+            "You do not have access to this command run"));
     }
 }
