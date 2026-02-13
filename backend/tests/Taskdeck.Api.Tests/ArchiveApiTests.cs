@@ -64,6 +64,26 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task RestoreArchivedItem_WithInvalidEntityType_ShouldReturnBadRequest()
+    {
+        await AuthenticateAsync("archive-restore-invalid-type");
+
+        var restoreDto = new RestoreArchiveItemDto(
+            TargetBoardId: Guid.NewGuid(),
+            RestoreMode: RestoreMode.InPlace,
+            ConflictStrategy: ConflictStrategy.Fail
+        );
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/archive/not-a-type/{Guid.NewGuid()}/restore",
+            restoreDto);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
     public async Task GetArchiveItems_WithLimit_ShouldRespectLimit()
     {
         await AuthenticateAsync("archive-limit");
