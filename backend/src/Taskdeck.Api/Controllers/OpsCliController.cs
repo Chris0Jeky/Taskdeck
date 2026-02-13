@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -10,15 +12,13 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/ops/cli")]
-public class OpsCliController : ControllerBase
+public class OpsCliController : AuthenticatedControllerBase
 {
     private readonly IOpsCliService _opsCliService;
-    private readonly IUserContext _userContext;
 
-    public OpsCliController(IOpsCliService opsCliService, IUserContext userContext)
+    public OpsCliController(IOpsCliService opsCliService, IUserContext userContext) : base(userContext)
     {
         _opsCliService = opsCliService;
-        _userContext = userContext;
     }
 
     [HttpPost("run")]
@@ -28,19 +28,7 @@ public class OpsCliController : ControllerBase
             return errorResult!;
 
         var result = await _opsCliService.RunCommandAsync(userId, dto, ct);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("runs/{id}")]
@@ -52,19 +40,10 @@ public class OpsCliController : ControllerBase
         var result = await _opsCliService.GetCommandRunAsync(id, ct);
 
         if (!result.IsSuccess)
-        {
-            return result.ErrorCode == "NotFound"
-                ? NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage })
-                : Problem(result.ErrorMessage, statusCode: 500);
-        }
+            return result.ToErrorActionResult();
+
         if (result.Value.RequestedByUserId != userId)
-        {
-            return StatusCode(403, new
-            {
-                errorCode = ErrorCodes.Forbidden,
-                message = "You do not have access to this command run"
-            });
-        }
+            return ForbiddenCommandRunAccess();
 
         return Ok(result.Value);
     }
@@ -76,31 +55,15 @@ public class OpsCliController : ControllerBase
             return errorResult!;
 
         var runResult = await _opsCliService.GetCommandRunAsync(id, ct);
+
         if (!runResult.IsSuccess)
-        {
-            return runResult.ErrorCode == "NotFound"
-                ? NotFound(new { errorCode = runResult.ErrorCode, message = runResult.ErrorMessage })
-                : Problem(runResult.ErrorMessage, statusCode: 500);
-        }
+            return runResult.ToErrorActionResult();
+
         if (runResult.Value.RequestedByUserId != userId)
-        {
-            return StatusCode(403, new
-            {
-                errorCode = ErrorCodes.Forbidden,
-                message = "You do not have access to this command run"
-            });
-        }
+            return ForbiddenCommandRunAccess();
 
         var result = await _opsCliService.GetCommandRunLogsAsync(id, ct);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode == "NotFound"
-                ? NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage })
-                : Problem(result.ErrorMessage, statusCode: 500);
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("templates")]
@@ -110,31 +73,10 @@ public class OpsCliController : ControllerBase
         return Ok(result.Value);
     }
 
-    private bool TryGetCurrentUserId(out Guid userId, out IActionResult? errorResult)
+    private IActionResult ForbiddenCommandRunAccess()
     {
-        userId = Guid.Empty;
-        errorResult = null;
-
-        if (!_userContext.IsAuthenticated || string.IsNullOrWhiteSpace(_userContext.UserId))
-        {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user context is required"
-            });
-            return false;
-        }
-
-        if (!Guid.TryParse(_userContext.UserId, out userId))
-        {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user id claim is invalid"
-            });
-            return false;
-        }
-
-        return true;
+        return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(
+            ErrorCodes.Forbidden,
+            "You do not have access to this command run"));
     }
 }

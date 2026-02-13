@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 
@@ -19,15 +20,7 @@ public class LabelsController : ControllerBase
     public async Task<IActionResult> GetLabels(Guid boardId)
     {
         var result = await _labelService.GetLabelsByBoardIdAsync(boardId);
-        if (result.IsSuccess)
-            return Ok(result.Value);
-
-        return result.ErrorCode switch
-        {
-            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            _ => Problem(result.ErrorMessage, statusCode: 500)
-        };
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpPost]
@@ -35,50 +28,22 @@ public class LabelsController : ControllerBase
     {
         var createDto = dto with { BoardId = boardId };
         var result = await _labelService.CreateLabelAsync(createDto);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return CreatedAtAction(nameof(GetLabels), new { boardId }, result.Value);
+        return result.IsSuccess
+            ? CreatedAtAction(nameof(GetLabels), new { boardId }, result.Value)
+            : result.ToErrorActionResult();
     }
 
     [HttpPatch("{labelId}")]
     public async Task<IActionResult> UpdateLabel(Guid boardId, Guid labelId, [FromBody] UpdateLabelDto dto)
     {
         var result = await _labelService.UpdateLabelAsync(boardId, labelId, dto);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpDelete("{labelId}")]
     public async Task<IActionResult> DeleteLabel(Guid boardId, Guid labelId)
     {
         var result = await _labelService.DeleteLabelAsync(boardId, labelId);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode == "NotFound"
-                ? NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage })
-                : Problem(result.ErrorMessage, statusCode: 500);
-        }
-
-        return NoContent();
+        return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 }
