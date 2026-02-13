@@ -20,14 +20,6 @@ I should describe every end-point, entry-point for a total front-end implementat
    developing the entry points for user input and then it's just a matter of wiring things up, while this can be, 
    at the very least, used for better understanding of directions and needed additions.
    
-New:
-
-When I click and drag a task while it's open (example while I change its title), it drags the whole UI around, as if it's
-trying to move the task from one stage/columns to the other (without actually placing it in a new column). This behaviour,
-I believe, is an unintentional side-effect and it should be fixed/removed. The ideal patch/fix is by not having the 
-side-effect, instead of explicitily making sure it doesn't move around, but further considerations are required in this
-merit.  
-
 Some automation examples/functionalities should be implemented. Even better, a framework for creating automations should be thought of.
 
 The ability to already have the instructions from an LLM and act upon those, ideally with the framework mentioned above,
@@ -38,3 +30,16 @@ The ability to "chat" and send commands to the LLM should be implemented in the 
 More E2E and Playwright tests should be added since so much of extra Front-end has been added.
 
 The remaining delta is mainly backend activation + deeper E2E/operational validation rather than missing frontend architecture.
+   
+New:
+
+When I click and drag a task while it's open (example while I change its title), it drags the whole UI around, as if it's
+trying to move the task from one stage/columns to the other (without actually placing it in a new column). This behaviour,
+I believe, is an unintentional side-effect and it should be fixed/removed. The ideal patch/fix is by not having the 
+side-effect, instead of explicitily making sure it doesn't move around, but further considerations are required in this
+merit.  
+
+Refactoring would be great at this stage, as a lot of code has been produced so far. Going to different sections of the 
+code base, assessing how it works, and consequently how it can be refactored to improve maintainability, modularity, 
+reducing code duplication, optimizing performance, etc
+
