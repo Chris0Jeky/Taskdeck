@@ -56,7 +56,7 @@ public class ChatServiceTests
             .ReturnsAsync(session);
         _chatMessageRepoMock
             .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((ChatMessage message, CancellationToken _) => message);
 
         var result = await _service.SendMessageAsync(
             session.Id,
@@ -82,7 +82,7 @@ public class ChatServiceTests
             .ReturnsAsync(session);
         _chatMessageRepoMock
             .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((ChatMessage message, CancellationToken _) => message);
         _llmProviderMock
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
             .ReturnsAsync(new LlmCompletionResult("Actionable response", 12, true, "card.create"));
