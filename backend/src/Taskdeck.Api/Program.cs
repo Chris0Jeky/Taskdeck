@@ -23,6 +23,7 @@ builder.Services.AddScoped<CardService>();
 builder.Services.AddScoped<LabelService>();
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<AuthorizationService>();
+builder.Services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<BoardAccessService>();
 builder.Services.AddScoped<ExportImportService>();
