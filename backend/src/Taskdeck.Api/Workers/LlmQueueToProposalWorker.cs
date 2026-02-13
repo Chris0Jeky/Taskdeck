@@ -212,6 +212,3 @@ public class LlmQueueToProposalWorker : BackgroundService
         return _settings.RetryBackoffSeconds[index];
     }
 }
-        }
-    }
-}
