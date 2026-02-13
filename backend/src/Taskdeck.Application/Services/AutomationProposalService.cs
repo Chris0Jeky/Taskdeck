@@ -223,10 +223,23 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal == null)
             return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
-        if (string.IsNullOrEmpty(proposal.DiffPreview))
+        if (!string.IsNullOrWhiteSpace(proposal.DiffPreview))
+            return Result.Success(proposal.DiffPreview);
+
+        if (proposal.Operations.Count == 0)
             return Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
 
-        return Result.Success(proposal.DiffPreview);
+        var generatedDiff = string.Join(
+            Environment.NewLine,
+            proposal.Operations
+                .OrderBy(o => o.Sequence)
+                .Select(o =>
+                {
+                    var target = string.IsNullOrWhiteSpace(o.TargetId) ? o.TargetType : $"{o.TargetType}:{o.TargetId}";
+                    return $"{o.Sequence}. {o.ActionType} {target}";
+                }));
+
+        return Result.Success(generatedDiff);
     }
 
     private static ProposalDto MapToDto(AutomationProposal proposal)
