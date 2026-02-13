@@ -92,14 +92,58 @@ Exit Criteria:
 12. P2: Database-level export/import implementation.
 13. P2: Log query scalability improvements and nullable-warning debt reduction.
 14. P2: Deeper E2E expansion for keyboard flows, archive edge paths, and automation/ops error paths.
+15. P1: One-click package framework for reusable board starter states (labels, columns, templates, and seeded cards).
+16. P1: Starter pack catalog UX with preview/apply flow and per-pack conflict handling.
+17. P1: Test fixture packs derived from the same package manifests for deterministic QA/E2E setup.
+18. P2: Domain packs for common workflows (engineering, support, incidents, product, content, operations).
+19. P2: Package versioning and migration strategy for existing boards.
+20. P2: User-defined package export/import and organization-level shared package libraries.
 
+
+## Prepackaged Starter States Track (Roadmap Additions)
+
+Goal:
+- reduce setup friction and make boards immediately useful
+- make QA/E2E environments reproducible through deterministic starter states
+- reuse one package definition across product onboarding, demos, and tests
+
+Brainstormed package candidates (to be converted into scoped work items):
+- Label packages: software delivery, bug triage, incident severity, customer support, product discovery, content production, compliance/risk.
+- Column packages: simple Kanban, Scrum sprint, intake-triage-doing-done, incident command flow, support SLA flow, release train flow.
+- Board blueprint packages: sprint board, roadmap board, on-call board, support queue, launch checklist board, design review board.
+- Card template packages: bug report, incident ticket, feature request, technical debt, postmortem, release task, QA test case.
+- Checklist template packages: DoR/DoD, pre-release checklist, rollback checklist, incident response checklist.
+- Automation preset packages: stale-card nudges, due-date reminders, WIP breach alerts, auto-labeling suggestions, proposal gating defaults.
+- Ops preset packages: common command templates, log query presets, correlation-ID trace bundles.
+- Saved filter/view packages: blocked-only view, due-this-week view, critical-label view, owner-centric view.
+- Permissions/access packages: default board role policies and invite presets for common team topologies.
+- Seed-data demo packages: realistic sample boards/cards for walkthroughs and onboarding.
+- Deterministic QA fixture packages: minimal/small/large datasets with stable IDs and timestamps.
+- Edge-case fixture packages: blocked-card-heavy boards, overdue-heavy boards, archive-heavy boards, WIP-limit stress boards.
+- Security fixture packages: unauthorized/forbidden/cross-user scenario seeds for auth contract validation.
+- Performance fixture packages: high-card/high-column/high-label board seeds for load and latency profiling.
+- Archive lifecycle packages: pre-seeded archive/restore scenarios for board/entity recovery testing.
+- Activity discoverability packages: seeded histories across board/entity/user to validate selector UX.
+- Keyboard workflow packages: board states designed to validate no-mouse task creation/edit/navigation paths.
+- LLM/automation sandbox packages: curated prompts + expected proposal shapes for regression validation.
+- Domain-specific packs: engineering backlog, agency workflow, content calendar, CRM-lite pipeline, research planning.
+- “Golden path” E2E packs: canonical start states for smoke, regression, and release-candidate test suites.
+
+Initial implementation shape:
+1. Define a versioned package manifest schema (labels, columns, cards, automations, metadata, compatibility rules).
+2. Build idempotent package-apply backend endpoints with dry-run and conflict reporting.
+3. Add frontend package catalog with search, preview, and one-click apply.
+4. Ship first-party packs: common labels + common column flows + 3-5 board blueprints.
+5. Reuse package manifests to generate deterministic E2E/QA fixtures.
+6. Add pack telemetry to measure adoption, setup-time reduction, and failure points.
+7. Add pack migration/version compatibility checks for long-lived boards.
 ## Next Best Steps (Immediate)
 
 1. Complete claims-first retrofit for core board controllers and align response contracts.
 2. Add unauthorized/forbidden matrix tests for both legacy and advanced routes.
 3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
 4. Define and implement archive board lifecycle behavior contract (API + UI).
-5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.
+5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.`r`n6. Draft package-manifest RFC and ship first two starter packs (common labels + common column flows).
 
 ## Documentation Operating Model
 
