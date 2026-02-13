@@ -1,12 +1,10 @@
 import http from './http'
+import { buildQueryParams } from './queryBuilder'
 import type { Card, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
 
 export const cardsApi = {
   async getCards(boardId: string, params?: { search?: string; labelId?: string; columnId?: string }): Promise<Card[]> {
-    const searchParams = new URLSearchParams()
-    if (params?.search) searchParams.append('search', params.search)
-    if (params?.labelId) searchParams.append('labelId', params.labelId)
-    if (params?.columnId) searchParams.append('columnId', params.columnId)
+    const searchParams = buildQueryParams(params)
 
     const { data } = await http.get<Card[]>(`/boards/${boardId}/cards?${searchParams}`)
     return data

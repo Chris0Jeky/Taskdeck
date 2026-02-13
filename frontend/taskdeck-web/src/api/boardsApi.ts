@@ -1,11 +1,13 @@
 import http from './http'
+import { buildQueryParams } from './queryBuilder'
 import type { Board, BoardDetail, CreateBoardDto, UpdateBoardDto } from '../types/board'
 
 export const boardsApi = {
   async getBoards(search?: string, includeArchived = false): Promise<Board[]> {
-    const params = new URLSearchParams()
-    if (search) params.append('search', search)
-    if (includeArchived) params.append('includeArchived', 'true')
+    const params = buildQueryParams({
+      search,
+      includeArchived: includeArchived ? 'true' : undefined,
+    })
 
     const { data } = await http.get<Board[]>(`/boards?${params}`)
     return data
