@@ -493,7 +493,7 @@ public class AutomationProposalServiceTests
             new AutomationProposal(ProposalSourceType.Chat, Guid.NewGuid(), "Test", RiskLevel.Low, Guid.NewGuid().ToString(), boardId)
         };
 
-        _proposalRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+        _proposalRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, 100, default))
             .ReturnsAsync(proposals);
 
         // Act
