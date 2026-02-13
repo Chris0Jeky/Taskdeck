@@ -2,12 +2,14 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
 public class OpsCliService : IOpsCliService
 {
+    private const int MaxOutputPreviewLength = 1000;
     private readonly IUnitOfWork _unitOfWork;
 
     private static readonly Dictionary<string, CommandTemplateDto> _templates = new()
@@ -28,8 +30,22 @@ public class OpsCliService : IOpsCliService
     {
         try
         {
-            if (!_templates.ContainsKey(dto.TemplateName))
+            if (string.IsNullOrWhiteSpace(dto.TemplateName))
+                return Result.Failure<CommandRunDto>(ErrorCodes.ValidationError, "TemplateName is required");
+            if (!_templates.TryGetValue(dto.TemplateName, out var template))
                 return Result.Failure<CommandRunDto>(ErrorCodes.ValidationError, $"Unknown command template: {dto.TemplateName}");
+
+            var parameterValidation = ValidateTemplateParameters(template, dto.Parameters);
+            if (!parameterValidation.IsSuccess)
+                return Result.Failure<CommandRunDto>(parameterValidation.ErrorCode, parameterValidation.ErrorMessage);
+
+            var user = await _unitOfWork.Users.GetByIdAsync(userId, ct);
+            if (user == null)
+                return Result.Failure<CommandRunDto>(ErrorCodes.NotFound, $"User with ID {userId} was not found");
+            if (!HasRequiredRole(user.DefaultRole, template.RequiredRole))
+                return Result.Failure<CommandRunDto>(
+                    ErrorCodes.Forbidden,
+                    $"Template '{template.Name}' requires role '{template.RequiredRole}'");
 
             var correlationId = Guid.NewGuid().ToString("N");
 
@@ -37,23 +53,39 @@ public class OpsCliService : IOpsCliService
             await _unitOfWork.CommandRuns.AddAsync(commandRun, ct);
 
             commandRun.Start();
+            commandRun.AddLog(new CommandRunLog(
+                commandRun.Id,
+                "Info",
+                "OpsCliService",
+                $"Starting template '{dto.TemplateName}'",
+                metadata: dto.Parameters == null ? null : System.Text.Json.JsonSerializer.Serialize(dto.Parameters)));
+            await _unitOfWork.SaveChangesAsync(ct);
 
             try
             {
-                var output = await ExecuteTemplateAsync(dto.TemplateName, dto.Parameters, ct);
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(template.TimeoutSeconds));
 
-                if (output.Length > 1000)
+                var output = await ExecuteTemplateAsync(dto.TemplateName, dto.Parameters, timeoutCts.Token);
+                var redactedOutput = RedactSensitiveContent(output);
+
+                if (redactedOutput.Length > MaxOutputPreviewLength)
                 {
-                    commandRun.SetOutputPreview(output[..1000]);
+                    commandRun.SetOutputPreview(redactedOutput[..MaxOutputPreviewLength]);
                     commandRun.SetTruncated();
                 }
                 else
                 {
-                    commandRun.SetOutputPreview(output);
+                    commandRun.SetOutputPreview(redactedOutput);
                 }
 
                 commandRun.AddLog(new CommandRunLog(commandRun.Id, "Info", "OpsCliService", $"Command '{dto.TemplateName}' completed successfully"));
                 commandRun.Complete(0);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                commandRun.AddLog(new CommandRunLog(commandRun.Id, "Error", "OpsCliService", $"Command '{dto.TemplateName}' timed out"));
+                commandRun.Timeout();
             }
             catch (Exception ex)
             {
@@ -135,8 +167,81 @@ public class OpsCliService : IOpsCliService
     private async Task<string> ExecuteQueuePendingAsync(CancellationToken ct)
     {
         var pending = await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Pending, ct);
-        var pendingList = pending.ToList();
+        var pendingList = pending.Take(50).ToList();
         return $"Pending queue items: {pendingList.Count}\n" + string.Join("\n", pendingList.Select(r => $"- {r.Id}: {r.RequestType} (created: {r.CreatedAt})"));
+    }
+
+    private Result ValidateTemplateParameters(CommandTemplateDto template, Dictionary<string, string>? parameters)
+    {
+        var providedParameters = parameters ?? new Dictionary<string, string>();
+
+        var unknownParameters = providedParameters.Keys
+            .Where(key => !template.AcceptedParameters.Contains(key, StringComparer.Ordinal))
+            .ToList();
+        if (unknownParameters.Count > 0)
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Unsupported parameter(s) for template '{template.Name}': {string.Join(", ", unknownParameters)}");
+        }
+
+        var missingParameters = template.AcceptedParameters
+            .Where(name => !providedParameters.ContainsKey(name))
+            .ToList();
+        if (missingParameters.Count > 0)
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Missing required parameter(s): {string.Join(", ", missingParameters)}");
+        }
+
+        return Result.Success();
+    }
+
+    private static bool HasRequiredRole(UserRole userRole, string requiredRole)
+    {
+        return TryParseRole(requiredRole, out var required) && (int)userRole <= (int)required;
+    }
+
+    private static bool TryParseRole(string role, out UserRole parsedRole)
+    {
+        return Enum.TryParse(role, ignoreCase: true, out parsedRole);
+    }
+
+    private static string RedactSensitiveContent(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return content;
+        }
+
+        var result = content;
+        var redactionPatterns = new[]
+        {
+            "Bearer ",
+            "token=",
+            "password=",
+            "secret="
+        };
+
+        foreach (var pattern in redactionPatterns)
+        {
+            var index = result.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+            while (index >= 0)
+            {
+                var start = index + pattern.Length;
+                var end = result.IndexOfAny(new[] { ' ', '\n', '\r', '\t', ',' }, start);
+                if (end < 0)
+                {
+                    end = result.Length;
+                }
+
+                result = result[..start] + "***" + result[end..];
+                index = result.IndexOf(pattern, start + 3, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return result;
     }
 
     private static string ExecuteHealthCheck()
