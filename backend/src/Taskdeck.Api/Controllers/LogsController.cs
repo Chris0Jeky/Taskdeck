@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
@@ -32,17 +33,7 @@ public class LogsController : ControllerBase
     {
         var query = new LogQueryDto(level, source, userId, boardId, correlationId, from, to, limit);
         var result = await _logQueryService.QueryLogsAsync(query, ct);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                ErrorCodes.ValidationError => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("stream")]
@@ -69,17 +60,6 @@ public class LogsController : ControllerBase
     public async Task<IActionResult> GetByCorrelationId(string correlationId, CancellationToken ct = default)
     {
         var result = await _logQueryService.GetByCorrelationIdAsync(correlationId, ct);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                ErrorCodes.ValidationError => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                ErrorCodes.NotFound => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }

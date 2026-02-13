@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -14,17 +15,15 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/archive")]
-public class ArchiveController : ControllerBase
+public class ArchiveController : AuthenticatedControllerBase
 {
     private readonly IArchiveRecoveryService _archiveService;
-    private readonly IUserContext _userContext;
 
     public ArchiveController(
         IArchiveRecoveryService archiveService,
-        IUserContext userContext)
+        IUserContext userContext) : base(userContext)
     {
         _archiveService = archiveService;
-        _userContext = userContext;
     }
 
     /// <summary>
@@ -51,15 +50,7 @@ public class ArchiveController : ControllerBase
             limit,
             cancellationToken);
 
-        if (result.IsSuccess)
-            return Ok(result.Value);
-
-        return result.ErrorCode switch
-        {
-            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            _ => Problem(result.ErrorMessage, statusCode: 500)
-        };
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>
@@ -72,15 +63,7 @@ public class ArchiveController : ControllerBase
     public async Task<IActionResult> GetArchiveItem(Guid id, CancellationToken cancellationToken = default)
     {
         var result = await _archiveService.GetArchiveItemByIdAsync(id, cancellationToken);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode == "NotFound"
-                ? NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage })
-                : Problem(result.ErrorMessage, statusCode: 500);
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     /// <summary>
@@ -110,17 +93,7 @@ public class ArchiveController : ControllerBase
             cancellationToken);
 
         if (!archiveItemResult.IsSuccess)
-        {
-            return archiveItemResult.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = archiveItemResult.ErrorCode, message = archiveItemResult.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = archiveItemResult.ErrorCode, message = archiveItemResult.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = archiveItemResult.ErrorCode, message = archiveItemResult.ErrorMessage }),
-                "Unauthorized" => Unauthorized(new { errorCode = archiveItemResult.ErrorCode, message = archiveItemResult.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = archiveItemResult.ErrorCode, message = archiveItemResult.ErrorMessage }),
-                _ => Problem(archiveItemResult.ErrorMessage, statusCode: 500)
-            };
-        }
+            return archiveItemResult.ToErrorActionResult();
 
         var archiveItem = archiveItemResult.Value;
         if (archiveItem.RestoreStatus != RestoreStatus.Available)
@@ -138,22 +111,7 @@ public class ArchiveController : ControllerBase
             restoredByUserId,
             cancellationToken);
 
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                ErrorCodes.InvalidOperation => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Unauthorized" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     private static bool TryNormalizeEntityType(string entityType, out string normalizedEntityType, out IActionResult? errorResult)
@@ -178,34 +136,6 @@ public class ArchiveController : ControllerBase
             {
                 errorCode = ErrorCodes.ValidationError,
                 message = "EntityType must be 'board', 'column', or 'card'"
-            });
-            return false;
-        }
-
-        return true;
-    }
-
-    private bool TryGetCurrentUserId(out Guid userId, out IActionResult? errorResult)
-    {
-        userId = Guid.Empty;
-        errorResult = null;
-
-        if (!_userContext.IsAuthenticated || string.IsNullOrWhiteSpace(_userContext.UserId))
-        {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user context is required"
-            });
-            return false;
-        }
-
-        if (!Guid.TryParse(_userContext.UserId, out userId))
-        {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user id claim is invalid"
             });
             return false;
         }

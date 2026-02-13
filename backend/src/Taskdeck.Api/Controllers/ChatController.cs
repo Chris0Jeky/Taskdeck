@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -10,15 +11,13 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/llm/chat")]
-public class ChatController : ControllerBase
+public class ChatController : AuthenticatedControllerBase
 {
     private readonly IChatService _chatService;
-    private readonly IUserContext _userContext;
 
-    public ChatController(IChatService chatService, IUserContext userContext)
+    public ChatController(IChatService chatService, IUserContext userContext) : base(userContext)
     {
         _chatService = chatService;
-        _userContext = userContext;
     }
 
     [HttpPost("sessions")]
@@ -28,18 +27,9 @@ public class ChatController : ControllerBase
             return errorResult!;
 
         var result = await _chatService.CreateSessionAsync(userId, dto, ct);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return CreatedAtAction(nameof(GetSession), new { id = result.Value.Id }, result.Value);
+        return result.IsSuccess
+            ? CreatedAtAction(nameof(GetSession), new { id = result.Value.Id }, result.Value)
+            : result.ToErrorActionResult();
     }
 
     [HttpGet("sessions")]
@@ -49,12 +39,7 @@ public class ChatController : ControllerBase
             return errorResult!;
 
         var result = await _chatService.GetUserSessionsAsync(userId, ct);
-        if (!result.IsSuccess)
-        {
-            return Problem(result.ErrorMessage, statusCode: 500);
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("sessions/{id}")]
@@ -64,18 +49,7 @@ public class ChatController : ControllerBase
             return errorResult!;
 
         var result = await _chatService.GetSessionAsync(id, userId, ct);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpPost("sessions/{id}/messages")]
@@ -85,20 +59,7 @@ public class ChatController : ControllerBase
             return errorResult!;
 
         var result = await _chatService.SendMessageAsync(id, userId, dto, ct);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                ErrorCodes.InvalidOperation => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("sessions/{id}/stream")]
@@ -134,33 +95,5 @@ public class ChatController : ControllerBase
             await Response.WriteAsync($"event: {eventType}\ndata: {System.Text.Json.JsonSerializer.Serialize(tokenEvent)}\n\n", ct);
             await Response.Body.FlushAsync(ct);
         }
-    }
-
-    private bool TryGetCurrentUserId(out Guid userId, out IActionResult? errorResult)
-    {
-        userId = Guid.Empty;
-        errorResult = null;
-
-        if (!_userContext.IsAuthenticated || string.IsNullOrWhiteSpace(_userContext.UserId))
-        {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user context is required"
-            });
-            return false;
-        }
-
-        if (!Guid.TryParse(_userContext.UserId, out userId))
-        {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user id claim is invalid"
-            });
-            return false;
-        }
-
-        return true;
     }
 }
