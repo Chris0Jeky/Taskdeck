@@ -153,6 +153,31 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task ExecuteProposal_WithoutIdempotencyKey_ShouldReturnBadRequest()
+    {
+        var userId = await AuthenticateAsync("automation-exec-no-idempotency");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+
+        var executeResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/execute", null);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var error = await executeResponse.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
+    public async Task ApproveProposal_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task GetProposalDiff_ShouldReturnDiffPreview()
     {
         var userId = await AuthenticateAsync("automation-diff");
