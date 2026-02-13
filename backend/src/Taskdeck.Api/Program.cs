@@ -37,8 +37,8 @@ builder.Services.AddScoped<IAutomationExecutorService, AutomationExecutorService
 builder.Services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
 builder.Services.AddScoped<IOpsCliService, OpsCliService>();
 builder.Services.AddScoped<IChatService, ChatService>();
-builder.Services.AddScoped<ILlmProvider, MockLlmProvider>();
 builder.Services.AddScoped<ILogQueryService, LogQueryService>();
+builder.Services.AddScoped<ILlmProvider, MockLlmProvider>();
 
 // Add IUserContext for claim-based identity
 builder.Services.AddHttpContextAccessor();
@@ -53,9 +53,10 @@ var sandboxSettings = builder.Configuration.GetSection("DevelopmentSandbox").Get
 sandboxSettings.Enabled = sandboxSettings.Enabled && builder.Environment.IsDevelopment();
 builder.Services.AddSingleton(sandboxSettings);
 
-// Add Worker settings and background workers
+// Worker settings and runtime services
 var workerSettings = builder.Configuration.GetSection("Workers").Get<WorkerSettings>() ?? new WorkerSettings();
 builder.Services.AddSingleton(workerSettings);
+builder.Services.AddSingleton<WorkerHeartbeatRegistry>();
 builder.Services.AddHostedService<LlmQueueToProposalWorker>();
 builder.Services.AddHostedService<ProposalHousekeepingWorker>();
 
