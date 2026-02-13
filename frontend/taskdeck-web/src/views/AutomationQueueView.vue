@@ -7,7 +7,7 @@ import { useToastStore } from '../store/toastStore'
 import { getQueueTotal, normalizeQueueStatus } from '../utils/queue'
 import { createRequestId } from '../utils/requestId'
 import { normalizeProposalRiskLevel, normalizeProposalStatus } from '../utils/automation'
-import type { Proposal, QueueStatus } from '../types/queue'
+import type { QueueStatus } from '../types/queue'
 import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
@@ -35,9 +35,9 @@ function syncTabFromRoute() {
   activeTab.value = route.name === 'workspace-automations-proposals' ? 'proposals' : 'queue'
 }
 
-function toProposalStatus(status: ApiProposal['status']): Proposal['status'] {
+function toProposalStatus(status: ApiProposal['status']): UiProposalStatus {
   const normalized = normalizeProposalStatus(status)
-  const mapping: Record<string, Proposal['status']> = {
+  const mapping: Record<string, UiProposalStatus> = {
     PendingReview: 'pending-review',
     Approved: 'approved',
     Rejected: 'rejected',
@@ -414,3 +414,4 @@ function statusColor(status: QueueStatus | number): string {
 .td-proposal-status { font-size: var(--td-font-xs); color: var(--td-text-secondary); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-sm); padding: 1px 8px; }
 .td-diff { margin-top: var(--td-space-2); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-sm); background: var(--td-surface-secondary); padding: var(--td-space-2); font-size: var(--td-font-xs); white-space: pre-wrap; }
 </style>
+type UiProposalStatus = 'pending-review' | 'approved' | 'rejected' | 'applied' | 'failed'
