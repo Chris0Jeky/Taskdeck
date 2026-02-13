@@ -1,0 +1,14 @@
+using Taskdeck.Domain.Entities;
+
+namespace Taskdeck.Application.Interfaces;
+
+public interface IAutomationProposalRepository : IRepository<AutomationProposal>
+{
+    Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default);
+    Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default);
+    Task<AutomationProposal?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default);
+}

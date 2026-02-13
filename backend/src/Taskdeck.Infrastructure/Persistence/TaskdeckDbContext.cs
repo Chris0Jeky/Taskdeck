@@ -18,6 +18,13 @@ public class TaskdeckDbContext : DbContext
     public DbSet<BoardAccess> BoardAccesses => Set<BoardAccess>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<LlmRequest> LlmRequests => Set<LlmRequest>();
+    public DbSet<AutomationProposal> AutomationProposals => Set<AutomationProposal>();
+    public DbSet<AutomationProposalOperation> AutomationProposalOperations => Set<AutomationProposalOperation>();
+    public DbSet<ArchiveItem> ArchiveItems => Set<ArchiveItem>();
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<CommandRun> CommandRuns => Set<CommandRun>();
+    public DbSet<CommandRunLog> CommandRunLogs => Set<CommandRunLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
