@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
@@ -20,8 +21,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task CreateProposal_ThenGetProposal_ShouldReturnCreatedProposal()
     {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
+        var userId = await AuthenticateAsync("automation-create");
+        var boardId = await CreateOwnedBoardAsync(userId);
         var correlationId = Guid.NewGuid().ToString();
 
         var createRequest = new CreateProposalDto(
@@ -65,8 +66,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task GetProposals_WithFilters_ShouldReturnFilteredResults()
     {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
+        var userId = await AuthenticateAsync("automation-filters");
+        var boardId = await CreateOwnedBoardAsync(userId);
 
         var proposal1 = await CreateTestProposal(userId, boardId, RiskLevel.Low);
         var proposal2 = await CreateTestProposal(userId, boardId, RiskLevel.High);
@@ -84,11 +85,11 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task ApproveProposal_ShouldUpdateStatus()
     {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
+        var userId = await AuthenticateAsync("automation-approve");
+        var boardId = await CreateOwnedBoardAsync(userId);
         var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
 
-        var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve?decidedByUserId={userId}", null);
+        var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
         approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var approvedProposal = await approveResponse.Content.ReadFromJsonAsync<ProposalDto>();
@@ -101,12 +102,12 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task RejectProposal_ShouldUpdateStatus()
     {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
+        var userId = await AuthenticateAsync("automation-reject");
+        var boardId = await CreateOwnedBoardAsync(userId);
         var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
 
         var rejectDto = new UpdateProposalStatusDto(Reason: "Not needed");
-        var rejectResponse = await _client.PostAsJsonAsync($"/api/automation/proposals/{proposal.Id}/reject?decidedByUserId={userId}", rejectDto);
+        var rejectResponse = await _client.PostAsJsonAsync($"/api/automation/proposals/{proposal.Id}/reject", rejectDto);
         rejectResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var rejectedProposal = await rejectResponse.Content.ReadFromJsonAsync<ProposalDto>();
@@ -118,13 +119,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task ExecuteProposal_WhenApproved_ShouldMarkAsApplied()
     {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
+        var userId = await AuthenticateAsync("automation-exec-applied");
+        var boardId = await CreateOwnedBoardAsync(userId);
         var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
 
-        await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve?decidedByUserId={userId}", null);
+        await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
 
-        var executeResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/execute", null);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await _client.SendAsync(executeRequest);
         executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var executedProposal = await executeResponse.Content.ReadFromJsonAsync<ProposalDto>();
@@ -136,22 +139,24 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task ExecuteProposal_WhenNotApproved_ShouldReturnConflict()
     {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
+        var userId = await AuthenticateAsync("automation-exec-conflict");
+        var boardId = await CreateOwnedBoardAsync(userId);
         var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
 
-        var executeResponse = await _client.PostAsync($"/api/automation/proposals/{proposal.Id}/execute", null);
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await _client.SendAsync(executeRequest);
         executeResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         var error = await executeResponse.Content.ReadFromJsonAsync<JsonElement>();
-        error.GetProperty("errorCode").GetString().Should().Be("Conflict");
+        error.GetProperty("errorCode").GetString().Should().Be("InvalidOperation");
     }
 
     [Fact]
     public async Task GetProposalDiff_ShouldReturnDiffPreview()
     {
-        var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
+        var userId = await AuthenticateAsync("automation-diff");
+        var boardId = await CreateOwnedBoardAsync(userId);
         var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
 
         var diffResponse = await _client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
@@ -164,6 +169,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task GetProposal_ShouldReturnNotFound_WhenProposalDoesNotExist()
     {
+        await AuthenticateAsync("automation-get-notfound");
+
         var response = await _client.GetAsync($"/api/automation/proposals/{Guid.NewGuid()}");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
@@ -174,7 +181,9 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task ApproveProposal_ShouldReturnNotFound_WhenProposalDoesNotExist()
     {
-        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/approve?decidedByUserId={Guid.NewGuid()}", null);
+        await AuthenticateAsync("automation-approve-notfound");
+
+        var response = await _client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/approve", null);
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var error = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -184,9 +193,11 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task CreateProposal_WithEmptySummary_ShouldReturnBadRequest()
     {
+        var userId = await AuthenticateAsync("automation-create-invalid");
+
         var createRequest = new CreateProposalDto(
             SourceType: ProposalSourceType.Chat,
-            RequestedByUserId: Guid.NewGuid(),
+            RequestedByUserId: userId,
             Summary: string.Empty,
             RiskLevel: RiskLevel.Low,
             CorrelationId: Guid.NewGuid().ToString()
@@ -212,10 +223,11 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             {
                 new(
                     Sequence: 1,
-                    ActionType: "CreateCard",
-                    TargetType: "Card",
-                    Parameters: "{\"title\":\"Test\"}",
-                    IdempotencyKey: Guid.NewGuid().ToString()
+                    ActionType: "update",
+                    TargetType: "board",
+                    Parameters: $"{{\"boardId\":\"{boardId}\",\"name\":\"Automated update {Guid.NewGuid():N}\"}}",
+                    IdempotencyKey: Guid.NewGuid().ToString(),
+                    TargetId: boardId.ToString()
                 )
             }
         );
@@ -223,5 +235,44 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var response = await _client.PostAsJsonAsync("/api/automation/proposals", createRequest);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
+    }
+
+    private async Task<Guid> AuthenticateAsync(string stem)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var username = $"{stem}_{suffix}";
+        var email = $"{stem}_{suffix}@example.com";
+        const string password = "password123";
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/auth/register",
+            new CreateUserDto(username, email, password));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
+        payload.Should().NotBeNull();
+
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload!.Token);
+        return payload.User.Id;
+    }
+
+    private async Task<Guid> CreateOwnedBoardAsync(Guid ownerId)
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/import/boards?userId={ownerId}",
+            new ImportBoardDto(
+                $"automation-board-{Guid.NewGuid():N}",
+                null,
+                Array.Empty<ImportColumnDto>(),
+                Array.Empty<ImportCardDto>(),
+                Array.Empty<ImportLabelDto>()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
+        result.Should().NotBeNull();
+        result!.Success.Should().BeTrue();
+        result.BoardId.Should().NotBeNull();
+
+        return result.BoardId!.Value;
     }
 }
