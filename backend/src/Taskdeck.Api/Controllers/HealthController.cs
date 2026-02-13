@@ -9,6 +9,7 @@ namespace Taskdeck.Api.Controllers;
 [Route("health")]
 public class HealthController : ControllerBase
 {
+    private const int QueueDepthDegradedThreshold = 100;
     private readonly IServiceProvider _serviceProvider;
 
     public HealthController(IServiceProvider serviceProvider)
@@ -49,8 +50,8 @@ public class HealthController : ControllerBase
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             var pending = await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct);
             var queueDepth = pending.Count();
-            checks["queue"] = new { status = queueDepth > 100 ? "Degraded" : "Healthy", depth = queueDepth };
-            if (queueDepth > 100) isReady = false;
+            checks["queue"] = new { status = queueDepth > QueueDepthDegradedThreshold ? "Degraded" : "Healthy", depth = queueDepth };
+            if (queueDepth > QueueDepthDegradedThreshold) isReady = false;
         }
         catch (Exception ex)
         {

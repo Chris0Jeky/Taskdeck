@@ -23,7 +23,7 @@ public class ChatService : IChatService
         try
         {
             var session = new ChatSession(userId, dto.Title, dto.BoardId);
-            await _unitOfWork.ChatSessions.AddAsync(session);
+            await _unitOfWork.ChatSessions.AddAsync(session, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             return Result.Success(MapSessionToDto(session));
         }
@@ -58,7 +58,7 @@ public class ChatService : IChatService
             // Add user message
             var userMessage = new ChatMessage(sessionId, ChatMessageRole.User, dto.Content);
             session.AddMessage(userMessage);
-            await _unitOfWork.ChatMessages.AddAsync(userMessage);
+            await _unitOfWork.ChatMessages.AddAsync(userMessage, ct);
 
             // Get LLM response
             var chatMessages = session.Messages
@@ -83,7 +83,7 @@ public class ChatService : IChatService
                 messageType,
                 tokenUsage: llmResult.TokensUsed);
             session.AddMessage(assistantMessage);
-            await _unitOfWork.ChatMessages.AddAsync(assistantMessage);
+            await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
 
             await _unitOfWork.SaveChangesAsync(ct);
 
