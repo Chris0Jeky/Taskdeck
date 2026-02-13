@@ -7,6 +7,7 @@ import ProfileSettingsView from '../views/ProfileSettingsView.vue'
 import BoardAccessView from '../views/BoardAccessView.vue'
 import ActivityView from '../views/ActivityView.vue'
 import AutomationQueueView from '../views/AutomationQueueView.vue'
+import AutomationChatView from '../views/AutomationChatView.vue'
 import OpsConsoleView from '../views/OpsConsoleView.vue'
 import ExportImportView from '../views/ExportImportView.vue'
 import ArchiveView from '../views/ArchiveView.vue'
@@ -95,6 +96,12 @@ const router = createRouter({
       path: '/workspace/automations/proposals',
       name: 'workspace-automations-proposals',
       component: AutomationQueueView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/automations/chat',
+      name: 'workspace-automations-chat',
+      component: AutomationChatView,
       meta: { requiresShell: true },
     },
 
