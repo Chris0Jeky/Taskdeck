@@ -1,4 +1,4 @@
-﻿# Taskdeck Status (Source of Truth)
+# Taskdeck Status (Source of Truth)
 
 Last Updated: 2026-02-13  
 Status Owner: Repository maintainers  
@@ -10,8 +10,8 @@ Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 fronte
 Core board workflows are stable, and advanced slices are implemented for automation proposals, chat, ops/log querying, archive recovery, and worker health reporting.
 
 Current constraints are mostly hardening and consistency:
-- security/identity behavior is not yet uniform across all controller families
-- some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
+- security and identity behavior is not yet uniform across all controller families
+- some UX/operator surfaces are functional but not yet keyboard-first, discoverability-first, or interaction-conflict-safe
 - LLM flow is still mock-provider based
 
 ## Current Implementation Snapshot
@@ -26,6 +26,10 @@ Current constraints are mostly hardening and consistency:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
   - `WorkerHeartbeatRegistry` (used by `/health/ready`)
+- Cross-cutting API consistency:
+  - `ApiErrorResponse` contract for stable error payload shape (`errorCode`, `message`)
+  - `ResultExtensions` mapping for domain/app errors to HTTP statuses
+  - `AuthenticatedControllerBase` for claim extraction and authenticated-user guardrails
 - Implemented automation stack:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
@@ -52,6 +56,9 @@ Current constraints are mostly hardening and consistency:
   - archive listing and restore operations
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
+- Shared maintainability utilities:
+  - `buildQueryString` for API query construction across filter-driven endpoints
+  - `getErrorMessage` for consistent API/store error extraction
 
 ## Phase Progress (Reconciled)
 
@@ -71,6 +78,7 @@ Completed in Phase 4:
 - archive recovery flow
 - chat + ops + logs + worker/health stack
 - frontend integration for automations/chat/ops/archive
+- maintainability refactor across API/controller error handling and frontend API/store utilities (PR #23)
 
 Remaining for Phase 4 completion:
 - security and claim-based identity convergence across legacy controllers
@@ -78,7 +86,7 @@ Remaining for Phase 4 completion:
 - production-capable LLM provider path (or strict feature-gated mock-only policy)
 - broader planner/executor coverage and safety semantics
 - database-level export/import implementation
-- UX and operator hardening for keyboard/accessibility/discoverability gaps
+- UX/operator hardening for keyboard/accessibility/discoverability/interaction-conflict gaps
 
 ## Test Status (Executed)
 
@@ -92,9 +100,9 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 256/256 passing
-- API integration: 86/86 passing
+- API integration: 106/106 passing
 - CLI contract: 4/4 passing
-- Backend Total: 439/439 passing
+- Backend Total: 459/459 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -104,21 +112,21 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 238/238 passing
+- Frontend unit: 245/245 passing
 - Typecheck: passing
 - Production build: passing
 
 ### Frontend E2E (Executed)
 
 Command:
-- `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local2.db npx playwright test --reporter=line`
+- `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.docsrefresh2.db npx playwright test --reporter=line`
 
 Result:
 - E2E smoke + automation/ops flow: 11/11 passing
 
 ### Total
 
-- Combined automated total: 688/688 passing
+- Combined automated total: 715/715 passing
 
 ## CI Status
 
@@ -142,20 +150,22 @@ Automation and data:
 
 Observability and scalability:
 - `LogQueryService` currently performs broad in-memory composition paths
-- nullable warnings (`CS8618`) remain in newly added domain entities
+- nullable warnings (`CS8618`) remain in domain entities
 
 UX and operability (reconciled from product notes):
-- archive UX consistency for board archive/recovery is not fully cohesive
+- archive board lifecycle behavior is not yet fully coherent with archive/recovery UX
 - command palette lacks full keyboard item selection/activation flow
-- activity exploration relies on direct IDs (limited discoverability)
+- activity exploration still relies on direct IDs (limited discoverability)
 - ops/automation forms need stronger autocomplete/option scaffolding
-- drag/edit interaction edge cases and escape-driven workspace exit ergonomics need hardening
+- drag/edit interaction mode conflicts can still trigger unintended board/card movement
+- escape-driven board/workspace exit ergonomics need a defined and test-backed model
 
 ## Recently Resolved (This Cycle)
 
-- Archived non-authoritative feature/spec packs from active docs root into a dated archive bundle.
-- Consolidated active docs to a smaller maintained set.
-- Updated manual and automated testing documentation to current route surface and totals.
+- Unified API error-response shape and HTTP error-code mapping in shared backend helpers.
+- Reduced duplicated frontend API/store logic by extracting shared query and error utilities.
+- Reconciled active docs and test totals after PR #23 merge.
+- Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
 
 ## Canonical Documentation Policy
 
