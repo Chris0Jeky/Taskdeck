@@ -1,21 +1,25 @@
 ﻿# Archive Guide
 
 All files in this folder are historical and non-authoritative.
-If a number or status in this archive conflicts with `docs/STATUS.md`, trust `docs/STATUS.md`.
+If a status, scope, or test number here conflicts with active docs, trust:
+1. `docs/STATUS.md`
+2. `docs/IMPLEMENTATION_MASTERPLAN.md`
+3. `docs/TESTING_GUIDE.md`
+4. `docs/MANUAL_TEST_CHECKLIST.md`
 
 ## Folder Map
 
+Legacy archive groups:
 - `status-history/`
-  - Previous status snapshots.
 - `testing-history/`
-  - Historical testing posture notes.
 - `planning-history/`
-  - Superseded planning documents.
 - `pr-history/`
-  - Pull request technical summaries.
 - `session-notes/`
-  - Session-by-session implementation notes.
+
+Time-scoped archive bundles:
+- `2026-02-13_phase4-doc-consolidation/`
+  - Consolidation bundle that archived backend/frontend detail packs and superseded root guides.
 
 ## Usage
 
-Use archive docs only for context reconstruction, not for active planning or current-state reporting.
+Use archive docs for context reconstruction, not for active planning or current-state reporting.
