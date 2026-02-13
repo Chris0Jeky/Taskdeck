@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -67,21 +68,18 @@ public class ChatController : AuthenticatedControllerBase
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
         {
-            Response.StatusCode = 401;
-            await Response.WriteAsJsonAsync(new { errorCode = ErrorCodes.AuthenticationFailed, message = "Authenticated user context is required" }, ct);
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await Response.WriteAsJsonAsync(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                "Authenticated user context is required"), ct);
             return;
         }
 
         var sessionResult = await _chatService.GetSessionAsync(id, userId, ct);
         if (!sessionResult.IsSuccess)
         {
-            Response.StatusCode = sessionResult.ErrorCode switch
-            {
-                "NotFound" => 404,
-                "Forbidden" => 403,
-                _ => 500
-            };
-            await Response.WriteAsJsonAsync(new { errorCode = sessionResult.ErrorCode, message = sessionResult.ErrorMessage }, ct);
+            Response.StatusCode = sessionResult.ToHttpStatusCode();
+            await Response.WriteAsJsonAsync(ApiErrorResponse.FromResult(sessionResult), ct);
             return;
         }
 
