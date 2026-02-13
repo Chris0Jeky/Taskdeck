@@ -8,25 +8,7 @@ import type {
   LogQuery,
   RunCommandRequest,
 } from '../types/ops'
-
-function toQuery(query?: LogQuery): string {
-  if (!query) {
-    return ''
-  }
-
-  const params = new URLSearchParams()
-  if (query.level) params.set('level', query.level)
-  if (query.source) params.set('source', query.source)
-  if (query.userId) params.set('userId', query.userId)
-  if (query.boardId) params.set('boardId', query.boardId)
-  if (query.correlationId) params.set('correlationId', query.correlationId)
-  if (query.from) params.set('from', query.from)
-  if (query.to) params.set('to', query.to)
-  if (query.limit !== undefined) params.set('limit', String(query.limit))
-
-  const asText = params.toString()
-  return asText.length > 0 ? `?${asText}` : ''
-}
+import { buildQueryString } from '../utils/queryBuilder'
 
 export const opsApi = {
   async getTemplates(): Promise<CommandTemplate[]> {
@@ -50,7 +32,7 @@ export const opsApi = {
   },
 
   async queryLogs(query?: LogQuery): Promise<LogEntry[]> {
-    const { data } = await http.get<LogEntry[]>(`/logs${toQuery(query)}`)
+    const { data } = await http.get<LogEntry[]>(`/logs${buildQueryString(query)}`)
     return data
   },
 
