@@ -99,8 +99,8 @@ public class OpsCliService : IOpsCliService
         {
             "boards.list" => await ExecuteBoardsListAsync(ct),
             "boards.search" => await ExecuteBoardsSearchAsync(parameters, ct),
-            "queue.stats" => await ExecuteQueueStatsAsync(),
-            "queue.pending" => await ExecuteQueuePendingAsync(),
+            "queue.stats" => await ExecuteQueueStatsAsync(ct),
+            "queue.pending" => await ExecuteQueuePendingAsync(ct),
             "health.check" => ExecuteHealthCheck(),
             _ => throw new InvalidOperationException($"No handler for template: {templateName}")
         };
@@ -121,18 +121,20 @@ public class OpsCliService : IOpsCliService
         return $"Search for '{query}': {matches.Count} result(s).\n" + string.Join("\n", matches.Select(b => $"- {b.Name} ({b.Id})"));
     }
 
-    private async Task<string> ExecuteQueueStatsAsync()
+    private async Task<string> ExecuteQueueStatsAsync(CancellationToken ct)
     {
-        var pending = (await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Pending)).Count();
-        var processing = (await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Processing)).Count();
-        var completed = (await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Completed)).Count();
-        var failed = (await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Failed)).Count();
+        var allItems = await _unitOfWork.LlmQueue.GetAllAsync(ct);
+        var grouped = allItems.GroupBy(r => r.Status).ToDictionary(g => g.Key, g => g.Count());
+        var pending = grouped.GetValueOrDefault(Domain.Enums.RequestStatus.Pending);
+        var processing = grouped.GetValueOrDefault(Domain.Enums.RequestStatus.Processing);
+        var completed = grouped.GetValueOrDefault(Domain.Enums.RequestStatus.Completed);
+        var failed = grouped.GetValueOrDefault(Domain.Enums.RequestStatus.Failed);
         return $"Queue stats: Pending={pending}, Processing={processing}, Completed={completed}, Failed={failed}";
     }
 
-    private async Task<string> ExecuteQueuePendingAsync()
+    private async Task<string> ExecuteQueuePendingAsync(CancellationToken ct)
     {
-        var pending = await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Pending);
+        var pending = await _unitOfWork.LlmQueue.GetByStatusAsync(Domain.Enums.RequestStatus.Pending, ct);
         var pendingList = pending.ToList();
         return $"Pending queue items: {pendingList.Count}\n" + string.Join("\n", pendingList.Select(r => $"- {r.Id}: {r.RequestType} (created: {r.CreatedAt})"));
     }
