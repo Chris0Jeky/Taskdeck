@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -116,11 +117,9 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyHeader) ||
             string.IsNullOrWhiteSpace(idempotencyHeader))
         {
-            return BadRequest(new
-            {
-                errorCode = ErrorCodes.ValidationError,
-                message = "Idempotency-Key header is required"
-            });
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Idempotency-Key header is required"));
         }
 
         var executionResult = await _executorService.ExecuteProposalAsync(id, idempotencyHeader.ToString(), cancellationToken);
