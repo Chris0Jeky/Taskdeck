@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '../api/authApi'
 import { useToastStore } from './toastStore'
+import { getErrorMessage } from '../utils/errorMessage'
 import type { LoginRequest, RegisterRequest, ChangePasswordRequest, SessionState, AuthResponse } from '../types/auth'
 import { getTokenExpiryIso, isTokenExpired } from '../utils/jwt'
 
@@ -140,15 +141,6 @@ export const useSessionStore = defineStore('session', () => {
     const message = `You must be logged in to use ${context}.`
     error.value = message
     throw new Error(message)
-  }
-
-  function getErrorMessage(err: unknown, fallback: string): string {
-    if (typeof err !== 'object' || err === null) return fallback
-    const typed = err as { response?: { data?: { message?: unknown } }; message?: unknown }
-    const responseMessage = typed.response?.data?.message
-    if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) return responseMessage
-    if (typeof typed.message === 'string' && typed.message.trim().length > 0) return typed.message
-    return fallback
   }
 
   return {

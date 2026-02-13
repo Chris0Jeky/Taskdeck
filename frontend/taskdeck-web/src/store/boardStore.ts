@@ -5,6 +5,7 @@ import { columnsApi } from '../api/columnsApi'
 import { cardsApi } from '../api/cardsApi'
 import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
+import { getErrorMessage } from '../utils/errorMessage'
 import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 
 export interface CardFilters {
@@ -25,28 +26,6 @@ export const useBoardStore = defineStore('board', () => {
   const currentBoardLabels = ref<Label[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
-
-  const getErrorMessage = (err: unknown, fallback: string): string => {
-    if (typeof err !== 'object' || err === null) {
-      return fallback
-    }
-
-    const typedError = err as {
-      response?: { data?: { message?: unknown } }
-      message?: unknown
-    }
-
-    const responseMessage = typedError.response?.data?.message
-    if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) {
-      return responseMessage
-    }
-
-    if (typeof typedError.message === 'string' && typedError.message.trim().length > 0) {
-      return typedError.message
-    }
-
-    return fallback
-  }
 
   const handleApiError = (err: unknown, fallback: string) => {
     const message = getErrorMessage(err, fallback)
