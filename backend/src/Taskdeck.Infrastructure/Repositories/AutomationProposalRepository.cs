@@ -20,42 +20,50 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
 
     public async Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _dbSet
+        var proposals = await _dbSet
             .Include(p => p.Operations)
             .Where(p => p.Status == status)
-            .OrderByDescending(p => p.CreatedAt)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return proposals
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(limit);
     }
 
     public async Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _dbSet
+        var proposals = await _dbSet
             .Include(p => p.Operations)
             .Where(p => p.BoardId == boardId)
-            .OrderByDescending(p => p.CreatedAt)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return proposals
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(limit);
     }
 
     public async Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _dbSet
+        var proposals = await _dbSet
             .Include(p => p.Operations)
             .Where(p => p.RequestedByUserId == userId)
-            .OrderByDescending(p => p.CreatedAt)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return proposals
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(limit);
     }
 
     public async Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
     {
-        return await _dbSet
+        var proposals = await _dbSet
             .Include(p => p.Operations)
             .Where(p => p.RiskLevel == riskLevel)
-            .OrderByDescending(p => p.CreatedAt)
-            .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return proposals
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(limit);
     }
 
     public async Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default)
