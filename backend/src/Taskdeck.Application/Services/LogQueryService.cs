@@ -80,10 +80,11 @@ public class LogQueryService : ILogQueryService
 
         while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow - streamStartedAt < TimeSpan.FromMinutes(10))
         {
+            var queryUpperBound = DateTimeOffset.UtcNow;
             var query = (filter ?? new LogQueryDto()) with
             {
                 From = lastCheck,
-                To = DateTimeOffset.UtcNow
+                To = queryUpperBound
             };
 
             var result = await QueryLogsAsync(query, ct);
@@ -95,7 +96,8 @@ public class LogQueryService : ILogQueryService
                 }
             }
 
-            lastCheck = DateTimeOffset.UtcNow;
+            // Advance cursor to the exact queried upper bound to avoid gaps.
+            lastCheck = queryUpperBound;
 
             if ((DateTimeOffset.UtcNow - heartbeatTimer).TotalSeconds >= 15)
             {
