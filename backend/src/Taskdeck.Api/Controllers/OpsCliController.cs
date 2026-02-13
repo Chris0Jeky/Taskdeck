@@ -46,6 +46,9 @@ public class OpsCliController : ControllerBase
     [HttpGet("runs/{id}")]
     public async Task<IActionResult> GetCommandRun(Guid id, CancellationToken ct = default)
     {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
         var result = await _opsCliService.GetCommandRunAsync(id, ct);
 
         if (!result.IsSuccess)
@@ -54,6 +57,14 @@ public class OpsCliController : ControllerBase
                 ? NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage })
                 : Problem(result.ErrorMessage, statusCode: 500);
         }
+        if (result.Value.RequestedByUserId != userId)
+        {
+            return StatusCode(403, new
+            {
+                errorCode = ErrorCodes.Forbidden,
+                message = "You do not have access to this command run"
+            });
+        }
 
         return Ok(result.Value);
     }
@@ -61,6 +72,25 @@ public class OpsCliController : ControllerBase
     [HttpGet("runs/{id}/logs")]
     public async Task<IActionResult> GetCommandRunLogs(Guid id, CancellationToken ct = default)
     {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var runResult = await _opsCliService.GetCommandRunAsync(id, ct);
+        if (!runResult.IsSuccess)
+        {
+            return runResult.ErrorCode == "NotFound"
+                ? NotFound(new { errorCode = runResult.ErrorCode, message = runResult.ErrorMessage })
+                : Problem(runResult.ErrorMessage, statusCode: 500);
+        }
+        if (runResult.Value.RequestedByUserId != userId)
+        {
+            return StatusCode(403, new
+            {
+                errorCode = ErrorCodes.Forbidden,
+                message = "You do not have access to this command run"
+            });
+        }
+
         var result = await _opsCliService.GetCommandRunLogsAsync(id, ct);
 
         if (!result.IsSuccess)
