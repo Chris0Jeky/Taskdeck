@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
@@ -9,6 +10,25 @@ namespace Taskdeck.Api.Tests;
 
 public class ResultExtensionsTests
 {
+    [Theory]
+    [InlineData(ErrorCodes.NotFound, 404)]
+    [InlineData(ErrorCodes.ValidationError, 400)]
+    [InlineData(ErrorCodes.WipLimitExceeded, 400)]
+    [InlineData(ErrorCodes.AuthenticationFailed, 401)]
+    [InlineData(ErrorCodes.Unauthorized, 401)]
+    [InlineData(ErrorCodes.Forbidden, 403)]
+    [InlineData(ErrorCodes.Conflict, 409)]
+    [InlineData(ErrorCodes.InvalidOperation, 409)]
+    [InlineData("SomethingUnexpected", 500)]
+    public void ToHttpStatusCode_ShouldMapErrorCodes(string errorCode, int expectedStatusCode)
+    {
+        var result = Result.Failure(errorCode, "test message");
+
+        var statusCode = result.ToHttpStatusCode();
+
+        statusCode.Should().Be(expectedStatusCode);
+    }
+
     [Theory]
     [InlineData(ErrorCodes.NotFound, 404)]
     [InlineData(ErrorCodes.ValidationError, 400)]
@@ -51,12 +71,10 @@ public class ResultExtensionsTests
         var notFoundResult = actionResult as NotFoundObjectResult;
         notFoundResult.Should().NotBeNull();
 
-        var body = notFoundResult!.Value;
-        body.Should().NotBeNull();
-        var errorCode = body!.GetType().GetProperty("errorCode")?.GetValue(body) as string;
-        var message = body.GetType().GetProperty("message")?.GetValue(body) as string;
-        errorCode.Should().Be(ErrorCodes.NotFound);
-        message.Should().Be("Board not found");
+        notFoundResult!.Value.Should().BeOfType<ApiErrorResponse>();
+        var body = (ApiErrorResponse)notFoundResult.Value!;
+        body.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        body.Message.Should().Be("Board not found");
     }
 
     [Fact]
