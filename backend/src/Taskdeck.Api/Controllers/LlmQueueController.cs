@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -35,7 +37,9 @@ public class LlmQueueController : ControllerBase
     public async Task<IActionResult> GetByStatus(string status)
     {
         if (!Enum.TryParse<RequestStatus>(status, true, out var parsedStatus) || !Enum.IsDefined(parsedStatus))
-            return BadRequest(new { errorCode = "ValidationError", message = $"Invalid status value: {status}" });
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                $"Invalid status value: {status}"));
 
         var result = await _llmQueueService.GetQueueByStatusAsync(parsedStatus);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
