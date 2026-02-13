@@ -8,15 +8,18 @@ public class ProposalHousekeepingWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly WorkerSettings _settings;
+    private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly ILogger<ProposalHousekeepingWorker> _logger;
 
     public ProposalHousekeepingWorker(
         IServiceScopeFactory scopeFactory,
         WorkerSettings settings,
+        WorkerHeartbeatRegistry workerHeartbeatRegistry,
         ILogger<ProposalHousekeepingWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _settings = settings;
+        _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _logger = logger;
     }
 
@@ -26,6 +29,8 @@ public class ProposalHousekeepingWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            _workerHeartbeatRegistry.ReportHeartbeat(nameof(ProposalHousekeepingWorker));
+
             try
             {
                 await ExpireStaleProposalsAsync(stoppingToken);
