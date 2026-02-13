@@ -159,7 +159,7 @@ public class LlmQueueToProposalWorker : BackgroundService
         CancellationToken ct)
     {
         var currentRetryCount = item.RetryCount;
-        var shouldRetry = IsTransientFailure(errorCode) && currentRetryCount < _settings.MaxRetries;
+        var shouldRetry = IsTransientFailure(errorCode) && currentRetryCount + 1 < _settings.MaxRetries;
 
         item.MarkAsFailed(errorMessage);
         await unitOfWork.SaveChangesAsync(ct);
