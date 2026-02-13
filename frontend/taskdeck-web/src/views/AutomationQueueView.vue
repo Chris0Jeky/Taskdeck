@@ -279,7 +279,7 @@ function statusColor(status: QueueStatus | number): string {
       <div v-if="showComposer" class="td-composer">
         <div class="td-form-group">
           <label class="td-label">Request Type</label>
-          <input v-model="newRequestType" type="text" class="td-input" placeholder="e.g. create card \"title\"" />
+          <input v-model="newRequestType" type="text" class="td-input" placeholder='e.g. create card "title"' />
         </div>
         <div class="td-form-group">
           <label class="td-label">Payload</label>
