@@ -43,3 +43,18 @@ Refactoring would be great at this stage, as a lot of code has been produced so 
 code base, assessing how it works, and consequently how it can be refactored to improve maintainability, modularity, 
 reducing code duplication, optimizing performance, etc
 
+
+Auto-completion and in-real-time list of options creation while typing or selecting something when using the Ops console, endpoint explorer, Automation (when doing new request for example), etc
+
+When using the "Search or command", ability to use the keyboard for selecting the navigation elements
+
+Exit the projects/boards using Esc key
+
+Archive still not working when archiving a board
+
+"? Shortcuts(?)" footer on the sidebar, or any footer of this sort, should be sticky at the bottom there somehow, instead of having to scroll all the way down to see it
+
+When using "Activity" I want to be able to see and choose from the options instead of having to know the ID of the entity/board/user 
+Also, there should be an easy way to get the ID of the entities/Boards/user
+
+
