@@ -34,6 +34,7 @@ builder.Services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
 builder.Services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
 builder.Services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
 builder.Services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
+builder.Services.AddScoped<IOpsCliService, OpsCliService>();
 
 // Add IUserContext for claim-based identity
 builder.Services.AddHttpContextAccessor();
