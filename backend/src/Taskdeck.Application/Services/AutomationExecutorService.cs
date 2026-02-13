@@ -16,7 +16,6 @@ public class AutomationExecutorService : IAutomationExecutorService
     private readonly CardService _cardService;
     private readonly BoardService _boardService;
     private readonly ColumnService _columnService;
-    private readonly Dictionary<string, HashSet<string>> _executedOperations = new();
 
     public AutomationExecutorService(
         IUnitOfWork unitOfWork,
@@ -42,19 +41,16 @@ public class AutomationExecutorService : IAutomationExecutorService
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return Result.Failure(ErrorCodes.ValidationError, "IdempotencyKey cannot be empty");
 
-        // Check idempotency - has this proposal been executed with this key?
-        if (_executedOperations.ContainsKey(idempotencyKey) && 
-            _executedOperations[idempotencyKey].Contains(proposalId.ToString()))
-        {
-            return Result.Success(); // Already executed, return success
-        }
-
         // Get proposal
         var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
         if (!proposalResult.IsSuccess)
             return Result.Failure(proposalResult.ErrorCode, proposalResult.ErrorMessage);
 
         var proposal = proposalResult.Value;
+
+        // Idempotent behavior across requests/processes: already-applied proposals are treated as success.
+        if (proposal.Status == ProposalStatus.Applied)
+            return Result.Success();
 
         // Verify proposal is approved
         if (proposal.Status != ProposalStatus.Approved)
@@ -116,11 +112,6 @@ public class AutomationExecutorService : IAutomationExecutorService
             var markResult = await UpdateProposalStatusAsync(proposalId, ProposalStatus.Applied, null, cancellationToken);
             if (!markResult.IsSuccess)
                 return Result.Failure(markResult.ErrorCode, markResult.ErrorMessage);
-
-            // Record idempotency
-            if (!_executedOperations.ContainsKey(idempotencyKey))
-                _executedOperations[idempotencyKey] = new HashSet<string>();
-            _executedOperations[idempotencyKey].Add(proposalId.ToString());
 
             return Result.Success();
         }
