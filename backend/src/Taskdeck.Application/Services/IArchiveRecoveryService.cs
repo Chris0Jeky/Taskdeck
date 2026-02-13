@@ -21,6 +21,11 @@ public interface IArchiveRecoveryService
         Guid id, 
         CancellationToken cancellationToken = default);
 
+    Task<Result<ArchiveItemDto>> GetArchiveItemByEntityAsync(
+        string entityType,
+        Guid entityId,
+        CancellationToken cancellationToken = default);
+
     Task<Result<RestoreResult>> RestoreArchiveItemAsync(
         Guid id, 
         RestoreArchiveItemDto dto,
