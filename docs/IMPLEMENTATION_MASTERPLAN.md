@@ -127,7 +127,7 @@ Brainstormed package candidates (to be converted into scoped work items):
 - Keyboard workflow packages: board states designed to validate no-mouse task creation/edit/navigation paths.
 - LLM/automation sandbox packages: curated prompts + expected proposal shapes for regression validation.
 - Domain-specific packs: engineering backlog, agency workflow, content calendar, CRM-lite pipeline, research planning.
-- “Golden path” E2E packs: canonical start states for smoke, regression, and release-candidate test suites.
+- "Golden path" E2E packs: canonical start states for smoke, regression, and release-candidate test suites.
 
 Initial implementation shape:
 1. Define a versioned package manifest schema (labels, columns, cards, automations, metadata, compatibility rules).
@@ -143,10 +143,10 @@ Initial implementation shape:
 2. Add unauthorized/forbidden matrix tests for both legacy and advanced routes.
 3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
 4. Define and implement archive board lifecycle behavior contract (API + UI).
-5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.`r`n6. Draft package-manifest RFC and ship first two starter packs (common labels + common column flows).
+5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.
+6. Draft package-manifest RFC and ship first two starter packs (common labels + common column flows).
 
 ## Documentation Operating Model
-
 Active docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
