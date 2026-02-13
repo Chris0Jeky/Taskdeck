@@ -57,7 +57,7 @@ export interface LogEntry {
   metadata: string | null
 }
 
-export interface LogQuery extends Record<string, string | number | undefined> {
+export interface LogQuery {
   level?: string
   source?: string
   userId?: string
