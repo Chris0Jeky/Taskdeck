@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
 
@@ -6,29 +7,43 @@ namespace Taskdeck.Api.Extensions;
 
 public static class ResultExtensions
 {
+    public static int ToHttpStatusCode(this Result result)
+    {
+        return result.ErrorCode switch
+        {
+            ErrorCodes.NotFound => StatusCodes.Status404NotFound,
+            ErrorCodes.ValidationError => StatusCodes.Status400BadRequest,
+            ErrorCodes.WipLimitExceeded => StatusCodes.Status400BadRequest,
+            ErrorCodes.AuthenticationFailed => StatusCodes.Status401Unauthorized,
+            ErrorCodes.Unauthorized => StatusCodes.Status401Unauthorized,
+            ErrorCodes.Forbidden => StatusCodes.Status403Forbidden,
+            ErrorCodes.Conflict => StatusCodes.Status409Conflict,
+            ErrorCodes.InvalidOperation => StatusCodes.Status409Conflict,
+            _ => StatusCodes.Status500InternalServerError
+        };
+    }
+
     /// <summary>
     /// Maps a failed Result to the appropriate IActionResult based on the error code.
     /// Should only be called when result.IsSuccess is false.
     /// </summary>
     public static IActionResult ToErrorActionResult(this Result result)
     {
-        var body = new { errorCode = result.ErrorCode, message = result.ErrorMessage };
+        var statusCode = result.ToHttpStatusCode();
+        var body = ApiErrorResponse.FromResult(result);
 
-        return result.ErrorCode switch
+        return statusCode switch
         {
-            ErrorCodes.NotFound => new NotFoundObjectResult(body),
-            ErrorCodes.ValidationError => new BadRequestObjectResult(body),
-            ErrorCodes.WipLimitExceeded => new BadRequestObjectResult(body),
-            ErrorCodes.AuthenticationFailed => new UnauthorizedObjectResult(body),
-            ErrorCodes.Unauthorized => new UnauthorizedObjectResult(body),
-            ErrorCodes.Forbidden => new ObjectResult(body) { StatusCode = 403 },
-            ErrorCodes.Conflict => new ConflictObjectResult(body),
-            ErrorCodes.InvalidOperation => new ConflictObjectResult(body),
+            StatusCodes.Status404NotFound => new NotFoundObjectResult(body),
+            StatusCodes.Status400BadRequest => new BadRequestObjectResult(body),
+            StatusCodes.Status401Unauthorized => new UnauthorizedObjectResult(body),
+            StatusCodes.Status403Forbidden => new ObjectResult(body) { StatusCode = StatusCodes.Status403Forbidden },
+            StatusCodes.Status409Conflict => new ConflictObjectResult(body),
             _ => new ObjectResult(new ProblemDetails
             {
                 Detail = result.ErrorMessage,
-                Status = 500
-            }) { StatusCode = 500 }
+                Status = StatusCodes.Status500InternalServerError
+            }) { StatusCode = StatusCodes.Status500InternalServerError }
         };
     }
 }
