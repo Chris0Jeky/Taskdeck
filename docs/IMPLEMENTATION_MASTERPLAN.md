@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-12  
+Last Updated: 2026-02-13  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Status Doc: `docs/STATUS.md`
 
@@ -11,185 +11,144 @@ Update this file at the end of each meaningful delivery cycle.
 
 ## Planning Principles
 
-- `docs/STATUS.md` is authoritative for current reality and test totals.
+- `docs/STATUS.md` is authoritative for what is shipped and verified.
 - Every behavior change ships with tests.
-- Keep CI gates aligned with local commands.
-- Prioritize one primary Phase 4 track at a time to avoid scope sprawl.
-- Build stable interfaces that can later be safely used by an LLM agent.
-- Keep scaffolding tracks as side work unless explicitly promoted to the primary track.
+- Security hardening is now the primary constraint, not feature breadth.
+- Prefer finishing incomplete cross-cutting concerns over adding new surface area.
+- Keep automation safe-by-default: proposal first, explicit approval, auditable execution.
+- Keep documentation narrow and maintained; archive drift instead of accumulating stale plans.
 
 ## Current Cycle Outcome (Completed)
 
-Delivered in this cycle:
+Delivered during the latest merge cycle (PRs #20 and #21):
 
-1. API integration suite expanded across happy/error paths for boards, columns, cards, and labels.
-2. Nested-route board ownership checks added for cards, columns, and labels.
-3. E2E smoke suite expanded from 5 to 8 tests:
-   - column reorder
-   - keyboard-only open/close flow
-   - filter persistence in-session
-4. Escape-key closure behavior fixed across major modals and inline add-card forms.
-5. CLI expanded and hardened:
-   - `boards update`
-   - `columns create`
-   - `cards list`
-   - `--json` output mode (camelCase)
-6. CLI contract tests added (`backend/tests/Taskdeck.Cli.Tests`).
-7. CI gate hardening completed:
-   - backend unit (including CLI contract tests)
-   - API integration
-   - frontend unit
-   - E2E smoke
-   - Ubuntu/Windows matrix for non-E2E gates
-8. Parallel scaffolding package delivered for future multi-user/export-import/history/queue tracks:
-   - domain entities, repository contracts, service interfaces
-   - infrastructure repositories and migration
-   - foundational domain tests
-9. Scaffolding service implementations completed:
-   - UserService with BCrypt password hashing
-   - AuthenticationService with JWT token generation/validation
-   - AuthorizationService with role-based permission checks and backward compatibility
-   - BoardAccessService for board-level permission management
-   - HistoryService for audit log queries and action logging
-   - LlmQueueService for offline request queue management
-   - ExportImportService for board export/import via JSON
-10. API controllers added for all new services:
-    - AuthController, UsersController, BoardAccessController
-    - ExportController, LlmQueueController, AuditController
-11. JWT Bearer authentication middleware configured in Program.cs
-12. Unit tests added for new service implementations and follow-up hardening regressions.
-13. Merge-readiness hardening for side-track implementation:
-    - board-access update/revoke now enforce route-board scoping
-    - board-access grant/update/revoke validate acting user and manage-access permission
-    - export/import hardened with board read-permission checks and export-shape JSON import compatibility
-    - JWT configuration safety checks added to auth service and API startup wiring
-    - history limit/input validation added and wired to HTTP 400 mappings
-    - additional automated coverage: +17 application tests and +3 API integration tests
-
-Note:
-- Items 8-13 are intentional side-track prep and do not replace the primary roadmap sequence below.
+1. Added backend automation stack end-to-end:
+   - proposal service/controller with approval/rejection/execution/diff flow
+   - policy engine, planner, and executor services
+2. Added archive recovery stack:
+   - archive entity/repository/service/controller
+   - restore flow with conflict strategies and permission checks
+3. Added chat stack:
+   - chat sessions/messages/streaming endpoints
+   - proposal handoff path from actionable chat prompts
+4. Added ops/logging stack:
+   - ops template execution service/controller
+   - log query/stream/correlation endpoints
+5. Added worker/health runtime:
+   - queue-to-proposal worker with retries
+   - proposal-housekeeping worker
+   - heartbeat registry + readiness checks
+6. Added infrastructure/migration support for automation/archive/chat/ops entities.
+7. Expanded test coverage substantially:
+   - backend application tests now 256 passing
+   - backend API tests now 86 passing
+   - frontend unit tests now 238 passing
+   - Playwright E2E now 11 passing
+8. Frontend integration completed for automations, chat, ops, and archive views/API clients.
 
 ## Roadmap by Horizon
 
-### Horizon A (Week 1 to 2): CI and Reliability Consolidation
+### Horizon A (Week 1 to 2): Security and Identity Convergence
 
-- Validate first real GitHub matrix runs and patch drift quickly.
-- Add residual API negative-path cases not yet covered.
-- Extend E2E beyond smoke to multi-step long-session regressions.
-- Expand CLI JSON contract to more commands and error payloads.
-
-Exit Criteria:
-- CI matrix consistently green.
-- API integration + E2E suites cover key regressions and primary failures.
-- CLI automation contracts are test-backed.
-
-### Horizon B (Week 3 to 6): Complete CLI Primary Track
-
-- Expand CLI command surface toward full board operations:
-  - boards: archive/unarchive ergonomics, optional delete path handling
-  - columns: update/delete/reorder
-  - cards: update/delete/search refinements
-  - labels: list/create/update/delete
-- Improve CLI UX:
-  - consistent formatting
-  - explicit error categorization
-  - deterministic exit behavior
+Focus:
+- Apply `[Authorize]` and claim-based user resolution across legacy controllers.
+- Remove query/body acting-user parameters where claims are required.
+- Normalize permission enforcement paths for board/card/column/label/export/audit/queue surfaces.
+- Add regression integration tests for unauthorized, forbidden, and cross-user access paths.
 
 Exit Criteria:
-- CLI can perform end-to-end daily task operations.
-- CLI supports both human-readable and automation-friendly output.
+- No production endpoint depends on caller-supplied `userId` for identity.
+- Endpoint auth behavior is consistent and test-backed.
+- Legacy + new controller families use the same security posture.
 
-### Horizon C (Week 7 to 12): Agent-Compatible Automation Foundation
+### Horizon B (Week 3 to 6): Automation Hardening and Real Provider Path
 
-Target end state:
-- Local LLM agent can act on the board through tool calls driven by text and voice transcript inputs.
-
-Required foundation work:
-1. Action Proposal Layer
-   - agent proposes operations, does not auto-apply by default.
-   - operations represented as explicit, typed mutation intents.
-2. Review and Approval UX
-   - pending action queue in UI.
-   - user can accept, edit, or reject proposed mutations.
-3. Diff Visibility
-   - show before/after snapshots for board, column, and card mutations.
-   - expose concise audit entries for what changed and why.
-4. Security and Fallback
-   - policy gates for destructive actions.
-   - scoped permissions for tool calls.
-   - rollback or compensating action path for failed/undesired mutations.
-5. Interface Contract
-   - stable API and CLI command contracts suitable for automated callers.
-   - idempotency and conflict handling defined for repeated agent actions.
+Focus:
+- Introduce a production-capable LLM provider path behind clear configuration/feature flags.
+- Expand planner coverage beyond narrow regex patterns (typed operation extraction and safer validation).
+- Tighten executor behavior (operation coverage, error semantics, compensating-path definitions).
+- Improve audit fidelity for executed operations (entity IDs and consistent change payloads).
 
 Exit Criteria:
-- Agent action flow is safe-by-default and reviewable.
-- Mutation diffs and audit trail exist for all agent-originated changes.
-- Core operations are consumable through automation-compatible interfaces.
+- Planner/executor support a broader realistic command set with deterministic validation.
+- LLM integration can be switched between mock and real providers safely.
+- Automation execution has stronger audit and failure semantics.
 
-## Parallel Track (Sidecar): Scaffolding Activation Plan
+### Horizon C (Week 7 to 12): Operational Robustness and Data Portability
 
-This track has progressed from pure scaffolding to functional service implementations.
+Focus:
+- Implement database-level export/import.
+- Improve log query performance to avoid broad in-memory fan-out under load.
+- Resolve nullable warning debt introduced by new entities (`CS8618` set).
+- Expand E2E beyond smoke/ops happy paths to cover auth boundaries and recovery edge cases.
 
-Completed foundations:
-- Multi-user roles and board-level access model (entities + services + API)
-- Export/import interfaces and service for board/database portability
-- LLM queue entities/contracts/service for offline submission and later processing
-- Audit/history service with API endpoints
-- JWT authentication infrastructure with configurable settings
-- Unit tests covering new service implementations
-- Merge-readiness hardening and regression tests for side-track correctness paths
-
-Remaining activation work:
-1. Enforce authentication on existing API endpoints (add [Authorize] attributes) using the endpoint matrix in `docs/PR_MERGE_READINESS_REPORT_2026-02-12.md`.
-2. Wire authorization checks into existing BoardService, CardService, ColumnService, LabelService per the defined read/write/delete role model.
-3. Implement LLM queue background processor (IHostedService).
-4. Add automatic audit logging to existing service operations.
-5. Implement database-level export/import (SQLite file copy).
-6. Frontend integration with login/register and permission-aware UI.
+Exit Criteria:
+- DB-level portability works and is test-backed.
+- Log queries are performant for realistic datasets.
+- Warning profile is materially reduced and tracked.
+- E2E includes security and recovery regression slices, not only happy paths.
 
 ## Active Backlog (Prioritized)
 
-1. P0: Monitor first GitHub CI matrix runs and patch platform drift.
-2. P0: Extend CLI JSON to include structured error payloads.
-3. P0: Add remaining low-frequency API edge/error mappings.
-4. P1: Finish core CLI command parity for columns/cards/labels.
-5. P1: Define action proposal schema for future LLM tool-calling integration.
-6. P1: Draft approval/diff UX spec for agent-proposed changes.
-7. P2: Prepare implementation sequence for scaffolding services (auth, permissions, export/import, queue) without promoting them to primary track yet.
-8. P2: Start time-tracking design spike after CLI milestone lock.
+1. P0: Enforce authentication/authorization on all legacy controllers.
+2. P0: Replace endpoint-level actor `userId` parameters with claims-based identity.
+3. P0: Add integration tests for unauthorized/forbidden permutations across controller families.
+4. P1: Add real LLM provider path and environment-safe toggling.
+5. P1: Expand planner grammar -> structured operation extraction coverage.
+6. P1: Improve automation executor semantics for partial failure and richer audit attribution.
+7. P1: Implement database export/import.
+8. P2: Optimize `LogQueryService` query strategy and avoid broad in-memory composition.
+9. P2: Eliminate key nullable warnings in newly added domain entities.
+10. P2: Execute documentation cleanup/archive pass for stale deep-dive specs.
 
-## Next Best Steps (Updated)
+## Next Best Steps (Immediate)
 
-1. Verify and monitor first GitHub matrix runs in repository Actions UI.
-2. Implement structured JSON error output for CLI (`code`, `message`, `usageHint`).
-3. Add long-session E2E regression slice (multi-edit, reorder, filter, refresh persistence).
-4. Create initial agent action proposal spec:
-   - operation envelope
-   - dry-run preview response
-   - approval token flow
-5. Document scaffolding activation checklist so future work can start quickly when promoted.
+1. Land auth + claims retrofit for `Boards/Columns/Cards/Labels` controllers first.
+2. Retrofit `Export/Audit/LlmQueue/BoardAccess/Users` controllers to claim-based identity.
+3. Add API integration tests that assert all retrofitted endpoints reject missing/invalid tokens.
+4. Define provider contract for real LLM integration and add config-driven provider selection.
+5. Open a docs cleanup PR that archives stale reference specs and updates `docs/INDEX.md` accordingly.
+
+## Documentation Cleanup Plan (Companion Track)
+
+Objective:
+- Reduce drift and planning noise while preserving useful reference material.
+
+Execution:
+1. Keep only two authoritative planning docs active:
+   - `docs/STATUS.md`
+   - `docs/IMPLEMENTATION_MASTERPLAN.md`
+2. For each deep-dive spec under `docs/backend/*` and `docs/frontend/*`:
+   - mark as `Maintained` or `Archive`
+   - if archived, move to `docs/archive/` with a date suffix
+3. Update `docs/INDEX.md` so ownership and authority are explicit.
+4. Add a lightweight docs-review checklist item to PR template/workflow.
+
+Exit Criteria:
+- Every top-level doc has clear authority + owner.
+- Stale planning docs are archived, not left ambiguous.
+- Future drift is caught during normal PR flow.
 
 ## Weekly Cadence
 
 - Start of week:
   - reconcile `docs/STATUS.md`
-  - select top 3 backlog items
+  - choose top 3 backlog items that move one horizon forward
 - During week:
   - ship vertical slices with tests
-  - avoid creating extra top-level planning documents
+  - avoid introducing new top-level planning docs
 - End of week:
-  - update this file with completed items and reprioritized next steps
+  - update this file with completed work, deltas, and reprioritized next steps
 
 ## Risk Register
 
-- Risk: CI matrix instability or flaky browser tests
-  - Mitigation: deterministic test setup, pinned versions, and fast flake triage
-- Risk: CLI scope broadens before reliability hardening
-  - Mitigation: test-first additions and strict JSON contract discipline
-- Risk: Unsafe autonomous agent operations
-  - Mitigation: proposal-first flow, explicit approvals, diff visibility, rollback path
-- Risk: Side-track scaffolding displaces primary delivery goals
-  - Mitigation: activation gates and explicit re-prioritization before promotion
-- Risk: Documentation drift
-  - Mitigation: keep only `STATUS.md` + this file authoritative
+- Risk: security retrofit introduces regressions in existing client flows
+  - Mitigation: staged rollout + integration coverage for both happy and forbidden paths
+- Risk: mock-to-real LLM transition changes behavior unexpectedly
+  - Mitigation: provider abstraction, feature flags, and replayable integration tests
+- Risk: automation parser/executor mismatch causes unsafe/incorrect operations
+  - Mitigation: strict schema validation, policy gates, and explicit approval requirements
+- Risk: log query performance degrades with dataset growth
+  - Mitigation: query strategy refactor + targeted performance tests
+- Risk: documentation drift returns after cleanup
+  - Mitigation: enforce status/masterplan update policy and archive stale specs quickly
