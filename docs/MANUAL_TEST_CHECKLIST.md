@@ -1,11 +1,11 @@
-﻿# Manual Test Checklist
+# Manual Test Checklist
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
 ## Scope and Boundaries
 
 In scope:
-- Core board workflow: boards, columns, cards, labels, filters, drag and drop, keyboard flows.
+- Core board workflow: boards, columns, cards, labels, filters, drag/drop, keyboard flows.
 - Workspace shell: navigation, command palette open/close, shortcuts help.
 - Advanced surfaces: automations (queue/proposals/chat), ops (CLI templates/logs), archive, activity.
 - API contract spot checks for auth, access, queue, archive, automation, chat, and ops endpoints.
@@ -14,7 +14,7 @@ Out of scope (known implementation boundaries on current `main`):
 - Full claim-based auth enforcement on all legacy controllers is still in progress.
 - Some legacy endpoints still accept user identity through query/body parameters.
 - `ExportDatabaseAsync` and `ImportDatabaseAsync` are not implemented.
-- Command palette navigation currently uses pointer selection (no full keyboard item selection yet).
+- Command palette navigation currently has limited keyboard item selection/activation.
 - Activity filtering still depends on direct IDs, not chooser-driven entity discovery.
 
 ## Preconditions
@@ -58,7 +58,7 @@ Optional clean start:
 4. Delete board via Board Settings.
    - Expected: redirected to `/workspace/boards`, deleted board absent.
 
-5. Create two columns, then reorder columns by drag and drop.
+5. Create two columns, then reorder columns by drag/drop.
    - Expected: visual order changes and persists on refresh.
 6. Set WIP limit on a column.
    - Expected: `count/limit` indicator visible.
@@ -71,7 +71,7 @@ Optional clean start:
    - Expected: modal opens with current values.
 10. Edit title/description, set due date, block with reason, assign labels.
     - Expected: updates persist and render in lane.
-11. Move card to another column via drag and drop.
+11. Move card to another column via drag/drop.
     - Expected: card relocates and counts update.
 12. Delete card from modal.
     - Expected: card removed.
@@ -131,6 +131,8 @@ Optional clean start:
    - Expected: list narrows correctly.
 3. Restore an available archived item.
    - Expected: restore succeeds, item removed from list, success toast.
+4. Validate board archive/unarchive coherence against archive view.
+   - Expected: behavior is consistent and understandable across board settings and archive routes.
 
 ## G. Activity View
 
@@ -151,19 +153,19 @@ Assume API at `http://localhost:5000`.
    - Expected: token and user payload.
 2. Chat unauthorized check:
    - `GET /api/llm/chat/sessions` without bearer token.
-   - Expected: `401`.
+   - Expected: `401` with JSON body containing `errorCode` and `message`.
 3. Ops unauthorized check:
    - `GET /api/ops/cli/templates` without bearer token.
-   - Expected: `401`.
+   - Expected: `401` with JSON body containing `errorCode` and `message`.
 4. Archive unauthorized check:
    - `GET /api/archive/items` without bearer token.
-   - Expected: `401`.
+   - Expected: `401` with JSON body containing `errorCode` and `message`.
 5. Queue status validation:
    - `GET /api/llm-queue/status/not-a-real-status`.
-   - Expected: `400 ValidationError`.
+   - Expected: `400` with validation-style `errorCode` and `message`.
 6. Automation execute without `Idempotency-Key`:
    - `POST /api/automation/proposals/{id}/execute` without header.
-   - Expected: `400 ValidationError`.
+   - Expected: `400` with validation-style `errorCode` and `message`.
 
 ## I. Known-Gap Triage (From Product Notes)
 
@@ -172,21 +174,21 @@ Run these checks even if they currently fail; log outcome explicitly.
 1. Drag side-effect while editing card/task:
    - Repro: open card modal/edit fields, perform pointer drag gestures.
    - Target behavior: editing interactions should not trigger unintended board drag/move behavior.
-2. Archive consistency for board archive/unarchive:
-   - Repro: archive board and inspect archive workflows.
-   - Target behavior: board archival should be coherently represented in archive/recovery UX and data pipeline.
-3. Command palette keyboard selection:
+2. Command palette keyboard selection:
    - Repro: open palette, try arrow/enter item selection.
    - Target behavior: full keyboard-first navigation and activation.
-4. Activity discoverability without raw IDs:
+3. Activity discoverability without raw IDs:
    - Repro: attempt history exploration without pre-known IDs.
    - Target behavior: picker/autocomplete-assisted discovery for board/entity/user selectors.
-5. Ops and automation form ergonomics:
+4. Ops and automation form ergonomics:
    - Repro: create requests using ops/automation UIs.
    - Target behavior: contextual autocomplete/options, reduced manual input burden.
-6. Escape-to-exit board context:
+5. Escape-to-exit board context:
    - Repro: on board screen with no modal open, press `Escape`.
-   - Target behavior: configurable back/exit behavior for rapid keyboard-driven workflow.
+   - Target behavior: consistent back/exit behavior for rapid keyboard-driven workflow.
+6. Sidebar shortcuts affordance:
+   - Repro: test on shorter and taller viewports.
+   - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 
 ## J. Post-Run Documentation Check
 
