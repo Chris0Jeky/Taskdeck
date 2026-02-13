@@ -12,8 +12,9 @@ interface AuthResult {
   user: AuthUser
 }
 
-interface BoardDto {
-  id: string
+interface ImportResultDto {
+  success: boolean
+  boardId: string | null
 }
 
 interface ChatMessageDto {
@@ -58,31 +59,30 @@ async function bootstrapAuthenticatedSession(page: Page, request: APIRequestCont
   return auth
 }
 
-async function createBoardWithColumn(request: APIRequestContext, token: string, seed: string): Promise<string> {
-  const authHeader = { Authorization: `Bearer ${token}` }
-
-  const createBoardResponse = await request.post(`${API_BASE_URL}/boards`, {
+async function createBoardWithColumn(request: APIRequestContext, auth: AuthResult, seed: string): Promise<string> {
+  const authHeader = { Authorization: `Bearer ${auth.token}` }
+  const importResponse = await request.post(`${API_BASE_URL}/import/boards?userId=${encodeURIComponent(auth.user.id)}`, {
     headers: authHeader,
     data: {
       name: `Automation E2E ${seed}`,
       description: 'automation e2e board',
+      columns: [
+        {
+          name: `Backlog ${seed}`,
+          position: 0,
+          wipLimit: null,
+        },
+      ],
+      cards: [],
+      labels: [],
     },
   })
-  expect(createBoardResponse.ok()).toBeTruthy()
-  const board = await createBoardResponse.json() as BoardDto
+  expect(importResponse.ok()).toBeTruthy()
+  const importResult = await importResponse.json() as ImportResultDto
+  expect(importResult.success).toBeTruthy()
+  expect(importResult.boardId).toBeTruthy()
 
-  const createColumnResponse = await request.post(`${API_BASE_URL}/boards/${board.id}/columns`, {
-    headers: authHeader,
-    data: {
-      boardId: board.id,
-      name: `Backlog ${seed}`,
-      hasWipLimit: null,
-      wipLimit: null,
-    },
-  })
-  expect(createColumnResponse.ok()).toBeTruthy()
-
-  return board.id
+  return importResult.boardId!
 }
 
 async function waitForProposalInSession(
@@ -142,7 +142,7 @@ test('ops cli should run health.check template', async ({ page }) => {
 
 test('chat proposal flow should create, approve, and execute proposal', async ({ page, request }) => {
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
-  const boardId = await createBoardWithColumn(request, auth.token, seed)
+  const boardId = await createBoardWithColumn(request, auth, seed)
   const uniqueCardTitle = `E2E Card ${seed}`
 
   await page.goto('/workspace/automations/chat')
