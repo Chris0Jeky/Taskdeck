@@ -29,7 +29,7 @@ public class OpsCliServiceTests
 
         _commandRunRepoMock
             .Setup(r => r.AddAsync(It.IsAny<CommandRun>(), default))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((CommandRun run, CancellationToken _) => run);
 
         _service = new OpsCliService(_unitOfWorkMock.Object);
     }
