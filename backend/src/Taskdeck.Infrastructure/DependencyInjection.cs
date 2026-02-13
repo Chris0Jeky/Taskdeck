@@ -25,6 +25,11 @@ public static class DependencyInjection
         services.AddScoped<IBoardAccessRepository, BoardAccessRepository>();
         services.AddScoped<IAuditLogRepository, AuditLogRepository>();
         services.AddScoped<ILlmQueueRepository, LlmQueueRepository>();
+        services.AddScoped<IAutomationProposalRepository, AutomationProposalRepository>();
+        services.AddScoped<IArchiveItemRepository, ArchiveItemRepository>();
+        services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
+        services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
+        services.AddScoped<ICommandRunRepository, CommandRunRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;
