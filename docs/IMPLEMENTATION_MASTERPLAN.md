@@ -15,6 +15,7 @@ Update this file at the end of each meaningful delivery cycle.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
 - Security and identity convergence remains the highest-priority engineering track.
 - Automation remains proposal-first and review-first by default.
+- MVP should include a dogfooding workflow: paste structured plan text in chat and bootstrap a board/project from approved proposals.
 - UX investments should be modular and reusable (keyboard-first, discoverable selectors, shared input-assist patterns).
 
 ## Current Cycle Outcome (Completed)
@@ -88,16 +89,17 @@ Exit Criteria:
 8. P1: Real LLM provider abstraction and environment-safe provider selection.
 9. P1: Planner schema expansion with deterministic validation and stronger tests.
 10. P1: Automation executor hardening (failure semantics, audit attribution, operation coverage).
-11. P2: Refactoring/modularization sprint for maintainability and duplication reduction.
-12. P2: Database-level export/import implementation.
-13. P2: Log query scalability improvements and nullable-warning debt reduction.
-14. P2: Deeper E2E expansion for keyboard flows, archive edge paths, and automation/ops error paths.
-15. P1: One-click package framework for reusable board starter states (labels, columns, templates, and seeded cards).
-16. P1: Starter pack catalog UX with preview/apply flow and per-pack conflict handling.
-17. P1: Test fixture packs derived from the same package manifests for deterministic QA/E2E setup.
-18. P2: Domain packs for common workflows (engineering, support, incidents, product, content, operations).
-19. P2: Package versioning and migration strategy for existing boards.
-20. P2: User-defined package export/import and organization-level shared package libraries.
+11. P1: MVP dogfooding flow - parse pasted project checklist text in chat and generate board/bootstrap proposals for one-click setup.
+12. P2: Refactoring/modularization sprint for maintainability and duplication reduction.
+13. P2: Database-level export/import implementation.
+14. P2: Log query scalability improvements and nullable-warning debt reduction.
+15. P2: Deeper E2E expansion for keyboard flows, archive edge paths, and automation/ops error paths.
+16. P1: One-click package framework for reusable board starter states (labels, columns, templates, and seeded cards).
+17. P1: Starter pack catalog UX with preview/apply flow and per-pack conflict handling.
+18. P1: Test fixture packs derived from the same package manifests for deterministic QA/E2E setup.
+19. P2: Domain packs for common workflows (engineering, support, incidents, product, content, operations).
+20. P2: Package versioning and migration strategy for existing boards.
+21. P2: User-defined package export/import and organization-level shared package libraries.
 
 
 ## Prepackaged Starter States Track (Roadmap Additions)
@@ -126,6 +128,7 @@ Brainstormed package candidates (to be converted into scoped work items):
 - Activity discoverability packages: seeded histories across board/entity/user to validate selector UX.
 - Keyboard workflow packages: board states designed to validate no-mouse task creation/edit/navigation paths.
 - LLM/automation sandbox packages: curated prompts + expected proposal shapes for regression validation.
+- Chat-to-project bootstrap packages: paste Markdown checklist/project plan and generate columns/cards/labels/proposals from it.
 - Domain-specific packs: engineering backlog, agency workflow, content calendar, CRM-lite pipeline, research planning.
 - "Golden path" E2E packs: canonical start states for smoke, regression, and release-candidate test suites.
 
@@ -137,6 +140,7 @@ Initial implementation shape:
 5. Reuse package manifests to generate deterministic E2E/QA fixtures.
 6. Add pack telemetry to measure adoption, setup-time reduction, and failure points.
 7. Add pack migration/version compatibility checks for long-lived boards.
+8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
 1. Complete claims-first retrofit for core board controllers and align response contracts.
@@ -145,6 +149,7 @@ Initial implementation shape:
 4. Define and implement archive board lifecycle behavior contract (API + UI).
 5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.
 6. Draft package-manifest RFC and ship first two starter packs (common labels + common column flows).
+7. Define and implement MVP chat-to-project bootstrap acceptance flow (paste checklist -> approve proposals -> populated board).
 
 ## Documentation Operating Model
 Active docs:
