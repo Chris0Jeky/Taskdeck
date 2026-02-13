@@ -11,6 +11,8 @@ import type { QueueStatus } from '../types/queue'
 import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
+type UiProposalStatus = 'pending-review' | 'approved' | 'rejected' | 'applied' | 'failed'
+
 const queue = useQueueStore()
 const toast = useToastStore()
 const route = useRoute()
@@ -414,4 +416,3 @@ function statusColor(status: QueueStatus | number): string {
 .td-proposal-status { font-size: var(--td-font-xs); color: var(--td-text-secondary); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-sm); padding: 1px 8px; }
 .td-diff { margin-top: var(--td-space-2); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-sm); background: var(--td-surface-secondary); padding: var(--td-space-2); font-size: var(--td-font-xs); white-space: pre-wrap; }
 </style>
-type UiProposalStatus = 'pending-review' | 'approved' | 'rejected' | 'applied' | 'failed'
