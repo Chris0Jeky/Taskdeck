@@ -42,16 +42,37 @@ public class ChatController : ControllerBase
         return CreatedAtAction(nameof(GetSession), new { id = result.Value.Id }, result.Value);
     }
 
+    [HttpGet("sessions")]
+    public async Task<IActionResult> GetMySessions(CancellationToken ct = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _chatService.GetUserSessionsAsync(userId, ct);
+        if (!result.IsSuccess)
+        {
+            return Problem(result.ErrorMessage, statusCode: 500);
+        }
+
+        return Ok(result.Value);
+    }
+
     [HttpGet("sessions/{id}")]
     public async Task<IActionResult> GetSession(Guid id, CancellationToken ct = default)
     {
-        var result = await _chatService.GetSessionAsync(id, ct);
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _chatService.GetSessionAsync(id, userId, ct);
 
         if (!result.IsSuccess)
         {
-            return result.ErrorCode == "NotFound"
-                ? NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage })
-                : Problem(result.ErrorMessage, statusCode: 500);
+            return result.ErrorCode switch
+            {
+                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                _ => Problem(result.ErrorMessage, statusCode: 500)
+            };
         }
 
         return Ok(result.Value);
@@ -82,11 +103,31 @@ public class ChatController : ControllerBase
     [HttpGet("sessions/{id}/stream")]
     public async Task GetStream(Guid id, CancellationToken ct = default)
     {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+        {
+            Response.StatusCode = 401;
+            await Response.WriteAsJsonAsync(new { errorCode = ErrorCodes.AuthenticationFailed, message = "Authenticated user context is required" }, ct);
+            return;
+        }
+
+        var sessionResult = await _chatService.GetSessionAsync(id, userId, ct);
+        if (!sessionResult.IsSuccess)
+        {
+            Response.StatusCode = sessionResult.ErrorCode switch
+            {
+                "NotFound" => 404,
+                "Forbidden" => 403,
+                _ => 500
+            };
+            await Response.WriteAsJsonAsync(new { errorCode = sessionResult.ErrorCode, message = sessionResult.ErrorMessage }, ct);
+            return;
+        }
+
         Response.Headers.Append("Content-Type", "text/event-stream");
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
 
-        await foreach (var tokenEvent in _chatService.StreamResponseAsync(id, ct))
+        await foreach (var tokenEvent in _chatService.StreamResponseAsync(id, userId, ct))
         {
             var eventType = tokenEvent.IsComplete ? "message.complete" : "message.delta";
             await Response.WriteAsync($"event: {eventType}\ndata: {System.Text.Json.JsonSerializer.Serialize(tokenEvent)}\n\n", ct);
