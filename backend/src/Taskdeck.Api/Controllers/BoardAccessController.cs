@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 
@@ -19,18 +20,7 @@ public class BoardAccessController : ControllerBase
     public async Task<IActionResult> GetBoardAccess(Guid boardId)
     {
         var result = await _boardAccessService.GetBoardAccessListAsync(boardId);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpPost]
@@ -38,62 +28,20 @@ public class BoardAccessController : ControllerBase
     {
         var dtoWithBoardId = dto with { BoardId = boardId };
         var result = await _boardAccessService.GrantAccessAsync(dtoWithBoardId, grantedBy);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpPut("{accessId}")]
     public async Task<IActionResult> UpdateAccess(Guid boardId, Guid accessId, [FromBody] UpdateAccessDto dto, [FromQuery] Guid updatedBy)
     {
         var result = await _boardAccessService.UpdateAccessAsync(boardId, accessId, dto, updatedBy);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpDelete("{accessId}")]
     public async Task<IActionResult> RevokeAccess(Guid boardId, Guid accessId, [FromQuery] Guid revokedBy)
     {
         var result = await _boardAccessService.RevokeAccessAsync(boardId, accessId, revokedBy);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return NoContent();
+        return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 }

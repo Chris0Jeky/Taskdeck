@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Enums;
@@ -20,36 +21,14 @@ public class LlmQueueController : ControllerBase
     public async Task<IActionResult> AddToQueue([FromBody] CreateLlmRequestDto dto)
     {
         var result = await _llmQueueService.AddToQueueAsync(dto);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetUserQueue(Guid userId)
     {
         var result = await _llmQueueService.GetUserQueueAsync(userId);
-        if (result.IsSuccess)
-            return Ok(result.Value);
-
-        return result.ErrorCode switch
-        {
-            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            _ => Problem(result.ErrorMessage, statusCode: 500)
-        };
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("status/{status}")]
@@ -59,71 +38,27 @@ public class LlmQueueController : ControllerBase
             return BadRequest(new { errorCode = "ValidationError", message = $"Invalid status value: {status}" });
 
         var result = await _llmQueueService.GetQueueByStatusAsync(parsedStatus);
-        if (result.IsSuccess)
-            return Ok(result.Value);
-
-        return result.ErrorCode switch
-        {
-            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            _ => Problem(result.ErrorMessage, statusCode: 500)
-        };
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpPost("{requestId}/cancel")]
     public async Task<IActionResult> CancelRequest(Guid requestId, [FromQuery] Guid userId)
     {
         var result = await _llmQueueService.CancelRequestAsync(requestId, userId);
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return NoContent();
+        return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 
     [HttpPost("process-next")]
     public async Task<IActionResult> ProcessNext()
     {
         var result = await _llmQueueService.ProcessNextRequestAsync();
-
-        if (!result.IsSuccess)
-        {
-            return result.ErrorCode switch
-            {
-                "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "AuthenticationFailed" => Unauthorized(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                "Conflict" => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-                _ => Problem(result.ErrorMessage, statusCode: 500)
-            };
-        }
-
-        return Ok(result.Value);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
     [HttpGet("stats")]
     public async Task<IActionResult> GetQueueStats()
     {
         var result = await _llmQueueService.GetQueueStatsAsync();
-        if (result.IsSuccess)
-            return Ok(result.Value);
-
-        return result.ErrorCode switch
-        {
-            "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
-            _ => Problem(result.ErrorMessage, statusCode: 500)
-        };
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }
