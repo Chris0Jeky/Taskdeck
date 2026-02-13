@@ -16,6 +16,19 @@ interface BoardDto {
   id: string
 }
 
+interface ChatMessageDto {
+  proposalId: string | null
+}
+
+interface ChatSessionDto {
+  recentMessages: ChatMessageDto[]
+}
+
+interface ProposalDto {
+  id: string
+  summary: string
+}
+
 const API_BASE_URL = 'http://localhost:5000/api'
 
 async function bootstrapAuthenticatedSession(page: Page, request: APIRequestContext): Promise<AuthResult> {
@@ -72,6 +85,29 @@ async function createBoardWithColumn(request: APIRequestContext, token: string, 
   return board.id
 }
 
+async function waitForProposalInSession(
+  request: APIRequestContext,
+  token: string,
+  sessionId: string,
+): Promise<string> {
+  for (let i = 0; i < 30; i += 1) {
+    const response = await request.get(`${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(response.ok()).toBeTruthy()
+
+    const session = await response.json() as ChatSessionDto
+    const proposalId = session.recentMessages.find((m) => !!m.proposalId)?.proposalId
+    if (proposalId) {
+      return proposalId
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+
+  throw new Error('Timed out waiting for proposal reference in chat session')
+}
+
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
@@ -114,16 +150,28 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
   await page.getByPlaceholder('Board ID (optional)').fill(boardId)
   await page.getByRole('button', { name: 'Create Session' }).click()
 
+  const sessionMetaText = await page.locator('.td-chat-meta').first().innerText()
+  const sessionId = sessionMetaText.replace('Session ', '').trim()
+
   await page.getByPlaceholder('Describe an automation instruction...').fill(`create card "${uniqueCardTitle}"`)
-  await page.getByLabel('Request proposal generation').check()
+  const requestProposalCheckbox = page.getByRole('checkbox', { name: 'Request proposal generation' })
+  await requestProposalCheckbox.check()
+  await expect(requestProposalCheckbox).toBeChecked()
   await page.getByRole('button', { name: 'Send Message' }).click()
 
-  await expect(page.locator('.td-message-proposal').last()).toContainText('Proposal:')
+  const proposalId = await waitForProposalInSession(request, auth.token, sessionId)
+  await expect(page.locator('.td-message-proposal').filter({ hasText: proposalId }).first()).toBeVisible()
+
+  const proposalResponse = await request.get(`${API_BASE_URL}/automation/proposals/${encodeURIComponent(proposalId)}`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+  })
+  expect(proposalResponse.ok()).toBeTruthy()
+  const proposal = await proposalResponse.json() as ProposalDto
 
   await page.goto('/workspace/automations/proposals')
   await expect(page.getByRole('heading', { name: 'Automations' })).toBeVisible()
 
-  const proposalCard = page.locator('.td-proposal-card').filter({ hasText: uniqueCardTitle }).first()
+  const proposalCard = page.locator('.td-proposal-card').filter({ hasText: proposal.summary }).first()
   await expect(proposalCard).toBeVisible()
 
   await proposalCard.getByRole('button', { name: 'Approve' }).click()
