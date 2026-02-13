@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
@@ -34,6 +35,10 @@ builder.Services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
 builder.Services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
 builder.Services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
 builder.Services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
+builder.Services.AddScoped<IOpsCliService, OpsCliService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<ILogQueryService, LogQueryService>();
+builder.Services.AddScoped<ILlmProvider, MockLlmProvider>();
 
 // Add IUserContext for claim-based identity
 builder.Services.AddHttpContextAccessor();
@@ -47,6 +52,13 @@ builder.Services.AddSingleton(jwtSettings);
 var sandboxSettings = builder.Configuration.GetSection("DevelopmentSandbox").Get<DevelopmentSandboxSettings>() ?? new DevelopmentSandboxSettings();
 sandboxSettings.Enabled = sandboxSettings.Enabled && builder.Environment.IsDevelopment();
 builder.Services.AddSingleton(sandboxSettings);
+
+// Worker settings and runtime services
+var workerSettings = builder.Configuration.GetSection("Workers").Get<WorkerSettings>() ?? new WorkerSettings();
+builder.Services.AddSingleton(workerSettings);
+builder.Services.AddSingleton<WorkerHeartbeatRegistry>();
+builder.Services.AddHostedService<LlmQueueToProposalWorker>();
+builder.Services.AddHostedService<ProposalHousekeepingWorker>();
 
 // Add JWT Authentication
 if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
