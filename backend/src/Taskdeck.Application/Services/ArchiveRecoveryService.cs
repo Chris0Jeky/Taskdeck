@@ -66,6 +66,24 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
     {
         try
         {
+            if (limit <= 0 || limit > 1000)
+            {
+                return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                    ErrorCodes.ValidationError,
+                    "Limit must be between 1 and 1000");
+            }
+
+            if (!string.IsNullOrWhiteSpace(entityType))
+            {
+                entityType = entityType.Trim().ToLowerInvariant();
+                if (entityType != "board" && entityType != "column" && entityType != "card")
+                {
+                    return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                        ErrorCodes.ValidationError,
+                        "EntityType must be 'board', 'column', or 'card'");
+                }
+            }
+
             IEnumerable<ArchiveItem> items;
 
             if (entityType != null && boardId != null && status != null)
@@ -131,6 +149,27 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
         return Result.Success(MapToDto(archiveItem));
     }
 
+    public async Task<Result<ArchiveItemDto>> GetArchiveItemByEntityAsync(
+        string entityType,
+        Guid entityId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(entityType))
+            return Result.Failure<ArchiveItemDto>(ErrorCodes.ValidationError, "EntityType cannot be empty");
+        if (entityId == Guid.Empty)
+            return Result.Failure<ArchiveItemDto>(ErrorCodes.ValidationError, "EntityId cannot be empty");
+
+        var normalizedType = entityType.Trim().ToLowerInvariant();
+        if (normalizedType != "board" && normalizedType != "column" && normalizedType != "card")
+            return Result.Failure<ArchiveItemDto>(ErrorCodes.ValidationError, "EntityType must be 'board', 'column', or 'card'");
+
+        var archiveItem = await _unitOfWork.ArchiveItems.GetByEntityAsync(normalizedType, entityId, cancellationToken);
+        if (archiveItem == null)
+            return Result.Failure<ArchiveItemDto>(ErrorCodes.NotFound, $"Archive item for {normalizedType} with entity ID {entityId} not found");
+
+        return Result.Success(MapToDto(archiveItem));
+    }
+
     public async Task<Result<RestoreResult>> RestoreArchiveItemAsync(
         Guid id,
         RestoreArchiveItemDto dto,
@@ -156,7 +195,14 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
             if (_authorizationService != null)
             {
                 var canWriteResult = await _authorizationService.CanWriteBoardAsync(restoredByUserId, targetBoardId);
-                if (canWriteResult.IsSuccess && !canWriteResult.Value)
+                if (!canWriteResult.IsSuccess)
+                {
+                    return Result.Failure<RestoreResult>(
+                        canWriteResult.ErrorCode,
+                        canWriteResult.ErrorMessage);
+                }
+
+                if (!canWriteResult.Value)
                 {
                     return Result.Failure<RestoreResult>(
                         ErrorCodes.Forbidden, 
@@ -164,17 +210,7 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                 }
             }
 
-            // 4. Validate target board exists
-            var targetBoard = await _unitOfWork.Boards.GetByIdAsync(targetBoardId, cancellationToken);
-            if (targetBoard == null)
-                return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Target board with ID {targetBoardId} not found");
-
-            if (targetBoard.IsArchived)
-                return Result.Failure<RestoreResult>(
-                    ErrorCodes.InvalidOperation, 
-                    "Cannot restore to an archived board");
-
-            // 5. Validate and restore based on entity type
+            // 4. Validate and restore based on entity type
             Result<RestoreResult> restoreResult;
             switch (archiveItem.EntityType)
             {
@@ -182,11 +218,27 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                     restoreResult = await RestoreBoardAsync(archiveItem, dto, restoredByUserId, cancellationToken);
                     break;
                 case "column":
+                {
+                    var targetBoard = await _unitOfWork.Boards.GetByIdAsync(targetBoardId, cancellationToken);
+                    if (targetBoard == null)
+                        return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Target board with ID {targetBoardId} not found");
+                    if (targetBoard.IsArchived)
+                        return Result.Failure<RestoreResult>(ErrorCodes.InvalidOperation, "Cannot restore to an archived board");
+
                     restoreResult = await RestoreColumnAsync(archiveItem, targetBoardId, dto, restoredByUserId, cancellationToken);
                     break;
+                }
                 case "card":
+                {
+                    var targetBoard = await _unitOfWork.Boards.GetByIdAsync(targetBoardId, cancellationToken);
+                    if (targetBoard == null)
+                        return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Target board with ID {targetBoardId} not found");
+                    if (targetBoard.IsArchived)
+                        return Result.Failure<RestoreResult>(ErrorCodes.InvalidOperation, "Cannot restore to an archived board");
+
                     restoreResult = await RestoreCardAsync(archiveItem, targetBoardId, dto, restoredByUserId, cancellationToken);
                     break;
+                }
                 default:
                     return Result.Failure<RestoreResult>(
                         ErrorCodes.ValidationError, 
