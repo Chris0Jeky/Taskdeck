@@ -1,4 +1,4 @@
-﻿# Taskdeck Implementation Masterplan
+# Taskdeck Implementation Masterplan
 
 Last Updated: 2026-02-13  
 Planning Horizon: Next 8 to 12 weeks  
@@ -13,22 +13,25 @@ Update this file at the end of each meaningful delivery cycle.
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
-- Security and identity convergence is the current highest-priority engineering track.
+- Security and identity convergence remains the highest-priority engineering track.
 - Automation remains proposal-first and review-first by default.
-- UX investments should improve operability in a modular way (keyboard-first, discoverable inputs, lower manual ID friction).
+- UX investments should be modular and reusable (keyboard-first, discoverable selectors, shared input-assist patterns).
 
 ## Current Cycle Outcome (Completed)
 
 Delivered in the latest cycle:
 1. Backend advanced slices completed: automation proposals/executor, archive recovery, chat, ops/logs, workers/health.
 2. Frontend advanced views integrated: automations/chat/ops/archive and supporting APIs/types.
-3. Test surface expanded and verified:
-   - Backend: 439 passing
-   - Frontend unit: 238 passing
+3. Maintainability refactor delivered (PR #23):
+   - backend shared error contracts/mapping and authenticated-user controller base
+   - frontend shared query-string and error-message utilities
+4. Test surface expanded and verified:
+   - Backend: 459 passing
+   - Frontend unit: 245 passing
    - E2E: 11 passing
-4. Documentation consolidation completed:
-   - active docs reduced to operational set
-   - non-authoritative packs archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
+5. Documentation consolidation retained:
+   - active docs remain focused at `docs/` root
+   - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
 
 ## Roadmap by Horizon
 
@@ -37,11 +40,13 @@ Delivered in the latest cycle:
 Focus:
 - enforce `[Authorize]` and claim-derived identity on legacy controller families
 - remove query/body actor identity where claims should be source of truth
+- align all controller failure responses with shared error contract patterns
 - add integration coverage for unauthorized/forbidden/cross-user paths
 
 Exit Criteria:
 - no production endpoint depends on caller-supplied actor IDs for identity
 - core + advanced controllers have consistent auth behavior
+- security failures expose stable, documented response shapes
 
 ### Horizon B (Week 3 to 6): Automation Hardening and Provider Strategy
 
@@ -53,46 +58,48 @@ Focus:
 
 Exit Criteria:
 - provider strategy supports safe mock/prod switching
-- planner/executor coverage materially expanded with clear safety constraints
-- audit trail quality improves for automation-originated mutations
+- planner/executor coverage materially expanded with explicit safety constraints
+- archive + automation workflows are behaviorally consistent in UI/API
 
 ### Horizon C (Week 7 to 12): UX and Operability Hardening
 
 Focus:
 - command palette keyboard-first item navigation and activation
-- activity view discoverability (pickers/autocomplete instead of manual ID-only flow)
-- ops/automation input ergonomics via contextual option generation/autocomplete
+- activity view discoverability via selectors/autocomplete instead of raw ID-only flow
+- ops/automation input ergonomics via modular autocomplete/option generation
 - drag/edit interaction conflict hardening and escape-driven navigation ergonomics
-- modular refactoring pass across high-churn frontend/backend areas to reduce duplication
+- sticky/always-reachable shortcuts/help affordance in workspace shell
 
 Exit Criteria:
 - key operations can be completed keyboard-first in shell-level and ops flows
 - ID-heavy workflows are replaced or assisted by discoverable selectors
-- interaction regressions from drag/edit/escape overlap are resolved and test-backed
-- refactor pass lands with no regression in current test baseline
+- drag/edit and escape interaction regressions are resolved and test-backed
+- shared input-assist and navigation patterns are reusable across feature modules
 
 ## Active Backlog (Prioritized)
 
 1. P0: Claims-first identity retrofit across boards/columns/cards/labels/export/audit/queue/board-access/users.
 2. P0: Auth regression integration suite expansion for legacy + advanced controllers.
-3. P1: Real LLM provider abstraction and environment-safe provider selection.
-4. P1: Planner schema expansion with deterministic validation and stronger tests.
-5. P1: Automation executor hardening (failure semantics, audit attribution, operation coverage).
-6. P1: Archive workflow coherence for board archive/restore behavior.
-7. P1: Command palette keyboard selection and activation model.
-8. P1: Activity entity/user/board selector UX with discoverability support.
-9. P2: Ops/automation form autocomplete and contextual options.
-10. P2: Refactoring/modularization sprint for maintainability and duplication reduction.
-11. P2: Database-level export/import implementation.
-12. P2: Log query scalability improvements and nullable-warning debt reduction.
+3. P0: Archive board lifecycle coherence (archive/unarchive visibility, restore semantics, UX parity).
+4. P1: Interaction-mode guardrails to prevent drag side effects while editing card/task content.
+5. P1: Command palette keyboard selection/activation model.
+6. P1: Activity selector UX for board/entity/user discovery + easy ID reveal/copy affordance.
+7. P1: Ops/automation contextual autocomplete + option scaffolding via shared input-assist module.
+8. P1: Real LLM provider abstraction and environment-safe provider selection.
+9. P1: Planner schema expansion with deterministic validation and stronger tests.
+10. P1: Automation executor hardening (failure semantics, audit attribution, operation coverage).
+11. P2: Refactoring/modularization sprint for maintainability and duplication reduction.
+12. P2: Database-level export/import implementation.
+13. P2: Log query scalability improvements and nullable-warning debt reduction.
+14. P2: Deeper E2E expansion for keyboard flows, archive edge paths, and automation/ops error paths.
 
 ## Next Best Steps (Immediate)
 
-1. Ship auth/claims retrofit for core board controllers first.
-2. Add matching API integration tests for unauthorized/forbidden matrix.
-3. Define UX RFC for command palette keyboard model + activity selectors.
-4. Implement board archive/restore coherence fix path and add regression checks.
-5. Start modular refactor inventory (frontend shell + automation/ops services + shared validation).
+1. Complete claims-first retrofit for core board controllers and align response contracts.
+2. Add unauthorized/forbidden matrix tests for both legacy and advanced routes.
+3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
+4. Define and implement archive board lifecycle behavior contract (API + UI).
+5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.
 
 ## Documentation Operating Model
 
@@ -126,6 +133,6 @@ Rule:
 - Risk: automation parser/executor changes introduce unsafe operations
   - Mitigation: strict schema validation + proposal-first enforcement
 - Risk: UX changes increase complexity without cohesion
-  - Mitigation: RFC-first design and shared component/pattern reuse
+  - Mitigation: shared modular patterns (selectors/input-assist/navigation) + RFC-first implementation
 - Risk: docs drift returns after consolidation
   - Mitigation: strict update requirements on behavior-changing PRs
