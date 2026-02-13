@@ -1,4 +1,4 @@
-# Taskdeck Status (Source of Truth)
+﻿# Taskdeck Status (Source of Truth)
 
 Last Updated: 2026-02-13  
 Status Owner: Repository maintainers  
@@ -7,13 +7,12 @@ Authoritative Scope: Current implementation, verified test execution, and active
 ## Project Summary
 
 Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 frontend.
-The core board workflow is stable (boards/columns/cards/labels, filters, keyboard flow, drag/drop), and the automation stack landed as working slices: archive recovery, automation proposals/execution, chat sessions, ops templates/logs, worker heartbeats, and readiness checks.
+Core board workflows are stable, and advanced slices are implemented for automation proposals, chat, ops/log querying, archive recovery, and worker health reporting.
 
-The current constraint is consistency and hardening, not feature absence:
-- authorization is only partially enforced across controllers
-- identity is still query/body-driven on several legacy endpoints
-- LLM integration is mock-backed and planner parsing is rule-based
-- docs have grown quickly and need tighter governance
+Current constraints are mostly hardening and consistency:
+- security/identity behavior is not yet uniform across all controller families
+- some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
+- LLM flow is still mock-provider based
 
 ## Current Implementation Snapshot
 
@@ -21,41 +20,38 @@ The current constraint is consistency and hardening, not feature absence:
 
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core + SQLite
-- API controllers include:
-  - Core: boards, columns, cards, labels
-  - Access and identity: auth, users, board access
-  - History/export/queue: audit, export/import, LLM queue
-  - Automation/ops: automation proposals, archive, chat, ops CLI, logs, health
+- Core controllers: boards, columns, cards, labels
+- Extended controllers: auth, users, board-access, audit, export/import, llm-queue, automation proposals, archive, chat, ops-cli, logs, health
 - Worker runtime:
-  - `LlmQueueToProposalWorker` (queue polling -> planner/proposal flow, retries, heartbeat)
-  - `ProposalHousekeepingWorker` (proposal expiry maintenance, heartbeat)
-  - `WorkerHeartbeatRegistry` surfaced through `/health/ready`
-- Automation services delivered:
+  - `LlmQueueToProposalWorker`
+  - `ProposalHousekeepingWorker`
+  - `WorkerHeartbeatRegistry` (used by `/health/ready`)
+- Implemented automation stack:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
   - `ChatService` + `MockLlmProvider`
   - `OpsCliService` + `LogQueryService`
-- Auth wiring:
-  - JWT authentication middleware is enabled when valid settings are present
-  - `[Authorize]` is currently applied to `ChatController`, `AutomationProposalsController`, `ArchiveController`, `OpsCliController`, and `LogsController`
+- Auth posture today:
+  - JWT middleware is wired
+  - `[Authorize]` currently enforced on chat, automation-proposals, archive, ops-cli, and logs controllers
 
 ### Frontend
 
 - Stack: Vue 3 + TypeScript + Pinia + Vue Router + Vite
-- Shell and routing:
-  - workspace boards
-  - activity views
+- Workspace routes include:
+  - boards
+  - activity
   - automations (queue/proposals/chat)
   - ops (cli/endpoints/logs)
   - settings (profile/access/export-import)
   - archive
-- API modules are in place for all currently shipped surfaces, including `automationApi`, `archiveApi`, `chatApi`, and `opsApi`
-- Feature flags and request correlation (`X-Request-Id`) are integrated
-- Current UX behavior:
-  - automation proposals can be listed, diffed, approved/rejected/executed
-  - chat sessions can produce proposal references
-  - ops console runs templates and reads logs
-  - archive view can list/restore archived entities
+- Feature slices integrated end to end:
+  - proposal review/approve/reject/execute and diff viewing
+  - chat session flow with proposal handoff
+  - ops template execution and log querying
+  - archive listing and restore operations
+- Cross-cutting UI infrastructure:
+  - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
 
 ## Phase Progress (Reconciled)
 
@@ -67,25 +63,22 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
 4. Phase 4 - Advanced Features: IN PROGRESS (90%)
 
 Completed in Phase 4:
-- CLI expansion and JSON contract baseline
-- CI matrix and gate split (backend unit, API integration, frontend unit, E2E smoke)
-- authn/authz infrastructure and board access model
-- export/import board JSON flow (with compatibility import)
-- audit and queue services/endpoints
-- automation proposal lifecycle + diff preview + execution path
+- CI gate split and matrix hardening
+- authn/authz infrastructure baseline
+- export/import board JSON flow
+- audit and queue service/API slices
+- automation proposal lifecycle + diff + execute flow
 - archive recovery flow
-- chat sessions/messages/stream endpoints with proposal handoff
-- ops templates/runs/log querying endpoints
-- background workers + heartbeat-aware readiness endpoint
-- frontend automation/chat/ops/archive views and supporting API/state wiring
+- chat + ops + logs + worker/health stack
+- frontend integration for automations/chat/ops/archive
 
 Remaining for Phase 4 completion:
-- enforce auth and claims-based identity consistently across legacy controllers
-- remove query/body `userId` acting-user patterns from endpoints that should use claims
-- replace mock LLM path for production use (or formally gate it by environment/feature flag)
-- expand planner/executor operation coverage and safety guarantees
-- implement database-level export/import (currently returns not-implemented failures)
-- finish documentation cleanup and drift controls
+- security and claim-based identity convergence across legacy controllers
+- removal of query/body actor identity patterns where claims should be authoritative
+- production-capable LLM provider path (or strict feature-gated mock-only policy)
+- broader planner/executor coverage and safety semantics
+- database-level export/import implementation
+- UX and operator hardening for keyboard/accessibility/discoverability gaps
 
 ## Test Status (Executed)
 
@@ -103,10 +96,6 @@ Result:
 - CLI contract: 4/4 passing
 - Backend Total: 439/439 passing
 
-Notes:
-- A `Debug` solution run initially failed due file locks from a running `Taskdeck.Api` process.
-- Re-run in `Release` completed cleanly.
-
 ### Frontend Unit + Build (Executed)
 
 Commands:
@@ -119,13 +108,13 @@ Result:
 - Typecheck: passing
 - Production build: passing
 
-### Frontend E2E Smoke (Executed)
+### Frontend E2E (Executed)
 
 Command:
-- `cd frontend/taskdeck-web && $env:TASKDECK_E2E_DB='taskdeck.e2e.local2.db'; npx playwright test --reporter=line`
+- `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local2.db npx playwright test --reporter=line`
 
 Result:
-- E2E smoke + automation ops flow: 11/11 passing
+- E2E smoke + automation/ops flow: 11/11 passing
 
 ### Total
 
@@ -133,67 +122,51 @@ Result:
 
 ## CI Status
 
-- Workflow: `.github/workflows/ci.yml`
-- Gates:
-  - `backend-unit` (Domain + Application + CLI) on Ubuntu/Windows
-  - `api-integration` on Ubuntu/Windows
-  - `frontend-unit` on Ubuntu/Windows
-  - `e2e-smoke` on Ubuntu (depends on all previous gates)
+Workflow: `.github/workflows/ci.yml`
 
-## Strategic Direction (Automation)
-
-Target remains proposal-first automation that is safe-by-default:
-- users issue instructions through chat or other tooling
-- system produces typed proposals and diff previews
-- user approves/rejects before execution
-- every operation is auditable and recoverable
-
-Current state:
-- end-to-end skeleton is functional (chat -> proposal -> execute)
-- execution safety exists but is still bounded by mock LLM + limited parser coverage
+- `backend-unit` (Ubuntu/Windows)
+- `api-integration` (Ubuntu/Windows)
+- `frontend-unit` (Ubuntu/Windows)
+- `e2e-smoke` (Ubuntu, depends on prior jobs)
 
 ## Known Gaps and Risks
 
-- Auth coverage is partial:
-  - legacy controllers (boards/columns/cards/labels/export/audit/queue/board-access/users) are not uniformly claim-enforced yet
-- Identity handling is mixed:
-  - several endpoints still accept actor/user IDs in query/body instead of deriving from claims
-- LLM path is non-production:
-  - `MockLlmProvider` is the active provider
-  - planner parsing is regex/rule-based and supports a narrow instruction set
-- Export/import scope gap:
-  - `ExportDatabaseAsync` and `ImportDatabaseAsync` intentionally return not-implemented failures
-- Audit consistency gap:
-  - automation/archive flows emit audit entries, but legacy board/card/column/label mutations are not fully integrated into a single automatic audit pipeline
-- Scalability risk in logs:
-  - `LogQueryService` composes entries with broad in-memory reads and per-run expansion
-- Build-quality signal gap:
-  - nullable warnings (`CS8618`) are present in several newly introduced entities and should be resolved deliberately
-- Documentation drift risk:
-  - backend/frontend deep-dive packs are useful references but not continuously reconciled unless explicitly maintained
+Security and identity:
+- legacy controller families are not yet fully aligned with claims-first identity handling
+- mixed identity model (claims + query/body actor IDs) increases misuse risk
+
+Automation and data:
+- active LLM provider is mock-backed
+- planner extraction remains rule/regex-based and intentionally narrow
+- database-level export/import remains unimplemented
+
+Observability and scalability:
+- `LogQueryService` currently performs broad in-memory composition paths
+- nullable warnings (`CS8618`) remain in newly added domain entities
+
+UX and operability (reconciled from product notes):
+- archive UX consistency for board archive/recovery is not fully cohesive
+- command palette lacks full keyboard item selection/activation flow
+- activity exploration relies on direct IDs (limited discoverability)
+- ops/automation forms need stronger autocomplete/option scaffolding
+- drag/edit interaction edge cases and escape-driven workspace exit ergonomics need hardening
 
 ## Recently Resolved (This Cycle)
 
-- Delivered automation proposal APIs and execution path with idempotency header support.
-- Delivered archive listing and restore APIs with validation and permission checks.
-- Delivered chat session/message/stream APIs and proposal handoff support.
-- Delivered ops CLI and logs APIs with user scoping checks on run retrieval.
-- Added queue-to-proposal and proposal-housekeeping workers plus heartbeat-aware readiness reporting.
-- Expanded automated coverage significantly across backend services/controllers and frontend automation/ops APIs plus E2E automation flows.
+- Archived non-authoritative feature/spec packs from active docs root into a dated archive bundle.
+- Consolidated active docs to a smaller maintained set.
+- Updated manual and automated testing documentation to current route surface and totals.
 
 ## Canonical Documentation Policy
 
-- `docs/STATUS.md` is the single source of truth for shipped behavior and verified test totals.
-- `docs/IMPLEMENTATION_MASTERPLAN.md` is the single source of truth for active sequencing/priorities.
-- `docs/MANUAL_TEST_CHECKLIST.md` remains canonical for manual validation steps.
-- `docs/backend/*` and `docs/frontend/*` are reference specs/playbooks and may lag; they are non-authoritative unless reflected here.
-- Historical or superseded planning artifacts belong in `docs/archive/`.
+Authoritative docs:
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/TESTING_GUIDE.md`
+- `docs/MANUAL_TEST_CHECKLIST.md`
 
-## Documentation Hygiene Rules (Effective Now)
+Historical/spec detail material:
+- `docs/archive/` (latest consolidation bundle: `docs/archive/2026-02-13_phase4-doc-consolidation/`)
 
-- Any PR that changes behavior must update both:
-  - `docs/STATUS.md` (what is true now)
-  - `docs/IMPLEMENTATION_MASTERPLAN.md` (what changes next)
-- Keep exactly two authoritative planning docs (`STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`).
-- If a deep-dive spec is no longer actively maintained, archive it instead of letting it silently drift.
-- Do not add new top-level planning docs unless they have a named owner and explicit review cadence.
+Rule:
+- If archive content conflicts with active docs, active docs win.
