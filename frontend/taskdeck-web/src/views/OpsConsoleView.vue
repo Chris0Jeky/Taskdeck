@@ -152,8 +152,12 @@ async function handleEndpointSend() {
     endpointResponse.value = JSON.stringify(response.data, null, 2)
   } catch (e: unknown) {
     const display = getErrorDisplay(e, 'Endpoint request failed')
-    endpointStatus.value = display.statusCode ?? 500
-    endpointResponse.value = JSON.stringify(display.data ?? { message: display.message }, null, 2)
+    const maybeResponse = (typeof e === 'object' && e !== null)
+      ? (e as { response?: { status?: number; data?: unknown } }).response
+      : undefined
+
+    endpointStatus.value = maybeResponse?.status ?? 500
+    endpointResponse.value = JSON.stringify(maybeResponse?.data ?? { message: display.message }, null, 2)
   } finally {
     endpointSending.value = false
   }
