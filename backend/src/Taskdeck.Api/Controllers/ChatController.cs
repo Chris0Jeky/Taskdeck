@@ -92,6 +92,7 @@ public class ChatController : ControllerBase
             {
                 "ValidationError" => BadRequest(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 "NotFound" => NotFound(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
+                "Forbidden" => StatusCode(403, new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 ErrorCodes.InvalidOperation => Conflict(new { errorCode = result.ErrorCode, message = result.ErrorMessage }),
                 _ => Problem(result.ErrorMessage, statusCode: 500)
             };
