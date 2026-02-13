@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -98,11 +99,9 @@ public class ArchiveController : AuthenticatedControllerBase
         var archiveItem = archiveItemResult.Value;
         if (archiveItem.RestoreStatus != RestoreStatus.Available)
         {
-            return Conflict(new
-            {
-                errorCode = ErrorCodes.InvalidOperation,
-                message = $"Archive item for {normalizedEntityType} with ID {entityId} is in status {archiveItem.RestoreStatus}"
-            });
+            return Conflict(new ApiErrorResponse(
+                ErrorCodes.InvalidOperation,
+                $"Archive item for {normalizedEntityType} with ID {entityId} is in status {archiveItem.RestoreStatus}"));
         }
 
         var result = await _archiveService.RestoreArchiveItemAsync(
@@ -121,22 +120,18 @@ public class ArchiveController : AuthenticatedControllerBase
 
         if (string.IsNullOrWhiteSpace(entityType))
         {
-            errorResult = new BadRequestObjectResult(new
-            {
-                errorCode = ErrorCodes.ValidationError,
-                message = "EntityType is required"
-            });
+            errorResult = new BadRequestObjectResult(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "EntityType is required"));
             return false;
         }
 
         normalizedEntityType = entityType.Trim().ToLowerInvariant();
         if (normalizedEntityType != "board" && normalizedEntityType != "column" && normalizedEntityType != "card")
         {
-            errorResult = new BadRequestObjectResult(new
-            {
-                errorCode = ErrorCodes.ValidationError,
-                message = "EntityType must be 'board', 'column', or 'card'"
-            });
+            errorResult = new BadRequestObjectResult(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "EntityType must be 'board', 'column', or 'card'"));
             return false;
         }
 
