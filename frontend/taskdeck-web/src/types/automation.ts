@@ -39,7 +39,7 @@ export interface Proposal {
   operations: ProposalOperation[]
 }
 
-export interface ProposalFilters extends Record<string, string | number | undefined> {
+export interface ProposalFilters {
   status?: ProposalStatus
   boardId?: string
   userId?: string
