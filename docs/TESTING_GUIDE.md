@@ -1,17 +1,17 @@
-﻿# Testing Guide
+# Testing Guide
 
 This is the active testing guide for Taskdeck.
 
 ## Current Verified Totals (2026-02-13)
 
-- Backend: 439/439 passing
+- Backend: 459/459 passing
   - Domain: 93
   - Application: 256
-  - API integration: 86
+  - API integration: 106
   - CLI contract: 4
-- Frontend unit: 238/238 passing
+- Frontend unit: 245/245 passing
 - Frontend E2E (smoke + automation/ops): 11/11 passing
-- Combined automated total: 688/688 passing
+- Combined automated total: 715/715 passing
 
 ## Backend Commands
 
@@ -86,11 +86,13 @@ Workflow: `.github/workflows/ci.yml`
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
+  - Includes `ResultExtensions` mapping tests for standardized API error/status behavior
 - CLI contracts:
   - `backend/tests/Taskdeck.Cli.Tests`
 - Frontend unit behavior:
   - `frontend/taskdeck-web/src/tests`
   - Components, stores, API modules, composables, utilities
+  - Includes shared utility tests for `queryBuilder` and `errorMessage`
 - End-to-end journeys:
   - `frontend/taskdeck-web/tests/e2e`
 
