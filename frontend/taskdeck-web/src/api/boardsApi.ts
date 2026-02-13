@@ -6,7 +6,7 @@ export const boardsApi = {
   async getBoards(search?: string, includeArchived = false): Promise<Board[]> {
     const params = buildQueryParams({
       search,
-      includeArchived: includeArchived ? 'true' : undefined,
+      includeArchived: includeArchived ? true : undefined,
     })
 
     const { data } = await http.get<Board[]>(`/boards?${params}`)
