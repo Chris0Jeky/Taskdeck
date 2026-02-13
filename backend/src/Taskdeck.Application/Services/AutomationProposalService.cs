@@ -72,41 +72,47 @@ public class AutomationProposalService : IAutomationProposalService
     public async Task<Result<IEnumerable<ProposalDto>>> GetProposalsAsync(ProposalFilterDto? filter = null, CancellationToken cancellationToken = default)
     {
         filter ??= new ProposalFilterDto();
+        var limit = filter.Limit <= 0 ? 100 : filter.Limit;
 
         IEnumerable<AutomationProposal> proposals;
 
         // Apply filters in order of specificity
         if (filter.Status.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByStatusAsync(filter.Status.Value, filter.Limit, cancellationToken);
+            proposals = await _unitOfWork.AutomationProposals.GetByStatusAsync(filter.Status.Value, limit, cancellationToken);
         }
         else if (filter.BoardId.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByBoardIdAsync(filter.BoardId.Value, cancellationToken);
+            proposals = await _unitOfWork.AutomationProposals.GetByBoardIdAsync(filter.BoardId.Value, limit, cancellationToken);
         }
         else if (filter.UserId.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, filter.Limit, cancellationToken);
+            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken);
         }
         else if (filter.RiskLevel.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByRiskLevelAsync(filter.RiskLevel.Value, filter.Limit, cancellationToken);
+            proposals = await _unitOfWork.AutomationProposals.GetByRiskLevelAsync(filter.RiskLevel.Value, limit, cancellationToken);
         }
         else
         {
             // Get all by status Pending if no filters provided
-            proposals = await _unitOfWork.AutomationProposals.GetByStatusAsync(ProposalStatus.PendingReview, filter.Limit, cancellationToken);
+            proposals = await _unitOfWork.AutomationProposals.GetByStatusAsync(ProposalStatus.PendingReview, limit, cancellationToken);
         }
 
-        // Apply additional filters in memory if multiple filters are specified
-        if (filter.Status.HasValue && filter.BoardId.HasValue)
+        // Apply remaining filters in-memory when multiple filters are specified.
+        if (filter.Status.HasValue)
+            proposals = proposals.Where(p => p.Status == filter.Status.Value);
+
+        if (filter.BoardId.HasValue)
             proposals = proposals.Where(p => p.BoardId == filter.BoardId.Value);
 
-        if (filter.Status.HasValue && filter.UserId.HasValue)
+        if (filter.UserId.HasValue)
             proposals = proposals.Where(p => p.RequestedByUserId == filter.UserId.Value);
 
-        if (filter.Status.HasValue && filter.RiskLevel.HasValue)
+        if (filter.RiskLevel.HasValue)
             proposals = proposals.Where(p => p.RiskLevel == filter.RiskLevel.Value);
+
+        proposals = proposals.Take(limit);
 
         return Result.Success(proposals.Select(MapToDto));
     }
