@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Exceptions;
 
@@ -24,21 +25,17 @@ public abstract class AuthenticatedControllerBase : ControllerBase
 
         if (!UserContext.IsAuthenticated || string.IsNullOrWhiteSpace(UserContext.UserId))
         {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user context is required"
-            });
+            errorResult = Unauthorized(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                "Authenticated user context is required"));
             return false;
         }
 
         if (!Guid.TryParse(UserContext.UserId, out userId))
         {
-            errorResult = Unauthorized(new
-            {
-                errorCode = ErrorCodes.AuthenticationFailed,
-                message = "Authenticated user id claim is invalid"
-            });
+            errorResult = Unauthorized(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                "Authenticated user id claim is invalid"));
             return false;
         }
 
