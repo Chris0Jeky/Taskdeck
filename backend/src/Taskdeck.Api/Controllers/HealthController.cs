@@ -94,12 +94,16 @@ public class HealthController : ControllerBase
         {
             var queueWorkerLastHeartbeat = _workerHeartbeatRegistry.GetLastHeartbeat(nameof(LlmQueueToProposalWorker));
             var maxQueueWorkerStaleness = TimeSpan.FromSeconds(Math.Max(_workerSettings.QueuePollIntervalSeconds * 3, 30));
-            var queueWorkerHealthy = queueWorkerLastHeartbeat.HasValue &&
-                                     DateTimeOffset.UtcNow - queueWorkerLastHeartbeat.Value <= maxQueueWorkerStaleness;
+            var withinStartupGrace = DateTimeOffset.UtcNow - _workerHeartbeatRegistry.StartupTime <= TimeSpan.FromSeconds(30);
+            var queueWorkerHealthy = (queueWorkerLastHeartbeat.HasValue &&
+                                      DateTimeOffset.UtcNow - queueWorkerLastHeartbeat.Value <= maxQueueWorkerStaleness)
+                                     || (!queueWorkerLastHeartbeat.HasValue && withinStartupGrace);
 
             workerChecks["queueToProposal"] = new
             {
-                status = queueWorkerHealthy ? "Healthy" : "Stale",
+                status = queueWorkerLastHeartbeat.HasValue
+                    ? (queueWorkerHealthy ? "Healthy" : "Stale")
+                    : (withinStartupGrace ? "Starting" : "Stale"),
                 lastHeartbeat = queueWorkerLastHeartbeat
             };
 
@@ -118,11 +122,15 @@ public class HealthController : ControllerBase
         }
 
         var housekeepingLastHeartbeat = _workerHeartbeatRegistry.GetLastHeartbeat(nameof(ProposalHousekeepingWorker));
-        var housekeepingHealthy = housekeepingLastHeartbeat.HasValue &&
-                                  DateTimeOffset.UtcNow - housekeepingLastHeartbeat.Value <= TimeSpan.FromMinutes(3);
+        var housekeepingWithinStartupGrace = DateTimeOffset.UtcNow - _workerHeartbeatRegistry.StartupTime <= TimeSpan.FromSeconds(30);
+        var housekeepingHealthy = (housekeepingLastHeartbeat.HasValue &&
+                                   DateTimeOffset.UtcNow - housekeepingLastHeartbeat.Value <= TimeSpan.FromMinutes(3))
+                                  || (!housekeepingLastHeartbeat.HasValue && housekeepingWithinStartupGrace);
         workerChecks["proposalHousekeeping"] = new
         {
-            status = housekeepingHealthy ? "Healthy" : "Stale",
+            status = housekeepingLastHeartbeat.HasValue
+                ? (housekeepingHealthy ? "Healthy" : "Stale")
+                : (housekeepingWithinStartupGrace ? "Starting" : "Stale"),
             lastHeartbeat = housekeepingLastHeartbeat
         };
         if (!housekeepingHealthy)
