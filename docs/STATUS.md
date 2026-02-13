@@ -13,6 +13,7 @@ Current constraints are mostly hardening and consistency:
 - security and identity behavior is not yet uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first, discoverability-first, or interaction-conflict-safe
 - LLM flow is still mock-provider based
+- MVP dogfooding flow is incomplete: paste execution checklist in chat -> generate actionable board/project setup
 
 ## Current Implementation Snapshot
 
@@ -85,6 +86,7 @@ Remaining for Phase 4 completion:
 - removal of query/body actor identity patterns where claims should be authoritative
 - production-capable LLM provider path (or strict feature-gated mock-only policy)
 - broader planner/executor coverage and safety semantics
+- MVP chat-to-project bootstrap: paste checklist/plan text and generate a ready-to-use board via proposal-first flow
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability/interaction-conflict gaps
 
