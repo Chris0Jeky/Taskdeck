@@ -42,7 +42,7 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
 
         var actionableResponse = await _client.PostAsJsonAsync(
             $"/api/llm/chat/sessions/{session.Id}/messages",
-            new SendChatMessageDto("create card \"Backend task\"", requestProposal: true));
+            new SendChatMessageDto("create card \"Backend task\"", RequestProposal: true));
 
         actionableResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var actionableAssistant = await actionableResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
