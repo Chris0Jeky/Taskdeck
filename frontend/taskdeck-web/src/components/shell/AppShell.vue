@@ -31,6 +31,12 @@ const navItems = computed(() => {
 })
 
 function isActiveRoute(path: string): boolean {
+  if (path === '/workspace/automations/queue') {
+    return route.path.startsWith('/workspace/automations')
+  }
+  if (path === '/workspace/ops/cli') {
+    return route.path.startsWith('/workspace/ops')
+  }
   return route.path.startsWith(path)
 }
 

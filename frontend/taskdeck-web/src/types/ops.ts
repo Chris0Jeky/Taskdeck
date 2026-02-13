@@ -1,55 +1,69 @@
-export type LogLevel = 'info' | 'warning' | 'error'
-export type LogSource = 'frontend' | 'api' | 'cli-bridge' | 'queue' | 'automation'
-export type CommandRunStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type CommandRunStatus = 'Queued' | 'Running' | 'Completed' | 'Failed' | 'TimedOut' | 'Cancelled'
+export type CommandRunStatusValue = CommandRunStatus | number
+
+export interface RunCommandRequest {
+  templateName: string
+  parameters?: Record<string, string>
+}
 
 export interface CommandRun {
-  runId: string
-  commandKey: string
-  args: string[]
-  requestedBy: string
-  startedAt: string
-  endedAt: string | null
-  status: CommandRunStatus
-  stdout: string | null
-  stderr: string | null
+  id: string
+  templateName: string
+  requestedByUserId: string
+  status: CommandRunStatusValue
+  startedAt: string | null
+  completedAt: string | null
   exitCode: number | null
+  truncated: boolean
   correlationId: string
+  errorMessage: string | null
+  outputPreview: string | null
+  createdAt: string
+}
+
+export interface CommandRunLog {
+  id: string
+  commandRunId: string
+  timestamp: string
+  level: string
+  source: string
+  message: string
+  metadata: string | null
+}
+
+export interface CommandRunDetail extends CommandRun {
+  logs: CommandRunLog[]
 }
 
 export interface CommandTemplate {
-  key: string
-  label: string
-  domain: string
-  description: string
-  parameters: CommandParameter[]
-}
-
-export interface CommandParameter {
   name: string
-  type: 'string' | 'number' | 'boolean'
-  required: boolean
   description: string
+  riskClass: string
+  timeoutSeconds: number
+  requiredRole: string
+  acceptedParameters: string[]
 }
 
 export interface LogEntry {
   id: string
   timestamp: string
-  level: LogLevel
-  source: LogSource
-  correlationId: string | null
-  actorId: string | null
-  entityType: string | null
-  entityId: string | null
+  level: string
+  source: string
+  eventName: string
   message: string
-  payload: Record<string, unknown> | null
+  correlationId: string | null
+  userId: string | null
+  boardId: string | null
+  metadata: string | null
 }
 
 export interface LogQuery {
-  level?: LogLevel
-  source?: LogSource
+  level?: string
+  source?: string
+  userId?: string
+  boardId?: string
   correlationId?: string
-  startTime?: string
-  endTime?: string
+  from?: string
+  to?: string
   limit?: number
-  offset?: number
 }

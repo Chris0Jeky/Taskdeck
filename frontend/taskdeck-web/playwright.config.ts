@@ -6,11 +6,12 @@ export default defineConfig({
   testDir: './tests/e2e',
   forbidOnly: !!process.env.CI,
   fullyParallel: false,
-  maxFailures: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : undefined,
+  maxFailures: process.env.CI ? 3 : undefined,
   globalTimeout: process.env.CI ? 12 * 60_000 : undefined,
-  timeout: 60_000,
+  timeout: 45_000,
   expect: {
-    timeout: 10_000,
+    timeout: 8_000,
   },
   retries: process.env.CI ? 0 : 0,
   reporter: process.env.CI ? [['line'], ['github'], ['html', { open: 'never' }]] : 'list',
@@ -24,6 +25,8 @@ export default defineConfig({
       url: 'http://localhost:5000/api/boards',
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         ASPNETCORE_ENVIRONMENT: 'Development',
         ConnectionStrings__DefaultConnection: `Data Source=${e2eDbPath}`,
@@ -34,6 +37,8 @@ export default defineConfig({
       url: 'http://localhost:5173',
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         VITE_API_BASE_URL: 'http://localhost:5000/api',
       },
