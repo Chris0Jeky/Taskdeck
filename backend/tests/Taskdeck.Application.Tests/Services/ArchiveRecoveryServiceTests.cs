@@ -373,6 +373,30 @@ public class ArchiveRecoveryServiceTests
     }
 
     [Fact]
+    public async Task RestoreArchiveItemAsync_ShouldReturnFailure_WhenAuthorizationCheckFails()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var snapshotJson = JsonSerializer.Serialize(new { Name = "Test", Description = (string?)null });
+        var item = CreateArchiveItem("board", Guid.NewGuid(), boardId, "Test", userId, RestoreStatus.Available, snapshotJson);
+        var dto = new RestoreArchiveItemDto(null, RestoreMode.InPlace, ConflictStrategy.Fail);
+
+        _archiveItemRepoMock.Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock.Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.NotFound, "Board missing"));
+
+        // Act
+        var result = await _service.RestoreArchiveItemAsync(item.Id, dto, userId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.ErrorMessage.Should().Contain("missing");
+    }
+
+    [Fact]
     public async Task RestoreArchiveItemAsync_ShouldReturnNotFound_WhenTargetBoardDoesNotExist()
     {
         // Arrange
