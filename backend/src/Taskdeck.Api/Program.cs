@@ -30,8 +30,8 @@ builder.Services.AddScoped<LlmQueueService>();
 builder.Services.AddScoped<HistoryService>();
 builder.Services.AddScoped<IAutomationProposalService, AutomationProposalService>();
 builder.Services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
-builder.Services.AddScoped<AutomationPlannerService>();
-builder.Services.AddScoped<AutomationExecutorService>();
+builder.Services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
+builder.Services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
 builder.Services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
 
 // Add IUserContext for claim-based identity
