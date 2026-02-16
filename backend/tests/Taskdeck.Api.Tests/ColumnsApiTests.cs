@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
 
@@ -10,6 +11,7 @@ namespace Taskdeck.Api.Tests;
 public class ColumnsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private bool _isAuthenticated;
 
     public ColumnsApiTests(TestWebApplicationFactory factory)
     {
@@ -155,14 +157,8 @@ public class ColumnsApiTests : IClassFixture<TestWebApplicationFactory>
 
     private async Task<BoardDto> CreateBoardAsync()
     {
-        var response = await _client.PostAsJsonAsync(
-            "/api/boards",
-            new CreateBoardDto($"Board-{Guid.NewGuid():N}", "Column integration tests"));
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var board = await response.Content.ReadFromJsonAsync<BoardDto>();
-        board.Should().NotBeNull();
-        return board!;
+        await EnsureAuthenticatedAsync();
+        return await ApiTestHarness.CreateBoardAsync(_client, "columns-board", "Column integration tests");
     }
 
     private async Task<ColumnDto> CreateColumnAsync(Guid boardId, string name)
@@ -187,5 +183,16 @@ public class ColumnsApiTests : IClassFixture<TestWebApplicationFactory>
         var card = await response.Content.ReadFromJsonAsync<CardDto>();
         card.Should().NotBeNull();
         return card!;
+    }
+
+    private async Task EnsureAuthenticatedAsync()
+    {
+        if (_isAuthenticated)
+        {
+            return;
+        }
+
+        await ApiTestHarness.AuthenticateAsync(_client, "columns-suite");
+        _isAuthenticated = true;
     }
 }
