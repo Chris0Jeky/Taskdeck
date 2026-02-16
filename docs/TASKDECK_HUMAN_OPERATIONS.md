@@ -42,7 +42,7 @@ Do in GitHub UI:
 Create a Project (or use Issues):
 - Views: `Now`, `Next`, `Blocked`, `Review`, `Done`
 - WIP: cap “Now/In Progress” to 1 major item
-- Labels: `security`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `starter-packs`, `llm`
+- Labels: `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`
 
 ## A3) Secrets: GitHub PAT and environment variables (for GitHub MCP)
 You must create and manage tokens:
