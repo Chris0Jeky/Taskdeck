@@ -82,3 +82,7 @@ Provide:
 - Commands run + results
 - Docs updated (`STATUS` / `MASTERPLAN`)
 - Notable risks or follow-ups (if any)
+
+See docs/FUTURE_HARNESS_BACKLOG.md for deferred harness/MCP upgrades.
+
+See docs/DEVTOOLS_OBSERVABILITY_ADDON.md for Playwright vs DevTools vs logs decision rules.
