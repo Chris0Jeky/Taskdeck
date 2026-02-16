@@ -82,6 +82,34 @@ public class OpsCliApiTests : IClassFixture<TestWebApplicationFactory>
         error.GetProperty("errorCode").GetString().Should().Be("ValidationError");
     }
 
+    [Fact]
+    public async Task RunCommand_ShouldUseRequestCorrelationId_WhenProvided()
+    {
+        await AuthenticateAsync("ops-correlation");
+        var requestCorrelationId = $"req-{Guid.NewGuid():N}";
+        _client.DefaultRequestHeaders.Remove("X-Request-Id");
+        _client.DefaultRequestHeaders.TryAddWithoutValidation("X-Request-Id", requestCorrelationId);
+
+        try
+        {
+            var response = await _client.PostAsJsonAsync(
+                "/api/ops/cli/run",
+                new RunCommandDto("health.check"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var payload = await response.Content.ReadFromJsonAsync<CommandRunDto>();
+            payload.Should().NotBeNull();
+            payload!.CorrelationId.Should().Be(requestCorrelationId);
+
+            var logsResponse = await _client.GetAsync($"/api/logs/correlation/{requestCorrelationId}");
+            logsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            _client.DefaultRequestHeaders.Remove("X-Request-Id");
+        }
+    }
+
     private async Task<Guid> AuthenticateAsync(string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
