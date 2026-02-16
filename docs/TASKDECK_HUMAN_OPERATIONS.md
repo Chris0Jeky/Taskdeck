@@ -40,9 +40,19 @@ Do in GitHub UI:
 
 ## A2) GitHub Project / Execution Board setup
 Create a Project (or use Issues):
-- Views: `Now`, `Next`, `Blocked`, `Review`, `Done`
+- Status values: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
+- Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
 - WIP: cap “Now/In Progress” to 1 major item
 - Labels: `security`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `starter-packs`, `llm`
+- Configure workflows (must be ON):
+  - `Auto-add to project` for `Chris0Jeky/Taskdeck` issues + pull requests
+  - `Item added to project` -> set `Status=Pending`
+  - `Item reopened` -> set `Status=Pending`
+  - `Item closed` -> set `Status=Done`
+  - `Pull request linked to issue` -> set linked issue to `Status=Review`
+  - `Pull request merged` -> set `Status=Done`
+
+See `docs/GITHUB_PROJECT_AUTOMATION.md` for the canonical setup and verification checklist.
 
 ## A3) Secrets: GitHub PAT and environment variables (for GitHub MCP)
 You must create and manage tokens:

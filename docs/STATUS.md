@@ -83,7 +83,7 @@ Completed in Phase 4:
 - frontend integration for automations/chat/ops/archive
 - maintainability refactor across API/controller error handling and frontend API/store utilities (PR #23)
 - CI hardening follow-up: workflow concurrency cancellation, frontend typecheck/build parity, TRX artifacts, caching
-- mechanical checks added: docs governance CI check and architecture boundary test project
+- mechanical checks added: docs governance CI checks (`check-docs-governance` + `check-github-ops-governance`) and architecture boundary test project
 - API integration harness additions for authz assertions (`AssertUnauthorized`, `AssertForbidden`, `AssertNotFoundOrForbidden`, `AssertCrossUserIsolation`)
 
 Remaining for Phase 4 completion:
@@ -179,6 +179,7 @@ UX and operability (reconciled from product notes):
 - Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
 - Added CI hardening parity updates: concurrency cancellation, frontend typecheck/build enforcement, TRX/JUnit failure artifacts, and package/browser caches.
 - Added docs governance script and architecture boundary tests as CI invariants.
+- Added GitHub operations governance script to enforce issue-template label hygiene and project-automation doc invariants in CI.
 - Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.
 - Added request-correlation middleware and propagated request IDs into Ops command correlation IDs.
 - Added lightweight timing/result diagnostics for log queries and automation proposal execution.

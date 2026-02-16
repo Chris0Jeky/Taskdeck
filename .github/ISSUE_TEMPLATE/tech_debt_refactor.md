@@ -2,7 +2,7 @@
 name: Tech debt / refactor
 about: Track non-feature engineering debt with clear exit criteria
 title: "[Debt] "
-labels: ["tech-debt"]
+labels: ["refactor"]
 assignees: []
 ---
 

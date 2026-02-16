@@ -18,6 +18,14 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
     - Repo search → native `rg` (ripgrep MCP unreliable on Windows; fallback to GitHub search_code)
     - Issues/PRs/workflows → GitHub MCP (write actions only when required)
 
+## Project Operations Automation (required)
+- Read `docs/GITHUB_PROJECT_AUTOMATION.md` before changing project operations, issue templates, or workflow conventions.
+- Canonical project status model is: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`.
+- Do not introduce labels in issue templates that are not in the required label set documented in `docs/GITHUB_PROJECT_AUTOMATION.md`.
+- If workflow/status conventions change, update both:
+  - `docs/GITHUB_PROJECT_AUTOMATION.md`
+  - this `AGENTS.md` (only if contributor behavior expectations changed)
+
 ## Work protocol (required)
 - Before edits: write a short plan (files, approach, risks, tests).
 - Keep diffs small and scoped; avoid large mixed refactors.
