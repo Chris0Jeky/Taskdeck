@@ -43,7 +43,7 @@ Create a Project (or use Issues):
 - Status values: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
 - Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
 - WIP: cap “Now/In Progress” to 1 major item
-- Labels: `security`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `starter-packs`, `llm`
+- Labels: `bug`, `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`
 - Configure workflows (must be ON):
   - `Auto-add to project` for `Chris0Jeky/Taskdeck` issues + pull requests
   - `Item added to project` -> set `Status=Pending`

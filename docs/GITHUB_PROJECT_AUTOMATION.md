@@ -15,32 +15,35 @@ Required `Status` options:
 
 Rules:
 - Every new project item must receive `Status=Pending` automatically.
-- `Done` is terminal for closed/merged work.
+- `Done` is terminal for closed or merged work.
 - `Now` is WIP-limited to one major item at a time (team discipline + weekly audit).
 
 ## Required Labels
 
 Operational labels:
+- `bug` (GitHub default; keep it present because `bug_report` template uses it)
 - `security`
+- `hardening`
 - `backend`
 - `frontend`
 - `ux`
 - `testing`
 - `docs`
 - `refactor`
+- `tech-debt`
 - `starter-packs`
 - `llm`
 
 ## Project Views
 
 Keep these views:
+- `Pending` (filter: `status:"Pending"`)
 - `Now` (filter: `status:"Now"`)
 - `Next` (filter: `status:"Next"`)
-- `Pending` (filter: `status:"Pending"`)
 - `Blocked` (filter: `status:"Blocked"`)
 - `Review` (filter: `status:"Review"`)
 - `Done` (filter: `status:"Done"`)
-- `Execution Board` (Board view, `Column by: Status`)
+- `Execution Board` (board view, `Column by: Status`)
 
 Operational safety views:
 - `Needs Status` table view with `Status` empty filter.
@@ -66,14 +69,14 @@ Project: `Taskdeck Execution`
 - Action: set `Status=Done`.
 
 5. `Pull request linked to issue` (ON)
-- Action: set `Status=Review` (for the linked issue item).
+- Action: set linked issue `Status=Review`.
 
 6. `Pull request merged` (ON)
 - Action: set `Status=Done`.
 
 Optional:
-- `Code review approved` can set `Status=Review` if you want explicit reviewer-state visibility.
-- `Code changes requested` can set `Status=Now` or `Blocked` per team preference.
+- `Code review approved` can set `Status=Review`.
+- `Code changes requested` can set `Status=Now` or `Status=Blocked`.
 
 ## Drift Controls
 
@@ -86,9 +89,9 @@ Optional:
 ## Verification Checklist
 
 After setup changes:
-- Create a test issue -> confirm it auto-adds with `Status=Pending`.
-- Reopen the issue -> confirm it returns to `Pending`.
-- Close the issue -> confirm `Done`.
-- Create a test PR linked to an issue -> confirm linked issue moves to `Review`.
-- Merge PR -> confirm issue and PR items become `Done`.
+- Create a test issue and confirm it auto-adds with `Status=Pending`.
+- Reopen the issue and confirm it returns to `Pending`.
+- Close the issue and confirm `Status=Done`.
+- Create a PR linked to an issue and confirm issue `Status=Review`.
+- Merge PR and confirm issue and PR items move to `Done`.
 

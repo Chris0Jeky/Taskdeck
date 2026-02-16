@@ -15,17 +15,19 @@ const requiredIssueTemplateFiles = [
 const allowedTemplateLabels = new Set([
   'bug',
   'security',
+  'hardening',
   'backend',
   'frontend',
   'ux',
   'testing',
   'docs',
   'refactor',
+  'tech-debt',
   'starter-packs',
   'llm',
 ])
 
-const deprecatedTemplateLabels = new Set(['hardening', 'tech-debt'])
+const deprecatedTemplateLabels = new Set([])
 
 async function fileExists(path) {
   try {
@@ -111,6 +113,7 @@ async function validateProjectAutomationDocs() {
       '`Item added to project`',
       '`Item reopened`',
       '`Item closed`',
+      '`Pull request linked to issue`',
       '`Pull request merged`',
     ]
 

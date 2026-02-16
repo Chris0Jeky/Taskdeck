@@ -17,7 +17,7 @@
 ## Tracking
 
 - [ ] Linked issue included (e.g., `Closes #123`)
-- [ ] Project item status reviewed (`Review` while open, `Done` when merged)
+- [ ] Linked issue’s project item status reviewed (`Review` while this PR is open, `Done` when this PR is merged)
 
 ## Risk Notes
 

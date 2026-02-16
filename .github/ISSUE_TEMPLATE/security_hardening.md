@@ -2,7 +2,7 @@
 name: Security / hardening
 about: Track authn/authz and security retrofit work
 title: "[Security] "
-labels: ["security", "testing"]
+labels: ["security", "hardening"]
 assignees: []
 ---
 
