@@ -32,6 +32,11 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - After edits: run required checks and report results.
 - If you cannot run checks, state exactly why and what you would run.
 
+### Small Mainline Exception
+- If a change is very small and low-risk (especially minor docs wording/checklist updates), do not automatically create a branch/PR.
+- Prompt the user first and offer to let the user apply the change directly on `main`.
+- Only proceed with branch/PR flow for these tiny changes when the user explicitly asks for it.
+
 ## Definition of Done (non-negotiable)
 - Behavior changes ship with tests (unit/integration/E2E as appropriate).
 - Handle error cases explicitly; do not swallow failures.
