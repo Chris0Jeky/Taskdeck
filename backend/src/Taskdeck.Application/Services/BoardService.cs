@@ -22,16 +22,6 @@ public class BoardService
         _authorizationService = authorizationService;
     }
 
-    public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, CancellationToken cancellationToken = default)
-    {
-        if (_authorizationService is not null)
-            return Result.Failure<BoardDto>(
-                ErrorCodes.ValidationError,
-                "Acting user ID is required when authorization is enabled");
-
-        return await CreateBoardInternalAsync(dto, ownerId: null, cancellationToken);
-    }
-
     public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
     {
         if (actingUserId == Guid.Empty)
@@ -93,26 +83,26 @@ public class BoardService
         if (actingUserId == Guid.Empty)
             return Result.Failure<IEnumerable<BoardDto>>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
 
-        var boards = (await _unitOfWork.Boards.SearchAsync(searchText, includeArchived, cancellationToken)).ToList();
+        var candidateBoardIds = (await _unitOfWork.Boards.SearchIdsAsync(searchText, includeArchived, cancellationToken)).ToList();
 
         if (_authorizationService is null)
+        {
+            var boards = await _unitOfWork.Boards.GetByIdsAsync(candidateBoardIds, cancellationToken);
             return Result.Success(boards.Select(MapToDto));
+        }
 
         var visibleBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
             actingUserId,
-            boards,
+            candidateBoardIds,
             cancellationToken);
 
         if (!visibleBoardIdsResult.IsSuccess)
             return Result.Failure<IEnumerable<BoardDto>>(visibleBoardIdsResult.ErrorCode, visibleBoardIdsResult.ErrorMessage);
 
-        var visibleBoardIds = visibleBoardIdsResult.Value;
-        var visibleBoards = boards
-            .Where(board => visibleBoardIds.Contains(board.Id))
-            .Select(MapToDto)
-            .ToList();
+        var visibleBoardIds = visibleBoardIdsResult.Value.ToList();
+        var visibleBoards = await _unitOfWork.Boards.GetByIdsAsync(visibleBoardIds, cancellationToken);
 
-        return Result.Success<IEnumerable<BoardDto>>(visibleBoards);
+        return Result.Success<IEnumerable<BoardDto>>(visibleBoards.Select(MapToDto));
     }
 
     public async Task<Result> DeleteBoardAsync(Guid id, CancellationToken cancellationToken = default)
