@@ -162,7 +162,7 @@ Before calling something “RC”:
 
 ## E1) Use small, explicit prompts
 Good prompt:
-- “Implement Delivery Unit 1.1–1.3 from docs/CODEX_EXECUTION_PLAN.md. Keep diff small. Run checks. Update docs if needed.”
+- “Implement Delivery Unit 1.1–1.3 from docs/ISSUE_EXECUTION_GUIDE.md. Keep diff small. Run checks. Update docs if needed.”
 
 Bad prompt:
 - “Make CI better and improve security.” (too broad)
@@ -193,3 +193,4 @@ stop and re-scope.
 - Login/logout edges: expired session, forbidden actions
 - Cross-user attempts (if security touched)
 - Archive restore conflict path (if archive touched)
+
