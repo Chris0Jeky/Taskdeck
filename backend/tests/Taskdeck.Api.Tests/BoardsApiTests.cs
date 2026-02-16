@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
 
@@ -9,16 +9,21 @@ namespace Taskdeck.Api.Tests;
 
 public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
+    private bool _isAuthenticated;
 
     public BoardsApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
     [Fact]
     public async Task CreateBoard_ThenGetBoardDetail_ShouldReturnCreatedBoard()
     {
+        await EnsureAuthenticatedAsync();
+
         var createRequest = new CreateBoardDto(
             Name: $"Board-{Guid.NewGuid():N}",
             Description: "Integration test board");
@@ -43,17 +48,111 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BoardsEndpoints_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        using var anonymousClient = _factory.CreateClient();
+
+        var listResponse = await anonymousClient.GetAsync("/api/boards");
+        await ApiTestHarness.AssertUnauthorizedAsync(listResponse);
+
+        var getResponse = await anonymousClient.GetAsync($"/api/boards/{Guid.NewGuid()}");
+        await ApiTestHarness.AssertUnauthorizedAsync(getResponse);
+
+        var createResponse = await anonymousClient.PostAsJsonAsync(
+            "/api/boards",
+            new CreateBoardDto($"Board-{Guid.NewGuid():N}", "Unauthorized"));
+        await ApiTestHarness.AssertUnauthorizedAsync(createResponse);
+
+        var updateResponse = await anonymousClient.PutAsJsonAsync(
+            $"/api/boards/{Guid.NewGuid()}",
+            new UpdateBoardDto("Renamed", null, null));
+        await ApiTestHarness.AssertUnauthorizedAsync(updateResponse);
+
+        var deleteResponse = await anonymousClient.DeleteAsync($"/api/boards/{Guid.NewGuid()}");
+        await ApiTestHarness.AssertUnauthorizedAsync(deleteResponse);
+    }
+
+    [Fact]
+    public async Task GetBoard_ShouldReturnForbidden_ForDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "board-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "owner-board");
+
+        using var otherClient = _factory.CreateClient();
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "board-other");
+
+        await ApiTestHarness.AssertCrossUserIsolationAsync(
+            () => otherClient.GetAsync($"/api/boards/{board.Id}"));
+
+        other.UserId.Should().NotBe(owner.UserId);
+    }
+
+    [Fact]
+    public async Task DeleteBoard_ShouldReturnForbidden_ForDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "board-delete-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "board-delete");
+
+        using var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(otherClient, "board-delete-other");
+
+        await ApiTestHarness.AssertCrossUserIsolationAsync(
+            () => otherClient.DeleteAsync($"/api/boards/{board.Id}"));
+    }
+
+    [Fact]
+    public async Task ListBoards_ShouldReturnOnlyBoardsVisibleToCaller()
+    {
+        using var ownerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "list-owner");
+        var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "list-owner-board");
+
+        using var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(otherClient, "list-other");
+        var otherBoard = await ApiTestHarness.CreateBoardAsync(otherClient, "list-other-board");
+
+        var ownerListResponse = await ownerClient.GetAsync("/api/boards");
+        ownerListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ownerBoards = await ownerListResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
+        ownerBoards.Should().NotBeNull();
+        ownerBoards.Should().ContainSingle(b => b.Id == ownerBoard.Id);
+        ownerBoards.Should().NotContain(b => b.Id == otherBoard.Id);
+    }
+
+    [Fact]
+    public async Task CreateBoard_ShouldReturnBadRequest_WhenNameIsEmpty()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/boards",
+            new CreateBoardDto(string.Empty, "Invalid board"));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task UpdateBoard_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/boards/{Guid.NewGuid()}",
+            new UpdateBoardDto("Renamed", null, null));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+    }
+
+    [Fact]
     public async Task DeleteBoard_ShouldArchiveAndHideFromDefaultList()
     {
-        var createResponse = await _client.PostAsJsonAsync(
-            "/api/boards",
-            new CreateBoardDto($"Archive-{Guid.NewGuid():N}", "Archive flow"));
-        createResponse.EnsureSuccessStatusCode();
+        await EnsureAuthenticatedAsync();
 
-        var createdBoard = await createResponse.Content.ReadFromJsonAsync<BoardDto>();
-        createdBoard.Should().NotBeNull();
+        var createdBoard = await ApiTestHarness.CreateBoardAsync(_client, "archive-flow");
 
-        var deleteResponse = await _client.DeleteAsync($"/api/boards/{createdBoard!.Id}");
+        var deleteResponse = await _client.DeleteAsync($"/api/boards/{createdBoard.Id}");
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var activeListResponse = await _client.GetAsync("/api/boards");
@@ -69,71 +168,14 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         allBoards.Should().ContainSingle(b => b.Id == createdBoard.Id && b.IsArchived);
     }
 
-    [Fact]
-    public async Task GetBoard_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    private async Task EnsureAuthenticatedAsync()
     {
-        var response = await _client.GetAsync($"/api/boards/{Guid.NewGuid()}");
+        if (_isAuthenticated)
+        {
+            return;
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
-    }
-
-    [Fact]
-    public async Task CreateBoard_ShouldReturnBadRequest_WhenNameIsEmpty()
-    {
-        var response = await _client.PostAsJsonAsync(
-            "/api/boards",
-            new CreateBoardDto(string.Empty, "Invalid board"));
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
-    }
-
-    [Fact]
-    public async Task UpdateBoard_ShouldReturnNotFound_WhenBoardDoesNotExist()
-    {
-        var response = await _client.PutAsJsonAsync(
-            $"/api/boards/{Guid.NewGuid()}",
-            new UpdateBoardDto("Renamed", null, null));
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
-    }
-
-    [Fact]
-    public async Task UpdateBoard_ShouldReturnBadRequest_WhenNameIsEmpty()
-    {
-        var createResponse = await _client.PostAsJsonAsync(
-            "/api/boards",
-            new CreateBoardDto($"Board-{Guid.NewGuid():N}", null));
-        createResponse.EnsureSuccessStatusCode();
-        var board = await createResponse.Content.ReadFromJsonAsync<BoardDto>();
-        board.Should().NotBeNull();
-
-        var response = await _client.PutAsJsonAsync(
-            $"/api/boards/{board!.Id}",
-            new UpdateBoardDto(string.Empty, null, null));
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
-    }
-
-    [Fact]
-    public async Task DeleteBoard_ShouldReturnNotFound_WhenBoardDoesNotExist()
-    {
-        var response = await _client.DeleteAsync($"/api/boards/{Guid.NewGuid()}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+        await ApiTestHarness.AuthenticateAsync(_client, "boards-suite");
+        _isAuthenticated = true;
     }
 }
