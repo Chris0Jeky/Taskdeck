@@ -9,6 +9,15 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - For test operations, see `docs/TESTING_GUIDE.md`.
 - Precedence when instructions conflict: `docs/STATUS.md` > this file > subfolder `AGENTS.md`.
 
+## MCP tools (agent tooling)
+- See `docs/MCP_TOOLING_GUIDE.md` for tool selection rules and safe usage.
+- Prefer MCP tools over guessing:
+    - OpenAI/Codex/API docs → openaiDeveloperDocs MCP
+    - Third-party library docs → Context7 MCP
+    - UI reproduction/regression → Playwright MCP
+    - Repo search → native `rg` (ripgrep MCP unreliable on Windows; fallback to GitHub search_code)
+    - Issues/PRs/workflows → GitHub MCP (write actions only when required)
+
 ## Work protocol (required)
 - Before edits: write a short plan (files, approach, risks, tests).
 - Keep diffs small and scoped; avoid large mixed refactors.
