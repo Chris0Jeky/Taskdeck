@@ -131,7 +131,9 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
 
             var name = normalizedArgs[0];
             var description = normalizedArgs.Length > 1 ? string.Join(' ', normalizedArgs.Skip(1)) : null;
-            var result = await boardService.CreateBoardAsync(new CreateBoardDto(name, description));
+            var result = await boardService.CreateBoardAsync(
+                new CreateBoardDto(name, description),
+                GetCliActorId());
 
             if (!result.IsSuccess)
             {
@@ -595,4 +597,15 @@ void PrintHelp()
 void WriteJson<T>(T value, JsonSerializerOptions options)
 {
     Console.WriteLine(JsonSerializer.Serialize(value, options));
+}
+
+Guid GetCliActorId()
+{
+    var configuredActorId = Environment.GetEnvironmentVariable("TASKDECK_CLI_ACTOR_ID");
+    if (Guid.TryParse(configuredActorId, out var actorId) && actorId != Guid.Empty)
+    {
+        return actorId;
+    }
+
+    return Guid.Parse("11111111-1111-1111-1111-111111111111");
 }
