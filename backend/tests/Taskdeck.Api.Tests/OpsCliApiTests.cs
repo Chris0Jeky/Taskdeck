@@ -128,13 +128,34 @@ public class OpsCliApiTests : IClassFixture<TestWebApplicationFactory>
             var payload = await response.Content.ReadFromJsonAsync<CommandRunDto>();
             payload.Should().NotBeNull();
             payload!.CorrelationId.Should().NotBe(invalidCorrelationId);
-            payload.CorrelationId.Length.Should().BeLessOrEqualTo(128);
+            payload.CorrelationId.Length.Should().BeLessOrEqualTo(100);
 
             response.Headers.TryGetValues("X-Request-Id", out var responseRequestIds).Should().BeTrue();
             responseRequestIds!.Single().Should().Be(payload.CorrelationId);
 
             var logsResponse = await _client.GetAsync($"/api/logs/correlation/{payload.CorrelationId}");
             logsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // Additional check: correlation IDs in the 101–128 range are also constrained to the DB limit (100).
+            var midRangeInvalidCorrelationId = new string('b', 101);
+            _client.DefaultRequestHeaders.Remove("X-Request-Id");
+            _client.DefaultRequestHeaders.TryAddWithoutValidation("X-Request-Id", midRangeInvalidCorrelationId);
+
+            var midRangeResponse = await _client.PostAsJsonAsync(
+                "/api/ops/cli/run",
+                new RunCommandDto("health.check"));
+
+            midRangeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var midRangePayload = await midRangeResponse.Content.ReadFromJsonAsync<CommandRunDto>();
+            midRangePayload.Should().NotBeNull();
+            midRangePayload!.CorrelationId.Should().NotBe(midRangeInvalidCorrelationId);
+            midRangePayload.CorrelationId.Length.Should().BeLessOrEqualTo(100);
+
+            midRangeResponse.Headers.TryGetValues("X-Request-Id", out var midRangeResponseRequestIds).Should().BeTrue();
+            midRangeResponseRequestIds!.Single().Should().Be(midRangePayload.CorrelationId);
+
+            var midRangeLogsResponse = await _client.GetAsync($"/api/logs/correlation/{midRangePayload.CorrelationId}");
+            midRangeLogsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
