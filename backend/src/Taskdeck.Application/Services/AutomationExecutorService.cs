@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -16,6 +17,7 @@ public class AutomationExecutorService : IAutomationExecutorService
     private readonly CardService _cardService;
     private readonly BoardService _boardService;
     private readonly ColumnService _columnService;
+    private readonly ILogger<AutomationExecutorService>? _logger;
 
     public AutomationExecutorService(
         IUnitOfWork unitOfWork,
@@ -24,6 +26,18 @@ public class AutomationExecutorService : IAutomationExecutorService
         CardService cardService,
         BoardService boardService,
         ColumnService columnService)
+        : this(unitOfWork, proposalService, policyEngine, cardService, boardService, columnService, logger: null)
+    {
+    }
+
+    public AutomationExecutorService(
+        IUnitOfWork unitOfWork,
+        IAutomationProposalService proposalService,
+        IAutomationPolicyEngine policyEngine,
+        CardService cardService,
+        BoardService boardService,
+        ColumnService columnService,
+        ILogger<AutomationExecutorService>? logger)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
@@ -31,35 +45,73 @@ public class AutomationExecutorService : IAutomationExecutorService
         _cardService = cardService;
         _boardService = boardService;
         _columnService = columnService;
+        _logger = logger;
     }
 
     public async Task<Result> ExecuteProposalAsync(Guid proposalId, string idempotencyKey, CancellationToken cancellationToken = default)
     {
+        var startedAt = DateTimeOffset.UtcNow;
+
         if (proposalId == Guid.Empty)
+        {
+            _logger?.LogWarning("Automation proposal execution rejected: empty proposalId");
             return Result.Failure(ErrorCodes.ValidationError, "ProposalId cannot be empty");
+        }
 
         if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            _logger?.LogWarning("Automation proposal execution rejected for proposal {ProposalId}: missing idempotency key", proposalId);
             return Result.Failure(ErrorCodes.ValidationError, "IdempotencyKey cannot be empty");
+        }
 
         // Get proposal
         var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
         if (!proposalResult.IsSuccess)
+        {
+            _logger?.LogWarning(
+                "Automation proposal execution failed for proposal {ProposalId} after {DurationMs}ms: {ErrorCode} {ErrorMessage}",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                proposalResult.ErrorCode,
+                proposalResult.ErrorMessage);
             return Result.Failure(proposalResult.ErrorCode, proposalResult.ErrorMessage);
+        }
 
         var proposal = proposalResult.Value;
 
         // Idempotent behavior across requests/processes: already-applied proposals are treated as success.
         if (proposal.Status == ProposalStatus.Applied)
+        {
+            _logger?.LogInformation(
+                "Automation proposal execution skipped for already-applied proposal {ProposalId} after {DurationMs}ms",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
             return Result.Success();
+        }
 
         // Verify proposal is approved
         if (proposal.Status != ProposalStatus.Approved)
+        {
+            _logger?.LogWarning(
+                "Automation proposal execution rejected for proposal {ProposalId} after {DurationMs}ms due to status {Status}",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                proposal.Status);
             return Result.Failure(ErrorCodes.InvalidOperation, $"Cannot execute proposal in status {proposal.Status}");
+        }
 
         // Revalidate policy before execution
         var policyResult = _policyEngine.ValidatePolicy(proposal);
         if (!policyResult.IsSuccess)
+        {
+            _logger?.LogWarning(
+                "Automation proposal execution policy validation failed for proposal {ProposalId} after {DurationMs}ms: {ErrorCode} {ErrorMessage}",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                policyResult.ErrorCode,
+                policyResult.ErrorMessage);
             return Result.Failure(policyResult.ErrorCode, policyResult.ErrorMessage);
+        }
 
         // Revalidate permissions
         var permissionResult = await _policyEngine.ValidatePermissionsAsync(
@@ -68,7 +120,15 @@ public class AutomationExecutorService : IAutomationExecutorService
             proposal.Operations, 
             cancellationToken);
         if (!permissionResult.IsSuccess)
+        {
+            _logger?.LogWarning(
+                "Automation proposal execution permission validation failed for proposal {ProposalId} after {DurationMs}ms: {ErrorCode} {ErrorMessage}",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                permissionResult.ErrorCode,
+                permissionResult.ErrorMessage);
             return Result.Failure(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+        }
 
         try
         {
@@ -103,6 +163,12 @@ public class AutomationExecutorService : IAutomationExecutorService
                 if (!updateResult.IsSuccess)
                     return Result.Failure(updateResult.ErrorCode, updateResult.ErrorMessage);
 
+                _logger?.LogWarning(
+                    "Automation proposal execution failed for proposal {ProposalId} at operation {OperationSequence} after {DurationMs}ms: {FailureReason}",
+                    proposalId,
+                    failedOperation,
+                    (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                    failureReason);
                 return Result.Failure(ErrorCodes.UnexpectedError, failureReason);
             }
 
@@ -113,12 +179,22 @@ public class AutomationExecutorService : IAutomationExecutorService
             if (!markResult.IsSuccess)
                 return Result.Failure(markResult.ErrorCode, markResult.ErrorMessage);
 
+            _logger?.LogInformation(
+                "Automation proposal execution completed for proposal {ProposalId} in {DurationMs}ms with {OperationCount} operation(s)",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                orderedOperations.Count);
             return Result.Success();
         }
         catch (Exception ex)
         {
             await _unitOfWork.RollbackTransactionAsync(cancellationToken);
             await UpdateProposalStatusAsync(proposalId, ProposalStatus.Failed, ex.Message, cancellationToken);
+            _logger?.LogError(
+                ex,
+                "Automation proposal execution threw for proposal {ProposalId} after {DurationMs}ms",
+                proposalId,
+                (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
             return Result.Failure(ErrorCodes.UnexpectedError, $"Failed to execute proposal: {ex.Message}");
         }
     }
