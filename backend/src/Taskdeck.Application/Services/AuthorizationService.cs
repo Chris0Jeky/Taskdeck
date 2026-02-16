@@ -1,6 +1,5 @@
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
-using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
@@ -19,40 +18,33 @@ public class AuthorizationService : IAuthorizationService
 
     public async Task<Result<IReadOnlySet<Guid>>> GetReadableBoardIdsAsync(
         Guid userId,
-        IEnumerable<Board> boards,
+        IEnumerable<Guid> boardIds,
         CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
             return Result.Failure<IReadOnlySet<Guid>>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
-        var boardList = boards.ToList();
-        if (boardList.Count == 0)
+        var candidateBoardIds = boardIds.Distinct().ToList();
+        if (candidateBoardIds.Count == 0)
             return Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>());
 
         if (_sandboxSettings.Enabled)
-            return Result.Success<IReadOnlySet<Guid>>(boardList.Select(b => b.Id).ToHashSet());
+            return Result.Success<IReadOnlySet<Guid>>(candidateBoardIds.ToHashSet());
 
-        var readableBoardIds = new HashSet<Guid>();
-        var candidateBoardIds = new HashSet<Guid>();
+        var readableBoardIds = (await _unitOfWork.Boards.GetOwnedBoardIdsAsync(
+                userId,
+                candidateBoardIds,
+                cancellationToken))
+            .ToHashSet();
 
-        foreach (var board in boardList)
-        {
-            if (board.OwnerId == userId)
-            {
-                readableBoardIds.Add(board.Id);
-                continue;
-            }
-
-            candidateBoardIds.Add(board.Id);
-        }
-
-        if (candidateBoardIds.Count == 0)
+        if (readableBoardIds.Count == candidateBoardIds.Count)
             return Result.Success<IReadOnlySet<Guid>>(readableBoardIds);
 
         var boardAccesses = await _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
+        var candidateBoardIdSet = candidateBoardIds.ToHashSet();
         foreach (var boardAccess in boardAccesses)
         {
-            if (candidateBoardIds.Contains(boardAccess.BoardId) && boardAccess.CanRead())
+            if (candidateBoardIdSet.Contains(boardAccess.BoardId) && boardAccess.CanRead())
             {
                 readableBoardIds.Add(boardAccess.BoardId);
             }
