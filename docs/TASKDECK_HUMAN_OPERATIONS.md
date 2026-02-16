@@ -65,12 +65,15 @@ Mark your Taskdeck repo as trusted in Codex settings.
 # B) Decisions you must make (LLM can propose; you decide)
 
 ## B1) Cross-user existence policy: 403 vs 404
-Pick and document a policy:
-- Do you return 404 to avoid leaking existence across users?
-- Or 403 for simplicity?
-Decide once, document it, and enforce via tests.
+Decision (2026-02-16): use `403` for authenticated-but-unauthorized or cross-user access on protected resources.
 
-Recommended: choose per resource type and keep it consistent.
+Contract to enforce:
+- `401` -> request is unauthenticated.
+- `403` -> request is authenticated but not authorized (including cross-user isolation failures).
+- `404` -> resource is truly missing.
+
+Implementation note:
+- Apply this policy consistently across controller families and lock it with integration tests.
 
 ## B2) Starter pack semantics (product decisions)
 Decide and document:
@@ -178,4 +181,3 @@ stop and re-scope.
 - Login/logout edges: expired session, forbidden actions
 - Cross-user attempts (if security touched)
 - Archive restore conflict path (if archive touched)
-
