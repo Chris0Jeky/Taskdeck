@@ -1,4 +1,4 @@
-﻿# Archive Guide
+# Archive Guide
 
 All files in this folder are historical and non-authoritative.
 If a status, scope, or test number here conflicts with active docs, trust:
@@ -19,6 +19,8 @@ Legacy archive groups:
 Time-scoped archive bundles:
 - `2026-02-13_phase4-doc-consolidation/`
   - Consolidation bundle that archived backend/frontend detail packs and superseded root guides.
+- `2026-02-16_docs-curation/`
+  - Archived stale root-level snapshots and one-off planning artifacts during docs curation cleanup.
 
 ## Usage
 
