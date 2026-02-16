@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -10,19 +12,33 @@ namespace Taskdeck.Application.Services;
 public class LogQueryService : ILogQueryService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<LogQueryService>? _logger;
 
     public LogQueryService(IUnitOfWork unitOfWork)
+        : this(unitOfWork, logger: null)
+    {
+    }
+
+    public LogQueryService(IUnitOfWork unitOfWork, ILogger<LogQueryService>? logger)
     {
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result<IEnumerable<LogEntryDto>>> QueryLogsAsync(LogQueryDto query, CancellationToken ct = default)
     {
+        var stopwatch = Stopwatch.StartNew();
+
         try
         {
             var validationResult = ValidateQuery(query);
             if (!validationResult.IsSuccess)
             {
+                _logger?.LogWarning(
+                    "Log query rejected in {DurationMs}ms due to validation failure: {ErrorCode} {ErrorMessage}",
+                    stopwatch.ElapsedMilliseconds,
+                    validationResult.ErrorCode,
+                    validationResult.ErrorMessage);
                 return Result.Failure<IEnumerable<LogEntryDto>>(validationResult.ErrorCode, validationResult.ErrorMessage);
             }
 
@@ -42,10 +58,29 @@ public class LogQueryService : ILogQueryService
                 .Take(limit)
                 .ToList();
 
+            _logger?.LogInformation(
+                "Log query completed in {DurationMs}ms with {ResultCount} entries (level={Level}, source={Source}, correlationId={CorrelationId}, userId={UserId}, boardId={BoardId})",
+                stopwatch.ElapsedMilliseconds,
+                combined.Count,
+                query.Level,
+                query.Source,
+                query.CorrelationId,
+                query.UserId,
+                query.BoardId);
+
             return Result.Success<IEnumerable<LogEntryDto>>(combined);
         }
         catch (Exception ex)
         {
+            _logger?.LogError(
+                ex,
+                "Log query failed in {DurationMs}ms (level={Level}, source={Source}, correlationId={CorrelationId}, userId={UserId}, boardId={BoardId})",
+                stopwatch.ElapsedMilliseconds,
+                query.Level,
+                query.Source,
+                query.CorrelationId,
+                query.UserId,
+                query.BoardId);
             return Result.Failure<IEnumerable<LogEntryDto>>(ErrorCodes.UnexpectedError, ex.Message);
         }
     }
