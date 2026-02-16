@@ -85,3 +85,4 @@ playwright-report/
 *.log
 logs/
 SESSION_SUMMARY.md
+scripts/git/redistribute-commit-dates.ps1
