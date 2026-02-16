@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
 
@@ -10,6 +11,7 @@ namespace Taskdeck.Api.Tests;
 public class LabelsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private bool _isAuthenticated;
 
     public LabelsApiTests(TestWebApplicationFactory factory)
     {
@@ -165,13 +167,18 @@ public class LabelsApiTests : IClassFixture<TestWebApplicationFactory>
 
     private async Task<BoardDto> CreateBoardAsync()
     {
-        var response = await _client.PostAsJsonAsync(
-            "/api/boards",
-            new CreateBoardDto($"Board-{Guid.NewGuid():N}", "Label integration tests"));
+        await EnsureAuthenticatedAsync();
+        return await ApiTestHarness.CreateBoardAsync(_client, "labels-board", "Label integration tests");
+    }
 
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var board = await response.Content.ReadFromJsonAsync<BoardDto>();
-        board.Should().NotBeNull();
-        return board!;
+    private async Task EnsureAuthenticatedAsync()
+    {
+        if (_isAuthenticated)
+        {
+            return;
+        }
+
+        await ApiTestHarness.AuthenticateAsync(_client, "labels-suite");
+        _isAuthenticated = true;
     }
 }
