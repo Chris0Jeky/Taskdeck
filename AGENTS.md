@@ -21,6 +21,8 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 ## Work protocol (required)
 - Before edits: write a short plan (files, approach, risks, tests).
 - Keep diffs small and scoped; avoid large mixed refactors.
+- During PR review/management/development: check PR comments and review threads.
+- If you take action from PR feedback, reply in the PR with what changed and reference the commit(s).
 - After edits: run required checks and report results.
 - If you cannot run checks, state exactly why and what you would run.
 
@@ -69,9 +71,12 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Commit & Pull Request Guidelines
 - Commits: Use clear, present-tense messages (e.g., `Add booking validation to application layer`).
-  Group related changes; avoid large mixed-topic commits.
+  Default to one commit per changed file with a short file-specific description.
+  Keep commits small and focused; avoid large mixed-topic commits.
+  If a single logical change must touch multiple files, keep the smallest practical commit set and explain why.
 - Pull requests: Provide a short summary, key implementation notes, and testing evidence
   (commands run, screenshots for UI changes). Link related issues/tasks where applicable.
+- During PR review, resolve all actionable comments and post follow-up replies summarizing actions taken.
 - Keep PRs focused and small when possible; prefer follow-up PRs for refactors or additional cleanup.
 
 ## Output expectations (after work)
