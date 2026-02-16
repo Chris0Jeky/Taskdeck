@@ -334,12 +334,17 @@ public class AuthorizationServiceTests
 
         var grantedAccess = new BoardAccess(grantedBoard.Id, ownerId, UserRole.Viewer, grantedBy);
 
+        _boardRepoMock.Setup(r => r.GetOwnedBoardIdsAsync(
+                ownerId,
+                It.IsAny<IEnumerable<Guid>>(),
+                default))
+            .ReturnsAsync(new List<Guid> { ownedBoard.Id });
         _boardAccessRepoMock.Setup(r => r.GetByUserIdAsync(ownerId, default))
             .ReturnsAsync(new List<BoardAccess> { grantedAccess });
 
         var result = await _service.GetReadableBoardIdsAsync(
             ownerId,
-            new[] { ownedBoard, grantedBoard, noAccessBoard });
+            new[] { ownedBoard.Id, grantedBoard.Id, noAccessBoard.Id });
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Contain(ownedBoard.Id);
@@ -352,7 +357,7 @@ public class AuthorizationServiceTests
     public async Task GetReadableBoardIdsAsync_ShouldReturnValidationError_WhenUserIdIsEmpty()
     {
         var board = new Board("Test Board", ownerId: Guid.NewGuid());
-        var result = await _service.GetReadableBoardIdsAsync(Guid.Empty, new[] { board });
+        var result = await _service.GetReadableBoardIdsAsync(Guid.Empty, new[] { board.Id });
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
