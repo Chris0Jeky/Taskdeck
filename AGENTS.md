@@ -69,7 +69,9 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Commit & Pull Request Guidelines
 - Commits: Use clear, present-tense messages (e.g., `Add booking validation to application layer`).
-  Group related changes; avoid large mixed-topic commits. Ideally use one commit per file change or major change in a file.
+  Default to one commit per changed file with a short file-specific description.
+  Keep commits small and focused; avoid large mixed-topic commits.
+  If a single logical change must touch multiple files, keep the smallest practical commit set and explain why.
 - Pull requests: Provide a short summary, key implementation notes, and testing evidence
   (commands run, screenshots for UI changes). Link related issues/tasks where applicable.
 - Keep PRs focused and small when possible; prefer follow-up PRs for refactors or additional cleanup.

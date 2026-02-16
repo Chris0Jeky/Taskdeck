@@ -16,6 +16,43 @@ public class AuthorizationService : IAuthorizationService
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
+    public async Task<Result<IReadOnlySet<Guid>>> GetReadableBoardIdsAsync(
+        Guid userId,
+        IEnumerable<Guid> boardIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<IReadOnlySet<Guid>>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        var candidateBoardIds = boardIds.Distinct().ToList();
+        if (candidateBoardIds.Count == 0)
+            return Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>());
+
+        if (_sandboxSettings.Enabled)
+            return Result.Success<IReadOnlySet<Guid>>(candidateBoardIds.ToHashSet());
+
+        var readableBoardIds = (await _unitOfWork.Boards.GetOwnedBoardIdsAsync(
+                userId,
+                candidateBoardIds,
+                cancellationToken))
+            .ToHashSet();
+
+        if (readableBoardIds.Count == candidateBoardIds.Count)
+            return Result.Success<IReadOnlySet<Guid>>(readableBoardIds);
+
+        var boardAccesses = await _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
+        var candidateBoardIdSet = candidateBoardIds.ToHashSet();
+        foreach (var boardAccess in boardAccesses)
+        {
+            if (candidateBoardIdSet.Contains(boardAccess.BoardId) && boardAccess.CanRead())
+            {
+                readableBoardIds.Add(boardAccess.BoardId);
+            }
+        }
+
+        return Result.Success<IReadOnlySet<Guid>>(readableBoardIds);
+    }
+
     public async Task<Result<bool>> CanReadBoardAsync(Guid userId, Guid boardId)
     {
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
@@ -25,7 +62,7 @@ public class AuthorizationService : IAuthorizationService
         if (_sandboxSettings.Enabled)
             return Result.Success(true);
 
-        if (board.OwnerId is null || board.OwnerId == userId)
+        if (board.OwnerId == userId)
             return Result.Success(true);
 
         var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);
@@ -41,7 +78,7 @@ public class AuthorizationService : IAuthorizationService
         if (_sandboxSettings.Enabled)
             return Result.Success(true);
 
-        if (board.OwnerId is null || board.OwnerId == userId)
+        if (board.OwnerId == userId)
             return Result.Success(true);
 
         var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);
@@ -57,7 +94,7 @@ public class AuthorizationService : IAuthorizationService
         if (_sandboxSettings.Enabled)
             return Result.Success(true);
 
-        if (board.OwnerId is null || board.OwnerId == userId)
+        if (board.OwnerId == userId)
             return Result.Success(true);
 
         var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);
@@ -73,7 +110,7 @@ public class AuthorizationService : IAuthorizationService
         if (_sandboxSettings.Enabled)
             return Result.Success(true);
 
-        if (board.OwnerId is null || board.OwnerId == userId)
+        if (board.OwnerId == userId)
             return Result.Success(true);
 
         var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);
@@ -89,7 +126,7 @@ public class AuthorizationService : IAuthorizationService
         if (_sandboxSettings.Enabled)
             return Result.Success<UserRole?>(UserRole.Owner);
 
-        if (board.OwnerId is null || board.OwnerId == userId)
+        if (board.OwnerId == userId)
             return Result.Success<UserRole?>(UserRole.Owner);
 
         var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);

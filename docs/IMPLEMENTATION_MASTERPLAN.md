@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-13  
+Last Updated: 2026-02-16  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Status Doc: `docs/STATUS.md`
 
@@ -26,11 +26,23 @@ Delivered in the latest cycle:
 3. Maintainability refactor delivered (PR #23):
    - backend shared error contracts/mapping and authenticated-user controller base
    - frontend shared query-string and error-message utilities
-4. Test surface expanded and verified:
-   - Backend: 459 passing
+4. CI hardening follow-up delivered:
+   - workflow concurrency cancellation
+   - frontend typecheck/build parity in CI
+   - NuGet/Playwright caching and richer failure artifacts (TRX/JUnit uploads)
+5. Mechanical invariants delivered:
+   - docs governance CI check (`scripts/check-docs-governance.mjs`)
+   - architecture boundary test project (`Taskdeck.Architecture.Tests`)
+6. Security/observability slice delivered:
+   - boards controller family retrofitted to claims-first authz
+   - API authz harness helpers for 401/403/cross-user assertions
+   - request correlation middleware + Ops CLI correlation propagation
+   - timing/result diagnostics for log query and automation execution paths
+7. Test surface expanded and verified:
+   - Backend: 461 passing
    - Frontend unit: 245 passing
    - E2E: 11 passing
-5. Documentation consolidation retained:
+8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
 
@@ -79,7 +91,7 @@ Exit Criteria:
 
 ## Active Backlog (Prioritized)
 
-1. P0: Claims-first identity retrofit across boards/columns/cards/labels/export/audit/queue/board-access/users.
+1. P0: Claims-first identity retrofit across remaining controller families: columns/cards/labels/export/audit/queue/board-access/users.
 2. P0: Auth regression integration suite expansion for legacy + advanced controllers.
 3. P0: Archive board lifecycle coherence (archive/unarchive visibility, restore semantics, UX parity).
 4. P1: Interaction-mode guardrails to prevent drag side effects while editing card/task content.
@@ -143,8 +155,8 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Complete claims-first retrofit for core board controllers and align response contracts.
-2. Add unauthorized/forbidden matrix tests for both legacy and advanced routes.
+1. Continue claims-first retrofit for remaining legacy controller families and align response contracts.
+2. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes.
 3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
 4. Define and implement archive board lifecycle behavior contract (API + UI).
 5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.

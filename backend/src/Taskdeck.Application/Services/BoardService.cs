@@ -9,17 +9,126 @@ namespace Taskdeck.Application.Services;
 public class BoardService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuthorizationService? _authorizationService;
 
     public BoardService(IUnitOfWork unitOfWork)
+        : this(unitOfWork, authorizationService: null)
     {
-        _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, CancellationToken cancellationToken = default)
+    public BoardService(IUnitOfWork unitOfWork, IAuthorizationService? authorizationService)
+    {
+        _unitOfWork = unitOfWork;
+        _authorizationService = authorizationService;
+    }
+
+    public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
+    {
+        if (actingUserId == Guid.Empty)
+            return Result.Failure<BoardDto>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
+
+        return await CreateBoardInternalAsync(dto, actingUserId, cancellationToken);
+    }
+
+    public async Task<Result<BoardDto>> UpdateBoardAsync(Guid id, UpdateBoardDto dto, CancellationToken cancellationToken = default)
+    {
+        return await UpdateBoardInternalAsync(id, dto, cancellationToken);
+    }
+
+    public async Task<Result<BoardDto>> UpdateBoardAsync(Guid id, UpdateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
+    {
+        var permission = await EnsureBoardPermissionAsync(
+            actingUserId,
+            id,
+            static (authorizationService, userId, boardId) => authorizationService.CanWriteBoardAsync(userId, boardId),
+            "You do not have permission to update this board");
+
+        if (!permission.IsSuccess)
+            return Result.Failure<BoardDto>(permission.ErrorCode, permission.ErrorMessage);
+
+        return await UpdateBoardInternalAsync(id, dto, cancellationToken);
+    }
+
+    public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var board = await _unitOfWork.Boards.GetByIdWithDetailsAsync(id, cancellationToken);
+        if (board == null)
+            return Result.Failure<BoardDetailDto>(ErrorCodes.NotFound, $"Board with ID {id} not found");
+
+        return Result.Success(MapToDetailDto(board));
+    }
+
+    public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, Guid actingUserId, CancellationToken cancellationToken = default)
+    {
+        var permission = await EnsureBoardPermissionAsync(
+            actingUserId,
+            id,
+            static (authorizationService, userId, boardId) => authorizationService.CanReadBoardAsync(userId, boardId),
+            "You do not have access to this board");
+
+        if (!permission.IsSuccess)
+            return Result.Failure<BoardDetailDto>(permission.ErrorCode, permission.ErrorMessage);
+
+        return await GetBoardDetailAsync(id, cancellationToken);
+    }
+
+    public async Task<Result<IEnumerable<BoardDto>>> ListBoardsAsync(string? searchText = null, bool includeArchived = false, CancellationToken cancellationToken = default)
+    {
+        var boards = await _unitOfWork.Boards.SearchAsync(searchText, includeArchived, cancellationToken);
+        return Result.Success(boards.Select(MapToDto));
+    }
+
+    public async Task<Result<IEnumerable<BoardDto>>> ListBoardsAsync(Guid actingUserId, string? searchText = null, bool includeArchived = false, CancellationToken cancellationToken = default)
+    {
+        if (actingUserId == Guid.Empty)
+            return Result.Failure<IEnumerable<BoardDto>>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
+
+        var candidateBoardIds = (await _unitOfWork.Boards.SearchIdsAsync(searchText, includeArchived, cancellationToken)).ToList();
+
+        if (_authorizationService is null)
+        {
+            var boards = await _unitOfWork.Boards.GetByIdsAsync(candidateBoardIds, cancellationToken);
+            return Result.Success(boards.Select(MapToDto));
+        }
+
+        var visibleBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
+            actingUserId,
+            candidateBoardIds,
+            cancellationToken);
+
+        if (!visibleBoardIdsResult.IsSuccess)
+            return Result.Failure<IEnumerable<BoardDto>>(visibleBoardIdsResult.ErrorCode, visibleBoardIdsResult.ErrorMessage);
+
+        var visibleBoardIds = visibleBoardIdsResult.Value.ToList();
+        var visibleBoards = await _unitOfWork.Boards.GetByIdsAsync(visibleBoardIds, cancellationToken);
+
+        return Result.Success<IEnumerable<BoardDto>>(visibleBoards.Select(MapToDto));
+    }
+
+    public async Task<Result> DeleteBoardAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        return await DeleteBoardInternalAsync(id, cancellationToken);
+    }
+
+    public async Task<Result> DeleteBoardAsync(Guid id, Guid actingUserId, CancellationToken cancellationToken = default)
+    {
+        var permission = await EnsureBoardPermissionAsync(
+            actingUserId,
+            id,
+            static (authorizationService, userId, boardId) => authorizationService.CanDeleteBoardAsync(userId, boardId),
+            "You do not have permission to delete this board");
+
+        if (!permission.IsSuccess)
+            return permission;
+
+        return await DeleteBoardInternalAsync(id, cancellationToken);
+    }
+
+    private async Task<Result<BoardDto>> CreateBoardInternalAsync(CreateBoardDto dto, Guid? ownerId, CancellationToken cancellationToken)
     {
         try
         {
-            var board = new Board(dto.Name, dto.Description);
+            var board = new Board(dto.Name, dto.Description, ownerId);
             await _unitOfWork.Boards.AddAsync(board, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -31,7 +140,7 @@ public class BoardService
         }
     }
 
-    public async Task<Result<BoardDto>> UpdateBoardAsync(Guid id, UpdateBoardDto dto, CancellationToken cancellationToken = default)
+    private async Task<Result<BoardDto>> UpdateBoardInternalAsync(Guid id, UpdateBoardDto dto, CancellationToken cancellationToken)
     {
         try
         {
@@ -68,22 +177,7 @@ public class BoardService
         return Result.Success(MapToDto(board));
     }
 
-    public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var board = await _unitOfWork.Boards.GetByIdWithDetailsAsync(id, cancellationToken);
-        if (board == null)
-            return Result.Failure<BoardDetailDto>(ErrorCodes.NotFound, $"Board with ID {id} not found");
-
-        return Result.Success(MapToDetailDto(board));
-    }
-
-    public async Task<Result<IEnumerable<BoardDto>>> ListBoardsAsync(string? searchText = null, bool includeArchived = false, CancellationToken cancellationToken = default)
-    {
-        var boards = await _unitOfWork.Boards.SearchAsync(searchText, includeArchived, cancellationToken);
-        return Result.Success(boards.Select(MapToDto));
-    }
-
-    public async Task<Result> DeleteBoardAsync(Guid id, CancellationToken cancellationToken = default)
+    private async Task<Result> DeleteBoardInternalAsync(Guid id, CancellationToken cancellationToken)
     {
         var board = await _unitOfWork.Boards.GetByIdAsync(id, cancellationToken);
         if (board == null)
@@ -92,6 +186,27 @@ public class BoardService
         board.Archive(); // Soft delete
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
+    }
+
+    private async Task<Result> EnsureBoardPermissionAsync(
+        Guid actingUserId,
+        Guid boardId,
+        Func<IAuthorizationService, Guid, Guid, Task<Result<bool>>> permissionCheck,
+        string forbiddenMessage)
+    {
+        if (actingUserId == Guid.Empty)
+            return Result.Failure(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
+
+        if (_authorizationService is null)
+            return Result.Success();
+
+        var permission = await permissionCheck(_authorizationService, actingUserId, boardId);
+        if (!permission.IsSuccess)
+            return Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+
+        return permission.Value
+            ? Result.Success()
+            : Result.Failure(ErrorCodes.Forbidden, forbiddenMessage);
     }
 
     private static BoardDto MapToDto(Board board)

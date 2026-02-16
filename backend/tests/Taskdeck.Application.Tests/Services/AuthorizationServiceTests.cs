@@ -32,7 +32,7 @@ public class AuthorizationServiceTests
     #region CanReadBoardAsync Tests
 
     [Fact]
-    public async Task CanReadBoardAsync_ShouldReturnTrue_WhenBoardHasNullOwnerId()
+    public async Task CanReadBoardAsync_ShouldReturnFalse_WhenBoardHasNullOwnerIdAndNoExplicitAccess()
     {
         // Arrange
         var board = new Board("Test Board");
@@ -40,11 +40,32 @@ public class AuthorizationServiceTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, userId, default))
+            .ReturnsAsync((BoardAccess?)null);
 
         // Act
         var result = await _service.CanReadBoardAsync(userId, board.Id);
 
         // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CanReadBoardAsync_ShouldReturnTrue_WhenBoardHasNullOwnerIdButUserHasExplicitAccess()
+    {
+        var board = new Board("Test Board");
+        var userId = Guid.NewGuid();
+        var grantedBy = Guid.NewGuid();
+        var access = new BoardAccess(board.Id, userId, UserRole.Viewer, grantedBy);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, userId, default))
+            .ReturnsAsync(access);
+
+        var result = await _service.CanReadBoardAsync(userId, board.Id);
+
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().BeTrue();
     }
@@ -295,6 +316,51 @@ public class AuthorizationServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    #endregion
+
+    #region GetReadableBoardIdsAsync Tests
+
+    [Fact]
+    public async Task GetReadableBoardIdsAsync_ShouldReturnOwnedAndGrantedBoardIds()
+    {
+        var ownerId = Guid.NewGuid();
+        var grantedBy = Guid.NewGuid();
+
+        var ownedBoard = new Board("Owned Board", ownerId: ownerId);
+        var grantedBoard = new Board("Granted Board", ownerId: Guid.NewGuid());
+        var noAccessBoard = new Board("No Access Board", ownerId: Guid.NewGuid());
+
+        var grantedAccess = new BoardAccess(grantedBoard.Id, ownerId, UserRole.Viewer, grantedBy);
+
+        _boardRepoMock.Setup(r => r.GetOwnedBoardIdsAsync(
+                ownerId,
+                It.IsAny<IEnumerable<Guid>>(),
+                default))
+            .ReturnsAsync(new List<Guid> { ownedBoard.Id });
+        _boardAccessRepoMock.Setup(r => r.GetByUserIdAsync(ownerId, default))
+            .ReturnsAsync(new List<BoardAccess> { grantedAccess });
+
+        var result = await _service.GetReadableBoardIdsAsync(
+            ownerId,
+            new[] { ownedBoard.Id, grantedBoard.Id, noAccessBoard.Id });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Contain(ownedBoard.Id);
+        result.Value.Should().Contain(grantedBoard.Id);
+        result.Value.Should().NotContain(noAccessBoard.Id);
+        _boardAccessRepoMock.Verify(r => r.GetByUserIdAsync(ownerId, default), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetReadableBoardIdsAsync_ShouldReturnValidationError_WhenUserIdIsEmpty()
+    {
+        var board = new Board("Test Board", ownerId: Guid.NewGuid());
+        var result = await _service.GetReadableBoardIdsAsync(Guid.Empty, new[] { board.Id });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
     #endregion
