@@ -32,6 +32,8 @@ Do in GitHub UI:
 - Protect `main`:
   - require PR reviews (even 1 self-review is fine)
   - require status checks to pass:
+    - docs-governance
+    - backend-architecture
     - backend-unit (ubuntu/windows)
     - api-integration (ubuntu/windows)
     - frontend-unit (ubuntu/windows)
