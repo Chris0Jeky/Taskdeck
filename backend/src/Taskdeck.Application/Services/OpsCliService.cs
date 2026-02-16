@@ -26,7 +26,11 @@ public class OpsCliService : IOpsCliService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<CommandRunDto>> RunCommandAsync(Guid userId, RunCommandDto dto, CancellationToken ct = default)
+    public async Task<Result<CommandRunDto>> RunCommandAsync(
+        Guid userId,
+        RunCommandDto dto,
+        string? correlationId = null,
+        CancellationToken ct = default)
     {
         try
         {
@@ -47,9 +51,11 @@ public class OpsCliService : IOpsCliService
                     ErrorCodes.Forbidden,
                     $"Template '{template.Name}' requires role '{template.RequiredRole}'");
 
-            var correlationId = Guid.NewGuid().ToString("N");
+            var effectiveCorrelationId = string.IsNullOrWhiteSpace(correlationId)
+                ? Guid.NewGuid().ToString("N")
+                : correlationId;
 
-            var commandRun = new CommandRun(dto.TemplateName, userId, correlationId);
+            var commandRun = new CommandRun(dto.TemplateName, userId, effectiveCorrelationId);
             await _unitOfWork.CommandRuns.AddAsync(commandRun, ct);
 
             commandRun.Start();
