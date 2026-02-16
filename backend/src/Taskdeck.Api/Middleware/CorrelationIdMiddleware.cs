@@ -6,6 +6,7 @@ public class CorrelationIdMiddleware
 {
     public const string HeaderName = "X-Request-Id";
     public const string ItemKey = "CorrelationId";
+    private const int MaxCorrelationIdLength = 128;
 
     private readonly RequestDelegate _next;
     private readonly ILogger<CorrelationIdMiddleware> _logger;
@@ -19,9 +20,23 @@ public class CorrelationIdMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         context.Request.Headers.TryGetValue(HeaderName, out StringValues incomingHeader);
-        var correlationId = string.IsNullOrWhiteSpace(incomingHeader)
-            ? context.TraceIdentifier
-            : incomingHeader.ToString();
+        var requestedCorrelationId = incomingHeader.ToString().Trim();
+        var correlationId = context.TraceIdentifier;
+
+        if (!string.IsNullOrWhiteSpace(requestedCorrelationId))
+        {
+            if (IsValidCorrelationId(requestedCorrelationId))
+            {
+                correlationId = requestedCorrelationId;
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Rejected invalid {HeaderName} value (length: {Length}); falling back to generated trace identifier",
+                    HeaderName,
+                    requestedCorrelationId.Length);
+            }
+        }
 
         context.TraceIdentifier = correlationId;
         context.Items[ItemKey] = correlationId;
@@ -34,5 +49,24 @@ public class CorrelationIdMiddleware
         {
             await _next(context);
         }
+    }
+
+    private static bool IsValidCorrelationId(string correlationId)
+    {
+        if (correlationId.Length > MaxCorrelationIdLength)
+            return false;
+
+        foreach (var ch in correlationId)
+        {
+            if (char.IsLetterOrDigit(ch))
+                continue;
+
+            if (ch is '-' or '_' or '.' or ':' or '/')
+                continue;
+
+            return false;
+        }
+
+        return true;
     }
 }

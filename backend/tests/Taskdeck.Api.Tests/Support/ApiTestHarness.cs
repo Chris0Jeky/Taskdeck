@@ -99,7 +99,8 @@ public static class ApiTestHarness
 
     private static async Task AssertErrorContractIfPresentAsync(HttpResponseMessage response)
     {
-        if (response.Content.Headers.ContentLength.GetValueOrDefault() == 0)
+        var contentLength = response.Content.Headers.ContentLength;
+        if (contentLength.HasValue && contentLength.Value == 0)
         {
             return;
         }

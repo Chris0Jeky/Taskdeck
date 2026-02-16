@@ -24,6 +24,11 @@ public class BoardService
 
     public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, CancellationToken cancellationToken = default)
     {
+        if (_authorizationService is not null)
+            return Result.Failure<BoardDto>(
+                ErrorCodes.ValidationError,
+                "Acting user ID is required when authorization is enabled");
+
         return await CreateBoardInternalAsync(dto, ownerId: null, cancellationToken);
     }
 
@@ -88,30 +93,24 @@ public class BoardService
         if (actingUserId == Guid.Empty)
             return Result.Failure<IEnumerable<BoardDto>>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
 
-        var boards = await _unitOfWork.Boards.SearchAsync(searchText, includeArchived, cancellationToken);
+        var boards = (await _unitOfWork.Boards.SearchAsync(searchText, includeArchived, cancellationToken)).ToList();
 
         if (_authorizationService is null)
             return Result.Success(boards.Select(MapToDto));
 
-        var visibleBoards = new List<BoardDto>();
-        foreach (var board in boards)
-        {
-            var permission = await _authorizationService.CanReadBoardAsync(actingUserId, board.Id);
-            if (!permission.IsSuccess)
-            {
-                if (permission.ErrorCode == ErrorCodes.NotFound)
-                {
-                    continue;
-                }
+        var visibleBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
+            actingUserId,
+            boards,
+            cancellationToken);
 
-                return Result.Failure<IEnumerable<BoardDto>>(permission.ErrorCode, permission.ErrorMessage);
-            }
+        if (!visibleBoardIdsResult.IsSuccess)
+            return Result.Failure<IEnumerable<BoardDto>>(visibleBoardIdsResult.ErrorCode, visibleBoardIdsResult.ErrorMessage);
 
-            if (permission.Value)
-            {
-                visibleBoards.Add(MapToDto(board));
-            }
-        }
+        var visibleBoardIds = visibleBoardIdsResult.Value;
+        var visibleBoards = boards
+            .Where(board => visibleBoardIds.Contains(board.Id))
+            .Select(MapToDto)
+            .ToList();
 
         return Result.Success<IEnumerable<BoardDto>>(visibleBoards);
     }

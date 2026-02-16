@@ -1,5 +1,6 @@
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.Services;
@@ -10,6 +11,11 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public interface IAuthorizationService
 {
+    Task<Result<IReadOnlySet<Guid>>> GetReadableBoardIdsAsync(
+        Guid userId,
+        IEnumerable<Board> boards,
+        CancellationToken cancellationToken = default);
+
     Task<Result<bool>> CanReadBoardAsync(Guid userId, Guid boardId);
     Task<Result<bool>> CanWriteBoardAsync(Guid userId, Guid boardId);
     Task<Result<bool>> CanManageBoardAccessAsync(Guid userId, Guid boardId);
