@@ -37,6 +37,11 @@ frontend/*/.vitest/
 frontend/*/.playwright/
 frontend/*/.cache/
 
+# Environment files (root/app)
+.env
+.env.*
+!.env.example
+
 # Package managers
 npm-debug.log*
 yarn-debug.log*
