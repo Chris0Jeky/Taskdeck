@@ -1,0 +1,31 @@
+# Project-scoped Codex MCP configuration for Taskdeck.
+# This file is loaded when the repository is a trusted project.
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+
+[mcp_servers.ripgrep]
+command = "npx"
+args = ["-y", "mcp-ripgrep@latest"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@executeautomation/playwright-mcp-server"]
+startup_timeout_sec = 30
+tool_timeout_sec = 180
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_PAT"
+startup_timeout_sec = 20
+tool_timeout_sec = 120
