@@ -14,6 +14,7 @@ Update this file at the end of each meaningful delivery cycle.
 - `docs/STATUS.md` is authoritative for current shipped reality.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
 - Security and identity convergence remains the highest-priority engineering track.
+- Cross-user existence policy is fixed: return `403` for authenticated-but-unauthorized access and `404` for true missing resources.
 - Automation remains proposal-first and review-first by default.
 - MVP should include a dogfooding workflow: paste structured plan text in chat and bootstrap a board/project from approved proposals.
 - UX investments should be modular and reusable (keyboard-first, discoverable selectors, shared input-assist patterns).
@@ -54,6 +55,7 @@ Focus:
 - enforce `[Authorize]` and claim-derived identity on legacy controller families
 - remove query/body actor identity where claims should be source of truth
 - align all controller failure responses with shared error contract patterns
+- enforce the `401/403/404` contract (`401` unauthenticated, `403` authenticated-but-unauthorized/cross-user, `404` true missing)
 - add integration coverage for unauthorized/forbidden/cross-user paths
 
 Exit Criteria:
@@ -92,7 +94,7 @@ Exit Criteria:
 ## Active Backlog (Prioritized)
 
 1. P0: Claims-first identity retrofit across remaining controller families: columns/cards/labels/export/audit/queue/board-access/users.
-2. P0: Auth regression integration suite expansion for legacy + advanced controllers.
+2. P0: Auth regression integration suite expansion for legacy + advanced controllers with explicit `401/403/404` assertions.
 3. P0: Archive board lifecycle coherence (archive/unarchive visibility, restore semantics, UX parity).
 4. P1: Interaction-mode guardrails to prevent drag side effects while editing card/task content.
 5. P1: Command palette keyboard selection/activation model.
@@ -156,7 +158,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Continue claims-first retrofit for remaining legacy controller families and align response contracts.
-2. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes.
+2. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes, enforcing `401/403/404` policy semantics.
 3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
 4. Define and implement archive board lifecycle behavior contract (API + UI).
 5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.

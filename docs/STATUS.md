@@ -89,6 +89,7 @@ Completed in Phase 4:
 Remaining for Phase 4 completion:
 - security and claim-based identity convergence across legacy controllers
 - removal of query/body actor identity patterns where claims should be authoritative
+- repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
 - production-capable LLM provider path (or strict feature-gated mock-only policy)
 - broader planner/executor coverage and safety semantics
 - MVP chat-to-project bootstrap: paste checklist/plan text and generate a ready-to-use board via proposal-first flow
@@ -153,6 +154,7 @@ Security and identity:
 - legacy controller families are not yet fully aligned with claims-first identity handling
 - mixed identity model (claims + query/body actor IDs) increases misuse risk
 - boards family is now claims-first; remaining legacy families are columns/cards/labels/export/audit/queue/board-access/users
+- policy decision is now explicit: cross-user authenticated access failures should return `403`; remaining work is consistent enforcement across all families/tests
 
 Automation and data:
 - active LLM provider is mock-backed
@@ -183,6 +185,7 @@ UX and operability (reconciled from product notes):
 - Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.
 - Added request-correlation middleware and propagated request IDs into Ops command correlation IDs.
 - Added lightweight timing/result diagnostics for log queries and automation proposal execution.
+- Recorded cross-user existence policy decision: use `403` for authenticated-but-unauthorized access, reserve `404` for true missing resources.
 
 ## Canonical Documentation Policy
 

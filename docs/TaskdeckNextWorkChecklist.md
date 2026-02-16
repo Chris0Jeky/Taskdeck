@@ -21,6 +21,10 @@
   AC: STATUS, IMPLEMENTATION_MASTERPLAN, TESTING_GUIDE, MANUAL_TEST_CHECKLIST cross-linked and date-stamped.
 
 ## Security & Identity (Highest Priority)
+- [ ] SEC-00 Ratify and enforce cross-user existence policy (`403`)  
+  Branch: `chore/security-cross-user-policy-403`  
+  Depends on: BASE-02  
+  AC: docs state `401` unauthenticated, `403` authenticated-but-unauthorized/cross-user, `404` true missing; integration tests enforce this contract.
 - [ ] SEC-01 Enforce auth on legacy controllers  
   Branch: `feature/security-claims-retrofit-phase1`  
   Depends on: BASE-01  
