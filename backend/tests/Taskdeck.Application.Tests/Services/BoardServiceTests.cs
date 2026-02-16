@@ -39,7 +39,7 @@ public class BoardServiceTests
             .ReturnsAsync((Board b, CancellationToken ct) => b);
 
         // Act
-        var result = await _service.CreateBoardAsync(dto);
+        var result = await _service.CreateBoardAsync(dto, Guid.NewGuid());
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -56,7 +56,7 @@ public class BoardServiceTests
         var dto = new CreateBoardDto("", "Description");
 
         // Act
-        var result = await _service.CreateBoardAsync(dto);
+        var result = await _service.CreateBoardAsync(dto, Guid.NewGuid());
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -72,7 +72,7 @@ public class BoardServiceTests
         var dto = new CreateBoardDto(longName, "Description");
 
         // Act
-        var result = await _service.CreateBoardAsync(dto);
+        var result = await _service.CreateBoardAsync(dto, Guid.NewGuid());
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -89,7 +89,7 @@ public class BoardServiceTests
             .ReturnsAsync((Board b, CancellationToken ct) => b);
 
         // Act
-        var result = await _service.CreateBoardAsync(dto);
+        var result = await _service.CreateBoardAsync(dto, Guid.NewGuid());
 
         // Assert
         result.IsSuccess.Should().BeTrue();
