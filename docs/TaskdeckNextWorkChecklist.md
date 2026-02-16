@@ -3,7 +3,7 @@
 ## Project Setup
 - [ ] OPS-01 Create GitHub Project views (Now, Next, Blocked, Review, Done)  
   AC: all items below imported as project items.
-- [ ] OPS-02 Add labels (`security`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `starter-packs`, `llm`)  
+- [ ] OPS-02 Add labels (`security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`)  
   AC: each checklist item has at least one label.
 - [ ] OPS-03 Add PR template gates (tests run, docs updated, risk notes)  
   AC: PRs cannot be merged without all three checked.
