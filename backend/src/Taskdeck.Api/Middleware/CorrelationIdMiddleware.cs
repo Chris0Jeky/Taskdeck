@@ -6,7 +6,7 @@ public class CorrelationIdMiddleware
 {
     public const string HeaderName = "X-Request-Id";
     public const string ItemKey = "CorrelationId";
-    private const int MaxCorrelationIdLength = 128;
+    private const int MaxCorrelationIdLength = 100;
 
     private readonly RequestDelegate _next;
     private readonly ILogger<CorrelationIdMiddleware> _logger;
