@@ -10,7 +10,59 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
 jobs:
+  docs-governance:
+    name: Docs Governance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Validate docs governance invariants
+        run: node scripts/check-docs-governance.mjs
+
+  backend-architecture:
+    name: Backend Architecture
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Run architecture boundary tests
+        run: dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=architecture.trx" --results-directory "backend/TestResults/architecture"
+
+      - name: Upload architecture test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-architecture-trx
+          path: backend/TestResults/architecture
+          if-no-files-found: ignore
+
   backend-unit:
     name: Backend Unit (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -28,18 +80,30 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
 
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln
 
       - name: Run domain tests
-        run: dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj --configuration Release --no-restore
+        run: dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=domain.trx" --results-directory "backend/TestResults/backend-unit/${{ matrix.os }}/domain"
 
       - name: Run application tests
-        run: dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj --configuration Release --no-restore
+        run: dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=application.trx" --results-directory "backend/TestResults/backend-unit/${{ matrix.os }}/application"
 
       - name: Run CLI contract tests
-        run: dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj --configuration Release --no-restore
+        run: dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=cli.trx" --results-directory "backend/TestResults/backend-unit/${{ matrix.os }}/cli"
+
+      - name: Upload backend unit test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-trx-${{ matrix.os }}
+          path: backend/TestResults/backend-unit/${{ matrix.os }}
+          if-no-files-found: ignore
 
   api-integration:
     name: API Integration (${{ matrix.os }})
@@ -58,12 +122,24 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
 
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln
 
       - name: Run API integration tests
-        run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore
+        run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"
+
+      - name: Upload API integration test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-integration-trx-${{ matrix.os }}
+          path: backend/TestResults/api-integration/${{ matrix.os }}
+          if-no-files-found: ignore
 
   frontend-unit:
     name: Frontend Unit (${{ matrix.os }})
@@ -89,13 +165,34 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
+      - name: Run frontend typecheck
+        working-directory: frontend/taskdeck-web
+        run: npm run typecheck
+
+      - name: Run frontend build
+        working-directory: frontend/taskdeck-web
+        run: npm run build
+
       - name: Run frontend tests
         working-directory: frontend/taskdeck-web
-        run: npx vitest run
+        run: |
+          node -e "require('fs').mkdirSync('test-results',{recursive:true});"
+          npx vitest run --reporter=default --reporter=junit --outputFile.junit=./test-results/vitest.junit.xml
+
+      - name: Upload frontend test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-artifacts-${{ matrix.os }}
+          path: |
+            frontend/taskdeck-web/test-results
+          if-no-files-found: ignore
 
   e2e-smoke:
     name: E2E Smoke
     needs:
+      - docs-governance
+      - backend-architecture
       - backend-unit
       - api-integration
       - frontend-unit
@@ -109,6 +206,10 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -123,6 +224,12 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend/taskdeck-web
         run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('frontend/taskdeck-web/package-lock.json') }}
 
       - name: Install Playwright browser
         working-directory: frontend/taskdeck-web
