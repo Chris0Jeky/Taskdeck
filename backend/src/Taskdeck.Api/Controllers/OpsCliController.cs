@@ -27,7 +27,8 @@ public class OpsCliController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _opsCliService.RunCommandAsync(userId, dto, ct);
+        var correlationId = HttpContext.TraceIdentifier;
+        var result = await _opsCliService.RunCommandAsync(userId, dto, correlationId, ct);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
