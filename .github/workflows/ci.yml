@@ -33,6 +33,9 @@ jobs:
       - name: Validate docs governance invariants
         run: node scripts/check-docs-governance.mjs
 
+      - name: Validate GitHub operations governance invariants
+        run: node scripts/check-github-ops-governance.mjs
+
   backend-architecture:
     name: Backend Architecture
     runs-on: ubuntu-latest

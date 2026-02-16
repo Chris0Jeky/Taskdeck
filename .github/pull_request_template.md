@@ -14,6 +14,11 @@
 - [ ] `docs/IMPLEMENTATION_MASTERPLAN.md` updated (if roadmap or priorities changed)
 - [ ] `docs/TESTING_GUIDE.md` / `docs/MANUAL_TEST_CHECKLIST.md` updated (if verification flow changed)
 
+## Tracking
+
+- [ ] Linked issue included (e.g., `Closes #123`)
+- [ ] Linked issue’s project item status reviewed (`Review` while this PR is open, `Done` when this PR is merged)
+
 ## Risk Notes
 
 - Security impact:

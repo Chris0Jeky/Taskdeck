@@ -15,6 +15,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 
 ## Active Supporting Docs
 
+- `GITHUB_PROJECT_AUTOMATION.md`
+  - Canonical setup and automation rules for the Taskdeck GitHub Project (statuses, workflows, and drift checks).
 - `personalNotes.txt`
   - Working note capture from product/development perspective.
   - Non-authoritative: ideas from this file must be reconciled through `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` before execution.

@@ -14,7 +14,7 @@ assignees: []
 
 ## Required Matrix
 - [ ] Unauthenticated request returns `401`
-- [ ] Authenticated request without access returns `403` (or repo policy `404`)
+- [ ] Authenticated request without access returns `403`
 - [ ] Cross-user isolation is enforced
 - [ ] Happy path remains valid
 - [ ] Error contract is `{ errorCode, message }` where applicable

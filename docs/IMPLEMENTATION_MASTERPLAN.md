@@ -32,7 +32,7 @@ Delivered in the latest cycle:
    - frontend typecheck/build parity in CI
    - NuGet/Playwright caching and richer failure artifacts (TRX/JUnit uploads)
 5. Mechanical invariants delivered:
-   - docs governance CI check (`scripts/check-docs-governance.mjs`)
+   - docs governance CI checks (`scripts/check-docs-governance.mjs`, `scripts/check-github-ops-governance.mjs`)
    - architecture boundary test project (`Taskdeck.Architecture.Tests`)
 6. Security/observability slice delivered:
    - boards controller family retrofitted to claims-first authz
