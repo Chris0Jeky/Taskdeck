@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-13  
+Last Updated: 2026-02-16  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 
@@ -31,6 +31,7 @@ Current constraints are mostly hardening and consistency:
   - `ApiErrorResponse` contract for stable error payload shape (`errorCode`, `message`)
   - `ResultExtensions` mapping for domain/app errors to HTTP statuses
   - `AuthenticatedControllerBase` for claim extraction and authenticated-user guardrails
+  - request correlation middleware (`X-Request-Id`) with response echo and log scope propagation
 - Implemented automation stack:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
@@ -38,7 +39,7 @@ Current constraints are mostly hardening and consistency:
   - `OpsCliService` + `LogQueryService`
 - Auth posture today:
   - JWT middleware is wired
-  - `[Authorize]` currently enforced on chat, automation-proposals, archive, ops-cli, and logs controllers
+  - `[Authorize]` currently enforced on boards, chat, automation-proposals, archive, ops-cli, and logs controllers
 
 ### Frontend
 
@@ -73,6 +74,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
 Completed in Phase 4:
 - CI gate split and matrix hardening
 - authn/authz infrastructure baseline
+- boards controller family retrofit to claims-derived identity (`[Authorize]` + owner-scoped board operations)
 - export/import board JSON flow
 - audit and queue service/API slices
 - automation proposal lifecycle + diff + execute flow
@@ -80,6 +82,9 @@ Completed in Phase 4:
 - chat + ops + logs + worker/health stack
 - frontend integration for automations/chat/ops/archive
 - maintainability refactor across API/controller error handling and frontend API/store utilities (PR #23)
+- CI hardening follow-up: workflow concurrency cancellation, frontend typecheck/build parity, TRX artifacts, caching
+- mechanical checks added: docs governance CI check and architecture boundary test project
+- API integration harness additions for authz assertions (`AssertUnauthorized`, `AssertForbidden`, `AssertNotFoundOrForbidden`, `AssertCrossUserIsolation`)
 
 Remaining for Phase 4 completion:
 - security and claim-based identity convergence across legacy controllers
@@ -92,24 +97,25 @@ Remaining for Phase 4 completion:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-13
+Verification Date: 2026-02-16
 
 ### Backend (Executed)
 
 Command:
-- `dotnet test backend/Taskdeck.sln -c Release`
+- `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
 - Domain: 93/93 passing
 - Application: 256/256 passing
-- API integration: 106/106 passing
+- API integration: 108/108 passing
 - CLI contract: 4/4 passing
-- Backend Total: 459/459 passing
+- Architecture boundaries: 4/4 passing
+- Backend Total: 461/461 passing
 
 ### Frontend Unit + Build (Executed)
 
 Commands:
-- `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose`
+- `cd frontend/taskdeck-web && npx vitest run`
 - `cd frontend/taskdeck-web && npm run typecheck`
 - `cd frontend/taskdeck-web && npm run build`
 
@@ -128,12 +134,14 @@ Result:
 
 ### Total
 
-- Combined automated total: 715/715 passing
+- Combined automated total: 717/717 passing
 
 ## CI Status
 
 Workflow: `.github/workflows/ci.yml`
 
+- `docs-governance` (Ubuntu)
+- `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)
 - `frontend-unit` (Ubuntu/Windows)
@@ -144,6 +152,7 @@ Workflow: `.github/workflows/ci.yml`
 Security and identity:
 - legacy controller families are not yet fully aligned with claims-first identity handling
 - mixed identity model (claims + query/body actor IDs) increases misuse risk
+- boards family is now claims-first; remaining legacy families are columns/cards/labels/export/audit/queue/board-access/users
 
 Automation and data:
 - active LLM provider is mock-backed
@@ -151,7 +160,7 @@ Automation and data:
 - database-level export/import remains unimplemented
 
 Observability and scalability:
-- `LogQueryService` currently performs broad in-memory composition paths
+- `LogQueryService` currently performs broad in-memory composition paths (now emits duration/result-size diagnostics)
 - nullable warnings (`CS8618`) remain in domain entities
 
 UX and operability (reconciled from product notes):
@@ -168,6 +177,11 @@ UX and operability (reconciled from product notes):
 - Reduced duplicated frontend API/store logic by extracting shared query and error utilities.
 - Reconciled active docs and test totals after PR #23 merge.
 - Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
+- Added CI hardening parity updates: concurrency cancellation, frontend typecheck/build enforcement, TRX/JUnit failure artifacts, and package/browser caches.
+- Added docs governance script and architecture boundary tests as CI invariants.
+- Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.
+- Added request-correlation middleware and propagated request IDs into Ops command correlation IDs.
+- Added lightweight timing/result diagnostics for log queries and automation proposal execution.
 
 ## Canonical Documentation Policy
 

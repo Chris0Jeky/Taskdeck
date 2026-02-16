@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Taskdeck.Cli", "src\Taskdec
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Taskdeck.Cli.Tests", "tests\Taskdeck.Cli.Tests\Taskdeck.Cli.Tests.csproj", "{E20D09B5-EE36-4A70-B8B4-6254276E7C6E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Taskdeck.Architecture.Tests", "tests\Taskdeck.Architecture.Tests\Taskdeck.Architecture.Tests.csproj", "{3991B600-152B-4AD7-94E7-4418C59EECF2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -143,6 +145,18 @@ Global
 		{E20D09B5-EE36-4A70-B8B4-6254276E7C6E}.Release|x64.Build.0 = Release|Any CPU
 		{E20D09B5-EE36-4A70-B8B4-6254276E7C6E}.Release|x86.ActiveCfg = Release|Any CPU
 		{E20D09B5-EE36-4A70-B8B4-6254276E7C6E}.Release|x86.Build.0 = Release|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Debug|x64.Build.0 = Debug|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Debug|x86.Build.0 = Debug|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Release|x64.ActiveCfg = Release|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Release|x64.Build.0 = Release|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Release|x86.ActiveCfg = Release|Any CPU
+		{3991B600-152B-4AD7-94E7-4418C59EECF2}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -155,5 +169,6 @@ Global
 		{19881EB5-EAE6-4DE9-A8D0-85EDBD14E1B1} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{ED0833E3-F2F6-4B7E-A7D4-57F6FC2D26D5} = {8A7E8B9C-1D2E-4F3A-9B5C-6D7E8F9A0B1C}
 		{E20D09B5-EE36-4A70-B8B4-6254276E7C6E} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{3991B600-152B-4AD7-94E7-4418C59EECF2} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

@@ -5,7 +5,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -59,13 +61,14 @@ async Task<int> RunAsync(IServiceProvider rootServices, string[] args)
     var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
     var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
     var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+    var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
     var group = args[0].ToLowerInvariant();
     var command = args.Length > 1 ? args[1].ToLowerInvariant() : string.Empty;
 
     return group switch
     {
-        "boards" => await HandleBoardsAsync(boardService, command, args.Skip(2).ToArray()),
+        "boards" => await HandleBoardsAsync(boardService, unitOfWork, command, args.Skip(2).ToArray()),
         "columns" => await HandleColumnsAsync(columnService, command, args.Skip(2).ToArray()),
         "cards" => await HandleCardsAsync(cardService, command, args.Skip(2).ToArray()),
         "help" => ReturnHelp(),
@@ -73,7 +76,11 @@ async Task<int> RunAsync(IServiceProvider rootServices, string[] args)
     };
 }
 
-async Task<int> HandleBoardsAsync(BoardService boardService, string command, string[] args)
+async Task<int> HandleBoardsAsync(
+    BoardService boardService,
+    IUnitOfWork unitOfWork,
+    string command,
+    string[] args)
 {
     var outputJson = HasFlag(args, "--json");
     var normalizedArgs = args
@@ -131,7 +138,10 @@ async Task<int> HandleBoardsAsync(BoardService boardService, string command, str
 
             var name = normalizedArgs[0];
             var description = normalizedArgs.Length > 1 ? string.Join(' ', normalizedArgs.Skip(1)) : null;
-            var result = await boardService.CreateBoardAsync(new CreateBoardDto(name, description));
+            var actorId = await GetOrCreateCliActorIdAsync(unitOfWork);
+            var result = await boardService.CreateBoardAsync(
+                new CreateBoardDto(name, description),
+                actorId);
 
             if (!result.IsSuccess)
             {
@@ -595,4 +605,21 @@ void PrintHelp()
 void WriteJson<T>(T value, JsonSerializerOptions options)
 {
     Console.WriteLine(JsonSerializer.Serialize(value, options));
+}
+
+async Task<Guid> GetOrCreateCliActorIdAsync(IUnitOfWork unitOfWork)
+{
+    const string actorUsername = "taskdeck_cli_actor";
+    const string actorEmail = "taskdeck-cli-actor@local.taskdeck";
+
+    var existingActor = await unitOfWork.Users.GetByUsernameAsync(actorUsername);
+    if (existingActor is not null)
+    {
+        return existingActor.Id;
+    }
+
+    var actor = new User(actorUsername, actorEmail, "cli-internal-actor-password-hash");
+    await unitOfWork.Users.AddAsync(actor);
+    await unitOfWork.SaveChangesAsync();
+    return actor.Id;
 }

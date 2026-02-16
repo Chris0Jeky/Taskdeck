@@ -13,22 +13,46 @@ public class BoardRepository : Repository<Board>, IBoardRepository
 
     public async Task<IEnumerable<Board>> SearchAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
     {
-        var query = _dbSet.AsQueryable();
-
-        if (!includeArchived)
-        {
-            query = query.Where(b => !b.IsArchived);
-        }
-
-        if (!string.IsNullOrWhiteSpace(searchText))
-        {
-            query = query.Where(b => b.Name.Contains(searchText) ||
-                                    (b.Description != null && b.Description.Contains(searchText)));
-        }
+        var query = BuildSearchQuery(searchText, includeArchived);
 
         // Load from database first, then order in memory (SQLite doesn't support DateTimeOffset in ORDER BY)
         var boards = await query.ToListAsync(cancellationToken);
         return boards.OrderByDescending(b => b.CreatedAt);
+    }
+
+    public async Task<IEnumerable<Guid>> SearchIdsAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
+    {
+        var query = BuildSearchQuery(searchText, includeArchived);
+        var boardIds = await query.Select(board => board.Id).ToListAsync(cancellationToken);
+        return boardIds;
+    }
+
+    public async Task<IEnumerable<Board>> GetByIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default)
+    {
+        var idSet = boardIds.Distinct().ToList();
+        if (idSet.Count == 0)
+            return Array.Empty<Board>();
+
+        var boards = await _dbSet
+            .Where(board => idSet.Contains(board.Id))
+            .ToListAsync(cancellationToken);
+
+        return boards.OrderByDescending(board => board.CreatedAt);
+    }
+
+    public async Task<IEnumerable<Guid>> GetOwnedBoardIdsAsync(
+        Guid userId,
+        IEnumerable<Guid> candidateBoardIds,
+        CancellationToken cancellationToken = default)
+    {
+        var candidateIdSet = candidateBoardIds.Distinct().ToList();
+        if (candidateIdSet.Count == 0)
+            return Array.Empty<Guid>();
+
+        return await _dbSet
+            .Where(board => board.OwnerId == userId && candidateIdSet.Contains(board.Id))
+            .Select(board => board.Id)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<Board?> GetByIdWithDetailsAsync(Guid id, CancellationToken cancellationToken = default)
@@ -40,5 +64,24 @@ public class BoardRepository : Repository<Board>, IBoardRepository
                         .ThenInclude(cardLabel => cardLabel.Label)
             .Include(b => b.Labels)
             .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+    }
+
+    private IQueryable<Board> BuildSearchQuery(string? searchText, bool includeArchived)
+    {
+        var query = _dbSet.AsQueryable();
+
+        if (!includeArchived)
+        {
+            query = query.Where(board => !board.IsArchived);
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            query = query.Where(board =>
+                board.Name.Contains(searchText) ||
+                (board.Description != null && board.Description.Contains(searchText)));
+        }
+
+        return query;
     }
 }
