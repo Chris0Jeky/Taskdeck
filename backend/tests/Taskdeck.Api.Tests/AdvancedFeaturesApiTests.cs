@@ -44,6 +44,19 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.GetAsync($"/api/boards/{boardId}/access"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/access",
+                new { userId }));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PutAsJsonAsync(
+                $"/api/boards/{boardId}/access",
+                new { userId }));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.DeleteAsync($"/api/boards/{boardId}/access"));
     }
 
     [Fact]
