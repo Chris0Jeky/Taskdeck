@@ -44,7 +44,7 @@ Current constraints are mostly hardening and consistency:
   - `OpsCliService` + `LogQueryService`
 - Auth posture today:
   - JWT middleware is wired
-  - `[Authorize]` currently enforced on boards, chat, automation-proposals, archive, ops-cli, and logs controllers
+  - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, automation-proposals, archive, ops-cli, and logs controllers
 
 ### Frontend
 
@@ -113,10 +113,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 259/259 passing
-- API integration: 109/109 passing
+- API integration: 117/117 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 469/469 passing
+- Backend Total: 477/477 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -140,7 +140,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 725/725 passing
+- Combined automated total: 733/733 passing
 
 ## CI Status
 
@@ -158,7 +158,7 @@ Workflow: `.github/workflows/ci.yml`
 Security and identity:
 - legacy controller families are not yet fully aligned with claims-first identity handling
 - mixed identity model (claims + query/body actor IDs) increases misuse risk
-- boards family is now claims-first; remaining legacy families are columns/cards/labels/export/audit/queue/board-access/users
+- boards family is now claims-first; remaining claims-first retrofit families are columns/cards/labels/export/audit/queue/board-access/users
 - policy decision is now explicit: cross-user authenticated access failures should return `403`; remaining work is consistent enforcement across all families/tests
 
 Automation and data:
@@ -194,6 +194,7 @@ UX and operability (reconciled from product notes):
 - Recorded cross-user existence policy decision: use `403` for authenticated-but-unauthorized access, reserve `404` for true missing resources.
 - Aligned active docs cross-links/date stamps across `STATUS`, `IMPLEMENTATION_MASTERPLAN`, `TESTING_GUIDE`, and `MANUAL_TEST_CHECKLIST`.
 - Confirmed GitHub Project operational safety view as `No Status` (`no:status`) and documented release/weekly safety checks.
+- Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
 
 ## Canonical Documentation Policy
 
