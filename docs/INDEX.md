@@ -23,6 +23,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Checklist-to-issue planning source for backlog seeding.
 - `ISSUE_EXECUTION_GUIDE.md`
   - Execution order and operating protocol for agents tackling issue backlog.
+- `SESSION_START_CHECKLIST.md`
+  - Lightweight start-of-session runbook for branch hygiene, issue selection, and verification discipline.
 
 ## Active Tooling Docs
 
