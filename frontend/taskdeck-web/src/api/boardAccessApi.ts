@@ -20,31 +20,28 @@ export const boardAccessApi = {
     return data.map(normalizeAccess)
   },
 
-  async grantAccess(boardId: string, access: GrantAccessDto, grantedBy: string): Promise<BoardAccess> {
+  async grantAccess(boardId: string, access: GrantAccessDto): Promise<BoardAccess> {
     const pathBoardId = encodePathSegment(boardId)
-    const queryGrantedBy = encodeURIComponent(grantedBy)
-    const { data } = await http.post<BoardAccess>(`/boards/${pathBoardId}/access?grantedBy=${queryGrantedBy}`, {
+    const { data } = await http.post<BoardAccess>(`/boards/${pathBoardId}/access`, {
       ...access,
       role: toBoardRoleValue(access.role),
     })
     return normalizeAccess(data)
   },
 
-  async updateAccess(boardId: string, accessId: string, access: UpdateAccessDto, updatedBy: string): Promise<BoardAccess> {
+  async updateAccess(boardId: string, accessId: string, access: UpdateAccessDto): Promise<BoardAccess> {
     const pathBoardId = encodePathSegment(boardId)
     const pathAccessId = encodePathSegment(accessId)
-    const queryUpdatedBy = encodeURIComponent(updatedBy)
-    const { data } = await http.put<BoardAccess>(`/boards/${pathBoardId}/access/${pathAccessId}?updatedBy=${queryUpdatedBy}`, {
+    const { data } = await http.put<BoardAccess>(`/boards/${pathBoardId}/access/${pathAccessId}`, {
       ...access,
       role: toBoardRoleValue(access.role),
     })
     return normalizeAccess(data)
   },
 
-  async revokeAccess(boardId: string, accessId: string, revokedBy: string): Promise<void> {
+  async revokeAccess(boardId: string, accessId: string): Promise<void> {
     const pathBoardId = encodePathSegment(boardId)
     const pathAccessId = encodePathSegment(accessId)
-    const queryRevokedBy = encodeURIComponent(revokedBy)
-    await http.delete(`/boards/${pathBoardId}/access/${pathAccessId}?revokedBy=${queryRevokedBy}`)
+    await http.delete(`/boards/${pathBoardId}/access/${pathAccessId}`)
   },
 }
