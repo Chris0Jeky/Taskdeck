@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
 
@@ -10,6 +11,7 @@ namespace Taskdeck.Api.Tests;
 public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private bool _isAuthenticated;
 
     public UsersApiTests(TestWebApplicationFactory factory)
     {
@@ -17,8 +19,41 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task UsersEndpoints_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        var userId = Guid.NewGuid();
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync("/api/users"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/users/{userId}"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync("/api/users/by-username/unauthorized"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                "/api/users",
+                new CreateUserDto($"user_{Guid.NewGuid():N}", $"user_{Guid.NewGuid():N}@example.com", "password123")));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PutAsJsonAsync(
+                $"/api/users/{userId}",
+                new UpdateUserDto($"updated_{Guid.NewGuid():N}", $"updated_{Guid.NewGuid():N}@example.com")));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsync($"/api/users/{userId}/deactivate", null));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsync($"/api/users/{userId}/activate", null));
+    }
+
+    [Fact]
     public async Task CreateUser_ShouldReturnCreated_WithValidData()
     {
+        await EnsureAuthenticatedAsync();
+
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var dto = new CreateUserDto($"user_{suffix}", $"user_{suffix}@example.com", "password123");
 
@@ -36,6 +71,8 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task GetUser_ShouldReturnNotFound_WhenUserDoesNotExist()
     {
+        await EnsureAuthenticatedAsync();
+
         var response = await _client.GetAsync($"/api/users/{Guid.NewGuid()}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -48,6 +85,7 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetUserByUsername_ShouldReturnUser_WhenUserExists()
     {
         var (username, _, _, _) = await RegisterUserAsync("byname");
+        await EnsureAuthenticatedAsync();
 
         var response = await _client.GetAsync($"/api/users/by-username/{username}");
 
@@ -61,6 +99,8 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task GetUserByUsername_ShouldReturnNotFound_WhenUsernameDoesNotExist()
     {
+        await EnsureAuthenticatedAsync();
+
         var response = await _client.GetAsync("/api/users/by-username/nonexistent_user_xyz");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -73,6 +113,7 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task DeactivateUser_ShouldReturnNoContent()
     {
         var (_, _, _, userId) = await RegisterUserAsync("deact");
+        await EnsureAuthenticatedAsync();
 
         var response = await _client.PostAsync($"/api/users/{userId}/deactivate", null);
 
@@ -83,6 +124,7 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task ActivateUser_ShouldReturnNoContent_AfterDeactivation()
     {
         var (_, _, _, userId) = await RegisterUserAsync("activ");
+        await EnsureAuthenticatedAsync();
 
         var deactivateResponse = await _client.PostAsync($"/api/users/{userId}/deactivate", null);
         deactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -101,6 +143,7 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetUsers_ShouldReturnListOfUsers()
     {
         await RegisterUserAsync("listuser");
+        await EnsureAuthenticatedAsync();
 
         var response = await _client.GetAsync("/api/users");
 
@@ -127,5 +170,16 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
         payload.Should().NotBeNull();
 
         return (username, email, password, payload!.User.Id);
+    }
+
+    private async Task EnsureAuthenticatedAsync()
+    {
+        if (_isAuthenticated)
+        {
+            return;
+        }
+
+        await ApiTestHarness.AuthenticateAsync(_client, "users-suite");
+        _isAuthenticated = true;
     }
 }

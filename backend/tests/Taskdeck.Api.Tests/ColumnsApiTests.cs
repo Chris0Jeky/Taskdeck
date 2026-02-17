@@ -19,6 +19,34 @@ public class ColumnsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ColumnsEndpoints_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        var boardId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/boards/{boardId}/columns"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/columns",
+                new CreateColumnDto(boardId, "Unauthorized", null, null)));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PatchAsJsonAsync(
+                $"/api/boards/{boardId}/columns/{columnId}",
+                new UpdateColumnDto("Updated", null, null)));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.DeleteAsync($"/api/boards/{boardId}/columns/{columnId}"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/columns/reorder",
+                new ReorderColumnsDto(new List<Guid> { columnId })));
+    }
+
+    [Fact]
     public async Task ReorderColumns_ShouldReturnColumnsInRequestedOrder()
     {
         var board = await CreateBoardAsync();
@@ -47,6 +75,8 @@ public class ColumnsApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task CreateColumn_ShouldReturnNotFound_WhenBoardDoesNotExist()
     {
+        await EnsureAuthenticatedAsync();
+
         var response = await _client.PostAsJsonAsync(
             $"/api/boards/{Guid.NewGuid()}/columns",
             new CreateColumnDto(Guid.Empty, "Missing board", null, null));

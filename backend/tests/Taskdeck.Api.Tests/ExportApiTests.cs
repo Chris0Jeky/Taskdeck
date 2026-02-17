@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
 
@@ -10,6 +11,7 @@ namespace Taskdeck.Api.Tests;
 public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private bool _isAuthenticated;
 
     public ExportApiTests(TestWebApplicationFactory factory)
     {
@@ -17,8 +19,31 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ExportEndpoints_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        var boardId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/export/boards/{boardId}?userId={userId}"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/export/boards/{boardId}/json?userId={userId}"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                $"/api/import/boards?userId={userId}",
+                new ImportBoardDto("Unauthorized", null, Array.Empty<ImportColumnDto>(), Array.Empty<ImportCardDto>(), Array.Empty<ImportLabelDto>())));
+
+        using var document = JsonDocument.Parse("""{"board":{"id":"00000000-0000-0000-0000-000000000000","name":"x","isArchived":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},"columns":[],"cards":[],"labels":[],"accesses":[],"exportedAt":"2026-01-01T00:00:00Z","exportedBy":"test"}""");
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync($"/api/import/boards/json?userId={userId}", document.RootElement));
+    }
+
+    [Fact]
     public async Task ExportBoard_ShouldReturnBoardData_WhenBoardExists()
     {
+        await EnsureAuthenticatedAsync();
         var (_, _, _, userId) = await RegisterUserAsync("exporter");
         var boardId = await CreateOwnedBoardAsync("export", userId);
 
@@ -35,6 +60,7 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task ExportBoardAsJson_ShouldReturnJsonString()
     {
+        await EnsureAuthenticatedAsync();
         var (_, _, _, userId) = await RegisterUserAsync("jsonexp");
         var boardId = await CreateOwnedBoardAsync("jsonexport", userId);
 
@@ -53,6 +79,7 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task ImportBoard_ShouldCreateNewBoard()
     {
+        await EnsureAuthenticatedAsync();
         var (_, _, _, userId) = await RegisterUserAsync("importer");
 
         var importDto = new ImportBoardDto(
@@ -84,6 +111,7 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task ExportThenImport_ShouldRoundTrip()
     {
+        await EnsureAuthenticatedAsync();
         var (_, _, _, userId) = await RegisterUserAsync("roundtrip");
 
         // Create a board with content via import
@@ -139,6 +167,8 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
 
     private async Task<Guid> CreateOwnedBoardAsync(string stem, Guid ownerId)
     {
+        await EnsureAuthenticatedAsync();
+
         var response = await _client.PostAsJsonAsync(
             $"/api/import/boards?userId={ownerId}",
             new ImportBoardDto(
@@ -154,5 +184,16 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
         result!.Success.Should().BeTrue();
         result.BoardId.Should().NotBeNull();
         return result.BoardId!.Value;
+    }
+
+    private async Task EnsureAuthenticatedAsync()
+    {
+        if (_isAuthenticated)
+        {
+            return;
+        }
+
+        await ApiTestHarness.AuthenticateAsync(_client, "export-suite");
+        _isAuthenticated = true;
     }
 }

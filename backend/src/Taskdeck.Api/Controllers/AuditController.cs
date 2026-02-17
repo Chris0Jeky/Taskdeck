@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.Services;
@@ -5,6 +6,7 @@ using Taskdeck.Application.Services;
 namespace Taskdeck.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class AuditController : ControllerBase
 {
