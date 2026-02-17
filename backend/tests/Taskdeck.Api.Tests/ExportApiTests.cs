@@ -22,32 +22,30 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task ExportEndpoints_ShouldReturnUnauthorized_WhenNoToken()
     {
         var boardId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.GetAsync($"/api/export/boards/{boardId}?userId={userId}"));
+            await _client.GetAsync($"/api/export/boards/{boardId}"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.GetAsync($"/api/export/boards/{boardId}/json?userId={userId}"));
+            await _client.GetAsync($"/api/export/boards/{boardId}/json"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsJsonAsync(
-                $"/api/import/boards?userId={userId}",
+                "/api/import/boards",
                 new ImportBoardDto("Unauthorized", null, Array.Empty<ImportColumnDto>(), Array.Empty<ImportCardDto>(), Array.Empty<ImportLabelDto>())));
 
         using var document = JsonDocument.Parse("""{"board":{"id":"00000000-0000-0000-0000-000000000000","name":"x","isArchived":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},"columns":[],"cards":[],"labels":[],"accesses":[],"exportedAt":"2026-01-01T00:00:00Z","exportedBy":"test"}""");
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.PostAsJsonAsync($"/api/import/boards/json?userId={userId}", document.RootElement));
+            await _client.PostAsJsonAsync("/api/import/boards/json", document.RootElement));
     }
 
     [Fact]
     public async Task ExportBoard_ShouldReturnBoardData_WhenBoardExists()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("exporter");
-        var boardId = await CreateOwnedBoardAsync("export", userId);
+        var boardId = await CreateOwnedBoardAsync("export");
 
-        var response = await _client.GetAsync($"/api/export/boards/{boardId}?userId={userId}");
+        var response = await _client.GetAsync($"/api/export/boards/{boardId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -61,10 +59,9 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task ExportBoardAsJson_ShouldReturnJsonString()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("jsonexp");
-        var boardId = await CreateOwnedBoardAsync("jsonexport", userId);
+        var boardId = await CreateOwnedBoardAsync("jsonexport");
 
-        var response = await _client.GetAsync($"/api/export/boards/{boardId}/json?userId={userId}");
+        var response = await _client.GetAsync($"/api/export/boards/{boardId}/json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -80,7 +77,6 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task ImportBoard_ShouldCreateNewBoard()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("importer");
 
         var importDto = new ImportBoardDto(
             $"Imported-{Guid.NewGuid():N}",
@@ -96,7 +92,7 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
             },
             Array.Empty<ImportLabelDto>());
 
-        var response = await _client.PostAsJsonAsync($"/api/import/boards?userId={userId}", importDto);
+        var response = await _client.PostAsJsonAsync("/api/import/boards", importDto);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -112,7 +108,6 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task ExportThenImport_ShouldRoundTrip()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("roundtrip");
 
         // Create a board with content via import
         var importDto = new ImportBoardDto(
@@ -122,20 +117,20 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
             new[] { new ImportCardDto("Card A", "desc", "Backlog", 0, null, null) },
             new[] { new ImportLabelDto("Bug", "#FF0000") });
 
-        var importResponse = await _client.PostAsJsonAsync($"/api/import/boards?userId={userId}", importDto);
+        var importResponse = await _client.PostAsJsonAsync("/api/import/boards", importDto);
         importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var importResult = await importResponse.Content.ReadFromJsonAsync<ImportResultDto>();
         importResult.Should().NotBeNull();
         var boardId = importResult!.BoardId!.Value;
 
         // Export the board as JSON
-        var exportResponse = await _client.GetAsync($"/api/export/boards/{boardId}/json?userId={userId}");
+        var exportResponse = await _client.GetAsync($"/api/export/boards/{boardId}/json");
         exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var exportJson = await exportResponse.Content.ReadAsStringAsync();
 
         // Import from the exported JSON
         var reimportResponse = await _client.PostAsync(
-            $"/api/import/boards/json?userId={userId}",
+            "/api/import/boards/json",
             new StringContent(exportJson, System.Text.Encoding.UTF8, "application/json"));
         reimportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -147,30 +142,26 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
         reimportResult.LabelsImported.Should().Be(1);
     }
 
-    private async Task<(string Username, string Email, string Password, Guid UserId)> RegisterUserAsync(string stem)
+    [Fact]
+    public async Task ExportBoard_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
     {
-        var suffix = Guid.NewGuid().ToString("N")[..8];
-        var username = $"{stem}_{suffix}";
-        var email = $"{stem}_{suffix}@example.com";
-        const string password = "password123";
+        await EnsureAuthenticatedAsync();
+        var boardId = await CreateOwnedBoardAsync("forbidden-export");
 
-        var response = await _client.PostAsJsonAsync(
-            "/api/auth/register",
-            new CreateUserDto(username, email, password));
+        await ApiTestHarness.AuthenticateAsync(_client, "export-forbidden-user");
+        _isAuthenticated = true;
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
-        payload.Should().NotBeNull();
+        var response = await _client.GetAsync($"/api/export/boards/{boardId}");
 
-        return (username, email, password, payload!.User.Id);
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
-    private async Task<Guid> CreateOwnedBoardAsync(string stem, Guid ownerId)
+    private async Task<Guid> CreateOwnedBoardAsync(string stem)
     {
         await EnsureAuthenticatedAsync();
 
         var response = await _client.PostAsJsonAsync(
-            $"/api/import/boards?userId={ownerId}",
+            "/api/import/boards",
             new ImportBoardDto(
                 $"{stem}-{Guid.NewGuid():N}",
                 null,
