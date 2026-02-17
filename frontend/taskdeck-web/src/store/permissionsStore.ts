@@ -66,8 +66,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       loading.value = true
       error.value = null
-      const grantedBy = session.requireUserId('board access management')
-      const access = await boardAccessApi.grantAccess(boardId, dto, grantedBy)
+      session.requireUserId('board access management')
+      const access = await boardAccessApi.grantAccess(boardId, dto)
       const existing = boardAccess.value.get(boardId) ?? []
       boardAccess.value.set(boardId, [...existing, access])
       toast.success('Access granted')
@@ -86,8 +86,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       loading.value = true
       error.value = null
-      const updatedBy = session.requireUserId('board access management')
-      const updated = await boardAccessApi.updateAccess(boardId, accessId, dto, updatedBy)
+      session.requireUserId('board access management')
+      const updated = await boardAccessApi.updateAccess(boardId, accessId, dto)
       const existing = boardAccess.value.get(boardId) ?? []
       const index = existing.findIndex(a => a.id === accessId)
       if (index !== -1) {
@@ -110,8 +110,8 @@ export const usePermissionsStore = defineStore('permissions', () => {
     try {
       loading.value = true
       error.value = null
-      const revokedBy = session.requireUserId('board access management')
-      await boardAccessApi.revokeAccess(boardId, accessId, revokedBy)
+      session.requireUserId('board access management')
+      await boardAccessApi.revokeAccess(boardId, accessId)
       const existing = boardAccess.value.get(boardId) ?? []
       boardAccess.value.set(boardId, existing.filter(a => a.id !== accessId))
       toast.success('Access revoked')
