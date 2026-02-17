@@ -42,6 +42,19 @@ public class LabelsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetLabels_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
+    {
+        var board = await CreateBoardAsync();
+
+        await ApiTestHarness.AuthenticateAsync(_client, "labels-other-user");
+        _isAuthenticated = true;
+
+        var response = await _client.GetAsync($"/api/boards/{board.Id}/labels");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
     public async Task CreateUpdateDeleteLabel_ShouldCompleteLifecycle()
     {
         var board = await CreateBoardAsync();

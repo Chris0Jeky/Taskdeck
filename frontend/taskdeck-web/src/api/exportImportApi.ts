@@ -6,30 +6,26 @@ function encodePathSegment(value: string): string {
 }
 
 export const exportImportApi = {
-  async exportBoard(boardId: string, userId: string): Promise<unknown> {
+  async exportBoard(boardId: string): Promise<unknown> {
     const pathBoardId = encodePathSegment(boardId)
-    const queryUserId = encodeURIComponent(userId)
-    const { data } = await http.get(`/export/boards/${pathBoardId}?userId=${queryUserId}`)
+    const { data } = await http.get(`/export/boards/${pathBoardId}`)
     return data
   },
 
-  async exportBoardJson(boardId: string, userId: string): Promise<unknown> {
+  async exportBoardJson(boardId: string): Promise<unknown> {
     const pathBoardId = encodePathSegment(boardId)
-    const queryUserId = encodeURIComponent(userId)
-    const { data } = await http.get(`/export/boards/${pathBoardId}/json?userId=${queryUserId}`)
+    const { data } = await http.get(`/export/boards/${pathBoardId}/json`)
     return data
   },
 
-  async importBoard(payload: unknown, userId: string): Promise<ImportResult> {
-    const queryUserId = encodeURIComponent(userId)
-    const { data } = await http.post<ImportResult>(`/import/boards?userId=${queryUserId}`, payload)
+  async importBoard(payload: unknown): Promise<ImportResult> {
+    const { data } = await http.post<ImportResult>('/import/boards', payload)
     return data
   },
 
-  async importBoardJson(json: string, userId: string): Promise<ImportResult> {
-    const queryUserId = encodeURIComponent(userId)
+  async importBoardJson(json: string): Promise<ImportResult> {
     const parsed = JSON.parse(json)
-    const { data } = await http.post<ImportResult>(`/import/boards/json?userId=${queryUserId}`, parsed, {
+    const { data } = await http.post<ImportResult>('/import/boards/json', parsed, {
       headers: { 'Content-Type': 'application/json' },
     })
     return data

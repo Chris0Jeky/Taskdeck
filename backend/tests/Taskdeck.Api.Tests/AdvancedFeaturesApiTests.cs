@@ -28,12 +28,12 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsJsonAsync(
-                $"/api/import/boards?userId={userId}",
+                "/api/import/boards",
                 new ImportBoardDto("Unauthorized", null, Array.Empty<ImportColumnDto>(), Array.Empty<ImportCardDto>(), Array.Empty<ImportLabelDto>())));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsJsonAsync(
-                $"/api/import/boards/json?userId={userId}",
+                "/api/import/boards/json",
                 new ExportBoardDto(
                     new BoardDto(Guid.NewGuid(), "Unauthorized", null, false, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
                     Array.Empty<ColumnDto>(),
@@ -53,11 +53,11 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PutAsJsonAsync(
-                $"/api/boards/{boardId}/access/{accessId}?updatedBy={userId}",
+                $"/api/boards/{boardId}/access/{accessId}",
                 new UpdateAccessDto(UserRole.Editor)));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.DeleteAsync($"/api/boards/{boardId}/access/{accessId}?revokedBy={userId}"));
+            await _client.DeleteAsync($"/api/boards/{boardId}/access/{accessId}"));
     }
 
     [Fact]
@@ -78,7 +78,6 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task ImportBoardFromJson_ShouldAcceptExportPayloadShape()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, importingUserId) = await RegisterUserAsync("importer");
         var now = DateTimeOffset.UtcNow;
         var boardId = Guid.NewGuid();
         var columnId = Guid.NewGuid();
@@ -108,7 +107,7 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
             now,
             "exporter");
 
-        var response = await _client.PostAsJsonAsync($"/api/import/boards/json?userId={importingUserId}", exportPayload);
+        var response = await _client.PostAsJsonAsync("/api/import/boards/json", exportPayload);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var importResult = await response.Content.ReadFromJsonAsync<ImportResultDto>();
@@ -123,20 +122,19 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task UpdateAccess_ShouldReturnNotFound_WhenAccessBelongsToDifferentBoard()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, granterId) = await RegisterUserAsync("granter");
         var (_, _, _, targetUserId) = await RegisterUserAsync("target");
-        var board1Id = await CreateOwnedBoardAsync("board1", granterId);
-        var board2Id = await CreateOwnedBoardAsync("board2", granterId);
+        var board1Id = await CreateOwnedBoardAsync("board1");
+        var board2Id = await CreateOwnedBoardAsync("board2");
 
         var grantResponse = await _client.PostAsJsonAsync(
-            $"/api/boards/{board2Id}/access?grantedBy={granterId}",
+            $"/api/boards/{board2Id}/access",
             new GrantAccessDto(board2Id, targetUserId, UserRole.Viewer));
         grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var createdAccess = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
         createdAccess.Should().NotBeNull();
 
         var updateResponse = await _client.PutAsJsonAsync(
-            $"/api/boards/{board1Id}/access/{createdAccess!.Id}?updatedBy={granterId}",
+            $"/api/boards/{board1Id}/access/{createdAccess!.Id}",
             new UpdateAccessDto(UserRole.Editor));
 
         updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -162,12 +160,12 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
         return (username, email, password, payload!.User.Id);
     }
 
-    private async Task<Guid> CreateOwnedBoardAsync(string stem, Guid ownerId)
+    private async Task<Guid> CreateOwnedBoardAsync(string stem)
     {
         await EnsureAuthenticatedAsync();
 
         var response = await _client.PostAsJsonAsync(
-            $"/api/import/boards?userId={ownerId}",
+            "/api/import/boards",
             new ImportBoardDto(
                 $"{stem}-{Guid.NewGuid():N}",
                 null,

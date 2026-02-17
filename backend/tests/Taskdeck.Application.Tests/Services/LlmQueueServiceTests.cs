@@ -43,7 +43,7 @@ public class LlmQueueServiceTests
         var boardId = Guid.NewGuid();
         var user = new User("testuser", "test@example.com", "hashedpassword");
         var board = new Board("Test Board");
-        var dto = new CreateLlmRequestDto(userId, "voicenote", "payload text", boardId);
+        var dto = new CreateLlmRequestDto("voicenote", "payload text", boardId);
 
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync(user);
@@ -53,7 +53,7 @@ public class LlmQueueServiceTests
             .ReturnsAsync((LlmRequest r, CancellationToken ct) => r);
 
         // Act
-        var result = await _service.AddToQueueAsync(dto);
+        var result = await _service.AddToQueueAsync(userId, dto);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -68,13 +68,13 @@ public class LlmQueueServiceTests
     {
         // Arrange
         var userId = Guid.NewGuid();
-        var dto = new CreateLlmRequestDto(userId, "voicenote", "payload text");
+        var dto = new CreateLlmRequestDto("voicenote", "payload text");
 
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync((User?)null);
 
         // Act
-        var result = await _service.AddToQueueAsync(dto);
+        var result = await _service.AddToQueueAsync(userId, dto);
 
         // Assert
         result.IsSuccess.Should().BeFalse();

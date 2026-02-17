@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
@@ -12,11 +13,12 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/llm-queue")]
-public class LlmQueueController : ControllerBase
+public class LlmQueueController : AuthenticatedControllerBase
 {
     private readonly LlmQueueService _llmQueueService;
 
-    public LlmQueueController(LlmQueueService llmQueueService)
+    public LlmQueueController(LlmQueueService llmQueueService, IUserContext userContext)
+        : base(userContext)
     {
         _llmQueueService = llmQueueService;
     }
@@ -24,13 +26,19 @@ public class LlmQueueController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> AddToQueue([FromBody] CreateLlmRequestDto dto)
     {
-        var result = await _llmQueueService.AddToQueueAsync(dto);
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _llmQueueService.AddToQueueAsync(userId, dto);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
-    [HttpGet("user/{userId}")]
-    public async Task<IActionResult> GetUserQueue(Guid userId)
+    [HttpGet("user")]
+    public async Task<IActionResult> GetUserQueue()
     {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
         var result = await _llmQueueService.GetUserQueueAsync(userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
@@ -48,8 +56,11 @@ public class LlmQueueController : ControllerBase
     }
 
     [HttpPost("{requestId}/cancel")]
-    public async Task<IActionResult> CancelRequest(Guid requestId, [FromQuery] Guid userId)
+    public async Task<IActionResult> CancelRequest(Guid requestId)
     {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
         var result = await _llmQueueService.CancelRequestAsync(requestId, userId);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }

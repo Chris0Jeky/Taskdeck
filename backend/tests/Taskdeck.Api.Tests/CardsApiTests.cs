@@ -48,6 +48,19 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetCards_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
+    {
+        var board = await CreateBoardAsync();
+
+        await ApiTestHarness.AuthenticateAsync(_client, "cards-other-user");
+        _isAuthenticated = true;
+
+        var response = await _client.GetAsync($"/api/boards/{board.Id}/cards");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
     public async Task CreateCard_ShouldReturnBadRequest_WhenTargetColumnWipLimitExceeded()
     {
         var board = await CreateBoardAsync();
