@@ -284,7 +284,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     private async Task<Guid> CreateOwnedBoardAsync(Guid ownerId)
     {
         var response = await _client.PostAsJsonAsync(
-            $"/api/import/boards?userId={ownerId}",
+            $"/api/import/boards",
             new ImportBoardDto(
                 $"automation-board-{Guid.NewGuid():N}",
                 null,
