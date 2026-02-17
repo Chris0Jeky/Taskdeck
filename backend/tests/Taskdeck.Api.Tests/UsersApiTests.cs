@@ -38,6 +38,11 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
                 new CreateUserDto($"user_{Guid.NewGuid():N}", $"user_{Guid.NewGuid():N}@example.com", "password123")));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PutAsJsonAsync(
+                $"/api/users/{userId}",
+                new UpdateUserDto($"updated_{Guid.NewGuid():N}", $"updated_{Guid.NewGuid():N}@example.com")));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsync($"/api/users/{userId}/deactivate", null));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
