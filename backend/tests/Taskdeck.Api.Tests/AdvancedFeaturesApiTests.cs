@@ -24,6 +24,7 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var boardId = Guid.NewGuid();
         var userId = Guid.NewGuid();
+        var accessId = Guid.NewGuid();
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsJsonAsync(
@@ -48,15 +49,15 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsJsonAsync(
                 $"/api/boards/{boardId}/access",
-                new { userId }));
+                new GrantAccessDto(boardId, userId, UserRole.Viewer)));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PutAsJsonAsync(
-                $"/api/boards/{boardId}/access",
-                new { userId }));
+                $"/api/boards/{boardId}/access/{accessId}?updatedBy={userId}",
+                new UpdateAccessDto(UserRole.Editor)));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.DeleteAsync($"/api/boards/{boardId}/access"));
+            await _client.DeleteAsync($"/api/boards/{boardId}/access/{accessId}?revokedBy={userId}"));
     }
 
     [Fact]
