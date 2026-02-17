@@ -19,6 +19,35 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CardsEndpoints_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        var boardId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/boards/{boardId}/cards"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/cards",
+                new CreateCardDto(boardId, columnId, "Unauthorized", null, null, null)));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PatchAsJsonAsync(
+                $"/api/boards/{boardId}/cards/{cardId}",
+                new UpdateCardDto("Updated", null, null, null, null, null)));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/cards/{cardId}/move",
+                new MoveCardDto(columnId, 0)));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.DeleteAsync($"/api/boards/{boardId}/cards/{cardId}"));
+    }
+
+    [Fact]
     public async Task CreateCard_ShouldReturnBadRequest_WhenTargetColumnWipLimitExceeded()
     {
         var board = await CreateBoardAsync();
