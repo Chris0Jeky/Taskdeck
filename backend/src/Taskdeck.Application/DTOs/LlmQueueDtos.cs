@@ -15,7 +15,6 @@ public record LlmRequestDto(
     int RetryCount);
 
 public record CreateLlmRequestDto(
-    Guid UserId,
     string RequestType,
     string Payload,
     Guid? BoardId = null);

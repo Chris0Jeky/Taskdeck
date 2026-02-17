@@ -47,6 +47,19 @@ public class ColumnsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetColumns_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
+    {
+        var board = await CreateBoardAsync();
+
+        await ApiTestHarness.AuthenticateAsync(_client, "columns-other-user");
+        _isAuthenticated = true;
+
+        var response = await _client.GetAsync($"/api/boards/{board.Id}/columns");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
     public async Task ReorderColumns_ShouldReturnColumnsInRequestedOrder()
     {
         var board = await CreateBoardAsync();

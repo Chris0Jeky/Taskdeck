@@ -10,7 +10,7 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public interface ILlmQueueService
 {
-    Task<Result<LlmRequestDto>> AddToQueueAsync(CreateLlmRequestDto dto);
+    Task<Result<LlmRequestDto>> AddToQueueAsync(Guid userId, CreateLlmRequestDto dto);
     Task<Result<IEnumerable<LlmRequestDto>>> GetUserQueueAsync(Guid userId);
     Task<Result<IEnumerable<LlmRequestDto>>> GetQueueByStatusAsync(RequestStatus status);
     Task<Result> CancelRequestAsync(Guid requestId, Guid userId);

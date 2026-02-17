@@ -12,6 +12,7 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
     private bool _isAuthenticated;
+    private Guid? _authenticatedUserId;
 
     public LlmQueueApiTests(TestWebApplicationFactory factory)
     {
@@ -22,13 +23,12 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task LlmQueueEndpoints_ShouldReturnUnauthorized_WhenNoToken()
     {
         var requestId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.PostAsJsonAsync("/api/llm-queue", new CreateLlmRequestDto(userId, "summarize", "payload")));
+            await _client.PostAsJsonAsync("/api/llm-queue", new CreateLlmRequestDto("summarize", "payload")));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.GetAsync($"/api/llm-queue/user/{userId}"));
+            await _client.GetAsync("/api/llm-queue/user"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.GetAsync("/api/llm-queue/status/Pending"));
@@ -37,7 +37,7 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
             await _client.GetAsync("/api/llm-queue/stats"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.PostAsync($"/api/llm-queue/{requestId}/cancel?userId={userId}", null));
+            await _client.PostAsync($"/api/llm-queue/{requestId}/cancel", null));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsync("/api/llm-queue/process-next", null));
@@ -47,10 +47,9 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task AddToQueue_ShouldReturnOk_WithValidData()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("llmuser");
-        var boardId = await CreateOwnedBoardAsync("llmboard", userId);
+        var boardId = await CreateOwnedBoardAsync("llmboard");
 
-        var dto = new CreateLlmRequestDto(userId, "summarize", "payload data", boardId);
+        var dto = new CreateLlmRequestDto("summarize", "payload data", boardId);
 
         var response = await _client.PostAsJsonAsync("/api/llm-queue", dto);
 
@@ -58,32 +57,39 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
 
         var request = await response.Content.ReadFromJsonAsync<LlmRequestDto>();
         request.Should().NotBeNull();
-        request!.UserId.Should().Be(userId);
+        _authenticatedUserId.Should().NotBeNull();
+        request!.UserId.Should().Be(_authenticatedUserId!.Value);
         request.BoardId.Should().Be(boardId);
         request.RequestType.Should().Be("summarize");
     }
 
     [Fact]
-    public async Task AddToQueue_ShouldReturnNotFound_WhenUserDoesNotExist()
+    public async Task GetUserQueue_ShouldOnlyReturnCurrentUserRequests()
     {
-        await EnsureAuthenticatedAsync();
-        var dto = new CreateLlmRequestDto(Guid.NewGuid(), "summarize", "payload");
+        var owner = await AuthenticateAsAsync("llmowner");
+        var boardId = await CreateOwnedBoardAsync("llm-owner-board");
 
-        var response = await _client.PostAsJsonAsync("/api/llm-queue", dto);
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("summarize", "owner payload", boardId));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await AuthenticateAsAsync("llmother");
+        var response = await _client.GetAsync("/api/llm-queue/user");
 
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var requests = await response.Content.ReadFromJsonAsync<List<LlmRequestDto>>();
+        requests.Should().NotBeNull();
+        requests.Should().NotContain(request => request.UserId == owner.UserId);
     }
 
     [Fact]
     public async Task AddToQueue_ShouldReturnNotFound_WhenBoardDoesNotExist()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("llmnobrd");
 
-        var dto = new CreateLlmRequestDto(userId, "summarize", "payload", Guid.NewGuid());
+        var dto = new CreateLlmRequestDto("summarize", "payload", Guid.NewGuid());
 
         var response = await _client.PostAsJsonAsync("/api/llm-queue", dto);
 
@@ -97,9 +103,8 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetUserQueue_ShouldReturnOk_WhenNoRequests()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("llmempty");
 
-        var response = await _client.GetAsync($"/api/llm-queue/user/{userId}");
+        var response = await _client.GetAsync("/api/llm-queue/user");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -138,10 +143,7 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task CancelRequest_ShouldReturnNotFound_WhenRequestDoesNotExist()
     {
         await EnsureAuthenticatedAsync();
-        var (_, _, _, userId) = await RegisterUserAsync("llmcancel");
-
-        var response = await _client.PostAsync(
-            $"/api/llm-queue/{Guid.NewGuid()}/cancel?userId={userId}", null);
+        var response = await _client.PostAsync($"/api/llm-queue/{Guid.NewGuid()}/cancel", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
@@ -149,30 +151,31 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
     }
 
-    private async Task<(string Username, string Email, string Password, Guid UserId)> RegisterUserAsync(string stem)
+    [Fact]
+    public async Task CancelRequest_ShouldReturnForbidden_WhenRequestBelongsToDifferentUser()
     {
-        var suffix = Guid.NewGuid().ToString("N")[..8];
-        var username = $"{stem}_{suffix}";
-        var email = $"{stem}_{suffix}@example.com";
-        const string password = "password123";
+        await AuthenticateAsAsync("llm-cancel-owner");
+        var boardId = await CreateOwnedBoardAsync("llm-cancel-board");
 
-        var response = await _client.PostAsJsonAsync(
-            "/api/auth/register",
-            new CreateUserDto(username, email, password));
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("summarize", "owner payload", boardId));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var createdRequest = await createResponse.Content.ReadFromJsonAsync<LlmRequestDto>();
+        createdRequest.Should().NotBeNull();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
-        payload.Should().NotBeNull();
+        await AuthenticateAsAsync("llm-cancel-other");
+        var response = await _client.PostAsync($"/api/llm-queue/{createdRequest!.Id}/cancel", null);
 
-        return (username, email, password, payload!.User.Id);
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
-    private async Task<Guid> CreateOwnedBoardAsync(string stem, Guid ownerId)
+    private async Task<Guid> CreateOwnedBoardAsync(string stem)
     {
         await EnsureAuthenticatedAsync();
 
         var response = await _client.PostAsJsonAsync(
-            $"/api/import/boards?userId={ownerId}",
+            "/api/import/boards",
             new ImportBoardDto(
                 $"{stem}-{Guid.NewGuid():N}",
                 null,
@@ -188,6 +191,14 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
         return result.BoardId!.Value;
     }
 
+    private async Task<TestUserContext> AuthenticateAsAsync(string stem)
+    {
+        var context = await ApiTestHarness.AuthenticateAsync(_client, stem);
+        _isAuthenticated = true;
+        _authenticatedUserId = context.UserId;
+        return context;
+    }
+
     private async Task EnsureAuthenticatedAsync()
     {
         if (_isAuthenticated)
@@ -195,7 +206,6 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
             return;
         }
 
-        await ApiTestHarness.AuthenticateAsync(_client, "llmqueue-suite");
-        _isAuthenticated = true;
+        await AuthenticateAsAsync("llmqueue-suite");
     }
 }
