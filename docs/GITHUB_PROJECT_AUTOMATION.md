@@ -2,6 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
+Last Updated: 2026-02-17
 
 ## Canonical Status Model
 
@@ -46,8 +47,12 @@ Keep these views:
 - `Execution Board` (board view, `Column by: Status`)
 
 Operational safety views:
-- `Needs Status` table view with `Status` empty filter.
+- `No Status` table view with `Status` empty filter (`no:status`).
 - `WIP Audit` table view with `status:"Now"` for weekly WIP cap validation.
+
+Safety discipline:
+- Check `No Status` before each release candidate and during weekly backlog seeding.
+- Resolve all empty-status items before merge trains or release tagging.
 
 ## Workflow Automation (GitHub Project UI)
 
@@ -94,4 +99,26 @@ After setup changes:
 - Close the issue and confirm `Status=Done`.
 - Create a PR linked to an issue and confirm issue `Status=Review`.
 - Merge PR and confirm issue and PR items move to `Done`.
+- Open `No Status` and confirm only empty-status items are listed.
+
+## Weekly Backlog Seeding Cadence (OPS-06)
+
+Goal:
+- Keep the project populated with near-horizon, dependency-aware items without overloading WIP.
+
+Weekly process:
+1. Review `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TaskdeckNextWorkChecklist.md`.
+2. Select the highest-priority items whose dependencies are complete.
+3. Create/update issues with explicit acceptance criteria and required labels.
+4. Ensure each issue body includes dependency mapping (`Depends on #...`, `Unblocks #...` when applicable).
+5. Place items into project statuses according to WIP rules.
+
+WIP-aware intake limits:
+- Maximum 5 newly-seeded issues per week.
+- Maximum 1 major issue in `Now`.
+- Maximum 2 issues in `Next`.
+- Remaining seeded issues stay in `Pending` until promoted.
+
+Evidence of execution:
+- 2026-02-16 seeding pass populated Stage 0 governance issues (`#43`, `#59`, `#41`, `#55`, `#60`, `#56`) and Stage 1 security tranche issues.
 
