@@ -2,17 +2,17 @@
 
 This is the active testing guide for Taskdeck.
 
-## Current Verified Totals (2026-02-16)
+## Current Verified Totals (2026-02-17)
 
-- Backend: 461/461 passing
+- Backend: 469/469 passing
   - Domain: 93
-  - Application: 256
-  - API integration: 108
+  - Application: 259
+  - API integration: 109
   - CLI contract: 4
   - Architecture boundaries: 4
 - Frontend unit: 245/245 passing
 - Frontend E2E (smoke + automation/ops): 11/11 passing
-- Combined automated total: 717/717 passing
+- Combined automated total: 725/725 passing
 
 ## Backend Commands
 
@@ -57,7 +57,7 @@ Run E2E suite:
 
 ```bash
 cd frontend/taskdeck-web
-TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
+npx playwright test --reporter=line
 ```
 
 ## CI Gates
