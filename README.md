@@ -1,56 +1,45 @@
-﻿# Taskdeck
+# Taskdeck
 
-Taskdeck is a personal Kanban and to-do manager for developers.
-It is local-first (SQLite), keyboard-friendly, and built with a clean layered backend architecture.
+Taskdeck is a local-first Kanban and execution system for developers.
+It combines a .NET 8 backend, Vue 3 frontend, and automation workflows designed for safe, review-first operations.
 
-## Core Features
+## What It Does
 
-- Boards, columns, cards, and labels
-- WIP limits and blocked-card workflows
-- Card and column drag-and-drop
-- Filtering (text, labels, due date windows, blocked-only)
-- Keyboard shortcuts and shortcut help modal
-- Toast notifications for CRUD and move operations
+- Boards, columns, cards, and labels with WIP-aware flow management
+- Archive and restore operations
+- Workspace activity and operational surfaces
+- Proposal-first automation flows (review before apply)
+- Local-first persistence via SQLite
 
 ## Tech Stack
 
-### Backend
+- Backend: .NET 8, ASP.NET Core Web API, EF Core, SQLite
+- Frontend: Vue 3, TypeScript, Pinia, Vite
+- Testing: xUnit, Vitest, Playwright
 
-- .NET 8
-- ASP.NET Core Web API
-- Entity Framework Core
-- SQLite
-- xUnit + FluentAssertions
+## Repository Layout
 
-### Frontend
+- Backend solution: `backend/Taskdeck.sln`
+- Backend source: `backend/src`
+- Backend tests: `backend/tests`
+- Frontend app: `frontend/taskdeck-web`
+- Active docs: `docs/`
+- Historical docs: `docs/archive/`
 
-- Vue 3 + TypeScript
-- Vite
-- Pinia
-- Vue Router
-- Tailwind CSS
-- Vitest + Vue Test Utils
+## Quick Start
 
-## Getting Started
-
-### Prerequisites
-
+Prerequisites:
 - .NET 8 SDK
 - Node.js 20+ and npm
 
-### Backend
+Backend:
 
 ```bash
-cd backend
-dotnet restore
-dotnet ef database update -p src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj -s src/Taskdeck.Api/Taskdeck.Api.csproj
-dotnet run --project src/Taskdeck.Api/Taskdeck.Api.csproj
+dotnet restore backend/Taskdeck.sln
+dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 ```
 
-API base URL: `http://localhost:5000`
-Swagger: `http://localhost:5000/swagger`
-
-### Frontend
+Frontend:
 
 ```bash
 cd frontend/taskdeck-web
@@ -58,73 +47,53 @@ npm install
 npm run dev
 ```
 
-Frontend URL: `http://localhost:5173`
+Default URLs:
+- API: `http://localhost:5000`
+- Swagger: `http://localhost:5000/swagger`
+- Frontend: `http://localhost:5173`
 
-## Testing
+## Test Commands
 
-### Backend
-
-```bash
-dotnet test backend/Taskdeck.sln
-```
-
-### Frontend
+Backend:
 
 ```bash
-cd frontend/taskdeck-web
-npm run test -- --run
+dotnet test backend/Taskdeck.sln -c Release -m:1
 ```
 
-### E2E Smoke
+Frontend unit + type + build:
 
 ```bash
 cd frontend/taskdeck-web
-npx playwright test
+npx vitest --run --reporter=verbose
+npm run typecheck
+npm run build
 ```
 
-See `docs/TESTING_GUIDE.md` for full details and troubleshooting.
-
-## Reconciled Current Status
-
-As of 2026-02-11:
-
-- Backend tests: 164/164 passing
-- Frontend unit tests: 115/115 passing
-- Frontend E2E smoke tests: 8/8 passing
-- Total automated: 287/287 passing
-
-Phase progress (original roadmap aligned):
-
-1. Phase 1 (Core Data Model and API): 100%
-2. Phase 2 (Basic Web UI): 100%
-3. Phase 3 (UX Improvements): 100%
-4. Phase 4 (Advanced Features): 60%
-
-## CLI (Phase 4 Bootstrap)
-
-Initial CLI commands are available in `backend/src/Taskdeck.Cli`.
+Frontend E2E:
 
 ```bash
-dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj help
-dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj boards list
-dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj boards list --json
-dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj boards update --board <id> --name "Renamed Board"
-dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj columns create --board <id> --name "In Progress" --wip 3
-dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj cards list --board <id>
-dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj cards list --board <id> --json
+cd frontend/taskdeck-web
+TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
 ```
 
-## Documentation
+For latest verified totals and CI parity, see `docs/STATUS.md` and `docs/TESTING_GUIDE.md`.
 
-- `docs/STATUS.md` (single source of truth)
-- `docs/IMPLEMENTATION_MASTERPLAN.md` (active roadmap)
-- `docs/TESTING_GUIDE.md` (active testing guide)
-- `docs/MANUAL_TEST_CHECKLIST.md` (manual validation script with expected outcomes)
-- `docs/INDEX.md` (documentation index)
-- `docs/archive/README.md` (historical docs map)
-- `filesAndResources/taskdeck_technical_design_document.md` (original design document)
+## Architecture
 
-## Notes
+- `Taskdeck.Domain`: core entities and rules
+- `Taskdeck.Application`: use cases/services
+- `Taskdeck.Infrastructure`: persistence and adapters
+- `Taskdeck.Api`: HTTP endpoints and integration layer
 
-- Historical session summaries and superseded plans were moved under `docs/archive/`.
-- If any old note conflicts with `docs/STATUS.md`, trust `docs/STATUS.md`.
+## Roadmap and Current Status
+
+Start here:
+- `docs/STATUS.md` for current shipped reality
+- `docs/IMPLEMENTATION_MASTERPLAN.md` for delivery sequencing
+- `docs/INDEX.md` for documentation map
+
+## Contributing
+
+- Open or pick a GitHub issue before larger changes.
+- Keep PRs scoped and include verification evidence.
+- For contribution guidance and repo rules, see `AGENTS.md`.

@@ -1,4 +1,4 @@
-﻿# Documentation Index
+# Documentation Index
 
 This directory is the canonical documentation entrypoint for Taskdeck.
 
@@ -13,19 +13,39 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `MANUAL_TEST_CHECKLIST.md`
   - Canonical manual validation script for UI/API/ops workflows.
 
-## Active Supporting Docs
+## Active Operational Docs
 
 - `GITHUB_PROJECT_AUTOMATION.md`
-  - Canonical setup and automation rules for the Taskdeck GitHub Project (statuses, workflows, and drift checks).
+  - Canonical setup and automation rules for GitHub Project statuses/workflows.
+- `TASKDECK_HUMAN_OPERATIONS.md`
+  - Human runbook for repository/project operations.
+- `TaskdeckNextWorkChecklist.md`
+  - Checklist-to-issue planning source for backlog seeding.
+- `ISSUE_EXECUTION_GUIDE.md`
+  - Execution order and operating protocol for agents tackling issue backlog.
+- `SESSION_START_CHECKLIST.md`
+  - Lightweight start-of-session runbook for branch hygiene, issue selection, and verification discipline.
+
+## Active Tooling Docs
+
+- `MCP_TOOLING_GUIDE.md`
+  - MCP selection rules and safe operation patterns.
+- `DEVTOOLS_OBSERVABILITY_ADDON.md`
+  - Debug workflow guidance for Playwright/DevTools/log signals.
+- `FUTURE_HARNESS_BACKLOG.md`
+  - Deferred tooling and harness upgrades.
+
+## Working Notes (Non-authoritative)
+
 - `personalNotes.txt`
-  - Working note capture from product/development perspective.
-  - Non-authoritative: ideas from this file must be reconciled through `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` before execution.
+  - Idea capture only. Must be reconciled through `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` before execution.
 
 ## Archive
 
-All superseded planning packs, feature-spec bundles, and historical snapshots live under:
+All superseded planning packs, snapshots, and historical notes live under:
 - `archive/README.md`
-- `archive/2026-02-13_phase4-doc-consolidation/` (latest major consolidation)
+- `archive/2026-02-13_phase4-doc-consolidation/`
+- `archive/2026-02-16_docs-curation/`
 
 ## Governance Rules
 
@@ -35,3 +55,8 @@ All superseded planning packs, feature-spec bundles, and historical snapshots li
   1. `STATUS.md`
   2. `IMPLEMENTATION_MASTERPLAN.md`
   3. `TESTING_GUIDE.md` or `MANUAL_TEST_CHECKLIST.md` when verification flow changes.
+- Every root doc in `docs/` must be listed in this index as one of:
+  - Active authoritative
+  - Active operational/tooling
+  - Working notes (non-authoritative)
+  - Archived

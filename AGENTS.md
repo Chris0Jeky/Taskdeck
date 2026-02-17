@@ -6,17 +6,18 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 ## Always start here (required)
 - Read `docs/STATUS.md` for Current Focus and constraints (source of truth).
 - Use `docs/IMPLEMENTATION_MASTERPLAN.md` for roadmap context.
+- Use `docs/ISSUE_EXECUTION_GUIDE.md` for dependency-aware issue execution order.
 - For test operations, see `docs/TESTING_GUIDE.md`.
 - Precedence when instructions conflict: `docs/STATUS.md` > this file > subfolder `AGENTS.md`.
 
 ## MCP tools (agent tooling)
 - See `docs/MCP_TOOLING_GUIDE.md` for tool selection rules and safe usage.
 - Prefer MCP tools over guessing:
-    - OpenAI/Codex/API docs → openaiDeveloperDocs MCP
-    - Third-party library docs → Context7 MCP
-    - UI reproduction/regression → Playwright MCP
-    - Repo search → native `rg` (ripgrep MCP unreliable on Windows; fallback to GitHub search_code)
-    - Issues/PRs/workflows → GitHub MCP (write actions only when required)
+    - OpenAI/Codex/API docs -> openaiDeveloperDocs MCP
+    - Third-party library docs -> Context7 MCP
+    - UI reproduction/regression -> Playwright MCP
+    - Repo search -> native `rg` (ripgrep MCP unreliable on Windows; fallback to GitHub search_code)
+    - Issues/PRs/workflows -> GitHub MCP (write actions only when required)
 
 ## Project Operations Automation (required)
 - Read `docs/GITHUB_PROJECT_AUTOMATION.md` before changing project operations, issue templates, or workflow conventions.
@@ -61,7 +62,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Build, Test & Run
 - Backend restore/build: `dotnet restore backend/Taskdeck.sln` and `dotnet build backend/Taskdeck.sln -c Release`.
-- Backend tests (required): `dotnet test backend/Taskdeck.sln -c Release`.
+- Backend tests (required): `dotnet test backend/Taskdeck.sln -c Release -m:1`.
 - Backend API (local): from `backend/src/Taskdeck.Api`, run `dotnet run`.
 - Frontend dev server: from `frontend/taskdeck-web`, run `npm install` once, then `npm run dev`.
 - Frontend checks (required when frontend touched): from `frontend/taskdeck-web`,
@@ -82,9 +83,10 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Commit & Pull Request Guidelines
 - Commits: Use clear, present-tense messages (e.g., `Add booking validation to application layer`).
-  Default to one commit per changed file with a short file-specific description.
+  Default to small focused commits, often one commit per changed file with a short file-specific description.
   Keep commits small and focused; avoid large mixed-topic commits.
   If a single logical change must touch multiple files, keep the smallest practical commit set and explain why.
+  Exception: for pure file move/rename batches (no content changes), one grouped commit is acceptable and preferred.
 - Pull requests: Provide a short summary, key implementation notes, and testing evidence
   (commands run, screenshots for UI changes). Link related issues/tasks where applicable.
 - Keep PRs focused and small when possible; prefer follow-up PRs for refactors or additional cleanup.
@@ -98,6 +100,6 @@ Provide:
 - Docs updated (`STATUS` / `MASTERPLAN`)
 - Notable risks or follow-ups (if any)
 
-See docs/FUTURE_HARNESS_BACKLOG.md for deferred harness/MCP upgrades.
+See `docs/FUTURE_HARNESS_BACKLOG.md` for deferred harness/MCP upgrades.
 
-See docs/DEVTOOLS_OBSERVABILITY_ADDON.md for Playwright vs DevTools vs logs decision rules.
+See `docs/DEVTOOLS_OBSERVABILITY_ADDON.md` for Playwright vs DevTools vs logs decision rules.
