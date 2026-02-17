@@ -16,7 +16,7 @@ describe('queueApi', () => {
     vi.clearAllMocks()
   })
 
-  it('createRequest sends payload with userId and normalizes status', async () => {
+  it('createRequest sends payload and normalizes status', async () => {
     const mockRequest = {
       id: 'req-1',
       userId: 'user-1',
@@ -31,13 +31,13 @@ describe('queueApi', () => {
     vi.mocked(http.post).mockResolvedValue({ data: mockRequest })
 
     const dto = { requestType: 'generate', payload: '{"prompt":"hello"}' }
-    const result = await queueApi.createRequest(dto, 'user-1')
+    const result = await queueApi.createRequest(dto)
 
-    expect(http.post).toHaveBeenCalledWith('/llm-queue', { ...dto, userId: 'user-1' })
+    expect(http.post).toHaveBeenCalledWith('/llm-queue', dto)
     expect(result.status).toBe('Pending')
   })
 
-  it('getUserRequests encodes userId and normalizes statuses', async () => {
+  it('getUserRequests normalizes statuses', async () => {
     vi.mocked(http.get).mockResolvedValue({
       data: [
         {
@@ -54,9 +54,9 @@ describe('queueApi', () => {
       ],
     })
 
-    const result = await queueApi.getUserRequests('user/1')
+    const result = await queueApi.getUserRequests()
 
-    expect(http.get).toHaveBeenCalledWith('/llm-queue/user/user%2F1')
+    expect(http.get).toHaveBeenCalledWith('/llm-queue/user')
     expect(result[0]?.status).toBe('Completed')
   })
 
@@ -68,12 +68,12 @@ describe('queueApi', () => {
     expect(http.get).toHaveBeenCalledWith('/llm-queue/status/Pending%20Review')
   })
 
-  it('cancelRequest encodes requestId and userId', async () => {
+  it('cancelRequest encodes requestId', async () => {
     vi.mocked(http.post).mockResolvedValue({})
 
-    await queueApi.cancelRequest('req/1', 'user/1')
+    await queueApi.cancelRequest('req/1')
 
-    expect(http.post).toHaveBeenCalledWith('/llm-queue/req%2F1/cancel?userId=user%2F1')
+    expect(http.post).toHaveBeenCalledWith('/llm-queue/req%2F1/cancel')
   })
 
   it('processNext returns null when API responds with NotFound', async () => {
