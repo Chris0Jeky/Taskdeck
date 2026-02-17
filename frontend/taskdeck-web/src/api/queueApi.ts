@@ -7,14 +7,13 @@ function encodePathSegment(value: string): string {
 }
 
 export const queueApi = {
-  async createRequest(request: CreateQueueRequestDto, userId: string): Promise<QueueRequest> {
-    const { data } = await http.post<QueueRequest>('/llm-queue', { ...request, userId })
+  async createRequest(request: CreateQueueRequestDto): Promise<QueueRequest> {
+    const { data } = await http.post<QueueRequest>('/llm-queue', request)
     return normalizeQueueRequest(data)
   },
 
-  async getUserRequests(userId: string): Promise<QueueRequest[]> {
-    const queryUserId = encodeURIComponent(userId)
-    const { data } = await http.get<QueueRequest[]>(`/llm-queue/user/${queryUserId}`)
+  async getUserRequests(): Promise<QueueRequest[]> {
+    const { data } = await http.get<QueueRequest[]>('/llm-queue/user')
     return data.map(normalizeQueueRequest)
   },
 
@@ -24,10 +23,9 @@ export const queueApi = {
     return data.map(normalizeQueueRequest)
   },
 
-  async cancelRequest(requestId: string, userId: string): Promise<void> {
+  async cancelRequest(requestId: string): Promise<void> {
     const pathRequestId = encodePathSegment(requestId)
-    const queryUserId = encodeURIComponent(userId)
-    await http.post(`/llm-queue/${pathRequestId}/cancel?userId=${queryUserId}`)
+    await http.post(`/llm-queue/${pathRequestId}/cancel`)
   },
 
   async processNext(): Promise<QueueRequest | null> {
