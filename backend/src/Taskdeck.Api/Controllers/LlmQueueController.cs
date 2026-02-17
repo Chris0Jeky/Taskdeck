@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
@@ -9,6 +10,7 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/llm-queue")]
 public class LlmQueueController : ControllerBase
 {
