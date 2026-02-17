@@ -15,7 +15,7 @@ Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 fronte
 Core board workflows are stable, and advanced slices are implemented for automation proposals, chat, ops/log querying, archive recovery, and worker health reporting.
 
 Current constraints are mostly hardening and consistency:
-- security and identity behavior is not yet uniform across all controller families
+- security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first, discoverability-first, or interaction-conflict-safe
 - LLM flow is still mock-provider based
 - MVP dogfooding flow is incomplete: paste execution checklist in chat -> generate actionable board/project setup
@@ -80,6 +80,7 @@ Completed in Phase 4:
 - CI gate split and matrix hardening
 - authn/authz infrastructure baseline
 - boards controller family retrofit to claims-derived identity (`[Authorize]` + owner-scoped board operations)
+- claims-first retrofit for columns/cards/labels/export-import/queue/board-access (actor identity derived from claims; caller actor query/body IDs removed)
 - export/import board JSON flow
 - audit and queue service/API slices
 - automation proposal lifecycle + diff + execute flow
@@ -92,8 +93,7 @@ Completed in Phase 4:
 - API integration harness additions for authz assertions (`AssertUnauthorized`, `AssertForbidden`, `AssertNotFoundOrForbidden`, `AssertCrossUserIsolation`)
 
 Remaining for Phase 4 completion:
-- security and claim-based identity convergence across legacy controllers
-- removal of query/body actor identity patterns where claims should be authoritative
+- final security and claim-based identity convergence across remaining legacy controllers (audit/users)
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
 - production-capable LLM provider path (or strict feature-gated mock-only policy)
 - broader planner/executor coverage and safety semantics
@@ -113,10 +113,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 259/259 passing
-- API integration: 117/117 passing
+- API integration: 122/122 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 477/477 passing
+- Backend Total: 482/482 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -140,7 +140,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 733/733 passing
+- Combined automated total: 738/738 passing
 
 ## CI Status
 
@@ -156,9 +156,8 @@ Workflow: `.github/workflows/ci.yml`
 ## Known Gaps and Risks
 
 Security and identity:
-- legacy controller families are not yet fully aligned with claims-first identity handling
-- mixed identity model (claims + query/body actor IDs) increases misuse risk
-- boards family is now claims-first; remaining claims-first retrofit families are columns/cards/labels/export/audit/queue/board-access/users
+- claims-first identity is now aligned for boards/columns/cards/labels/export/queue/board-access
+- remaining security convergence work is concentrated in audit/users behavior and consistent cross-user policy enforcement
 - policy decision is now explicit: cross-user authenticated access failures should return `403`; remaining work is consistent enforcement across all families/tests
 
 Automation and data:
@@ -189,6 +188,7 @@ UX and operability (reconciled from product notes):
 - Added docs governance script and architecture boundary tests as CI invariants.
 - Added GitHub operations governance script to enforce issue-template label hygiene and project-automation doc invariants in CI.
 - Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.
+- Retrofitted columns/cards/labels/export/queue/board-access to claims-first identity and removed caller-supplied actor query/body IDs.
 - Added request-correlation middleware and propagated request IDs into Ops command correlation IDs.
 - Added lightweight timing/result diagnostics for log queries and automation proposal execution.
 - Recorded cross-user existence policy decision: use `403` for authenticated-but-unauthorized access, reserve `404` for true missing resources.
