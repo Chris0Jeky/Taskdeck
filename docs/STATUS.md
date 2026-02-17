@@ -168,7 +168,7 @@ Automation and data:
 Observability and scalability:
 - `LogQueryService` currently performs broad in-memory composition paths (now emits duration/result-size diagnostics)
 - nullable warnings (`CS8618`) remain in domain entities
-- local build environment is currently Node 22.11.0; Vite warns that 22.12+ is preferred (build still passes)
+- frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
 
 UX and operability (reconciled from product notes):
 - archive board lifecycle behavior is not yet fully coherent with archive/recovery UX
