@@ -1,8 +1,13 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-16  
+Last Updated: 2026-02-17  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Status Doc: `docs/STATUS.md`
+Companion Active Docs:
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/TESTING_GUIDE.md`
+- `docs/MANUAL_TEST_CHECKLIST.md`
 
 ## Purpose
 
@@ -46,6 +51,10 @@ Delivered in the latest cycle:
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
+9. Stage 0 governance follow-through:
+   - active docs cross-link/date-stamp freeze completed for canonical docs
+   - project safety view standardized as `No Status` (`no:status`)
+   - weekly backlog seeding cadence and RC hard-gate policy documented in active ops docs
 
 ## Roadmap by Horizon
 
