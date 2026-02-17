@@ -36,7 +36,7 @@ describe('boardAccessApi', () => {
     expect(result[0]?.role).toBe('Admin')
   })
 
-  it('grantAccess encodes boardId, grantedBy, and sends numeric enum', async () => {
+  it('grantAccess encodes boardId and sends numeric enum', async () => {
     vi.mocked(http.post).mockResolvedValue({
       data: {
         id: 'a1',
@@ -48,16 +48,16 @@ describe('boardAccessApi', () => {
       },
     })
 
-    const result = await boardAccessApi.grantAccess('b/1', { userId: 'u2', role: 'Viewer' }, 'u/1')
+    const result = await boardAccessApi.grantAccess('b/1', { userId: 'u2', role: 'Viewer' })
 
-    expect(http.post).toHaveBeenCalledWith('/boards/b%2F1/access?grantedBy=u%2F1', {
+    expect(http.post).toHaveBeenCalledWith('/boards/b%2F1/access', {
       userId: 'u2',
       role: 3,
     })
     expect(result.role).toBe('Viewer')
   })
 
-  it('updateAccess encodes boardId/accessId/updatedBy and sends numeric enum', async () => {
+  it('updateAccess encodes boardId/accessId and sends numeric enum', async () => {
     vi.mocked(http.put).mockResolvedValue({
       data: {
         id: 'a1',
@@ -69,19 +69,19 @@ describe('boardAccessApi', () => {
       },
     })
 
-    const result = await boardAccessApi.updateAccess('b/1', 'a/1', { role: 'Editor' }, 'u/1')
+    const result = await boardAccessApi.updateAccess('b/1', 'a/1', { role: 'Editor' })
 
-    expect(http.put).toHaveBeenCalledWith('/boards/b%2F1/access/a%2F1?updatedBy=u%2F1', {
+    expect(http.put).toHaveBeenCalledWith('/boards/b%2F1/access/a%2F1', {
       role: 2,
     })
     expect(result.role).toBe('Editor')
   })
 
-  it('revokeAccess encodes boardId/accessId/revokedBy', async () => {
+  it('revokeAccess encodes boardId/accessId', async () => {
     vi.mocked(http.delete).mockResolvedValue({})
 
-    await boardAccessApi.revokeAccess('b/1', 'a/1', 'u/1')
+    await boardAccessApi.revokeAccess('b/1', 'a/1')
 
-    expect(http.delete).toHaveBeenCalledWith('/boards/b%2F1/access/a%2F1?revokedBy=u%2F1')
+    expect(http.delete).toHaveBeenCalledWith('/boards/b%2F1/access/a%2F1')
   })
 })
