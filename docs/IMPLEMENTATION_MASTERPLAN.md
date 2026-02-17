@@ -2,7 +2,6 @@
 
 Last Updated: 2026-02-17  
 Planning Horizon: Next 8 to 12 weeks  
-Companion Status Doc: `docs/STATUS.md`
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
