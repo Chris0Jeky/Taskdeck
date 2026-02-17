@@ -2,23 +2,24 @@
 
 This is the active testing guide for Taskdeck.
 
-## Current Verified Totals (2026-02-13)
+## Current Verified Totals (2026-02-16)
 
-- Backend: 459/459 passing
+- Backend: 461/461 passing
   - Domain: 93
   - Application: 256
-  - API integration: 106
+  - API integration: 108
   - CLI contract: 4
+  - Architecture boundaries: 4
 - Frontend unit: 245/245 passing
 - Frontend E2E (smoke + automation/ops): 11/11 passing
-- Combined automated total: 715/715 passing
+- Combined automated total: 717/717 passing
 
 ## Backend Commands
 
 Run full backend verification (recommended):
 
 ```bash
-dotnet test backend/Taskdeck.sln -c Release
+dotnet test backend/Taskdeck.sln -c Release -m:1
 ```
 
 Run project-split backend verification:
@@ -28,6 +29,7 @@ dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c 
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release
 dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj -c Release
+dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release
 ```
 
 Note:
@@ -62,6 +64,10 @@ TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
 
 Workflow: `.github/workflows/ci.yml`
 
+- `docs-governance`
+  - Enforces required active docs and docs index invariants
+- `backend-architecture`
+  - Enforces architecture boundaries in CI
 - `backend-unit`
   - Domain + Application + CLI contract tests
   - Ubuntu and Windows matrix
@@ -69,7 +75,7 @@ Workflow: `.github/workflows/ci.yml`
   - API integration tests
   - Ubuntu and Windows matrix
 - `frontend-unit`
-  - Vitest suite
+  - Vitest + typecheck + build
   - Ubuntu and Windows matrix
 - `e2e-smoke`
   - Playwright smoke + automation/ops flow
@@ -89,6 +95,8 @@ Workflow: `.github/workflows/ci.yml`
   - Includes `ResultExtensions` mapping tests for standardized API error/status behavior
 - CLI contracts:
   - `backend/tests/Taskdeck.Cli.Tests`
+- Architecture boundaries:
+  - `backend/tests/Taskdeck.Architecture.Tests`
 - Frontend unit behavior:
   - `frontend/taskdeck-web/src/tests`
   - Components, stores, API modules, composables, utilities
