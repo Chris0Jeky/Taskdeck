@@ -31,7 +31,7 @@ Use this at the beginning of every coding session.
 
 1. Add/update tests with behavior changes.
 2. Run required checks:
-   - `dotnet test backend/Taskdeck.sln -c Release`
+   - `dotnet test backend/Taskdeck.sln -c Release -m:1`
    - `cd frontend/taskdeck-web && npm run typecheck && npm run build && npx vitest --run`
    - Playwright E2E when UI/cross-surface behavior changes
 

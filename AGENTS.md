@@ -62,7 +62,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Build, Test & Run
 - Backend restore/build: `dotnet restore backend/Taskdeck.sln` and `dotnet build backend/Taskdeck.sln -c Release`.
-- Backend tests (required): `dotnet test backend/Taskdeck.sln -c Release`.
+- Backend tests (required): `dotnet test backend/Taskdeck.sln -c Release -m:1`.
 - Backend API (local): from `backend/src/Taskdeck.Api`, run `dotnet run`.
 - Frontend dev server: from `frontend/taskdeck-web`, run `npm install` once, then `npm run dev`.
 - Frontend checks (required when frontend touched): from `frontend/taskdeck-web`,

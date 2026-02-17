@@ -57,7 +57,7 @@ Default URLs:
 Backend:
 
 ```bash
-dotnet test backend/Taskdeck.sln -c Release
+dotnet test backend/Taskdeck.sln -c Release -m:1
 ```
 
 Frontend unit + type + build:

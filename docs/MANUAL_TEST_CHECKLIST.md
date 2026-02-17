@@ -201,7 +201,7 @@ If behavior, commands, or known gaps changed, update:
 ## K. Final Automated Smoke Before Merge
 
 1. Backend:
-   - `dotnet test backend/Taskdeck.sln -c Release`
+   - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 2. Frontend unit/build:
    - `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose`
    - `cd frontend/taskdeck-web && npm run typecheck && npm run build`
