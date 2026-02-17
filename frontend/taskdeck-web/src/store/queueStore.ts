@@ -19,8 +19,8 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       loading.value = true
       error.value = null
-      const uid = session.requireUserId('queue operations')
-      requests.value = await queueApi.getUserRequests(uid)
+      session.requireUserId('queue operations')
+      requests.value = await queueApi.getUserRequests()
     } catch (e: unknown) {
       const msg = getErrorDisplay(e, 'Failed to fetch queue requests').message
       error.value = msg
@@ -50,8 +50,8 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       loading.value = true
       error.value = null
-      const uid = session.requireUserId('queue operations')
-      const request = await queueApi.createRequest(dto, uid)
+      session.requireUserId('queue operations')
+      const request = await queueApi.createRequest(dto)
       requests.value.push(request)
       toast.success('Request submitted')
       return request
@@ -69,8 +69,8 @@ export const useQueueStore = defineStore('queue', () => {
     try {
       loading.value = true
       error.value = null
-      const uid = session.requireUserId('queue operations')
-      await queueApi.cancelRequest(requestId, uid)
+      session.requireUserId('queue operations')
+      await queueApi.cancelRequest(requestId)
       requests.value = requests.value.filter(r => r.id !== requestId)
       toast.success('Request cancelled')
     } catch (e: unknown) {
