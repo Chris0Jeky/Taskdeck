@@ -59,6 +59,9 @@ Delivered in the latest cycle:
    - claims-first identity retrofit delivered for columns/cards/labels/export/queue/board-access
    - caller-supplied actor query/body IDs removed from those controller families
    - API integration suite expanded for legacy unauthorized/forbidden/cross-user regression checks
+   - API integration suite expanded for legacy unauthorized-path regression checks
+11. Frontend runtime alignment:
+   - CI and local developer baseline pinned to Node 24.13.1 (LTS) to match Vite 7 engine constraints
 
 ## Roadmap by Horizon
 
