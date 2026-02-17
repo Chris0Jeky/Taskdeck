@@ -116,7 +116,7 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     private async Task<Guid> CreateOwnedBoardWithColumnAsync(Guid ownerId)
     {
         var response = await _client.PostAsJsonAsync(
-            $"/api/import/boards?userId={ownerId}",
+            $"/api/import/boards",
             new ImportBoardDto(
                 $"chat-board-{Guid.NewGuid():N}",
                 null,
