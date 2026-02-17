@@ -1,4 +1,4 @@
-# Taskdeck — Human Operations Document (What YOU should do by hand)
+# Taskdeck - Human Operations Document (What YOU should do by hand)
 
 This document captures the parts that are either:
 - not safe to delegate to an LLM (secrets, irreversible repo settings),
@@ -14,7 +14,7 @@ Use it alongside the Codex execution plan.
 1) For each delivery unit Codex completes:
    - Review diff like a PR (even if solo)
    - Run the required checks locally once
-   - Do the “manual break-it” sanity checklist (below)
+   - Do the manual break-it sanity checklist (below)
    - Merge only when CI is green and docs are updated
 
 2) Keep WIP low:
@@ -26,7 +26,7 @@ Use it alongside the Codex execution plan.
 # A) One-time setup tasks (do these yourself)
 
 ## A1) GitHub repo settings (branch protections + required checks)
-Codex cannot reliably configure GitHub repository settings unless you explicitly delegate admin access, and it’s risky.
+Codex cannot reliably configure GitHub repository settings unless you explicitly delegate admin access, and it's risky.
 
 Do in GitHub UI:
 - Protect `main`:
@@ -43,8 +43,8 @@ Do in GitHub UI:
 ## A2) GitHub Project / Execution Board setup
 Create a Project (or use Issues):
 - Status values: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
-- Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
-- WIP: cap “Now/In Progress” to 1 major item
+- Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`, `No Status`, `WIP Audit`
+- WIP: cap Now/In Progress to 1 major item
 - Labels: `bug`, `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`
 - Configure workflows (must be ON):
   - `Auto-add to project` for `Chris0Jeky/Taskdeck` issues + pull requests
@@ -69,7 +69,7 @@ Windows PowerShell:
   - `setx GITHUB_PAT "ghp_..."`
 
 ## A4) Trust the repo for project-scoped Codex config
-If you use `.codex/config.toml`, Codex only loads it for “trusted” projects.
+If you use `.codex/config.toml`, Codex only loads it for trusted projects.
 Mark your Taskdeck repo as trusted in Codex settings.
 
 ---
@@ -91,14 +91,14 @@ Implementation note:
 Decide and document:
 - merge vs overwrite behavior
 - conflict resolution rules
-- idempotency definition (what “apply twice” means)
+- idempotency definition (what apply twice means)
 - transaction boundaries (all-or-nothing)
 Codex can implement the chosen policy, but you should own the decision.
 
 ## B3) Export/Import strategy
 Your app has stubbed export/import functions.
 Decide:
-- implement minimal safe export now (and what “import” means),
+- implement minimal safe export now (and what import means),
 - or defer explicitly with a dated ADR + rationale.
 This impacts portability, backup, and recovery posture.
 
@@ -142,19 +142,20 @@ Even if Playwright passes:
 # D) Operational habits (keep the repo healthy)
 
 ## D1) Weekly docs reconciliation ritual
-Every week (or every 2–3 merges):
-- `docs/STATUS.md`: update “Last Updated”, current focus, verified checks
+Every week (or every 2-3 merges):
+- `docs/STATUS.md`: update Last Updated, current focus, verified checks
 - `docs/IMPLEMENTATION_MASTERPLAN.md`: update next steps and completed items
 - `docs/TESTING_GUIDE.md`: update if commands/tooling changed
 - `docs/MANUAL_TEST_CHECKLIST.md`: add new critical manual checks
 - archive stale docs under `docs/archive/` and keep `docs/INDEX.md` clean
+- run one backlog seeding pass from `STATUS` + `IMPLEMENTATION_MASTERPLAN` and check `No Status` for empty-status drift
 
 ## D2) Release-candidate discipline
-Before calling something “RC”:
+Before calling something RC:
 - CI green
 - manual checklist executed
 - docs updated in the same PR
-- “known limitations” listed
+- known limitations listed
 
 ---
 
@@ -162,10 +163,10 @@ Before calling something “RC”:
 
 ## E1) Use small, explicit prompts
 Good prompt:
-- “Implement Delivery Unit 1.1–1.3 from docs/ISSUE_EXECUTION_GUIDE.md. Keep diff small. Run checks. Update docs if needed.”
+- Implement Delivery Unit 1.1-1.3 from docs/ISSUE_EXECUTION_GUIDE.md. Keep diff small. Run checks. Update docs if needed.
 
 Bad prompt:
-- “Make CI better and improve security.” (too broad)
+- Make CI better and improve security. (too broad)
 
 ## E2) Require the output format
 Ask Codex to always end with:
@@ -185,7 +186,7 @@ stop and re-scope.
 
 ---
 
-# F) 10-minute “break it” checklist (after any meaningful merge)
+# F) 10-minute break it checklist (after any meaningful merge)
 
 - Invalid inputs: empty, huge, weird characters
 - Double-submit actions; refresh mid-save
@@ -193,4 +194,3 @@ stop and re-scope.
 - Login/logout edges: expired session, forbidden actions
 - Cross-user attempts (if security touched)
 - Archive restore conflict path (if archive touched)
-

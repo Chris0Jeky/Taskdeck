@@ -2,6 +2,13 @@
 
 This is the active testing guide for Taskdeck.
 
+Last Updated: 2026-02-17
+Companion Active Docs:
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/TESTING_GUIDE.md`
+- `docs/MANUAL_TEST_CHECKLIST.md`
+
 ## Current Verified Totals (2026-02-17)
 
 - Backend: 469/469 passing

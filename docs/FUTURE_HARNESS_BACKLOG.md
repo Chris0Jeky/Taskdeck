@@ -1,6 +1,6 @@
-# Taskdeck — Future Harness Backlog (Deferred Enhancements)
+# Taskdeck - Future Harness Backlog (Deferred Enhancements)
 
-**Purpose:** A “do later” list of optional tools, settings, harness ideas, and workflows we discussed but are *not required right now* (to keep agility high).  
+**Purpose:** A do later list of optional tools, settings, harness ideas, and workflows we discussed but are *not required right now* (to keep agility high).  
 **Use:** Keep this file in `docs/` and periodically cherry-pick items into your Execution Board.
 
 ---
@@ -21,7 +21,7 @@ Promote an item from this backlog **only if** it:
 
 ## A2) Observability MCP (logs/metrics/traces queryable by the agent)
 **Why:** agent can reason from real runtime signals, not guesses.  
-**Pull forward when:** you spend time chasing “why is this slow/broken” without good telemetry.
+**Pull forward when:** you spend time chasing why is this slow/broken without good telemetry.
 
 **Paths:**
 - Lite: structured logs + local query scripts
@@ -29,7 +29,7 @@ Promote an item from this backlog **only if** it:
 
 ## A3) Error tracking MCP (e.g., Sentry)
 **Why:** automatic grouping + stack traces + regressions; agent can triage and open issues.  
-**Pull forward when:** real users / long sessions produce bugs you can’t reproduce quickly.
+**Pull forward when:** real users / long sessions produce bugs you can't reproduce quickly.
 
 ## A4) Dependency/security maintenance automation
 **Why:** routine upgrades and security alerts become mechanical.  
@@ -47,12 +47,12 @@ Promote an item from this backlog **only if** it:
 # B) MCP configuration hardening (recommended later)
 
 ## B1) Split GitHub tokens: readonly vs write
-**Goal:** day-to-day agent runs use readonly; “elevated” token only used intentionally.
+**Goal:** day-to-day agent runs use readonly; elevated token only used intentionally.
 
 ## B2) Tool allowlists
 **Goal:** reduce blast radius by restricting which tools are callable per MCP server.
 
-## B3) “Write is explicit” policy
+## B3) Write is explicit policy
 **Goal:** agent only performs GitHub write operations when the prompt explicitly authorizes it.
 
 ---
@@ -62,18 +62,18 @@ Promote an item from this backlog **only if** it:
 ## C1) Structural architecture checks
 **Goal:** make Clean Architecture boundaries mechanical (CI failure on violations).
 
-## C2) “Docs governance” CI job
+## C2) Docs governance CI job
 **Goal:** doc drift becomes an observable failure (missing cross-links, missing last-updated).
 
-## C3) “Golden principles” doc + lint
-**Goal:** 5–10 rules that never change (naming, layering, auth posture, error contract) + checks.
+## C3) Golden principles doc + lint
+**Goal:** 5-10 rules that never change (naming, layering, auth posture, error contract) + checks.
 
 ## C4) Benchmark guardrails
 **Goal:** simple performance checks for hot paths (log query, automation execution).  
 **Pull forward when:** performance regressions become a time sink.
 
 ## C5) Flake quarantine policy (E2E)
-**Goal:** separate “flaky test maintenance” from product bugs.  
+**Goal:** separate flaky test maintenance from product bugs.  
 **Includes:** quarantine label, rerun strategy, stabilize selectors/timeouts.
 
 ## C6) Property-based / fuzz testing for risky parsers/inputs
@@ -90,14 +90,14 @@ Promote an item from this backlog **only if** it:
 **Includes:**
 - changelog conventions
 - tag/version rules
-- “RC checklist” enforced (manual checklist + green CI + docs updated)
+- RC checklist enforced (manual checklist + green CI + docs updated)
 
-## D3) Automated “Execution Board” sync
+## D3) Automated Execution Board sync
 **Goal:** turn Masterplan items into issues automatically; keep a project board tidy.
 
 ---
 
-# E) “Ways of thinking” you’ll reuse (keep sharp)
+# E) Ways of thinking you'll reuse (keep sharp)
 
 ## E1) Correctness Map (zones)
 - Zone A: security/identity + access control
@@ -106,24 +106,24 @@ Promote an item from this backlog **only if** it:
 - Zone D: operability (logs/diagnostics) + release safety
 
 ## E2) Contract-first boundaries
-UI ↔ API ↔ Domain ↔ DB as contracts; enforce with types, validation, tests.
+UI -> API -> Domain -> DB as contracts; enforce with types, validation, tests.
 
 ## E3) Mechanical invariants over prose
 If it matters, encode it as:
 - tests
 - CI checks
 - linters/structural assertions
-…not “guidelines someone might forget”.
+not guidelines someone might forget.
 
-## E4) “Promote friction to tooling”
-Repeated confusion → add a doc pointer, script, template, or check.
+## E4) Promote friction to tooling
+Repeated confusion -> add a doc pointer, script, template, or check.
 
 ---
 
-# F) Optional “nice-to-have” additions
+# F) Optional nice-to-have additions
 
 - Accessibility audit pass (keyboard + contrast + screen-reader labels)
 - Threat model doc (assets, threats, controls, detection) updated quarterly
 - Backup/restore posture doc + recovery drills
 - SBOM generation for releases
-- “One command” dev bootstrap (`./dev.ps1` / `./dev.sh`) for consistency
+- One command dev bootstrap (`./dev.ps1` / `./dev.sh`) for consistency

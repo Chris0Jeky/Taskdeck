@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-02-16
+Last Updated: 2026-02-17
 Scope: How agents should execute the current GitHub issue backlog safely and in the right order.
 
 ## Purpose
@@ -14,6 +14,7 @@ Use this file when starting work from the issue backlog. It prevents out-of-orde
 3. Read `docs/GITHUB_PROJECT_AUTOMATION.md`.
 4. Confirm current branch is clean and based on `main`.
 5. Pick the highest-priority issue whose dependencies are complete.
+6. Use the project `No Status` view (`no:status`) and assign status before active work.
 
 ## Project Status Workflow (Required)
 
