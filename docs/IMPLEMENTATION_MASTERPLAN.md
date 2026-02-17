@@ -44,7 +44,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 461 passing
+   - Backend: 482 passing
    - Frontend unit: 245 passing
    - E2E: 11 passing
 8. Documentation consolidation retained:
@@ -56,7 +56,9 @@ Delivered in the latest cycle:
    - weekly backlog seeding cadence and RC hard-gate policy documented in active ops docs
 10. Security convergence progress:
    - `[Authorize]` enforced across remaining legacy controller families
-   - API integration suite expanded for legacy unauthorized-path regression checks
+   - claims-first identity retrofit delivered for columns/cards/labels/export/queue/board-access
+   - caller-supplied actor query/body IDs removed from those controller families
+   - API integration suite expanded for legacy unauthorized/forbidden/cross-user regression checks
 
 ## Roadmap by Horizon
 
@@ -104,7 +106,7 @@ Exit Criteria:
 
 ## Active Backlog (Prioritized)
 
-1. P0: Claims-first identity retrofit across remaining controller families: columns/cards/labels/export/audit/queue/board-access/users.
+1. P0: Claims-first identity retrofit completion across remaining controller families: audit/users.
 2. P0: Auth regression integration suite expansion for legacy + advanced controllers with explicit `401/403/404` assertions.
 3. P0: Archive board lifecycle coherence (archive/unarchive visibility, restore semantics, UX parity).
 4. P1: Interaction-mode guardrails to prevent drag side effects while editing card/task content.
@@ -168,7 +170,7 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Continue claims-first retrofit for remaining legacy controller families and align response contracts.
+1. Complete claims-first retrofit for remaining legacy controller families (audit/users) and align response contracts.
 2. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes, enforcing `401/403/404` policy semantics.
 3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
 4. Define and implement archive board lifecycle behavior contract (API + UI).
