@@ -1,4 +1,4 @@
-# Taskdeck — DevTools & Observability Add‑On (Agent + Human)
+# Taskdeck - DevTools & Observability Add-On (Agent + Human)
 
 **Purpose:** Extend your harness so Codex can debug UI/network/performance issues quickly and reason from runtime signals (logs/metrics/traces), not guesses.
 
@@ -7,7 +7,7 @@ This doc is designed to be referenced from `AGENTS.md` (short pointer) and used 
 - flaky E2E debugging
 - performance regressions
 - automation execution issues
-- “works locally but not in CI” problems
+- works locally but not in CI problems
 
 ---
 
@@ -24,39 +24,39 @@ This doc is designed to be referenced from `AGENTS.md` (short pointer) and used 
 - network request inspection (headers, payloads, status)
 - performance profiling (long tasks, layout thrash, CPU/memory)
 - layout/debug overlays, event listeners, DOM mutation tracing
-- to understand “why” (Playwright proves “it breaks”; DevTools explains “why”)
+- to understand why (Playwright proves it breaks; DevTools explains why)
 
 ### Use Observability (logs/metrics/traces) when:
 - behavior depends on timing/background workers
 - you need system-level truth (errors, durations, failure rates)
-- you’re triaging CI-only failures or intermittent bugs
+- you're triaging CI-only failures or intermittent bugs
 
 ---
 
 ## 2) Standard UI-debug workflow (agent-friendly)
 
-### Step 0 — Write the repro contract
+### Step 0 - Write the repro contract
 Before touching code, record:
 - expected behavior
 - actual behavior
 - minimal repro steps
 - environment (OS, browser, build, branch)
-- “stop condition” (what result counts as fixed)
+- stop condition (what result counts as fixed)
 
-### Step 1 — Reproduce with Playwright first
+### Step 1 - Reproduce with Playwright first
 - Navigate to the failing screen/flow.
 - Capture screenshot on failure.
 - Extract visible text and key DOM state.
 - If easy: create a minimal regression test.
 
-### Step 2 — Escalate to DevTools signals
+### Step 2 - Escalate to DevTools signals
 Capture these signals:
 - console log/errors during repro
 - network: failing requests, status codes, payload shape mismatches
 - timing: which actions trigger long tasks
 - storage/auth: cookies/local storage/session state
 
-### Step 3 — Close the loop: convert “debug signal” to a guardrail
+### Step 3 - Close the loop: convert debug signal to a guardrail
 Prefer converting learnings into:
 - a regression test (Playwright)
 - an API integration test (if server contract)
@@ -67,7 +67,7 @@ Prefer converting learnings into:
 
 ## 3) Minimal DevTools integration plan (choose one)
 
-### Option A: “Use DevTools manually, attach artifacts”
+### Option A: Use DevTools manually, attach artifacts
 **Fastest:** no new MCP needed.
 - Run repro in Chrome
 - Export HAR for network issues
@@ -97,7 +97,7 @@ Playwright can capture traces/video/network-like signals depending on your setup
 
 ---
 
-## 4) Observability: “lite → full” roadmap
+## 4) Observability: lite to full roadmap
 
 ### 4.1 Lite (do now if needed; minimal infra)
 **Goal:** high-signal logs you can query quickly.
@@ -116,7 +116,7 @@ Playwright can capture traces/video/network-like signals depending on your setup
 **Queryable storage**
 - local file logs (rotating)
 - basic query scripts (PowerShell/node)
-- or “log search” via your existing Taskdeck Logs feature (if it’s already good)
+- or log search via your existing Taskdeck Logs feature (if its already good)
 
 ### 4.2 Medium (still local)
 Add:
@@ -125,20 +125,20 @@ Add:
   - auth failures
   - automation execution steps
   - archive restore conflicts
-- “one-click bundle” for bug reports (logs + environment + last actions)
+- one-click bundle for bug reports (logs + environment + last actions)
 
 ### 4.3 Full (if/when the project warrants it)
 If you want the OpenAI-style harness:
-- logs → Loki (LogQL)
-- metrics → Prometheus (PromQL)
-- traces → Tempo/Jaeger (TraceQL)
+- logs -> Loki (LogQL)
+- metrics -> Prometheus (PromQL)
+- traces -> Tempo/Jaeger (TraceQL)
 
 This is optional; do it when debugging time justifies the setup.
 
 ---
 
 ## 5) Correlation ID contract (high leverage)
-**Goal:** connect FE events → API requests → worker actions → logs.
+**Goal:** connect FE events -> API requests -> worker actions -> logs.
 
 ### Frontend
 - Generate/request a requestId per API call (or per user action).
@@ -154,7 +154,7 @@ This is optional; do it when debugging time justifies the setup.
 ### Workers/automation
 - Propagate requestId into job metadata and logs.
 
-**Deliverable:** “Given a bug report with requestId, we can trace the entire lifecycle.”
+**Deliverable:** Given a bug report with requestId, we can trace the entire lifecycle.
 
 ---
 
