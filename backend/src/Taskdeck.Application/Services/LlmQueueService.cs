@@ -18,13 +18,13 @@ public class LlmQueueService : ILlmQueueService
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
-    public async Task<Result<LlmRequestDto>> AddToQueueAsync(CreateLlmRequestDto dto)
+    public async Task<Result<LlmRequestDto>> AddToQueueAsync(Guid userId, CreateLlmRequestDto dto)
     {
         try
         {
-            var user = await _unitOfWork.Users.GetByIdAsync(dto.UserId);
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
             if (user == null)
-                return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, $"User with ID {dto.UserId} not found");
+                return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, $"User with ID {userId} not found");
 
             if (dto.BoardId.HasValue)
             {
@@ -33,7 +33,7 @@ public class LlmQueueService : ILlmQueueService
                     return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId.Value} not found");
             }
 
-            var request = new LlmRequest(dto.UserId, dto.RequestType, dto.Payload, dto.BoardId);
+            var request = new LlmRequest(userId, dto.RequestType, dto.Payload, dto.BoardId);
             await _unitOfWork.LlmQueue.AddAsync(request);
             await _unitOfWork.SaveChangesAsync();
 
