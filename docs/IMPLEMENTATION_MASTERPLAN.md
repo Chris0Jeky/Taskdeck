@@ -54,6 +54,9 @@ Delivered in the latest cycle:
    - active docs cross-link/date-stamp freeze completed for canonical docs
    - project safety view standardized as `No Status` (`no:status`)
    - weekly backlog seeding cadence and RC hard-gate policy documented in active ops docs
+10. Security convergence progress:
+   - `[Authorize]` enforced across remaining legacy controller families
+   - API integration suite expanded for legacy unauthorized-path regression checks
 
 ## Roadmap by Horizon
 
