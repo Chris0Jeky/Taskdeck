@@ -19,6 +19,29 @@ public class LabelsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task LabelsEndpoints_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        var boardId = Guid.NewGuid();
+        var labelId = Guid.NewGuid();
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/boards/{boardId}/labels"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/labels",
+                new CreateLabelDto(boardId, "Unauthorized", "#123456")));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PatchAsJsonAsync(
+                $"/api/boards/{boardId}/labels/{labelId}",
+                new UpdateLabelDto("Updated", "#654321")));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.DeleteAsync($"/api/boards/{boardId}/labels/{labelId}"));
+    }
+
+    [Fact]
     public async Task CreateUpdateDeleteLabel_ShouldCompleteLifecycle()
     {
         var board = await CreateBoardAsync();
@@ -90,6 +113,8 @@ public class LabelsApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task CreateLabel_ShouldReturnNotFound_WhenBoardDoesNotExist()
     {
+        await EnsureAuthenticatedAsync();
+
         var missingBoardId = Guid.NewGuid();
 
         var response = await _client.PostAsJsonAsync(
