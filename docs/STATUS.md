@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-16  
+Last Updated: 2026-02-17  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 
@@ -98,7 +98,7 @@ Remaining for Phase 4 completion:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-16
+Verification Date: 2026-02-17
 
 ### Backend (Executed)
 
@@ -107,11 +107,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 256/256 passing
-- API integration: 108/108 passing
+- Application: 259/259 passing
+- API integration: 109/109 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 461/461 passing
+- Backend Total: 469/469 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -128,14 +128,14 @@ Result:
 ### Frontend E2E (Executed)
 
 Command:
-- `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.docsrefresh2.db npx playwright test --reporter=line`
+- `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
 - E2E smoke + automation/ops flow: 11/11 passing
 
 ### Total
 
-- Combined automated total: 717/717 passing
+- Combined automated total: 725/725 passing
 
 ## CI Status
 
@@ -164,6 +164,7 @@ Automation and data:
 Observability and scalability:
 - `LogQueryService` currently performs broad in-memory composition paths (now emits duration/result-size diagnostics)
 - nullable warnings (`CS8618`) remain in domain entities
+- local build environment is currently Node 22.11.0; Vite warns that 22.12+ is preferred (build still passes)
 
 UX and operability (reconciled from product notes):
 - archive board lifecycle behavior is not yet fully coherent with archive/recovery UX
