@@ -19,6 +19,19 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AuditEndpoints_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/audit/boards/{Guid.NewGuid()}"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/audit/entities/Card/{Guid.NewGuid()}"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/audit/users/{Guid.NewGuid()}"));
+    }
+
+    [Fact]
     public async Task GetBoardHistory_ShouldReturnOk_ForNewBoard()
     {
         var board = await CreateBoardAsync();
@@ -44,6 +57,8 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task GetEntityHistory_ShouldReturnOk_ForAnyEntity()
     {
+        await EnsureAuthenticatedAsync();
+
         var entityId = Guid.NewGuid();
 
         var response = await _client.GetAsync($"/api/audit/entities/Card/{entityId}");
@@ -55,6 +70,7 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task GetUserHistory_ShouldReturnOk_ForRegisteredUser()
     {
         var (_, _, _, userId) = await RegisterUserAsync("audituser");
+        await EnsureAuthenticatedAsync();
 
         var response = await _client.GetAsync($"/api/audit/users/{userId}");
 
