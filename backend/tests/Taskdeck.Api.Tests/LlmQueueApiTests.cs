@@ -38,6 +38,9 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsync($"/api/llm-queue/{requestId}/cancel?userId={userId}", null));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsync("/api/llm-queue/process-next", null));
     }
 
     [Fact]
