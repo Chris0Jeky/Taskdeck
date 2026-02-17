@@ -1,16 +1,21 @@
 # Taskdeck
 
-Taskdeck is a local-first Kanban system for developers, with a .NET 8 API, Vue 3 frontend, and proposal-first automation workflows.
+Taskdeck is a local-first Kanban and execution system for developers.
+It combines a .NET 8 backend, Vue 3 frontend, and automation workflows designed for safe, review-first operations.
 
-## Source of Truth
+## What It Does
 
-Start with:
-- `docs/STATUS.md` for current shipped reality and verified totals.
-- `docs/IMPLEMENTATION_MASTERPLAN.md` for execution priority and roadmap.
-- `docs/TESTING_GUIDE.md` for canonical test commands and CI parity.
-- `docs/INDEX.md` for doc classification (authoritative vs operational vs archive).
+- Boards, columns, cards, and labels with WIP-aware flow management
+- Archive and restore operations
+- Workspace activity and operational surfaces
+- Proposal-first automation flows (review before apply)
+- Local-first persistence via SQLite
 
-If any other document conflicts with these, trust `docs/STATUS.md`.
+## Tech Stack
+
+- Backend: .NET 8, ASP.NET Core Web API, EF Core, SQLite
+- Frontend: Vue 3, TypeScript, Pinia, Vite
+- Testing: xUnit, Vitest, Playwright
 
 ## Repository Layout
 
@@ -21,7 +26,7 @@ If any other document conflicts with these, trust `docs/STATUS.md`.
 - Active docs: `docs/`
 - Historical docs: `docs/archive/`
 
-## Local Run
+## Quick Start
 
 Prerequisites:
 - .NET 8 SDK
@@ -47,7 +52,7 @@ Default URLs:
 - Swagger: `http://localhost:5000/swagger`
 - Frontend: `http://localhost:5173`
 
-## Verification
+## Test Commands
 
 Backend:
 
@@ -71,11 +76,24 @@ cd frontend/taskdeck-web
 TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
 ```
 
-For latest verified pass counts, see `docs/STATUS.md` and `docs/TESTING_GUIDE.md`.
+For latest verified totals and CI parity, see `docs/STATUS.md` and `docs/TESTING_GUIDE.md`.
 
-## Working Model
+## Architecture
 
-- Security-first and claims-first identity posture.
-- Proposal-first automation: plan/review before mutations.
-- Docs governance and architecture checks are CI-gated.
-- Work is tracked through GitHub Issues plus Project workflows.
+- `Taskdeck.Domain`: core entities and rules
+- `Taskdeck.Application`: use cases/services
+- `Taskdeck.Infrastructure`: persistence and adapters
+- `Taskdeck.Api`: HTTP endpoints and integration layer
+
+## Roadmap and Current Status
+
+Start here:
+- `docs/STATUS.md` for current shipped reality
+- `docs/IMPLEMENTATION_MASTERPLAN.md` for delivery sequencing
+- `docs/INDEX.md` for documentation map
+
+## Contributing
+
+- Open or pick a GitHub issue before larger changes.
+- Keep PRs scoped and include verification evidence.
+- For contribution guidance and repo rules, see `AGENTS.md`.
