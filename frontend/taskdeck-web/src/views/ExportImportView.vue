@@ -27,8 +27,8 @@ async function handleExport() {
 
   try {
     exporting.value = true
-    const userId = session.requireUserId('export/import')
-    const data = await exportImportApi.exportBoardJson(exportBoardId.value.trim(), userId)
+    session.requireUserId('export/import')
+    const data = await exportImportApi.exportBoardJson(exportBoardId.value.trim())
     exportResult.value = JSON.stringify(data, null, 2)
     toast.success('Board exported successfully')
   } catch (err: unknown) {
@@ -72,8 +72,8 @@ async function handleImport() {
 
   try {
     importing.value = true
-    const userId = session.requireUserId('export/import')
-    const result = await exportImportApi.importBoardJson(importJson.value.trim(), userId)
+    session.requireUserId('export/import')
+    const result = await exportImportApi.importBoardJson(importJson.value.trim())
 
     if (result.success) {
       importResult.value = {
