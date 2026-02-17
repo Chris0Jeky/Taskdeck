@@ -3,6 +3,11 @@
 Last Updated: 2026-02-17  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
+Companion Active Docs:
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/TESTING_GUIDE.md`
+- `docs/MANUAL_TEST_CHECKLIST.md`
 
 ## Project Summary
 
@@ -187,6 +192,8 @@ UX and operability (reconciled from product notes):
 - Added request-correlation middleware and propagated request IDs into Ops command correlation IDs.
 - Added lightweight timing/result diagnostics for log queries and automation proposal execution.
 - Recorded cross-user existence policy decision: use `403` for authenticated-but-unauthorized access, reserve `404` for true missing resources.
+- Aligned active docs cross-links/date stamps across `STATUS`, `IMPLEMENTATION_MASTERPLAN`, `TESTING_GUIDE`, and `MANUAL_TEST_CHECKLIST`.
+- Confirmed GitHub Project operational safety view as `No Status` (`no:status`) and documented release/weekly safety checks.
 
 ## Canonical Documentation Policy
 
