@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
+import { automationApi } from '../api/automationApi'
 import { useToastStore } from '../store/toastStore'
 import type { ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
@@ -9,6 +10,7 @@ import { normalizeChatRole } from '../utils/chat'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
+import { createRequestId } from '../utils/requestId'
 
 const toast = useToastStore()
 
@@ -18,6 +20,7 @@ const selectedSession = ref<ChatSession | null>(null)
 const loadingSessions = ref(false)
 const creatingSession = ref(false)
 const sendingMessage = ref(false)
+const proposalActionBusyId = ref<string | null>(null)
 
 const newSessionTitle = ref('')
 const newSessionBoardId = ref('')
@@ -112,6 +115,23 @@ async function handleSendMessage() {
   }
 }
 
+async function handleApproveAndExecuteProposal(proposalId: string) {
+  try {
+    proposalActionBusyId.value = proposalId
+    await automationApi.approveProposal(proposalId)
+    await automationApi.executeProposal(proposalId, createRequestId())
+    toast.success('Proposal approved and executed')
+
+    if (selectedSession.value) {
+      await loadSession(selectedSession.value.id)
+    }
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to apply proposal from chat').message)
+  } finally {
+    proposalActionBusyId.value = null
+  }
+}
+
 onMounted(() => {
   void loadSessions()
   void loadBoardOptions()
@@ -178,7 +198,16 @@ async function loadBoardOptions() {
                 <span class="td-message-time">{{ new Date(message.createdAt).toLocaleTimeString() }}</span>
               </div>
               <div class="td-message-content">{{ message.content }}</div>
-              <div v-if="message.proposalId" class="td-message-proposal">Proposal: {{ message.proposalId }}</div>
+              <div v-if="message.proposalId" class="td-message-proposal">
+                <span>Proposal: {{ message.proposalId }}</span>
+                <button
+                  class="td-btn td-btn--secondary td-btn--xs"
+                  :disabled="proposalActionBusyId === message.proposalId"
+                  @click="handleApproveAndExecuteProposal(message.proposalId!)"
+                >
+                  {{ proposalActionBusyId === message.proposalId ? 'Applying...' : 'Approve & Execute' }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -224,14 +253,17 @@ async function loadBoardOptions() {
 .td-message-role { font-weight: 600; font-size: var(--td-font-xs); }
 .td-message-time { font-size: var(--td-font-xs); color: var(--td-text-tertiary); }
 .td-message-content { white-space: pre-wrap; font-size: var(--td-font-sm); }
-.td-message-proposal { margin-top: var(--td-space-1); font-size: var(--td-font-xs); color: var(--td-color-primary); font-family: monospace; }
 .td-chat-compose { display: flex; flex-direction: column; gap: var(--td-space-2); }
 .td-textarea { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); resize: vertical; }
 .td-checkbox { display: inline-flex; align-items: center; gap: var(--td-space-1); font-size: var(--td-font-xs); color: var(--td-text-secondary); }
 .td-btn { padding: var(--td-space-2) var(--td-space-4); border: none; border-radius: var(--td-radius-md); font-size: var(--td-font-sm); font-weight: 600; cursor: pointer; }
 .td-btn--sm { padding: var(--td-space-1) var(--td-space-3); font-size: var(--td-font-xs); }
+.td-btn--xs { padding: 2px 8px; font-size: 11px; }
 .td-btn--primary { background: var(--td-color-primary); color: var(--td-text-inverse); }
 .td-btn--primary:hover:not(:disabled) { background: var(--td-color-primary-hover); }
+.td-btn--secondary { background: var(--td-surface-tertiary); color: var(--td-text-primary); border: 1px solid var(--td-border-default); }
+.td-btn--secondary:hover:not(:disabled) { background: var(--td-surface-hover); }
 .td-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .td-loading, .td-empty { text-align: center; color: var(--td-text-secondary); padding: var(--td-space-4); }
+.td-message-proposal { margin-top: var(--td-space-1); font-size: var(--td-font-xs); color: var(--td-color-primary); font-family: monospace; display: inline-flex; align-items: center; gap: var(--td-space-2); }
 </style>
