@@ -138,6 +138,9 @@ After setup changes:
 - Create a PR linked to an issue and confirm issue `Status=Review`.
 - Merge PR and confirm issue and PR items move to `Done`.
 - Open `No Status` and confirm only empty-status items are listed.
+- Open `Priority View` and confirm issue/PR items have non-empty `Priority` values.
+- Run issue search and confirm zero issues without a priority label:
+  - `is:issue -label:"Priority I" -label:"Priority II" -label:"Priority III" -label:"Priority IV" -label:"Priority V"`
 <<<<<<< Updated upstream
 - Run issue search and confirm zero issues without a priority label:
   - `is:issue -label:\"Priority I\" -label:\"Priority II\" -label:\"Priority III\" -label:\"Priority IV\" -label:\"Priority V\"`
@@ -160,7 +163,7 @@ Weekly process:
 5. Sync project `Priority` field for issues and PRs per policy above.
 6. Place items into project statuses according to WIP rules.
 
-WIP-aware intake limits (default mode):
+WIP-aware intake limits:
 - Maximum 5 newly-seeded issues per week.
 - Maximum 1 major issue in `Now`.
 - Maximum 2 issues in `Next`.
@@ -176,5 +179,3 @@ Evidence of execution:
 - 2026-02-18 expansion pass seeded future-development waves (`#67` to `#111`) and applied priority labels across all issues.
 =======
 - 2026-02-18 reconciliation pass applied issue-priority labels to all issues and synchronized project `Priority` for issues + PRs.
->>>>>>> Stashed changes
-
