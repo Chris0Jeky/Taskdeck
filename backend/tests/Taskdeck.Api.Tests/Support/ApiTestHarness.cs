@@ -55,8 +55,7 @@ public static class ApiTestHarness
 
     public static async Task AssertUnauthorizedAsync(HttpResponseMessage response)
     {
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        await AssertErrorContractIfPresentAsync(response);
+        await AssertErrorContractAsync(response, HttpStatusCode.Unauthorized, "Unauthorized");
     }
 
     public static async Task AssertForbiddenAsync(HttpResponseMessage response)
@@ -97,27 +96,4 @@ public static class ApiTestHarness
         }
     }
 
-    private static async Task AssertErrorContractIfPresentAsync(HttpResponseMessage response)
-    {
-        var contentLength = response.Content.Headers.ContentLength;
-        if (contentLength.HasValue && contentLength.Value == 0)
-        {
-            return;
-        }
-
-        var mediaType = response.Content.Headers.ContentType?.MediaType;
-        if (!string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        if (payload.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-
-        payload.TryGetProperty("errorCode", out _).Should().BeTrue();
-        payload.TryGetProperty("message", out _).Should().BeTrue();
-    }
 }
