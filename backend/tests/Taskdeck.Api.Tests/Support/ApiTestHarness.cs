@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Taskdeck.Application.DTOs;
 
 namespace Taskdeck.Api.Tests.Support;
@@ -82,10 +83,37 @@ public static class ApiTestHarness
     {
         response.StatusCode.Should().Be(expectedStatus);
 
-        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(
+            "application/json",
+            $"expected {expectedStatus} error responses to return application/json");
+
+        var rawBody = await response.Content.ReadAsStringAsync();
+        rawBody.Should().NotBeNullOrWhiteSpace(
+            $"expected {expectedStatus} responses to include a non-empty error contract body");
+
+        JsonElement payload;
+        try
+        {
+            using var document = JsonDocument.Parse(rawBody);
+            payload = document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            Execute.Assertion.FailWith(
+                "Expected a JSON error contract body for {0}, but parsing failed: {1}. Body: {2}",
+                expectedStatus,
+                ex.Message,
+                rawBody);
+            return;
+        }
+
         payload.ValueKind.Should().Be(JsonValueKind.Object);
-        payload.TryGetProperty("errorCode", out var codeProperty).Should().BeTrue();
-        payload.TryGetProperty("message", out var messageProperty).Should().BeTrue();
+        payload.TryGetProperty("errorCode", out var codeProperty).Should().BeTrue(
+            "expected error payload to contain 'errorCode'. Body: {0}",
+            rawBody);
+        payload.TryGetProperty("message", out var messageProperty).Should().BeTrue(
+            "expected error payload to contain 'message'. Body: {0}",
+            rawBody);
         var errorCode = codeProperty.GetString();
         errorCode.Should().NotBeNullOrWhiteSpace();
         messageProperty.GetString().Should().NotBeNullOrWhiteSpace();
