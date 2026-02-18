@@ -94,6 +94,72 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         assistant.Content.Should().Contain("blocked by safety guardrails");
     }
 
+    [Fact]
+    public async Task SendMessage_ShouldCreateProposalReference_ForChecklistBootstrapRequest()
+    {
+        var userId = await AuthenticateAsync("chat-checklist");
+        var boardId = await CreateOwnedBoardWithColumnAsync(userId);
+
+        var createSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Checklist bootstrap flow", boardId));
+        createSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+
+        var checklistRequest = new SendChatMessageDto(
+            """
+            Release checklist:
+            - [ ] Setup board columns
+            - [ ] Create MVP tasks
+            - [ ] Add release review item
+            """,
+            RequestProposal: true);
+
+        var sendMessageResponse = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            checklistRequest);
+
+        sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
+        assistant.Should().NotBeNull();
+        assistant!.MessageType.Should().Be("proposal-reference");
+        assistant.ProposalId.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SendMessage_ShouldReturnError_ForChecklistBootstrapRequestWithoutBoardScope()
+    {
+        await AuthenticateAsync("chat-checklist-noboard");
+
+        var createSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Checklist without board"));
+        createSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+
+        var checklistRequest = new SendChatMessageDto(
+            """
+            Project checklist:
+            - [ ] Setup board
+            - [ ] Plan backlog
+            """,
+            RequestProposal: true);
+
+        var sendMessageResponse = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            checklistRequest);
+
+        sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
+        assistant.Should().NotBeNull();
+        assistant!.MessageType.Should().Be("error");
+        assistant.Content.Should().Contain("board-scoped chat session");
+    }
+
     private async Task<Guid> AuthenticateAsync(string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
