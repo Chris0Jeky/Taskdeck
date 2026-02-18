@@ -79,10 +79,14 @@ const router = createRouter({
       meta: { requiresShell: true },
     },
     {
-      path: '/workspace/activity/user/:userId',
+      path: '/workspace/activity/user',
       name: 'workspace-activity-user',
       component: ActivityView,
       meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/activity/user/:userId',
+      redirect: '/workspace/activity/user',
     },
 
     // Automation routes
