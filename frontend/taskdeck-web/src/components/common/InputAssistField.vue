@@ -133,6 +133,7 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     if (panelOpen.value) {
       event.preventDefault()
+      event.stopPropagation()
       closePanel()
     }
     return
