@@ -146,7 +146,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 260/260 passing
+- Frontend unit: 267/267 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -160,7 +160,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 770/770 passing
+- Combined automated total: 777/777 passing
 
 ## CI Status
 
@@ -200,7 +200,6 @@ Observability and scalability:
   - cloud target topology and autoscaling ADR (`#111`)
 
 UX and operability (reconciled from product notes):
-- ops/automation forms need stronger autocomplete/option scaffolding
 - escape-driven board/workspace exit ergonomics need a defined and test-backed model
 
 Security/compliance hardening backlog added from research cross-check:
@@ -235,6 +234,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
 - Delivered UX-03 command palette keyboard model: shell command palette now supports keyboard-first item filtering, selection, and activation with unit + E2E regression coverage.
 - Delivered UX-04 activity selector discoverability: activity workflows now use selector-first board/entity/user exploration with ID copy affordance and unit + E2E regression coverage.
+- Delivered UX-04 shared input-assist scaffolding: shared combobox/listbox input-assist is now integrated into Ops template selection and automation chat board targeting with keyboard-first option navigation and dedicated unit coverage.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

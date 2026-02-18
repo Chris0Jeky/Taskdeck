@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import http from '../api/http'
 import { opsApi } from '../api/opsApi'
 import { useToastStore } from '../store/toastStore'
 import type { CommandTemplate, LogEntry } from '../types/ops'
 import { normalizeCommandRunStatus } from '../utils/ops'
 import { getErrorDisplay } from '../composables/useErrorMapper'
+import InputAssistField from '../components/common/InputAssistField.vue'
+import { buildInputAssistOptions } from '../utils/inputAssist'
 
 const toast = useToastStore()
 
@@ -34,6 +36,19 @@ const logEntries = ref<LogEntry[]>([])
 let logRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
+const templateOptions = computed(() => buildInputAssistOptions(
+  templates.value.map((template) => ({
+    value: template.name,
+    label: template.name,
+    helperText: `${template.requiredRole} role`,
+    keywords: [template.description, ...template.acceptedParameters],
+  }))
+))
+
+const selectedTemplateMeta = computed(() => {
+  return templates.value.find((template) => template.name === selectedTemplate.value) ?? null
+})
 
 function stopLogAutoRefresh() {
   if (logRefreshTimer !== null) {
@@ -80,8 +95,8 @@ function parseCliParameters(): Record<string, string> {
 }
 
 async function handleCliRun() {
-  if (!selectedTemplate.value) {
-    toast.error('Select a command template first')
+  if (!selectedTemplateMeta.value) {
+    toast.error('Select a valid command template first')
     return
   }
 
@@ -91,7 +106,7 @@ async function handleCliRun() {
     cliOutput.value.push(`> ${selectedTemplate.value}`)
 
     const run = await opsApi.runCommand({
-      templateName: selectedTemplate.value,
+      templateName: selectedTemplateMeta.value.name,
       parameters: Object.keys(parameters).length === 0 ? undefined : parameters,
     })
 
@@ -218,13 +233,22 @@ onBeforeUnmount(() => {
 
     <div v-if="activeTab === 'cli'" class="td-ops-panel">
       <div class="td-cli-toolbar">
-        <select v-model="selectedTemplate" class="td-input">
-          <option value="" disabled>Select template</option>
-          <option v-for="template in templates" :key="template.name" :value="template.name">
-            {{ template.name }} ({{ template.requiredRole }})
-          </option>
-        </select>
+        <InputAssistField
+          v-model="selectedTemplate"
+          :options="templateOptions"
+          aria-label="Command template"
+          placeholder="Select template"
+          no-results-text="No matching templates."
+        />
         <button class="td-btn td-btn--secondary td-btn--sm" @click="loadTemplates">Reload Templates</button>
+      </div>
+      <div v-if="selectedTemplateMeta" class="td-template-meta">
+        <div class="td-template-meta__title">{{ selectedTemplateMeta.description }}</div>
+        <div class="td-template-meta__details">
+          Role: {{ selectedTemplateMeta.requiredRole }} |
+          Timeout: {{ selectedTemplateMeta.timeoutSeconds }}s |
+          Params: {{ selectedTemplateMeta.acceptedParameters.length > 0 ? selectedTemplateMeta.acceptedParameters.join(', ') : 'None' }}
+        </div>
       </div>
 
       <div class="td-form-group">
@@ -309,6 +333,9 @@ onBeforeUnmount(() => {
 .td-tab--active { color: var(--td-color-primary); border-bottom-color: var(--td-color-primary); }
 .td-ops-panel { background: var(--td-surface-primary); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-lg); padding: var(--td-space-4); }
 .td-cli-toolbar { display: flex; gap: var(--td-space-2); margin-bottom: var(--td-space-3); }
+.td-template-meta { margin-bottom: var(--td-space-3); padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); background: var(--td-surface-secondary); }
+.td-template-meta__title { font-size: var(--td-font-sm); color: var(--td-text-primary); }
+.td-template-meta__details { margin-top: 2px; font-size: var(--td-font-xs); color: var(--td-text-tertiary); }
 .td-form-group { display: flex; flex-direction: column; gap: var(--td-space-1); margin-bottom: var(--td-space-3); }
 .td-label { font-size: var(--td-font-sm); font-weight: 500; color: var(--td-text-secondary); }
 .td-input { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); }

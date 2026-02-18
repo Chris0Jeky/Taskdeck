@@ -133,8 +133,8 @@ test('ops cli should run health.check template', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Ops Console' })).toBeVisible()
 
-  const templateSelect = page.locator('select').first()
-  await templateSelect.selectOption('health.check')
+  const templateInput = page.getByRole('combobox', { name: 'Command template' })
+  await templateInput.fill('health.check')
   await page.getByRole('button', { name: 'Run Template' }).click()
 
   await expect(page.getByText('Health check: OK')).toBeVisible()
