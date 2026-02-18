@@ -17,9 +17,9 @@ Companion Active Docs:
   - API integration: 136
   - CLI contract: 4
   - Architecture boundaries: 4
-- Frontend unit: 248/248 passing
-- Frontend E2E (smoke + automation/ops): 11/11 passing
-- Combined automated total: 755/755 passing
+- Frontend unit: 252/252 passing
+- Frontend E2E (smoke + automation/ops): 12/12 passing
+- Combined automated total: 760/760 passing
 
 ## Backend Commands
 
