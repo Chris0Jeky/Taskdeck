@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { chatApi } from '../api/chatApi'
+import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
 import type { ChatSession } from '../types/chat'
+import type { Board } from '../types/board'
 import { normalizeChatRole } from '../utils/chat'
 import { getErrorDisplay } from '../composables/useErrorMapper'
+import InputAssistField from '../components/common/InputAssistField.vue'
+import { buildInputAssistOptions } from '../utils/inputAssist'
 
 const toast = useToastStore()
 
 const sessions = ref<ChatSession[]>([])
+const availableBoards = ref<Board[]>([])
 const selectedSession = ref<ChatSession | null>(null)
 const loadingSessions = ref(false)
 const creatingSession = ref(false)
@@ -18,6 +23,15 @@ const newSessionTitle = ref('')
 const newSessionBoardId = ref('')
 const messageContent = ref('')
 const requestProposal = ref(false)
+
+const boardOptions = computed(() => buildInputAssistOptions(
+  availableBoards.value.map((board) => ({
+    value: board.id,
+    label: board.name,
+    helperText: board.id,
+    keywords: [board.description ?? ''],
+  }))
+))
 
 const sortedMessages = computed(() => {
   const current = selectedSession.value
@@ -100,7 +114,16 @@ async function handleSendMessage() {
 
 onMounted(() => {
   void loadSessions()
+  void loadBoardOptions()
 })
+
+async function loadBoardOptions() {
+  try {
+    availableBoards.value = await boardsApi.getBoards()
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to load boards').message)
+  }
+}
 </script>
 
 <template>
@@ -113,7 +136,13 @@ onMounted(() => {
 
         <div class="td-form-group">
           <input v-model="newSessionTitle" class="td-input" type="text" placeholder="Session title" />
-          <input v-model="newSessionBoardId" class="td-input" type="text" placeholder="Board ID (optional)" />
+          <InputAssistField
+            v-model="newSessionBoardId"
+            :options="boardOptions"
+            aria-label="Board ID"
+            placeholder="Board ID (optional)"
+            no-results-text="No matching boards."
+          />
           <button class="td-btn td-btn--primary td-btn--sm" @click="handleCreateSession" :disabled="creatingSession">
             {{ creatingSession ? 'Creating...' : 'Create Session' }}
           </button>
