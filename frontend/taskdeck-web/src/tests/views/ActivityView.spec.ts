@@ -196,4 +196,18 @@ describe('ActivityView selector discoverability', () => {
     expect(mockRouter.push).toHaveBeenLastCalledWith({ name: 'workspace-activity-user' })
     expect(mockAuditStore.fetchUserHistory).toHaveBeenLastCalledWith(50)
   })
+
+  it('preserves deep-linked entity ID before selector options hydrate', async () => {
+    mockRoute.name = 'workspace-activity-entity'
+    mockRoute.fullPath = '/workspace/activity/entity/Card/card-route'
+    mockRoute.params = {
+      entityType: 'Card',
+      entityId: 'card-route',
+    }
+
+    mount(ActivityView)
+    await waitForUi()
+
+    expect(mockAuditStore.fetchEntityHistory).toHaveBeenCalledWith('Card', 'card-route', 50)
+  })
 })
