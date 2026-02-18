@@ -71,6 +71,22 @@ function columnDndByName(page: Page, columnName: string) {
     .first()
 }
 
+function columnDragHandleByName(page: Page, columnName: string) {
+  return columnDndByName(page, columnName)
+    .locator('[data-action="drag-column-handle"]')
+    .first()
+}
+
+function cardByTitle(page: Page, cardTitle: string) {
+  return page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
+}
+
+function cardDragHandleByTitle(page: Page, cardTitle: string) {
+  return cardByTitle(page, cardTitle)
+    .locator('[data-action="drag-card-handle"]')
+    .first()
+}
+
 async function addColumn(page: Page, columnName: string) {
   await page.getByRole('button', { name: '+ Add Column' }).click()
   await page.getByPlaceholder('Column name').fill(columnName)
@@ -148,12 +164,33 @@ test('card drag and drop should move card between columns', async ({ page }) => 
   await addColumn(page, targetColumn)
   await addCard(page, sourceColumn, cardTitle)
 
-  const sourceCard = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
+  const sourceCardHandle = cardDragHandleByTitle(page, cardTitle)
+  const targetLane = columnByName(page, targetColumn)
+
+  await sourceCardHandle.dragTo(targetLane)
+
+  await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
+})
+
+test('card body drag should be ignored unless drag handle is used', async ({ page }) => {
+  const boardName = `Card Guard Board ${Date.now()}`
+  const sourceColumn = `To Do ${Date.now()}`
+  const targetColumn = `Done ${Date.now()}`
+  const cardTitle = `Do Not Move ${Date.now()}`
+
+  await createBoard(page, boardName)
+  await addColumn(page, sourceColumn)
+  await addColumn(page, targetColumn)
+  await addCard(page, sourceColumn, cardTitle)
+
+  const sourceCard = cardByTitle(page, cardTitle)
+  const sourceLane = columnByName(page, sourceColumn)
   const targetLane = columnByName(page, targetColumn)
 
   await sourceCard.dragTo(targetLane)
 
-  await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
+  await expect(sourceLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
+  await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(0)
 })
 
 test('board settings lifecycle should support rename archive unarchive and archive action', async ({ page }) => {
@@ -203,9 +240,20 @@ test('column drag and drop should reorder columns', async ({ page }) => {
 
   await expect(page.locator('[data-column-dnd-id] h3').first()).toHaveText(firstColumn)
 
+  const firstColumnLane = columnByName(page, firstColumn)
+  await firstColumnLane.getByRole('button', { name: 'Add Card' }).click()
+  await firstColumnLane.getByPlaceholder('Enter card title...').fill('Editing in progress')
+
   const first = columnDndByName(page, firstColumn)
   const third = columnDndByName(page, thirdColumn)
   await first.dragTo(third)
+
+  await expect(page.locator('[data-column-dnd-id] h3').first()).toHaveText(firstColumn)
+  await expect(page.locator('[data-column-dnd-id] h3').nth(1)).toHaveText(secondColumn)
+  await expect(page.locator('[data-column-dnd-id] h3').nth(2)).toHaveText(thirdColumn)
+
+  const firstHandle = columnDragHandleByName(page, firstColumn)
+  await firstHandle.dragTo(third)
 
   await expect(page.locator('[data-column-dnd-id] h3').first()).toHaveText(secondColumn)
   await expect(page.locator('[data-column-dnd-id] h3').nth(1)).toHaveText(thirdColumn)
