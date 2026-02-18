@@ -22,6 +22,8 @@ Update this file at the end of each meaningful delivery cycle.
 - Automation remains proposal-first and review-first by default.
 - MVP should include a dogfooding workflow: paste structured plan text in chat and bootstrap a board/project from approved proposals.
 - UX investments should be modular and reusable (keyboard-first, discoverable selectors, shared input-assist patterns).
+- Every issue must carry exactly one priority label (`Priority I` through `Priority V`).
+- Out-of-code and configuration work (containerization, deployment, security posture, observability, DR) must be tracked as first-class backlog items.
 
 ## Current Cycle Outcome (Completed)
 
@@ -111,29 +113,97 @@ Exit Criteria:
 - drag/edit and escape interaction regressions are resolved and test-backed
 - shared input-assist and navigation patterns are reusable across feature modules
 
-## Active Backlog (Prioritized)
+### Horizon D (Post-Phase-4): Platform, Deployment, and Operability Baseline
 
-1. P0: Auth regression integration suite expansion for legacy + advanced controllers with explicit `401/403/404` assertions.
-2. P0: Cross-user existence policy enforcement sweep (`403` for unauthorized/cross-user, `404` for true missing) across remaining edge paths.
-3. P0: Archive board lifecycle coherence (archive/unarchive visibility, restore semantics, UX parity).
-4. P1: Interaction-mode guardrails to prevent drag side effects while editing card/task content.
-5. P1: Command palette keyboard selection/activation model.
-6. P1: Activity selector UX for board/entity/user discovery + easy ID reveal/copy affordance.
-7. P1: Ops/automation contextual autocomplete + option scaffolding via shared input-assist module.
-8. P1: Real LLM provider abstraction and environment-safe provider selection.
-9. P1: Planner schema expansion with deterministic validation and stronger tests.
-10. P1: Automation executor hardening (failure semantics, audit attribution, operation coverage).
-11. P1: MVP dogfooding flow - parse pasted project checklist text in chat and generate board/bootstrap proposals for one-click setup.
-12. P2: Refactoring/modularization sprint for maintainability and duplication reduction.
-13. P2: Database-level export/import implementation.
-14. P2: Log query scalability improvements and nullable-warning debt reduction.
-15. P2: Deeper E2E expansion for keyboard flows, archive edge paths, and automation/ops error paths.
-16. P1: One-click package framework for reusable board starter states (labels, columns, templates, and seeded cards).
-17. P1: Starter pack catalog UX with preview/apply flow and per-pack conflict handling.
-18. P1: Test fixture packs derived from the same package manifests for deterministic QA/E2E setup.
-19. P2: Domain packs for common workflows (engineering, support, incidents, product, content, operations).
-20. P2: Package versioning and migration strategy for existing boards.
-21. P2: User-defined package export/import and organization-level shared package libraries.
+Focus:
+- containerized runtime baseline with reverse-proxy and compression posture
+- observability baseline (metrics/traces/log correlation + alerts)
+- performance and concurrency budgets with repeatable harnesses
+- production data/runtime posture decisions (DB provider migration strategy, caching strategy)
+- disaster-recovery and staged rollout operational readiness
+
+Exit Criteria:
+- environment bring-up and rollout paths are documented, test-backed, and repeatable
+- core SRE signals exist for errors, latency, backlog, worker health, and cost drift
+- release governance includes provenance/compliance artifacts (SBOM and documented rollback)
+
+### Horizon E (Post-Phase-4): Collaboration, Integrations, and Product Maturity
+
+Focus:
+- realtime collaboration and notification ecosystem
+- integrations/webhooks/connectors foundation
+- analytics and planning surfaces
+- compliance/security expansion (SSO/MFA, data portability, dependency-security policy)
+- UX maturity (accessibility, search, onboarding, offline readiness)
+
+Exit Criteria:
+- collaboration and integration foundations are production-safe and test-backed
+- growth-oriented UX and analytics features remain consistent with security and operability controls
+
+## Active Backlog (Priority-Labeled)
+
+### Priority I (Current Phase 4 Completion Path)
+
+- Security and policy convergence: `#33`, `#34`, `#44`
+- UX reliability and interaction safety: `#35`, `#45`, `#36`, `#37`, `#38`, `#46`
+- Automation/provider hardening: `#39`, `#40`, `#57`
+- Starter packs foundation: `#47`, `#48`, `#49`, `#50`, `#51`
+- Tech-debt blockers for stable expansion: `#52`, `#53`, `#54`
+
+### Priority II (Immediate Post-Phase-4 Foundation)
+
+- Real-time and observability baseline: `#67`, `#68`
+- Container/deployment and performance harness baseline: `#69`, `#70`
+- Multi-tenancy strategy and collaboration/integration foundations: `#71`, `#72`, `#73`, `#74`, `#75`, `#76`
+
+### Priority III (Expansion Tranche: Analytics, Security, Compliance)
+
+- Analytics and forecasting: `#77`, `#78`, `#79`
+- Security/compliance expansion: `#80`, `#81`, `#82`, `#83`, `#106`, `#110`
+
+### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
+
+- Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
+- Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
+- UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`, `#96`
+- Developer/user docs maturity: `#99`, `#100`
+
+### Priority V (Meta/Historical)
+
+- Wave index and historical/closed tracking: `#107` and completed governance items.
+
+## Research Reconciliation (WIP PDFs, Feb 2026)
+
+Research sources reviewed:
+- `docs/WIP/FutureExpansionAndImprovementsChecklist.pdf`
+- `docs/WIP/In-DepthAnalysisAndProgressReport(Feb2026).pdf`
+- `docs/WIP/Scaling and Hardening Taskdeck (Vue 3 + ASP.NET Core) - Comprehensive Guide.pdf`
+
+Strategic reconciliation applied:
+- Keep current sequence: finish Phase 4 consistency/security first (`Priority I`) before broad feature expansion.
+- Translate research recommendations into dependency-aware issues rather than broad unscoped themes.
+- Treat non-code operations/configuration work as a mandatory delivery track, not "later ops".
+
+## Out-of-Code and Configuration Coverage Matrix
+
+Covered by seeded issues:
+- Docker + reverse proxy + compression baseline: `#69`
+- Staged rollout policy (blue/green/canary): `#101`
+- IaC baseline: `#102`
+- SBOM/release provenance: `#103`
+- Cost guardrails: `#104`
+- Backup/restore disaster recovery: `#86`
+- OpenTelemetry metrics/tracing and alerting runbook: `#68`
+- Load/concurrency harness and budgets: `#70`
+- API abuse/rate limiting: `#81`
+- OWASP/security headers and CSRF/XSS baseline: `#80`
+- Dependency vulnerability management policy: `#106`
+- Secrets/configuration management baseline: `#110`
+- DB migration strategy and cache strategy: `#84`, `#85`
+- Cloud target topology and autoscaling ADR: `#111`
+
+Outstanding strategy-level gap to monitor:
+- no major out-of-code categories from the reviewed WIP PDFs are currently untracked; residual risk is execution sequencing and closure quality.
 
 
 ## Prepackaged Starter States Track (Roadmap Additions)
@@ -177,13 +247,13 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes, enforcing `401/403/404` policy semantics.
-2. Perform focused cross-user status-code consistency sweep and close remaining policy drift.
-3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
-4. Define and implement archive board lifecycle behavior contract (API + UI).
-5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.
-6. Draft package-manifest RFC and ship first two starter packs (common labels + common column flows).
-7. Define and implement MVP chat-to-project bootstrap acceptance flow (paste checklist -> approve proposals -> populated board).
+1. Complete `Priority I` security/policy tranche (`#33`, `#34`, `#44`) and close remaining auth/contract drift.
+2. Complete `Priority I` UX reliability tranche (`#35`, `#45`, `#36`, `#37`, `#38`, `#46`).
+3. Complete `Priority I` automation/provider and MVP bootstrap tranche (`#39`, `#40`, `#57`).
+4. Complete `Priority I` starter-pack foundation and debt blockers (`#47` to `#54`).
+5. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
+6. Keep issue `#107` updated as the canonical expansion-wave index.
+7. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
 
 ## Documentation Operating Model
 Active docs:

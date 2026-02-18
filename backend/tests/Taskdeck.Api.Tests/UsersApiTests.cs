@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -114,43 +113,8 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await _client.GetAsync($"/api/users/by-username/{username}");
 
-<<<<<<< Updated upstream
         await ApiTestHarness.AssertForbiddenAsync(response);
     }
-=======
-<<<<<<< Updated upstream
-=======
-        await ApiTestHarness.AssertForbiddenAsync(response);
-    }
-
-    [Fact]
-    public async Task GetUserByUsername_ShouldReturnForbidden_WhenRequestingSelfUsernameWithDifferentCase()
-    {
-        var currentUser = await EnsureAuthenticatedAsync();
-        var differentCaseUsername = currentUser.Username.ToUpperInvariant();
-
-        if (differentCaseUsername == currentUser.Username)
-        {
-            differentCaseUsername = currentUser.Username.ToLowerInvariant();
-        }
-
-        var response = await _client.GetAsync($"/api/users/by-username/{differentCaseUsername}");
-
-        await ApiTestHarness.AssertForbiddenAsync(response);
-    }
-
-    [Fact]
-    public async Task UpdateUser_ShouldReturnOk_WhenUpdatingSelf()
-    {
-        var currentUser = await EnsureAuthenticatedAsync();
-        var suffix = Guid.NewGuid().ToString("N")[..6];
-        var updateDto = new UpdateUserDto($"updated_{suffix}", $"updated_{suffix}@example.com");
-
-        var response = await _client.PutAsJsonAsync($"/api/users/{currentUser.UserId}", updateDto);
-
->>>>>>> Stashed changes
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
->>>>>>> Stashed changes
 
     [Fact]
     public async Task GetUserByUsername_ShouldReturnForbidden_WhenRequestingSelfUsernameWithDifferentCase()

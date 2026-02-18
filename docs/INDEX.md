@@ -17,6 +17,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 
 - `GITHUB_PROJECT_AUTOMATION.md`
   - Canonical setup and automation rules for GitHub Project statuses/workflows.
+- `GITHUB_LABEL_TAXONOMY.md`
+  - Canonical descriptions and usage rules for repository labels (including `Priority I` to `Priority V`).
 - `TASKDECK_HUMAN_OPERATIONS.md`
   - Human runbook for repository/project operations.
 - `TaskdeckNextWorkChecklist.md`

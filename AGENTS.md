@@ -23,6 +23,10 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Read `docs/GITHUB_PROJECT_AUTOMATION.md` before changing project operations, issue templates, or workflow conventions.
 - Canonical project status model is: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`.
 - Do not introduce labels in issue templates that are not in the required label set documented in `docs/GITHUB_PROJECT_AUTOMATION.md`.
+- Priority sync is mandatory:
+  - For issue project items, set project `Priority` to match the issue's single priority label (`Priority I` to `Priority V`).
+  - For PR project items, derive `Priority` from linked/referenced issues; if multiple priorities exist, choose highest urgency (`I` highest); if none can be derived, set `Priority V`.
+  - Before handoff, verify no issue/PR project item has empty `Priority`.
 - If workflow/status conventions change, update both:
   - `docs/GITHUB_PROJECT_AUTOMATION.md`
   - this `AGENTS.md` (only if contributor behavior expectations changed)
