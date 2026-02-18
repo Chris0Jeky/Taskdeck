@@ -153,4 +153,26 @@ describe('AppShell command palette keyboard model', () => {
     expect(options[1].attributes('aria-selected')).toBe('true')
     expect(wrapper.get('.td-command-palette__input').attributes('aria-activedescendant')).toBe('td-command-option-1')
   })
+
+  it('closes only the top-most escape surface first', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+  })
 })
