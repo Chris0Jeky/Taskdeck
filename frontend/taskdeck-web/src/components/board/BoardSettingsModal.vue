@@ -69,7 +69,7 @@ async function handleArchiveBoard() {
     emit('close')
     router.push('/boards')
   } catch (error) {
-    console.error('Failed to delete board:', error)
+    console.error('Failed to archive board:', error)
   }
 }
 
