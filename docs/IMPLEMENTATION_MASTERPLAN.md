@@ -44,7 +44,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 488 passing
+   - Backend: 491 passing
    - Frontend unit: 245 passing
    - E2E: 11 passing
 8. Documentation consolidation retained:
@@ -66,6 +66,9 @@ Delivered in the latest cycle:
    - audit controller now derives actor identity from claims for user-history and board-history access checks
    - users controller now enforces self-scope for read/update/activate/deactivate profile actions
    - audit frontend flow moved from user-id route calls to `/audit/users/me`
+13. SEC-03 regression matrix delivery:
+   - added explicit API integration matrix assertions for protected legacy + advanced routes
+   - expanded policy coverage for `401` unauthenticated, `403` cross-user unauthorized, and `404` true missing resources
 
 ## Roadmap by Horizon
 
@@ -113,8 +116,8 @@ Exit Criteria:
 
 ## Active Backlog (Prioritized)
 
-1. P0: Auth regression integration suite expansion for legacy + advanced controllers with explicit `401/403/404` assertions.
-2. P0: Cross-user existence policy enforcement sweep (`403` for unauthorized/cross-user, `404` for true missing) across remaining edge paths.
+1. P0: Cross-user existence policy enforcement sweep (`403` for unauthorized/cross-user, `404` for true missing) across remaining edge paths.
+2. P0: Standardized API error-contract assertion expansion for key auth and validation failure paths.
 3. P0: Archive board lifecycle coherence (archive/unarchive visibility, restore semantics, UX parity).
 4. P1: Interaction-mode guardrails to prevent drag side effects while editing card/task content.
 5. P1: Command palette keyboard selection/activation model.
@@ -177,8 +180,8 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes, enforcing `401/403/404` policy semantics.
-2. Perform focused cross-user status-code consistency sweep and close remaining policy drift.
+1. Perform focused cross-user status-code consistency sweep and close remaining policy drift.
+2. Add standardized API error-contract assertions for key auth and validation failures (SEC-04).
 3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
 4. Define and implement archive board lifecycle behavior contract (API + UI).
 5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.
