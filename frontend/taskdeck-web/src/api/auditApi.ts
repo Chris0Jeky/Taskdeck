@@ -15,9 +15,8 @@ export const auditApi = {
     return data
   },
 
-  async getUserHistory(userId: string, limit = 50): Promise<AuditEntry[]> {
-    const queryUserId = encodeURIComponent(userId)
-    const { data } = await http.get<AuditEntry[]>(`/audit/users/${queryUserId}?limit=${limit}`)
+  async getUserHistory(limit = 50): Promise<AuditEntry[]> {
+    const { data } = await http.get<AuditEntry[]>(`/audit/users/me?limit=${limit}`)
     return data
   },
 }

@@ -10,7 +10,6 @@ const viewMode = ref<'board' | 'entity' | 'user'>('board')
 const boardId = ref('')
 const entityType = ref('')
 const entityId = ref('')
-const userId = ref('')
 const limit = ref(50)
 
 function formatTimestamp(ts: string): string {
@@ -46,8 +45,8 @@ async function fetchHistory() {
     return
   }
 
-  if (viewMode.value === 'user' && userId.value) {
-    await audit.fetchUserHistory(userId.value, limit.value)
+  if (viewMode.value === 'user') {
+    await audit.fetchUserHistory(limit.value)
   }
 }
 
@@ -65,16 +64,13 @@ function syncFromRouteAndFetch() {
     boardId.value = route.params.boardId
     entityType.value = ''
     entityId.value = ''
-    userId.value = ''
   } else if (typeof route.params.entityType === 'string' && typeof route.params.entityId === 'string') {
     viewMode.value = 'entity'
     entityType.value = route.params.entityType
     entityId.value = route.params.entityId
     boardId.value = ''
-    userId.value = ''
-  } else if (typeof route.params.userId === 'string') {
+  } else if (route.name === 'workspace-activity-user') {
     viewMode.value = 'user'
-    userId.value = route.params.userId
     boardId.value = ''
     entityType.value = ''
     entityId.value = ''
@@ -83,14 +79,13 @@ function syncFromRouteAndFetch() {
     boardId.value = ''
     entityType.value = ''
     entityId.value = ''
-    userId.value = ''
   }
 
   fetchHistorySafe()
 }
 
 onMounted(syncFromRouteAndFetch)
-watch(() => route.params, syncFromRouteAndFetch, { deep: true })
+watch(() => route.fullPath, syncFromRouteAndFetch)
 </script>
 
 <template>
@@ -111,8 +106,6 @@ watch(() => route.params, syncFromRouteAndFetch, { deep: true })
           <input v-model="entityType" type="text" class="td-input" placeholder="Entity Type" />
           <input v-model="entityId" type="text" class="td-input" placeholder="Entity ID" />
         </template>
-
-        <input v-if="viewMode === 'user'" v-model="userId" type="text" class="td-input" placeholder="User ID" />
 
         <select v-model.number="limit" class="td-input td-input--sm">
           <option :value="25">25</option>

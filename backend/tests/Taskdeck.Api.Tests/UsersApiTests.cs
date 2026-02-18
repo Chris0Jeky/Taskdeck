@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -12,6 +11,7 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
     private bool _isAuthenticated;
+    private TestUserContext? _currentUser;
 
     public UsersApiTests(TestWebApplicationFactory factory)
     {
@@ -69,70 +69,119 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetUser_ShouldReturnNotFound_WhenUserDoesNotExist()
+    public async Task GetUser_ShouldReturnCurrentUser_WhenRequestingSelf()
     {
-        await EnsureAuthenticatedAsync();
+        var currentUser = await EnsureAuthenticatedAsync();
 
-        var response = await _client.GetAsync($"/api/users/{Guid.NewGuid()}");
+        var response = await _client.GetAsync($"/api/users/{currentUser.UserId}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var user = await response.Content.ReadFromJsonAsync<UserDto>();
+        user.Should().NotBeNull();
+        user!.Id.Should().Be(currentUser.UserId);
     }
 
     [Fact]
-    public async Task GetUserByUsername_ShouldReturnUser_WhenUserExists()
+    public async Task GetUser_ShouldReturnForbidden_WhenRequestingAnotherUser()
     {
-        var (username, _, _, _) = await RegisterUserAsync("byname");
         await EnsureAuthenticatedAsync();
+        var (_, _, _, otherUserId) = await RegisterUserAsync("other_get");
+
+        var response = await _client.GetAsync($"/api/users/{otherUserId}");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task GetUserByUsername_ShouldReturnCurrentUser_WhenRequestingSelfUsername()
+    {
+        var currentUser = await EnsureAuthenticatedAsync();
+
+        var response = await _client.GetAsync($"/api/users/by-username/{currentUser.Username}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var user = await response.Content.ReadFromJsonAsync<UserDto>();
+        user.Should().NotBeNull();
+        user!.Id.Should().Be(currentUser.UserId);
+    }
+
+    [Fact]
+    public async Task GetUserByUsername_ShouldReturnForbidden_WhenRequestingDifferentUsername()
+    {
+        await EnsureAuthenticatedAsync();
+        var (username, _, _, _) = await RegisterUserAsync("other_by_name");
 
         var response = await _client.GetAsync($"/api/users/by-username/{username}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
 
+    [Fact]
+    public async Task GetUserByUsername_ShouldReturnForbidden_WhenRequestingSelfUsernameWithDifferentCase()
+    {
+        var currentUser = await EnsureAuthenticatedAsync();
+        var differentCaseUsername = currentUser.Username.ToUpperInvariant();
+
+        if (differentCaseUsername == currentUser.Username)
+        {
+            differentCaseUsername = currentUser.Username.ToLowerInvariant();
+        }
+
+        var response = await _client.GetAsync($"/api/users/by-username/{differentCaseUsername}");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task UpdateUser_ShouldReturnOk_WhenUpdatingSelf()
+    {
+        var currentUser = await EnsureAuthenticatedAsync();
+        var suffix = Guid.NewGuid().ToString("N")[..6];
+        var updateDto = new UpdateUserDto($"updated_{suffix}", $"updated_{suffix}@example.com");
+
+        var response = await _client.PutAsJsonAsync($"/api/users/{currentUser.UserId}", updateDto);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         var user = await response.Content.ReadFromJsonAsync<UserDto>();
         user.Should().NotBeNull();
-        user!.Username.Should().Be(username);
+        user!.Username.Should().Be(updateDto.Username);
     }
 
     [Fact]
-    public async Task GetUserByUsername_ShouldReturnNotFound_WhenUsernameDoesNotExist()
+    public async Task UpdateUser_ShouldReturnForbidden_WhenUpdatingAnotherUser()
     {
         await EnsureAuthenticatedAsync();
+        var (_, _, _, otherUserId) = await RegisterUserAsync("other_update");
 
-        var response = await _client.GetAsync("/api/users/by-username/nonexistent_user_xyz");
+        var response = await _client.PutAsJsonAsync(
+            $"/api/users/{otherUserId}",
+            new UpdateUserDto($"updated_{Guid.NewGuid():N}", $"updated_{Guid.NewGuid():N}@example.com"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
-        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
     [Fact]
-    public async Task DeactivateUser_ShouldReturnNoContent()
+    public async Task DeactivateUser_ShouldReturnNoContent_WhenDeactivatingSelf()
     {
-        var (_, _, _, userId) = await RegisterUserAsync("deact");
-        await EnsureAuthenticatedAsync();
+        var currentUser = await EnsureAuthenticatedAsync();
 
-        var response = await _client.PostAsync($"/api/users/{userId}/deactivate", null);
+        var response = await _client.PostAsync($"/api/users/{currentUser.UserId}/deactivate", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact]
-    public async Task ActivateUser_ShouldReturnNoContent_AfterDeactivation()
+    public async Task ActivateUser_ShouldReturnNoContent_AfterSelfDeactivation()
     {
-        var (_, _, _, userId) = await RegisterUserAsync("activ");
-        await EnsureAuthenticatedAsync();
+        var currentUser = await EnsureAuthenticatedAsync();
 
-        var deactivateResponse = await _client.PostAsync($"/api/users/{userId}/deactivate", null);
+        var deactivateResponse = await _client.PostAsync($"/api/users/{currentUser.UserId}/deactivate", null);
         deactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var activateResponse = await _client.PostAsync($"/api/users/{userId}/activate", null);
+        var activateResponse = await _client.PostAsync($"/api/users/{currentUser.UserId}/activate", null);
         activateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var getResponse = await _client.GetAsync($"/api/users/{userId}");
+        var getResponse = await _client.GetAsync($"/api/users/{currentUser.UserId}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var user = await getResponse.Content.ReadFromJsonAsync<UserDto>();
         user.Should().NotBeNull();
@@ -140,10 +189,32 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetUsers_ShouldReturnListOfUsers()
+    public async Task DeactivateUser_ShouldReturnForbidden_WhenDeactivatingAnotherUser()
     {
-        await RegisterUserAsync("listuser");
         await EnsureAuthenticatedAsync();
+        var (_, _, _, otherUserId) = await RegisterUserAsync("other_deactivate");
+
+        var response = await _client.PostAsync($"/api/users/{otherUserId}/deactivate", null);
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ActivateUser_ShouldReturnForbidden_WhenActivatingAnotherUser()
+    {
+        await EnsureAuthenticatedAsync();
+        var (_, _, _, otherUserId) = await RegisterUserAsync("other_activate");
+
+        var response = await _client.PostAsync($"/api/users/{otherUserId}/activate", null);
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task GetUsers_ShouldReturnOnlyCurrentUser()
+    {
+        var currentUser = await EnsureAuthenticatedAsync();
+        await RegisterUserAsync("list_other");
 
         var response = await _client.GetAsync("/api/users");
 
@@ -151,7 +222,8 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
 
         var users = await response.Content.ReadFromJsonAsync<List<UserDto>>();
         users.Should().NotBeNull();
-        users!.Count.Should().BeGreaterThanOrEqualTo(1);
+        users.Should().HaveCount(1);
+        users![0].Id.Should().Be(currentUser.UserId);
     }
 
     private async Task<(string Username, string Email, string Password, Guid UserId)> RegisterUserAsync(string stem)
@@ -172,14 +244,15 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
         return (username, email, password, payload!.User.Id);
     }
 
-    private async Task EnsureAuthenticatedAsync()
+    private async Task<TestUserContext> EnsureAuthenticatedAsync()
     {
-        if (_isAuthenticated)
+        if (_isAuthenticated && _currentUser is not null)
         {
-            return;
+            return _currentUser;
         }
 
-        await ApiTestHarness.AuthenticateAsync(_client, "users-suite");
+        _currentUser = await ApiTestHarness.AuthenticateAsync(_client, "users-suite");
         _isAuthenticated = true;
+        return _currentUser;
     }
 }

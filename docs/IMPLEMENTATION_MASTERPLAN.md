@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 482 passing
+   - Backend: 489 passing
    - Frontend unit: 245 passing
    - E2E: 11 passing
 8. Documentation consolidation retained:
@@ -64,6 +64,10 @@ Delivered in the latest cycle:
    - API integration suite expanded for legacy unauthorized-path regression checks
 11. Frontend runtime alignment:
    - CI and local developer baseline pinned to Node 24.13.1 (LTS) to match Vite 7 engine constraints
+12. Security convergence completion for remaining legacy families:
+   - audit controller now derives actor identity from claims for user-history and board-history access checks
+   - users controller now enforces self-scope for read/update/activate/deactivate profile actions
+   - audit frontend flow moved from user-id route calls to `/audit/users/me`
 
 ## Roadmap by Horizon
 
