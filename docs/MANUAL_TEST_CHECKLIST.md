@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-02-17
+Last Updated: 2026-02-18
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -62,8 +62,8 @@ Optional clean start:
    - Expected: heading updates and board remains accessible.
 3. Archive and unarchive board via Board Settings.
    - Expected: archived board hidden from default boards list; unarchived board reappears.
-4. Delete board via Board Settings.
-   - Expected: redirected to `/workspace/boards`, deleted board absent.
+4. Use `Archive Board` action in Board Settings.
+   - Expected: redirected to `/workspace/boards`, archived board absent from default list (soft-delete behavior).
 
 5. Create two columns, then reorder columns by drag/drop.
    - Expected: visual order changes and persists on refresh.
@@ -139,7 +139,7 @@ Optional clean start:
 3. Restore an available archived item.
    - Expected: restore succeeds, item removed from list, success toast.
 4. Validate board archive/unarchive coherence against archive view.
-   - Expected: behavior is consistent and understandable across board settings and archive routes.
+   - Expected: archived boards are visible in `/workspace/archive` and can be restored there; restored boards return to default boards list.
 
 ## G. Activity View
 
