@@ -88,7 +88,7 @@ describe('ArchiveView', () => {
     const wrapper = mount(ArchiveView)
     await waitForAsyncUi()
 
-    expect(wrapper.text()).toContain('Archived Board')
+    expect(wrapper.text()).toContain('Board To Restore')
     expect(wrapper.text()).toContain('Archived Card')
     expect(mocks.getBoards).toHaveBeenCalledWith(undefined, true)
   })
@@ -175,8 +175,8 @@ describe('ArchiveView', () => {
     await waitForAsyncUi()
 
     expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
-    expect(mocks.successToast).toHaveBeenCalled()
-    expect(wrapper.text()).not.toContain('Board To Restore')
+    expect(mocks.successToast).toHaveBeenCalledWith('Restored board "Archived Board"')
+    expect(wrapper.findAll('.td-archive-list--section .td-archive-row')).toHaveLength(0)
 
     confirmSpy.mockRestore()
   })
