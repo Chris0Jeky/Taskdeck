@@ -47,7 +47,7 @@ Delivered in the latest cycle:
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
    - Backend: 496 passing
-   - Frontend unit: 268 passing
+   - Frontend unit: 271 passing
    - E2E: 14 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
