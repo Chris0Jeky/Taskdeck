@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-17  
+Last Updated: 2026-02-18  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -44,7 +44,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 482 passing
+   - Backend: 488 passing
    - Frontend unit: 245 passing
    - E2E: 11 passing
 8. Documentation consolidation retained:
@@ -62,6 +62,10 @@ Delivered in the latest cycle:
    - API integration suite expanded for legacy unauthorized-path regression checks
 11. Frontend runtime alignment:
    - CI and local developer baseline pinned to Node 24.13.1 (LTS) to match Vite 7 engine constraints
+12. Security convergence completion for remaining legacy families:
+   - audit controller now derives actor identity from claims for user-history and board-history access checks
+   - users controller now enforces self-scope for read/update/activate/deactivate profile actions
+   - audit frontend flow moved from user-id route calls to `/audit/users/me`
 
 ## Roadmap by Horizon
 
@@ -109,8 +113,8 @@ Exit Criteria:
 
 ## Active Backlog (Prioritized)
 
-1. P0: Claims-first identity retrofit completion across remaining controller families: audit/users.
-2. P0: Auth regression integration suite expansion for legacy + advanced controllers with explicit `401/403/404` assertions.
+1. P0: Auth regression integration suite expansion for legacy + advanced controllers with explicit `401/403/404` assertions.
+2. P0: Cross-user existence policy enforcement sweep (`403` for unauthorized/cross-user, `404` for true missing) across remaining edge paths.
 3. P0: Archive board lifecycle coherence (archive/unarchive visibility, restore semantics, UX parity).
 4. P1: Interaction-mode guardrails to prevent drag side effects while editing card/task content.
 5. P1: Command palette keyboard selection/activation model.
@@ -173,8 +177,8 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Complete claims-first retrofit for remaining legacy controller families (audit/users) and align response contracts.
-2. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes, enforcing `401/403/404` policy semantics.
+1. Expand unauthorized/forbidden/cross-user matrix tests for both legacy and advanced routes, enforcing `401/403/404` policy semantics.
+2. Perform focused cross-user status-code consistency sweep and close remaining policy drift.
 3. Ship command palette keyboard navigation and add corresponding unit/E2E coverage.
 4. Define and implement archive board lifecycle behavior contract (API + UI).
 5. Start shared selector/input-assist infrastructure for Activity, Ops, and Automation forms.
