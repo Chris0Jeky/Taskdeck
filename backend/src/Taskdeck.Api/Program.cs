@@ -2,9 +2,11 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -79,6 +81,37 @@ if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
                 ValidIssuer = jwtSettings.Issuer,
                 ValidAudience = jwtSettings.Audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
+            };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnChallenge = async context =>
+                {
+                    context.HandleResponse();
+                    if (context.Response.HasStarted)
+                    {
+                        return;
+                    }
+
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                        ErrorCodes.Unauthorized,
+                        "Authentication is required to access this resource."));
+                },
+                OnForbidden = async context =>
+                {
+                    if (context.Response.HasStarted)
+                    {
+                        return;
+                    }
+
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                        ErrorCodes.Forbidden,
+                        "You do not have permission to access this resource."));
+                }
             };
         });
 }
