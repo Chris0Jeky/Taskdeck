@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import InputAssistField from '../../components/common/InputAssistField.vue'
 import type { InputAssistOption } from '../../utils/inputAssist'
@@ -68,8 +68,13 @@ describe('InputAssistField', () => {
     await input.trigger('focus')
     expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
 
+    const windowHandler = vi.fn()
+    window.addEventListener('keydown', windowHandler)
     await input.trigger('keydown', { key: 'Escape' })
+    window.removeEventListener('keydown', windowHandler)
+
     expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(windowHandler).not.toHaveBeenCalled()
   })
 
   it('closes the suggestion panel when input exactly matches an option value', async () => {
