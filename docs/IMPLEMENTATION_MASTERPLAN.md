@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 492 passing
+   - Backend: 495 passing
    - Frontend unit: 245 passing
    - E2E: 11 passing
 8. Documentation consolidation retained:
@@ -71,6 +71,9 @@ Delivered in the latest cycle:
 13. SEC-03 regression matrix delivery:
    - added explicit API integration matrix assertions for protected legacy + advanced routes
    - expanded policy coverage for `401` unauthenticated, `403` cross-user unauthorized, and `404` true missing resources
+14. SEC-04 API error-contract assertions delivery:
+   - middleware-level JWT challenge/forbidden responses now emit stable `ApiErrorResponse` payloads
+   - API integration assertions now explicitly enforce auth and validation error-contract shape stability
 
 ## Roadmap by Horizon
 
@@ -250,7 +253,7 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Complete `Priority I` security/policy tranche (`#33`, `#34`, `#44`) and close remaining auth/contract drift.
+1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
 2. Complete `Priority I` UX reliability tranche (`#35`, `#45`, `#36`, `#37`, `#38`, `#46`).
 3. Complete `Priority I` automation/provider and MVP bootstrap tranche (`#39`, `#40`, `#57`).
 4. Complete `Priority I` starter-pack foundation and debt blockers (`#47` to `#54`).
