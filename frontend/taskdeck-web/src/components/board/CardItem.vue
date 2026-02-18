@@ -15,7 +15,16 @@ const emit = defineEmits<{
 
 const isDragging = ref(false)
 
+function isDragHandleTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-action="drag-card-handle"]') !== null
+}
+
 function handleDragStart(event: DragEvent) {
+  if (!isDragHandleTarget(event.target)) {
+    event.preventDefault()
+    return
+  }
+
   // Stop propagation to prevent parent column from being dragged
   event.stopPropagation()
 
@@ -46,10 +55,10 @@ function isOverdue(dateString: string | null): boolean {
 
 <template>
   <div
-    draggable="true"
+    draggable="false"
     :data-card-id="card.id"
     :class="[
-      'rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-move border-2',
+      'rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-pointer border-2',
       isSelected ? 'border-blue-600 ring-4 ring-blue-300 shadow-xl bg-blue-50 scale-105' : 'bg-white border-gray-200',
       isDragging ? 'opacity-50 scale-95' : ''
     ]"
@@ -67,8 +76,23 @@ function isOverdue(dateString: string | null): boolean {
       </span>
     </div>
 
-    <!-- Card Title -->
-    <h4 class="text-sm font-medium text-gray-900 mb-2">{{ card.title }}</h4>
+    <!-- Card Title + Drag Handle -->
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <h4 class="text-sm font-medium text-gray-900 min-w-0 break-words flex-1">{{ card.title }}</h4>
+      <button
+        type="button"
+        data-action="drag-card-handle"
+        draggable="true"
+        class="flex-shrink-0 rounded p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-grab active:cursor-grabbing"
+        title="Drag Card"
+        aria-label="Drag Card"
+        @click.stop
+      >
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
+        </svg>
+      </button>
+    </div>
 
     <!-- Card Description (if exists) -->
     <p v-if="card.description" class="text-xs text-gray-600 mb-2 line-clamp-2">
