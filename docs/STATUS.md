@@ -98,7 +98,6 @@ Completed in Phase 4:
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- broader planner/executor coverage and safety semantics
 - MVP chat-to-project bootstrap: paste checklist/plan text and generate a ready-to-use board via proposal-first flow
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
@@ -131,11 +130,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 277/277 passing
+- Application: 284/284 passing
 - API integration: 136/136 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 514/514 passing
+- Backend Total: 521/521 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -159,7 +158,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 799/799 passing
+- Combined automated total: 806/806 passing
 
 ## CI Status
 
@@ -182,7 +181,7 @@ Security and identity:
 
 Automation and data:
 - active LLM provider policy supports explicit mock vs OpenAI switching with safe defaults for development/test environments
-- planner extraction remains rule/regex-based and intentionally narrow
+- planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import remains unimplemented
 
 Observability and scalability:
@@ -236,6 +235,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered UX-04 shared input-assist scaffolding: shared combobox/listbox input-assist is now integrated into Ops template selection and automation chat board targeting with keyboard-first option navigation and dedicated unit coverage.
 - Delivered UX-05 escape behavior contract: Escape now closes only the top-most transient surface per key press, board routes exit to `/workspace/boards` when clean, and regression coverage spans shell/unit and board keyboard-flow E2E paths.
 - Delivered AUTO-01 provider strategy: deterministic environment-aware `ILlmProvider` selection now gates OpenAI usage behind explicit config while keeping mock default safety, with policy + provider tests for switching behavior.
+- Delivered AUTO-02 planner/executor hardening: expanded deterministic planner instruction coverage (board/column intents), hardened executor parameter validation and partial-failure semantics, and improved audit entity attribution with new regression coverage.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
