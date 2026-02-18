@@ -28,17 +28,29 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
             await _client.GetAsync($"/api/audit/entities/Card/{Guid.NewGuid()}"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await _client.GetAsync($"/api/audit/users/{Guid.NewGuid()}"));
+            await _client.GetAsync("/api/audit/users/me"));
     }
 
     [Fact]
-    public async Task GetBoardHistory_ShouldReturnOk_ForNewBoard()
+    public async Task GetBoardHistory_ShouldReturnOk_ForAccessibleBoard()
     {
         var board = await CreateBoardAsync();
 
         var response = await _client.GetAsync($"/api/audit/boards/{board.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetBoardHistory_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
+    {
+        await AuthenticateAsAsync("audit-board-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "audit-private-board", "Audit security test");
+
+        await AuthenticateAsAsync("audit-board-outsider");
+        var response = await _client.GetAsync($"/api/audit/boards/{board.Id}");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
     [Fact]
@@ -67,12 +79,11 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetUserHistory_ShouldReturnOk_ForRegisteredUser()
+    public async Task GetUserHistory_ShouldReturnOk_ForCurrentUser()
     {
-        var (_, _, _, userId) = await RegisterUserAsync("audituser");
         await EnsureAuthenticatedAsync();
 
-        var response = await _client.GetAsync($"/api/audit/users/{userId}");
+        var response = await _client.GetAsync("/api/audit/users/me");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -83,22 +94,11 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
         return await ApiTestHarness.CreateBoardAsync(_client, "audit-board", "Audit integration tests");
     }
 
-    private async Task<(string Username, string Email, string Password, Guid UserId)> RegisterUserAsync(string stem)
+    private async Task<TestUserContext> AuthenticateAsAsync(string stem)
     {
-        var suffix = Guid.NewGuid().ToString("N")[..8];
-        var username = $"{stem}_{suffix}";
-        var email = $"{stem}_{suffix}@example.com";
-        const string password = "password123";
-
-        var response = await _client.PostAsJsonAsync(
-            "/api/auth/register",
-            new CreateUserDto(username, email, password));
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
-        payload.Should().NotBeNull();
-
-        return (username, email, password, payload!.User.Id);
+        var context = await ApiTestHarness.AuthenticateAsync(_client, stem);
+        _isAuthenticated = true;
+        return context;
     }
 
     private async Task EnsureAuthenticatedAsync()
@@ -108,7 +108,6 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
             return;
         }
 
-        await ApiTestHarness.AuthenticateAsync(_client, "audit-suite");
-        _isAuthenticated = true;
+        await AuthenticateAsAsync("audit-suite");
     }
 }
