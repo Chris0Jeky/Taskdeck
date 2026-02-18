@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useSessionStore } from '../../store/sessionStore'
@@ -12,6 +12,10 @@ const featureFlags = useFeatureFlagStore()
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
 const showKeyboardHelp = ref(false)
+const commandPaletteInput = ref<HTMLInputElement | null>(null)
+const commandQuery = ref('')
+const selectedCommandIndex = ref(0)
+const commandListboxId = 'td-command-palette-listbox'
 
 const navItems = computed(() => {
   const items = [
@@ -28,6 +32,26 @@ const navItems = computed(() => {
     if (!item.flag) return true
     return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
   })
+})
+
+const filteredCommandItems = computed(() => {
+  const normalizedQuery = commandQuery.value.trim().toLowerCase()
+  if (!normalizedQuery) {
+    return navItems.value
+  }
+
+  return navItems.value.filter((item) =>
+    item.label.toLowerCase().includes(normalizedQuery) ||
+    item.path.toLowerCase().includes(normalizedQuery)
+  )
+})
+
+const activeCommandId = computed(() => {
+  if (filteredCommandItems.value.length === 0) {
+    return undefined
+  }
+
+  return `td-command-option-${selectedCommandIndex.value}`
 })
 
 function isActiveRoute(path: string): boolean {
@@ -49,10 +73,49 @@ function handleLogout() {
   router.push('/login')
 }
 
+function openCommandPalette() {
+  showCommandPalette.value = true
+  commandQuery.value = ''
+  selectedCommandIndex.value = 0
+}
+
+function closeCommandPalette() {
+  showCommandPalette.value = false
+  commandQuery.value = ''
+  selectedCommandIndex.value = 0
+}
+
+function selectNextCommand() {
+  const itemCount = filteredCommandItems.value.length
+  if (itemCount === 0) return
+  selectedCommandIndex.value = (selectedCommandIndex.value + 1) % itemCount
+}
+
+function selectPreviousCommand() {
+  const itemCount = filteredCommandItems.value.length
+  if (itemCount === 0) return
+  selectedCommandIndex.value = (selectedCommandIndex.value - 1 + itemCount) % itemCount
+}
+
+function setSelectedCommand(index: number) {
+  selectedCommandIndex.value = index
+}
+
+function activateCommand(path: string) {
+  router.push(path)
+  closeCommandPalette()
+}
+
+function activateSelectedCommand() {
+  const selectedItem = filteredCommandItems.value[selectedCommandIndex.value]
+  if (!selectedItem) return
+  activateCommand(selectedItem.path)
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (showCommandPalette.value) {
-      showCommandPalette.value = false
+      closeCommandPalette()
       return
     }
     if (showKeyboardHelp.value) {
@@ -63,13 +126,34 @@ function handleKeydown(e: KeyboardEvent) {
 
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
-    showCommandPalette.value = !showCommandPalette.value
+    if (showCommandPalette.value) {
+      closeCommandPalette()
+      return
+    }
+    openCommandPalette()
   }
 
   if (e.key === '?' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
     showKeyboardHelp.value = !showKeyboardHelp.value
   }
 }
+
+watch(showCommandPalette, async (isOpen) => {
+  if (!isOpen) return
+  await nextTick()
+  commandPaletteInput.value?.focus()
+})
+
+watch(filteredCommandItems, (items) => {
+  if (items.length === 0) {
+    selectedCommandIndex.value = 0
+    return
+  }
+
+  if (selectedCommandIndex.value >= items.length) {
+    selectedCommandIndex.value = 0
+  }
+})
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
@@ -132,7 +216,7 @@ onUnmounted(() => {
           <button
             class="td-topbar__palette-trigger"
             aria-label="Open command palette (Ctrl+K)"
-            @click="showCommandPalette = true"
+            @click="openCommandPalette"
           >
             <span class="td-topbar__search-icon">/</span>
             <span class="td-topbar__search-text">Search or command... (Ctrl+K)</span>
@@ -166,28 +250,54 @@ onUnmounted(() => {
         role="dialog"
         aria-label="Command palette"
         aria-modal="true"
-        @click.self="showCommandPalette = false"
+        @click.self="closeCommandPalette"
       >
         <div class="td-command-palette">
           <input
+            ref="commandPaletteInput"
+            v-model="commandQuery"
             type="text"
             class="td-command-palette__input"
             placeholder="Type a command or search..."
             autofocus
-            @keydown.escape="showCommandPalette = false"
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-expanded="showCommandPalette"
+            :aria-controls="commandListboxId"
+            :aria-activedescendant="activeCommandId"
+            @keydown.escape.prevent="closeCommandPalette"
+            @keydown.down.prevent="selectNextCommand"
+            @keydown.up.prevent="selectPreviousCommand"
+            @keydown.enter.prevent="activateSelectedCommand"
           />
-          <div class="td-command-palette__results">
+          <div
+            :id="commandListboxId"
+            class="td-command-palette__results"
+            role="listbox"
+            aria-label="Navigation commands"
+          >
             <div class="td-command-palette__group">
               <div class="td-command-palette__group-title">Navigation</div>
-              <button
-                v-for="item in navItems"
+              <div
+                v-for="(item, index) in filteredCommandItems"
                 :key="item.path"
-                class="td-command-palette__item"
-                @click="router.push(item.path); showCommandPalette = false"
+                :id="`td-command-option-${index}`"
+                :data-command-index="index"
+                :class="[
+                  'td-command-palette__item',
+                  index === selectedCommandIndex ? 'td-command-palette__item--active' : ''
+                ]"
+                role="option"
+                :aria-selected="index === selectedCommandIndex"
+                @mouseenter="setSelectedCommand(index)"
+                @click="activateCommand(item.path)"
               >
                 <span>{{ item.icon }}</span>
                 <span>Go to {{ item.label }}</span>
-              </button>
+              </div>
+              <div v-if="filteredCommandItems.length === 0" class="td-command-palette__empty">
+                No matching commands.
+              </div>
             </div>
           </div>
         </div>
@@ -469,6 +579,17 @@ onUnmounted(() => {
 
 .td-command-palette__item:hover {
   background: var(--td-surface-tertiary);
+}
+
+.td-command-palette__item--active {
+  background: var(--td-surface-tertiary);
+  outline: 1px solid var(--td-border-focus);
+}
+
+.td-command-palette__empty {
+  padding: var(--td-space-3);
+  color: var(--td-text-tertiary);
+  font-size: var(--td-font-sm);
 }
 
 .td-keyboard-help {

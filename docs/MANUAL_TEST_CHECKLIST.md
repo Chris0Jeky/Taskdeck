@@ -13,15 +13,12 @@ Companion Active Docs:
 
 In scope:
 - Core board workflow: boards, columns, cards, labels, filters, drag/drop, keyboard flows.
-- Workspace shell: navigation, command palette open/close, shortcuts help.
+- Workspace shell: navigation, command palette keyboard model, shortcuts help.
 - Advanced surfaces: automations (queue/proposals/chat), ops (CLI templates/logs), archive, activity.
 - API contract spot checks for auth, access, queue, archive, automation, chat, and ops endpoints.
 
 Out of scope (known implementation boundaries on current `main`):
-- Full claim-based auth enforcement on all legacy controllers is still in progress.
-- Some legacy endpoints still accept user identity through query/body parameters.
 - `ExportDatabaseAsync` and `ImportDatabaseAsync` are not implemented.
-- Command palette navigation currently has limited keyboard item selection/activation.
 - Activity filtering still depends on direct IDs, not chooser-driven entity discovery.
 
 ## Preconditions
@@ -47,8 +44,8 @@ Optional clean start:
    - Expected: routed to `/workspace/boards`.
 3. Attempt workspace route while logged out.
    - Expected: redirected to `/login` with redirect query.
-4. Open command palette via `Ctrl+K`/`Cmd+K` and close with `Escape`.
-   - Expected: overlay toggles correctly.
+4. Open command palette via `Ctrl+K`/`Cmd+K`, use arrow keys to select an item, and press `Enter`.
+   - Expected: command activates the selected item and closes the palette; `Escape` closes palette without navigation.
 5. Open shortcuts help via `?` and close with `Escape`.
    - Expected: dialog toggles correctly.
 6. Logout from top bar.
@@ -181,19 +178,16 @@ Run these checks even if they currently fail; log outcome explicitly.
 1. Drag/edit conflict regression check:
    - Repro: open add-card input or card modal field, perform non-handle drag gestures near editable surfaces.
    - Target behavior: only explicit drag handles initiate board/card drag; editable interactions do not trigger unintended movement.
-2. Command palette keyboard selection:
-   - Repro: open palette, try arrow/enter item selection.
-   - Target behavior: full keyboard-first navigation and activation.
-3. Activity discoverability without raw IDs:
+2. Activity discoverability without raw IDs:
    - Repro: attempt history exploration without pre-known IDs.
    - Target behavior: picker/autocomplete-assisted discovery for board/entity/user selectors.
-4. Ops and automation form ergonomics:
+3. Ops and automation form ergonomics:
    - Repro: create requests using ops/automation UIs.
    - Target behavior: contextual autocomplete/options, reduced manual input burden.
-5. Escape-to-exit board context:
+4. Escape-to-exit board context:
    - Repro: on board screen with no modal open, press `Escape`.
    - Target behavior: consistent back/exit behavior for rapid keyboard-driven workflow.
-6. Sidebar shortcuts affordance:
+5. Sidebar shortcuts affordance:
    - Repro: test on shorter and taller viewports.
    - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 
