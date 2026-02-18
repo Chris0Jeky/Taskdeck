@@ -1,4 +1,5 @@
 import { watch } from 'vue'
+import { registerEscapeHandler } from './useEscapeStack'
 
 export function useEscapeToClose(isOpen: () => boolean, onClose: () => void) {
   watch(
@@ -8,16 +9,9 @@ export function useEscapeToClose(isOpen: () => boolean, onClose: () => void) {
         return
       }
 
-      const handleEscape = (event: KeyboardEvent) => {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          onClose()
-        }
-      }
-
-      window.addEventListener('keydown', handleEscape)
+      const unregisterEscapeHandler = registerEscapeHandler(onClose)
       onCleanup(() => {
-        window.removeEventListener('keydown', handleEscape)
+        unregisterEscapeHandler()
       })
     },
     { immediate: true }
