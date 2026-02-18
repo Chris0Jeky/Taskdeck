@@ -42,7 +42,34 @@ builder.Services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
 builder.Services.AddScoped<IOpsCliService, OpsCliService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<ILogQueryService, LogQueryService>();
-builder.Services.AddScoped<ILlmProvider, MockLlmProvider>();
+
+// LLM provider settings and deterministic provider selection policy
+var llmProviderSettings = builder.Configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
+builder.Services.AddSingleton(llmProviderSettings);
+
+builder.Services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
+{
+    var settings = sp.GetRequiredService<LlmProviderSettings>();
+    var timeoutSeconds = settings.OpenAi.TimeoutSeconds <= 0 ? 30 : settings.OpenAi.TimeoutSeconds;
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+builder.Services.AddScoped<MockLlmProvider>();
+builder.Services.AddScoped<ILlmProvider>(sp =>
+{
+    var settings = sp.GetRequiredService<LlmProviderSettings>();
+    var environment = sp.GetRequiredService<IWebHostEnvironment>();
+    var decision = LlmProviderSelectionPolicy.Evaluate(settings, environment.EnvironmentName);
+
+    var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Taskdeck.Api.LlmProviderSelection");
+    logger.LogInformation(
+        "Resolved ILlmProvider to {ProviderKind}. Reason: {Reason}",
+        decision.ProviderKind,
+        decision.Reason);
+
+    return decision.ProviderKind == LlmProviderKind.OpenAi
+        ? sp.GetRequiredService<OpenAiLlmProvider>()
+        : sp.GetRequiredService<MockLlmProvider>();
+});
 
 // Add IUserContext for claim-based identity
 builder.Services.AddHttpContextAccessor();

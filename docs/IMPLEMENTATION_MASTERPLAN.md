@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 496 passing
+   - Backend: 514 passing
    - Frontend unit: 271 passing
    - E2E: 14 passing
 8. Documentation consolidation retained:
@@ -98,6 +98,10 @@ Delivered in the latest cycle:
    - workspace and board escape handling now follows a top-surface-first contract via shared escape-stack handling
    - board routes now exit to `/workspace/boards` when no transient surface is open
    - unit + E2E regression coverage validates escape ordering and board-exit behavior
+21. AUTO-01 real-provider strategy delivery:
+   - `ILlmProvider` selection now follows deterministic environment-aware policy evaluation (`Mock` vs `OpenAI`)
+   - live provider usage is explicitly gated by config (`EnableLiveProviders`, provider mode, development override guard)
+   - OpenAI provider path and policy constraints are test-backed while preserving proposal-first chat flow semantics
 
 ## Roadmap by Horizon
 
@@ -118,7 +122,7 @@ Exit Criteria:
 ### Horizon B (Week 3 to 6): Automation Hardening and Provider Strategy
 
 Focus:
-- add production-capable LLM provider path behind config/feature gates
+- operationalize real-provider usage with deterministic policy gates and safe defaults across environments
 - expand planner operation extraction in a structured, test-backed way
 - harden executor behavior for partial failure semantics and audit quality
 - improve archive and automation coherence for board-level restore/execution workflows
@@ -175,7 +179,7 @@ Exit Criteria:
 ### Priority I (Current Phase 4 Completion Path)
 
 - Security and policy convergence: `#33`, `#34`, `#44`
-- Automation/provider hardening: `#39`, `#40`, `#57`
+- Automation/provider hardening: `#40`, `#57`
 - Starter packs foundation: `#47`, `#48`, `#49`, `#50`, `#51`
 - Tech-debt blockers for stable expansion: `#52`, `#53`, `#54`
 
@@ -277,7 +281,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete `Priority I` automation/provider and MVP bootstrap tranche (`#39`, `#40`, `#57`).
+2. Complete remaining `Priority I` automation/provider and MVP bootstrap tranche (`#40`, `#57`).
 3. Complete `Priority I` starter-pack foundation and debt blockers (`#47` to `#54`).
 4. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
 5. Keep issue `#107` updated as the canonical expansion-wave index.

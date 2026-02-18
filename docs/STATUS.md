@@ -17,7 +17,7 @@ Core board workflows are stable, and advanced slices are implemented for automat
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
-- LLM flow is still mock-provider based
+- LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture
 - MVP dogfooding flow is incomplete: paste execution checklist in chat -> generate actionable board/project setup
 
 ## Current Implementation Snapshot
@@ -41,7 +41,7 @@ Current constraints are mostly hardening and consistency:
 - Implemented automation stack:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
-  - `ChatService` + `MockLlmProvider`
+  - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI` behind explicit gates)
   - `OpsCliService` + `LogQueryService`
 - Auth posture today:
   - JWT middleware is wired
@@ -98,7 +98,6 @@ Completed in Phase 4:
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- production-capable LLM provider path (or strict feature-gated mock-only policy)
 - broader planner/executor coverage and safety semantics
 - MVP chat-to-project bootstrap: paste checklist/plan text and generate a ready-to-use board via proposal-first flow
 - database-level export/import implementation
@@ -132,11 +131,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 259/259 passing
+- Application: 277/277 passing
 - API integration: 136/136 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 496/496 passing
+- Backend Total: 514/514 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -160,7 +159,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 781/781 passing
+- Combined automated total: 799/799 passing
 
 ## CI Status
 
@@ -182,7 +181,7 @@ Security and identity:
 - policy decision is now explicit: cross-user authenticated access failures should return `403`; remaining work is consistent enforcement across all families/tests
 
 Automation and data:
-- active LLM provider is mock-backed
+- active LLM provider policy supports explicit mock vs OpenAI switching with safe defaults for development/test environments
 - planner extraction remains rule/regex-based and intentionally narrow
 - database-level export/import remains unimplemented
 
@@ -236,6 +235,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered UX-04 activity selector discoverability: activity workflows now use selector-first board/entity/user exploration with ID copy affordance and unit + E2E regression coverage.
 - Delivered UX-04 shared input-assist scaffolding: shared combobox/listbox input-assist is now integrated into Ops template selection and automation chat board targeting with keyboard-first option navigation and dedicated unit coverage.
 - Delivered UX-05 escape behavior contract: Escape now closes only the top-most transient surface per key press, board routes exit to `/workspace/boards` when clean, and regression coverage spans shell/unit and board keyboard-flow E2E paths.
+- Delivered AUTO-01 provider strategy: deterministic environment-aware `ILlmProvider` selection now gates OpenAI usage behind explicit config while keeping mock default safety, with policy + provider tests for switching behavior.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
