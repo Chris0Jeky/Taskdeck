@@ -174,7 +174,7 @@ describe('BoardSettingsModal', () => {
     expect((saveButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('should show delete confirmation before deleting', async () => {
+  it('should show archive confirmation before archiving', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
 
     const wrapper = mount(BoardSettingsModal, {
@@ -184,10 +184,10 @@ describe('BoardSettingsModal', () => {
       },
     })
 
-    const deleteButton = wrapper
+    const archiveButton = wrapper
       .findAll('button')
-      .find((btn) => btn.text().includes('Delete Board'))
-    await deleteButton?.trigger('click')
+      .find((btn) => btn.text().includes('Archive Board'))
+    await archiveButton?.trigger('click')
 
     expect(confirmSpy).toHaveBeenCalled()
     expect(mockStore.deleteBoard).not.toHaveBeenCalled()
@@ -195,7 +195,7 @@ describe('BoardSettingsModal', () => {
     confirmSpy.mockRestore()
   })
 
-  it('should call deleteBoard and navigate when deletion is confirmed', async () => {
+  it('should call deleteBoard and navigate when archiving is confirmed', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const wrapper = mount(BoardSettingsModal, {
@@ -205,10 +205,10 @@ describe('BoardSettingsModal', () => {
       },
     })
 
-    const deleteButton = wrapper
+    const archiveButton = wrapper
       .findAll('button')
-      .find((btn) => btn.text().includes('Delete Board'))
-    await deleteButton?.trigger('click')
+      .find((btn) => btn.text().includes('Archive Board'))
+    await archiveButton?.trigger('click')
 
     await wrapper.vm.$nextTick()
 
@@ -217,6 +217,23 @@ describe('BoardSettingsModal', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/boards')
 
     confirmSpy.mockRestore()
+  })
+
+  it('should disable archive action when board is already archived', async () => {
+    const archivedBoard = { ...board, isArchived: true }
+
+    const wrapper = mount(BoardSettingsModal, {
+      props: {
+        board: archivedBoard,
+        isOpen: true,
+      },
+    })
+
+    const archiveButton = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Archive Board'))
+
+    expect((archiveButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('should handle archived board toggle', async () => {
