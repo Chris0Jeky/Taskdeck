@@ -137,15 +137,17 @@ public class AutomationExecutorService : IAutomationExecutorService
             // Execute operations in sequence order
             var orderedOperations = proposal.Operations.OrderBy(o => o.Sequence).ToList();
             var failedOperation = -1;
+            var failedResult = Result.Success();
             var failureReason = "";
 
             foreach (var operation in orderedOperations)
             {
-                var executionResult = await ExecuteOperationAsync(operation, proposal.RequestedByUserId, cancellationToken);
+                var executionResult = await ExecuteOperationAsync(operation, cancellationToken);
                 if (!executionResult.IsSuccess)
                 {
                     failedOperation = operation.Sequence;
-                    failureReason = $"Operation {operation.Sequence} failed: {executionResult.ErrorMessage}";
+                    failedResult = executionResult;
+                    failureReason = $"Operation {operation.Sequence} ({operation.ActionType} {operation.TargetType}) failed: {executionResult.ErrorMessage}";
                     break;
                 }
 
@@ -169,7 +171,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                     failedOperation,
                     (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                     failureReason);
-                return Result.Failure(ErrorCodes.UnexpectedError, failureReason);
+                return Result.Failure(failedResult.ErrorCode, failureReason);
             }
 
             // Mark proposal as applied
@@ -199,7 +201,7 @@ public class AutomationExecutorService : IAutomationExecutorService
         }
     }
 
-    private async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, Guid userId, CancellationToken cancellationToken)
+    private async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken)
     {
         var actionType = operation.ActionType.ToLowerInvariant();
         var targetType = operation.TargetType.ToLowerInvariant();
@@ -231,7 +233,8 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ExecuteCardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
     {
-        var parameters = JsonSerializer.Deserialize<JsonElement>(operation.Parameters);
+        if (!TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
+            return Result.Failure(ErrorCodes.ValidationError, parseError);
 
         switch (actionType)
         {
@@ -254,18 +257,18 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> CreateCardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        var title = parameters.GetProperty("title").GetString();
-        var description = parameters.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
-        var columnIdStr = parameters.GetProperty("columnId").GetString();
-        var boardIdStr = parameters.GetProperty("boardId").GetString();
+        if (!TryGetRequiredString(parameters, "title", out var title, out var titleError))
+            return Result.Failure(ErrorCodes.ValidationError, titleError);
 
-        if (!Guid.TryParse(columnIdStr, out var columnId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid columnId");
-        
-        if (!Guid.TryParse(boardIdStr, out var boardId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid boardId");
+        var description = GetOptionalString(parameters, "description");
 
-        var dto = new CreateCardDto(boardId, columnId, title!, description, null, null);
+        if (!TryGetRequiredGuid(parameters, "columnId", out var columnId, out var columnIdError))
+            return Result.Failure(ErrorCodes.ValidationError, columnIdError);
+
+        if (!TryGetRequiredGuid(parameters, "boardId", out var boardId, out var boardIdError))
+            return Result.Failure(ErrorCodes.ValidationError, boardIdError);
+
+        var dto = new CreateCardDto(boardId, columnId, title, description, null, null);
         var result = await _cardService.CreateCardAsync(dto, cancellationToken);
         
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
@@ -273,12 +276,13 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> UpdateCardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        var cardIdStr = parameters.GetProperty("cardId").GetString();
-        if (!Guid.TryParse(cardIdStr, out var cardId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid cardId");
+        if (!TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
+            return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
-        var title = parameters.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
-        var description = parameters.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
+        var title = GetOptionalString(parameters, "title");
+        var description = GetOptionalString(parameters, "description");
+        if (title == null && description == null)
+            return Result.Failure(ErrorCodes.ValidationError, "Update card operation requires at least one of 'title' or 'description'");
 
         var dto = new UpdateCardDto(title, description, null, null, null, null);
         var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
@@ -288,14 +292,11 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> MoveCardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        var cardIdStr = parameters.GetProperty("cardId").GetString();
-        var columnIdStr = parameters.GetProperty("columnId").GetString();
+        if (!TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
+            return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
-        if (!Guid.TryParse(cardIdStr, out var cardId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid cardId");
-        
-        if (!Guid.TryParse(columnIdStr, out var columnId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid columnId");
+        if (!TryGetRequiredGuid(parameters, "columnId", out var columnId, out var columnIdError))
+            return Result.Failure(ErrorCodes.ValidationError, columnIdError);
 
         // Get current cards in target column to determine position
         var targetColumn = await _unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
@@ -311,9 +312,8 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ArchiveCardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        var cardIdStr = parameters.GetProperty("cardId").GetString();
-        if (!Guid.TryParse(cardIdStr, out var cardId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid cardId");
+        if (!TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
+            return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
         var dto = new UpdateCardDto(null, null, null, true, null, null);
         var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
@@ -323,7 +323,8 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ExecuteBoardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
     {
-        var parameters = JsonSerializer.Deserialize<JsonElement>(operation.Parameters);
+        if (!TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
+            return Result.Failure(ErrorCodes.ValidationError, parseError);
 
         switch (actionType)
         {
@@ -337,14 +338,16 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> UpdateBoardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        var boardIdStr = parameters.GetProperty("boardId").GetString();
-        if (!Guid.TryParse(boardIdStr, out var boardId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid boardId");
+        if (!TryGetRequiredGuid(parameters, "boardId", out var boardId, out var boardIdError))
+            return Result.Failure(ErrorCodes.ValidationError, boardIdError);
 
-        var name = parameters.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
-        var description = parameters.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
+        var name = GetOptionalString(parameters, "name");
+        var description = GetOptionalString(parameters, "description");
+        var isArchived = GetOptionalBoolean(parameters, "isArchived");
+        if (name == null && description == null && !isArchived.HasValue)
+            return Result.Failure(ErrorCodes.ValidationError, "Update board operation requires at least one of 'name', 'description', or 'isArchived'");
 
-        var dto = new UpdateBoardDto(name, description, null);
+        var dto = new UpdateBoardDto(name, description, isArchived);
         var result = await _boardService.UpdateBoardAsync(boardId, dto, cancellationToken);
         
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
@@ -352,7 +355,8 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ExecuteColumnOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
     {
-        var parameters = JsonSerializer.Deserialize<JsonElement>(operation.Parameters);
+        if (!TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
+            return Result.Failure(ErrorCodes.ValidationError, parseError);
 
         switch (actionType)
         {
@@ -366,11 +370,14 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ReorderColumnAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        var columnIdStr = parameters.GetProperty("columnId").GetString();
-        var newPosition = parameters.GetProperty("position").GetInt32();
+        if (!TryGetRequiredGuid(parameters, "columnId", out var columnId, out var columnIdError))
+            return Result.Failure(ErrorCodes.ValidationError, columnIdError);
 
-        if (!Guid.TryParse(columnIdStr, out var columnId))
-            return Result.Failure(ErrorCodes.ValidationError, "Invalid columnId");
+        if (!TryGetRequiredInt32(parameters, "position", out var newPosition, out var positionError))
+            return Result.Failure(ErrorCodes.ValidationError, positionError);
+
+        if (newPosition < 0)
+            return Result.Failure(ErrorCodes.ValidationError, "Invalid position: must be non-negative");
 
         var dto = new UpdateColumnDto(null, newPosition, null);
         var result = await _columnService.UpdateColumnAsync(columnId, dto, cancellationToken);
@@ -385,21 +392,19 @@ public class AutomationExecutorService : IAutomationExecutorService
             { "create", AuditAction.Created },
             { "update", AuditAction.Updated },
             { "archive", AuditAction.Archived },
-            { "move", AuditAction.Moved }
+            { "move", AuditAction.Moved },
+            { "reorder", AuditAction.Moved }
         };
 
         var auditAction = actionMap.ContainsKey(operation.ActionType.ToLowerInvariant()) 
             ? actionMap[operation.ActionType.ToLowerInvariant()] 
             : AuditAction.Updated;
 
-        var entityId = !string.IsNullOrEmpty(operation.TargetId) && Guid.TryParse(operation.TargetId, out var id)
-            ? id
-            : Guid.NewGuid(); // For creates, we'd need to capture the created ID
-
-        var changes = $"Automation Proposal {proposal.Id}: {operation.ActionType} {operation.TargetType}. Parameters: {operation.Parameters}";
+        var (entityType, entityId) = ResolveAuditEntity(operation, proposal);
+        var changes = BuildAuditChanges(operation, proposal);
 
         var auditLog = new AuditLog(
-            operation.TargetType,
+            entityType,
             entityId,
             auditAction,
             proposal.RequestedByUserId,
@@ -407,6 +412,164 @@ public class AutomationExecutorService : IAutomationExecutorService
         );
 
         await _unitOfWork.AuditLogs.AddAsync(auditLog, cancellationToken);
+    }
+
+    private static (string EntityType, Guid EntityId) ResolveAuditEntity(ProposalOperationDto operation, ProposalDto proposal)
+    {
+        if (!string.IsNullOrWhiteSpace(operation.TargetId) && Guid.TryParse(operation.TargetId, out var targetId))
+            return (operation.TargetType, targetId);
+
+        if (TryDeserializeParameters(operation.Parameters, out var parameters, out _))
+        {
+            if (TryGetGuidFromParameters(parameters, "cardId", out var cardId))
+                return ("card", cardId);
+
+            if (TryGetGuidFromParameters(parameters, "columnId", out var columnId))
+                return ("column", columnId);
+
+            if (TryGetGuidFromParameters(parameters, "boardId", out var boardId))
+                return ("board", boardId);
+        }
+
+        if (proposal.BoardId.HasValue)
+            return ("board", proposal.BoardId.Value);
+
+        return ("automation-proposal", proposal.Id);
+    }
+
+    private static string BuildAuditChanges(ProposalOperationDto operation, ProposalDto proposal)
+    {
+        var parameterPreview = operation.Parameters.Length <= 500
+            ? operation.Parameters
+            : operation.Parameters[..500] + "...";
+
+        return $"Automation proposal {proposal.Id}, sequence {operation.Sequence}: {operation.ActionType} {operation.TargetType}. Parameters: {parameterPreview}";
+    }
+
+    private static bool TryDeserializeParameters(string rawParameters, out JsonElement parameters, out string error)
+    {
+        parameters = default;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(rawParameters))
+        {
+            error = "Operation parameters cannot be empty";
+            return false;
+        }
+
+        try
+        {
+            parameters = JsonSerializer.Deserialize<JsonElement>(rawParameters);
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = $"Invalid operation parameters JSON: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool TryGetRequiredString(JsonElement parameters, string parameterName, out string value, out string error)
+    {
+        value = string.Empty;
+        error = string.Empty;
+
+        if (!parameters.TryGetProperty(parameterName, out var property))
+        {
+            error = $"Missing required parameter '{parameterName}'";
+            return false;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            error = $"Parameter '{parameterName}' must be a string";
+            return false;
+        }
+
+        var parsed = property.GetString();
+        if (string.IsNullOrWhiteSpace(parsed))
+        {
+            error = $"Parameter '{parameterName}' cannot be empty";
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static string? GetOptionalString(JsonElement parameters, string parameterName)
+    {
+        if (!parameters.TryGetProperty(parameterName, out var property))
+            return null;
+
+        if (property.ValueKind == JsonValueKind.Null)
+            return null;
+
+        if (property.ValueKind != JsonValueKind.String)
+            return null;
+
+        var value = property.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static bool? GetOptionalBoolean(JsonElement parameters, string parameterName)
+    {
+        if (!parameters.TryGetProperty(parameterName, out var property))
+            return null;
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
+
+    private static bool TryGetRequiredGuid(JsonElement parameters, string parameterName, out Guid value, out string error)
+    {
+        value = Guid.Empty;
+
+        if (!TryGetRequiredString(parameters, parameterName, out var rawValue, out error))
+            return false;
+
+        if (!Guid.TryParse(rawValue, out value))
+        {
+            error = $"Invalid {parameterName}";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryGetRequiredInt32(JsonElement parameters, string parameterName, out int value, out string error)
+    {
+        value = 0;
+        error = string.Empty;
+
+        if (!parameters.TryGetProperty(parameterName, out var property))
+        {
+            error = $"Missing required parameter '{parameterName}'";
+            return false;
+        }
+
+        if (property.ValueKind != JsonValueKind.Number || !property.TryGetInt32(out value))
+        {
+            error = $"Parameter '{parameterName}' must be an integer";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryGetGuidFromParameters(JsonElement parameters, string parameterName, out Guid value)
+    {
+        value = Guid.Empty;
+
+        if (!parameters.TryGetProperty(parameterName, out var property) || property.ValueKind != JsonValueKind.String)
+            return false;
+
+        var raw = property.GetString();
+        return Guid.TryParse(raw, out value);
     }
 
     private async Task<Result> UpdateProposalStatusAsync(Guid proposalId, ProposalStatus status, string? failureReason, CancellationToken cancellationToken)
