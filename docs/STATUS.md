@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-17  
+Last Updated: 2026-02-18  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -101,6 +101,23 @@ Remaining for Phase 4 completion:
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability/interaction-conflict gaps
 
+## Future Expansion Backlog Snapshot (2026-02-18)
+
+Backlog seeding was expanded from near-horizon only to a staged future roadmap grounded in `docs/WIP` research PDFs.
+
+- New future-expansion issues created: `#67` to `#111`
+- Wave index issue: `#107` (`OPS-13`)
+- Priority-label rollout completed across every issue (open and closed):
+  - `Priority I`: current Phase 4 completion path
+  - `Priority II`: post-Phase-4 foundation tranche
+  - `Priority III`: analytics/security/compliance expansion tranche
+  - `Priority IV`: platform, UX, testing, docs maturity tranche
+  - `Priority V`: low-urgency/meta/historical tracking
+
+Current open backlog is now split into:
+- Phase-4 completion tranche (`#33` to `#57`, `Priority I`)
+- Future expansion tranche (`#67` to `#111`, `Priority II` to `Priority V`)
+
 ## Test Status (Executed)
 
 Verification Date: 2026-02-17
@@ -169,6 +186,14 @@ Observability and scalability:
 - `LogQueryService` currently performs broad in-memory composition paths (now emits duration/result-size diagnostics)
 - nullable warnings (`CS8618`) remain in domain entities
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
+- out-of-code/platform execution is now tracked, but not yet shipped:
+  - containerization + reverse proxy baseline (`#69`)
+  - OpenTelemetry metrics/tracing baseline (`#68`)
+  - load/concurrency harness (`#70`)
+  - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
+  - backup/restore disaster-recovery playbook (`#86`)
+  - staged rollout policy (`#101`), IaC baseline (`#102`), SBOM/provenance (`#103`), cost guardrails (`#104`)
+  - cloud target topology and autoscaling ADR (`#111`)
 
 UX and operability (reconciled from product notes):
 - archive board lifecycle behavior is not yet fully coherent with archive/recovery UX
@@ -177,6 +202,14 @@ UX and operability (reconciled from product notes):
 - ops/automation forms need stronger autocomplete/option scaffolding
 - drag/edit interaction mode conflicts can still trigger unintended board/card movement
 - escape-driven board/workspace exit ergonomics need a defined and test-backed model
+
+Security/compliance hardening backlog added from research cross-check:
+- OWASP/security headers + CSRF/XSS baseline (`#80`)
+- API abuse/rate-limiting policy (`#81`)
+- SSO/OIDC + optional MFA (`#82`)
+- data portability/deletion workflow (`#83`)
+- dependency vulnerability management policy (`#106`)
+- secrets/configuration management baseline (`#110`)
 
 ## Recently Resolved (This Cycle)
 
@@ -195,6 +228,8 @@ UX and operability (reconciled from product notes):
 - Aligned active docs cross-links/date stamps across `STATUS`, `IMPLEMENTATION_MASTERPLAN`, `TESTING_GUIDE`, and `MANUAL_TEST_CHECKLIST`.
 - Confirmed GitHub Project operational safety view as `No Status` (`no:status`) and documented release/weekly safety checks.
 - Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
+- Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
+- Applied `Priority I` through `Priority V` labels to every repository issue.
 
 ## Canonical Documentation Policy
 
