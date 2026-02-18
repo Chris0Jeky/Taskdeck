@@ -170,16 +170,13 @@ test('activity view selectors should support board and entity discovery without 
   await page.locator('#activity-entity-type').selectOption('Card')
   await page.locator('#activity-entity-board-select').selectOption({ label: boardName })
 
-  const entityOptionValue = await page.locator('#activity-entity-select option').evaluateAll(
-    (options, expectedTitle) => {
-      const match = options.find((option) => option.textContent?.includes(expectedTitle))
-      return match?.getAttribute('value') ?? ''
-    },
-    cardTitle
-  )
+  const entitySelect = page.locator('#activity-entity-select')
+  const entityOption = entitySelect.locator('option').filter({ hasText: cardTitle })
+  await expect(entityOption).toHaveCount(1)
 
-  expect(entityOptionValue).not.toBe('')
-  await page.locator('#activity-entity-select').selectOption(entityOptionValue)
+  const entityOptionValue = await entityOption.first().getAttribute('value')
+  expect(entityOptionValue).toBeTruthy()
+  await entitySelect.selectOption(entityOptionValue!)
   await page.getByRole('button', { name: 'Fetch', exact: true }).click()
 
   await expect(page).toHaveURL(/\/workspace\/activity\/entity\/Card\/[a-f0-9-]+$/)
