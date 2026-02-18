@@ -9,7 +9,8 @@ import { normalizeRestoreStatus } from '../utils/archive'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
 const toast = useToastStore()
-const loading = ref(false)
+const loadingItems = ref(false)
+const loadingBoards = ref(false)
 const restoreBusyId = ref<string | null>(null)
 const boardRestoreBusyId = ref<string | null>(null)
 const archiveItems = ref<ArchiveItem[]>([])
@@ -24,23 +25,30 @@ const filteredItems = computed(() => {
   return archiveItems.value.filter(item => item.entityType.toLowerCase() === entityTypeFilter.value)
 })
 
-async function loadArchive() {
+async function loadArchiveItems() {
   try {
-    loading.value = true
-    const [items, boards] = await Promise.all([
-      archiveApi.getItems({
-        entityType: entityTypeFilter.value === 'all' ? undefined : entityTypeFilter.value,
-        limit: 200,
-      }),
-      boardsApi.getBoards(undefined, true),
-    ])
-
+    loadingItems.value = true
+    const items = await archiveApi.getItems({
+      entityType: entityTypeFilter.value === 'all' ? undefined : entityTypeFilter.value,
+      limit: 200,
+    })
     archiveItems.value = items
-    archivedBoards.value = boards.filter(board => board.isArchived)
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to load archive items').message)
   } finally {
-    loading.value = false
+    loadingItems.value = false
+  }
+}
+
+async function loadArchivedBoards() {
+  try {
+    loadingBoards.value = true
+    const boards = await boardsApi.getBoards(undefined, true)
+    archivedBoards.value = boards.filter(board => board.isArchived)
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to load archived boards').message)
+  } finally {
+    loadingBoards.value = false
   }
 }
 
@@ -89,9 +97,8 @@ async function handleRestore(item: ArchiveItem) {
 }
 
 onMounted(() => {
-  loadArchive().catch(() => {
-    // Error handling done in loadArchive.
-  })
+  void loadArchiveItems()
+  void loadArchivedBoards()
 })
 </script>
 
@@ -102,7 +109,7 @@ onMounted(() => {
     <div class="td-panel">
       <h2 class="td-section-title">Archived Boards</h2>
 
-      <div v-if="loading" class="td-loading">Loading archived boards...</div>
+      <div v-if="loadingBoards" class="td-loading">Loading archived boards...</div>
 
       <div v-else-if="archivedBoards.length === 0" class="td-empty">
         No archived boards found.
@@ -129,16 +136,18 @@ onMounted(() => {
 
       <h2 class="td-section-title">Archived Items</h2>
       <div class="td-toolbar">
-        <select v-model="entityTypeFilter" class="td-input" @change="loadArchive">
+        <select v-model="entityTypeFilter" class="td-input" @change="loadArchiveItems">
           <option value="all">All types</option>
           <option value="board">Boards</option>
           <option value="column">Columns</option>
           <option value="card">Cards</option>
         </select>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="loadArchive" :disabled="loading">Refresh</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="loadArchiveItems" :disabled="loadingItems">
+          Refresh Items
+        </button>
       </div>
 
-      <div v-if="loading" class="td-loading">Loading archive...</div>
+      <div v-if="loadingItems" class="td-loading">Loading archive...</div>
 
       <div v-else-if="filteredItems.length === 0" class="td-empty">
         No archived items found in recovery inventory.
