@@ -50,16 +50,11 @@ builder.Services.AddSingleton(llmProviderSettings);
 builder.Services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
 {
     var settings = sp.GetRequiredService<LlmProviderSettings>();
-    if (Uri.TryCreate(settings.OpenAi.BaseUrl, UriKind.Absolute, out var baseUri))
-    {
-        client.BaseAddress = baseUri;
-    }
-
     var timeoutSeconds = settings.OpenAi.TimeoutSeconds <= 0 ? 30 : settings.OpenAi.TimeoutSeconds;
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
-builder.Services.AddSingleton<MockLlmProvider>();
-builder.Services.AddSingleton<ILlmProvider>(sp =>
+builder.Services.AddScoped<MockLlmProvider>();
+builder.Services.AddScoped<ILlmProvider>(sp =>
 {
     var settings = sp.GetRequiredService<LlmProviderSettings>();
     var environment = sp.GetRequiredService<IWebHostEnvironment>();
