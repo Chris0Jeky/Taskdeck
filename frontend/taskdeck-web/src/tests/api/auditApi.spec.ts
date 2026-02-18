@@ -32,11 +32,11 @@ describe('auditApi', () => {
     expect(http.get).toHaveBeenCalledWith('/audit/entities/card%2Ftype/entity%2F1?limit=10')
   })
 
-  it('getUserHistory encodes user id', async () => {
+  it('getUserHistory uses current user endpoint', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: [] })
 
-    await auditApi.getUserHistory('user/1', 50)
+    await auditApi.getUserHistory(50)
 
-    expect(http.get).toHaveBeenCalledWith('/audit/users/user%2F1?limit=50')
+    expect(http.get).toHaveBeenCalledWith('/audit/users/me?limit=50')
   })
 })
