@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
@@ -23,6 +24,10 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await anonymousClient.GetAsync("/api/boards");
 
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized, "Unauthorized");
+        response.Headers.WwwAuthenticate.Should().NotBeEmpty();
+        response.Headers.WwwAuthenticate
+            .Should()
+            .Contain(header => string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
