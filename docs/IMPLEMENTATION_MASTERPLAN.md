@@ -106,6 +106,10 @@ Delivered in the latest cycle:
    - planner instruction coverage now includes deterministic board/column intents (rename/archive/unarchive/reorder) with explicit board/position validation
    - executor operation parameter parsing now fails with deterministic validation errors instead of exception-driven fallbacks
    - partial-failure behavior is test-backed as transactional rollback + proposal failure status update with actionable operation-sequenced reasoning and improved audit entity attribution
+23. MVP-01 chat-to-project bootstrap delivery:
+   - chat now supports canonical Markdown checklist ingestion and proposal-first bootstrap operation generation for board-scoped sessions
+   - proposal review remains mandatory, with chat exposing one-click approve + execute action for generated checklist bootstrap proposals
+   - backend + API + frontend tests cover canonical happy path and key checklist parse/validation failures
 
 ## Roadmap by Horizon
 
@@ -183,7 +187,6 @@ Exit Criteria:
 ### Priority I (Current Phase 4 Completion Path)
 
 - Security and policy convergence: `#33`, `#34`, `#44`
-- Automation/provider and MVP bootstrap: `#57`
 - Starter packs foundation: `#47`, `#48`, `#49`, `#50`, `#51`
 - Tech-debt blockers for stable expansion: `#52`, `#53`, `#54`
 
@@ -285,11 +288,10 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` automation/provider and MVP bootstrap tranche (`#57`).
-3. Complete `Priority I` starter-pack foundation and debt blockers (`#47` to `#54`).
-4. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
-5. Keep issue `#107` updated as the canonical expansion-wave index.
-6. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
+2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#47` to `#54`).
+3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
+4. Keep issue `#107` updated as the canonical expansion-wave index.
+5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
 
 ## Documentation Operating Model
 Active docs:
