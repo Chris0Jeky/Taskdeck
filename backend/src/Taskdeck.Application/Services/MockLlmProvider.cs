@@ -6,7 +6,9 @@ public class MockLlmProvider : ILlmProvider
 {
     public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
     {
-        var lastUserMessage = request.Messages.LastOrDefault(m => m.Role == "User")?.Content ?? "";
+        var lastUserMessage = request.Messages
+            .LastOrDefault(m => m.Role.Equals("User", StringComparison.OrdinalIgnoreCase))
+            ?.Content ?? "";
 
         var (isActionable, actionIntent) = ClassifyIntent(lastUserMessage);
 
