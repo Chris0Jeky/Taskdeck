@@ -61,6 +61,20 @@ public class LlmProviderSelectionPolicyTests
     }
 
     [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiSettingsAreMissing()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi = null!;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("OpenAI settings are required");
+    }
+
+    [Fact]
     public void Evaluate_ShouldSelectMock_WhenProviderModeIsUnknown()
     {
         var settings = BuildValidSettings();
