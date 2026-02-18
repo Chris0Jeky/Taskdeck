@@ -61,6 +61,7 @@ Keep these views:
 - `Review` (filter: `status:"Review"`)
 - `Done` (filter: `status:"Done"`)
 - `Execution Board` (board view, `Column by: Status`)
+- `Priority View` (board view, `Column by: Priority`)
 
 Operational safety views:
 - `No Status` table view with `Status` empty filter (`no:status`).
@@ -69,6 +70,27 @@ Operational safety views:
 Safety discipline:
 - Check `No Status` before each release candidate and during weekly backlog seeding.
 - Resolve all empty-status items before merge trains or release tagging.
+- Check `Priority View` and ensure no issue/PR remains without a `Priority` field value.
+
+## Priority Field Synchronization Policy (required)
+
+Field:
+- Project field `Priority` with options `Priority I` through `Priority V`.
+
+Issue item rule:
+- For every issue project item, `Priority` field must exactly match the issue's single priority label.
+- If an issue has missing or multiple priority labels, fix labels first, then set project field.
+
+Pull request item rule:
+- Every PR project item must have a `Priority` field value.
+- Derivation order:
+1. Use linked closing issues (`closingIssuesReferences`) and inherit issue priority.
+2. If no closing links, parse PR body references (`Closes #...`, `Fixes #...`, `Refs #...`) and inherit referenced issue priority.
+3. If multiple priorities are discovered, choose the highest urgency (`Priority I` > `II` > `III` > `IV` > `V`).
+4. If no issue priority can be derived, set `Priority V` and note the fallback in PR notes/comment when practical.
+
+Operational timing:
+- Apply/sync `Priority` field during issue seeding, issue relabeling, PR creation, and backlog reconciliation passes.
 
 ## Workflow Automation (GitHub Project UI)
 
@@ -116,8 +138,14 @@ After setup changes:
 - Create a PR linked to an issue and confirm issue `Status=Review`.
 - Merge PR and confirm issue and PR items move to `Done`.
 - Open `No Status` and confirm only empty-status items are listed.
+<<<<<<< Updated upstream
 - Run issue search and confirm zero issues without a priority label:
   - `is:issue -label:\"Priority I\" -label:\"Priority II\" -label:\"Priority III\" -label:\"Priority IV\" -label:\"Priority V\"`
+=======
+- Open `Priority View` and confirm issue/PR items have non-empty `Priority` values.
+- Run issue search and confirm zero issues without a priority label:
+  - `is:issue -label:"Priority I" -label:"Priority II" -label:"Priority III" -label:"Priority IV" -label:"Priority V"`
+>>>>>>> Stashed changes
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
 
@@ -129,7 +157,8 @@ Weekly process:
 2. Select the highest-priority items whose dependencies are complete.
 3. Create/update issues with explicit acceptance criteria and required labels.
 4. Ensure each issue body includes dependency mapping (`Depends on #...`, `Unblocks #...` when applicable).
-5. Place items into project statuses according to WIP rules.
+5. Sync project `Priority` field for issues and PRs per policy above.
+6. Place items into project statuses according to WIP rules.
 
 WIP-aware intake limits (default mode):
 - Maximum 5 newly-seeded issues per week.
@@ -143,5 +172,9 @@ Override rule:
 
 Evidence of execution:
 - 2026-02-16 seeding pass populated Stage 0 governance issues (`#43`, `#59`, `#41`, `#55`, `#60`, `#56`) and Stage 1 security tranche issues.
+<<<<<<< Updated upstream
 - 2026-02-18 expansion pass seeded future-development waves (`#67` to `#111`) and applied priority labels across all issues.
+=======
+- 2026-02-18 reconciliation pass applied issue-priority labels to all issues and synchronized project `Priority` for issues + PRs.
+>>>>>>> Stashed changes
 
