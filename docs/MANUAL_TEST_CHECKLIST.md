@@ -65,7 +65,7 @@ Optional clean start:
 4. Use `Archive Board` action in Board Settings.
    - Expected: redirected to `/workspace/boards`, archived board absent from default list (soft-delete behavior).
 
-5. Create two columns, then reorder columns by drag/drop.
+5. Create two columns, then reorder columns by drag/drop using the `Drag Column` handle.
    - Expected: visual order changes and persists on refresh.
 6. Set WIP limit on a column.
    - Expected: `count/limit` indicator visible.
@@ -78,7 +78,7 @@ Optional clean start:
    - Expected: modal opens with current values.
 10. Edit title/description, set due date, block with reason, assign labels.
     - Expected: updates persist and render in lane.
-11. Move card to another column via drag/drop.
+11. Move card to another column via drag/drop using the `Drag Card` handle.
     - Expected: card relocates and counts update.
 12. Delete card from modal.
     - Expected: card removed.
@@ -178,9 +178,9 @@ Assume API at `http://localhost:5000`.
 
 Run these checks even if they currently fail; log outcome explicitly.
 
-1. Drag side-effect while editing card/task:
-   - Repro: open card modal/edit fields, perform pointer drag gestures.
-   - Target behavior: editing interactions should not trigger unintended board drag/move behavior.
+1. Drag/edit conflict regression check:
+   - Repro: open add-card input or card modal field, perform non-handle drag gestures near editable surfaces.
+   - Target behavior: only explicit drag handles initiate board/card drag; editable interactions do not trigger unintended movement.
 2. Command palette keyboard selection:
    - Repro: open palette, try arrow/enter item selection.
    - Target behavior: full keyboard-first navigation and activation.
