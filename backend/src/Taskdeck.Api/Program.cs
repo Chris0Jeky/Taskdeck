@@ -2,9 +2,12 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Net.Http.Headers;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -80,6 +83,39 @@ if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
                 ValidAudience = jwtSettings.Audience,
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
             };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnChallenge = async context =>
+                {
+                    context.HandleResponse();
+                    if (context.Response.HasStarted)
+                    {
+                        return;
+                    }
+
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    context.Response.Headers[HeaderNames.WWWAuthenticate] =
+                        BuildWwwAuthenticateHeaderValue(context.Error, context.ErrorDescription);
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                        ErrorCodes.Unauthorized,
+                        "Authentication is required to access this resource."));
+                },
+                OnForbidden = async context =>
+                {
+                    if (context.Response.HasStarted)
+                    {
+                        return;
+                    }
+
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                        ErrorCodes.Forbidden,
+                        "You do not have permission to access this resource."));
+                }
+            };
         });
 }
 
@@ -118,5 +154,26 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static string BuildWwwAuthenticateHeaderValue(string? error, string? errorDescription)
+{
+    if (string.IsNullOrWhiteSpace(error))
+    {
+        return "Bearer";
+    }
+
+    var escapedError = EscapeAuthHeaderValue(error);
+    if (string.IsNullOrWhiteSpace(errorDescription))
+    {
+        return $"Bearer error=\"{escapedError}\"";
+    }
+
+    return $"Bearer error=\"{escapedError}\", error_description=\"{EscapeAuthHeaderValue(errorDescription)}\"";
+}
+
+static string EscapeAuthHeaderValue(string value)
+{
+    return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+}
 
 public partial class Program { }

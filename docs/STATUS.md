@@ -35,6 +35,7 @@ Current constraints are mostly hardening and consistency:
 - Cross-cutting API consistency:
   - `ApiErrorResponse` contract for stable error payload shape (`errorCode`, `message`)
   - `ResultExtensions` mapping for domain/app errors to HTTP statuses
+  - JWT challenge/forbidden handlers return `ApiErrorResponse` payloads for middleware-level `401/403` responses
   - `AuthenticatedControllerBase` for claim extraction and authenticated-user guardrails
   - request correlation middleware (`X-Request-Id`) with response echo and log scope propagation
 - Implemented automation stack:
@@ -91,6 +92,7 @@ Completed in Phase 4:
 - CI hardening follow-up: workflow concurrency cancellation, frontend typecheck/build parity, TRX artifacts, caching
 - mechanical checks added: docs governance CI checks (`check-docs-governance` + `check-github-ops-governance`) and architecture boundary test project
 - API integration harness additions for authz assertions (`AssertUnauthorized`, `AssertForbidden`, `AssertNotFoundOrForbidden`, `AssertCrossUserIsolation`)
+- SEC-04 API error-contract assertions for key auth/validation paths, including middleware-level `401/403` payload normalization
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
@@ -129,10 +131,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 259/259 passing
-- API integration: 132/132 passing
+- API integration: 135/135 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 492/492 passing
+- Backend Total: 495/495 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -156,7 +158,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 748/748 passing
+- Combined automated total: 751/751 passing
 
 ## CI Status
 
@@ -230,6 +232,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
 - Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
 - Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
+- Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
