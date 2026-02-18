@@ -38,6 +38,10 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - If you cannot run checks, state exactly why and what you would run.
 - In this Windows PowerShell environment, do not chain commands with `&&`; use `;` and check `$LASTEXITCODE` when failure handling matters.
 
+### Windows Git Reliability Fallback
+- If `git` resolves to Cygwin or produces signal/pipe-style failures, use `C:\Program Files\Git\cmd\git.exe` explicitly for repo operations.
+- If a commit fails because `.git/index.lock` cannot be created, first check for active `git` processes; remove `.git/index.lock` only when no git process is running.
+
 ### Small Mainline Exception
 - If a change is very small and low-risk (especially minor docs wording/checklist updates), do not automatically create a branch/PR.
 - Prompt the user first and offer to let the user apply the change directly on `main`.
