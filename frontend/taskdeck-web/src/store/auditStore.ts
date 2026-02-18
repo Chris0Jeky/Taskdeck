@@ -48,11 +48,11 @@ export const useAuditStore = defineStore('audit', () => {
     }
   }
 
-  async function fetchUserHistory(userId: string, limit = 50) {
+  async function fetchUserHistory(limit = 50) {
     try {
       loading.value = true
       error.value = null
-      entries.value = await auditApi.getUserHistory(userId, clampLimit(limit))
+      entries.value = await auditApi.getUserHistory(clampLimit(limit))
     } catch (e: unknown) {
       const msg = getErrorDisplay(e, 'Failed to fetch user history').message
       error.value = msg
