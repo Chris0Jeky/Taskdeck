@@ -141,14 +141,6 @@ After setup changes:
 - Open `Priority View` and confirm issue/PR items have non-empty `Priority` values.
 - Run issue search and confirm zero issues without a priority label:
   - `is:issue -label:"Priority I" -label:"Priority II" -label:"Priority III" -label:"Priority IV" -label:"Priority V"`
-<<<<<<< Updated upstream
-- Run issue search and confirm zero issues without a priority label:
-  - `is:issue -label:\"Priority I\" -label:\"Priority II\" -label:\"Priority III\" -label:\"Priority IV\" -label:\"Priority V\"`
-=======
-- Open `Priority View` and confirm issue/PR items have non-empty `Priority` values.
-- Run issue search and confirm zero issues without a priority label:
-  - `is:issue -label:"Priority I" -label:"Priority II" -label:"Priority III" -label:"Priority IV" -label:"Priority V"`
->>>>>>> Stashed changes
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
 

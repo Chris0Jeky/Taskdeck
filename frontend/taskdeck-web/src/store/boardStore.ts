@@ -227,9 +227,9 @@ export const useBoardStore = defineStore('board', () => {
         currentBoardLabels.value = []
       }
 
-      toast.success('Board deleted successfully')
+      toast.success('Board archived successfully')
     } catch (e: unknown) {
-      handleApiError(e, 'Failed to delete board')
+      handleApiError(e, 'Failed to archive board')
       throw e
     } finally {
       loading.value = false

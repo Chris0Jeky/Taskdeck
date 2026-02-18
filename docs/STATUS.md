@@ -88,6 +88,7 @@ Completed in Phase 4:
 - archive recovery flow
 - chat + ops + logs + worker/health stack
 - frontend integration for automations/chat/ops/archive
+- archive lifecycle coherence for boards across board settings and archive workspace flows
 - maintainability refactor across API/controller error handling and frontend API/store utilities (PR #23)
 - CI hardening follow-up: workflow concurrency cancellation, frontend typecheck/build parity, TRX artifacts, caching
 - mechanical checks added: docs governance CI checks (`check-docs-governance` + `check-github-ops-governance`) and architecture boundary test project
@@ -131,10 +132,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 259/259 passing
-- API integration: 135/135 passing
+- API integration: 136/136 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 495/495 passing
+- Backend Total: 496/496 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -144,7 +145,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 245/245 passing
+- Frontend unit: 248/248 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -158,7 +159,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 751/751 passing
+- Combined automated total: 755/755 passing
 
 ## CI Status
 
@@ -198,7 +199,6 @@ Observability and scalability:
   - cloud target topology and autoscaling ADR (`#111`)
 
 UX and operability (reconciled from product notes):
-- archive board lifecycle behavior is not yet fully coherent with archive/recovery UX
 - command palette lacks full keyboard item selection/activation flow
 - activity exploration still relies on direct IDs (limited discoverability)
 - ops/automation forms need stronger autocomplete/option scaffolding
@@ -233,6 +233,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
 - Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
+- Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

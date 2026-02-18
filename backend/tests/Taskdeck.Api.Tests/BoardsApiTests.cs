@@ -168,6 +168,33 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         allBoards.Should().ContainSingle(b => b.Id == createdBoard.Id && b.IsArchived);
     }
 
+    [Fact]
+    public async Task ArchivedBoard_ShouldBeRestorable_ViaUpdateEndpoint()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var createdBoard = await ApiTestHarness.CreateBoardAsync(_client, "restore-flow");
+
+        var archiveResponse = await _client.DeleteAsync($"/api/boards/{createdBoard.Id}");
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var restoreResponse = await _client.PutAsJsonAsync(
+            $"/api/boards/{createdBoard.Id}",
+            new UpdateBoardDto(null, null, false));
+
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var restoredBoard = await restoreResponse.Content.ReadFromJsonAsync<BoardDto>();
+        restoredBoard.Should().NotBeNull();
+        restoredBoard!.Id.Should().Be(createdBoard.Id);
+        restoredBoard.IsArchived.Should().BeFalse();
+
+        var activeListResponse = await _client.GetAsync("/api/boards");
+        activeListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var activeBoards = await activeListResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
+        activeBoards.Should().NotBeNull();
+        activeBoards.Should().ContainSingle(b => b.Id == createdBoard.Id && !b.IsArchived);
+    }
+
     private async Task EnsureAuthenticatedAsync()
     {
         if (_isAuthenticated)
