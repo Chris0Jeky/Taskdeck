@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-17  
+Last Updated: 2026-02-18  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -93,7 +93,6 @@ Completed in Phase 4:
 - API integration harness additions for authz assertions (`AssertUnauthorized`, `AssertForbidden`, `AssertNotFoundOrForbidden`, `AssertCrossUserIsolation`)
 
 Remaining for Phase 4 completion:
-- final security and claim-based identity convergence across remaining legacy controllers (audit/users)
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
 - production-capable LLM provider path (or strict feature-gated mock-only policy)
 - broader planner/executor coverage and safety semantics
@@ -103,7 +102,7 @@ Remaining for Phase 4 completion:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-17
+Verification Date: 2026-02-18
 
 ### Backend (Executed)
 
@@ -113,10 +112,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 259/259 passing
-- API integration: 122/122 passing
+- API integration: 128/128 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 482/482 passing
+- Backend Total: 488/488 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -140,7 +139,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 738/738 passing
+- Combined automated total: 744/744 passing
 
 ## CI Status
 
@@ -157,7 +156,8 @@ Workflow: `.github/workflows/ci.yml`
 
 Security and identity:
 - claims-first identity is now aligned for boards/columns/cards/labels/export/queue/board-access
-- remaining security convergence work is concentrated in audit/users behavior and consistent cross-user policy enforcement
+- claims-first identity is now aligned for audit/users as well (including self-scoped user/audit history flows)
+- remaining security convergence work is concentrated on consistent cross-user policy enforcement breadth
 - policy decision is now explicit: cross-user authenticated access failures should return `403`; remaining work is consistent enforcement across all families/tests
 
 Automation and data:
@@ -195,6 +195,7 @@ UX and operability (reconciled from product notes):
 - Aligned active docs cross-links/date stamps across `STATUS`, `IMPLEMENTATION_MASTERPLAN`, `TESTING_GUIDE`, and `MANUAL_TEST_CHECKLIST`.
 - Confirmed GitHub Project operational safety view as `No Status` (`no:status`) and documented release/weekly safety checks.
 - Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
+- Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
 
 ## Canonical Documentation Policy
 
