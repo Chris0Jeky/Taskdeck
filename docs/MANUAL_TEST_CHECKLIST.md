@@ -19,7 +19,6 @@ In scope:
 
 Out of scope (known implementation boundaries on current `main`):
 - `ExportDatabaseAsync` and `ImportDatabaseAsync` are not implemented.
-- Activity filtering still depends on direct IDs, not chooser-driven entity discovery.
 
 ## Preconditions
 
@@ -142,10 +141,12 @@ Optional clean start:
 
 1. Open `/workspace/activity`.
    - Expected: view loads and allows mode selection (`board`, `entity`, `user`).
-2. Fetch board history with valid board ID.
+2. Fetch board history using the board selector.
    - Expected: timeline entries display.
-3. Fetch entity and user history with valid IDs.
-   - Expected: corresponding entries display.
+3. Fetch entity history using entity type + board context + entity selectors.
+   - Expected: timeline entries display without manual raw ID entry.
+4. Fetch user history in `user` mode.
+   - Expected: current-user timeline entries display.
 
 ## H. API Spot Checks
 
@@ -178,16 +179,13 @@ Run these checks even if they currently fail; log outcome explicitly.
 1. Drag/edit conflict regression check:
    - Repro: open add-card input or card modal field, perform non-handle drag gestures near editable surfaces.
    - Target behavior: only explicit drag handles initiate board/card drag; editable interactions do not trigger unintended movement.
-2. Activity discoverability without raw IDs:
-   - Repro: attempt history exploration without pre-known IDs.
-   - Target behavior: picker/autocomplete-assisted discovery for board/entity/user selectors.
-3. Ops and automation form ergonomics:
+2. Ops and automation form ergonomics:
    - Repro: create requests using ops/automation UIs.
    - Target behavior: contextual autocomplete/options, reduced manual input burden.
-4. Escape-to-exit board context:
+3. Escape-to-exit board context:
    - Repro: on board screen with no modal open, press `Escape`.
    - Target behavior: consistent back/exit behavior for rapid keyboard-driven workflow.
-5. Sidebar shortcuts affordance:
+4. Sidebar shortcuts affordance:
    - Repro: test on shorter and taller viewports.
    - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 
