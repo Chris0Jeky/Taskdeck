@@ -47,6 +47,12 @@ public static class LlmProviderSelectionPolicy
 
     public static bool TryValidateOpenAiSettings(LlmProviderSettings settings, out string error)
     {
+        if (settings.OpenAi is null)
+        {
+            error = "OpenAI settings are required.";
+            return false;
+        }
+
         var openAi = settings.OpenAi;
 
         if (string.IsNullOrWhiteSpace(openAi.ApiKey))
