@@ -71,4 +71,41 @@ describe('InputAssistField', () => {
     await input.trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
   })
+
+  it('closes the suggestion panel when input exactly matches an option value', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options,
+      },
+    })
+
+    const input = wrapper.get('input')
+    await input.trigger('focus')
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+
+    await input.setValue('health.check')
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
+  })
+
+  it('maps exact label match to canonical option value and closes panel', async () => {
+    const wrapper = mount(InputAssistField, {
+      props: {
+        modelValue: '',
+        options,
+      },
+    })
+
+    const input = wrapper.get('input')
+    await input.trigger('focus')
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
+
+    await input.setValue('Health Check')
+
+    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['health.check'])
+    expect(wrapper.emitted('select')?.at(-1)?.[0]).toMatchObject({ value: 'health.check', label: 'Health Check' })
+  })
 })
