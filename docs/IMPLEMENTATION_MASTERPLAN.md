@@ -47,8 +47,8 @@ Delivered in the latest cycle:
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
    - Backend: 496 passing
-   - Frontend unit: 248 passing
-   - E2E: 11 passing
+   - Frontend unit: 252 passing
+   - E2E: 12 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
@@ -78,6 +78,10 @@ Delivered in the latest cycle:
    - board settings archive action now reflects soft-delete semantics (reversible archive, not permanent deletion)
    - archive workspace now surfaces archived boards and supports restore via board lifecycle API flow
    - API integration roundtrip coverage added for archive-to-restore board lifecycle behavior
+16. UX-02 drag/edit interaction safety guardrails delivery:
+   - card and column drag now requires explicit drag handles
+   - non-handle drag gestures are ignored to prevent accidental movement during adjacent edit interactions
+   - frontend unit + E2E coverage added for handle-only drag behavior and conflict paths
 
 ## Roadmap by Horizon
 
@@ -155,7 +159,7 @@ Exit Criteria:
 ### Priority I (Current Phase 4 Completion Path)
 
 - Security and policy convergence: `#33`, `#34`, `#44`
-- UX reliability and interaction safety: `#45`, `#36`, `#37`, `#38`, `#46`
+- UX reliability and interaction safety: `#36`, `#37`, `#38`, `#46`
 - Automation/provider hardening: `#39`, `#40`, `#57`
 - Starter packs foundation: `#47`, `#48`, `#49`, `#50`, `#51`
 - Tech-debt blockers for stable expansion: `#52`, `#53`, `#54`
@@ -258,7 +262,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete `Priority I` UX reliability tranche (`#45`, `#36`, `#37`, `#38`, `#46`).
+2. Complete remaining `Priority I` UX reliability tranche (`#36`, `#37`, `#38`, `#46`).
 3. Complete `Priority I` automation/provider and MVP bootstrap tranche (`#39`, `#40`, `#57`).
 4. Complete `Priority I` starter-pack foundation and debt blockers (`#47` to `#54`).
 5. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
