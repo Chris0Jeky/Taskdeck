@@ -2,7 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
-Last Updated: 2026-02-17
+Last Updated: 2026-02-18
 
 ## Canonical Status Model
 
@@ -21,6 +21,9 @@ Rules:
 
 ## Required Labels
 
+Canonical descriptions and usage rules live in:
+- `docs/GITHUB_LABEL_TAXONOMY.md`
+
 Operational labels:
 - `bug` (GitHub default; keep it present because `bug_report` template uses it)
 - `security`
@@ -34,6 +37,19 @@ Operational labels:
 - `tech-debt`
 - `starter-packs`
 - `llm`
+- `Priority I`
+- `Priority II`
+- `Priority III`
+- `Priority IV`
+- `Priority V`
+
+Priority label rules:
+- Every issue must have exactly one priority label.
+- `Priority I` = highest urgency / current cycle blockers.
+- `Priority II` = immediate next tranche after `Priority I`.
+- `Priority III` = medium-term expansion tranche.
+- `Priority IV` = later maturity tranche.
+- `Priority V` = meta/historical/lowest urgency.
 
 ## Project Views
 
@@ -100,6 +116,8 @@ After setup changes:
 - Create a PR linked to an issue and confirm issue `Status=Review`.
 - Merge PR and confirm issue and PR items move to `Done`.
 - Open `No Status` and confirm only empty-status items are listed.
+- Run issue search and confirm zero issues without a priority label:
+  - `is:issue -label:\"Priority I\" -label:\"Priority II\" -label:\"Priority III\" -label:\"Priority IV\" -label:\"Priority V\"`
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
 
@@ -113,12 +131,17 @@ Weekly process:
 4. Ensure each issue body includes dependency mapping (`Depends on #...`, `Unblocks #...` when applicable).
 5. Place items into project statuses according to WIP rules.
 
-WIP-aware intake limits:
+WIP-aware intake limits (default mode):
 - Maximum 5 newly-seeded issues per week.
 - Maximum 1 major issue in `Now`.
 - Maximum 2 issues in `Next`.
 - Remaining seeded issues stay in `Pending` until promoted.
 
+Override rule:
+- Maintainer may explicitly waive intake cap for one-off backlog seeding/reconciliation events.
+- WIP execution discipline (`Now`/`Review` limits) remains in force even when intake cap is waived.
+
 Evidence of execution:
 - 2026-02-16 seeding pass populated Stage 0 governance issues (`#43`, `#59`, `#41`, `#55`, `#60`, `#56`) and Stage 1 security tranche issues.
+- 2026-02-18 expansion pass seeded future-development waves (`#67` to `#111`) and applied priority labels across all issues.
 
