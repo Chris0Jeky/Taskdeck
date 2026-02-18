@@ -148,6 +148,40 @@ test('command palette keyboard navigation should activate selected command', asy
   await expect(palette).toHaveCount(0)
 })
 
+test('activity view selectors should support board and entity discovery without raw IDs', async ({ page }) => {
+  const boardName = `Activity Board ${Date.now()}`
+  const columnName = `Activity Column ${Date.now()}`
+  const cardTitle = `Activity Card ${Date.now()}`
+
+  await createBoard(page, boardName)
+  await addColumn(page, columnName)
+  await addCard(page, columnName, cardTitle)
+
+  await page.goto('/workspace/activity')
+
+  const boardSelect = page.locator('#activity-board-select')
+  await expect(boardSelect).toBeVisible()
+  await boardSelect.selectOption({ label: boardName })
+  await page.getByRole('button', { name: 'Fetch', exact: true }).click()
+
+  await expect(page).toHaveURL(/\/workspace\/activity\/board\/[a-f0-9-]+$/)
+
+  await page.locator('#activity-view-mode').selectOption('entity')
+  await page.locator('#activity-entity-type').selectOption('Card')
+  await page.locator('#activity-entity-board-select').selectOption({ label: boardName })
+
+  const entitySelect = page.locator('#activity-entity-select')
+  const entityOption = entitySelect.locator('option').filter({ hasText: cardTitle })
+  await expect(entityOption).toHaveCount(1)
+
+  const entityOptionValue = await entityOption.first().getAttribute('value')
+  expect(entityOptionValue).toBeTruthy()
+  await entitySelect.selectOption(entityOptionValue!)
+  await page.getByRole('button', { name: 'Fetch', exact: true }).click()
+
+  await expect(page).toHaveURL(/\/workspace\/activity\/entity\/Card\/[a-f0-9-]+$/)
+})
+
 test('column WIP limit should reject additional cards', async ({ page }) => {
   const boardName = `WIP Board ${Date.now()}`
   const columnName = `In Progress ${Date.now()}`
