@@ -156,7 +156,7 @@ test('card drag and drop should move card between columns', async ({ page }) => 
   await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
 })
 
-test('board settings lifecycle should support rename archive unarchive and delete', async ({ page }) => {
+test('board settings lifecycle should support rename archive unarchive and archive action', async ({ page }) => {
   const initialBoardName = `Settings Board ${Date.now()}`
   const renamedBoardName = `${initialBoardName} Renamed`
 
@@ -184,7 +184,7 @@ test('board settings lifecycle should support rename archive unarchive and delet
   await page.goto(boardUrl)
   await page.locator('button[title="Board Settings"]').click()
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Delete Board' }).click()
+  await page.getByRole('button', { name: 'Archive Board' }).click()
 
   await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
