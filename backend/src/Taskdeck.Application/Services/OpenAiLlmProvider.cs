@@ -24,7 +24,9 @@ public class OpenAiLlmProvider : ILlmProvider
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
     {
-        var lastUserMessage = request.Messages.LastOrDefault(m => m.Role.Equals("User", StringComparison.OrdinalIgnoreCase))?.Content ?? string.Empty;
+        var lastUserMessage = request.Messages
+            .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
+            ?.Content ?? string.Empty;
 
         if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var validationError))
         {
@@ -62,7 +64,7 @@ public class OpenAiLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.");
             }
 
-            var (isActionable, actionIntent) = ClassifyIntent(lastUserMessage);
+            var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
             return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent);
         }
         catch (OperationCanceledException)
@@ -107,9 +109,10 @@ public class OpenAiLlmProvider : ILlmProvider
 
     private static object MapMessage(ChatCompletionMessage message)
     {
+        var normalizedRole = (message.Role ?? string.Empty).Trim().ToLowerInvariant();
         return new
         {
-            role = message.Role.Trim().ToLowerInvariant() switch
+            role = normalizedRole switch
             {
                 "assistant" => "assistant",
                 "system" => "system",
@@ -172,7 +175,7 @@ public class OpenAiLlmProvider : ILlmProvider
 
     private static LlmCompletionResult BuildFallbackResult(string userMessage, string reason)
     {
-        var (isActionable, actionIntent) = ClassifyIntent(userMessage);
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
         var content = isActionable
             ? $"I can help with that. I'll create a proposal to {actionIntent}. ({reason})"
             : $"I can help with that request. ({reason})";
@@ -192,25 +195,5 @@ public class OpenAiLlmProvider : ILlmProvider
         }
 
         return Math.Max(1, text.Length / 4);
-    }
-
-    private static (bool IsActionable, string? ActionIntent) ClassifyIntent(string message)
-    {
-        var lower = message.ToLowerInvariant();
-
-        if (lower.Contains("create card") || lower.Contains("add card"))
-            return (true, "card.create");
-        if (lower.Contains("move card"))
-            return (true, "card.move");
-        if (lower.Contains("archive card") || lower.Contains("delete card"))
-            return (true, "card.archive");
-        if (lower.Contains("update card") || lower.Contains("edit card"))
-            return (true, "card.update");
-        if (lower.Contains("create board") || lower.Contains("add board"))
-            return (true, "board.create");
-        if (lower.Contains("reorder") || lower.Contains("sort"))
-            return (true, "column.reorder");
-
-        return (false, null);
     }
 }
