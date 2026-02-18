@@ -5,7 +5,6 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
-using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -58,7 +57,7 @@ public class UsersController : AuthenticatedControllerBase
         if (!currentUserResult.IsSuccess)
             return currentUserResult.ToErrorActionResult();
 
-        if (!string.Equals(currentUserResult.Value.Username, username, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(currentUserResult.Value.Username, username, StringComparison.Ordinal))
             return ForbiddenSelfScope();
 
         return Ok(currentUserResult.Value);
@@ -114,7 +113,7 @@ public class UsersController : AuthenticatedControllerBase
 
     private static IActionResult ForbiddenSelfScope()
     {
-        var forbidden = Result.Failure(ErrorCodes.Forbidden, "You can only access your own user profile");
+        var forbidden = Result.Failure(Taskdeck.Domain.Exceptions.ErrorCodes.Forbidden, "You can only access your own user profile");
         return forbidden.ToErrorActionResult();
     }
 }
