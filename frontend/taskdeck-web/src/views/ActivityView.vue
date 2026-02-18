@@ -32,6 +32,7 @@ const limit = ref(50)
 const loadingEntitySource = ref(false)
 const suppressRouteSync = ref(false)
 const loadedEntityBoardId = ref<string | null>(null)
+const preserveRouteEntitySelection = ref(false)
 
 const boardOptions = computed<SelectorOption[]>(() => {
   return [...boards.boards]
@@ -219,6 +220,7 @@ function syncFromRoute() {
   const routeEntityId = typeof route.params.entityId === 'string' ? route.params.entityId : ''
 
   if (routeBoardId) {
+    preserveRouteEntitySelection.value = false
     viewMode.value = 'board'
     selectedBoardId.value = routeBoardId
     selectedEntityType.value = ''
@@ -228,6 +230,7 @@ function syncFromRoute() {
   }
 
   if (routeEntityType && routeEntityId) {
+    preserveRouteEntitySelection.value = true
     viewMode.value = 'entity'
     selectedEntityType.value = routeEntityType
     selectedEntityId.value = routeEntityId
@@ -240,6 +243,7 @@ function syncFromRoute() {
   }
 
   if (route.name === 'workspace-activity-user') {
+    preserveRouteEntitySelection.value = false
     viewMode.value = 'user'
     selectedBoardId.value = ''
     selectedEntityType.value = ''
@@ -248,6 +252,7 @@ function syncFromRoute() {
     return
   }
 
+  preserveRouteEntitySelection.value = false
   viewMode.value = 'board'
   selectedBoardId.value = ''
   selectedEntityType.value = ''
@@ -375,10 +380,8 @@ watch(viewMode, async (mode) => {
   selectedEntityId.value = ''
 })
 
-watch(selectedEntityType, async (nextType, previousType) => {
-  if (nextType !== previousType) {
-    selectedEntityId.value = ''
-  }
+watch(selectedEntityType, async (nextType) => {
+  selectedEntityId.value = ''
 
   if (!nextType) {
     selectedEntityBoardId.value = ''
@@ -396,11 +399,9 @@ watch(selectedEntityType, async (nextType, previousType) => {
   await ensureEntitySourceBoardLoaded()
 })
 
-watch(selectedEntityBoardId, async (nextBoardId, previousBoardId) => {
-  if (nextBoardId !== previousBoardId) {
-    selectedEntityId.value = ''
-    loadedEntityBoardId.value = null
-  }
+watch(selectedEntityBoardId, async () => {
+  selectedEntityId.value = ''
+  loadedEntityBoardId.value = null
 
   await ensureEntitySourceBoardLoaded()
 })
@@ -411,12 +412,20 @@ watch(entityOptions, (options) => {
   }
 
   if (options.length === 0) {
+    if (preserveRouteEntitySelection.value && selectedEntityId.value) {
+      return
+    }
+
     selectedEntityId.value = ''
     return
   }
 
   const hasSelectedEntity = options.some((option) => option.id === selectedEntityId.value)
   if (!hasSelectedEntity) {
+    if (preserveRouteEntitySelection.value && selectedEntityId.value) {
+      return
+    }
+
     selectedEntityId.value = options[0]!.id
   }
 })
@@ -431,6 +440,7 @@ onMounted(async () => {
   applySelectorDefaults()
   await ensureEntitySourceBoardLoaded()
   await fetchHistorySafe()
+  preserveRouteEntitySelection.value = false
 })
 
 watch(
@@ -444,6 +454,7 @@ watch(
     applySelectorDefaults()
     await ensureEntitySourceBoardLoaded()
     await fetchHistorySafe()
+    preserveRouteEntitySelection.value = false
   }
 )
 </script>
@@ -454,7 +465,7 @@ watch(
 
     <div class="td-activity__controls">
       <div class="td-form-row">
-        <select id="activity-view-mode" v-model="viewMode" class="td-input">
+        <select id="activity-view-mode" v-model="viewMode" class="td-input" aria-label="Activity view mode">
           <option value="board">Board History</option>
           <option value="entity">Entity History</option>
           <option value="user">User History</option>
@@ -465,6 +476,7 @@ watch(
           id="activity-board-select"
           v-model="selectedBoardId"
           class="td-input"
+          aria-label="Select board"
         >
           <option value="" disabled>Select board...</option>
           <option v-for="board in boardOptions" :key="board.id" :value="board.id">
@@ -473,7 +485,7 @@ watch(
         </select>
 
         <template v-if="viewMode === 'entity'">
-          <select id="activity-entity-type" v-model="selectedEntityType" class="td-input">
+          <select id="activity-entity-type" v-model="selectedEntityType" class="td-input" aria-label="Select entity type">
             <option value="" disabled>Select entity type...</option>
             <option value="Board">Board</option>
             <option value="Column">Column</option>
@@ -486,6 +498,7 @@ watch(
             id="activity-entity-board-select"
             v-model="selectedEntityBoardId"
             class="td-input"
+            aria-label="Select board context"
           >
             <option value="" disabled>Select board context...</option>
             <option v-for="board in boardOptions" :key="board.id" :value="board.id">
@@ -499,6 +512,7 @@ watch(
             v-model="selectedEntityId"
             class="td-input"
             :disabled="loadingEntitySource || entityOptions.length === 0"
+            aria-label="Select entity"
           >
             <option value="" disabled>Select entity...</option>
             <option v-for="option in entityOptions" :key="option.id" :value="option.id">
@@ -533,7 +547,13 @@ watch(
       <div v-if="selectedIdForCopy" class="td-id-affordance">
         <span class="td-id-affordance__label">{{ selectedIdLabel }}</span>
         <code class="td-id-affordance__value">{{ selectedIdForCopy }}</code>
-        <button class="td-btn td-btn--ghost td-btn--sm" @click="copySelectedId">Copy ID</button>
+        <button
+          class="td-btn td-btn--ghost td-btn--sm"
+          :aria-label="`Copy ${selectedIdLabel} to clipboard`"
+          @click="copySelectedId"
+        >
+          Copy ID
+        </button>
       </div>
     </div>
 
