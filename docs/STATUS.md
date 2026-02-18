@@ -146,7 +146,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 255/255 passing
+- Frontend unit: 259/259 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -156,11 +156,11 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops flow: 13/13 passing
+- E2E smoke + automation/ops flow: 14/14 passing
 
 ### Total
 
-- Combined automated total: 764/764 passing
+- Combined automated total: 769/769 passing
 
 ## CI Status
 
@@ -200,7 +200,6 @@ Observability and scalability:
   - cloud target topology and autoscaling ADR (`#111`)
 
 UX and operability (reconciled from product notes):
-- activity exploration still relies on direct IDs (limited discoverability)
 - ops/automation forms need stronger autocomplete/option scaffolding
 - escape-driven board/workspace exit ergonomics need a defined and test-backed model
 
@@ -235,6 +234,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
 - Delivered UX-03 command palette keyboard model: shell command palette now supports keyboard-first item filtering, selection, and activation with unit + E2E regression coverage.
+- Delivered UX-04 activity selector discoverability: activity workflows now use selector-first board/entity/user exploration with ID copy affordance and unit + E2E regression coverage.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
