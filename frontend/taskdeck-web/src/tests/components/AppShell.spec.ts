@@ -1,0 +1,120 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { reactive } from 'vue'
+import AppShell from '../../components/shell/AppShell.vue'
+
+const mockRouter = {
+  push: vi.fn(),
+}
+
+const mockRoute = reactive({
+  path: '/workspace/boards',
+})
+
+const mockSession = {
+  isAuthenticated: true,
+  username: 'test-user',
+  logout: vi.fn(),
+}
+
+const mockFeatureFlags = {
+  flags: {
+    newShell: true,
+    newAuth: true,
+    newAccess: true,
+    newActivity: true,
+    newOps: true,
+    newAutomation: true,
+    newArchive: true,
+  },
+  isEnabled: vi.fn(() => true),
+}
+
+vi.mock('vue-router', () => ({
+  useRouter: () => mockRouter,
+  useRoute: () => mockRoute,
+}))
+
+vi.mock('../../store/sessionStore', () => ({
+  useSessionStore: () => mockSession,
+}))
+
+vi.mock('../../store/featureFlagStore', () => ({
+  useFeatureFlagStore: () => mockFeatureFlags,
+}))
+
+function mountShell() {
+  return mount(AppShell, {
+    global: {
+      stubs: {
+        RouterView: true,
+        Teleport: true,
+        RouterLink: {
+          props: ['to'],
+          template: '<a :href="to"><slot /></a>',
+        },
+      },
+    },
+  })
+}
+
+async function waitForUi() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+describe('AppShell command palette keyboard model', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRoute.path = '/workspace/boards'
+  })
+
+  it('toggles command palette with Ctrl+K and closes with Escape', async () => {
+    const wrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+  })
+
+  it('navigates commands with arrows and activates selected command with Enter', async () => {
+    const wrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+
+    const input = wrapper.get('.td-command-palette__input')
+    await input.trigger('keydown.down')
+    await input.trigger('keydown.down')
+    await input.trigger('keydown.enter')
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/activity')
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+  })
+
+  it('activates filtered command with Enter', async () => {
+    const wrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+
+    const input = wrapper.get('.td-command-palette__input')
+    await input.setValue('arch')
+    await waitForUi()
+    await input.trigger('keydown.enter')
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/archive')
+  })
+})
