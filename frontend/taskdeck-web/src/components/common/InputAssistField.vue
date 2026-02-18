@@ -65,15 +65,21 @@ function setModelValue(value: string) {
   emit('update:modelValue', value)
 }
 
-function hasExactMatch(value: string): boolean {
+function findExactMatch(value: string): InputAssistOption | null {
   const normalizedInput = value.trim().toLowerCase()
   if (!normalizedInput) {
-    return false
+    return null
   }
 
-  return props.options.some((option) => {
-    return option.value.trim().toLowerCase() === normalizedInput || option.label.trim().toLowerCase() === normalizedInput
+  const byValue = props.options.find((option) => option.value.trim().toLowerCase() === normalizedInput)
+  if (byValue) {
+    return byValue
+  }
+
+  return props.options.find((option) => {
+    return option.label.trim().toLowerCase() === normalizedInput
   })
+  ?? null
 }
 
 function selectOption(option: InputAssistOption) {
@@ -93,12 +99,13 @@ function selectActiveOption() {
 
 function onInput(event: Event) {
   const target = event.target as HTMLInputElement
-  setModelValue(target.value)
-  if (hasExactMatch(target.value)) {
-    closePanel()
+  const exactMatch = findExactMatch(target.value)
+  if (exactMatch) {
+    selectOption(exactMatch)
     return
   }
 
+  setModelValue(target.value)
   openPanel()
 }
 
