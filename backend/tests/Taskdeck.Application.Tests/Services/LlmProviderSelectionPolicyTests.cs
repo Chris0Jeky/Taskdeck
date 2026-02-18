@@ -33,6 +33,35 @@ public class LlmProviderSelectionPolicyTests
         result.Reason.Should().Contain("development-like");
     }
 
+    [Theory]
+    [InlineData("Test")]
+    [InlineData("Testing")]
+    public void Evaluate_ShouldSelectMock_WhenTestLikeEnvironmentDisallowsLiveProviders(string environmentName)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = false;
+        settings.Provider = "OpenAI";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, environmentName);
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("development-like");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectOpenAi_WhenDevelopmentEnvironmentAllowsLiveProviders()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.OpenAi);
+    }
+
     [Fact]
     public void Evaluate_ShouldSelectOpenAi_WhenProductionAndConfigurationIsValid()
     {
@@ -58,6 +87,48 @@ public class LlmProviderSelectionPolicyTests
 
         result.ProviderKind.Should().Be(LlmProviderKind.Mock);
         result.Reason.Should().Contain("invalid");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiModelIsMissing()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.Model = string.Empty;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("Model is required");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiBaseUrlIsInvalid()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.BaseUrl = "not-a-url";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("BaseUrl must be an absolute HTTP(S) URI");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiTimeoutIsNotPositive()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi.TimeoutSeconds = 0;
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("TimeoutSeconds must be greater than zero");
     }
 
     [Fact]
