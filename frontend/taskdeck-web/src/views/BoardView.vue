@@ -63,7 +63,16 @@ function goBack() {
   router.push('/boards')
 }
 
+function isColumnDragHandleTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-action="drag-column-handle"]') !== null
+}
+
 function handleColumnDragStart(column: Column, event: DragEvent) {
+  if (!isColumnDragHandleTarget(event.target)) {
+    event.preventDefault()
+    return
+  }
+
   draggedColumn.value = column
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
@@ -467,7 +476,7 @@ useKeyboardShortcuts([
           v-for="column in sortedColumns"
           :key="column.id"
           :data-column-dnd-id="column.id"
-          draggable="true"
+          draggable="false"
           :class="[
             'transition-all',
             draggedColumn?.id === column.id ? 'opacity-50' : '',
