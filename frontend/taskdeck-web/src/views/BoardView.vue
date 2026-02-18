@@ -310,7 +310,13 @@ function closeOpenUi() {
   const cancelAddCardButton = document.querySelector(
     '[data-action="cancel-add-card"]'
   ) as HTMLButtonElement | null
-  cancelAddCardButton?.click()
+  if (cancelAddCardButton) {
+    cancelAddCardButton.click()
+    return
+  }
+
+  // Escape from a clean board canvas returns to the boards list.
+  router.push('/workspace/boards')
 }
 
 // Setup keyboard shortcuts
