@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import AppShell from '../../components/shell/AppShell.vue'
@@ -64,13 +64,21 @@ async function waitForUi() {
 }
 
 describe('AppShell command palette keyboard model', () => {
+  let mountedWrapper: ReturnType<typeof mountShell> | null = null
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockRoute.path = '/workspace/boards'
   })
 
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
+  })
+
   it('toggles command palette with Ctrl+K and closes with Escape', async () => {
-    const wrapper = mountShell()
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
     await waitForUi()
@@ -88,7 +96,8 @@ describe('AppShell command palette keyboard model', () => {
   })
 
   it('navigates commands with arrows and activates selected command with Enter', async () => {
-    const wrapper = mountShell()
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
     await waitForUi()
@@ -104,7 +113,8 @@ describe('AppShell command palette keyboard model', () => {
   })
 
   it('activates filtered command with Enter', async () => {
-    const wrapper = mountShell()
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
     await waitForUi()
