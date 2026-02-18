@@ -15,6 +15,7 @@ const showKeyboardHelp = ref(false)
 const commandPaletteInput = ref<HTMLInputElement | null>(null)
 const commandQuery = ref('')
 const selectedCommandIndex = ref(0)
+const commandListboxId = 'td-command-palette-listbox'
 
 const navItems = computed(() => {
   const items = [
@@ -43,6 +44,14 @@ const filteredCommandItems = computed(() => {
     item.label.toLowerCase().includes(normalizedQuery) ||
     item.path.toLowerCase().includes(normalizedQuery)
   )
+})
+
+const activeCommandId = computed(() => {
+  if (filteredCommandItems.value.length === 0) {
+    return undefined
+  }
+
+  return `td-command-option-${selectedCommandIndex.value}`
 })
 
 function isActiveRoute(path: string): boolean {
@@ -251,28 +260,41 @@ onUnmounted(() => {
             class="td-command-palette__input"
             placeholder="Type a command or search..."
             autofocus
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-expanded="showCommandPalette"
+            :aria-controls="commandListboxId"
+            :aria-activedescendant="activeCommandId"
             @keydown.escape.prevent="closeCommandPalette"
             @keydown.down.prevent="selectNextCommand"
             @keydown.up.prevent="selectPreviousCommand"
             @keydown.enter.prevent="activateSelectedCommand"
           />
-          <div class="td-command-palette__results">
+          <div
+            :id="commandListboxId"
+            class="td-command-palette__results"
+            role="listbox"
+            aria-label="Navigation commands"
+          >
             <div class="td-command-palette__group">
               <div class="td-command-palette__group-title">Navigation</div>
-              <button
+              <div
                 v-for="(item, index) in filteredCommandItems"
                 :key="item.path"
+                :id="`td-command-option-${index}`"
                 :data-command-index="index"
                 :class="[
                   'td-command-palette__item',
                   index === selectedCommandIndex ? 'td-command-palette__item--active' : ''
                 ]"
+                role="option"
+                :aria-selected="index === selectedCommandIndex"
                 @mouseenter="setSelectedCommand(index)"
                 @click="activateCommand(item.path)"
               >
                 <span>{{ item.icon }}</span>
                 <span>Go to {{ item.label }}</span>
-              </button>
+              </div>
               <div v-if="filteredCommandItems.length === 0" class="td-command-palette__empty">
                 No matching commands.
               </div>
