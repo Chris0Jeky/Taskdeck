@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -10,6 +12,7 @@ namespace Taskdeck.Application.Services;
 public class ChatService : IChatService
 {
     private const int MaxPromptLength = 4000;
+    private const int MaxChecklistItemCount = 30;
     private static readonly string[] PromptInjectionDenylist =
     {
         "ignore previous instructions",
@@ -22,15 +25,21 @@ public class ChatService : IChatService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILlmProvider _llmProvider;
     private readonly IAutomationPlannerService _automationPlanner;
+    private readonly IAutomationProposalService _proposalService;
+    private readonly IAutomationPolicyEngine _policyEngine;
 
     public ChatService(
         IUnitOfWork unitOfWork,
         ILlmProvider llmProvider,
-        IAutomationPlannerService automationPlanner)
+        IAutomationPlannerService automationPlanner,
+        IAutomationProposalService proposalService,
+        IAutomationPolicyEngine policyEngine)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
         _automationPlanner = automationPlanner;
+        _proposalService = proposalService;
+        _policyEngine = policyEngine;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -110,7 +119,35 @@ public class ChatService : IChatService
             Guid? proposalId = null;
             var assistantContent = llmResult.Content;
 
-            if (llmResult.IsActionable && dto.RequestProposal)
+            if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
+            {
+                if (!session.BoardId.HasValue)
+                {
+                    messageType = "error";
+                    assistantContent = "Checklist bootstrap requires a board-scoped chat session. Create a session with BoardId and retry.";
+                }
+                else
+                {
+                    var bootstrapResult = await CreateChecklistBootstrapProposalAsync(
+                        dto.Content,
+                        userId,
+                        session.BoardId.Value,
+                        ct);
+
+                    if (bootstrapResult.IsSuccess)
+                    {
+                        messageType = "proposal-reference";
+                        proposalId = bootstrapResult.Value.Id;
+                        assistantContent = $"{llmResult.Content}\n\nChecklist bootstrap proposal created: {bootstrapResult.Value.Id}";
+                    }
+                    else
+                    {
+                        messageType = "error";
+                        assistantContent = $"I could not create a checklist bootstrap proposal: {bootstrapResult.ErrorMessage}";
+                    }
+                }
+            }
+            else if (llmResult.IsActionable && dto.RequestProposal)
             {
                 if (!session.BoardId.HasValue)
                 {
@@ -186,6 +223,109 @@ public class ChatService : IChatService
     {
         var normalized = content.ToLowerInvariant();
         return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
+    }
+
+    private static bool LooksLikeChecklistBootstrapRequest(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        return Regex.IsMatch(content, @"(?m)^\s*[-*]\s*\[(?: |x|X)\]\s+.+$");
+    }
+
+    private async Task<Result<ProposalDto>> CreateChecklistBootstrapProposalAsync(
+        string content,
+        Guid userId,
+        Guid boardId,
+        CancellationToken ct)
+    {
+        var checklistItems = ParseChecklistItems(content);
+        if (checklistItems.Count == 0)
+            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Could not parse checklist tasks. Use Markdown checklist lines like '- [ ] Task title'.");
+
+        if (checklistItems.Count > MaxChecklistItemCount)
+            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, $"Checklist exceeds maximum item count of {MaxChecklistItemCount}.");
+
+        var columns = (await _unitOfWork.Columns.GetByBoardIdAsync(boardId, ct))
+            .OrderBy(c => c.Position)
+            .ToList();
+
+        var targetColumn = columns.FirstOrDefault();
+        if (targetColumn == null)
+            return Result.Failure<ProposalDto>(ErrorCodes.NotFound, "No columns found in board for checklist bootstrap.");
+
+        var operations = new List<CreateProposalOperationDto>();
+        var sequence = 0;
+        foreach (var title in checklistItems)
+        {
+            var parameters = JsonSerializer.Serialize(new
+            {
+                title,
+                description = (string?)null,
+                columnId = targetColumn.Id,
+                boardId
+            });
+
+            operations.Add(new CreateProposalOperationDto(
+                sequence++,
+                "create",
+                "card",
+                parameters,
+                Guid.NewGuid().ToString()));
+        }
+
+        var operationDtos = operations.Select(o => new ProposalOperationDto(
+            Guid.NewGuid(),
+            Guid.Empty,
+            o.Sequence,
+            o.ActionType,
+            o.TargetType,
+            o.TargetId,
+            o.Parameters,
+            o.IdempotencyKey,
+            o.ExpectedVersion)).ToList();
+
+        var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, ct);
+        if (!permissionResult.IsSuccess)
+            return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+
+        var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
+        var summary = $"Bootstrap board from checklist ({checklistItems.Count} task{(checklistItems.Count == 1 ? string.Empty : "s")})";
+        var createDto = new CreateProposalDto(
+            ProposalSourceType.Chat,
+            userId,
+            summary,
+            riskLevel,
+            Guid.NewGuid().ToString(),
+            boardId,
+            null,
+            1440,
+            operations);
+
+        var proposalResult = await _proposalService.CreateProposalAsync(createDto, ct);
+        if (!proposalResult.IsSuccess)
+            return Result.Failure<ProposalDto>(proposalResult.ErrorCode, proposalResult.ErrorMessage);
+
+        return Result.Success(proposalResult.Value);
+    }
+
+    private static List<string> ParseChecklistItems(string content)
+    {
+        var items = new List<string>();
+        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var line in lines)
+        {
+            var match = Regex.Match(line, @"^\s*[-*]\s*\[(?: |x|X)\]\s+(.+?)\s*$");
+            if (!match.Success)
+                continue;
+
+            var title = match.Groups[1].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(title))
+                items.Add(title);
+        }
+
+        return items;
     }
 
     private static ChatSessionDto MapSessionToDto(ChatSession session)
