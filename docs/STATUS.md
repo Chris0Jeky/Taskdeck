@@ -16,7 +16,7 @@ Core board workflows are stable, and advanced slices are implemented for automat
 
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
-- some UX/operator surfaces are functional but not yet keyboard-first, discoverability-first, or interaction-conflict-safe
+- some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
 - LLM flow is still mock-provider based
 - MVP dogfooding flow is incomplete: paste execution checklist in chat -> generate actionable board/project setup
 
@@ -89,6 +89,7 @@ Completed in Phase 4:
 - chat + ops + logs + worker/health stack
 - frontend integration for automations/chat/ops/archive
 - archive lifecycle coherence for boards across board settings and archive workspace flows
+- drag/edit interaction safety guardrails via explicit card/column drag handles and non-handle drag blocking
 - maintainability refactor across API/controller error handling and frontend API/store utilities (PR #23)
 - CI hardening follow-up: workflow concurrency cancellation, frontend typecheck/build parity, TRX artifacts, caching
 - mechanical checks added: docs governance CI checks (`check-docs-governance` + `check-github-ops-governance`) and architecture boundary test project
@@ -101,7 +102,7 @@ Remaining for Phase 4 completion:
 - broader planner/executor coverage and safety semantics
 - MVP chat-to-project bootstrap: paste checklist/plan text and generate a ready-to-use board via proposal-first flow
 - database-level export/import implementation
-- UX/operator hardening for keyboard/accessibility/discoverability/interaction-conflict gaps
+- UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
 
@@ -145,7 +146,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 248/248 passing
+- Frontend unit: 252/252 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -155,11 +156,11 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops flow: 11/11 passing
+- E2E smoke + automation/ops flow: 12/12 passing
 
 ### Total
 
-- Combined automated total: 755/755 passing
+- Combined automated total: 760/760 passing
 
 ## CI Status
 
@@ -202,7 +203,6 @@ UX and operability (reconciled from product notes):
 - command palette lacks full keyboard item selection/activation flow
 - activity exploration still relies on direct IDs (limited discoverability)
 - ops/automation forms need stronger autocomplete/option scaffolding
-- drag/edit interaction mode conflicts can still trigger unintended board/card movement
 - escape-driven board/workspace exit ergonomics need a defined and test-backed model
 
 Security/compliance hardening backlog added from research cross-check:
@@ -234,6 +234,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
+- Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

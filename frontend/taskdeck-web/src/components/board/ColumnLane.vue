@@ -168,6 +168,19 @@ function handleCardDragOver(event: DragEvent) {
       <div class="flex items-center justify-between mb-2">
         <h3 class="font-semibold text-gray-900 flex-1">{{ column.name }}</h3>
         <div class="flex items-center gap-2">
+          <button
+            type="button"
+            data-action="drag-column-handle"
+            draggable="true"
+            class="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors cursor-grab active:cursor-grabbing"
+            title="Drag Column"
+            aria-label="Drag Column"
+            @click.stop
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
+            </svg>
+          </button>
           <span
             class="text-sm px-2 py-1 rounded"
             :class="isWipLimitExceeded() ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'"
