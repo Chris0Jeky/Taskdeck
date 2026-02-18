@@ -93,6 +93,56 @@ describe('ArchiveView', () => {
     expect(mocks.getBoards).toHaveBeenCalledWith(undefined, true)
   })
 
+  it('keeps archived items visible when archived boards loading fails', async () => {
+    mocks.getItems.mockResolvedValue([
+      {
+        id: 'item-1',
+        entityType: 'card',
+        entityId: 'card-1',
+        boardId: 'board-1',
+        name: 'Recoverable Card',
+        archivedByUserId: 'user-1',
+        archivedAt: new Date().toISOString(),
+        reason: null,
+        restoreStatus: 'Available',
+        restoredAt: null,
+        restoredByUserId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+    mocks.getBoards.mockRejectedValue(new Error('boards request failed'))
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('Recoverable Card')
+    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load archived boards')
+  })
+
+  it('does not refetch boards when only archive item filter changes', async () => {
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    expect(mocks.getBoards).toHaveBeenCalledTimes(1)
+    expect(mocks.getItems).toHaveBeenCalledTimes(1)
+    expect(mocks.getItems).toHaveBeenNthCalledWith(1, {
+      entityType: undefined,
+      limit: 200,
+    })
+
+    const entityFilter = wrapper.find('select')
+    await entityFilter.setValue('card')
+    await waitForAsyncUi()
+
+    expect(mocks.getBoards).toHaveBeenCalledTimes(1)
+    expect(mocks.getItems).toHaveBeenCalledTimes(2)
+    expect(mocks.getItems).toHaveBeenNthCalledWith(2, {
+      entityType: 'card',
+      limit: 200,
+    })
+  })
+
   it('restores archived board from archive view', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
