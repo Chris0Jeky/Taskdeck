@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { archiveApi } from '../api/archiveApi'
+import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
 import type { ArchiveItem } from '../types/archive'
+import type { Board } from '../types/board'
 import { normalizeRestoreStatus } from '../utils/archive'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
 const toast = useToastStore()
 const loading = ref(false)
 const restoreBusyId = ref<string | null>(null)
+const boardRestoreBusyId = ref<string | null>(null)
 const archiveItems = ref<ArchiveItem[]>([])
+const archivedBoards = ref<Board[]>([])
 const entityTypeFilter = ref<'all' | 'board' | 'column' | 'card'>('all')
 
 const filteredItems = computed(() => {
@@ -23,14 +27,37 @@ const filteredItems = computed(() => {
 async function loadArchive() {
   try {
     loading.value = true
-    archiveItems.value = await archiveApi.getItems({
-      entityType: entityTypeFilter.value === 'all' ? undefined : entityTypeFilter.value,
-      limit: 200,
-    })
+    const [items, boards] = await Promise.all([
+      archiveApi.getItems({
+        entityType: entityTypeFilter.value === 'all' ? undefined : entityTypeFilter.value,
+        limit: 200,
+      }),
+      boardsApi.getBoards(undefined, true),
+    ])
+
+    archiveItems.value = items
+    archivedBoards.value = boards.filter(board => board.isArchived)
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to load archive items').message)
   } finally {
     loading.value = false
+  }
+}
+
+async function handleRestoreBoard(board: Board) {
+  if (!confirm(`Restore board "${board.name}"?`)) {
+    return
+  }
+
+  try {
+    boardRestoreBusyId.value = board.id
+    await boardsApi.updateBoard(board.id, { isArchived: false })
+    archivedBoards.value = archivedBoards.value.filter(existing => existing.id !== board.id)
+    toast.success(`Restored board "${board.name}"`)
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to restore board').message)
+  } finally {
+    boardRestoreBusyId.value = null
   }
 }
 
@@ -73,6 +100,34 @@ onMounted(() => {
     <h1 class="td-page-title">Archive</h1>
 
     <div class="td-panel">
+      <h2 class="td-section-title">Archived Boards</h2>
+
+      <div v-if="loading" class="td-loading">Loading archived boards...</div>
+
+      <div v-else-if="archivedBoards.length === 0" class="td-empty">
+        No archived boards found.
+      </div>
+
+      <div v-else class="td-archive-list td-archive-list--section">
+        <div v-for="board in archivedBoards" :key="board.id" class="td-archive-row">
+          <div class="td-archive-info">
+            <span class="td-badge">board</span>
+            <span class="td-archive-name">{{ board.name }}</span>
+            <span class="td-archive-meta">
+              archived board | updated {{ new Date(board.updatedAt).toLocaleString() }}
+            </span>
+          </div>
+          <button
+            class="td-btn td-btn--primary td-btn--sm"
+            @click="handleRestoreBoard(board)"
+            :disabled="boardRestoreBusyId === board.id"
+          >
+            {{ boardRestoreBusyId === board.id ? 'Restoring...' : 'Restore Board' }}
+          </button>
+        </div>
+      </div>
+
+      <h2 class="td-section-title">Archived Items</h2>
       <div class="td-toolbar">
         <select v-model="entityTypeFilter" class="td-input" @change="loadArchive">
           <option value="all">All types</option>
@@ -86,7 +141,7 @@ onMounted(() => {
       <div v-if="loading" class="td-loading">Loading archive...</div>
 
       <div v-else-if="filteredItems.length === 0" class="td-empty">
-        No archived items found.
+        No archived items found in recovery inventory.
       </div>
 
       <div v-else class="td-archive-list">
@@ -116,9 +171,12 @@ onMounted(() => {
 .td-archive { max-width: 960px; }
 .td-page-title { font-size: var(--td-font-2xl); font-weight: 700; margin-bottom: var(--td-space-6); color: var(--td-text-primary); }
 .td-panel { background: var(--td-surface-primary); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-lg); padding: var(--td-space-6); }
+.td-section-title { font-size: var(--td-font-lg); font-weight: 600; color: var(--td-text-primary); margin-bottom: var(--td-space-3); margin-top: var(--td-space-5); }
+.td-section-title:first-of-type { margin-top: 0; }
 .td-toolbar { display: flex; gap: var(--td-space-2); margin-bottom: var(--td-space-4); }
 .td-loading, .td-empty { text-align: center; padding: var(--td-space-6); color: var(--td-text-secondary); }
 .td-archive-list { display: flex; flex-direction: column; gap: var(--td-space-2); }
+.td-archive-list--section { margin-bottom: var(--td-space-5); }
 .td-archive-row { display: flex; justify-content: space-between; align-items: center; gap: var(--td-space-3); padding: var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); }
 .td-archive-info { display: flex; align-items: center; gap: var(--td-space-3); min-width: 0; }
 .td-archive-name { font-weight: 500; font-size: var(--td-font-sm); }
