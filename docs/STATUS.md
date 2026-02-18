@@ -112,10 +112,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 259/259 passing
-- API integration: 128/128 passing
+- API integration: 131/131 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 488/488 passing
+- Backend Total: 491/491 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -139,7 +139,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 744/744 passing
+- Combined automated total: 747/747 passing
 
 ## CI Status
 
@@ -196,6 +196,7 @@ UX and operability (reconciled from product notes):
 - Confirmed GitHub Project operational safety view as `No Status` (`no:status`) and documented release/weekly safety checks.
 - Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
 - Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
+- Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
 
 ## Canonical Documentation Policy
 
