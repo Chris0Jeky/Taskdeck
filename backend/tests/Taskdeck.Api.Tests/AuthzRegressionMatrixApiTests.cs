@@ -111,7 +111,7 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
             ("archive.item.missing", () => client.GetAsync($"/api/archive/items/{Guid.NewGuid()}")),
             ("automation.get.missing", () => client.GetAsync($"/api/automation/proposals/{Guid.NewGuid()}")),
             ("automation.approve.missing", () => client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/approve", content: null)),
-            ("ops.run.missing", () => client.GetAsync($"/api/ops/cli/runs/{Guid.NewGuid()}")),
+            ("ops.getRun.missing", () => client.GetAsync($"/api/ops/cli/runs/{Guid.NewGuid()}")),
             ("llmQueue.cancel.missing", () => client.PostAsync($"/api/llm-queue/{Guid.NewGuid()}/cancel", content: null)),
             ("boards.update.missing", () => client.PutAsJsonAsync($"/api/boards/{Guid.NewGuid()}", new UpdateBoardDto("missing", "missing", null))),
             ("boardAccess.update.missing", () => client.PutAsJsonAsync($"/api/boards/{board.Id}/access/{Guid.NewGuid()}", new UpdateAccessDto(UserRole.Editor)))
