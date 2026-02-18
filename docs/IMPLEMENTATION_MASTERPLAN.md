@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 489 passing
+   - Backend: 492 passing
    - Frontend unit: 245 passing
    - E2E: 11 passing
 8. Documentation consolidation retained:
@@ -68,6 +68,9 @@ Delivered in the latest cycle:
    - audit controller now derives actor identity from claims for user-history and board-history access checks
    - users controller now enforces self-scope for read/update/activate/deactivate profile actions
    - audit frontend flow moved from user-id route calls to `/audit/users/me`
+13. SEC-03 regression matrix delivery:
+   - added explicit API integration matrix assertions for protected legacy + advanced routes
+   - expanded policy coverage for `401` unauthenticated, `403` cross-user unauthorized, and `404` true missing resources
 
 ## Roadmap by Horizon
 

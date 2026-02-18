@@ -129,10 +129,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 259/259 passing
-- API integration: 129/129 passing
+- API integration: 132/132 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 489/489 passing
+- Backend Total: 492/492 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -156,7 +156,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 745/745 passing
+- Combined automated total: 748/748 passing
 
 ## CI Status
 
@@ -229,6 +229,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Confirmed GitHub Project operational safety view as `No Status` (`no:status`) and documented release/weekly safety checks.
 - Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
 - Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
+- Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
