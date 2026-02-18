@@ -394,6 +394,150 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
+    public async Task ParseInstruction_ShouldCreateProposal_ForRenameBoardInstruction()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Manual,
+            null,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            "rename board to 'Renamed Board'",
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            DateTime.UtcNow.AddDays(1),
+            null,
+            null,
+            null,
+            null,
+            "corr1",
+            new List<ProposalOperationDto>()
+        );
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        var result = await _service.ParseInstructionAsync("rename board to 'Renamed Board'", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto =>
+                dto.Operations != null &&
+                dto.Operations.Count == 1 &&
+                dto.Operations[0].ActionType == "update" &&
+                dto.Operations[0].TargetType == "board" &&
+                dto.Operations[0].TargetId == boardId.ToString() &&
+                dto.Operations[0].Parameters.Contains("\"name\":\"Renamed Board\"")
+            ), default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_ForRenameBoardWithoutBoardId()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+
+        // Act
+        var result = await _service.ParseInstructionAsync("rename board to 'Renamed Board'", userId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Board ID is required for board operations");
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldCreateProposal_ForMoveColumnInstruction()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var backlog = TestDataBuilder.CreateColumn(boardId, "Backlog", 0);
+        var inProgress = TestDataBuilder.CreateColumn(boardId, "In Progress", 1);
+
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { backlog, inProgress });
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Manual,
+            null,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            "move column 'In Progress' to position 0",
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            DateTime.UtcNow.AddDays(1),
+            null,
+            null,
+            null,
+            null,
+            "corr1",
+            new List<ProposalOperationDto>()
+        );
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        var result = await _service.ParseInstructionAsync("move column 'In Progress' to position 0", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto =>
+                dto.Operations != null &&
+                dto.Operations.Count == 1 &&
+                dto.Operations[0].ActionType == "reorder" &&
+                dto.Operations[0].TargetType == "column" &&
+                dto.Operations[0].TargetId == inProgress.Id.ToString()
+            ), default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_ForMoveColumnOutOfRangePosition()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var backlog = TestDataBuilder.CreateColumn(boardId, "Backlog", 0);
+        var inProgress = TestDataBuilder.CreateColumn(boardId, "In Progress", 1);
+
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { backlog, inProgress });
+
+        // Act
+        var result = await _service.ParseInstructionAsync("move column 'In Progress' to position 4", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Allowed range is 0 to 1");
+    }
+
+    [Fact]
     public async Task ParseInstruction_ShouldReturnFailure_ForUnrecognizedPattern()
     {
         // Arrange
