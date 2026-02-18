@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -113,6 +112,22 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
         var (username, _, _, _) = await RegisterUserAsync("other_by_name");
 
         var response = await _client.GetAsync($"/api/users/by-username/{username}");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task GetUserByUsername_ShouldReturnForbidden_WhenRequestingSelfUsernameWithDifferentCase()
+    {
+        var currentUser = await EnsureAuthenticatedAsync();
+        var differentCaseUsername = currentUser.Username.ToUpperInvariant();
+
+        if (differentCaseUsername == currentUser.Username)
+        {
+            differentCaseUsername = currentUser.Username.ToLowerInvariant();
+        }
+
+        var response = await _client.GetAsync($"/api/users/by-username/{differentCaseUsername}");
 
         await ApiTestHarness.AssertForbiddenAsync(response);
     }

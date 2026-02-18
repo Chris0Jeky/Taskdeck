@@ -85,7 +85,7 @@ function syncFromRouteAndFetch() {
 }
 
 onMounted(syncFromRouteAndFetch)
-watch(() => route.params, syncFromRouteAndFetch, { deep: true })
+watch(() => route.fullPath, syncFromRouteAndFetch)
 </script>
 
 <template>

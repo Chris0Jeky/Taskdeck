@@ -1,11 +1,11 @@
 # Issue Execution Guide
 
-Last Updated: 2026-02-17
-Scope: How agents should execute the current GitHub issue backlog safely and in the right order.
+Last Updated: 2026-02-18
+Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
 
-Use this file when starting work from the issue backlog. It prevents out-of-order development and keeps security/ops/doc guardrails ahead of feature expansion.
+Use this file when starting backlog work. It prevents out-of-order development and keeps security/ops/doc guardrails ahead of expansion.
 
 ## Start Protocol (Required)
 
@@ -14,7 +14,8 @@ Use this file when starting work from the issue backlog. It prevents out-of-orde
 3. Read `docs/GITHUB_PROJECT_AUTOMATION.md`.
 4. Confirm current branch is clean and based on `main`.
 5. Pick the highest-priority issue whose dependencies are complete.
-6. Use the project `No Status` view (`no:status`) and assign status before active work.
+6. Verify the issue has exactly one priority label (`Priority I` to `Priority V`).
+7. Use the project `No Status` view (`no:status`) and assign status before active work.
 
 ## Project Status Workflow (Required)
 
@@ -23,56 +24,117 @@ Use this file when starting work from the issue backlog. It prevents out-of-orde
 - Move issue to `Done` only after merge and verification notes are posted.
 - If item is blocked by dependency or external input, move to `Blocked` and add blocking note.
 
+## Priority Model (Required)
+
+- `Priority I`: Current Phase 4 completion path and blockers.
+- `Priority II`: Immediate post-Phase-4 foundation work.
+- `Priority III`: Expansion tranche (analytics/security/compliance).
+- `Priority IV`: Maturity tranche (platform/test/UX/docs).
+- `Priority V`: Meta/historical/low-urgency tracking.
+
+Rule:
+- Never start a lower-priority issue while an unblocked higher-priority issue is ready, unless explicitly directed.
+
 ## Execution Order (Dependency-Aware)
 
-### Stage 0: Baseline and Governance
+### Stage 0: Historical Baseline/Governance (Closed)
 
-1. `#42` BASE-01 baseline verification pass on `main`
-2. `#43` BASE-02 freeze active docs as source of truth
-3. `#59` OPS-05 no-status safety audit view
-4. `#41` OPS-06 weekly backlog seeding policy
-5. `#55` DOC-01 weekly docs reconciliation ritual
-6. `#60` DOC-02 active docs encoding normalization and stale-link sweep
-7. `#56` REL-01 release-candidate hard gate policy
+1. `#42` BASE-01 baseline verification pass
+2. `#43` BASE-02 active docs freeze
+3. `#59` OPS-05 no-status safety view
+4. `#41` OPS-06 backlog seeding policy
+5. `#55` DOC-01 docs reconciliation ritual
+6. `#60` DOC-02 docs normalization sweep
+7. `#56` REL-01 RC hard-gate policy
 
-### Stage 1: Security and Identity Convergence (Highest Priority)
+### Stage 1: Priority I - Phase 4 Completion
 
-1. `#58` SEC-01 enforce auth on legacy controllers
-2. `#33` SEC-02 claims-first identity retrofit
-3. `#34` SEC-03 authz regression matrix tests
-4. `#44` SEC-04 standardized API error-contract assertions
+Security/policy:
+1. `#33` SEC-02 claims-first identity retrofit
+2. `#34` SEC-03 authz regression matrix
+3. `#44` SEC-04 API error-contract assertions
 
-Notes:
-- Policy is fixed: `401` unauthenticated, `403` authenticated-but-unauthorized/cross-user, `404` true missing.
-- `#27` SEC-00 is already closed as the ratified policy decision record.
+UX reliability:
+4. `#35` UX-01 archive lifecycle coherence
+5. `#45` UX-02 drag/edit interaction safety
+6. `#36` UX-03 command palette keyboard model
+7. `#37` UX-04 activity selector discoverability
+8. `#38` UX-04 shared input-assist scaffolding
+9. `#46` UX-05 escape behavior contract
 
-### Stage 2: UX Reliability and Interaction Safety
+Automation/provider:
+10. `#39` AUTO-01 production provider strategy
+11. `#40` AUTO-02 planner/executor hardening
+12. `#57` MVP-01 chat-to-project bootstrap
 
-1. `#35` UX-01 archive lifecycle coherence
-2. `#45` UX-02 drag/edit interaction safety
-3. `#36` UX-03 command palette keyboard model
-4. `#37` UX-04 activity selector discoverability
-5. `#46` UX-05 escape behavior contract
+Starter packs and debt blockers:
+13. `#47` PACK-01 manifest RFC/schema
+14. `#48` PACK-02 backend apply dry-run/conflicts
+15. `#49` PACK-03 frontend catalog preview/apply
+16. `#50` PACK-04 first-party starter packs
+17. `#51` PACK-05 deterministic fixture packs
+18. `#52` DEBT-01 nullability reduction
+19. `#53` DEBT-02 log query scalability
+20. `#54` DEBT-03 export/import implementation vs ADR
 
-### Stage 3: Starter Packs Foundation and Adoption
+### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
 
-1. `#47` PACK-01 manifest RFC + schema
-2. `#48` PACK-02 backend apply endpoint with dry-run/conflicts
-3. `#49` PACK-03 frontend catalog preview/apply flow
-4. `#50` PACK-04 first-party starter packs v1
-5. `#51` PACK-05 deterministic QA/E2E fixture packs
+1. `#67` COL-01 realtime SignalR updates
+2. `#68` OBS-01 observability baseline
+3. `#69` OPS-07 containerized deployment baseline
+4. `#70` TST-01 load/concurrency harness
+5. `#71` ARCH-01 multi-tenancy strategy ADR
+6. `#72` COL-02 notifications framework
+7. `#73` COL-03 presence/conflict policy
+8. `#74` COL-04 comments/mentions workflow
+9. `#75` INT-01 import adapters foundation
+10. `#76` INT-02 webhooks/integration security model
 
-### Stage 4: Automation and Provider Hardening
+### Stage 3: Priority III - Expansion Wave
 
-1. `#39` AUTO-01 production-capable provider strategy
-2. `#40` AUTO-02 planner/executor hardening
-3. `#57` MVP-01 chat-to-project bootstrap flow
+1. `#77` ANL-01 metrics dashboard
+2. `#78` ANL-02 exportable reports
+3. `#79` ANL-03 forecasting/capacity heuristics
+4. `#80` SEC-05 OWASP baseline hardening
+5. `#81` SEC-06 API rate limiting
+6. `#82` SEC-07 SSO/OIDC + optional MFA
+7. `#83` SEC-08 data portability/deletion flow
+8. `#106` SEC-09 dependency vulnerability policy
+9. `#110` SEC-10 secrets/configuration management baseline
 
-### Stage 5: Tech Debt and Structural Follow-through
+### Stage 4: Priority IV - Maturity Wave
 
-1. `#52` DEBT-01 nullability warning reduction (CS8618)
-2. `#53` DEBT-02 log query scalability pass
-3. `#54` DEBT-03 export/import implementation vs ADR deferral decision
+Platform/ops:
+1. `#84` PLAT-01 DB migration strategy
+2. `#85` PLAT-02 distributed cache strategy
+3. `#86` OPS-08 backup/restore DR playbook
+4. `#101` OPS-09 staged deployment workflow
+5. `#102` OPS-10 IaC baseline
+6. `#103` OPS-11 SBOM/provenance
+7. `#104` OPS-12 cost guardrails
+8. `#105` PLAT-03 SignalR scale-out readiness
+9. `#111` OPS-14 cloud topology/autoscaling ADR
+
+Testing/UX/docs:
+10. `#87` TST-02 cross-browser/mobile E2E
+11. `#88` TST-03 visual regression
+12. `#89` TST-04 property/fuzz pilot
+13. `#90` TST-05 mutation pilot
+14. `#91` TST-06 ephemeral integration DBs
+15. `#92` UX-06 accessibility remediation
+16. `#93` UX-07 global search/actions
+17. `#94` UX-08 calendar/timeline views
+18. `#95` UX-09 PWA/offline readiness
+19. `#96` UX-10 onboarding/help
+20. `#97` INT-03 plugin architecture RFC
+21. `#98` INT-04 connector framework
+22. `#99` DOC-03 developer portal generation
+23. `#100` DOC-04 user guides/tutorials/FAQ
+
+### Stage 5: Priority V - Meta/Historical
+
+1. `#107` OPS-13 future expansion wave index
+2. Closed historical issues remain `Priority V` for archival consistency.
 
 ## Per-Issue Delivery Checklist
 
@@ -99,4 +161,3 @@ Stop and ask for direction if:
 - acceptance criteria conflict with `STATUS.md` reality,
 - dependency issue is incomplete but required,
 - the change would alter auth policy or project workflow conventions.
-
