@@ -130,6 +130,24 @@ test('filter panel shortcut should toggle panel', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
 })
 
+test('command palette keyboard navigation should activate selected command', async ({ page }) => {
+  await gotoBoardsWorkspace(page)
+
+  await page.keyboard.press('Control+K')
+  const palette = page.getByRole('dialog', { name: 'Command palette' })
+  await expect(palette).toBeVisible()
+
+  const paletteInput = palette.getByPlaceholder('Type a command or search...')
+  await expect(paletteInput).toBeFocused()
+
+  await paletteInput.press('ArrowDown')
+  await paletteInput.press('ArrowDown')
+  await paletteInput.press('Enter')
+
+  await expect(page).toHaveURL(/\/workspace\/activity$/)
+  await expect(palette).toHaveCount(0)
+})
+
 test('column WIP limit should reject additional cards', async ({ page }) => {
   const boardName = `WIP Board ${Date.now()}`
   const columnName = `In Progress ${Date.now()}`
