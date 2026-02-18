@@ -96,7 +96,10 @@ Optional clean start:
    - `Enter` opens selected card.
    - `n` opens inline new card form.
 5. Escape-close behavior:
-   - Expected: modal/panel/form closes in this order of focus.
+   - Expected contract:
+     - Escape closes only the top-most transient surface (dialog/panel/form) per key press.
+     - When no transient surface is open on a board route, Escape navigates to `/workspace/boards`.
+     - Escape inside input-assist closes the suggestion panel without cascading to unrelated board/workspace actions.
 
 ## D. Automations, Chat, and Proposals
 
@@ -182,10 +185,7 @@ Run these checks even if they currently fail; log outcome explicitly.
 2. Ops and automation form ergonomics:
    - Repro: create requests using ops/automation UIs.
    - Target behavior: contextual autocomplete/options, reduced manual input burden.
-3. Escape-to-exit board context:
-   - Repro: on board screen with no modal open, press `Escape`.
-   - Target behavior: consistent back/exit behavior for rapid keyboard-driven workflow.
-4. Sidebar shortcuts affordance:
+3. Sidebar shortcuts affordance:
    - Repro: test on shorter and taller viewports.
    - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 

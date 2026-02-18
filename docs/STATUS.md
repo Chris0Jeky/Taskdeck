@@ -146,7 +146,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 267/267 passing
+- Frontend unit: 271/271 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -160,7 +160,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 777/777 passing
+- Combined automated total: 781/781 passing
 
 ## CI Status
 
@@ -200,7 +200,7 @@ Observability and scalability:
   - cloud target topology and autoscaling ADR (`#111`)
 
 UX and operability (reconciled from product notes):
-- escape-driven board/workspace exit ergonomics need a defined and test-backed model
+- escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`)
@@ -235,6 +235,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered UX-03 command palette keyboard model: shell command palette now supports keyboard-first item filtering, selection, and activation with unit + E2E regression coverage.
 - Delivered UX-04 activity selector discoverability: activity workflows now use selector-first board/entity/user exploration with ID copy affordance and unit + E2E regression coverage.
 - Delivered UX-04 shared input-assist scaffolding: shared combobox/listbox input-assist is now integrated into Ops template selection and automation chat board targeting with keyboard-first option navigation and dedicated unit coverage.
+- Delivered UX-05 escape behavior contract: Escape now closes only the top-most transient surface per key press, board routes exit to `/workspace/boards` when clean, and regression coverage spans shell/unit and board keyboard-flow E2E paths.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

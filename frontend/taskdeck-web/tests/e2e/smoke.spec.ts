@@ -320,6 +320,14 @@ test('keyboard flow should open card and escape should close modal and inline fo
   await createBoard(page, boardName)
   await addColumn(page, columnName)
   await addCard(page, columnName, cardTitle)
+  await expect(cardByTitle(page, cardTitle)).toBeVisible()
+
+  const column = columnByName(page, columnName)
+  await expect(column.getByPlaceholder('Enter card title...')).toHaveCount(0)
+
+  await page.locator('body').click()
+  await page.keyboard.press('n')
+  await expect(column.getByPlaceholder('Enter card title...')).toBeVisible()
 
   await page.locator('body').click()
   await page.keyboard.press('Enter')
@@ -327,12 +335,13 @@ test('keyboard flow should open card and escape should close modal and inline fo
 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('heading', { name: 'Edit Card' })).not.toBeVisible()
-
-  await page.keyboard.press('n')
-  await expect(page.getByPlaceholder('Enter card title...')).toBeVisible()
+  await expect(column.getByPlaceholder('Enter card title...')).toBeVisible()
 
   await page.keyboard.press('Escape')
-  await expect(page.getByPlaceholder('Enter card title...')).toHaveCount(0)
+  await expect(column.getByPlaceholder('Enter card title...')).toHaveCount(0)
+
+  await page.keyboard.press('Escape')
+  await expect(page).toHaveURL(/\/workspace\/boards$/)
 })
 
 test('filter state should persist while panel is toggled in-session', async ({ page }) => {

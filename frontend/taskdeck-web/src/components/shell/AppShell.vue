@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useSessionStore } from '../../store/sessionStore'
+import { registerEscapeHandler } from '../../composables/useEscapeStack'
 
 const router = useRouter()
 const route = useRoute()
@@ -113,17 +114,6 @@ function activateSelectedCommand() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    if (showCommandPalette.value) {
-      closeCommandPalette()
-      return
-    }
-    if (showKeyboardHelp.value) {
-      showKeyboardHelp.value = false
-      return
-    }
-  }
-
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     if (showCommandPalette.value) {
@@ -142,6 +132,24 @@ watch(showCommandPalette, async (isOpen) => {
   if (!isOpen) return
   await nextTick()
   commandPaletteInput.value?.focus()
+})
+
+watch(showCommandPalette, (isOpen, _, onCleanup) => {
+  if (!isOpen) return
+  const unregisterEscapeHandler = registerEscapeHandler(closeCommandPalette)
+  onCleanup(() => {
+    unregisterEscapeHandler()
+  })
+})
+
+watch(showKeyboardHelp, (isOpen, _, onCleanup) => {
+  if (!isOpen) return
+  const unregisterEscapeHandler = registerEscapeHandler(() => {
+    showKeyboardHelp.value = false
+  })
+  onCleanup(() => {
+    unregisterEscapeHandler()
+  })
 })
 
 watch(filteredCommandItems, (items) => {
