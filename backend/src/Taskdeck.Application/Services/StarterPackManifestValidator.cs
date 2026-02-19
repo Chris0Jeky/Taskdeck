@@ -53,17 +53,34 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
             return new StarterPackManifestValidationResult(null, errors);
         }
 
-        ValidateHeader(manifest, errors);
-        ValidateCompatibility(manifest.Compatibility, errors);
-        var knownLabelNames = ValidateLabels(manifest.Labels, errors);
-        var knownColumnNames = ValidateColumns(manifest.Columns, errors);
-        var knownTemplateIds = ValidateTemplates(manifest.Templates, errors);
-        ValidateSeedCards(manifest.SeedCards, knownLabelNames, knownColumnNames, knownTemplateIds, errors);
+        var tags = NormalizeCollection(manifest.Tags, "$.tags", "Tags", errors);
+        var compatibility = manifest.Compatibility;
+        var requiredFeatures = compatibility == null
+            ? []
+            : NormalizeCollection(
+                compatibility.RequiredFeatures,
+                "$.compatibility.requiredFeatures",
+                "Required features",
+                errors);
+        var labels = NormalizeCollection(manifest.Labels, "$.labels", "Labels", errors);
+        var columns = NormalizeCollection(manifest.Columns, "$.columns", "Columns", errors);
+        var templates = NormalizeCollection(manifest.Templates, "$.templates", "Templates", errors);
+        var seedCards = NormalizeCollection(manifest.SeedCards, "$.seedCards", "Seed cards", errors);
+
+        ValidateHeader(manifest, tags, errors);
+        ValidateCompatibility(compatibility, requiredFeatures, errors);
+        var knownLabelNames = ValidateLabels(labels, errors);
+        var knownColumnNames = ValidateColumns(columns, errors);
+        var knownTemplateIds = ValidateTemplates(templates, errors);
+        ValidateSeedCards(seedCards, knownLabelNames, knownColumnNames, knownTemplateIds, errors);
 
         return new StarterPackManifestValidationResult(manifest, errors);
     }
 
-    private static void ValidateHeader(StarterPackManifestDto manifest, List<StarterPackManifestValidationError> errors)
+    private static void ValidateHeader(
+        StarterPackManifestDto manifest,
+        List<string> tags,
+        List<StarterPackManifestValidationError> errors)
     {
         if (!CurrentSchemaVersion.Equals(manifest.SchemaVersion?.Trim(), StringComparison.Ordinal))
         {
@@ -85,9 +102,9 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         }
 
         var tagSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < manifest.Tags.Count; i++)
+        for (var i = 0; i < tags.Count; i++)
         {
-            var tag = manifest.Tags[i];
+            var tag = tags[i];
             if (string.IsNullOrWhiteSpace(tag))
             {
                 errors.Add(new StarterPackManifestValidationError($"$.tags[{i}]", "Tag cannot be empty."));
@@ -108,7 +125,10 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         }
     }
 
-    private static void ValidateCompatibility(StarterPackCompatibilityDto compatibility, List<StarterPackManifestValidationError> errors)
+    private static void ValidateCompatibility(
+        StarterPackCompatibilityDto? compatibility,
+        List<string> requiredFeatures,
+        List<StarterPackManifestValidationError> errors)
     {
         if (compatibility == null)
         {
@@ -139,10 +159,10 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
                 "Maximum Taskdeck version must be greater than or equal to minimum version."));
         }
 
-        var requiredFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < compatibility.RequiredFeatures.Count; i++)
+        var requiredFeatureSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < requiredFeatures.Count; i++)
         {
-            var feature = compatibility.RequiredFeatures[i];
+            var feature = requiredFeatures[i];
             if (string.IsNullOrWhiteSpace(feature))
             {
                 errors.Add(new StarterPackManifestValidationError(
@@ -158,7 +178,7 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
                     "Required feature must be kebab-case."));
             }
 
-            if (!requiredFeatures.Add(feature))
+            if (!requiredFeatureSet.Add(feature))
             {
                 errors.Add(new StarterPackManifestValidationError(
                     $"$.compatibility.requiredFeatures[{i}]",
@@ -173,6 +193,12 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         for (var i = 0; i < labels.Count; i++)
         {
             var label = labels[i];
+            if (label == null)
+            {
+                errors.Add(new StarterPackManifestValidationError($"$.labels[{i}]", "Label entry cannot be null."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(label.Name))
             {
                 errors.Add(new StarterPackManifestValidationError($"$.labels[{i}].name", "Label name is required."));
@@ -211,6 +237,12 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         for (var i = 0; i < columns.Count; i++)
         {
             var column = columns[i];
+            if (column == null)
+            {
+                errors.Add(new StarterPackManifestValidationError($"$.columns[{i}]", "Column entry cannot be null."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(column.Name))
             {
                 errors.Add(new StarterPackManifestValidationError($"$.columns[{i}].name", "Column name is required."));
@@ -268,6 +300,12 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         for (var i = 0; i < templates.Count; i++)
         {
             var template = templates[i];
+            if (template == null)
+            {
+                errors.Add(new StarterPackManifestValidationError($"$.templates[{i}]", "Template entry cannot be null."));
+                continue;
+            }
+
             if (!IsSlug(template.TemplateId))
             {
                 errors.Add(new StarterPackManifestValidationError(
@@ -288,9 +326,14 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
                     "Template title is required."));
             }
 
-            for (var checklistIndex = 0; checklistIndex < template.Checklist.Count; checklistIndex++)
+            var checklist = NormalizeCollection(
+                template.Checklist,
+                $"$.templates[{i}].checklist",
+                "Template checklist",
+                errors);
+            for (var checklistIndex = 0; checklistIndex < checklist.Count; checklistIndex++)
             {
-                if (string.IsNullOrWhiteSpace(template.Checklist[checklistIndex]))
+                if (string.IsNullOrWhiteSpace(checklist[checklistIndex]))
                 {
                     errors.Add(new StarterPackManifestValidationError(
                         $"$.templates[{i}].checklist[{checklistIndex}]",
@@ -312,6 +355,12 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         for (var i = 0; i < seedCards.Count; i++)
         {
             var seedCard = seedCards[i];
+            if (seedCard == null)
+            {
+                errors.Add(new StarterPackManifestValidationError($"$.seedCards[{i}]", "Seed card entry cannot be null."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(seedCard.Title))
             {
                 errors.Add(new StarterPackManifestValidationError($"$.seedCards[{i}].title", "Seed card title is required."));
@@ -337,9 +386,14 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
                     $"Seed card references unknown template '{seedCard.TemplateId}'."));
             }
 
-            for (var labelIndex = 0; labelIndex < seedCard.Labels.Count; labelIndex++)
+            var labelNames = NormalizeCollection(
+                seedCard.Labels,
+                $"$.seedCards[{i}].labels",
+                "Seed card labels",
+                errors);
+            for (var labelIndex = 0; labelIndex < labelNames.Count; labelIndex++)
             {
-                var labelName = seedCard.Labels[labelIndex];
+                var labelName = labelNames[labelIndex];
                 if (string.IsNullOrWhiteSpace(labelName))
                 {
                     errors.Add(new StarterPackManifestValidationError(
@@ -356,6 +410,21 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
                 }
             }
         }
+    }
+
+    private static List<T> NormalizeCollection<T>(
+        List<T>? collection,
+        string path,
+        string fieldName,
+        List<StarterPackManifestValidationError> errors)
+    {
+        if (collection != null)
+        {
+            return collection;
+        }
+
+        errors.Add(new StarterPackManifestValidationError(path, $"{fieldName} must be an array."));
+        return [];
     }
 
     private static bool IsSlug(string? value)
