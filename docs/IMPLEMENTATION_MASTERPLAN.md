@@ -114,6 +114,9 @@ Delivered in the latest cycle:
    - added a versioned starter-pack manifest contract (`schemaVersion` `1.0`) for labels, columns, templates, and seed cards
    - added deterministic backend parsing/validation service with explicit compatibility and cross-reference constraints
    - added dedicated application tests covering canonical success + key parse/validation failure paths
+25. PACK-01 null-collection hardening follow-up:
+   - manifest validation now handles explicit JSON `null` collections deterministically (array-shape errors instead of null-reference exceptions)
+   - nested collection paths (`compatibility.requiredFeatures`, template checklists, seed-card labels) are now null-safe and regression-tested
 
 ## Roadmap by Horizon
 
