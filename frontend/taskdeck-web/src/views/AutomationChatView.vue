@@ -198,7 +198,7 @@ async function loadBoardOptions() {
                 <span class="td-message-time">{{ new Date(message.createdAt).toLocaleTimeString() }}</span>
               </div>
               <div class="td-message-content">{{ message.content }}</div>
-              <div v-if="message.proposalId" class="td-message-proposal">
+              <div v-if="message.proposalId && message.messageType === 'proposal-reference'" class="td-message-proposal">
                 <span>Proposal: {{ message.proposalId }}</span>
                 <button
                   class="td-btn td-btn--secondary td-btn--xs"

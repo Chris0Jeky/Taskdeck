@@ -52,7 +52,7 @@ vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
 }))
 
-function buildSession() {
+function buildSession(messageType = 'proposal-reference') {
   const now = new Date().toISOString()
   return {
     id: 'session-1',
@@ -68,7 +68,7 @@ function buildSession() {
         sessionId: 'session-1',
         role: 'Assistant',
         content: 'Checklist bootstrap proposal created',
-        messageType: 'proposal-reference',
+        messageType,
         proposalId: 'proposal-1',
         tokenUsage: 42,
         createdAt: now,
@@ -141,5 +141,26 @@ describe('AutomationChatView', () => {
 
     expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(mocks.errorToast).toHaveBeenCalledWith('Failed to apply proposal from chat')
+  })
+
+  it('does not show approve action for non proposal-reference messages', async () => {
+    const session = buildSession('status')
+    mocks.getMySessions.mockResolvedValue([session])
+    mocks.getSession.mockResolvedValue(session)
+
+    const wrapper = mount(AutomationChatView, {
+      global: {
+        stubs: {
+          InputAssistField: true,
+        },
+      },
+    })
+
+    await waitForAsyncUi()
+
+    const applyButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Approve & Execute'))
+    expect(applyButton).toBeFalsy()
   })
 })

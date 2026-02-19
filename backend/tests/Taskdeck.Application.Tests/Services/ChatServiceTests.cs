@@ -189,6 +189,7 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("proposal-reference");
         result.Value.ProposalId.Should().Be(proposalId);
+        _llmProviderMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default), Times.Never);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(
             It.Is<CreateProposalDto>(dto =>
                 dto.SourceType == ProposalSourceType.Chat &&
@@ -251,5 +252,67 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("error");
         result.Value.Content.Should().Contain("Could not parse checklist tasks");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnError_WhenChecklistItemCountExceedsLimit()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Checklist too many items", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var checklistLines = new List<string> { "Project checklist:" };
+        for (var i = 0; i < 31; i++)
+        {
+            checklistLines.Add($"- [ ] Task {i + 1}");
+        }
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(string.Join(Environment.NewLine, checklistLines), RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("error");
+        result.Value.Content.Should().Contain("maximum item count");
+        _llmProviderMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default), Times.Never);
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnError_WhenChecklistBootstrapBoardHasNoColumns()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Checklist no columns", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(Array.Empty<Column>());
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(
+                """
+                Project checklist:
+                - [ ] Setup board
+                """,
+                RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("error");
+        result.Value.Content.Should().Contain("No columns found in board");
+        _llmProviderMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default), Times.Never);
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
     }
 }

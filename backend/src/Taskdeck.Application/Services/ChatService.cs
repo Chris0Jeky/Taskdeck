@@ -106,18 +106,11 @@ public class ChatService : IChatService
                 return Result.Success(MapMessageToDto(blockedMessage));
             }
 
-            // Get LLM response
-            var chatMessages = session.Messages
-                .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-                .ToList();
-
-            var completionRequest = new ChatCompletionRequest(chatMessages);
-            var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
-
             // Determine message type and optional proposal attachment
             var messageType = "text";
             Guid? proposalId = null;
-            var assistantContent = llmResult.Content;
+            string assistantContent;
+            int? tokenUsage = null;
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
             {
@@ -138,7 +131,7 @@ public class ChatService : IChatService
                     {
                         messageType = "proposal-reference";
                         proposalId = bootstrapResult.Value.Id;
-                        assistantContent = $"{llmResult.Content}\n\nChecklist bootstrap proposal created: {bootstrapResult.Value.Id}";
+                        assistantContent = $"Checklist bootstrap proposal created: {bootstrapResult.Value.Id}";
                     }
                     else
                     {
@@ -147,37 +140,50 @@ public class ChatService : IChatService
                     }
                 }
             }
-            else if (llmResult.IsActionable && dto.RequestProposal)
+            else
             {
-                if (!session.BoardId.HasValue)
-                {
-                    messageType = "error";
-                    assistantContent = "Actionable instructions require a board-scoped chat session. Create a session with BoardId and retry.";
-                }
-                else
-                {
-                    var proposalResult = await _automationPlanner.ParseInstructionAsync(
-                        dto.Content,
-                        userId,
-                        session.BoardId,
-                        ct);
+                // Get LLM response for non-checklist messages.
+                var chatMessages = session.Messages
+                    .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
+                    .ToList();
 
-                    if (proposalResult.IsSuccess)
+                var completionRequest = new ChatCompletionRequest(chatMessages);
+                var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
+                assistantContent = llmResult.Content;
+                tokenUsage = llmResult.TokensUsed;
+
+                if (llmResult.IsActionable && dto.RequestProposal)
+                {
+                    if (!session.BoardId.HasValue)
                     {
-                        messageType = "proposal-reference";
-                        proposalId = proposalResult.Value.Id;
-                        assistantContent = $"{llmResult.Content}\n\nProposal created: {proposalResult.Value.Id}";
+                        messageType = "error";
+                        assistantContent = "Actionable instructions require a board-scoped chat session. Create a session with BoardId and retry.";
                     }
                     else
                     {
-                        messageType = "error";
-                        assistantContent = $"I could not create a proposal: {proposalResult.ErrorMessage}";
+                        var proposalResult = await _automationPlanner.ParseInstructionAsync(
+                            dto.Content,
+                            userId,
+                            session.BoardId,
+                            ct);
+
+                        if (proposalResult.IsSuccess)
+                        {
+                            messageType = "proposal-reference";
+                            proposalId = proposalResult.Value.Id;
+                            assistantContent = $"{llmResult.Content}\n\nProposal created: {proposalResult.Value.Id}";
+                        }
+                        else
+                        {
+                            messageType = "error";
+                            assistantContent = $"I could not create a proposal: {proposalResult.ErrorMessage}";
+                        }
                     }
                 }
-            }
-            else if (llmResult.IsActionable)
-            {
-                messageType = "status";
+                else if (llmResult.IsActionable)
+                {
+                    messageType = "status";
+                }
             }
 
             // Add assistant message
@@ -187,7 +193,7 @@ public class ChatService : IChatService
                 assistantContent,
                 messageType,
                 proposalId,
-                llmResult.TokensUsed);
+                tokenUsage);
             session.AddMessage(assistantMessage);
             await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
 
@@ -230,7 +236,7 @@ public class ChatService : IChatService
         if (string.IsNullOrWhiteSpace(content))
             return false;
 
-        return Regex.IsMatch(content, @"(?m)^\s*[-*]\s*\[(?: |x|X)\]\s+.+$");
+        return Regex.IsMatch(content, @"(?m)^\s*[-*]\s*\[\s\]\s+.+$");
     }
 
     private async Task<Result<ProposalDto>> CreateChecklistBootstrapProposalAsync(
@@ -316,7 +322,7 @@ public class ChatService : IChatService
 
         foreach (var line in lines)
         {
-            var match = Regex.Match(line, @"^\s*[-*]\s*\[(?: |x|X)\]\s+(.+?)\s*$");
+            var match = Regex.Match(line, @"^\s*[-*]\s*\[\s\]\s+(.+?)\s*$");
             if (!match.Success)
                 continue;
 
