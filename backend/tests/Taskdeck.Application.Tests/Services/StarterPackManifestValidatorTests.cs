@@ -178,6 +178,61 @@ public class StarterPackManifestValidatorTests
         result.Errors.Should().Contain(error => error.Path == "$.templates[0].checklist[1]");
     }
 
+    [Fact]
+    public void ValidateJson_ShouldReturnErrors_WhenCollectionsAreExplicitlyNull()
+    {
+        var result = _validator.ValidateJson(
+            """
+            {
+              "schemaVersion": "1.0",
+              "packId": "engineering-onboarding",
+              "displayName": "Engineering Onboarding",
+              "compatibility": {
+                "minTaskdeckVersion": "1.0.0",
+                "maxTaskdeckVersion": "2.0.0",
+                "requiredFeatures": null
+              },
+              "tags": null,
+              "labels": null,
+              "columns": [
+                { "name": "Backlog", "position": 0 }
+              ],
+              "templates": [
+                {
+                  "templateId": "bug-report",
+                  "title": "Bug Report",
+                  "checklist": null
+                }
+              ],
+              "seedCards": [
+                {
+                  "title": "Set up sprint board",
+                  "columnName": "Backlog",
+                  "templateId": "bug-report",
+                  "labels": null
+                }
+              ]
+            }
+            """);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error =>
+            error.Path == "$.tags" &&
+            error.Message.Contains("must be an array", StringComparison.OrdinalIgnoreCase));
+        result.Errors.Should().Contain(error =>
+            error.Path == "$.compatibility.requiredFeatures" &&
+            error.Message.Contains("must be an array", StringComparison.OrdinalIgnoreCase));
+        result.Errors.Should().Contain(error =>
+            error.Path == "$.labels" &&
+            error.Message.Contains("must be an array", StringComparison.OrdinalIgnoreCase));
+        result.Errors.Should().Contain(error =>
+            error.Path == "$.templates[0].checklist" &&
+            error.Message.Contains("must be an array", StringComparison.OrdinalIgnoreCase));
+        result.Errors.Should().Contain(error =>
+            error.Path == "$.seedCards[0].labels" &&
+            error.Message.Contains("must be an array", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static StarterPackManifestDto BuildValidManifest()
     {
         return new StarterPackManifestDto
