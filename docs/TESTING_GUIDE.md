@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-02-18
+Last Updated: 2026-02-19
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -11,15 +11,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-18)
 
-- Backend: 528/528 passing
+- Backend: 536/536 passing
   - Domain: 93
-  - Application: 289
+  - Application: 297
   - API integration: 138
   - CLI contract: 4
   - Architecture boundaries: 4
-- Frontend unit: 274/274 passing
+- Frontend unit: 275/275 passing
 - Frontend E2E (smoke + automation/ops): 14/14 passing
-- Combined automated total: 816/816 passing
+- Combined automated total: 825/825 passing
 
 ## Backend Commands
 
@@ -96,6 +96,7 @@ Workflow: `.github/workflows/ci.yml`
 - Application services:
   - `backend/tests/Taskdeck.Application.Tests`
   - Includes board/card/column/label/auth/authorization/board-access/export-import/history/queue plus automation/archive/chat/ops/log services
+  - Includes starter-pack manifest parsing/validation coverage
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers

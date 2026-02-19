@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-18  
+Last Updated: 2026-02-19  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -95,9 +95,11 @@ Completed in Phase 4:
 - mechanical checks added: docs governance CI checks (`check-docs-governance` + `check-github-ops-governance`) and architecture boundary test project
 - API integration harness additions for authz assertions (`AssertUnauthorized`, `AssertForbidden`, `AssertNotFoundOrForbidden`, `AssertCrossUserIsolation`)
 - SEC-04 API error-contract assertions for key auth/validation paths, including middleware-level `401/403` payload normalization
+- starter-pack manifest foundation (`PACK-01`): versioned manifest schema doc plus deterministic backend parsing/validation tests
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
+- starter-pack implementation follow-ons (apply endpoint, catalog, first-party packs, deterministic fixtures)
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
@@ -129,11 +131,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 289/289 passing
+- Application: 297/297 passing
 - API integration: 138/138 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 528/528 passing
+- Backend Total: 536/536 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -143,7 +145,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 274/274 passing
+- Frontend unit: 275/275 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -157,7 +159,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 816/816 passing
+- Combined automated total: 825/825 passing
 
 ## CI Status
 
@@ -236,6 +238,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered AUTO-01 provider strategy: deterministic environment-aware `ILlmProvider` selection now gates OpenAI usage behind explicit config while keeping mock default safety, with policy + provider tests for switching behavior.
 - Delivered AUTO-02 planner/executor hardening: expanded deterministic planner instruction coverage (board/column intents), hardened executor parameter validation and partial-failure semantics, and improved audit entity attribution with new regression coverage.
 - Delivered MVP-01 chat-to-project bootstrap: canonical Markdown checklist paste now creates a proposal-first board bootstrap plan in chat, with one-click approve+execute path and regression coverage for happy path + key validation failures.
+- Delivered PACK-01 starter-pack manifest foundation: added v1 manifest schema documentation and deterministic backend validator/test coverage for parsing, compatibility rules, and cross-reference validation.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
