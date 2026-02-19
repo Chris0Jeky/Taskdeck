@@ -85,6 +85,7 @@ async function waitForAsyncUi() {
 describe('AutomationChatView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const session = buildSession()
     mocks.getMySessions.mockResolvedValue([session])
     mocks.getSession.mockResolvedValue(session)
@@ -116,6 +117,31 @@ describe('AutomationChatView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-1')
     expect(mocks.executeProposal).toHaveBeenCalledWith('proposal-1', 'req-123')
     expect(mocks.successToast).toHaveBeenCalledWith('Proposal approved and executed')
+  })
+
+  it('does not apply proposal when confirmation is cancelled', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false)
+
+    const wrapper = mount(AutomationChatView, {
+      global: {
+        stubs: {
+          InputAssistField: true,
+        },
+      },
+    })
+
+    await waitForAsyncUi()
+
+    const applyButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Approve & Execute'))
+    expect(applyButton).toBeTruthy()
+
+    await applyButton!.trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
   })
 
   it('shows an error toast when proposal application fails', async () => {

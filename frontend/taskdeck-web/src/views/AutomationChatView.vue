@@ -116,6 +116,10 @@ async function handleSendMessage() {
 }
 
 async function handleApproveAndExecuteProposal(proposalId: string) {
+  if (!confirm('Approve and execute this proposal?')) {
+    return
+  }
+
   try {
     proposalActionBusyId.value = proposalId
     await automationApi.approveProposal(proposalId)
