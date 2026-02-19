@@ -42,6 +42,7 @@ builder.Services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
 builder.Services.AddScoped<IOpsCliService, OpsCliService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<ILogQueryService, LogQueryService>();
+builder.Services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
 
 // LLM provider settings and deterministic provider selection policy
 var llmProviderSettings = builder.Configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
