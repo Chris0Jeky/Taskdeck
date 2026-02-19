@@ -18,7 +18,7 @@ Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
 - LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture
-- MVP dogfooding flow is incomplete: paste execution checklist in chat -> generate actionable board/project setup
+- MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 
 ## Current Implementation Snapshot
 
@@ -98,7 +98,6 @@ Completed in Phase 4:
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- MVP chat-to-project bootstrap: paste checklist/plan text and generate a ready-to-use board via proposal-first flow
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
@@ -130,11 +129,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 284/284 passing
-- API integration: 136/136 passing
+- Application: 289/289 passing
+- API integration: 138/138 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 521/521 passing
+- Backend Total: 528/528 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -144,7 +143,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 271/271 passing
+- Frontend unit: 274/274 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -158,7 +157,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 806/806 passing
+- Combined automated total: 816/816 passing
 
 ## CI Status
 
@@ -236,6 +235,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered UX-05 escape behavior contract: Escape now closes only the top-most transient surface per key press, board routes exit to `/workspace/boards` when clean, and regression coverage spans shell/unit and board keyboard-flow E2E paths.
 - Delivered AUTO-01 provider strategy: deterministic environment-aware `ILlmProvider` selection now gates OpenAI usage behind explicit config while keeping mock default safety, with policy + provider tests for switching behavior.
 - Delivered AUTO-02 planner/executor hardening: expanded deterministic planner instruction coverage (board/column intents), hardened executor parameter validation and partial-failure semantics, and improved audit entity attribution with new regression coverage.
+- Delivered MVP-01 chat-to-project bootstrap: canonical Markdown checklist paste now creates a proposal-first board bootstrap plan in chat, with one-click approve+execute path and regression coverage for happy path + key validation failures.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
