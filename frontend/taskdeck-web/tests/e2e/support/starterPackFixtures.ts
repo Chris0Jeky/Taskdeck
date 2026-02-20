@@ -1,19 +1,7 @@
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 import type { StarterPackApplyResult, StarterPackManifest } from '../../../src/types/starter-packs'
-
-const API_BASE_URL = 'http://localhost:5000/api'
-
-interface AuthUser {
-  id: string
-  username: string
-  email: string
-}
-
-export interface AuthResult {
-  token: string
-  user: AuthUser
-}
+import { API_BASE_URL, attachSessionToPage, registerUserSession, type AuthResult } from './authSession'
 
 interface BoardDto {
   id: string
@@ -248,37 +236,6 @@ function hasConflicts(result: StarterPackApplyResult): boolean {
   }
 
   return result.conflicts.length > 0
-}
-
-export async function registerUserSession(
-  request: APIRequestContext,
-  scope: string,
-): Promise<AuthResult> {
-  const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
-  const username = `e2e-${scope}-${unique}`
-  const email = `${username}@taskdeck.local`
-  const password = 'E2ePassword123!'
-
-  const response = await request.post(`${API_BASE_URL}/auth/register`, {
-    data: { username, email, password },
-  })
-
-  expect(response.ok()).toBeTruthy()
-  return await response.json() as AuthResult
-}
-
-export async function attachSessionToPage(page: Page, auth: AuthResult): Promise<void> {
-  await page.addInitScript((payload: { token: string; session: { userId: string; username: string; email: string } }) => {
-    localStorage.setItem('taskdeck_token', payload.token)
-    localStorage.setItem('taskdeck_session', JSON.stringify(payload.session))
-  }, {
-    token: auth.token,
-    session: {
-      userId: auth.user.id,
-      username: auth.user.username,
-      email: auth.user.email,
-    },
-  })
 }
 
 async function createBoard(
