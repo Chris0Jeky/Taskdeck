@@ -1,6 +1,6 @@
 # Starter Pack Manifest Schema (PACK-01)
 
-Last Updated: 2026-02-19
+Last Updated: 2026-02-20
 
 This document defines the `v1` starter-pack manifest contract used by Taskdeck package foundations.
 
@@ -92,6 +92,37 @@ Seed cards:
 - `seedCards[*].columnName` must reference an existing column name.
 - `seedCards[*].templateId`, when provided, must reference an existing template ID.
 - `seedCards[*].labels[*]` must reference existing label names.
+
+## First-Party Catalog (PACK-04)
+
+First-party packs are exposed by:
+- `GET /api/boards/{boardId}/starter-packs/catalog`
+
+Catalog entry shape includes:
+- `id` (must match `manifest.packId`)
+- `category` (`label-pack`, `column-flow`, or `board-blueprint`)
+- `title`, `summary`, `highlights`
+- `manifest` (full `v1` manifest payload)
+
+Current first-party coverage target:
+- At least one `label-pack`
+- At least one `column-flow`
+- Exactly three `board-blueprint` packs
+
+All first-party manifests are validated server-side through the same validator used by apply flows.
+
+## Validation and Migration Constraints (PACK-04)
+
+Validation constraints:
+- First-party catalog IDs must be unique.
+- `id` and `manifest.packId` must stay aligned.
+- All shipped manifests must pass `StarterPackManifestValidator` without warnings/errors.
+- First-party manifests must remain on supported `schemaVersion` (`1.0`) until a new schema is introduced.
+
+Migration constraints (operational policy):
+- `packId` is treated as stable identity; existing IDs should not be repurposed.
+- Breaking content changes for a shipped pack should use a new `packId` (or new schema) rather than mutating semantics in place.
+- Non-breaking pack updates should remain additive and keep existing field meanings stable.
 
 ## Deterministic Validation Output
 

@@ -44,6 +44,7 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<ILogQueryService, LogQueryService>();
 builder.Services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
 builder.Services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
+builder.Services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
 
 // LLM provider settings and deterministic provider selection policy
 var llmProviderSettings = builder.Configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();

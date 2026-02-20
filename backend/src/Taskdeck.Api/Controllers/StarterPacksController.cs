@@ -16,16 +16,42 @@ namespace Taskdeck.Api.Controllers;
 public class StarterPacksController : AuthenticatedControllerBase
 {
     private readonly IStarterPackApplyService _starterPackApplyService;
+    private readonly IStarterPackCatalogService _starterPackCatalogService;
     private readonly BoardAuthorizationService _authorizationService;
 
     public StarterPacksController(
         IStarterPackApplyService starterPackApplyService,
+        IStarterPackCatalogService starterPackCatalogService,
         BoardAuthorizationService authorizationService,
         IUserContext userContext)
         : base(userContext)
     {
         _starterPackApplyService = starterPackApplyService;
+        _starterPackCatalogService = starterPackCatalogService;
         _authorizationService = authorizationService;
+    }
+
+    [HttpGet("catalog")]
+    public async Task<IActionResult> GetCatalog(Guid boardId)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+        {
+            return errorResult!;
+        }
+
+        var permissionError = await EnsureBoardPermissionAsync(
+            _authorizationService,
+            userId,
+            boardId,
+            static (authorizationService, actorId, targetBoardId) => authorizationService.CanReadBoardAsync(actorId, targetBoardId),
+            "You do not have permission to view this board");
+
+        if (permissionError is not null)
+        {
+            return permissionError;
+        }
+
+        return Ok(_starterPackCatalogService.GetCatalog());
     }
 
     [HttpPost("apply")]

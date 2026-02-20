@@ -18,6 +18,30 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetStarterPackCatalog_ShouldReturnUnauthorized_WhenUnauthenticated()
+    {
+        var response = await _client.GetAsync($"/api/boards/{Guid.NewGuid()}/starter-packs/catalog");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetStarterPackCatalog_ShouldReturnFirstPartyPacks_WhenBoardReadable()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.GetAsync($"/api/boards/{board.Id}/starter-packs/catalog");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<List<StarterPackCatalogEntryDto>>();
+        var catalog = payload ?? throw new InvalidOperationException("Starter-pack catalog response payload should not be null.");
+        catalog.Should().OnlyHaveUniqueItems(entry => entry.Id);
+        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.LabelPack).Should().BeGreaterThanOrEqualTo(1);
+        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.ColumnFlow).Should().BeGreaterThanOrEqualTo(1);
+        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.BoardBlueprint).Should().Be(3);
+    }
+
+    [Fact]
     public async Task ApplyStarterPack_ShouldCreateBoardArtifacts_WhenManifestIsValid()
     {
         var board = await CreateBoardAsync();

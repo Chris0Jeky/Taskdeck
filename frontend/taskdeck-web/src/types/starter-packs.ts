@@ -76,6 +76,7 @@ export interface StarterPackApplyResult {
 
 export interface StarterPackCatalogEntry {
   id: string
+  category: string
   title: string
   summary: string
   highlights: string[]

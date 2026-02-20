@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import StarterPackCatalogModal from '../../components/board/StarterPackCatalogModal.vue'
 
 const mocks = vi.hoisted(() => ({
+  getCatalog: vi.fn(),
   applyStarterPack: vi.fn(),
   fetchBoard: vi.fn(),
   toastSuccess: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../api/starterPacksApi', () => ({
   starterPacksApi: {
+    getCatalog: mocks.getCatalog,
     applyStarterPack: mocks.applyStarterPack,
   },
 }))
@@ -28,10 +30,34 @@ vi.mock('../../store/toastStore', () => ({
   }),
 }))
 
+function buildCatalogEntry() {
+  return {
+    id: 'board-blueprint-engineering-sprint',
+    category: 'board-blueprint',
+    title: 'Board Blueprint - Engineering Sprint',
+    summary: 'Sprint-ready engineering board',
+    highlights: ['Sprint lane defaults'],
+    manifest: {
+      schemaVersion: '1.0',
+      packId: 'board-blueprint-engineering-sprint',
+      displayName: 'Board Blueprint - Engineering Sprint',
+      compatibility: {
+        minTaskdeckVersion: '1.0.0',
+        requiredFeatures: ['boards', 'labels', 'cards'],
+      },
+      tags: ['starter', 'blueprint', 'engineering'],
+      labels: [{ name: 'priority-high', color: '#E85D5D' }],
+      columns: [{ name: 'Backlog', position: 0 }],
+      templates: [],
+      seedCards: [],
+    },
+  }
+}
+
 function buildResult(overrides?: Record<string, unknown>) {
   return {
     boardId: 'board-1',
-    packId: 'engineering-onboarding',
+    packId: 'board-blueprint-engineering-sprint',
     dryRun: false,
     applied: true,
     actions: [],
@@ -49,9 +75,10 @@ async function waitForUi() {
 describe('StarterPackCatalogModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.getCatalog.mockResolvedValue([buildCatalogEntry()])
   })
 
-  it('renders catalog entries and selected preview details', () => {
+  it('loads and renders starter-pack catalog entries from API', async () => {
     const wrapper = mount(StarterPackCatalogModal, {
       props: {
         boardId: 'board-1',
@@ -59,12 +86,17 @@ describe('StarterPackCatalogModal', () => {
       },
     })
 
+    await waitForUi()
+
+    expect(mocks.getCatalog).toHaveBeenCalledWith('board-1')
     expect(wrapper.text()).toContain('Starter Packs')
-    expect(wrapper.text()).toContain('Engineering Onboarding')
+    expect(wrapper.text()).toContain('Board Blueprint - Engineering Sprint')
     expect(wrapper.text()).toContain('Preview Highlights')
   })
 
-  it('shows empty state when search has no matches', async () => {
+  it('shows empty state when API returns no catalog entries', async () => {
+    mocks.getCatalog.mockResolvedValue([])
+
     const wrapper = mount(StarterPackCatalogModal, {
       props: {
         boardId: 'board-1',
@@ -72,10 +104,39 @@ describe('StarterPackCatalogModal', () => {
       },
     })
 
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('No starter packs are currently available.')
+  })
+
+  it('shows empty search state when query has no matches', async () => {
+    const wrapper = mount(StarterPackCatalogModal, {
+      props: {
+        boardId: 'board-1',
+        isOpen: true,
+      },
+    })
+
+    await waitForUi()
     await wrapper.get('#starter-pack-search').setValue('no-pack-like-this')
     await waitForUi()
 
     expect(wrapper.text()).toContain('No starter packs match this search.')
+  })
+
+  it('shows load error state when catalog request fails', async () => {
+    mocks.getCatalog.mockRejectedValue(new Error('catalog unavailable'))
+
+    const wrapper = mount(StarterPackCatalogModal, {
+      props: {
+        boardId: 'board-1',
+        isOpen: true,
+      },
+    })
+
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('catalog unavailable')
   })
 
   it('runs dry-run preview and shows result summary', async () => {
@@ -93,6 +154,8 @@ describe('StarterPackCatalogModal', () => {
         isOpen: true,
       },
     })
+
+    await waitForUi()
 
     const previewButton = wrapper
       .findAll('button')
@@ -119,6 +182,8 @@ describe('StarterPackCatalogModal', () => {
         isOpen: true,
       },
     })
+
+    await waitForUi()
 
     const applyButton = wrapper
       .findAll('button')
@@ -164,6 +229,8 @@ describe('StarterPackCatalogModal', () => {
         isOpen: true,
       },
     })
+
+    await waitForUi()
 
     const applyButton = wrapper
       .findAll('button')
