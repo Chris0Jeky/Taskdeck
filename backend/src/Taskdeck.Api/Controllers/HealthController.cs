@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -75,6 +76,9 @@ public class HealthController : ControllerBase
                 depth = queueDepth,
                 threshold = queueThreshold
             };
+            TaskdeckTelemetry.AutomationQueueBacklog.Record(
+                queueDepth,
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, "llm"));
 
             if (!queueHealthy)
             {
@@ -95,16 +99,29 @@ public class HealthController : ControllerBase
             var queueWorkerLastHeartbeat = _workerHeartbeatRegistry.GetLastHeartbeat(nameof(LlmQueueToProposalWorker));
             var maxQueueWorkerStaleness = TimeSpan.FromSeconds(Math.Max(_workerSettings.QueuePollIntervalSeconds * 3, 30));
             var withinStartupGrace = DateTimeOffset.UtcNow - _workerHeartbeatRegistry.StartupTime <= TimeSpan.FromSeconds(30);
+            var queueWorkerStaleness = queueWorkerLastHeartbeat.HasValue
+                ? DateTimeOffset.UtcNow - queueWorkerLastHeartbeat.Value
+                : (TimeSpan?)null;
             var queueWorkerHealthy = (queueWorkerLastHeartbeat.HasValue &&
-                                      DateTimeOffset.UtcNow - queueWorkerLastHeartbeat.Value <= maxQueueWorkerStaleness)
+                                      queueWorkerStaleness <= maxQueueWorkerStaleness)
                                      || (!queueWorkerLastHeartbeat.HasValue && withinStartupGrace);
+
+            if (queueWorkerStaleness.HasValue)
+            {
+                TaskdeckTelemetry.WorkerHeartbeatStalenessSeconds.Record(
+                    queueWorkerStaleness.Value.TotalSeconds,
+                    new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
+                    new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, queueWorkerHealthy ? "healthy" : "stale"));
+            }
 
             workerChecks["queueToProposal"] = new
             {
                 status = queueWorkerLastHeartbeat.HasValue
                     ? (queueWorkerHealthy ? "Healthy" : "Stale")
                     : (withinStartupGrace ? "Starting" : "Stale"),
-                lastHeartbeat = queueWorkerLastHeartbeat
+                lastHeartbeat = queueWorkerLastHeartbeat,
+                stalenessSeconds = queueWorkerStaleness?.TotalSeconds,
+                maxStalenessSeconds = maxQueueWorkerStaleness.TotalSeconds
             };
 
             if (!queueWorkerHealthy)
@@ -123,15 +140,28 @@ public class HealthController : ControllerBase
 
         var housekeepingLastHeartbeat = _workerHeartbeatRegistry.GetLastHeartbeat(nameof(ProposalHousekeepingWorker));
         var housekeepingWithinStartupGrace = DateTimeOffset.UtcNow - _workerHeartbeatRegistry.StartupTime <= TimeSpan.FromSeconds(30);
+        var housekeepingStaleness = housekeepingLastHeartbeat.HasValue
+            ? DateTimeOffset.UtcNow - housekeepingLastHeartbeat.Value
+            : (TimeSpan?)null;
         var housekeepingHealthy = (housekeepingLastHeartbeat.HasValue &&
-                                   DateTimeOffset.UtcNow - housekeepingLastHeartbeat.Value <= TimeSpan.FromMinutes(3))
+                                   housekeepingStaleness <= TimeSpan.FromMinutes(3))
                                   || (!housekeepingLastHeartbeat.HasValue && housekeepingWithinStartupGrace);
+        if (housekeepingStaleness.HasValue)
+        {
+            TaskdeckTelemetry.WorkerHeartbeatStalenessSeconds.Record(
+                housekeepingStaleness.Value.TotalSeconds,
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(ProposalHousekeepingWorker)),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, housekeepingHealthy ? "healthy" : "stale"));
+        }
+
         workerChecks["proposalHousekeeping"] = new
         {
             status = housekeepingLastHeartbeat.HasValue
                 ? (housekeepingHealthy ? "Healthy" : "Stale")
                 : (housekeepingWithinStartupGrace ? "Starting" : "Stale"),
-            lastHeartbeat = housekeepingLastHeartbeat
+            lastHeartbeat = housekeepingLastHeartbeat,
+            stalenessSeconds = housekeepingStaleness?.TotalSeconds,
+            maxStalenessSeconds = TimeSpan.FromMinutes(3).TotalSeconds
         };
         if (!housekeepingHealthy)
         {

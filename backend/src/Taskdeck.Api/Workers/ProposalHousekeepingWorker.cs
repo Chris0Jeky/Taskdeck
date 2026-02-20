@@ -1,5 +1,6 @@
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Api.Workers;
@@ -52,12 +53,21 @@ public class ProposalHousekeepingWorker : BackgroundService
 
     private async Task ExpireStaleProposalsAsync(CancellationToken ct)
     {
+        using var activity = TaskdeckTelemetry.ActivitySource.StartActivity(
+            "taskdeck.worker.expire_stale_proposals",
+            System.Diagnostics.ActivityKind.Internal);
+        activity?.SetTag(TaskdeckTelemetryTags.WorkerName, nameof(ProposalHousekeepingWorker));
+
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var pendingProposals = await unitOfWork.AutomationProposals.GetByStatusAsync(ProposalStatus.PendingReview, cancellationToken: ct);
+        var pendingProposals = (await unitOfWork.AutomationProposals.GetByStatusAsync(
+            ProposalStatus.PendingReview,
+            cancellationToken: ct)).ToList();
         var now = DateTime.UtcNow;
+        var pendingCount = pendingProposals.Count;
         var expiredCount = 0;
+        activity?.SetTag("taskdeck.proposals.pending_count", pendingCount);
 
         foreach (var proposal in pendingProposals)
         {
@@ -82,5 +92,10 @@ public class ProposalHousekeepingWorker : BackgroundService
             await unitOfWork.SaveChangesAsync(ct);
             _logger.LogInformation("Expired {Count} stale proposals", expiredCount);
         }
+
+        activity?.SetTag("taskdeck.proposals.expired_count", expiredCount);
+        TaskdeckTelemetry.HousekeepingExpiredProposals.Add(
+            expiredCount,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(ProposalHousekeepingWorker)));
     }
 }

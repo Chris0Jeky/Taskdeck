@@ -3,10 +3,15 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Realtime;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
@@ -20,6 +25,11 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+var observabilitySettings = builder.Configuration
+    .GetSection("Observability")
+    .Get<ObservabilitySettings>() ?? new ObservabilitySettings();
+builder.Services.AddSingleton(observabilitySettings);
 
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -105,6 +115,67 @@ builder.Services.AddSingleton(workerSettings);
 builder.Services.AddSingleton<WorkerHeartbeatRegistry>();
 builder.Services.AddHostedService<LlmQueueToProposalWorker>();
 builder.Services.AddHostedService<ProposalHousekeepingWorker>();
+
+if (observabilitySettings.EnableOpenTelemetry)
+{
+    var openTelemetryBuilder = builder.Services
+        .AddOpenTelemetry()
+        .ConfigureResource(resource => resource.AddService(observabilitySettings.ServiceName));
+
+    openTelemetryBuilder.WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                options.RecordException = true;
+            })
+            .AddHttpClientInstrumentation()
+            .AddSource(TaskdeckTelemetry.ActivitySourceName);
+
+        if (!string.IsNullOrWhiteSpace(observabilitySettings.OtlpEndpoint) &&
+            Uri.TryCreate(observabilitySettings.OtlpEndpoint, UriKind.Absolute, out var traceEndpoint))
+        {
+            tracing.AddOtlpExporter(options =>
+            {
+                options.Endpoint = traceEndpoint;
+                options.Protocol = OtlpExportProtocol.Grpc;
+            });
+        }
+
+        if (observabilitySettings.EnableConsoleExporter)
+        {
+            tracing.AddConsoleExporter();
+        }
+    });
+
+    openTelemetryBuilder.WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddMeter(TaskdeckTelemetry.MeterName);
+
+        if (!string.IsNullOrWhiteSpace(observabilitySettings.OtlpEndpoint) &&
+            Uri.TryCreate(observabilitySettings.OtlpEndpoint, UriKind.Absolute, out var metricEndpoint))
+        {
+            metrics.AddOtlpExporter(options =>
+            {
+                options.Endpoint = metricEndpoint;
+                options.Protocol = OtlpExportProtocol.Grpc;
+            });
+        }
+
+        if (observabilitySettings.EnableConsoleExporter)
+        {
+            metrics.AddConsoleExporter(
+                (_, readerOptions) =>
+                {
+                    readerOptions.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds =
+                        Math.Max(observabilitySettings.MetricExportIntervalSeconds, 5) * 1000;
+                });
+        }
+    });
+}
 
 // Add JWT Authentication
 if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
