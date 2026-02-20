@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Moq;
@@ -333,6 +334,164 @@ public class ExportImportServiceTests
         _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Never);
     }
 
+    [Fact]
+    public async Task ExportDatabaseAsync_ShouldReturnNotFound_WhenUserDoesNotExist()
+    {
+        var userId = Guid.NewGuid();
+        var service = CreateDatabaseService("Data Source=taskdeck.db");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync((User?)null);
+
+        var result = await service.ExportDatabaseAsync(userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task ExportDatabaseAsync_ShouldReturnValidationError_WhenConnectionStringIsMissing()
+    {
+        var user = CreateUser("dbexport");
+        var service = CreateDatabaseService(connectionString: null);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ExportDatabaseAsync(user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("connection string");
+    }
+
+    [Fact]
+    public async Task ExportDatabaseAsync_ShouldReturnNotFound_WhenDatabaseFileDoesNotExist()
+    {
+        var user = CreateUser("dbexport");
+        var dbPath = CreateTempFilePath();
+        var service = CreateDatabaseService($"Data Source={dbPath}");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ExportDatabaseAsync(user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task ExportDatabaseAsync_ShouldReturnDatabaseBytes_WhenSandboxEnabledAndDatabaseExists()
+    {
+        var user = CreateUser("dbexport");
+        var dbPath = CreateTempFilePath();
+        var expectedBytes = CreateSqlitePayload();
+
+        try
+        {
+            await File.WriteAllBytesAsync(dbPath, expectedBytes);
+            var service = CreateDatabaseService($"Data Source={dbPath}");
+            _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+            var result = await service.ExportDatabaseAsync(user.Id);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value.Should().Equal(expectedBytes);
+        }
+        finally
+        {
+            DeleteIfExists(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task ImportDatabaseAsync_ShouldReturnForbidden_WhenSandboxDisabled()
+    {
+        var user = CreateUser("dbimport");
+        var service = CreateDatabaseService("Data Source=taskdeck.db", sandboxEnabled: false);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ImportDatabaseAsync(CreateSqlitePayload(), user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ImportDatabaseAsync_ShouldReturnValidationError_WhenPayloadIsNotSqlite()
+    {
+        var user = CreateUser("dbimport");
+        var dbPath = CreateTempFilePath();
+        var service = CreateDatabaseService($"Data Source={dbPath}");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ImportDatabaseAsync(Encoding.UTF8.GetBytes("not-a-sqlite-file"), user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("valid SQLite file");
+    }
+
+    [Fact]
+    public async Task ImportDatabaseAsync_ShouldReturnValidationError_WhenPayloadExceedsConfiguredLimit()
+    {
+        var user = CreateUser("dbimport");
+        var dbPath = CreateTempFilePath();
+        var service = CreateDatabaseService(
+            $"Data Source={dbPath}",
+            maxImportBytes: 1 * 1024 * 1024);
+        var oversizedPayload = CreateSqlitePayload(length: (1 * 1024 * 1024) + 1);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ImportDatabaseAsync(oversizedPayload, user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("exceeds max size");
+    }
+
+    [Fact]
+    public async Task ImportDatabaseAsync_ShouldReplaceDatabaseFile_WhenPayloadIsValid()
+    {
+        var user = CreateUser("dbimport");
+        var dbPath = CreateTempFilePath();
+        var originalBytes = CreateSqlitePayload();
+        var importedBytes = CreateSqlitePayload(length: 384);
+
+        try
+        {
+            await File.WriteAllBytesAsync(dbPath, originalBytes);
+            var service = CreateDatabaseService($"Data Source={dbPath}");
+            _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+            var result = await service.ImportDatabaseAsync(importedBytes, user.Id);
+
+            result.IsSuccess.Should().BeTrue();
+            var diskBytes = await File.ReadAllBytesAsync(dbPath);
+            diskBytes.Should().Equal(importedBytes);
+        }
+        finally
+        {
+            DeleteIfExists(dbPath);
+        }
+    }
+
+    private ExportImportService CreateDatabaseService(
+        string? connectionString,
+        bool sandboxEnabled = true,
+        int? maxImportBytes = null)
+    {
+        return new ExportImportService(
+            _unitOfWorkMock.Object,
+            new DevelopmentSandboxSettings { Enabled = sandboxEnabled },
+            new DatabaseExportImportSettings
+            {
+                ConnectionString = connectionString,
+                MaxImportBytes = maxImportBytes ?? DatabaseExportImportSettings.DefaultMaxImportBytes
+            });
+    }
+
     private static User CreateUser(string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
@@ -352,5 +511,33 @@ public class ExportImportServiceTests
         var property = target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         property.Should().NotBeNull($"property '{propertyName}' should exist on {target.GetType().Name}");
         property!.SetValue(target, value);
+    }
+
+    private static byte[] CreateSqlitePayload(int length = 256)
+    {
+        length = Math.Max(length, 16);
+        var bytes = new byte[length];
+        var signature = Encoding.ASCII.GetBytes("SQLite format 3\0");
+        Array.Copy(signature, bytes, signature.Length);
+
+        for (var i = signature.Length; i < bytes.Length; i++)
+        {
+            bytes[i] = (byte)(i % 251);
+        }
+
+        return bytes;
+    }
+
+    private static string CreateTempFilePath()
+    {
+        return Path.Combine(Path.GetTempPath(), $"taskdeck-export-import-tests-{Guid.NewGuid():N}.db");
+    }
+
+    private static void DeleteIfExists(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
     }
 }
