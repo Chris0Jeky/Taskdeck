@@ -3,6 +3,9 @@
 **Audience:** Codex CLI / IDE agents working in this repo.  
 **Goal:** Make tool usage automatic and predictable.
 
+Operational companion:
+- `docs/MCP_OPERATIONS_RUNBOOK.md` (credential setup, verification, and recurring workflow)
+
 ---
 
 ## Quick Rules

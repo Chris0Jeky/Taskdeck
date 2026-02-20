@@ -75,6 +75,19 @@ docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
 docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
 ```
 
+## MCP Operations Validation
+
+```powershell
+docker mcp server ls
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
+```
+
+Optional servers (requires valid credentials for `postman` and `dockerhub`):
+
+```powershell
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors
+```
+
 ## CI Gates
 
 Workflow: `.github/workflows/ci.yml`

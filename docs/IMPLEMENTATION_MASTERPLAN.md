@@ -160,6 +160,10 @@ Delivered in the latest cycle:
    - enabled a broader Docker Marketplace MCP server bundle (SQLite, JetBrains, Postman candidate, OpenAPI, filesystem, terraform, time, etc.)
    - stabilized default Docker gateway server set for Codex project config to avoid secret-gated startup failures while preserving optional integrations
    - documented setup/credential expectations in `docs/MCP_TOOLING_GUIDE.md`
+37. MCP operations workflow integration:
+   - added operator runbook (`docs/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
+   - added helper scripts to wire credential-gated Docker MCP servers and verify baseline/optional MCP dry-run paths
+   - integrated MCP operations checks into active testing guidance
 
 ## Roadmap by Horizon
 
@@ -279,6 +283,7 @@ Strategic reconciliation applied:
 Covered by seeded issues:
 - Docker + reverse proxy + compression baseline: `#69` (delivered)
 - Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
+- MCP operator wiring + verification workflow: `#140` (in progress)
 - Staged rollout policy (blue/green/canary): `#101`
 - IaC baseline: `#102`
 - SBOM/release provenance: `#103`

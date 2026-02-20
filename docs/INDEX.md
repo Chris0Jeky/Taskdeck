@@ -36,6 +36,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 
 - `MCP_TOOLING_GUIDE.md`
   - MCP selection rules and safe operation patterns.
+- `MCP_OPERATIONS_RUNBOOK.md`
+  - MCP credential wiring, verification commands, and daily/weekly operator workflows.
 - `DEVTOOLS_OBSERVABILITY_ADDON.md`
   - Debug workflow guidance for Playwright/DevTools/log signals.
 - `FUTURE_HARNESS_BACKLOG.md`
