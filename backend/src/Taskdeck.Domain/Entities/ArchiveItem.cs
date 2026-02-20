@@ -5,14 +5,14 @@ namespace Taskdeck.Domain.Entities;
 
 public class ArchiveItem : Entity
 {
-    public string EntityType { get; private set; }
+    public string EntityType { get; private set; } = string.Empty;
     public Guid EntityId { get; private set; }
     public Guid BoardId { get; private set; }
-    public string Name { get; private set; }
+    public string Name { get; private set; } = string.Empty;
     public Guid ArchivedByUserId { get; private set; }
     public DateTime ArchivedAt { get; private set; }
     public string? Reason { get; private set; }
-    public string SnapshotJson { get; private set; }
+    public string SnapshotJson { get; private set; } = string.Empty;
     public RestoreStatus RestoreStatus { get; private set; }
     public DateTime? RestoredAt { get; private set; }
     public Guid? RestoredByUserId { get; private set; }
