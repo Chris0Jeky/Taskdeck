@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Primitives;
+using Taskdeck.Api.Telemetry;
 
 namespace Taskdeck.Api.Middleware;
 
@@ -41,6 +42,8 @@ public class CorrelationIdMiddleware
         context.TraceIdentifier = correlationId;
         context.Items[ItemKey] = correlationId;
         context.Response.Headers[HeaderName] = correlationId;
+        System.Diagnostics.Activity.Current?.SetTag(TaskdeckTelemetryTags.CorrelationId, correlationId);
+        System.Diagnostics.Activity.Current?.SetTag(TaskdeckTelemetryTags.RequestId, correlationId);
 
         using (_logger.BeginScope(new Dictionary<string, object>
         {

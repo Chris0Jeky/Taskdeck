@@ -11,15 +11,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-20)
 
-- Backend: 588/588 passing
+- Backend: 589/589 passing
   - Domain: 93
   - Application: 336
-  - API integration: 151
+  - API integration: 152
   - CLI contract: 4
   - Architecture boundaries: 4
 - Frontend unit: 292/292 passing
 - Frontend E2E (smoke + automation/ops + starter-pack fixtures): 19/19 passing
-- Combined automated total: 899/899 passing
+- Combined automated total: 900/900 passing
 
 ## Backend Commands
 
@@ -118,6 +118,7 @@ Workflow: `.github/workflows/ci.yml`
 ## Manual Verification
 
 Use `docs/MANUAL_TEST_CHECKLIST.md` for action-by-action manual validation.
+Use `docs/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
 
 ## Development Sandbox Mode
 

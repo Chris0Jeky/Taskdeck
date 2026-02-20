@@ -39,5 +39,14 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         checks.TryGetProperty("database", out _).Should().BeTrue();
         checks.TryGetProperty("queue", out _).Should().BeTrue();
         checks.TryGetProperty("workers", out _).Should().BeTrue();
+
+        var workers = checks.GetProperty("workers");
+        var queueWorker = workers.GetProperty("queueToProposal");
+        queueWorker.TryGetProperty("stalenessSeconds", out _).Should().BeTrue();
+        queueWorker.TryGetProperty("maxStalenessSeconds", out _).Should().BeTrue();
+
+        var housekeepingWorker = workers.GetProperty("proposalHousekeeping");
+        housekeepingWorker.TryGetProperty("stalenessSeconds", out _).Should().BeTrue();
+        housekeepingWorker.TryGetProperty("maxStalenessSeconds", out _).Should().BeTrue();
     }
 }

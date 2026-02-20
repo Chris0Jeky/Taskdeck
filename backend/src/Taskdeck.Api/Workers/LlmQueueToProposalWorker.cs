@@ -1,5 +1,6 @@
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
@@ -58,7 +59,11 @@ public class LlmQueueToProposalWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var pendingItems = await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct);
+        var pendingItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct)).ToList();
+        TaskdeckTelemetry.AutomationQueueBacklog.Record(
+            pendingItems.Count,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, "llm"));
+
         var batchItemIds = pendingItems
             .Take(_settings.MaxBatchSize)
             .Select(item => item.Id)
@@ -95,6 +100,15 @@ public class LlmQueueToProposalWorker : BackgroundService
 
     private async Task ProcessSingleItemAsync(Guid itemId, CancellationToken ct)
     {
+        using var activity = TaskdeckTelemetry.ActivitySource.StartActivity(
+            "taskdeck.worker.process_llm_queue_item",
+            System.Diagnostics.ActivityKind.Internal);
+        activity?.SetTag(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker));
+        activity?.SetTag(TaskdeckTelemetryTags.LlmRequestId, itemId.ToString());
+
+        var stopWatch = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = "skipped";
+
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var planner = scope.ServiceProvider.GetRequiredService<IAutomationPlannerService>();
@@ -102,7 +116,17 @@ public class LlmQueueToProposalWorker : BackgroundService
         var item = await unitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
         if (item == null || item.Status != RequestStatus.Pending)
         {
+            outcome = "already_claimed";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
             return;
+        }
+
+        activity?.SetTag(TaskdeckTelemetryTags.RequestType, item.RequestType);
+        activity?.SetTag(TaskdeckTelemetryTags.UserId, item.UserId.ToString());
+        if (item.BoardId.HasValue)
+        {
+            activity?.SetTag(TaskdeckTelemetryTags.BoardId, item.BoardId.Value.ToString());
         }
 
         try
@@ -113,6 +137,9 @@ public class LlmQueueToProposalWorker : BackgroundService
         catch (DomainException ex)
         {
             _logger.LogDebug(ex, "Queue item {ItemId} was already claimed by another worker", itemId);
+            outcome = "already_claimed";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
             return;
         }
 
@@ -129,29 +156,40 @@ public class LlmQueueToProposalWorker : BackgroundService
                 item.MarkAsCompleted();
                 await unitOfWork.SaveChangesAsync(ct);
                 _logger.LogInformation("Queue item {ItemId} processed successfully", item.Id);
+                outcome = "completed";
+                stopWatch.Stop();
+                RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
                 return;
             }
 
-            await HandleFailureWithRetryAsync(
+            var scheduledForRetry = await HandleFailureWithRetryAsync(
                 unitOfWork,
                 item,
                 proposalResult.ErrorCode,
                 proposalResult.ErrorMessage ?? "Unknown error",
                 ct);
+
+            outcome = scheduledForRetry ? "failed_retry" : "failed_permanent";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception processing queue item {ItemId}", item.Id);
-            await HandleFailureWithRetryAsync(
+            var scheduledForRetry = await HandleFailureWithRetryAsync(
                 unitOfWork,
                 item,
                 ErrorCodes.UnexpectedError,
                 ex.Message,
                 ct);
+
+            outcome = scheduledForRetry ? "failed_retry" : "failed_unhandled";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
         }
     }
 
-    private async Task HandleFailureWithRetryAsync(
+    private async Task<bool> HandleFailureWithRetryAsync(
         IUnitOfWork unitOfWork,
         Taskdeck.Domain.Entities.LlmRequest item,
         string? errorCode,
@@ -172,7 +210,7 @@ public class LlmQueueToProposalWorker : BackgroundService
                 item.RetryCount,
                 errorCode,
                 errorMessage);
-            return;
+            return false;
         }
 
         var backoff = TimeSpan.FromSeconds(GetRetryBackoffSeconds(item.RetryCount));
@@ -188,6 +226,7 @@ public class LlmQueueToProposalWorker : BackgroundService
             "Queue item {ItemId} scheduled for retry attempt {RetryCount}",
             item.Id,
             item.RetryCount + 1);
+        return true;
     }
 
     private bool IsTransientFailure(string? errorCode)
@@ -210,5 +249,18 @@ public class LlmQueueToProposalWorker : BackgroundService
 
         var index = Math.Clamp(retryCount - 1, 0, _settings.RetryBackoffSeconds.Length - 1);
         return _settings.RetryBackoffSeconds[index];
+    }
+
+    private static void RecordWorkerProcessingMetrics(double durationMs, string outcome)
+    {
+        TaskdeckTelemetry.WorkerItemProcessingDurationMs.Record(
+            durationMs,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
+
+        TaskdeckTelemetry.WorkerItemsProcessed.Add(
+            1,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
     }
 }
