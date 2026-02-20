@@ -156,6 +156,10 @@ Delivered in the latest cycle:
    - added production-oriented backend/frontend Dockerfiles and compose profile with reverse-proxy entrypoint
    - added proxy compression + forwarded-header/security-header posture and staging/local deployment runbook
    - added CI container image build/export artifacts with reproducible compose render checksums
+36. Developer MCP tooling posture expansion:
+   - enabled a broader Docker Marketplace MCP server bundle (SQLite, JetBrains, Postman candidate, OpenAPI, filesystem, terraform, time, etc.)
+   - stabilized default Docker gateway server set for Codex project config to avoid secret-gated startup failures while preserving optional integrations
+   - documented setup/credential expectations in `docs/MCP_TOOLING_GUIDE.md`
 
 ## Roadmap by Horizon
 
@@ -274,6 +278,7 @@ Strategic reconciliation applied:
 
 Covered by seeded issues:
 - Docker + reverse proxy + compression baseline: `#69` (delivered)
+- Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
 - Staged rollout policy (blue/green/canary): `#101`
 - IaC baseline: `#102`
 - SBOM/release provenance: `#103`
