@@ -16,6 +16,39 @@ describe('starterPacksApi', () => {
     vi.clearAllMocks()
   })
 
+  it('fetches starter-pack catalog for a board', async () => {
+    const catalogPayload = [
+      {
+        id: 'common-labels-core',
+        category: 'label-pack',
+        title: 'Common Labels Core',
+        summary: 'Reusable labels',
+        highlights: ['Priority and blocked labels'],
+        manifest: {
+          schemaVersion: '1.0',
+          packId: 'common-labels-core',
+          displayName: 'Common Labels Core',
+          compatibility: {
+            minTaskdeckVersion: '1.0.0',
+            requiredFeatures: ['boards', 'labels'],
+          },
+          tags: ['starter'],
+          labels: [],
+          columns: [{ name: 'Backlog', position: 0 }],
+          templates: [],
+          seedCards: [],
+        },
+      },
+    ]
+
+    vi.mocked(http.get).mockResolvedValue({ data: catalogPayload })
+
+    const result = await starterPacksApi.getCatalog('board-1')
+
+    expect(http.get).toHaveBeenCalledWith('/boards/board-1/starter-packs/catalog')
+    expect(result).toEqual(catalogPayload)
+  })
+
   it('posts starter-pack apply payload to the board endpoint', async () => {
     const payload = {
       boardId: 'board-1',
