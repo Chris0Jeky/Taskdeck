@@ -283,7 +283,7 @@ Strategic reconciliation applied:
 Covered by seeded issues:
 - Docker + reverse proxy + compression baseline: `#69` (delivered)
 - Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
-- MCP operator wiring + verification workflow: `#140` (in progress)
+- MCP operator wiring + verification workflow: `#140` (delivered via `#144`)
 - Staged rollout policy (blue/green/canary): `#101`
 - IaC baseline: `#102`
 - SBOM/release provenance: `#103`
