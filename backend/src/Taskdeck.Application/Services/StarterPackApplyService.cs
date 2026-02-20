@@ -66,12 +66,69 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
         var actions = new List<StarterPackApplyActionDto>();
         var conflicts = new List<StarterPackApplyConflictDto>();
 
-        var existingLabelsByName = board.Labels
-            .ToDictionary(label => label.Name, StringComparer.OrdinalIgnoreCase);
-        var existingColumnsByName = board.Columns
-            .ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
-        var existingColumnsByPosition = board.Columns
-            .ToDictionary(column => column.Position, column => column);
+        var existingLabelGroupsByName = board.Labels
+            .GroupBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var duplicateLabelGroup in existingLabelGroupsByName.Where(group => group.Count() > 1))
+        {
+            var existingColors = string.Join(", ",
+                duplicateLabelGroup
+                    .Select(label => label.ColorHex)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(color => color, StringComparer.OrdinalIgnoreCase));
+
+            conflicts.Add(new StarterPackApplyConflictDto(
+                "ExistingLabelNameConflict",
+                "$.board.labels",
+                $"Board already contains duplicate label name '{duplicateLabelGroup.Key}'. Resolve duplicate names before applying starter packs.",
+                existingColors,
+                duplicateLabelGroup.Key));
+        }
+
+        var existingLabelsByName = existingLabelGroupsByName
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        var existingColumnGroupsByName = board.Columns
+            .GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var duplicateColumnNameGroup in existingColumnGroupsByName.Where(group => group.Count() > 1))
+        {
+            var existingDefinitions = string.Join("; ",
+                duplicateColumnNameGroup
+                    .Select(column => DescribeColumn(column.Position, column.WipLimit))
+                    .OrderBy(definition => definition, StringComparer.Ordinal));
+
+            conflicts.Add(new StarterPackApplyConflictDto(
+                "ExistingColumnNameConflict",
+                "$.board.columns",
+                $"Board already contains duplicate column name '{duplicateColumnNameGroup.Key}'. Resolve duplicate names before applying starter packs.",
+                existingDefinitions,
+                duplicateColumnNameGroup.Key));
+        }
+
+        var existingColumnsByName = existingColumnGroupsByName
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        var existingColumnGroupsByPosition = board.Columns
+            .GroupBy(column => column.Position)
+            .ToList();
+        foreach (var duplicateColumnPositionGroup in existingColumnGroupsByPosition.Where(group => group.Count() > 1))
+        {
+            var existingNames = string.Join(", ",
+                duplicateColumnPositionGroup
+                    .Select(column => column.Name)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+
+            conflicts.Add(new StarterPackApplyConflictDto(
+                "ExistingColumnPositionConflict",
+                "$.board.columns",
+                $"Board already contains multiple columns at position '{duplicateColumnPositionGroup.Key}'. Resolve duplicate positions before applying starter packs.",
+                existingNames,
+                duplicateColumnPositionGroup.Key.ToString()));
+        }
+
+        var existingColumnsByPosition = existingColumnGroupsByPosition
+            .ToDictionary(group => group.Key, group => group.First());
 
         var plannedLabels = new List<StarterPackLabelDto>();
         var plannedLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
