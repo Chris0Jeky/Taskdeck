@@ -179,7 +179,21 @@ Assume API at `http://localhost:5000`.
    - `GET /api/export/database` and `POST /api/import/database` with bearer token while sandbox is disabled.
    - Expected: `403` with JSON body containing `errorCode` and `message`.
 
-## I. Known-Gap Triage (From Product Notes)
+## I. Observability Smoke (OBS-01)
+
+1. In `backend/src/Taskdeck.Api/appsettings.Development.json`, set:
+   - `"Observability": { "EnableConsoleExporter": true }`
+2. Restart API and perform:
+   - one board or card mutation from UI
+   - one ops command run from `/workspace/ops/cli`
+3. Call `GET /health/ready`.
+4. In backend console output, verify:
+   - HTTP telemetry is emitted (request spans/metrics)
+   - custom `taskdeck.*` metrics appear (`queue.backlog`, `worker.*`, `heartbeat.staleness`)
+   - request spans include `taskdeck.correlation_id`
+5. Revert `EnableConsoleExporter` to `false` after smoke validation.
+
+## J. Known-Gap Triage (From Product Notes)
 
 Run these checks even if they currently fail; log outcome explicitly.
 
@@ -193,15 +207,16 @@ Run these checks even if they currently fail; log outcome explicitly.
    - Repro: test on shorter and taller viewports.
    - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 
-## J. Post-Run Documentation Check
+## K. Post-Run Documentation Check
 
 If behavior, commands, or known gaps changed, update:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+- `docs/OBSERVABILITY_BASELINE.md` (when telemetry/dashboard/alert contract changes)
 
-## K. Final Automated Smoke Before Merge
+## L. Final Automated Smoke Before Merge
 
 1. Backend:
    - `dotnet test backend/Taskdeck.sln -c Release -m:1`

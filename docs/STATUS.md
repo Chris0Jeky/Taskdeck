@@ -45,6 +45,7 @@ Current constraints are mostly hardening and consistency:
   - `OpsCliService` + `LogQueryService`
   - `StarterPackManifestValidator` + `StarterPackApplyService` (idempotent apply with dry-run conflict reporting)
   - SignalR realtime baseline: `BoardsHub` with board-scoped subscription authz and application-level board mutation event publishing
+  - OpenTelemetry baseline for API + worker metrics/traces with configurable OTLP/console exporters
 - Auth posture today:
   - JWT middleware is wired
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, automation-proposals, archive, ops-cli, and logs controllers
@@ -126,7 +127,7 @@ Backlog seeding was expanded from near-horizon only to a staged future roadmap g
 
 Current open backlog is now split into:
 - Phase-4 completion tranche (`#33` to `#57`, `Priority I`)
-- Future expansion tranche (`#68` to `#111`, `Priority II` to `Priority V`)
+- Future expansion tranche (`#69` to `#111`, `Priority II` to `Priority V`)
 
 ## Test Status (Executed)
 
@@ -140,10 +141,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 336/336 passing
-- API integration: 151/151 passing
+- API integration: 152/152 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 588/588 passing
+- Backend Total: 589/589 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -167,7 +168,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 899/899 passing
+- Combined automated total: 900/900 passing
 
 ## CI Status
 
@@ -198,7 +199,6 @@ Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
 - out-of-code/platform execution is now tracked, but not yet shipped:
   - containerization + reverse proxy baseline (`#69`)
-  - OpenTelemetry metrics/tracing baseline (`#68`)
   - load/concurrency harness (`#70`)
   - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
   - backup/restore disaster-recovery playbook (`#86`)
@@ -253,6 +253,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered DEBT-01 nullability reduction: removed current domain `CS8618` warnings using EF-safe non-null default initialization patterns and verified backend regression suite pass.
 - Delivered DEBT-02 log-query scalability pass: replaced broad in-memory + command-run N+1 log composition with repository-filtered query paths while preserving logs API behavior and contracts.
 - Delivered COL-01 realtime board updates (`#67`): added authz-safe SignalR board subscriptions, app-layer mutation event publishing, frontend realtime lifecycle with polling fallback, and regression coverage across API/unit/E2E suites.
+- Delivered OBS-01 observability baseline (`#68`): added OpenTelemetry tracing/metrics wiring, worker/queue/heartbeat telemetry emission, correlation-to-trace tagging, and versioned runbook/alert threshold documentation.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

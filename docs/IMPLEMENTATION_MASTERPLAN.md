@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 588 passing
+   - Backend: 589 passing
    - Frontend unit: 292 passing
    - E2E: 19 passing
 8. Documentation consolidation retained:
@@ -148,6 +148,10 @@ Delivered in the latest cycle:
    - added SignalR `BoardsHub` with claims-derived board subscription authz checks and board-scoped group subscriptions
    - added application-layer board mutation notifications for board/card/column/label writes and wired hub fan-out notifier in API composition root
    - integrated frontend board realtime lifecycle (join/switch/leave/reconnect) with websocket-unavailable polling fallback and expanded API/unit/E2E regression coverage
+34. OBS-01 observability baseline delivery:
+   - added OpenTelemetry startup wiring for ASP.NET + HttpClient instrumentation with Taskdeck custom activity source and meter registration
+   - added worker/queue/heartbeat telemetry emission with stable metric names and dimension keys
+   - added correlation ID propagation into trace tags plus a versioned observability baseline runbook with dashboard/alert/smoke-verification guidance
 
 ## Roadmap by Horizon
 
@@ -230,7 +234,7 @@ Exit Criteria:
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
-- Real-time and observability baseline: `#67` (delivered), `#68`
+- Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69`, `#70`
 - Multi-tenancy strategy and collaboration/integration foundations: `#71`, `#72`, `#73`, `#74`, `#75`, `#76`
 
@@ -326,7 +330,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Promote remaining Wave A foundation issues (`#68` to `#71`) to active execution only after `Priority I` is materially reduced.
+2. Promote remaining Wave A foundation issues (`#69` to `#71`) to active execution only after `Priority I` is materially reduced.
 3. Keep issue `#107` updated as the canonical expansion-wave index.
 4. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
 
