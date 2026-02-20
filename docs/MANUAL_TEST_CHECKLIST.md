@@ -19,6 +19,7 @@ In scope:
 
 Out of scope (known implementation boundaries on current `main`):
 - Database export/import is intentionally sandbox-gated and returns `403` unless `DevelopmentSandbox.Enabled` is true in Development.
+- Database import is file-replacement based; if SQLite file locks are active, import may fail and should be retried during a quiescent period.
 
 ## Preconditions
 
