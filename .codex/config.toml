@@ -51,8 +51,8 @@ tool_timeout_sec = 180
 
 [mcp_servers.docker]
 command = "docker"
-args = ["mcp", "gateway", "run", "--servers", "docker", "--transport", "stdio"]
-startup_timeout_sec = 30
+args = ["mcp", "gateway", "run", "--servers", "docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform", "--transport", "stdio"]
+startup_timeout_sec = 60
 tool_timeout_sec = 240
 
 [mcp_servers.github]
