@@ -100,10 +100,10 @@ Completed in Phase 4:
 - starter-pack apply backend (`PACK-02`): idempotent apply endpoint with dry-run conflict reporting and integration coverage for success/re-apply/conflict flows
 - starter-pack frontend catalog (`PACK-03`): board-scoped catalog modal with search, preview (dry-run), and one-click apply flow with frontend interaction tests
 - starter-pack first-party catalog (`PACK-04`): API-backed first-party pack catalog (label/column/blueprint packs) consumed by board starter-pack UI
+- starter-pack deterministic fixture packs (`PACK-05`): Playwright bootstrap helpers and manifest-backed small/medium/edge deterministic E2E fixture coverage
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- starter-pack implementation follow-ons (deterministic fixtures)
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
@@ -159,11 +159,11 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops flow: 14/14 passing
+- E2E smoke + automation/ops + starter-pack fixture flow: 17/17 passing
 
 ### Total
 
-- Combined automated total: 868/868 passing
+- Combined automated total: 871/871 passing
 
 ## CI Status
 
@@ -246,6 +246,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered PACK-02 starter-pack apply backend: added `/api/boards/{boardId}/starter-packs/apply` with idempotent apply semantics, dry-run actionable conflict reporting, and API integration coverage for apply success/re-apply/conflict paths.
 - Delivered PACK-03 starter-pack frontend catalog: added board-level starter pack catalog UI with search, preview (dry-run), and one-click apply flow, plus frontend API/component interaction tests.
 - Delivered PACK-04 first-party starter packs v1: added API-backed first-party starter-pack catalog with common labels, common column flow, and 3 board blueprints, plus backend/frontend coverage for catalog usability and validity.
+- Delivered PACK-05 deterministic fixture packs: added Playwright starter-pack fixture bootstrap helpers with manifest-backed small/medium/edge scenarios and dedicated E2E regression coverage.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
