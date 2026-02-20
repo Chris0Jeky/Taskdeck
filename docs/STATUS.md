@@ -134,10 +134,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 322/322 passing
-- API integration: 142/142 passing
+- API integration: 143/143 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 565/565 passing
+- Backend Total: 566/566 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -161,7 +161,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 854/854 passing
+- Combined automated total: 855/855 passing
 
 ## CI Status
 
