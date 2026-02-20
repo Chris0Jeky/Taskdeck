@@ -4,7 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 using Taskdeck.Api.Contracts;
+using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
@@ -15,6 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
 builder.Services.AddControllers();
+builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -53,6 +56,7 @@ builder.Services.AddScoped<ILogQueryService, LogQueryService>();
 builder.Services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
 builder.Services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
 builder.Services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
+builder.Services.AddSingleton<IBoardRealtimeNotifier, SignalRBoardRealtimeNotifier>();
 
 // LLM provider settings and deterministic provider selection policy
 var llmProviderSettings = builder.Configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
@@ -124,6 +128,17 @@ if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
 
             options.Events = new JwtBearerEvents
             {
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    var path = context.HttpContext.Request.Path;
+                    if (!string.IsNullOrWhiteSpace(accessToken) && path.StartsWithSegments("/hubs/boards"))
+                    {
+                        context.Token = accessToken;
+                    }
+
+                    return Task.CompletedTask;
+                },
                 OnChallenge = async context =>
                 {
                     context.HandleResponse();
@@ -190,6 +205,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<BoardsHub>("/hubs/boards");
 
 app.Run();
 

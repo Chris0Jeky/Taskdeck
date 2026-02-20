@@ -44,6 +44,7 @@ Current constraints are mostly hardening and consistency:
   - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI` behind explicit gates)
   - `OpsCliService` + `LogQueryService`
   - `StarterPackManifestValidator` + `StarterPackApplyService` (idempotent apply with dry-run conflict reporting)
+  - SignalR realtime baseline: `BoardsHub` with board-scoped subscription authz and application-level board mutation event publishing
 - Auth posture today:
   - JWT middleware is wired
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, automation-proposals, archive, ops-cli, and logs controllers
@@ -63,6 +64,7 @@ Current constraints are mostly hardening and consistency:
   - chat session flow with proposal handoff
   - ops template execution and log querying
   - archive listing and restore operations
+  - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
 - Shared maintainability utilities:
@@ -124,7 +126,7 @@ Backlog seeding was expanded from near-horizon only to a staged future roadmap g
 
 Current open backlog is now split into:
 - Phase-4 completion tranche (`#33` to `#57`, `Priority I`)
-- Future expansion tranche (`#67` to `#111`, `Priority II` to `Priority V`)
+- Future expansion tranche (`#68` to `#111`, `Priority II` to `Priority V`)
 
 ## Test Status (Executed)
 
@@ -137,11 +139,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 326/326 passing
-- API integration: 146/146 passing
+- Application: 336/336 passing
+- API integration: 151/151 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 573/573 passing
+- Backend Total: 588/588 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -151,7 +153,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 284/284 passing
+- Frontend unit: 292/292 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -161,11 +163,11 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops + starter-pack fixture flow: 17/17 passing
+- E2E smoke + automation/ops + starter-pack fixture flow: 19/19 passing
 
 ### Total
 
-- Combined automated total: 886/886 passing
+- Combined automated total: 899/899 passing
 
 ## CI Status
 
@@ -250,6 +252,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered PACK-05 deterministic fixture packs: added Playwright starter-pack fixture bootstrap helpers with manifest-backed small/medium/edge scenarios and dedicated E2E regression coverage.
 - Delivered DEBT-01 nullability reduction: removed current domain `CS8618` warnings using EF-safe non-null default initialization patterns and verified backend regression suite pass.
 - Delivered DEBT-02 log-query scalability pass: replaced broad in-memory + command-run N+1 log composition with repository-filtered query paths while preserving logs API behavior and contracts.
+- Delivered COL-01 realtime board updates (`#67`): added authz-safe SignalR board subscriptions, app-layer mutation event publishing, frontend realtime lifecycle with polling fallback, and regression coverage across API/unit/E2E suites.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

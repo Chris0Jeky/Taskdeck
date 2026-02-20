@@ -18,6 +18,7 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
     "axios": "^1.13.2",
     "pinia": "^3.0.4",
     "vue": "^3.5.24",

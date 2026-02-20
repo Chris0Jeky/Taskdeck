@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
+import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import ColumnLane from '../components/board/ColumnLane.vue'
 import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
 import LabelManagerModal from '../components/board/LabelManagerModal.vue'
@@ -32,6 +33,11 @@ const selectedCardId = ref<string | null>(null)
 const selectedColumnIndex = ref<number>(0)
 
 const boardId = ref(route.params.id as string)
+const realtime = createBoardRealtimeController({
+  fetchBoard: async (id: string) => {
+    await boardStore.fetchBoard(id)
+  },
+})
 
 // Sort columns by position
 const sortedColumns = computed(() => {
@@ -42,9 +48,35 @@ const sortedColumns = computed(() => {
 onMounted(async () => {
   try {
     await boardStore.fetchBoard(boardId.value)
+    await realtime.start(boardId.value)
   } catch (error) {
     console.error('Failed to load board:', error)
   }
+})
+
+watch(
+  () => route.params.id,
+  async (nextId) => {
+    const nextBoardId = typeof nextId === 'string' ? nextId : ''
+    if (!nextBoardId || nextBoardId === boardId.value) {
+      return
+    }
+
+    boardId.value = nextBoardId
+    selectedCardId.value = null
+    selectedColumnIndex.value = 0
+
+    try {
+      await boardStore.fetchBoard(boardId.value)
+      await realtime.switchBoard(boardId.value)
+    } catch (error) {
+      console.error('Failed to switch board:', error)
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  void realtime.stop()
 })
 
 async function createColumn() {

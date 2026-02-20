@@ -46,9 +46,9 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 573 passing
-   - Frontend unit: 284 passing
-   - E2E: 17 passing
+   - Backend: 588 passing
+   - Frontend unit: 292 passing
+   - E2E: 19 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
@@ -144,6 +144,10 @@ Delivered in the latest cycle:
    - added authenticated database export/import API routes (`GET /api/export/database`, `POST /api/import/database`)
    - implemented minimal-safe SQLite file export/import with Development-sandbox gating, payload signature/size validation, and backup-restore fallback on file replacement failure
    - added application and API integration coverage for auth, sandbox gating, and import validation paths
+33. COL-01 realtime board updates delivery:
+   - added SignalR `BoardsHub` with claims-derived board subscription authz checks and board-scoped group subscriptions
+   - added application-layer board mutation notifications for board/card/column/label writes and wired hub fan-out notifier in API composition root
+   - integrated frontend board realtime lifecycle (join/switch/leave/reconnect) with websocket-unavailable polling fallback and expanded API/unit/E2E regression coverage
 
 ## Roadmap by Horizon
 
@@ -226,7 +230,7 @@ Exit Criteria:
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
-- Real-time and observability baseline: `#67`, `#68`
+- Real-time and observability baseline: `#67` (delivered), `#68`
 - Container/deployment and performance harness baseline: `#69`, `#70`
 - Multi-tenancy strategy and collaboration/integration foundations: `#71`, `#72`, `#73`, `#74`, `#75`, `#76`
 
@@ -322,7 +326,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
+2. Promote remaining Wave A foundation issues (`#68` to `#71`) to active execution only after `Priority I` is materially reduced.
 3. Keep issue `#107` updated as the canonical expansion-wave index.
 4. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
 
