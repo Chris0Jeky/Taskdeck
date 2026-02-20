@@ -48,6 +48,26 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
             ("ops.getRun", () => _client.GetAsync($"/api/ops/cli/runs/{runId}")),
             ("ops.getRunLogs", () => _client.GetAsync($"/api/ops/cli/runs/{runId}/logs")),
             ("automation.get", () => _client.GetAsync($"/api/automation/proposals/{proposalId}")),
+            ("starterPacks.apply", () => _client.PostAsJsonAsync(
+                $"/api/boards/{boardId}/starter-packs/apply",
+                new ApplyStarterPackDto(
+                    new StarterPackManifestDto
+                    {
+                        SchemaVersion = "1.0",
+                        PackId = "unauthorized-pack",
+                        DisplayName = "Unauthorized Pack",
+                        Compatibility = new StarterPackCompatibilityDto
+                        {
+                            MinTaskdeckVersion = "1.0.0",
+                            RequiredFeatures = ["boards"]
+                        },
+                        Tags = ["starter"],
+                        Labels = [],
+                        Columns = [new StarterPackColumnDto { Name = "Backlog", Position = 0 }],
+                        Templates = [],
+                        SeedCards = []
+                    },
+                    false))),
             ("users.getById", () => _client.GetAsync($"/api/users/{userId}")),
             ("users.update", () => _client.PutAsJsonAsync($"/api/users/{userId}", new UpdateUserDto("Unauthorized", "unauthorized@example.com"))),
             ("users.activate", () => _client.PostAsync($"/api/users/{userId}/activate", content: null)),
