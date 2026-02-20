@@ -45,6 +45,10 @@ function Set-DockerHubUsernameConfig {
     )
 
     $configPath = Join-Path $env:USERPROFILE '.docker\mcp\config.yaml'
+    $configDir  = Split-Path $configPath -Parent
+    if (-not (Test-Path $configDir)) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    }
     if (-not (Test-Path $configPath)) {
         New-Item -ItemType File -Path $configPath -Force | Out-Null
     }
