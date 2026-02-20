@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import ColumnLane from '../components/board/ColumnLane.vue'
 import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
 import LabelManagerModal from '../components/board/LabelManagerModal.vue'
+import StarterPackCatalogModal from '../components/board/StarterPackCatalogModal.vue'
 import KeyboardShortcutsHelp from '../components/KeyboardShortcutsHelp.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
 import type { Column, Card } from '../types/board'
@@ -19,6 +20,7 @@ const newColumnName = ref('')
 const showColumnForm = ref(false)
 const showBoardSettings = ref(false)
 const showLabelManager = ref(false)
+const showStarterPackCatalog = ref(false)
 const showKeyboardHelp = ref(false)
 const showFilterPanel = ref(false)
 const draggedColumn = ref<Column | null>(null)
@@ -292,6 +294,11 @@ function closeOpenUi() {
     return
   }
 
+  if (showStarterPackCatalog.value) {
+    showStarterPackCatalog.value = false
+    return
+  }
+
   if (showBoardSettings.value) {
     showBoardSettings.value = false
     return
@@ -406,6 +413,16 @@ useKeyboardShortcuts([
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
               </svg>
               Labels
+            </button>
+            <button
+              @click="showStarterPackCatalog = true"
+              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              title="Browse Starter Packs"
+            >
+              <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.483 9.246 5 7.5 5 4.462 5 2 6.79 2 9v9c0-2.21 2.462-4 5.5-4 1.746 0 3.332.483 4.5 1.253m0-9C13.168 5.483 14.754 5 16.5 5c3.038 0 5.5 1.79 5.5 4v9c0-2.21-2.462-4-5.5-4-1.746 0-3.332.483-4.5 1.253" />
+              </svg>
+              Starter Packs
             </button>
             <button
               @click="showBoardSettings = true"
@@ -537,6 +554,13 @@ useKeyboardShortcuts([
       :is-open="showBoardSettings"
       @close="showBoardSettings = false"
       @updated="() => { showBoardSettings = false }"
+    />
+
+    <StarterPackCatalogModal
+      :board-id="boardId"
+      :is-open="showStarterPackCatalog"
+      @close="showStarterPackCatalog = false"
+      @applied="() => { showStarterPackCatalog = false }"
     />
 
     <!-- Label Manager Modal -->
