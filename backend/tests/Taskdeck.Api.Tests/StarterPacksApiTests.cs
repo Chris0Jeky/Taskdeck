@@ -159,6 +159,48 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
         columns.Should().NotContain(column => column.Name == "Backlog");
     }
 
+    [Fact]
+    public async Task ApplyStarterPack_ShouldReturnConflict_WhenBoardContainsDuplicateNames()
+    {
+        var board = await CreateBoardAsync();
+
+        var firstLabelResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "duplicate-label", "#111111"));
+        firstLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var secondLabelResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "Duplicate-Label", "#222222"));
+        secondLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var firstColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "duplicate-column", 0, null));
+        firstColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var secondColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Duplicate-Column", 1, null));
+        secondColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var applyResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildCanonicalManifest(), DryRun: false));
+
+        applyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var payload = await applyResponse.Content.ReadFromJsonAsync<StarterPackApplyResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Applied.Should().BeFalse();
+        payload.HasConflicts.Should().BeTrue();
+        payload.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "ExistingLabelNameConflict" &&
+            conflict.Path == "$.board.labels");
+        payload.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "ExistingColumnNameConflict" &&
+            conflict.Path == "$.board.columns");
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         await EnsureAuthenticatedAsync();
