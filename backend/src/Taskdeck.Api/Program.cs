@@ -21,6 +21,14 @@ builder.Services.AddSwaggerGen();
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
 
+var databaseExportImportSettings = new DatabaseExportImportSettings
+{
+    ConnectionString = builder.Configuration.GetConnectionString("DefaultConnection"),
+    MaxImportBytes = builder.Configuration.GetValue<int?>("ExportImport:MaxDatabaseImportBytes")
+        ?? DatabaseExportImportSettings.DefaultMaxImportBytes
+};
+builder.Services.AddSingleton(databaseExportImportSettings);
+
 // Add Application Services
 builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ColumnService>();
@@ -31,7 +39,7 @@ builder.Services.AddScoped<AuthorizationService>();
 builder.Services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<BoardAccessService>();
-builder.Services.AddScoped<ExportImportService>();
+builder.Services.AddScoped<IExportImportService, ExportImportService>();
 builder.Services.AddScoped<LlmQueueService>();
 builder.Services.AddScoped<HistoryService>();
 builder.Services.AddScoped<IAutomationProposalService, AutomationProposalService>();

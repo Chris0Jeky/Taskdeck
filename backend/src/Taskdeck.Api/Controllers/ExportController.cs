@@ -5,6 +5,8 @@ using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -13,9 +15,9 @@ namespace Taskdeck.Api.Controllers;
 [Route("api")]
 public class ExportController : AuthenticatedControllerBase
 {
-    private readonly ExportImportService _exportImportService;
+    private readonly IExportImportService _exportImportService;
 
-    public ExportController(ExportImportService exportImportService, IUserContext userContext)
+    public ExportController(IExportImportService exportImportService, IUserContext userContext)
         : base(userContext)
     {
         _exportImportService = exportImportService;
@@ -59,5 +61,44 @@ public class ExportController : AuthenticatedControllerBase
 
         var result = await _exportImportService.ImportBoardFromJsonAsync(json.GetRawText(), userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    [HttpGet("export/database")]
+    public async Task<IActionResult> ExportDatabase()
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _exportImportService.ExportDatabaseAsync(userId);
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        var fileName = $"taskdeck-db-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.db";
+        return File(result.Value, "application/octet-stream", fileName);
+    }
+
+    [HttpPost("import/database")]
+    public async Task<IActionResult> ImportDatabase([FromForm] IFormFile? file)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        if (file is null)
+        {
+            return Result
+                .Failure(ErrorCodes.ValidationError, "Database import requires a file upload")
+                .ToErrorActionResult();
+        }
+
+        byte[] bytes;
+        await using (var stream = file.OpenReadStream())
+        {
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            bytes = memoryStream.ToArray();
+        }
+
+        var result = await _exportImportService.ImportDatabaseAsync(bytes, userId);
+        return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 }

@@ -4,8 +4,7 @@ using Taskdeck.Domain.Common;
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// Service interface for exporting and importing boards.
-/// SCAFFOLDING: Implementation pending.
+/// Service interface for exporting and importing board and database payloads.
 /// </summary>
 public interface IExportImportService
 {
