@@ -9,4 +9,13 @@ public interface ICommandRunRepository : IRepository<CommandRun>
     Task<IEnumerable<CommandRun>> GetByTemplateNameAsync(string templateName, int limit = 100, CancellationToken cancellationToken = default);
     Task<CommandRun?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default);
     Task<CommandRun?> GetByIdWithLogsAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IEnumerable<CommandRunLog>> QueryLogsAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        Guid? userId = null,
+        string? correlationId = null,
+        string? source = null,
+        string? level = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
 }
