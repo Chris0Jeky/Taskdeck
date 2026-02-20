@@ -1,43 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
-
-interface AuthUser {
-  id: string
-  username: string
-  email: string
-}
-
-interface AuthResult {
-  token: string
-  user: AuthUser
-}
-
-const API_BASE_URL = 'http://localhost:5000/api'
-
-async function bootstrapAuthenticatedSession(page: Page, request: APIRequestContext) {
-  const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
-  const username = `e2e-${unique}`
-  const email = `${username}@taskdeck.local`
-  const password = 'E2ePassword123!'
-
-  const response = await request.post(`${API_BASE_URL}/auth/register`, {
-    data: { username, email, password },
-  })
-  expect(response.ok()).toBeTruthy()
-
-  const auth = await response.json() as AuthResult
-  await page.addInitScript((payload: { token: string; session: { userId: string; username: string; email: string } }) => {
-    localStorage.setItem('taskdeck_token', payload.token)
-    localStorage.setItem('taskdeck_session', JSON.stringify(payload.session))
-  }, {
-    token: auth.token,
-    session: {
-      userId: auth.user.id,
-      username: auth.user.username,
-      email: auth.user.email,
-    },
-  })
-}
+import { registerAndAttachSession } from './support/authSession'
 
 async function gotoBoardsWorkspace(page: Page) {
   await page.goto('/workspace/boards')
@@ -45,7 +8,7 @@ async function gotoBoardsWorkspace(page: Page) {
 }
 
 test.beforeEach(async ({ page, request }) => {
-  await bootstrapAuthenticatedSession(page, request)
+  await registerAndAttachSession(page, request, 'smoke')
 })
 
 async function createBoard(page: Page, boardName: string) {
