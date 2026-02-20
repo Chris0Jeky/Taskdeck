@@ -1,16 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
-
-interface AuthUser {
-  id: string
-  username: string
-  email: string
-}
-
-interface AuthResult {
-  token: string
-  user: AuthUser
-}
+import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 
 interface ImportResultDto {
   success: boolean
@@ -28,35 +18,6 @@ interface ChatSessionDto {
 interface ProposalDto {
   id: string
   summary: string
-}
-
-const API_BASE_URL = 'http://localhost:5000/api'
-
-async function bootstrapAuthenticatedSession(page: Page, request: APIRequestContext): Promise<AuthResult> {
-  const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
-  const username = `e2e-ops-${unique}`
-  const email = `${username}@taskdeck.local`
-  const password = 'E2ePassword123!'
-
-  const response = await request.post(`${API_BASE_URL}/auth/register`, {
-    data: { username, email, password },
-  })
-  expect(response.ok()).toBeTruthy()
-
-  const auth = await response.json() as AuthResult
-  await page.addInitScript((payload: { token: string; session: { userId: string; username: string; email: string } }) => {
-    localStorage.setItem('taskdeck_token', payload.token)
-    localStorage.setItem('taskdeck_session', JSON.stringify(payload.session))
-  }, {
-    token: auth.token,
-    session: {
-      userId: auth.user.id,
-      username: auth.user.username,
-      email: auth.user.email,
-    },
-  })
-
-  return auth
 }
 
 async function createBoardWithColumn(request: APIRequestContext, auth: AuthResult, seed: string): Promise<string> {
@@ -111,7 +72,7 @@ async function waitForProposalInSession(
 let auth: AuthResult
 
 test.beforeEach(async ({ page, request }) => {
-  auth = await bootstrapAuthenticatedSession(page, request)
+  auth = await registerAndAttachSession(page, request, 'ops')
 })
 
 test('chat session should create and return assistant response', async ({ page }) => {

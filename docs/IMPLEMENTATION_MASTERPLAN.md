@@ -46,9 +46,9 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 570 passing
+   - Backend: 571 passing
    - Frontend unit: 284 passing
-   - E2E: 14 passing
+   - E2E: 17 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
@@ -129,6 +129,10 @@ Delivered in the latest cycle:
    - added API-backed first-party starter-pack catalog endpoint: `GET /api/boards/{boardId}/starter-packs/catalog`
    - shipped first-party pack coverage for common labels, common column flow, and 3 board blueprints
    - added backend/frontend tests for catalog availability, pack-category coverage, and manifest validity
+29. PACK-05 deterministic fixture packs delivery:
+   - added Playwright starter-pack fixture bootstrap helper flow for manifest-backed deterministic board-state setup
+   - shipped deterministic fixture manifests for `small`, `medium`, and `edge` scenarios
+   - added dedicated E2E coverage for fixture bootstrap success and conflict dry-run paths
 
 ## Roadmap by Horizon
 
@@ -206,7 +210,7 @@ Exit Criteria:
 ### Priority I (Current Phase 4 Completion Path)
 
 - Security and policy convergence: `#33`, `#34`, `#44`
-- Starter packs foundation: `#48`, `#49`, `#50`, `#51`
+- Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
 - Tech-debt blockers for stable expansion: `#52`, `#53`, `#54`
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
@@ -300,14 +304,14 @@ Initial implementation shape:
 2. Build idempotent package-apply backend endpoints with dry-run and conflict reporting.
 3. Add frontend package catalog with search, preview, and one-click apply (delivered in PACK-03, issue #49).
 4. Ship first-party packs: common labels + common column flows + 3-5 board blueprints (delivered in PACK-04, issue #50).
-5. Reuse package manifests to generate deterministic E2E/QA fixtures.
+5. Reuse package manifests to generate deterministic E2E/QA fixtures (delivered in PACK-05, issue #51).
 6. Add pack telemetry to measure adoption, setup-time reduction, and failure points.
 7. Add pack migration/version compatibility checks for long-lived boards.
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#51` to `#54`).
+2. Complete remaining `Priority I` debt blockers (`#52` to `#54`).
 3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
 4. Keep issue `#107` updated as the canonical expansion-wave index.
 5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
