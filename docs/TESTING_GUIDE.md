@@ -70,7 +70,7 @@ npx playwright test --reporter=line
 ## Container Baseline Validation
 
 ```bash
-docker compose -f deploy/docker-compose.yml --profile baseline config
+TASKDECK_JWT_SECRET=local-test-secret docker compose -f deploy/docker-compose.yml --profile baseline config
 docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
 docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
 ```

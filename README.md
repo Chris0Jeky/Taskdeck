@@ -59,6 +59,8 @@ From repository root:
 ```bash
 docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
 docker build -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
+cp deploy/.env.example deploy/.env   # PowerShell: Copy-Item deploy/.env.example deploy/.env
+# Set a strong TASKDECK_JWT_SECRET value in deploy/.env before starting.
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
 ```
 

@@ -46,12 +46,12 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 3. Validate:
 - App entrypoint: `http://localhost:8080`
 - API via proxy: `http://localhost:8080/api`
-- Swagger via proxy: `http://localhost:8080/swagger`
+- Optional (only when backend runs with `ASPNETCORE_ENVIRONMENT=Development`): `http://localhost:8080/swagger`
 
 4. Stop stack:
 
 ```bash
-docker compose -f deploy/docker-compose.yml --profile baseline down
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline down
 ```
 
 PowerShell helpers from repo root:
@@ -91,7 +91,7 @@ PowerShell export helper:
 powershell -File ./scripts/deploy/Export-TaskdeckImages.ps1
 ```
 
-This writes:
+This writes uncompressed exports:
 - `artifacts/container-images/taskdeck-api.tar`
 - `artifacts/container-images/taskdeck-web.tar`
 - `artifacts/container-images/SHA256SUMS.txt`
@@ -112,6 +112,7 @@ This writes:
   - `X-Frame-Options: SAMEORIGIN`
   - `Referrer-Policy: strict-origin-when-cross-origin`
   - `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+  - `Content-Security-Policy: default-src 'self'; ...`
 - gzip compression for common text/json/js/css/svg payloads
 
 ## TLS and Forwarded-Header Assumptions
