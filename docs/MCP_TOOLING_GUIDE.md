@@ -38,7 +38,18 @@ When you use MCP tools, include:
 | `context7` | PASS | Resolve library id -> query docs works |
 | `playwright` | PASS | End-to-end browser automation works |
 | `chromeDevTools` | PASS | Chrome DevTools protocol surface available via MCP |
-| `docker` | PASS | Docker container/image/runtime operations available via MCP |
+| `docker` | PASS | Docker gateway defaults to `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform` |
+| `docker-docs` | PASS | Fast Docker docs retrieval via Docker MCP gateway |
+| `openapi` | PASS | OpenAPI/Swagger validation + snippet generation available via Docker MCP gateway |
+| `SQLite` | PASS | Local Docker volume-backed SQLite MCP server available via Docker MCP gateway |
+| `filesystem` | PASS | Restricted to `C:\Users\jekyt\source\Taskdeck` and `C:\Users\jekyt\source` |
+| `jetbrains` | PASS | Requires JetBrains MCP plugin and local IDE listener (port `8090`) |
+| `terraform` | PASS | Terraform docs/registry helpers available via Docker MCP gateway |
+| `time` | PASS | Timezone/time conversion helpers available via Docker MCP gateway |
+| `postman` | OPTIONAL | Enabled in Docker catalog but requires `POSTMAN_API_KEY` secret |
+| `dockerhub` | OPTIONAL | Enabled in Docker catalog but requires username + `HUB_PAT_TOKEN` secret |
+| `kubernetes` | OPTIONAL | Enabled in Docker catalog; requires a real kubeconfig/context to initialize |
+| `semgrep` | OPTIONAL | Enabled in Docker catalog; remote endpoint may require Semgrep auth |
 | `ripgrep` | PARTIAL/FAIL | Server reachable; Windows path ops failing; use native `rg` |
 
 Treat `ripgrep` MCP as unavailable until fixed.
@@ -78,6 +89,37 @@ Use GitHub MCP:
 1. Use `docker` MCP for container/image lifecycle inspection.
 2. Use shell `docker compose` commands for canonical repo workflows and script parity.
 3. `docker` MCP in this repo is backed by Docker Desktop's `docker mcp gateway run` path, so Docker Desktop must be running.
+4. Project default Docker MCP gateway servers are in `.codex/config.toml` under `[mcp_servers.docker]`.
+
+---
+
+## Docker Marketplace Bundle (Enabled Locally)
+
+Enabled in Docker MCP registry:
+- `SQLite`
+- `context7`
+- `docker`
+- `docker-docs`
+- `dockerhub`
+- `filesystem`
+- `github-official`
+- `jetbrains`
+- `kubernetes`
+- `openapi`
+- `playwright`
+- `postman`
+- `semgrep`
+- `terraform`
+- `time`
+
+Default Docker MCP gateway servers (stable/no extra secrets required):
+- `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`
+
+Optional-but-enabled servers requiring additional setup:
+- `postman`: set Docker MCP secret `postman.postman-api-key`
+- `dockerhub`: set config `dockerhub.username` and secret `dockerhub.pat_token`
+- `kubernetes`: point `kubernetes.config_path` to a real kubeconfig with valid contexts
+- `semgrep`: remote Semgrep endpoint may require account auth
 
 ---
 
