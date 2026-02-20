@@ -7,8 +7,8 @@ public class ChatMessage : Entity
 {
     public Guid SessionId { get; private set; }
     public ChatMessageRole Role { get; private set; }
-    public string Content { get; private set; }
-    public string MessageType { get; private set; }
+    public string Content { get; private set; } = string.Empty;
+    public string MessageType { get; private set; } = string.Empty;
     public Guid? ProposalId { get; private set; }
     public int? TokenUsage { get; private set; }
 
