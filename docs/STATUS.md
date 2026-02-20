@@ -76,7 +76,7 @@ Progress is tracked against `filesAndResources/taskdeck_technical_design_documen
 1. Phase 1 - Core Data Model and API: COMPLETE (100%)
 2. Phase 2 - Basic Web UI: COMPLETE (100%)
 3. Phase 3 - UX Improvements: COMPLETE (100%)
-4. Phase 4 - Advanced Features: IN PROGRESS (90%)
+4. Phase 4 - Advanced Features: IN PROGRESS (93%)
 
 Completed in Phase 4:
 - CI gate split and matrix hardening
@@ -103,10 +103,10 @@ Completed in Phase 4:
 - starter-pack deterministic fixture packs (`PACK-05`): Playwright bootstrap helpers and manifest-backed small/medium/edge deterministic E2E fixture coverage
 - DEBT-01 nullability reduction (`#52`): domain `CS8618` warnings eliminated with EF-safe non-null initialization defaults
 - DEBT-02 log-query scalability pass (`#53`): repository-filtered query flow replaces full-table scans and command-run log N+1 composition
+- DEBT-03 database export/import (`#54`): sandbox-gated SQLite file export/import endpoints with payload signature/size validation and file-replacement rollback guardrails
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
@@ -189,7 +189,7 @@ Security and identity:
 Automation and data:
 - active LLM provider policy supports explicit mock vs OpenAI switching with safe defaults for development/test environments
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
-- database-level export/import remains unimplemented
+- database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
