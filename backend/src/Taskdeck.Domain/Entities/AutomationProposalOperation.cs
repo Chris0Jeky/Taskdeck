@@ -7,11 +7,11 @@ public class AutomationProposalOperation : Entity
 {
     public Guid ProposalId { get; private set; }
     public int Sequence { get; private set; }
-    public string ActionType { get; private set; }
-    public string TargetType { get; private set; }
+    public string ActionType { get; private set; } = string.Empty;
+    public string TargetType { get; private set; } = string.Empty;
     public string? TargetId { get; private set; }
-    public string Parameters { get; private set; } // JSON payload
-    public string IdempotencyKey { get; private set; }
+    public string Parameters { get; private set; } = string.Empty; // JSON payload
+    public string IdempotencyKey { get; private set; } = string.Empty;
     public string? ExpectedVersion { get; private set; }
 
     // Navigation
