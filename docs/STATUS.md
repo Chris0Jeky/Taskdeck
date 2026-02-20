@@ -101,6 +101,7 @@ Completed in Phase 4:
 - starter-pack frontend catalog (`PACK-03`): board-scoped catalog modal with search, preview (dry-run), and one-click apply flow with frontend interaction tests
 - starter-pack first-party catalog (`PACK-04`): API-backed first-party pack catalog (label/column/blueprint packs) consumed by board starter-pack UI
 - starter-pack deterministic fixture packs (`PACK-05`): Playwright bootstrap helpers and manifest-backed small/medium/edge deterministic E2E fixture coverage
+- DEBT-01 nullability reduction (`#52`): domain `CS8618` warnings eliminated with EF-safe non-null initialization defaults
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
@@ -191,7 +192,6 @@ Automation and data:
 
 Observability and scalability:
 - `LogQueryService` currently performs broad in-memory composition paths (now emits duration/result-size diagnostics)
-- nullable warnings (`CS8618`) remain in domain entities
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
 - out-of-code/platform execution is now tracked, but not yet shipped:
   - containerization + reverse proxy baseline (`#69`)
@@ -247,6 +247,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered PACK-03 starter-pack frontend catalog: added board-level starter pack catalog UI with search, preview (dry-run), and one-click apply flow, plus frontend API/component interaction tests.
 - Delivered PACK-04 first-party starter packs v1: added API-backed first-party starter-pack catalog with common labels, common column flow, and 3 board blueprints, plus backend/frontend coverage for catalog usability and validity.
 - Delivered PACK-05 deterministic fixture packs: added Playwright starter-pack fixture bootstrap helpers with manifest-backed small/medium/edge scenarios and dedicated E2E regression coverage.
+- Delivered DEBT-01 nullability reduction: removed current domain `CS8618` warnings using EF-safe non-null default initialization patterns and verified backend regression suite pass.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
