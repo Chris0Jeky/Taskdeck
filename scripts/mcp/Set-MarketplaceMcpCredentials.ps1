@@ -108,7 +108,7 @@ function Set-DockerHubUsernameConfig {
     }
 
     $content = ($lines -join [Environment]::NewLine).TrimEnd()
-    Set-Content -Path $configPath -Value $content -Encoding ASCII
+    Set-Content -Path $configPath -Value $content -Encoding UTF8
 }
 
 $resolvedPostmanKey = Resolve-Value -ExplicitValue $PostmanApiKey -EnvVarName 'POSTMAN_API_KEY' -UseEnvironmentSwitch:$UseEnvironment
