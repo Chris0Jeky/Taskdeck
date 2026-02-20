@@ -14,7 +14,7 @@ inherit = "all"
 sandbox = "elevated"
 
 [shell_environment_policy.set]
-PATH = "C:\\Users\\jekyt\\source\\Taskdeck\\.runtime-codex\\bin;C:\\Users\\Public\\codex-shell-home\\bin;C:\\Program Files\\Git\\cmd;C:\\Program Files\\dotnet;C:\\Program Files\\nodejs;C:\\Program Files\\GitHub CLI;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Windows\\System32\\OpenSSH"
+PATH = "C:\\Users\\jekyt\\source\\Taskdeck\\.runtime-codex\\bin;C:\\Users\\Public\\codex-shell-home\\bin;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Users\\jekyt\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Program Files\\Git\\cmd;C:\\Program Files\\dotnet;C:\\Program Files\\nodejs;C:\\Program Files\\GitHub CLI;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Windows\\System32\\OpenSSH"
 HOME = 'C:\Users\jekyt\source\Taskdeck\.runtime-codex\home'
 DOTNET_CLI_HOME = 'C:\Users\jekyt\source\Taskdeck\.runtime-codex\dotnet-home'
 NUGET_PACKAGES = 'C:\Users\jekyt\source\Taskdeck\.runtime-codex\nuget\packages'
@@ -42,6 +42,18 @@ command = "npx"
 args = ["-y", "@executeautomation/playwright-mcp-server"]
 startup_timeout_sec = 30
 tool_timeout_sec = 180
+
+[mcp_servers.chromeDevTools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest"]
+startup_timeout_sec = 30
+tool_timeout_sec = 180
+
+[mcp_servers.docker]
+command = "docker"
+args = ["mcp", "gateway", "run", "--servers", "docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform", "--transport", "stdio"]
+startup_timeout_sec = 60
+tool_timeout_sec = 240
 
 [mcp_servers.github]
 url = "https://api.githubcopilot.com/mcp/"

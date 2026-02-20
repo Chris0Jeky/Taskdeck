@@ -67,6 +67,14 @@ cd frontend/taskdeck-web
 npx playwright test --reporter=line
 ```
 
+## Container Baseline Validation
+
+```bash
+TASKDECK_JWT_SECRET=local-test-secret docker compose -f deploy/docker-compose.yml --profile baseline config
+docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
+docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
+```
+
 ## CI Gates
 
 Workflow: `.github/workflows/ci.yml`
@@ -84,6 +92,10 @@ Workflow: `.github/workflows/ci.yml`
 - `frontend-unit`
   - Vitest + typecheck + build
   - Ubuntu and Windows matrix
+- `container-images`
+  - Validates compose rendering
+  - Builds backend/frontend container images
+  - Exports compressed image artifacts plus SHA256 checksums
 - `e2e-smoke`
   - Playwright smoke + automation/ops + fixture bootstrap flow
   - Ubuntu only

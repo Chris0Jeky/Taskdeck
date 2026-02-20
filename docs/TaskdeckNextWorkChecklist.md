@@ -32,7 +32,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 
 ## Out-of-Code and Configuration Actions Coverage
 
-- [ ] Containerized runtime + reverse proxy + compression: `#69`
+- [x] Containerized runtime + reverse proxy + compression: `#69`
 - [ ] Staged rollout strategy: `#101`
 - [ ] Infrastructure as Code baseline: `#102`
 - [ ] SBOM/provenance release policy: `#103`

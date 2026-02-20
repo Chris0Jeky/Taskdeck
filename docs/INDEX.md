@@ -29,6 +29,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Lightweight start-of-session runbook for branch hygiene, issue selection, and verification discipline.
 - `STARTER_PACK_MANIFEST_SCHEMA.md`
   - PACK-01 manifest schema and validation contract for starter-pack foundations.
+- `DEPLOYMENT_CONTAINERS.md`
+  - Container deployment runbook for Docker images, compose baseline, reverse-proxy posture, and staging bootstrap.
 
 ## Active Tooling Docs
 

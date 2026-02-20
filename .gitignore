@@ -94,6 +94,7 @@ NuGet/
 # Logs
 *.log
 logs/
+artifacts/
 /.dotnet/
 SESSION_SUMMARY.md
 scripts/git/redistribute-commit-dates.ps1

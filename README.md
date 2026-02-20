@@ -52,6 +52,34 @@ Default URLs:
 - Swagger: `http://localhost:5000/swagger`
 - Frontend: `http://localhost:5173`
 
+## Container Baseline
+
+From repository root:
+
+```bash
+docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
+docker build -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
+cp deploy/.env.example deploy/.env   # PowerShell: Copy-Item deploy/.env.example deploy/.env
+# Set a strong TASKDECK_JWT_SECRET value in deploy/.env before starting.
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
+```
+
+PowerShell shortcuts:
+
+```powershell
+powershell -File ./scripts/deploy/Upgrade-DockerDesktop.ps1
+powershell -File ./scripts/deploy/Check-ContainerHost.ps1
+powershell -File ./scripts/deploy/Build-TaskdeckImages.ps1
+powershell -File ./scripts/deploy/Start-TaskdeckStack.ps1 -Build
+powershell -File ./scripts/deploy/Smoke-TestTaskdeckStack.ps1
+powershell -File ./scripts/deploy/Stop-TaskdeckStack.ps1
+```
+
+Container entrypoint URL:
+- Reverse proxy: `http://localhost:8080`
+
+For TLS assumptions, forwarded-header posture, staging bootstrap steps, and artifact packaging, see `docs/DEPLOYMENT_CONTAINERS.md`.
+
 ## Test Commands
 
 Backend:
