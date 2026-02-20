@@ -98,10 +98,11 @@ Completed in Phase 4:
 - SEC-04 API error-contract assertions for key auth/validation paths, including middleware-level `401/403` payload normalization
 - starter-pack manifest foundation (`PACK-01`): versioned manifest schema doc plus deterministic backend parsing/validation tests
 - starter-pack apply backend (`PACK-02`): idempotent apply endpoint with dry-run conflict reporting and integration coverage for success/re-apply/conflict flows
+- starter-pack frontend catalog (`PACK-03`): board-scoped catalog modal with search, preview (dry-run), and one-click apply flow with frontend interaction tests
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- starter-pack implementation follow-ons (catalog, first-party packs, deterministic fixtures)
+- starter-pack implementation follow-ons (first-party packs, deterministic fixtures)
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
@@ -142,12 +143,12 @@ Result:
 ### Frontend Unit + Build (Executed)
 
 Commands:
-- `cd frontend/taskdeck-web && npx vitest run`
+- `cd frontend/taskdeck-web && npx vitest --run`
 - `cd frontend/taskdeck-web && npm run typecheck`
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 275/275 passing
+- Frontend unit: 281/281 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -161,7 +162,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 855/855 passing
+- Combined automated total: 861/861 passing
 
 ## CI Status
 
@@ -242,6 +243,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered MVP-01 chat-to-project bootstrap: canonical Markdown checklist paste now creates a proposal-first board bootstrap plan in chat, with one-click approve+execute path and regression coverage for happy path + key validation failures.
 - Delivered PACK-01 starter-pack manifest foundation: added v1 manifest schema documentation and deterministic backend validator/test coverage for parsing, compatibility rules, and cross-reference validation.
 - Delivered PACK-02 starter-pack apply backend: added `/api/boards/{boardId}/starter-packs/apply` with idempotent apply semantics, dry-run actionable conflict reporting, and API integration coverage for apply success/re-apply/conflict paths.
+- Delivered PACK-03 starter-pack frontend catalog: added board-level starter pack catalog UI with search, preview (dry-run), and one-click apply flow, plus frontend API/component interaction tests.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

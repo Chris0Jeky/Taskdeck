@@ -47,7 +47,7 @@ Delivered in the latest cycle:
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
    - Backend: 566 passing
-   - Frontend unit: 275 passing
+   - Frontend unit: 281 passing
    - E2E: 14 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -121,6 +121,10 @@ Delivered in the latest cycle:
    - added authenticated board-scoped apply endpoint: `POST /api/boards/{boardId}/starter-packs/apply`
    - delivered idempotent apply semantics with dry-run actionable conflict reporting for labels/columns/seed-card references
    - added API integration coverage for apply success, re-apply idempotency, dry-run conflict report, and non-dry-run conflict response
+27. PACK-03 starter-pack frontend catalog delivery:
+   - added board-level starter pack catalog UI with search/filter and manifest preview details
+   - integrated dry-run preview and one-click apply flow against the backend apply endpoint
+   - added frontend API + component interaction tests for preview/apply/conflict/empty states
 
 ## Roadmap by Horizon
 
@@ -290,7 +294,7 @@ Brainstormed package candidates (to be converted into scoped work items):
 Initial implementation shape:
 1. Define a versioned package manifest schema (labels, columns, cards, automations, metadata, compatibility rules).
 2. Build idempotent package-apply backend endpoints with dry-run and conflict reporting.
-3. Add frontend package catalog with search, preview, and one-click apply.
+3. Add frontend package catalog with search, preview, and one-click apply (delivered in PACK-03, issue #49).
 4. Ship first-party packs: common labels + common column flows + 3-5 board blueprints.
 5. Reuse package manifests to generate deterministic E2E/QA fixtures.
 6. Add pack telemetry to measure adoption, setup-time reduction, and failure points.
@@ -299,7 +303,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#48` to `#54`).
+2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#50` to `#54`).
 3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
 4. Keep issue `#107` updated as the canonical expansion-wave index.
 5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
