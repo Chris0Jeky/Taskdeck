@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 571 passing
+   - Backend: 573 passing
    - Frontend unit: 284 passing
    - E2E: 17 passing
 8. Documentation consolidation retained:
@@ -136,6 +136,10 @@ Delivered in the latest cycle:
 30. DEBT-01 nullability reduction delivery:
    - eliminated current domain `CS8618` warnings by applying EF-safe non-null default initialization patterns
    - validated no behavior regressions via full backend solution test pass
+31. DEBT-02 log-query scalability pass delivery:
+   - replaced broad in-memory log composition with repository-filtered query paths
+   - removed command-run log query N+1 pattern by introducing direct filtered log querying with run correlation/user projection
+   - validated logs API contract behavior and full backend regression suite pass
 
 ## Roadmap by Horizon
 
@@ -214,7 +218,7 @@ Exit Criteria:
 
 - Security and policy convergence: `#33`, `#34`, `#44`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
-- Tech-debt blockers for stable expansion: `#52` (delivered), `#53`, `#54`
+- Tech-debt blockers for stable expansion: `#52` (delivered), `#53` (delivered), `#54`
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
@@ -314,7 +318,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` debt blockers (`#53` to `#54`).
+2. Complete remaining `Priority I` debt blockers (`#54`).
 3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
 4. Keep issue `#107` updated as the canonical expansion-wave index.
 5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
