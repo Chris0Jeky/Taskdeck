@@ -76,6 +76,42 @@ test('board to card workflow smoke test', async ({ page }) => {
   await expect(page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
 })
 
+test('realtime board updates should propagate across active sessions without refresh', async ({ page }) => {
+  const boardName = `Realtime Board ${Date.now()}`
+  const columnName = `Realtime Column ${Date.now()}`
+  const cardTitle = `Realtime Card ${Date.now()}`
+
+  await createBoard(page, boardName)
+  await addColumn(page, columnName)
+
+  const boardUrl = page.url()
+  const secondaryPage = await page.context().newPage()
+
+  try {
+    await secondaryPage.goto(boardUrl)
+    await expect(secondaryPage.getByRole('heading', { name: boardName })).toBeVisible()
+
+    await addCard(page, columnName, cardTitle)
+
+    await expect(
+      secondaryPage.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
+    ).toBeVisible({ timeout: 15000 })
+  } finally {
+    await secondaryPage.close()
+  }
+})
+
+test('realtime negotiate should reject unauthenticated subscriptions', async ({ request }) => {
+  const response = await request.post('http://localhost:5000/hubs/boards/negotiate?negotiateVersion=1', {
+    data: {},
+  })
+
+  expect(response.status()).toBe(401)
+  await expect(response.json()).resolves.toMatchObject({
+    errorCode: 'Unauthorized',
+  })
+})
+
 test('filter panel shortcut should toggle panel', async ({ page }) => {
   const boardName = `Filter Board ${Date.now()}`
 
