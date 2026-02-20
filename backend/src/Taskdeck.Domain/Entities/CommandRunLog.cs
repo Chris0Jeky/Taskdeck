@@ -7,9 +7,9 @@ public class CommandRunLog : Entity
 {
     public Guid CommandRunId { get; private set; }
     public DateTime Timestamp { get; private set; }
-    public string Level { get; private set; }
-    public string Source { get; private set; }
-    public string Message { get; private set; }
+    public string Level { get; private set; } = string.Empty;
+    public string Source { get; private set; } = string.Empty;
+    public string Message { get; private set; } = string.Empty;
     public string? Metadata { get; private set; } // JSON
 
     // Navigation
