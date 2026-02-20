@@ -7,7 +7,7 @@ public class ChatSession : Entity
 {
     public Guid UserId { get; private set; }
     public Guid? BoardId { get; private set; }
-    public string Title { get; private set; }
+    public string Title { get; private set; } = string.Empty;
     public ChatSessionStatus Status { get; private set; }
 
     private readonly List<ChatMessage> _messages = new();

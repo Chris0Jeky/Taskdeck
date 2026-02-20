@@ -5,14 +5,14 @@ namespace Taskdeck.Domain.Entities;
 
 public class CommandRun : Entity
 {
-    public string TemplateName { get; private set; }
+    public string TemplateName { get; private set; } = string.Empty;
     public Guid RequestedByUserId { get; private set; }
     public CommandRunStatus Status { get; private set; }
     public DateTime? StartedAt { get; private set; }
     public DateTime? CompletedAt { get; private set; }
     public int? ExitCode { get; private set; }
     public bool Truncated { get; private set; }
-    public string CorrelationId { get; private set; }
+    public string CorrelationId { get; private set; } = string.Empty;
     public string? ErrorMessage { get; private set; }
     public string? OutputPreview { get; private set; }
 

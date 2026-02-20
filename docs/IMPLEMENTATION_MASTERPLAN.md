@@ -133,6 +133,9 @@ Delivered in the latest cycle:
    - added Playwright starter-pack fixture bootstrap helper flow for manifest-backed deterministic board-state setup
    - shipped deterministic fixture manifests for `small`, `medium`, and `edge` scenarios
    - added dedicated E2E coverage for fixture bootstrap success and conflict dry-run paths
+30. DEBT-01 nullability reduction delivery:
+   - eliminated current domain `CS8618` warnings by applying EF-safe non-null default initialization patterns
+   - validated no behavior regressions via full backend solution test pass
 
 ## Roadmap by Horizon
 
@@ -211,7 +214,7 @@ Exit Criteria:
 
 - Security and policy convergence: `#33`, `#34`, `#44`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
-- Tech-debt blockers for stable expansion: `#52`, `#53`, `#54`
+- Tech-debt blockers for stable expansion: `#52` (delivered), `#53`, `#54`
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
@@ -311,7 +314,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` debt blockers (`#52` to `#54`).
+2. Complete remaining `Priority I` debt blockers (`#53` to `#54`).
 3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
 4. Keep issue `#107` updated as the canonical expansion-wave index.
 5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
