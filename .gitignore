@@ -54,6 +54,8 @@ lerna-debug.log*
 .vscode/
 .idea/
 .fleet/
+.codex/runtime/
+/.runtime-codex/
 *.swp
 *.swo
 *~
@@ -79,6 +81,8 @@ playwright-report/
 *.nupkg
 *.snupkg
 .nuget/
+/NuGet/
+/Microsoft/
 
 # Backup files
 *.bak
@@ -89,6 +93,7 @@ playwright-report/
 # Logs
 *.log
 logs/
+/.dotnet/
 SESSION_SUMMARY.md
 scripts/git/redistribute-commit-dates.ps1
 docs/WIP/__tmp_3.txt
