@@ -8,4 +8,13 @@ public interface IAuditLogRepository : IRepository<AuditLog>
     Task<IEnumerable<AuditLog>> GetByEntityAsync(string entityType, Guid entityId, int limit = 100, CancellationToken cancellationToken = default);
     Task<IEnumerable<AuditLog>> GetByUserAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default);
     Task<IEnumerable<AuditLog>> GetByBoardAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AuditLog>> QueryAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        Guid? userId = null,
+        Guid? boardId = null,
+        string? source = null,
+        string? level = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
 }

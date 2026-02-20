@@ -102,6 +102,7 @@ Completed in Phase 4:
 - starter-pack first-party catalog (`PACK-04`): API-backed first-party pack catalog (label/column/blueprint packs) consumed by board starter-pack UI
 - starter-pack deterministic fixture packs (`PACK-05`): Playwright bootstrap helpers and manifest-backed small/medium/edge deterministic E2E fixture coverage
 - DEBT-01 nullability reduction (`#52`): domain `CS8618` warnings eliminated with EF-safe non-null initialization defaults
+- DEBT-02 log-query scalability pass (`#53`): repository-filtered query flow replaces full-table scans and command-run log N+1 composition
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
@@ -136,11 +137,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 324/324 passing
+- Application: 326/326 passing
 - API integration: 146/146 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 571/571 passing
+- Backend Total: 573/573 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -164,7 +165,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 872/872 passing
+- Combined automated total: 874/874 passing
 
 ## CI Status
 
@@ -191,7 +192,6 @@ Automation and data:
 - database-level export/import remains unimplemented
 
 Observability and scalability:
-- `LogQueryService` currently performs broad in-memory composition paths (now emits duration/result-size diagnostics)
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
 - out-of-code/platform execution is now tracked, but not yet shipped:
   - containerization + reverse proxy baseline (`#69`)
@@ -248,6 +248,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered PACK-04 first-party starter packs v1: added API-backed first-party starter-pack catalog with common labels, common column flow, and 3 board blueprints, plus backend/frontend coverage for catalog usability and validity.
 - Delivered PACK-05 deterministic fixture packs: added Playwright starter-pack fixture bootstrap helpers with manifest-backed small/medium/edge scenarios and dedicated E2E regression coverage.
 - Delivered DEBT-01 nullability reduction: removed current domain `CS8618` warnings using EF-safe non-null default initialization patterns and verified backend regression suite pass.
+- Delivered DEBT-02 log-query scalability pass: replaced broad in-memory + command-run N+1 log composition with repository-filtered query paths while preserving logs API behavior and contracts.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

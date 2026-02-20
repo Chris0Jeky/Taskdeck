@@ -46,8 +46,10 @@ public class LogQueryService : ILogQueryService
             var effectiveFrom = query.From ?? effectiveTo.AddDays(-7);
             var limit = Math.Clamp(query.Limit, 1, 500);
 
-            var auditEntries = await BuildAuditEntriesAsync(query, effectiveFrom, effectiveTo, ct);
-            var commandEntries = await BuildCommandRunEntriesAsync(query, effectiveFrom, effectiveTo, ct);
+            var auditEntries = string.IsNullOrWhiteSpace(query.CorrelationId)
+                ? await BuildAuditEntriesAsync(query, effectiveFrom, effectiveTo, limit, ct)
+                : new List<LogEntryDto>();
+            var commandEntries = await BuildCommandRunEntriesAsync(query, effectiveFrom, effectiveTo, limit, ct);
 
             var combined = auditEntries
                 .Concat(commandEntries)
@@ -188,63 +190,52 @@ public class LogQueryService : ILogQueryService
         LogQueryDto query,
         DateTimeOffset effectiveFrom,
         DateTimeOffset effectiveTo,
+        int limit,
         CancellationToken ct)
     {
-        var auditLogs = await _unitOfWork.AuditLogs.GetAllAsync(ct);
+        var auditLogs = await _unitOfWork.AuditLogs.QueryAsync(
+            from: effectiveFrom,
+            to: effectiveTo,
+            userId: query.UserId,
+            boardId: query.BoardId,
+            source: query.Source,
+            level: query.Level,
+            limit: limit,
+            cancellationToken: ct);
 
-        var entries = auditLogs
-            .Where(log => log.Timestamp >= effectiveFrom && log.Timestamp <= effectiveTo)
-            .Where(log => !query.UserId.HasValue || log.UserId == query.UserId.Value)
-            .Where(log =>
-                !query.BoardId.HasValue ||
-                (log.EntityType.Equals("board", StringComparison.OrdinalIgnoreCase) && log.EntityId == query.BoardId.Value))
-            .Select(MapAuditLogToEntry)
-            .ToList();
-
-        return entries;
+        return auditLogs.Select(MapAuditLogToEntry).ToList();
     }
 
     private async Task<List<LogEntryDto>> BuildCommandRunEntriesAsync(
         LogQueryDto query,
         DateTimeOffset effectiveFrom,
         DateTimeOffset effectiveTo,
+        int limit,
         CancellationToken ct)
     {
-        var runs = await _unitOfWork.CommandRuns.GetAllAsync(ct);
-        var filteredRuns = runs
-            .Where(run => !query.UserId.HasValue || run.RequestedByUserId == query.UserId.Value)
-            .Where(run => string.IsNullOrWhiteSpace(query.CorrelationId) || run.CorrelationId.Equals(query.CorrelationId, StringComparison.OrdinalIgnoreCase))
+        var logs = await _unitOfWork.CommandRuns.QueryLogsAsync(
+            from: effectiveFrom,
+            to: effectiveTo,
+            userId: query.UserId,
+            correlationId: query.CorrelationId,
+            source: query.Source,
+            level: query.Level,
+            limit: limit,
+            cancellationToken: ct);
+
+        return logs
+            .Select(log => new LogEntryDto(
+                log.Id,
+                new DateTimeOffset(log.Timestamp, TimeSpan.Zero),
+                log.Level,
+                log.Source,
+                "CommandRunLog",
+                log.Message,
+                log.CommandRun.CorrelationId,
+                log.CommandRun.RequestedByUserId,
+                null,
+                log.Metadata))
             .ToList();
-
-        var entries = new List<LogEntryDto>();
-        foreach (var run in filteredRuns)
-        {
-            var runWithLogs = await _unitOfWork.CommandRuns.GetByIdWithLogsAsync(run.Id, ct);
-            if (runWithLogs == null)
-            {
-                continue;
-            }
-
-            entries.AddRange(runWithLogs.Logs
-                .Where(log =>
-                {
-                    var timestamp = new DateTimeOffset(log.Timestamp, TimeSpan.Zero);
-                    return timestamp >= effectiveFrom && timestamp <= effectiveTo;
-                })
-                .Select(log => new LogEntryDto(
-                    log.Id,
-                    new DateTimeOffset(log.Timestamp, TimeSpan.Zero),
-                    log.Level,
-                    log.Source,
-                    "CommandRunLog",
-                    log.Message,
-                    run.CorrelationId,
-                    run.RequestedByUserId,
-                    null,
-                    log.Metadata)));
-        }
-
-        return entries;
     }
 
     private static Result ValidateQuery(LogQueryDto query)

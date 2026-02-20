@@ -21,8 +21,28 @@ public class LogQueryServiceTests
         _unitOfWorkMock.SetupGet(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.SetupGet(u => u.CommandRuns).Returns(_commandRunRepoMock.Object);
 
-        _auditLogRepoMock.Setup(r => r.GetAllAsync(default)).ReturnsAsync(Array.Empty<AuditLog>());
-        _commandRunRepoMock.Setup(r => r.GetAllAsync(default)).ReturnsAsync(Array.Empty<CommandRun>());
+        _auditLogRepoMock
+            .Setup(r => r.QueryAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<AuditLog>());
+        _commandRunRepoMock
+            .Setup(r => r.QueryLogsAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<CommandRunLog>());
 
         _service = new LogQueryService(_unitOfWorkMock.Object);
     }
@@ -55,5 +75,66 @@ public class LogQueryServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task QueryLogsAsync_ShouldUseFilteredRepositoryQueries_InsteadOfFullTableComposition()
+    {
+        var from = DateTimeOffset.UtcNow.AddHours(-1);
+        var to = DateTimeOffset.UtcNow;
+        const int limit = 25;
+
+        var result = await _service.QueryLogsAsync(new LogQueryDto(From: from, To: to, Limit: limit), default);
+
+        result.IsSuccess.Should().BeTrue();
+
+        _auditLogRepoMock.Verify(r => r.QueryAsync(
+            from,
+            to,
+            null,
+            null,
+            null,
+            null,
+            limit,
+            It.IsAny<CancellationToken>()), Times.Once);
+        _commandRunRepoMock.Verify(r => r.QueryLogsAsync(
+            from,
+            to,
+            null,
+            null,
+            null,
+            null,
+            limit,
+            It.IsAny<CancellationToken>()), Times.Once);
+        _auditLogRepoMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _commandRunRepoMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _commandRunRepoMock.Verify(r => r.GetByIdWithLogsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task QueryLogsAsync_ShouldSkipAuditQuery_WhenCorrelationIdFilterProvided()
+    {
+        var result = await _service.QueryLogsAsync(new LogQueryDto(CorrelationId: "corr-123", Limit: 50), default);
+
+        result.IsSuccess.Should().BeTrue();
+
+        _auditLogRepoMock.Verify(r => r.QueryAsync(
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<int>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _commandRunRepoMock.Verify(r => r.QueryLogsAsync(
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<Guid?>(),
+            "corr-123",
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            50,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }
