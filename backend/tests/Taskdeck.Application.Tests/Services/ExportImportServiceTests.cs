@@ -403,6 +403,20 @@ public class ExportImportServiceTests
     }
 
     [Fact]
+    public async Task ExportDatabaseAsync_ShouldReturnForbidden_WhenSandboxDisabled()
+    {
+        var user = CreateUser("dbexport");
+        var service = CreateDatabaseService("Data Source=taskdeck.db", sandboxEnabled: false);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+        var result = await service.ExportDatabaseAsync(user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
     public async Task ImportDatabaseAsync_ShouldReturnForbidden_WhenSandboxDisabled()
     {
         var user = CreateUser("dbimport");
@@ -473,6 +487,45 @@ public class ExportImportServiceTests
         }
         finally
         {
+            DeleteIfExists(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task ImportDatabaseAsync_ShouldPreserveOriginalDatabase_WhenOverwriteFailsAfterBackupCreation()
+    {
+        var user = CreateUser("dbimport");
+        var dbPath = CreateTempFilePath();
+        var originalBytes = CreateSqlitePayload();
+        var importedBytes = CreateSqlitePayload(length: 384);
+
+        try
+        {
+            await File.WriteAllBytesAsync(dbPath, originalBytes);
+            var originalAttributes = File.GetAttributes(dbPath);
+            File.SetAttributes(dbPath, originalAttributes | FileAttributes.ReadOnly);
+
+            var service = CreateDatabaseService($"Data Source={dbPath}");
+            _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default)).ReturnsAsync(user);
+
+            var result = await service.ImportDatabaseAsync(importedBytes, user.Id);
+
+            result.IsSuccess.Should().BeFalse();
+            result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+            var diskBytes = await File.ReadAllBytesAsync(dbPath);
+            diskBytes.Should().Equal(originalBytes);
+        }
+        finally
+        {
+            if (File.Exists(dbPath))
+            {
+                var attributes = File.GetAttributes(dbPath);
+                if (attributes.HasFlag(FileAttributes.ReadOnly))
+                {
+                    File.SetAttributes(dbPath, attributes & ~FileAttributes.ReadOnly);
+                }
+            }
+
             DeleteIfExists(dbPath);
         }
     }

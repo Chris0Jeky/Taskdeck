@@ -323,6 +323,42 @@ public class ExportImportService : IExportImportService
             File.Copy(stagingPath, databasePath, overwrite: true);
             return Result.Success();
         }
+        catch (IOException ex)
+        {
+            if (backupCreated && File.Exists(backupPath))
+            {
+                try
+                {
+                    File.Copy(backupPath, databasePath, overwrite: true);
+                }
+                catch
+                {
+                    // Intentionally swallow backup restore failures to preserve original error.
+                }
+            }
+
+            return Result.Failure(
+                ErrorCodes.InvalidOperation,
+                $"Database import failed because the database file is in use or locked. Ensure no active connections and retry. Details: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            if (backupCreated && File.Exists(backupPath))
+            {
+                try
+                {
+                    File.Copy(backupPath, databasePath, overwrite: true);
+                }
+                catch
+                {
+                    // Intentionally swallow backup restore failures to preserve original error.
+                }
+            }
+
+            return Result.Failure(
+                ErrorCodes.InvalidOperation,
+                $"Database import failed due to file access restrictions. Ensure no active connections and retry. Details: {ex.Message}");
+        }
         catch (Exception ex)
         {
             if (backupCreated && File.Exists(backupPath))

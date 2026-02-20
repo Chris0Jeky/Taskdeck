@@ -16,11 +16,16 @@ namespace Taskdeck.Api.Controllers;
 public class ExportController : AuthenticatedControllerBase
 {
     private readonly IExportImportService _exportImportService;
+    private readonly DatabaseExportImportSettings _databaseSettings;
 
-    public ExportController(IExportImportService exportImportService, IUserContext userContext)
+    public ExportController(
+        IExportImportService exportImportService,
+        DatabaseExportImportSettings databaseSettings,
+        IUserContext userContext)
         : base(userContext)
     {
         _exportImportService = exportImportService;
+        _databaseSettings = databaseSettings;
     }
 
     [HttpGet("export/boards/{boardId}")]
@@ -87,6 +92,26 @@ public class ExportController : AuthenticatedControllerBase
         {
             return Result
                 .Failure(ErrorCodes.ValidationError, "Database import requires a file upload")
+                .ToErrorActionResult();
+        }
+
+        if (file.Length == 0)
+        {
+            return Result
+                .Failure(ErrorCodes.ValidationError, "Database import payload cannot be empty")
+                .ToErrorActionResult();
+        }
+
+        var maxImportBytes = Math.Clamp(
+            _databaseSettings.MaxImportBytes,
+            1 * 1024 * 1024,
+            500 * 1024 * 1024);
+        if (file.Length > maxImportBytes)
+        {
+            return Result
+                .Failure(
+                    ErrorCodes.ValidationError,
+                    $"Database import payload exceeds max size of {maxImportBytes} bytes")
                 .ToErrorActionResult();
         }
 

@@ -176,6 +176,17 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
             await _client.PostAsync("/api/import/database", importContent));
     }
 
+    [Fact]
+    public async Task ImportDatabase_ShouldReturnBadRequest_WhenFileIsMissing()
+    {
+        await EnsureAuthenticatedAsync();
+
+        using var content = new MultipartFormDataContent();
+        var response = await _client.PostAsync("/api/import/database", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private async Task<Guid> CreateOwnedBoardAsync(string stem)
     {
         await EnsureAuthenticatedAsync();
