@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-19  
+Last Updated: 2026-02-20  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 561 passing
+   - Backend: 566 passing
    - Frontend unit: 275 passing
    - E2E: 14 passing
 8. Documentation consolidation retained:
@@ -117,6 +117,10 @@ Delivered in the latest cycle:
 25. PACK-01 null-collection hardening follow-up:
    - manifest validation now handles explicit JSON `null` collections deterministically (array-shape errors instead of null-reference exceptions)
    - nested collection paths (`compatibility.requiredFeatures`, template checklists, seed-card labels) are now null-safe and regression-tested
+26. PACK-02 starter-pack apply backend delivery:
+   - added authenticated board-scoped apply endpoint: `POST /api/boards/{boardId}/starter-packs/apply`
+   - delivered idempotent apply semantics with dry-run actionable conflict reporting for labels/columns/seed-card references
+   - added API integration coverage for apply success, re-apply idempotency, dry-run conflict report, and non-dry-run conflict response
 
 ## Roadmap by Horizon
 

@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-19  
+Last Updated: 2026-02-20  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -27,7 +27,7 @@ Current constraints are mostly hardening and consistency:
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core + SQLite
 - Core controllers: boards, columns, cards, labels
-- Extended controllers: auth, users, board-access, audit, export/import, llm-queue, automation proposals, archive, chat, ops-cli, logs, health
+- Extended controllers: auth, users, board-access, audit, export/import, llm-queue, automation proposals, archive, chat, ops-cli, logs, health, starter-packs
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
@@ -43,6 +43,7 @@ Current constraints are mostly hardening and consistency:
   - `ArchiveRecoveryService`
   - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI` behind explicit gates)
   - `OpsCliService` + `LogQueryService`
+  - `StarterPackManifestValidator` + `StarterPackApplyService` (idempotent apply with dry-run conflict reporting)
 - Auth posture today:
   - JWT middleware is wired
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, automation-proposals, archive, ops-cli, and logs controllers
@@ -96,10 +97,11 @@ Completed in Phase 4:
 - API integration harness additions for authz assertions (`AssertUnauthorized`, `AssertForbidden`, `AssertNotFoundOrForbidden`, `AssertCrossUserIsolation`)
 - SEC-04 API error-contract assertions for key auth/validation paths, including middleware-level `401/403` payload normalization
 - starter-pack manifest foundation (`PACK-01`): versioned manifest schema doc plus deterministic backend parsing/validation tests
+- starter-pack apply backend (`PACK-02`): idempotent apply endpoint with dry-run conflict reporting and integration coverage for success/re-apply/conflict flows
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- starter-pack implementation follow-ons (apply endpoint, catalog, first-party packs, deterministic fixtures)
+- starter-pack implementation follow-ons (catalog, first-party packs, deterministic fixtures)
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
@@ -122,7 +124,7 @@ Current open backlog is now split into:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-19
+Verification Date: 2026-02-20
 
 ### Backend (Executed)
 
@@ -132,10 +134,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 322/322 passing
-- API integration: 138/138 passing
+- API integration: 143/143 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 561/561 passing
+- Backend Total: 566/566 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -159,7 +161,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 850/850 passing
+- Combined automated total: 855/855 passing
 
 ## CI Status
 
@@ -239,6 +241,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered AUTO-02 planner/executor hardening: expanded deterministic planner instruction coverage (board/column intents), hardened executor parameter validation and partial-failure semantics, and improved audit entity attribution with new regression coverage.
 - Delivered MVP-01 chat-to-project bootstrap: canonical Markdown checklist paste now creates a proposal-first board bootstrap plan in chat, with one-click approve+execute path and regression coverage for happy path + key validation failures.
 - Delivered PACK-01 starter-pack manifest foundation: added v1 manifest schema documentation and deterministic backend validator/test coverage for parsing, compatibility rules, and cross-reference validation.
+- Delivered PACK-02 starter-pack apply backend: added `/api/boards/{boardId}/starter-packs/apply` with idempotent apply semantics, dry-run actionable conflict reporting, and API integration coverage for apply success/re-apply/conflict paths.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

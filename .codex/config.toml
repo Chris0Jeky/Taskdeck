@@ -1,11 +1,17 @@
 # Project-scoped Codex MCP configuration for Taskdeck.
 # This file is loaded when the repository is a trusted project.
 
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
 [features]
 multi_agent = true
 
 [shell_environment_policy]
 inherit = "all"
+
+[windows]
+sandbox = "elevated"
 
 [shell_environment_policy.set]
 PATH = "C:\\Users\\Public\\codex-shell-home\\bin;C:\\Program Files\\Git\\cmd;C:\\Program Files\\dotnet;C:\\Program Files\\nodejs;C:\\Program Files\\GitHub CLI;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Windows\\System32\\OpenSSH"

@@ -81,6 +81,7 @@ playwright-report/
 *.nupkg
 *.snupkg
 .nuget/
+NuGet/
 /NuGet/
 /Microsoft/
 
