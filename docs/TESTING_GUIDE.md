@@ -11,15 +11,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-20)
 
-- Backend: 573/573 passing
+- Backend: 585/585 passing
   - Domain: 93
-  - Application: 326
-  - API integration: 146
+  - Application: 336
+  - API integration: 148
   - CLI contract: 4
   - Architecture boundaries: 4
 - Frontend unit: 284/284 passing
 - Frontend E2E (smoke + automation/ops + starter-pack fixtures): 17/17 passing
-- Combined automated total: 874/874 passing
+- Combined automated total: 886/886 passing
 
 ## Backend Commands
 
@@ -96,6 +96,7 @@ Workflow: `.github/workflows/ci.yml`
 - Application services:
   - `backend/tests/Taskdeck.Application.Tests`
   - Includes board/card/column/label/auth/authorization/board-access/export-import/history/queue plus automation/archive/chat/ops/log services
+  - Includes database export/import guardrail coverage (sandbox gating, payload validation, file replacement)
   - Includes starter-pack manifest parsing/validation, first-party catalog validity, and apply-planning coverage
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`

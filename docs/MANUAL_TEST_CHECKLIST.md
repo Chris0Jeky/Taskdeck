@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-02-18
+Last Updated: 2026-02-20
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -18,7 +18,8 @@ In scope:
 - API contract spot checks for auth, access, queue, archive, automation, chat, and ops endpoints.
 
 Out of scope (known implementation boundaries on current `main`):
-- `ExportDatabaseAsync` and `ImportDatabaseAsync` are not implemented.
+- Database export/import is intentionally sandbox-gated and returns `403` unless `DevelopmentSandbox.Enabled` is true in Development.
+- Database import is file-replacement based; if SQLite file locks are active, import may fail and should be retried during a quiescent period.
 
 ## Preconditions
 
@@ -174,6 +175,9 @@ Assume API at `http://localhost:5000`.
 6. Automation execute without `Idempotency-Key`:
    - `POST /api/automation/proposals/{id}/execute` without header.
    - Expected: `400` with validation-style `errorCode` and `message`.
+7. Database export/import sandbox gate:
+   - `GET /api/export/database` and `POST /api/import/database` with bearer token while sandbox is disabled.
+   - Expected: `403` with JSON body containing `errorCode` and `message`.
 
 ## I. Known-Gap Triage (From Product Notes)
 

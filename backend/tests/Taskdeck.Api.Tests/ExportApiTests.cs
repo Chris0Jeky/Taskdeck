@@ -37,6 +37,13 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
         using var document = JsonDocument.Parse("""{"board":{"id":"00000000-0000-0000-0000-000000000000","name":"x","isArchived":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},"columns":[],"cards":[],"labels":[],"accesses":[],"exportedAt":"2026-01-01T00:00:00Z","exportedBy":"test"}""");
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsJsonAsync("/api/import/boards/json", document.RootElement));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync("/api/export/database"));
+
+        using var databaseImportContent = CreateDatabaseImportContent(CreateSqlitePayload());
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsync("/api/import/database", databaseImportContent));
     }
 
     [Fact]
@@ -156,6 +163,30 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
+    [Fact]
+    public async Task DatabaseEndpoints_ShouldReturnForbidden_WhenSandboxIsDisabled()
+    {
+        await EnsureAuthenticatedAsync();
+
+        await ApiTestHarness.AssertForbiddenAsync(
+            await _client.GetAsync("/api/export/database"));
+
+        using var importContent = CreateDatabaseImportContent(CreateSqlitePayload());
+        await ApiTestHarness.AssertForbiddenAsync(
+            await _client.PostAsync("/api/import/database", importContent));
+    }
+
+    [Fact]
+    public async Task ImportDatabase_ShouldReturnBadRequest_WhenFileIsMissing()
+    {
+        await EnsureAuthenticatedAsync();
+
+        using var content = new MultipartFormDataContent();
+        var response = await _client.PostAsync("/api/import/database", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private async Task<Guid> CreateOwnedBoardAsync(string stem)
     {
         await EnsureAuthenticatedAsync();
@@ -186,5 +217,20 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AuthenticateAsync(_client, "export-suite");
         _isAuthenticated = true;
+    }
+
+    private static MultipartFormDataContent CreateDatabaseImportContent(byte[] payload)
+    {
+        var content = new MultipartFormDataContent();
+        content.Add(new ByteArrayContent(payload), "file", "taskdeck.db");
+        return content;
+    }
+
+    private static byte[] CreateSqlitePayload()
+    {
+        var payload = new byte[128];
+        var signature = System.Text.Encoding.ASCII.GetBytes("SQLite format 3\0");
+        Array.Copy(signature, payload, signature.Length);
+        return payload;
     }
 }

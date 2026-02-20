@@ -140,6 +140,10 @@ Delivered in the latest cycle:
    - replaced broad in-memory log composition with repository-filtered query paths
    - removed command-run log query N+1 pattern by introducing direct filtered log querying with run correlation/user projection
    - validated logs API contract behavior and full backend regression suite pass
+32. DEBT-03 database export/import delivery:
+   - added authenticated database export/import API routes (`GET /api/export/database`, `POST /api/import/database`)
+   - implemented minimal-safe SQLite file export/import with Development-sandbox gating, payload signature/size validation, and backup-restore fallback on file replacement failure
+   - added application and API integration coverage for auth, sandbox gating, and import validation paths
 
 ## Roadmap by Horizon
 
@@ -218,7 +222,7 @@ Exit Criteria:
 
 - Security and policy convergence: `#33`, `#34`, `#44`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
-- Tech-debt blockers for stable expansion: `#52` (delivered), `#53` (delivered), `#54`
+- Tech-debt blockers for stable expansion: `#52` (delivered), `#53` (delivered), `#54` (delivered)
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
@@ -318,10 +322,9 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` debt blockers (`#54`).
-3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
-4. Keep issue `#107` updated as the canonical expansion-wave index.
-5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
+2. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
+3. Keep issue `#107` updated as the canonical expansion-wave index.
+4. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
 
 ## Documentation Operating Model
 Active docs:
