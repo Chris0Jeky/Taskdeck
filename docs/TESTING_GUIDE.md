@@ -17,9 +17,9 @@ Companion Active Docs:
   - API integration: 151
   - CLI contract: 4
   - Architecture boundaries: 4
-- Frontend unit: 290/290 passing
+- Frontend unit: 292/292 passing
 - Frontend E2E (smoke + automation/ops + starter-pack fixtures): 19/19 passing
-- Combined automated total: 897/897 passing
+- Combined automated total: 899/899 passing
 
 ## Backend Commands
 
@@ -113,6 +113,7 @@ Workflow: `.github/workflows/ci.yml`
 - End-to-end journeys:
   - `frontend/taskdeck-web/tests/e2e`
   - Includes deterministic starter-pack fixture bootstrap coverage for `small`, `medium`, and `edge` manifest scenarios
+  - Includes unauthenticated SignalR negotiate rejection coverage aligned with the runtime client handshake path
 
 ## Manual Verification
 
