@@ -99,10 +99,11 @@ Completed in Phase 4:
 - starter-pack manifest foundation (`PACK-01`): versioned manifest schema doc plus deterministic backend parsing/validation tests
 - starter-pack apply backend (`PACK-02`): idempotent apply endpoint with dry-run conflict reporting and integration coverage for success/re-apply/conflict flows
 - starter-pack frontend catalog (`PACK-03`): board-scoped catalog modal with search, preview (dry-run), and one-click apply flow with frontend interaction tests
+- starter-pack first-party catalog (`PACK-04`): API-backed first-party pack catalog (label/column/blueprint packs) consumed by board starter-pack UI
 
 Remaining for Phase 4 completion:
 - repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
-- starter-pack implementation follow-ons (first-party packs, deterministic fixtures)
+- starter-pack implementation follow-ons (deterministic fixtures)
 - database-level export/import implementation
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
@@ -134,11 +135,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 322/322 passing
-- API integration: 143/143 passing
+- Application: 324/324 passing
+- API integration: 145/145 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 566/566 passing
+- Backend Total: 570/570 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -148,7 +149,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 281/281 passing
+- Frontend unit: 284/284 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -162,7 +163,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 861/861 passing
+- Combined automated total: 868/868 passing
 
 ## CI Status
 
@@ -244,6 +245,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered PACK-01 starter-pack manifest foundation: added v1 manifest schema documentation and deterministic backend validator/test coverage for parsing, compatibility rules, and cross-reference validation.
 - Delivered PACK-02 starter-pack apply backend: added `/api/boards/{boardId}/starter-packs/apply` with idempotent apply semantics, dry-run actionable conflict reporting, and API integration coverage for apply success/re-apply/conflict paths.
 - Delivered PACK-03 starter-pack frontend catalog: added board-level starter pack catalog UI with search, preview (dry-run), and one-click apply flow, plus frontend API/component interaction tests.
+- Delivered PACK-04 first-party starter packs v1: added API-backed first-party starter-pack catalog with common labels, common column flow, and 3 board blueprints, plus backend/frontend coverage for catalog usability and validity.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

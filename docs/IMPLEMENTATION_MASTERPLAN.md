@@ -46,8 +46,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 566 passing
-   - Frontend unit: 281 passing
+   - Backend: 570 passing
+   - Frontend unit: 284 passing
    - E2E: 14 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -125,6 +125,10 @@ Delivered in the latest cycle:
    - added board-level starter pack catalog UI with search/filter and manifest preview details
    - integrated dry-run preview and one-click apply flow against the backend apply endpoint
    - added frontend API + component interaction tests for preview/apply/conflict/empty states
+28. PACK-04 first-party starter packs v1 delivery:
+   - added API-backed first-party starter-pack catalog endpoint: `GET /api/boards/{boardId}/starter-packs/catalog`
+   - shipped first-party pack coverage for common labels, common column flow, and 3 board blueprints
+   - added backend/frontend tests for catalog availability, pack-category coverage, and manifest validity
 
 ## Roadmap by Horizon
 
@@ -295,7 +299,7 @@ Initial implementation shape:
 1. Define a versioned package manifest schema (labels, columns, cards, automations, metadata, compatibility rules).
 2. Build idempotent package-apply backend endpoints with dry-run and conflict reporting.
 3. Add frontend package catalog with search, preview, and one-click apply (delivered in PACK-03, issue #49).
-4. Ship first-party packs: common labels + common column flows + 3-5 board blueprints.
+4. Ship first-party packs: common labels + common column flows + 3-5 board blueprints (delivered in PACK-04, issue #50).
 5. Reuse package manifests to generate deterministic E2E/QA fixtures.
 6. Add pack telemetry to measure adoption, setup-time reduction, and failure points.
 7. Add pack migration/version compatibility checks for long-lived boards.
@@ -303,7 +307,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#50` to `#54`).
+2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#51` to `#54`).
 3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
 4. Keep issue `#107` updated as the canonical expansion-wave index.
 5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
