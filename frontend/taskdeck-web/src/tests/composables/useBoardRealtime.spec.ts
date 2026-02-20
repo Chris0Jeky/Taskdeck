@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBoardRealtimeController } from '../../composables/useBoardRealtime'
+import { HttpTransportType } from '@microsoft/signalr'
 
 const callbacks: {
   boardMutation?: (event: { boardId: string }) => Promise<void> | void
@@ -57,6 +58,7 @@ vi.mock('@microsoft/signalr', () => ({
 describe('createBoardRealtimeController', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.removeItem('taskdeck_token')
     callbacks.boardMutation = undefined
     callbacks.reconnecting = undefined
     callbacks.reconnected = undefined
@@ -79,6 +81,33 @@ describe('createBoardRealtimeController', () => {
 
     expect(mockConnection.start).toHaveBeenCalledOnce()
     expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-1')
+  })
+
+  it('configures SignalR with websocket transport and negotiation enabled', async () => {
+    const fetchBoard = vi.fn(async () => undefined)
+    localStorage.setItem('taskdeck_token', 'token-123')
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+
+    const withUrlCall = mockBuilder.withUrl.mock.calls.at(0)
+    expect(withUrlCall).toBeDefined()
+    const [, options] = withUrlCall as [string, { accessTokenFactory: () => string; transport: number; skipNegotiation?: boolean }]
+    expect(options.transport).toBe(HttpTransportType.WebSockets)
+    expect(options.skipNegotiation).toBeUndefined()
+    expect(options.accessTokenFactory()).toBe('token-123')
+  })
+
+  it('uses an empty access token when no session token is present', async () => {
+    const fetchBoard = vi.fn(async () => undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+
+    const withUrlCall = mockBuilder.withUrl.mock.calls.at(0)
+    expect(withUrlCall).toBeDefined()
+    const [, options] = withUrlCall as [string, { accessTokenFactory: () => string }]
+    expect(options.accessTokenFactory()).toBe('')
   })
 
   it('refreshes board when matching board mutation event arrives', async () => {

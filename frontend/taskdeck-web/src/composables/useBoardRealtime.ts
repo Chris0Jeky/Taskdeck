@@ -79,7 +79,6 @@ export function createBoardRealtimeController(
       .withUrl(resolveHubUrl(), {
         accessTokenFactory: getAccessToken,
         transport: HttpTransportType.WebSockets,
-        skipNegotiation: true,
       })
       .withAutomaticReconnect(RECONNECT_DELAYS_MS)
       .configureLogging(LogLevel.Warning)

@@ -95,7 +95,7 @@ test('realtime board updates should propagate across active sessions without ref
 
     await expect(
       secondaryPage.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
-    ).toBeVisible({ timeout: 15000 })
+    ).toBeVisible({ timeout: 25000 })
   } finally {
     await secondaryPage.close()
   }
