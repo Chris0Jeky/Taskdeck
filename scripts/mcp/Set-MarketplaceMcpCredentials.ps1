@@ -49,7 +49,7 @@ function Set-DockerHubUsernameConfig {
         New-Item -ItemType File -Path $configPath -Force | Out-Null
     }
 
-    $raw = Get-Content -Raw $configPath
+    $raw = Get-Content -Raw -ErrorAction SilentlyContinue $configPath
     if ($null -eq $raw) {
         $raw = ''
     }
