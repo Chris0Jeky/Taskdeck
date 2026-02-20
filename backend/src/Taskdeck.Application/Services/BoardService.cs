@@ -10,16 +10,21 @@ public class BoardService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService? _authorizationService;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
     public BoardService(IUnitOfWork unitOfWork)
-        : this(unitOfWork, authorizationService: null)
+        : this(unitOfWork, authorizationService: null, realtimeNotifier: null)
     {
     }
 
-    public BoardService(IUnitOfWork unitOfWork, IAuthorizationService? authorizationService)
+    public BoardService(
+        IUnitOfWork unitOfWork,
+        IAuthorizationService? authorizationService,
+        IBoardRealtimeNotifier? realtimeNotifier = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
+        _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
     }
 
     public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
@@ -131,6 +136,9 @@ public class BoardService
             var board = new Board(dto.Name, dto.Description, ownerId);
             await _unitOfWork.Boards.AddAsync(board, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(board.Id, "board", "created", board.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             return Result.Success(MapToDto(board));
         }
@@ -160,6 +168,9 @@ public class BoardService
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(board.Id, "board", "updated", board.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
             return Result.Success(MapToDto(board));
         }
         catch (DomainException ex)
@@ -185,6 +196,9 @@ public class BoardService
 
         board.Archive(); // Soft delete
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.NotifyBoardMutationAsync(
+            new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
+            cancellationToken);
         return Result.Success();
     }
 

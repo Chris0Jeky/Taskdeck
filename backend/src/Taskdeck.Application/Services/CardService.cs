@@ -9,10 +9,17 @@ namespace Taskdeck.Application.Services;
 public class CardService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
     public CardService(IUnitOfWork unitOfWork)
+        : this(unitOfWork, realtimeNotifier: null)
+    {
+    }
+
+    public CardService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null)
     {
         _unitOfWork = unitOfWork;
+        _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
     }
 
     public async Task<Result<CardDto>> CreateCardAsync(CreateCardDto dto, CancellationToken cancellationToken = default)
@@ -53,6 +60,9 @@ public class CardService
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
             return Result.Success(MapToDto(createdCard!));
@@ -99,6 +109,9 @@ public class CardService
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(card.BoardId, "card", "updated", card.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             var updatedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(updatedCard!));
@@ -153,6 +166,9 @@ public class CardService
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(card.BoardId, "card", "moved", card.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             var movedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(movedCard!));
@@ -195,6 +211,9 @@ public class CardService
 
         await _unitOfWork.Cards.DeleteAsync(card, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.NotifyBoardMutationAsync(
+            new BoardRealtimeEvent(card.BoardId, "card", "deleted", card.Id, DateTimeOffset.UtcNow),
+            cancellationToken);
 
         return Result.Success();
     }

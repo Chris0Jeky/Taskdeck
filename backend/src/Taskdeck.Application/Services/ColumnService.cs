@@ -9,10 +9,17 @@ namespace Taskdeck.Application.Services;
 public class ColumnService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
     public ColumnService(IUnitOfWork unitOfWork)
+        : this(unitOfWork, realtimeNotifier: null)
+    {
+    }
+
+    public ColumnService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null)
     {
         _unitOfWork = unitOfWork;
+        _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
     }
 
     public async Task<Result<ColumnDto>> CreateColumnAsync(CreateColumnDto dto, CancellationToken cancellationToken = default)
@@ -35,6 +42,9 @@ public class ColumnService
             var column = new Column(dto.BoardId, dto.Name, position.Value, dto.WipLimit);
             await _unitOfWork.Columns.AddAsync(column, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(column.BoardId, "column", "created", column.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             return Result.Success(MapToDto(column));
         }
@@ -54,6 +64,9 @@ public class ColumnService
 
             column.Update(dto.Name, dto.WipLimit, dto.Position);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(column.BoardId, "column", "updated", column.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             return Result.Success(MapToDto(column));
         }
@@ -89,6 +102,9 @@ public class ColumnService
 
         await _unitOfWork.Columns.DeleteAsync(column, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.NotifyBoardMutationAsync(
+            new BoardRealtimeEvent(column.BoardId, "column", "deleted", column.Id, DateTimeOffset.UtcNow),
+            cancellationToken);
 
         return Result.Success();
     }
@@ -147,6 +163,9 @@ public class ColumnService
 
             // Save Phase 2 changes - moves columns to final positions
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(boardId, "column", "reordered", null, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             // Return reordered columns
             var reorderedColumns = dto.ColumnIds.Select(id => MapToDto(columnDict[id]));

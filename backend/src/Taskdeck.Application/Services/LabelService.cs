@@ -9,10 +9,17 @@ namespace Taskdeck.Application.Services;
 public class LabelService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
     public LabelService(IUnitOfWork unitOfWork)
+        : this(unitOfWork, realtimeNotifier: null)
+    {
+    }
+
+    public LabelService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null)
     {
         _unitOfWork = unitOfWork;
+        _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
     }
 
     public async Task<Result<LabelDto>> CreateLabelAsync(CreateLabelDto dto, CancellationToken cancellationToken = default)
@@ -26,6 +33,9 @@ public class LabelService
             var label = new Label(dto.BoardId, dto.Name, dto.ColorHex);
             await _unitOfWork.Labels.AddAsync(label, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(label.BoardId, "label", "created", label.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             return Result.Success(MapToDto(label));
         }
@@ -45,6 +55,9 @@ public class LabelService
 
             label.Update(dto.Name, dto.ColorHex);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(label.BoardId, "label", "updated", label.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
 
             return Result.Success(MapToDto(label));
         }
@@ -77,6 +90,9 @@ public class LabelService
 
         await _unitOfWork.Labels.DeleteAsync(label, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.NotifyBoardMutationAsync(
+            new BoardRealtimeEvent(label.BoardId, "label", "deleted", label.Id, DateTimeOffset.UtcNow),
+            cancellationToken);
 
         return Result.Success();
     }
