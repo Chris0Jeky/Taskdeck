@@ -11,7 +11,7 @@ public class AutomationProposal : Entity
     public Guid RequestedByUserId { get; private set; }
     public ProposalStatus Status { get; private set; }
     public RiskLevel RiskLevel { get; private set; }
-    public string Summary { get; private set; }
+    public string Summary { get; private set; } = string.Empty;
     public string? DiffPreview { get; private set; }
     public string? ValidationIssues { get; private set; }
     public DateTime ExpiresAt { get; private set; }
@@ -19,7 +19,7 @@ public class AutomationProposal : Entity
     public Guid? DecidedByUserId { get; private set; }
     public DateTime? AppliedAt { get; private set; }
     public string? FailureReason { get; private set; }
-    public string CorrelationId { get; private set; }
+    public string CorrelationId { get; private set; } = string.Empty;
 
     private readonly List<AutomationProposalOperation> _operations = new();
     public IReadOnlyList<AutomationProposalOperation> Operations => _operations.AsReadOnly();
