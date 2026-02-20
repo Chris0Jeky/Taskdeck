@@ -2,7 +2,7 @@ param(
     [switch]$Build,
     [string]$ComposeFile = 'deploy/docker-compose.yml',
     [string]$Profile = 'baseline',
-    [string]$EnvFile = ''
+    [string]$EnvFile = 'deploy/.env'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,5 +19,11 @@ if ($Build) {
 docker @args
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-docker compose -f $ComposeFile --profile $Profile ps
+$statusArgs = @('compose', '-f', $ComposeFile)
+if ($EnvFile -ne '') {
+    $statusArgs += @('--env-file', $EnvFile)
+}
+$statusArgs += @('--profile', $Profile, 'ps')
+
+docker @statusArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

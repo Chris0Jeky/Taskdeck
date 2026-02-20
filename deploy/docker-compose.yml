@@ -12,7 +12,7 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       ConnectionStrings__DefaultConnection: Data Source=/app/data/taskdeck.db
-      Jwt__SecretKey: ${TASKDECK_JWT_SECRET:-TaskdeckContainerSecretKeyChangeMe12345!}
+      Jwt__SecretKey: ${TASKDECK_JWT_SECRET:?TASKDECK_JWT_SECRET must be set to a strong, unpredictable secret}
       Jwt__Issuer: ${TASKDECK_JWT_ISSUER:-Taskdeck}
       Jwt__Audience: ${TASKDECK_JWT_AUDIENCE:-TaskdeckUsers}
       Jwt__ExpirationMinutes: ${TASKDECK_JWT_EXPIRATION_MINUTES:-1440}
