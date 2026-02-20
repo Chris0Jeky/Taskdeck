@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { starterPacksApi } from '../../api/starterPacksApi'
-import { starterPackCatalog } from '../../data/starterPackCatalog'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useBoardStore } from '../../store/boardStore'
 import { useToastStore } from '../../store/toastStore'
@@ -21,8 +20,11 @@ const emit = defineEmits<{
 const boardStore = useBoardStore()
 const toast = useToastStore()
 
+const catalogEntries = ref<StarterPackCatalogEntry[]>([])
+const loadingCatalog = ref(false)
+const catalogLoadError = ref<string | null>(null)
 const searchQuery = ref('')
-const selectedPackId = ref(starterPackCatalog[0]?.id ?? '')
+const selectedPackId = ref('')
 const runningPreview = ref(false)
 const applyingPack = ref(false)
 const errorMessage = ref<string | null>(null)
@@ -31,10 +33,10 @@ const latestResult = ref<StarterPackApplyResult | null>(null)
 const filteredPacks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) {
-    return starterPackCatalog
+    return catalogEntries.value
   }
 
-  return starterPackCatalog.filter((entry) => {
+  return catalogEntries.value.filter((entry) => {
     const haystack = [
       entry.title,
       entry.summary,
@@ -96,8 +98,9 @@ watch(
     }
 
     searchQuery.value = ''
-    selectedPackId.value = starterPackCatalog[0]?.id ?? ''
+    selectedPackId.value = ''
     clearFeedback()
+    void loadCatalog()
   },
   { immediate: true }
 )
@@ -105,6 +108,25 @@ watch(
 function clearFeedback() {
   errorMessage.value = null
   latestResult.value = null
+}
+
+async function loadCatalog() {
+  loadingCatalog.value = true
+  catalogLoadError.value = null
+  catalogEntries.value = []
+  selectedPackId.value = ''
+  clearFeedback()
+
+  try {
+    const catalog = await starterPacksApi.getCatalog(props.boardId)
+    catalogEntries.value = catalog
+    selectedPackId.value = catalog[0]?.id ?? ''
+  } catch (error) {
+    catalogLoadError.value = getErrorMessage(error, 'Failed to load starter pack catalog.')
+    toast.error(catalogLoadError.value)
+  } finally {
+    loadingCatalog.value = false
+  }
 }
 
 function handleClose() {
@@ -161,7 +183,7 @@ function extractConflictResult(error: unknown): StarterPackApplyResult | null {
 }
 
 async function runPreview() {
-  if (!selectedPack.value || runningPreview.value || applyingPack.value) {
+  if (!selectedPack.value || loadingCatalog.value || runningPreview.value || applyingPack.value) {
     return
   }
 
@@ -188,7 +210,7 @@ async function runPreview() {
 }
 
 async function applyPack() {
-  if (!selectedPack.value || runningPreview.value || applyingPack.value) {
+  if (!selectedPack.value || loadingCatalog.value || runningPreview.value || applyingPack.value) {
     return
   }
 
@@ -265,10 +287,23 @@ useEscapeToClose(() => props.isOpen, handleClose)
               v-model="searchQuery"
               type="text"
               placeholder="Search by name, tag, or purpose"
+              :disabled="loadingCatalog || catalogLoadError !== null"
               class="mb-4 w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
 
-            <div v-if="filteredPacks.length === 0" class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+            <div v-if="loadingCatalog" class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+              <p class="text-sm font-medium text-gray-700">Loading starter packs...</p>
+            </div>
+
+            <div v-else-if="catalogLoadError" class="rounded-md border border-red-200 bg-red-50 p-6 text-center">
+              <p class="text-sm font-medium text-red-700">{{ catalogLoadError }}</p>
+            </div>
+
+            <div v-else-if="catalogEntries.length === 0" class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+              <p class="text-sm font-medium text-gray-700">No starter packs are currently available.</p>
+            </div>
+
+            <div v-else-if="filteredPacks.length === 0" class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
               <p class="text-sm font-medium text-gray-700">No starter packs match this search.</p>
               <p class="mt-1 text-xs text-gray-500">Try another keyword to view available packs.</p>
             </div>
