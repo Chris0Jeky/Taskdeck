@@ -11,6 +11,8 @@
 - OpenAI/Codex/OpenAI API questions -> `openaiDeveloperDocs` MCP
 - Third-party libraries/frameworks (.NET, ASP.NET Core, Vue, Vite, Playwright, etc.) -> `context7` MCP
 - UI flows, interaction bugs, E2E verification -> `playwright` MCP
+- Browser deep-debug and runtime protocol inspection -> `chromeDevTools` MCP
+- Container/build/runtime inspection -> `docker` MCP
 - Repo-wide code search -> native `rg` (ripgrep MCP is unreliable on Windows right now)
 - Repo/PR/issue state and automation -> `github` MCP
 
@@ -27,7 +29,7 @@ When you use MCP tools, include:
 
 ---
 
-## Current MCP Status (as of 2026-02-16)
+## Current MCP Status (as of 2026-02-20)
 
 | Server | Status | Notes |
 |---|---:|---|
@@ -35,6 +37,8 @@ When you use MCP tools, include:
 | `openaiDeveloperDocs` | PASS | `fetch_openai_doc` coverage is partial for some URLs (use search/list first) |
 | `context7` | PASS | Resolve library id -> query docs works |
 | `playwright` | PASS | End-to-end browser automation works |
+| `chromeDevTools` | PASS | Chrome DevTools protocol surface available via MCP |
+| `docker` | PASS | Docker container/image/runtime operations available via MCP |
 | `ripgrep` | PARTIAL/FAIL | Server reachable; Windows path ops failing; use native `rg` |
 
 Treat `ripgrep` MCP as unavailable until fixed.
@@ -61,10 +65,19 @@ Treat `ripgrep` MCP as unavailable until fixed.
 2. Capture screenshot/evidence.
 3. Convert repro into a deterministic Playwright test, or a smaller unit/integration test when UI is unnecessary.
 
+### C2) "Need browser protocol/network/devtools-level evidence"
+1. Use `chromeDevTools` MCP for runtime/network/debug protocol checks.
+2. Keep Playwright MCP for deterministic user-flow reproduction.
+
 ### D) "Plan/track work" / "Turn docs into issues"
 Use GitHub MCP:
 - Read: list/search issues, PRs, branches, commits
 - Write: create/update issues and PR metadata when explicitly requested
+
+### E) "Need container/runtime deployment checks"
+1. Use `docker` MCP for container/image lifecycle inspection.
+2. Use shell `docker compose` commands for canonical repo workflows and script parity.
+3. `docker` MCP in this repo is backed by Docker Desktop's `docker mcp gateway run` path, so Docker Desktop must be running.
 
 ---
 

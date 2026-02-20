@@ -127,7 +127,7 @@ Backlog seeding was expanded from near-horizon only to a staged future roadmap g
 
 Current open backlog is now split into:
 - Phase-4 completion tranche (`#33` to `#57`, `Priority I`)
-- Future expansion tranche (`#69` to `#111`, `Priority II` to `Priority V`)
+- Future expansion tranche (`#70` to `#111`, `Priority II` to `Priority V`)
 
 ## Test Status (Executed)
 
@@ -179,6 +179,7 @@ Workflow: `.github/workflows/ci.yml`
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)
 - `frontend-unit` (Ubuntu/Windows)
+- `container-images` (Ubuntu)
 - `e2e-smoke` (Ubuntu, depends on prior jobs)
 
 ## Known Gaps and Risks
@@ -197,8 +198,8 @@ Automation and data:
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
-- out-of-code/platform execution is now tracked, but not yet shipped:
-  - containerization + reverse proxy baseline (`#69`)
+- containerized deployment baseline is now shipped (`#69`): backend/frontend Dockerfiles, compose profile, reverse proxy compression/security headers posture, and CI image artifacts
+- out-of-code/platform execution is now tracked, but not yet fully shipped:
   - load/concurrency harness (`#70`)
   - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
   - backup/restore disaster-recovery playbook (`#86`)
@@ -254,6 +255,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered DEBT-02 log-query scalability pass: replaced broad in-memory + command-run N+1 log composition with repository-filtered query paths while preserving logs API behavior and contracts.
 - Delivered COL-01 realtime board updates (`#67`): added authz-safe SignalR board subscriptions, app-layer mutation event publishing, frontend realtime lifecycle with polling fallback, and regression coverage across API/unit/E2E suites.
 - Delivered OBS-01 observability baseline (`#68`): added OpenTelemetry tracing/metrics wiring, worker/queue/heartbeat telemetry emission, correlation-to-trace tagging, and versioned runbook/alert threshold documentation.
+- Delivered OPS-07 containerized deployment baseline (`#69`): added production-oriented backend/frontend Dockerfiles, compose-based proxy stack with gzip/security header posture, CI image artifact packaging, and deployment runbook coverage.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 

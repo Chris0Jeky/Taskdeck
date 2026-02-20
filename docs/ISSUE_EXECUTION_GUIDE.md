@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-02-18
+Last Updated: 2026-02-20
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -81,14 +81,13 @@ Starter packs and debt blockers:
 
 1. `#67` COL-01 realtime SignalR updates
 2. `#68` OBS-01 observability baseline
-3. `#69` OPS-07 containerized deployment baseline
-4. `#70` TST-01 load/concurrency harness
-5. `#71` ARCH-01 multi-tenancy strategy ADR
-6. `#72` COL-02 notifications framework
-7. `#73` COL-03 presence/conflict policy
-8. `#74` COL-04 comments/mentions workflow
-9. `#75` INT-01 import adapters foundation
-10. `#76` INT-02 webhooks/integration security model
+3. `#70` TST-01 load/concurrency harness
+4. `#71` ARCH-01 multi-tenancy strategy ADR
+5. `#72` COL-02 notifications framework
+6. `#73` COL-03 presence/conflict policy
+7. `#74` COL-04 comments/mentions workflow
+8. `#75` INT-01 import adapters foundation
+9. `#76` INT-02 webhooks/integration security model
 
 ### Stage 3: Priority III - Expansion Wave
 
