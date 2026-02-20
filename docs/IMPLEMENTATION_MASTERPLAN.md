@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-18  
+Last Updated: 2026-02-19  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -46,8 +46,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 514 passing
-   - Frontend unit: 271 passing
+   - Backend: 561 passing
+   - Frontend unit: 275 passing
    - E2E: 14 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -110,6 +110,13 @@ Delivered in the latest cycle:
    - chat now supports canonical Markdown checklist ingestion and proposal-first bootstrap operation generation for board-scoped sessions
    - proposal review remains mandatory, with chat exposing one-click approve + execute action for generated checklist bootstrap proposals
    - backend + API + frontend tests cover canonical happy path and key checklist parse/validation failures
+24. PACK-01 starter-pack manifest foundation delivery:
+   - added a versioned starter-pack manifest contract (`schemaVersion` `1.0`) for labels, columns, templates, and seed cards
+   - added deterministic backend parsing/validation service with explicit compatibility and cross-reference constraints
+   - added dedicated application tests covering canonical success + key parse/validation failure paths
+25. PACK-01 null-collection hardening follow-up:
+   - manifest validation now handles explicit JSON `null` collections deterministically (array-shape errors instead of null-reference exceptions)
+   - nested collection paths (`compatibility.requiredFeatures`, template checklists, seed-card labels) are now null-safe and regression-tested
 
 ## Roadmap by Horizon
 
@@ -187,7 +194,7 @@ Exit Criteria:
 ### Priority I (Current Phase 4 Completion Path)
 
 - Security and policy convergence: `#33`, `#34`, `#44`
-- Starter packs foundation: `#47`, `#48`, `#49`, `#50`, `#51`
+- Starter packs foundation: `#48`, `#49`, `#50`, `#51`
 - Tech-debt blockers for stable expansion: `#52`, `#53`, `#54`
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
@@ -288,7 +295,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#47` to `#54`).
+2. Complete remaining `Priority I` starter-pack foundation and debt blockers (`#48` to `#54`).
 3. Promote Wave A foundation issues (`#67` to `#71`) to active execution only after `Priority I` is materially reduced.
 4. Keep issue `#107` updated as the canonical expansion-wave index.
 5. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.

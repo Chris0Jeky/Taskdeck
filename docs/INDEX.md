@@ -27,6 +27,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Execution order and operating protocol for agents tackling issue backlog.
 - `SESSION_START_CHECKLIST.md`
   - Lightweight start-of-session runbook for branch hygiene, issue selection, and verification discipline.
+- `STARTER_PACK_MANIFEST_SCHEMA.md`
+  - PACK-01 manifest schema and validation contract for starter-pack foundations.
 
 ## Active Tooling Docs
 
