@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-02-20
+Last Updated: 2026-02-21
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -53,41 +53,50 @@ Security/policy:
 1. `#33` SEC-02 claims-first identity retrofit
 2. `#34` SEC-03 authz regression matrix
 3. `#44` SEC-04 API error-contract assertions
+4. `#152` SEC-11 final cross-user policy convergence pass
 
 UX reliability:
-4. `#35` UX-01 archive lifecycle coherence
-5. `#45` UX-02 drag/edit interaction safety
-6. `#36` UX-03 command palette keyboard model
-7. `#37` UX-04 activity selector discoverability
-8. `#38` UX-04 shared input-assist scaffolding
-9. `#46` UX-05 escape behavior contract
+5. `#35` UX-01 archive lifecycle coherence
+6. `#45` UX-02 drag/edit interaction safety
+7. `#36` UX-03 command palette keyboard model
+8. `#37` UX-04 activity selector discoverability
+9. `#38` UX-04 shared input-assist scaffolding
+10. `#46` UX-05 escape behavior contract
 
 Automation/provider:
-10. `#39` AUTO-01 production provider strategy
-11. `#40` AUTO-02 planner/executor hardening
-12. `#57` MVP-01 chat-to-project bootstrap
+11. `#39` AUTO-01 production provider strategy
+12. `#40` AUTO-02 planner/executor hardening
+13. `#57` MVP-01 chat-to-project bootstrap
 
 Starter packs and debt blockers:
-13. `#47` PACK-01 manifest RFC/schema
-14. `#48` PACK-02 backend apply dry-run/conflicts
-15. `#49` PACK-03 frontend catalog preview/apply
-16. `#50` PACK-04 first-party starter packs
-17. `#51` PACK-05 deterministic fixture packs
-18. `#52` DEBT-01 nullability reduction
-19. `#53` DEBT-02 log query scalability
-20. `#54` DEBT-03 export/import implementation vs ADR
+14. `#47` PACK-01 manifest RFC/schema
+15. `#48` PACK-02 backend apply dry-run/conflicts
+16. `#49` PACK-03 frontend catalog preview/apply
+17. `#50` PACK-04 first-party starter packs
+18. `#51` PACK-05 deterministic fixture packs
+19. `#52` DEBT-01 nullability reduction
+20. `#53` DEBT-02 log query scalability
+21. `#54` DEBT-03 export/import implementation vs ADR
 
 ### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
 
-1. `#67` COL-01 realtime SignalR updates
-2. `#68` OBS-01 observability baseline
-3. `#70` TST-01 load/concurrency harness
-4. `#71` ARCH-01 multi-tenancy strategy ADR
-5. `#72` COL-02 notifications framework
-6. `#73` COL-03 presence/conflict policy
-7. `#74` COL-04 comments/mentions workflow
-8. `#75` INT-01 import adapters foundation
-9. `#76` INT-02 webhooks/integration security model
+Analysis follow-through and hardening:
+1. `#151` ANL-2026-02-21 analysis follow-through umbrella (tracking)
+2. `#153` API-06 centralized exception handling/fallback error-contract uniformity
+3. `#154` FE-11 frontend linting baseline + CI gate
+4. `#155` FE-12 frontend coverage thresholds
+5. `#157` TST-14 architecture-guard expansion
+
+Foundation wave:
+6. `#67` COL-01 realtime SignalR updates
+7. `#68` OBS-01 observability baseline
+8. `#70` TST-01 load/concurrency harness
+9. `#71` ARCH-01 multi-tenancy strategy ADR
+10. `#72` COL-02 notifications framework
+11. `#73` COL-03 presence/conflict policy
+12. `#74` COL-04 comments/mentions workflow
+13. `#75` INT-01 import adapters foundation
+14. `#76` INT-02 webhooks/integration security model
 
 ### Stage 3: Priority III - Expansion Wave
 
@@ -100,6 +109,7 @@ Starter packs and debt blockers:
 7. `#83` SEC-08 data portability/deletion flow
 8. `#106` SEC-09 dependency vulnerability policy
 9. `#110` SEC-10 secrets/configuration management baseline
+10. `#156` SEC-12 session-token storage hardening plan
 
 ### Stage 4: Priority IV - Maturity Wave
 
@@ -129,6 +139,18 @@ Testing/UX/docs:
 21. `#98` INT-04 connector framework
 22. `#99` DOC-03 developer portal generation
 23. `#100` DOC-04 user guides/tutorials/FAQ
+
+Maintainability hotspot refactor wave (analysis-driven):
+24. `#158` REF-11 decompose `AppShell.vue`
+25. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
+26. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
+27. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
+28. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
+29. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
+30. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
+31. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
+32. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
+33. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
 
 ### Stage 5: Priority V - Meta/Historical
 
