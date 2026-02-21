@@ -28,25 +28,38 @@ public class AuthenticationService : IAuthenticationService
             if (!TryValidateJwtSettings(out var jwtValidationError))
                 return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
 
-            var users = await ResolveLoginCandidatesAsync(dto.UsernameOrEmail);
+            var loginIdentifier = dto.UsernameOrEmail?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(loginIdentifier))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Username or email is required");
+
+            var users = await ResolveLoginCandidatesAsync(loginIdentifier);
             if (users.Count == 0)
-                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Invalid username/email or password");
+                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "No account matches the provided username or email");
 
             User? authenticatedUser = null;
+            var hasInactivePasswordMatch = false;
             foreach (var candidate in users)
             {
                 if (!BCrypt.Net.BCrypt.Verify(dto.Password, candidate.PasswordHash))
                     continue;
 
                 if (!candidate.IsActive)
-                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+                {
+                    hasInactivePasswordMatch = true;
+                    continue;
+                }
 
                 authenticatedUser = candidate;
                 break;
             }
 
             if (authenticatedUser == null)
-                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Invalid username/email or password");
+            {
+                if (hasInactivePasswordMatch)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Password is incorrect for the provided account");
+            }
 
             var token = GenerateJwtToken(authenticatedUser);
             return Result.Success(new AuthResultDto(token, MapToDto(authenticatedUser)));
@@ -70,7 +83,7 @@ public class AuthenticationService : IAuthenticationService
 
             var exists = await _unitOfWork.Users.ExistsAsync(dto.Username, dto.Email);
             if (exists)
-                return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "A user with that username or email already exists");
+                return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
 
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
             var user = new User(dto.Username, dto.Email, passwordHash, dto.DefaultRole);
