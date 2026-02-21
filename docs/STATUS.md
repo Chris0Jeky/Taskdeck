@@ -149,7 +149,7 @@ Analysis record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-20
+Verification Date: 2026-02-21
 
 ### Backend (Executed)
 
@@ -159,10 +159,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 336/336 passing
-- API integration: 152/152 passing
+- API integration: 162/162 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 589/589 passing
+- Backend Total: 599/599 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -186,7 +186,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 900/900 passing
+- Combined automated total: 910/910 passing
 
 ## CI Status
 
@@ -261,6 +261,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
 - Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
 - Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
+- Advanced SEC-11 cross-user convergence (`#152`) with proposal-scope authorization enforcement in automation proposal lifecycle endpoints (`get/approve/reject/execute/diff`) and expanded API integration policy coverage for automation/logs/starter-pack protected routes.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
