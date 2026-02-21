@@ -76,7 +76,7 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
-    public async Task LoginAsync_ShouldReturnPasswordSpecificMessage_WhenIdentifierExistsButPasswordIsWrong()
+    public async Task LoginAsync_ShouldReturnGenericMessage_WhenIdentifierExistsButPasswordIsWrong()
     {
         var password = "password123";
         var user = new User("existing-user", "existing@example.com", BCrypt.Net.BCrypt.HashPassword(password));
@@ -89,7 +89,27 @@ public class AuthenticationServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
-        result.ErrorMessage.Should().Be("Password is incorrect for the provided account");
+        result.ErrorMessage.Should().Be("Invalid username/email or password");
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ShouldNormalizeIdentifiersBeforeExistenceCheckAndPersistence()
+    {
+        var service = CreateService();
+        var dto = new CreateUserDto("  new-user  ", "  NewUser@Example.com  ", "password123");
+        User? capturedUser = null;
+
+        _userRepoMock.Setup(r => r.ExistsAsync("new-user", "NewUser@Example.com", default)).ReturnsAsync(false);
+        _userRepoMock.Setup(r => r.AddAsync(It.IsAny<User>(), default))
+            .Callback<User, CancellationToken>((user, _) => capturedUser = user)
+            .ReturnsAsync((User user, CancellationToken _) => user);
+
+        var result = await service.RegisterAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        capturedUser.Should().NotBeNull();
+        capturedUser!.Username.Should().Be("new-user");
+        capturedUser.Email.Should().Be("newuser@example.com");
     }
 
     [Fact]
