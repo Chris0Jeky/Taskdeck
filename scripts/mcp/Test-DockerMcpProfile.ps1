@@ -50,10 +50,11 @@ function Get-DockerHubUsernameFromConfig {
         return ''
     }
 
-    $lines = Get-Content $configPath
-    if ($null -eq $lines -or $lines.Count -eq 0) {
+    $rawContent = Get-Content -LiteralPath $configPath -Raw
+    if ([string]::IsNullOrWhiteSpace($rawContent)) {
         return ''
     }
+    $lines = $rawContent -split "`r?`n"
 
     $keyPattern = '^[A-Za-z0-9_-]+:\s*$'
     $dockerHubStart = -1
