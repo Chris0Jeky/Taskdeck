@@ -143,7 +143,7 @@ Health endpoint routing:
 
 ## CI Packaging
 
-CI workflow `.github/workflows/ci.yml` includes `container-images` job that:
+CI workflow `.github/workflows/ci-required.yml` includes `container-images` job that:
 - validates compose rendering
 - builds backend and frontend images from repo root
 - exports compressed image artifacts and checksums

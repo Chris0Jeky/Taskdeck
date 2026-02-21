@@ -6,13 +6,13 @@ Authoring context: Local workflow/config scan + GitHub issue reconciliation + ta
 
 ## Purpose
 
-Define a pragmatic expansion strategy for `.github/workflows/ci.yml` so the pipeline scales with the already-seeded testing/security/ops issues without turning PR feedback into a bottleneck.
+Define a pragmatic expansion strategy for `.github/workflows/ci-required.yml` so the pipeline scales with the already-seeded testing/security/ops issues without turning PR feedback into a bottleneck.
 
 This plan is non-authoritative by itself. `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md` remain the canonical sources of truth.
 
 ## Current-State Snapshot
 
-Current CI workflow (`.github/workflows/ci.yml`) is strong and already above baseline:
+Current CI workflow (`.github/workflows/ci-required.yml`) is strong and already above baseline:
 
 - Single workflow with clear job decomposition:
   - docs governance

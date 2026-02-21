@@ -20,21 +20,9 @@ env:
 jobs:
   docs-governance:
     name: Docs Governance
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.13.1
-
-      - name: Validate docs governance invariants
-        run: node scripts/check-docs-governance.mjs
-
-      - name: Validate GitHub operations governance invariants
-        run: node scripts/check-github-ops-governance.mjs
+    uses: ./.github/workflows/reusable-docs-governance.yml
+    with:
+      node-version: 24.13.1
 
   backend-architecture:
     name: Backend Architecture
