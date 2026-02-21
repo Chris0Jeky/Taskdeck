@@ -56,6 +56,43 @@ public class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task LoginAsync_ShouldAuthenticateActiveCandidate_WhenInactiveCandidateMatchesPassword()
+    {
+        const string collision = "inactive-collision@example.com";
+        const string sharedPassword = "password-shared";
+        var activeUsernameOwner = new User(collision, "active-owner@example.com", BCrypt.Net.BCrypt.HashPassword(sharedPassword));
+        var inactiveEmailOwner = new User("inactive_email_owner", collision, BCrypt.Net.BCrypt.HashPassword(sharedPassword));
+        inactiveEmailOwner.Deactivate();
+
+        var service = CreateService();
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync(collision, default)).ReturnsAsync(activeUsernameOwner);
+        _userRepoMock.Setup(r => r.GetByEmailAsync(collision, default)).ReturnsAsync(inactiveEmailOwner);
+
+        var result = await service.LoginAsync(new LoginDto(collision, sharedPassword));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.User.Id.Should().Be(activeUsernameOwner.Id);
+    }
+
+    [Fact]
+    public async Task LoginAsync_ShouldReturnPasswordSpecificMessage_WhenIdentifierExistsButPasswordIsWrong()
+    {
+        var password = "password123";
+        var user = new User("existing-user", "existing@example.com", BCrypt.Net.BCrypt.HashPassword(password));
+        var service = CreateService();
+
+        _userRepoMock.Setup(r => r.GetByUsernameAsync(user.Username, default)).ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.GetByEmailAsync(user.Username, default)).ReturnsAsync((User?)null);
+
+        var result = await service.LoginAsync(new LoginDto(user.Username, "wrong-password"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.AuthenticationFailed);
+        result.ErrorMessage.Should().Be("Password is incorrect for the provided account");
+    }
+
+    [Fact]
     public async Task LoginAsync_ShouldReturnUnexpectedError_WhenJwtConfigIsInvalid()
     {
         var service = CreateService(new JwtSettings
