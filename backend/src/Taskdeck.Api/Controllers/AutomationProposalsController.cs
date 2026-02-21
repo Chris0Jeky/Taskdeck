@@ -68,10 +68,41 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 return permissionError;
         }
 
+        var requestLimit = limit <= 0 ? 100 : limit;
         var effectiveUserId = userId ?? (boardId.HasValue ? null : callerUserId);
-        var filter = new ProposalFilterDto(status, boardId, effectiveUserId, riskLevel, limit);
+        var queryLimit = boardId.HasValue ? requestLimit : int.MaxValue;
+        var filter = new ProposalFilterDto(status, boardId, effectiveUserId, riskLevel, queryLimit);
         var result = await _proposalService.GetProposalsAsync(filter, cancellationToken);
-        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        var proposals = result.Value.ToList();
+        if (!boardId.HasValue)
+        {
+            var boardScopedIds = proposals
+                .Where(p => p.BoardId.HasValue)
+                .Select(p => p.BoardId!.Value)
+                .Distinct()
+                .ToArray();
+
+            if (boardScopedIds.Length > 0)
+            {
+                var readableBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
+                    callerUserId,
+                    boardScopedIds,
+                    cancellationToken);
+
+                if (!readableBoardIdsResult.IsSuccess)
+                    return readableBoardIdsResult.ToErrorActionResult();
+
+                var readableBoardIds = readableBoardIdsResult.Value;
+                proposals = proposals
+                    .Where(p => !p.BoardId.HasValue || readableBoardIds.Contains(p.BoardId.Value))
+                    .ToList();
+            }
+        }
+
+        return Ok(proposals.Take(requestLimit));
     }
 
     /// <summary>
