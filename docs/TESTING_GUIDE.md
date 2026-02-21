@@ -75,6 +75,14 @@ docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
 docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
 ```
 
+Deployment script smoke path (PowerShell):
+
+```powershell
+powershell -File ./scripts/deploy/Start-TaskdeckStack.ps1
+powershell -File ./scripts/deploy/Smoke-TestTaskdeckStack.ps1 -Port 8080  # if TASKDECK_PROXY_PORT differs, set -Port to match
+powershell -File ./scripts/deploy/Stop-TaskdeckStack.ps1
+```
+
 ## MCP Operations Validation
 
 ```powershell

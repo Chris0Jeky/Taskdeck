@@ -65,6 +65,9 @@ powershell -File ./scripts/deploy/Smoke-TestTaskdeckStack.ps1
 powershell -File ./scripts/deploy/Stop-TaskdeckStack.ps1
 ```
 
+`Start-TaskdeckStack.ps1` now waits for proxy readiness (`/health/ready`) by default before returning.
+Use `-SkipReadyWait` only when you intentionally want fire-and-forget startup behavior.
+
 ## Staging Bootstrap Path
 
 1. Pin environment values in `deploy/.env` (especially `TASKDECK_JWT_SECRET`).
