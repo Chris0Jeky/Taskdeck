@@ -6,6 +6,7 @@ using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -83,6 +84,70 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         proposals.Should().NotBeEmpty();
         proposals.Should().Contain(p => p.Id == proposal1.Id);
         proposals.Should().Contain(p => p.Id == proposal2.Id);
+    }
+
+    [Fact]
+    public async Task GetProposals_WithStatusAndLimit_ShouldReturnCallerScopedResults()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+
+        var caller = await ApiTestHarness.AuthenticateAsync(callerClient, "automation-list-caller");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-list-other");
+        var callerBoard = await ApiTestHarness.CreateBoardAsync(callerClient, "automation-list-caller-board");
+        var callerProposal = await CreateTestProposalAsync(callerClient, caller.UserId, callerBoard.Id, RiskLevel.Low);
+
+        var otherBoard = await ApiTestHarness.CreateBoardAsync(otherClient, "automation-list-other-board");
+        _ = await CreateTestProposalAsync(otherClient, other.UserId, otherBoard.Id, RiskLevel.Low);
+
+        var response = await callerClient.GetAsync("/api/automation/proposals?status=PendingReview&limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposals = await response.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        var scopedProposals = proposals ?? throw new InvalidOperationException("Proposal list should not be null.");
+        scopedProposals.Should().ContainSingle();
+        scopedProposals[0].Id.Should().Be(callerProposal.Id);
+    }
+
+    [Fact]
+    public async Task GetProposals_ShouldExcludeBoardScopedProposals_WhenCallerNoLongerHasBoardReadAccess()
+    {
+        var ownerClient = _factory.CreateClient();
+        var collaboratorClient = _factory.CreateClient();
+
+        _ = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-list-owner");
+        var collaborator = await ApiTestHarness.AuthenticateAsync(collaboratorClient, "automation-list-collaborator");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-list-board");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, collaborator.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var access = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        access.Should().NotBeNull();
+
+        var boardScopedProposal = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+        var userScopedCreateResponse = await collaboratorClient.PostAsJsonAsync(
+            "/api/automation/proposals",
+            new CreateProposalDto(
+                SourceType: ProposalSourceType.Chat,
+                RequestedByUserId: collaborator.UserId,
+                Summary: "User scoped proposal",
+                RiskLevel: RiskLevel.Low,
+                CorrelationId: Guid.NewGuid().ToString()));
+        userScopedCreateResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var userScopedProposal = await userScopedCreateResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        userScopedProposal.Should().NotBeNull();
+
+        var revokeResponse = await ownerClient.DeleteAsync($"/api/boards/{board.Id}/access/{access!.Id}");
+        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var listResponse = await collaboratorClient.GetAsync("/api/automation/proposals?status=PendingReview&limit=10");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposals = await listResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        proposals.Should().NotBeNull();
+        proposals!.Should().Contain(p => p.Id == userScopedProposal!.Id);
+        proposals.Should().NotContain(p => p.Id == boardScopedProposal.Id);
     }
 
     [Fact]
