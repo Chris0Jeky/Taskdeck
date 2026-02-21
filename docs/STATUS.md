@@ -129,6 +129,22 @@ Current open backlog is now split into:
 - Phase-4 completion tranche (`#33` to `#57`, `Priority I`)
 - Future expansion tranche (`#70` to `#111`, `Priority II` to `Priority V`)
 
+## Analysis Follow-through Wave (2026-02-21)
+
+To convert the 2026-02-21 repository scan into executable work, a dedicated issue wave was seeded:
+- umbrella tracker: `#151`
+- engineering hardening issues: `#152` to `#157`
+- hotspot refactor issues: `#158` to `#167`
+
+Priority distribution for this wave:
+- `Priority I`: `#152`
+- `Priority II`: `#151`, `#153`, `#154`, `#155`, `#157`
+- `Priority III`: `#156`
+- `Priority IV`: `#158` to `#167`
+
+Analysis record:
+- `docs/analysis/2026-02-21_repo-scan-analysis.md`
+
 ## Test Status (Executed)
 
 Verification Date: 2026-02-20
