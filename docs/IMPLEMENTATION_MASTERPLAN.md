@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-20  
+Last Updated: 2026-02-21  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -164,6 +164,10 @@ Delivered in the latest cycle:
    - added operator runbook (`docs/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
    - added helper scripts to wire credential-gated Docker MCP servers and verify baseline/optional MCP dry-run paths
    - integrated MCP operations checks into active testing guidance
+38. TST-07 MCP smoke/regression harness delivery:
+   - enhanced MCP profile validation script with optional-server prerequisite diagnostics (missing secret/config classification)
+   - codified strict/warning/skip behavior for optional integrations and documented CI-friendly command patterns
+   - added deterministic CI status output contract (`PASS`, `PASS_WITH_WARNINGS`, `FAIL`) for MCP profile validation flows
 
 ## Roadmap by Horizon
 
@@ -284,6 +288,7 @@ Covered by seeded issues:
 - Docker + reverse proxy + compression baseline: `#69` (delivered)
 - Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
 - MCP operator wiring + verification workflow: `#140` (delivered via `#144`)
+- MCP integration smoke/regression harness: `#141` (delivered)
 - Staged rollout policy (blue/green/canary): `#101`
 - IaC baseline: `#102`
 - SBOM/release provenance: `#103`
