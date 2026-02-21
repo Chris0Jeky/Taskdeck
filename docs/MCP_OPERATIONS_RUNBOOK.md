@@ -1,6 +1,6 @@
 # MCP Operations Runbook
 
-Last Updated: 2026-02-20  
+Last Updated: 2026-02-21  
 Scope: Local operator setup, credential wiring, verification, and routine usage for Taskdeck MCP integrations.
 
 ## Purpose
@@ -80,8 +80,18 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
 ### Optional integrations (requires valid credentials)
 
 ```powershell
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors
 ```
+
+Pass/fail policy for optional integrations:
+- warning mode: `-IncludeOptional`
+  - missing prerequisites and optional runtime failures are reported as warnings
+  - script exits success so baseline automation can continue
+- strict mode: `-IncludeOptional -FailOnOptionalErrors`
+  - missing prerequisites or optional runtime failures fail fast with non-zero exit
+- warning mode with prerequisite skip: `-IncludeOptional -SkipOptionalWhenMissingPrereqs`
+  - when prerequisite checks fail, optional dry-run is skipped and warning is emitted
 
 ### Direct inspection commands
 
@@ -111,6 +121,24 @@ node scripts/check-docs-governance.mjs
 node scripts/check-github-ops-governance.mjs
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
 ```
+
+CI-friendly command patterns:
+
+```powershell
+# baseline only (strict)
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -CiMode
+
+# optional best-effort (warn + skip when prerequisites are missing)
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -SkipOptionalWhenMissingPrereqs -CiMode
+
+# optional strict gate (fail on missing prereqs or runtime failures)
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors -CiMode
+```
+
+`-CiMode` outputs deterministic status lines:
+- `MCP_PROFILE_RESULT=PASS`
+- `MCP_PROFILE_RESULT=PASS_WITH_WARNINGS`
+- `MCP_PROFILE_RESULT=FAIL`
 
 ## Weekly Workflow
 
