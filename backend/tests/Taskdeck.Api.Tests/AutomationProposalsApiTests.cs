@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 using Xunit;
@@ -12,9 +13,11 @@ namespace Taskdeck.Api.Tests;
 public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly TestWebApplicationFactory _factory;
 
     public AutomationProposalsApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -178,6 +181,82 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task GetProposal_ShouldReturnForbidden_WhenCallerCannotReadProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-access-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-access-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-access-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.GetAsync($"/api/automation/proposals/{proposal.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ApproveProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-approve-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-approve-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-approve-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-exec-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-exec-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-exec-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var response = await outsiderClient.SendAsync(executeRequest);
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task GetProposal_ShouldReturnForbidden_WhenProposalIsUserScopedToAnotherUser()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-user-scope-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-user-scope-outsider");
+
+        var createRequest = new CreateProposalDto(
+            SourceType: ProposalSourceType.Chat,
+            RequestedByUserId: owner.UserId,
+            Summary: "User-scoped proposal",
+            RiskLevel: RiskLevel.Low,
+            CorrelationId: Guid.NewGuid().ToString());
+
+        var createResponse = await ownerClient.PostAsJsonAsync("/api/automation/proposals", createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdProposal = await createResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        createdProposal.Should().NotBeNull();
+
+        var response = await outsiderClient.GetAsync($"/api/automation/proposals/{createdProposal!.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
     public async Task GetProposalDiff_ShouldReturnDiffPreview()
     {
         var userId = await AuthenticateAsync("automation-diff");
@@ -237,6 +316,11 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
     private async Task<ProposalDto> CreateTestProposal(Guid userId, Guid boardId, RiskLevel riskLevel)
     {
+        return await CreateTestProposalAsync(_client, userId, boardId, riskLevel);
+    }
+
+    private static async Task<ProposalDto> CreateTestProposalAsync(HttpClient client, Guid userId, Guid boardId, RiskLevel riskLevel)
+    {
         var createRequest = new CreateProposalDto(
             SourceType: ProposalSourceType.Chat,
             RequestedByUserId: userId,
@@ -257,7 +341,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             }
         );
 
-        var response = await _client.PostAsJsonAsync("/api/automation/proposals", createRequest);
+        var response = await client.PostAsJsonAsync("/api/automation/proposals", createRequest);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
     }
