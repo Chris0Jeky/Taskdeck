@@ -52,6 +52,52 @@ function Get-EnvFileValue {
     return $DefaultValue
 }
 
+function Resolve-ProxyPort {
+    param(
+        [string]$ComposeFilePath,
+        [string]$EnvFilePath
+    )
+
+    $environmentPort = [Environment]::GetEnvironmentVariable('TASKDECK_PROXY_PORT')
+    if (-not [string]::IsNullOrWhiteSpace($environmentPort)) {
+        return $environmentPort.Trim()
+    }
+
+    $envFilePort = Get-EnvFileValue -Path $EnvFilePath -Key 'TASKDECK_PROXY_PORT' -DefaultValue ''
+    if (-not [string]::IsNullOrWhiteSpace($envFilePort)) {
+        return $envFilePort.Trim()
+    }
+
+    try {
+        $portArgs = @('compose', '-f', $ComposeFilePath)
+        if ($EnvFilePath -ne '') {
+            $portArgs += @('--env-file', $EnvFilePath)
+        }
+        $portArgs += @('port', 'proxy', '8080')
+
+        $composePortOutput = docker @portArgs 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($composePortOutput)) {
+            $portLines = $composePortOutput -split "`r?`n"
+            foreach ($line in $portLines) {
+                $trimmed = $line.Trim()
+                if ([string]::IsNullOrWhiteSpace($trimmed)) {
+                    continue
+                }
+
+                $portPart = $trimmed.Split(':')[-1]
+                if ($portPart -match '^\d+$') {
+                    return $portPart
+                }
+            }
+        }
+    }
+    catch {
+        # Ignore and fall back to default.
+    }
+
+    return '8080'
+}
+
 $args = @('compose', '-f', $ComposeFile)
 if ($EnvFile -ne '') {
     $args += @('--env-file', $EnvFile)
@@ -80,7 +126,7 @@ if (-not $SkipReadyWait) {
 
     $resolvedReadyUrl = $ReadyUrl
     if ($resolvedReadyUrl -eq '') {
-        $proxyPort = Get-EnvFileValue -Path $EnvFile -Key 'TASKDECK_PROXY_PORT' -DefaultValue '8080'
+        $proxyPort = Resolve-ProxyPort -ComposeFilePath $ComposeFile -EnvFilePath $EnvFile
         $resolvedReadyUrl = "http://localhost:$proxyPort/health/ready"
     }
 
