@@ -174,6 +174,8 @@ Delivered in the latest cycle:
 40. OPS-19 CI topology second-pass delivery:
    - extracted backend architecture lane into reusable workflow `.github/workflows/reusable-backend-architecture.yml` and routed `ci-required.yml` through it
    - extracted frontend unit lane into reusable workflow `.github/workflows/reusable-frontend-unit.yml` (preserving Ubuntu/Windows matrix behavior) and routed `ci-required.yml` through it
+41. OPS-19 CI topology fourth-pass delivery:
+   - extracted API integration lane into reusable workflow `.github/workflows/reusable-api-integration.yml` and routed `ci-required.yml` through it (preserving Ubuntu/Windows matrix behavior)
 
 ## Roadmap by Horizon
 
