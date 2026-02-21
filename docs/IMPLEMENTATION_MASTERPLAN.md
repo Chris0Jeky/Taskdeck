@@ -174,6 +174,8 @@ Delivered in the latest cycle:
 40. OPS-19 CI topology second-pass delivery:
    - extracted backend architecture lane into reusable workflow `.github/workflows/reusable-backend-architecture.yml` and routed `ci-required.yml` through it
    - extracted frontend unit lane into reusable workflow `.github/workflows/reusable-frontend-unit.yml` (preserving Ubuntu/Windows matrix behavior) and routed `ci-required.yml` through it
+41. OPS-19 CI topology third-pass delivery:
+   - added `merge_group` trigger parity to `.github/workflows/ci-required.yml` to align merge-queue required-check execution with PR/push paths
 
 ## Roadmap by Horizon
 
