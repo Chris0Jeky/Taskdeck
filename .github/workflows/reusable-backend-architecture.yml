@@ -1,0 +1,44 @@
+name: Reusable Backend Architecture
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version used for architecture tests
+        required: false
+        default: "8.0.x"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backend-architecture:
+    name: Backend Architecture
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Run architecture boundary tests
+        run: dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=architecture.trx" --results-directory "backend/TestResults/architecture"
+
+      - name: Upload architecture test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-architecture-trx
+          path: backend/TestResults/architecture
+          if-no-files-found: ignore

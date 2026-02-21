@@ -1,0 +1,61 @@
+name: Reusable Frontend Unit
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version used for frontend quality gates
+        required: false
+        default: "24.13.1"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-unit:
+    name: Frontend Unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Run frontend typecheck
+        working-directory: frontend/taskdeck-web
+        run: npm run typecheck
+
+      - name: Run frontend build
+        working-directory: frontend/taskdeck-web
+        run: npx vite build
+
+      - name: Run frontend tests
+        working-directory: frontend/taskdeck-web
+        run: |
+          node -e "require('fs').mkdirSync('test-results',{recursive:true});"
+          npx vitest run --reporter=default --reporter=junit --outputFile.junit=./test-results/vitest.junit.xml
+
+      - name: Upload frontend test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-artifacts-${{ matrix.os }}
+          path: |
+            frontend/taskdeck-web/test-results
+          if-no-files-found: ignore
