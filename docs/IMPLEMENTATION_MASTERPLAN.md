@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 603 passing
+   - Backend: 605 passing
    - Frontend unit: 293 passing
    - E2E: 19 passing
 8. Documentation consolidation retained:
