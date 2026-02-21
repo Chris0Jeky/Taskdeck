@@ -168,6 +168,9 @@ Delivered in the latest cycle:
    - enhanced MCP profile validation script with optional-server prerequisite diagnostics (missing secret/config classification)
    - codified strict/warning/skip behavior for optional integrations and documented CI-friendly command patterns
    - added deterministic CI status output contract (`PASS`, `PASS_WITH_WARNINGS`, `FAIL`) for MCP profile validation flows
+39. OPS-19 CI topology first-pass delivery:
+   - migrated required CI entrypoint from `.github/workflows/ci.yml` to `.github/workflows/ci-required.yml` with equivalent gate behavior
+   - extracted docs governance lane into reusable workflow `.github/workflows/reusable-docs-governance.yml` as baseline for incremental workflow decomposition
 
 ## Roadmap by Horizon
 

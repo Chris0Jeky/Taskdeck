@@ -1,0 +1,32 @@
+name: Reusable Docs Governance
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version for docs governance checks
+        required: false
+        default: "24.13.1"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  docs-governance:
+    name: Docs Governance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Validate docs governance invariants
+        run: node scripts/check-docs-governance.mjs
+
+      - name: Validate GitHub operations governance invariants
+        run: node scripts/check-github-ops-governance.mjs

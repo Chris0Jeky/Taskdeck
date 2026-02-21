@@ -112,7 +112,7 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailO
 
 ## CI Gates
 
-Workflow: `.github/workflows/ci.yml`
+Workflow: `.github/workflows/ci-required.yml`
 
 - `docs-governance`
   - Enforces required active docs and docs index invariants

@@ -190,7 +190,7 @@ Result:
 
 ## CI Status
 
-Workflow: `.github/workflows/ci.yml`
+Workflow: `.github/workflows/ci-required.yml`
 
 - `docs-governance` (Ubuntu)
 - `backend-architecture` (Ubuntu)
@@ -245,6 +245,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Reconciled active docs and test totals after PR #23 merge.
 - Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
 - Added CI hardening parity updates: concurrency cancellation, frontend typecheck/build enforcement, TRX/JUnit failure artifacts, and package/browser caches.
+- Delivered OPS-19 CI topology first pass (`#168`): migrated required pipeline entrypoint to `.github/workflows/ci-required.yml` and extracted docs-governance lane into reusable workflow `.github/workflows/reusable-docs-governance.yml`.
 - Added docs governance script and architecture boundary tests as CI invariants.
 - Added GitHub operations governance script to enforce issue-template label hygiene and project-automation doc invariants in CI.
 - Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.
