@@ -109,7 +109,7 @@ jobs:
           if-no-files-found: ignore
 
   frontend-unit:
-    name: Frontend Unit (${{ matrix.os }})
+    name: Frontend Unit
     uses: ./.github/workflows/reusable-frontend-unit.yml
     with:
       node-version: 24.13.1
