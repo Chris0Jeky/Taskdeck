@@ -5,8 +5,10 @@ using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
+using BoardAuthorizationService = Taskdeck.Application.Services.IAuthorizationService;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -20,14 +22,17 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 {
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationExecutorService _executorService;
+    private readonly BoardAuthorizationService _authorizationService;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
         IAutomationExecutorService executorService,
+        BoardAuthorizationService authorizationService,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
         _executorService = executorService;
+        _authorizationService = authorizationService;
     }
 
     /// <summary>
@@ -42,7 +47,29 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         [FromQuery] int limit = 100,
         CancellationToken cancellationToken = default)
     {
-        var filter = new ProposalFilterDto(status, boardId, userId, riskLevel, limit);
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        if (userId.HasValue && userId.Value != callerUserId)
+        {
+            return Result.Failure(ErrorCodes.Forbidden, "You can only query proposals for your own user.").ToErrorActionResult();
+        }
+
+        if (boardId.HasValue)
+        {
+            var permissionError = await EnsureBoardPermissionAsync(
+                _authorizationService,
+                callerUserId,
+                boardId.Value,
+                static (authorizationService, actorId, targetBoardId) => authorizationService.CanReadBoardAsync(actorId, targetBoardId),
+                "You do not have permission to view this board");
+
+            if (permissionError is not null)
+                return permissionError;
+        }
+
+        var effectiveUserId = userId ?? (boardId.HasValue ? null : callerUserId);
+        var filter = new ProposalFilterDto(status, boardId, effectiveUserId, riskLevel, limit);
         var result = await _proposalService.GetProposalsAsync(filter, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
@@ -53,8 +80,14 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetProposal(Guid id, CancellationToken cancellationToken = default)
     {
-        var result = await _proposalService.GetProposalByIdAsync(id, cancellationToken);
-        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        return Ok(auth.Proposal);
     }
 
     /// <summary>
@@ -88,6 +121,10 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var decidedByUserId, out var errorResult))
             return errorResult!;
 
+        var auth = await AuthorizeProposalAsync(id, decidedByUserId, requireWriteAccess: true, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
         var result = await _proposalService.ApproveProposalAsync(id, decidedByUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
@@ -104,6 +141,10 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var decidedByUserId, out var errorResult))
             return errorResult!;
 
+        var auth = await AuthorizeProposalAsync(id, decidedByUserId, requireWriteAccess: true, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
         var result = await _proposalService.RejectProposalAsync(id, decidedByUserId, dto, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
@@ -114,6 +155,13 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     [HttpPost("{id}/execute")]
     public async Task<IActionResult> ExecuteProposal(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: true, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
         if (!Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyHeader) ||
             string.IsNullOrWhiteSpace(idempotencyHeader))
         {
@@ -136,7 +184,52 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     [HttpGet("{id}/diff")]
     public async Task<IActionResult> GetProposalDiff(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
         var result = await _proposalService.GetProposalDiffAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(new { diff = result.Value }) : result.ToErrorActionResult();
+    }
+
+    private async Task<(ProposalDto? Proposal, IActionResult? ErrorResult)> AuthorizeProposalAsync(
+        Guid proposalId,
+        Guid callerUserId,
+        bool requireWriteAccess,
+        CancellationToken cancellationToken)
+    {
+        var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
+        if (!proposalResult.IsSuccess)
+            return (null, proposalResult.ToErrorActionResult());
+
+        var proposal = proposalResult.Value;
+
+        if (proposal.BoardId.HasValue)
+        {
+            var permissionError = await EnsureBoardPermissionAsync(
+                _authorizationService,
+                callerUserId,
+                proposal.BoardId.Value,
+                requireWriteAccess
+                    ? static (authorizationService, actorId, targetBoardId) => authorizationService.CanWriteBoardAsync(actorId, targetBoardId)
+                    : static (authorizationService, actorId, targetBoardId) => authorizationService.CanReadBoardAsync(actorId, targetBoardId),
+                requireWriteAccess
+                    ? "You do not have permission to modify this board"
+                    : "You do not have permission to view this board");
+
+            return permissionError is null
+                ? (proposal, null)
+                : (null, permissionError);
+        }
+
+        if (proposal.RequestedByUserId != callerUserId)
+        {
+            return (null, Result.Failure(ErrorCodes.Forbidden, "You do not have permission to access this proposal.").ToErrorActionResult());
+        }
+
+        return (proposal, null);
     }
 }
