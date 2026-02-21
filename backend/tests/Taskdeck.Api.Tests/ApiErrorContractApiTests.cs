@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -111,6 +112,37 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
             "/api/auth/login",
             new LoginDto(username, password));
         await ApiTestHarness.AssertErrorContractAsync(inactiveLoginResponse, HttpStatusCode.Forbidden, "Forbidden");
+    }
+
+    [Fact]
+    public async Task Login_ShouldUseSameAuthenticationFailedMessage_ForUnknownIdentifierAndWrongPassword()
+    {
+        using var client = _factory.CreateClient();
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var username = $"auth_enum_{suffix}";
+        var email = $"auth_enum_{suffix}@example.com";
+        const string password = "password123";
+
+        var registerResponse = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new CreateUserDto(username, email, password));
+        registerResponse.EnsureSuccessStatusCode();
+
+        var wrongPasswordResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new LoginDto(username, "wrong-password"));
+        await ApiTestHarness.AssertErrorContractAsync(wrongPasswordResponse, HttpStatusCode.Unauthorized, "AuthenticationFailed");
+        var wrongPasswordPayload = await wrongPasswordResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        var unknownUserResponse = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new LoginDto($"unknown_{suffix}", "wrong-password"));
+        await ApiTestHarness.AssertErrorContractAsync(unknownUserResponse, HttpStatusCode.Unauthorized, "AuthenticationFailed");
+        var unknownUserPayload = await unknownUserResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        wrongPasswordPayload.GetProperty("message").GetString()
+            .Should()
+            .Be(unknownUserPayload.GetProperty("message").GetString());
     }
 
     [Fact]
