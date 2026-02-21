@@ -12,6 +12,8 @@ namespace Taskdeck.Application.Services;
 
 public class AuthenticationService : IAuthenticationService
 {
+    private const string InvalidCredentialsMessage = "Invalid username/email or password";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtSettings _jwtSettings;
 
@@ -34,7 +36,7 @@ public class AuthenticationService : IAuthenticationService
 
             var users = await ResolveLoginCandidatesAsync(loginIdentifier);
             if (users.Count == 0)
-                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "No account matches the provided username or email");
+                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, InvalidCredentialsMessage);
 
             User? authenticatedUser = null;
             var hasInactivePasswordMatch = false;
@@ -58,7 +60,7 @@ public class AuthenticationService : IAuthenticationService
                 if (hasInactivePasswordMatch)
                     return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
 
-                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Password is incorrect for the provided account");
+                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, InvalidCredentialsMessage);
             }
 
             var token = GenerateJwtToken(authenticatedUser);
@@ -81,12 +83,21 @@ public class AuthenticationService : IAuthenticationService
             if (!TryValidateJwtSettings(out var jwtValidationError))
                 return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
 
-            var exists = await _unitOfWork.Users.ExistsAsync(dto.Username, dto.Email);
+            var normalizedUsername = dto.Username?.Trim() ?? string.Empty;
+            var normalizedEmail = dto.Email?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedUsername))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Username is required");
+
+            if (string.IsNullOrWhiteSpace(normalizedEmail))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
+
+            var exists = await _unitOfWork.Users.ExistsAsync(normalizedUsername, normalizedEmail);
             if (exists)
                 return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
 
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-            var user = new User(dto.Username, dto.Email, passwordHash, dto.DefaultRole);
+            var user = new User(normalizedUsername, normalizedEmail, passwordHash, dto.DefaultRole);
 
             await _unitOfWork.Users.AddAsync(user);
             await _unitOfWork.SaveChangesAsync();
