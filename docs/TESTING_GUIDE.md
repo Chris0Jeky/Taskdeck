@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-02-20
+Last Updated: 2026-02-21
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -82,10 +82,24 @@ docker mcp server ls
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
 ```
 
-Optional servers (requires valid credentials for `postman` and `dockerhub`):
+Optional servers (`postman`, `dockerhub`) warning mode:
+
+```powershell
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional
+```
+
+Optional servers strict mode (fail-fast on missing prereqs/runtime failures):
 
 ```powershell
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors
+```
+
+CI-friendly variants:
+
+```powershell
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -CiMode
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -SkipOptionalWhenMissingPrereqs -CiMode
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors -CiMode
 ```
 
 ## CI Gates
