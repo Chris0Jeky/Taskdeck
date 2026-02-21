@@ -504,5 +504,27 @@ public class AutomationProposalServiceTests
         result.Value.Should().HaveCount(1);
     }
 
+    [Fact]
+    public async Task GetProposalsAsync_ShouldQueryByUserFirst_WhenUserAndStatusFiltersProvided()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var pending = new AutomationProposal(ProposalSourceType.Chat, userId, "Pending", RiskLevel.Low, Guid.NewGuid().ToString());
+        var approved = new AutomationProposal(ProposalSourceType.Chat, userId, "Approved", RiskLevel.Low, Guid.NewGuid().ToString());
+        approved.Approve(Guid.NewGuid());
+
+        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, 10, default))
+            .ReturnsAsync(new[] { pending, approved });
+
+        // Act
+        var result = await _service.GetProposalsAsync(new ProposalFilterDto(Status: ProposalStatus.PendingReview, UserId: userId, Limit: 10));
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(p => p.Id == pending.Id);
+        _proposalRepoMock.Verify(r => r.GetByUserIdAsync(userId, 10, default), Times.Once);
+        _proposalRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<ProposalStatus>(), It.IsAny<int>(), default), Times.Never);
+    }
+
     #endregion
 }
