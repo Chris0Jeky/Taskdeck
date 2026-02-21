@@ -47,6 +47,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 
 - `personalNotes.txt`
   - Idea capture only. Must be reconciled through `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` before execution.
+- `analysis/`
+  - Dated repository analysis snapshots and follow-through mapping notes (non-authoritative unless promoted into active docs).
 
 ## Archive
 
