@@ -135,15 +135,17 @@ To convert the 2026-02-21 repository scan into executable work, a dedicated issu
 - umbrella tracker: `#151`
 - engineering hardening issues: `#152` to `#157`
 - hotspot refactor issues: `#158` to `#167`
+- CI/workflow topology expansion issue: `#168`
 
 Priority distribution for this wave:
 - `Priority I`: `#152`
-- `Priority II`: `#151`, `#153`, `#154`, `#155`, `#157`
+- `Priority II`: `#151`, `#153`, `#154`, `#155`, `#157`, `#168`
 - `Priority III`: `#156`
 - `Priority IV`: `#158` to `#167`
 
 Analysis record:
 - `docs/analysis/2026-02-21_repo-scan-analysis.md`
+- `docs/analysis/2026-02-21_ci-github-actions-expansion-plan.md`
 
 ## Test Status (Executed)
 

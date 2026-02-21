@@ -80,23 +80,24 @@ Starter packs and debt blockers:
 
 ### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
 
-Analysis follow-through and hardening:
+Analysis follow-through, CI topology, and hardening:
 1. `#151` ANL-2026-02-21 analysis follow-through umbrella (tracking)
-2. `#153` API-06 centralized exception handling/fallback error-contract uniformity
-3. `#154` FE-11 frontend linting baseline + CI gate
-4. `#155` FE-12 frontend coverage thresholds
-5. `#157` TST-14 architecture-guard expansion
+2. `#168` OPS-19 CI workflow topology expansion and governance hardening
+3. `#153` API-06 centralized exception handling/fallback error-contract uniformity
+4. `#154` FE-11 frontend linting baseline + CI gate
+5. `#155` FE-12 frontend coverage thresholds
+6. `#157` TST-14 architecture-guard expansion
 
 Foundation wave:
-6. `#67` COL-01 realtime SignalR updates
-7. `#68` OBS-01 observability baseline
-8. `#70` TST-01 load/concurrency harness
-9. `#71` ARCH-01 multi-tenancy strategy ADR
-10. `#72` COL-02 notifications framework
-11. `#73` COL-03 presence/conflict policy
-12. `#74` COL-04 comments/mentions workflow
-13. `#75` INT-01 import adapters foundation
-14. `#76` INT-02 webhooks/integration security model
+7. `#67` COL-01 realtime SignalR updates
+8. `#68` OBS-01 observability baseline
+9. `#70` TST-01 load/concurrency harness
+10. `#71` ARCH-01 multi-tenancy strategy ADR
+11. `#72` COL-02 notifications framework
+12. `#73` COL-03 presence/conflict policy
+13. `#74` COL-04 comments/mentions workflow
+14. `#75` INT-01 import adapters foundation
+15. `#76` INT-02 webhooks/integration security model
 
 ### Stage 3: Priority III - Expansion Wave
 

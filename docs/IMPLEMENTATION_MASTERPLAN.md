@@ -252,6 +252,7 @@ Exit Criteria:
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
 - Analysis follow-through wave tracker: `#151`
+- CI/workflow topology expansion and governance track: `#168`
 - API/frontend hardening follow-through: `#153`, `#154`, `#155`, `#157`
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70`
@@ -306,6 +307,7 @@ Covered by seeded issues:
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`
 - Cloud target topology and autoscaling ADR: `#111`
+- CI workflow topology expansion/governance baseline: `#168`
 
 Outstanding strategy-level gap to monitor:
 - no major out-of-code categories from the reviewed WIP PDFs are currently untracked; residual risk is execution sequencing and closure quality.
