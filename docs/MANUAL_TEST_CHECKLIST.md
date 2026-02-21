@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-02-20
+Last Updated: 2026-02-21
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -207,7 +207,86 @@ Run these checks even if they currently fail; log outcome explicitly.
    - Repro: test on shorter and taller viewports.
    - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 
-## K. Post-Run Documentation Check
+## K. Manual Findings Regression Pack (MAN-2026-02-21)
+
+Use this section to retest the exact findings captured in `docs/notesFromManualTesting.txt`.
+Issue wave:
+- umbrella: `#173`
+- mapped issues: `#174`, `#175`, `#176`, `#177`, `#178`, `#179`
+
+For each test below, capture:
+- pass/fail
+- screenshot or short clip where UX is involved
+- request ID or API payload snippet for backend/auth failures
+- linked defect issue if outcome deviates from target behavior
+
+### K1. Auth login/register regression checks (`#174`)
+
+1. Register a new account with unique username/email.
+   - Expected: registration succeeds and user can access workspace.
+2. Attempt to register again with same username/email.
+   - Expected: deterministic duplicate/validation response (no ambiguous invalid-identity message).
+3. Immediately attempt login using the same valid account credentials.
+   - Expected: login succeeds; duplicate-registration failure does not poison login state.
+4. Attempt login with wrong password for existing user.
+   - Expected: error clearly indicates invalid credentials path, distinct from account-state failures.
+5. Attempt login with valid email but wrong username (or vice versa where supported).
+   - Expected: deterministic and consistent identity validation response.
+
+### K2. Starter-pack catalog breadth checks (`#175`)
+
+1. Open starter-pack catalog on a board.
+   - Expected: first-party pack set includes expanded categories beyond current baseline.
+2. Search for at least three domain-specific pack intents (example: engineering, support, content).
+   - Expected: relevant packs are discoverable by search/filter.
+3. Open previews for at least five different packs.
+   - Expected: each preview renders metadata and planned changes without runtime errors.
+
+### K3. Starter-pack warning-first apply UX checks (`#176`)
+
+1. Apply a pack to a clean board.
+   - Expected: apply success path is unchanged and explicit.
+2. Re-apply same pack.
+   - Expected: non-blocking conflicts are surfaced as warnings (or actionable conflict context), not opaque hard-stop.
+3. Apply a second pack with known overlap.
+   - Expected: warning vs blocking conflicts are clearly classified.
+4. Verify user guidance text.
+   - Expected: remediation options are explicit (what can be skipped, retried, or corrected).
+
+### K4. Archive/delete lifecycle consistency checks (`#177`)
+
+1. Open board settings for an active board and inspect lifecycle controls.
+   - Expected: archive/delete controls are non-duplicative and semantically clear.
+2. Archive board from board settings.
+   - Expected: board leaves default list and appears in archive workspace.
+3. In archive workspace, inspect available actions.
+   - Expected: action model matches documented lifecycle (restore/visibility/delete semantics are clear).
+4. Validate hidden archived visibility path.
+   - Expected: hidden archived items can be surfaced via explicit command/filter/control.
+5. Restore board and confirm list transitions.
+   - Expected: restored board returns to default boards list with consistent lifecycle state.
+
+### K5. Card drag affordance checks (`#178`)
+
+1. On a dense board, attempt drag from multiple card surface areas (top, center, near metadata).
+   - Expected: drag initiation is practical and not constrained to a tiny corner-only hit area.
+2. Attempt editing title/description fields and nearby interactions.
+   - Expected: improved drag area does not reintroduce accidental drag during edit flows.
+3. Drag across columns repeatedly.
+   - Expected: behavior is reliable, with no intermittent non-responsiveness from handle targeting.
+
+### K6. Ops role discoverability and permission-guidance checks (`#179`)
+
+1. Log in as non-admin user and open `/workspace/ops/cli`.
+   - Expected: current role/capability context is visible or discoverable from the screen.
+2. Run admin-restricted template (example: `boards.list` if still restricted).
+   - Expected: permission message includes actionable next steps (not just denial text).
+3. Discover runnable templates for current role.
+   - Expected: user can identify allowed templates without trial-and-error.
+4. Navigate to role-assignment/help path from ops surface (or linked settings/docs).
+   - Expected: clear guidance exists for obtaining required role/permissions.
+
+## L. Post-Run Documentation Check
 
 If behavior, commands, or known gaps changed, update:
 - `docs/STATUS.md`
@@ -216,7 +295,7 @@ If behavior, commands, or known gaps changed, update:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/OBSERVABILITY_BASELINE.md` (when telemetry/dashboard/alert contract changes)
 
-## L. Final Automated Smoke Before Merge
+## M. Final Automated Smoke Before Merge
 
 1. Backend:
    - `dotnet test backend/Taskdeck.sln -c Release -m:1`
