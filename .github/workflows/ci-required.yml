@@ -73,40 +73,10 @@ jobs:
           if-no-files-found: ignore
 
   api-integration:
-    name: API Integration (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-          cache: true
-          cache-dependency-path: |
-            backend/Taskdeck.sln
-            backend/**/*.csproj
-
-      - name: Restore backend
-        run: dotnet restore backend/Taskdeck.sln
-
-      - name: Run API integration tests
-        run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"
-
-      - name: Upload API integration test results
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-integration-trx-${{ matrix.os }}
-          path: backend/TestResults/api-integration/${{ matrix.os }}
-          if-no-files-found: ignore
+    name: API Integration
+    uses: ./.github/workflows/reusable-api-integration.yml
+    with:
+      dotnet-version: 8.0.x
 
   frontend-unit:
     name: Frontend Unit
