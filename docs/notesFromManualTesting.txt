@@ -1,0 +1,9 @@
+﻿1) "username or email is invalid" though it exists
+2) doesn't allow me to register with the same username nor email (which is kinda understandable), but it also won't allow me to login either
+3) we should make more starter packs from a brainstormed list of ideas
+4) adding starter packs should be smoother, like giving warnings instead of not allowing to do it at all
+5) when opening board options for a board, there is a button for "Archive Board" as well as a checkbox that can be ticked that achieves the same thing and no delete button. The delete button should not delete the board, it should still archive it but it should hide it in the archived list and be made visible only when a command or button for it is pressed in that section.
+6) the drag card function now limits the are where the card can be picked from to a small rectangle in the corner, but that's way too small. It should be easy to drago them from the majority (or all the) surface area of the card (the columns are ok)
+7) there is a section for archived items in the archive, but I can only delete items, not archive them
+8) in the ops console I get this "> boards.list
+Error: Template 'boards.list' requires role 'admin'" when trying to do boards.list with an account I logged into, whic doesn't seem to be admin, but there's no way of knowing whether I'm an admin, how to go about it, nor any other info
