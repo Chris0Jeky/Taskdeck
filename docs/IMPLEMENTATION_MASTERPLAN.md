@@ -46,7 +46,7 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 589 passing
+   - Backend: 599 passing
    - Frontend unit: 292 passing
    - E2E: 19 passing
 8. Documentation consolidation retained:
@@ -178,6 +178,9 @@ Delivered in the latest cycle:
    - extracted API integration lane into reusable workflow `.github/workflows/reusable-api-integration.yml` and routed `ci-required.yml` through it (preserving Ubuntu/Windows matrix behavior)
 42. OPS-19 CI topology third-pass delivery:
    - added `merge_group` trigger parity to `.github/workflows/ci-required.yml` to align merge-queue required-check execution with PR/push paths
+43. SEC-11 cross-user convergence progress (`#152`):
+   - automation proposal lifecycle endpoints now enforce proposal-scope authorization (`get/approve/reject/execute/diff`) via board read/write permission or requester-only fallback for user-scoped proposals
+   - API integration authz matrix expanded for additional protected automation/logs/starter-pack routes with `401` assertions, plus focused `403` and `404` regression tests for proposal, logs correlation, and starter-pack apply paths
 
 ## Roadmap by Horizon
 
