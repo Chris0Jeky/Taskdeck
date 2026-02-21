@@ -79,7 +79,7 @@ Deployment script smoke path (PowerShell):
 
 ```powershell
 powershell -File ./scripts/deploy/Start-TaskdeckStack.ps1
-powershell -File ./scripts/deploy/Smoke-TestTaskdeckStack.ps1
+powershell -File ./scripts/deploy/Smoke-TestTaskdeckStack.ps1 -Port 8080  # if TASKDECK_PROXY_PORT differs, set -Port to match
 powershell -File ./scripts/deploy/Stop-TaskdeckStack.ps1
 ```
 
