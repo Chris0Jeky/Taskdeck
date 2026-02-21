@@ -245,11 +245,14 @@ Exit Criteria:
 ### Priority I (Current Phase 4 Completion Path)
 
 - Security and policy convergence: `#33`, `#34`, `#44`
+- Final cross-user policy convergence follow-through: `#152`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
 - Tech-debt blockers for stable expansion: `#52` (delivered), `#53` (delivered), `#54` (delivered)
 
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
+- Analysis follow-through wave tracker: `#151`
+- API/frontend hardening follow-through: `#153`, `#154`, `#155`, `#157`
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70`
 - Multi-tenancy strategy and collaboration/integration foundations: `#71`, `#72`, `#73`, `#74`, `#75`, `#76`
@@ -257,7 +260,7 @@ Exit Criteria:
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80`, `#81`, `#82`, `#83`, `#106`, `#110`
+- Security/compliance expansion: `#80`, `#81`, `#82`, `#83`, `#106`, `#110`, `#156`
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
@@ -265,6 +268,7 @@ Exit Criteria:
 - Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`, `#96`
 - Developer/user docs maturity: `#99`, `#100`
+- Codebase maintainability hotspot refactors (analysis wave): `#158`, `#159`, `#160`, `#161`, `#162`, `#163`, `#164`, `#165`, `#166`, `#167`
 
 ### Priority V (Meta/Historical)
 
