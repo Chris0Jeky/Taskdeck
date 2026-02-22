@@ -11,15 +11,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-22)
 
-- Backend: 618/618 passing
+- Backend: 620/620 passing
   - Domain: 93
   - Application: 344
-  - API integration: 173
+  - API integration: 175
   - CLI contract: 4
   - Architecture boundaries: 4
 - Frontend unit: 293/293 passing
 - Frontend E2E (smoke + automation/ops + starter-pack fixtures): 19/19 passing
-- Combined automated total: 930/930 passing
+- Combined automated total: 932/932 passing
 
 ## Backend Commands
 
