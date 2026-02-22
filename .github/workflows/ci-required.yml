@@ -15,9 +15,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
-
 jobs:
   docs-governance:
     name: Docs Governance
