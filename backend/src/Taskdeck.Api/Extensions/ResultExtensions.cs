@@ -39,11 +39,12 @@ public static class ResultExtensions
             StatusCodes.Status401Unauthorized => new UnauthorizedObjectResult(body),
             StatusCodes.Status403Forbidden => new ObjectResult(body) { StatusCode = StatusCodes.Status403Forbidden },
             StatusCodes.Status409Conflict => new ConflictObjectResult(body),
-            _ => new ObjectResult(new ProblemDetails
+            _ => new ObjectResult(new ApiErrorResponse(
+                ErrorCodes.UnexpectedError,
+                "An unexpected error occurred."))
             {
-                Detail = result.ErrorMessage,
-                Status = StatusCodes.Status500InternalServerError
-            }) { StatusCode = StatusCodes.Status500InternalServerError }
+                StatusCode = StatusCodes.Status500InternalServerError
+            }
         };
     }
 }
