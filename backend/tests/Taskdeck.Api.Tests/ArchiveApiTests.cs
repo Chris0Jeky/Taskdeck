@@ -108,7 +108,7 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "archive-filter-owner");
         var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "archive-filter-owner-board");
 
-        await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId);
+        _ = await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId);
 
         using var otherClient = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(otherClient, "archive-filter-other");
@@ -125,12 +125,37 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "archive-item-owner");
         var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "archive-item-owner-board");
 
-        var archiveItemId = await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId);
+        var archiveItem = await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId);
 
         using var otherClient = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(otherClient, "archive-item-other");
 
-        var response = await otherClient.GetAsync($"/api/archive/items/{archiveItemId}");
+        var response = await otherClient.GetAsync($"/api/archive/items/{archiveItem.Id}");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task RestoreArchivedItem_ShouldReturnForbidden_WhenItemBelongsToDifferentBoard()
+    {
+        using var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "archive-restore-owner");
+        var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "archive-restore-owner-board");
+
+        var archiveItem = await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId, entityType: "board");
+
+        using var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(otherClient, "archive-restore-other");
+        var otherBoard = await ApiTestHarness.CreateBoardAsync(otherClient, "archive-restore-other-board");
+
+        var restoreDto = new RestoreArchiveItemDto(
+            TargetBoardId: otherBoard.Id,
+            RestoreMode: RestoreMode.InPlace,
+            ConflictStrategy: ConflictStrategy.Fail);
+
+        var response = await otherClient.PostAsJsonAsync(
+            $"/api/archive/board/{archiveItem.EntityId}/restore",
+            restoreDto);
 
         await ApiTestHarness.AssertForbiddenAsync(response);
     }
@@ -154,11 +179,16 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
         return payload.User.Id;
     }
 
-    private async Task<Guid> SeedArchiveItemAsync(Guid boardId, Guid archivedByUserId)
+    private async Task<ArchiveItem> SeedArchiveItemAsync(
+        Guid boardId,
+        Guid archivedByUserId,
+        string entityType = "board",
+        Guid? entityId = null)
     {
+        var resolvedEntityId = entityId ?? Guid.NewGuid();
         var archiveItem = new ArchiveItem(
-            "board",
-            Guid.NewGuid(),
+            entityType,
+            resolvedEntityId,
             boardId,
             $"archive-{Guid.NewGuid():N}",
             archivedByUserId,
@@ -169,6 +199,6 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
         dbContext.ArchiveItems.Add(archiveItem);
         await dbContext.SaveChangesAsync();
 
-        return archiveItem.Id;
+        return archiveItem;
     }
 }

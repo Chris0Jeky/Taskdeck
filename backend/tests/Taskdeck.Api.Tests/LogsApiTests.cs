@@ -11,9 +11,11 @@ namespace Taskdeck.Api.Tests;
 public class LogsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly TestWebApplicationFactory _factory;
 
     public LogsApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -94,14 +96,69 @@ public class LogsApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
     }
 
+    [Fact]
+    public async Task CorrelationLookup_ShouldReturnForbidden_WhenCorrelationBelongsToDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        await AuthenticateAsync(ownerClient, "logs-correlation-owner");
+        await AuthenticateAsync(outsiderClient, "logs-correlation-outsider");
+
+        var runResponse = await ownerClient.PostAsJsonAsync("/api/ops/cli/run", new RunCommandDto("health.check"));
+        runResponse.EnsureSuccessStatusCode();
+        var run = await runResponse.Content.ReadFromJsonAsync<CommandRunDto>();
+        run.Should().NotBeNull();
+
+        var response = await outsiderClient.GetAsync($"/api/logs/correlation/{run!.CorrelationId}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task QueryLogs_ShouldReturnForbidden_WhenRequestingDifferentUserId()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        var ownerUserId = await AuthenticateAsync(ownerClient, "logs-query-owner");
+        await AuthenticateAsync(outsiderClient, "logs-query-outsider");
+
+        var response = await outsiderClient.GetAsync($"/api/logs?userId={ownerUserId}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task QueryLogs_ShouldReturnOkWithEmptyList_WhenCallerCorrelationExistsButFiltersExcludeEntries()
+    {
+        using var ownerClient = _factory.CreateClient();
+        await AuthenticateAsync(ownerClient, "logs-filtered-correlation-owner");
+
+        var runResponse = await ownerClient.PostAsJsonAsync("/api/ops/cli/run", new RunCommandDto("health.check"));
+        runResponse.EnsureSuccessStatusCode();
+        var run = await runResponse.Content.ReadFromJsonAsync<CommandRunDto>();
+        run.Should().NotBeNull();
+
+        var response = await ownerClient.GetAsync($"/api/logs?correlationId={run!.CorrelationId}&source=NotARealSource");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var entries = await response.Content.ReadFromJsonAsync<List<LogEntryDto>>();
+        entries.Should().NotBeNull();
+        entries.Should().BeEmpty();
+    }
+
     private async Task<Guid> AuthenticateAsync(string stem)
+    {
+        return await AuthenticateAsync(_client, stem);
+    }
+
+    private static async Task<Guid> AuthenticateAsync(HttpClient client, string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var username = $"{stem}_{suffix}";
         var email = $"{stem}_{suffix}@example.com";
         const string password = "password123";
 
-        var response = await _client.PostAsJsonAsync(
+        var response = await client.PostAsJsonAsync(
             "/api/auth/register",
             new CreateUserDto(username, email, password));
 
@@ -109,7 +166,7 @@ public class LogsApiTests : IClassFixture<TestWebApplicationFactory>
         var payload = await response.Content.ReadFromJsonAsync<AuthResultDto>();
         payload.Should().NotBeNull();
 
-        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload!.Token);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload!.Token);
         return payload.User.Id;
     }
 }
