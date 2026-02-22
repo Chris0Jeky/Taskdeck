@@ -4,6 +4,7 @@ import { HttpTransportType } from '@microsoft/signalr'
 
 const callbacks: {
   boardMutation?: (event: { boardId: string }) => Promise<void> | void
+  boardPresence?: (event: { boardId: string; members: Array<{ userId: string }> }) => void
   reconnecting?: () => Promise<void> | void
   reconnected?: () => Promise<void> | void
   close?: () => Promise<void> | void
@@ -21,6 +22,11 @@ const mockConnection = {
   on: vi.fn((eventName: string, handler: (event: { boardId: string }) => Promise<void> | void) => {
     if (eventName === 'boardMutation') {
       callbacks.boardMutation = handler
+      return
+    }
+
+    if (eventName === 'boardPresence') {
+      callbacks.boardPresence = handler as (event: { boardId: string; members: Array<{ userId: string }> }) => void
     }
   }),
   onreconnecting: vi.fn((handler: () => Promise<void> | void) => {
@@ -60,6 +66,7 @@ describe('createBoardRealtimeController', () => {
     vi.clearAllMocks()
     localStorage.removeItem('taskdeck_token')
     callbacks.boardMutation = undefined
+    callbacks.boardPresence = undefined
     callbacks.reconnecting = undefined
     callbacks.reconnected = undefined
     callbacks.close = undefined
@@ -130,6 +137,31 @@ describe('createBoardRealtimeController', () => {
     expect(fetchBoard).not.toHaveBeenCalled()
   })
 
+  it('emits presence snapshots for the currently subscribed board', async () => {
+    const fetchBoard = vi.fn(async () => undefined)
+    const onPresenceChanged = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onPresenceChanged })
+
+    await controller.start('board-1')
+    callbacks.boardPresence?.({ boardId: 'board-1', members: [{ userId: 'user-1' }] })
+
+    expect(onPresenceChanged).toHaveBeenCalledWith({
+      boardId: 'board-1',
+      members: [{ userId: 'user-1' }],
+    })
+  })
+
+  it('ignores presence snapshots for other boards', async () => {
+    const fetchBoard = vi.fn(async () => undefined)
+    const onPresenceChanged = vi.fn()
+    const controller = createBoardRealtimeController({ fetchBoard, onPresenceChanged })
+
+    await controller.start('board-1')
+    callbacks.boardPresence?.({ boardId: 'board-2', members: [{ userId: 'user-1' }] })
+
+    expect(onPresenceChanged).not.toHaveBeenCalled()
+  })
+
   it('leaves previous board and joins next board when switched', async () => {
     const fetchBoard = vi.fn(async () => undefined)
     const controller = createBoardRealtimeController({ fetchBoard })
@@ -155,12 +187,23 @@ describe('createBoardRealtimeController', () => {
     await controller.stop()
   })
 
+  it('sends editing-card status when connected', async () => {
+    const fetchBoard = vi.fn(async () => undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+    await controller.setEditingCard('card-1')
+
+    expect(mockConnection.invoke).toHaveBeenCalledWith('SetEditingCard', 'board-1', 'card-1')
+  })
+
   it('starts polling on reconnecting and re-joins board when reconnected', async () => {
     vi.useFakeTimers()
     const fetchBoard = vi.fn(async () => undefined)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
+    await controller.setEditingCard('card-1')
     await callbacks.reconnecting?.()
     await vi.advanceTimersByTimeAsync(15000)
     expect(fetchBoard).toHaveBeenCalledWith('board-1')
@@ -168,6 +211,7 @@ describe('createBoardRealtimeController', () => {
     fetchBoard.mockClear()
     await callbacks.reconnected?.()
     expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-1')
+    expect(mockConnection.invoke).toHaveBeenCalledWith('SetEditingCard', 'board-1', 'card-1')
 
     await vi.advanceTimersByTimeAsync(15000)
     expect(fetchBoard).not.toHaveBeenCalled()
