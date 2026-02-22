@@ -6,12 +6,12 @@ namespace Taskdeck.Architecture.Tests;
 public class ApiControllerBoundaryTests
 {
     private static readonly Regex ControllerDeclarationRegex = new(
-        @"public\s+(?:abstract\s+)?(?:partial\s+)?class\s+(?<name>[A-Za-z0-9_]+)\s*:\s*(?<base>[A-Za-z0-9_]+)",
+        @"public\s+(?:abstract\s+)?(?:partial\s+)?class\s+(?<name>[A-Za-z0-9_]+)\s*:\s*(?<base>[A-Za-z0-9_:.]+)",
         RegexOptions.Compiled);
 
-    private static readonly Regex AuthorizeAttributeRegex = new(
-        @"\[Authorize(?:\s*\(.*?\))?\]",
-        RegexOptions.Compiled | RegexOptions.Singleline);
+    private static readonly Regex AuthorizeAttributeTokenRegex = new(
+        @"\bAuthorize(?:Attribute)?\b",
+        RegexOptions.Compiled);
 
     private static readonly HashSet<string> AllowedControllerBaseTypes = new(StringComparer.Ordinal)
     {
@@ -29,7 +29,7 @@ public class ApiControllerBoundaryTests
             var content = File.ReadAllText(controllerFile);
             var declaration = FindControllerDeclaration(controllerFile, content);
 
-            if (!declaration.BaseType.Equals("ControllerBase", StringComparison.Ordinal))
+            if (!IsControllerBaseType(declaration.BaseType))
             {
                 continue;
             }
@@ -63,7 +63,7 @@ public class ApiControllerBoundaryTests
                 continue;
             }
 
-            if (AuthorizeAttributeRegex.IsMatch(content))
+            if (declaration.HasClassAuthorizeAttribute)
             {
                 continue;
             }
@@ -94,8 +94,60 @@ public class ApiControllerBoundaryTests
 
         return new ControllerDeclaration(
             match.Groups["name"].Value,
-            match.Groups["base"].Value);
+            match.Groups["base"].Value,
+            HasAuthorizeAttributeOnClass(content, match.Index));
     }
 
-    private sealed record ControllerDeclaration(string ClassName, string BaseType);
+    private static bool IsControllerBaseType(string baseType)
+    {
+        return baseType.Equals("ControllerBase", StringComparison.Ordinal) ||
+               baseType.EndsWith(".ControllerBase", StringComparison.Ordinal) ||
+               baseType.EndsWith("::ControllerBase", StringComparison.Ordinal);
+    }
+
+    private static bool HasAuthorizeAttributeOnClass(string content, int classDeclarationIndex)
+    {
+        var linesBeforeClass = content[..classDeclarationIndex]
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n');
+
+        var index = linesBeforeClass.Length - 1;
+        while (index >= 0 && string.IsNullOrWhiteSpace(linesBeforeClass[index]))
+        {
+            index--;
+        }
+
+        var attributeLines = new List<string>();
+        while (index >= 0)
+        {
+            var line = linesBeforeClass[index];
+            var trimmed = line.TrimStart();
+
+            if (trimmed.StartsWith("[", StringComparison.Ordinal))
+            {
+                attributeLines.Add(line);
+                index--;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                index--;
+                continue;
+            }
+
+            break;
+        }
+
+        if (attributeLines.Count == 0)
+        {
+            return false;
+        }
+
+        attributeLines.Reverse();
+        var classAttributeBlock = string.Join(Environment.NewLine, attributeLines);
+        return AuthorizeAttributeTokenRegex.IsMatch(classAttributeBlock);
+    }
+
+    private sealed record ControllerDeclaration(string ClassName, string BaseType, bool HasClassAuthorizeAttribute);
 }
