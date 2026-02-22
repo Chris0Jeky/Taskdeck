@@ -5,9 +5,10 @@ import {
   HttpTransportType,
   LogLevel,
 } from '@microsoft/signalr'
-import type { BoardRealtimeEvent } from '../types/realtime'
+import type { BoardPresenceSnapshot, BoardRealtimeEvent } from '../types/realtime'
 
 const BOARD_MUTATION_EVENT = 'boardMutation'
+const BOARD_PRESENCE_EVENT = 'boardPresence'
 const RECONNECT_DELAYS_MS = [0, 2000, 5000, 10000]
 const FALLBACK_POLL_INTERVAL_MS = 15000
 
@@ -23,11 +24,13 @@ function getAccessToken(): string {
 
 export interface BoardRealtimeControllerOptions {
   fetchBoard: (boardId: string) => Promise<void>
+  onPresenceChanged?: (snapshot: BoardPresenceSnapshot) => void
 }
 
 export interface BoardRealtimeController {
   start: (boardId: string) => Promise<void>
   switchBoard: (boardId: string) => Promise<void>
+  setEditingCard: (cardId: string | null) => Promise<void>
   stop: () => Promise<void>
 }
 
@@ -36,6 +39,7 @@ export function createBoardRealtimeController(
 ): BoardRealtimeController {
   let connection: HubConnection | null = null
   let subscribedBoardId: string | null = null
+  let editingCardId: string | null = null
   let fallbackTimer: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
 
@@ -70,6 +74,14 @@ export function createBoardRealtimeController(
     }
   }
 
+  const handleBoardPresence = (snapshot: BoardPresenceSnapshot) => {
+    if (!subscribedBoardId || snapshot.boardId !== subscribedBoardId) {
+      return
+    }
+
+    options.onPresenceChanged?.(snapshot)
+  }
+
   const ensureConnection = () => {
     if (connection) {
       return connection
@@ -85,6 +97,7 @@ export function createBoardRealtimeController(
       .build()
 
     hubConnection.on(BOARD_MUTATION_EVENT, handleBoardMutation)
+    hubConnection.on(BOARD_PRESENCE_EVENT, handleBoardPresence)
     hubConnection.onreconnecting(() => {
       if (subscribedBoardId) {
         startFallbackPolling(subscribedBoardId)
@@ -94,6 +107,9 @@ export function createBoardRealtimeController(
       stopFallbackPolling()
       if (subscribedBoardId) {
         await hubConnection.invoke('JoinBoard', subscribedBoardId)
+        if (editingCardId !== null) {
+          await hubConnection.invoke('SetEditingCard', subscribedBoardId, editingCardId)
+        }
       }
     })
     hubConnection.onclose(() => {
@@ -137,8 +153,19 @@ export function createBoardRealtimeController(
     await joinBoard(boardId)
   }
 
+  const setEditingCard = async (cardId: string | null) => {
+    editingCardId = cardId
+
+    if (!connection || !subscribedBoardId || connection.state !== HubConnectionState.Connected) {
+      return
+    }
+
+    await connection.invoke('SetEditingCard', subscribedBoardId, cardId)
+  }
+
   const stop = async () => {
     stopFallbackPolling()
+    editingCardId = null
 
     if (!connection) {
       subscribedBoardId = null
@@ -166,6 +193,7 @@ export function createBoardRealtimeController(
   return {
     start,
     switchBoard,
+    setEditingCard,
     stop,
   }
 }
