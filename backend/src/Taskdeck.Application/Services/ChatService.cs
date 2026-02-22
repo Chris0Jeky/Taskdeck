@@ -13,6 +13,7 @@ public class ChatService : IChatService
 {
     private const int MaxPromptLength = 4000;
     private const int MaxChecklistItemCount = 30;
+    private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
         "ignore previous instructions",
@@ -27,19 +28,22 @@ public class ChatService : IChatService
     private readonly IAutomationPlannerService _automationPlanner;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
+    private readonly INotificationService _notificationService;
 
     public ChatService(
         IUnitOfWork unitOfWork,
         ILlmProvider llmProvider,
         IAutomationPlannerService automationPlanner,
         IAutomationProposalService proposalService,
-        IAutomationPolicyEngine policyEngine)
+        IAutomationPolicyEngine policyEngine,
+        INotificationService? notificationService = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
         _automationPlanner = automationPlanner;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
+        _notificationService = notificationService ?? NoOpNotificationService.Instance;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -92,6 +96,10 @@ public class ChatService : IChatService
             var userMessage = new ChatMessage(sessionId, ChatMessageRole.User, dto.Content);
             session.AddMessage(userMessage);
             await _unitOfWork.ChatMessages.AddAsync(userMessage, ct);
+
+            var mentionResult = await PublishMentionNotificationsAsync(session, userId, dto.Content, userMessage.Id, ct);
+            if (!mentionResult.IsSuccess)
+                return Result.Failure<ChatMessageDto>(mentionResult.ErrorCode, mentionResult.ErrorMessage);
 
             if (ContainsBlockedPromptPattern(dto.Content))
             {
@@ -237,6 +245,54 @@ public class ChatService : IChatService
             return false;
 
         return Regex.IsMatch(content, @"(?m)^\s*[-*]\s*\[\s\]\s+.+$");
+    }
+
+    private async Task<Result> PublishMentionNotificationsAsync(
+        ChatSession session,
+        Guid senderUserId,
+        string content,
+        Guid userMessageId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return Result.Success();
+
+        var usernames = MentionRegex
+            .Matches(content)
+            .Select(match => match.Groups["username"].Value)
+            .Where(username => !string.IsNullOrWhiteSpace(username))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (usernames.Length == 0)
+            return Result.Success();
+
+        var sender = await _unitOfWork.Users.GetByIdAsync(senderUserId, ct);
+        var senderName = sender?.Username ?? "A teammate";
+
+        foreach (var username in usernames)
+        {
+            var mentionedUser = await _unitOfWork.Users.GetByUsernameAsync(username, ct);
+            if (mentionedUser == null || mentionedUser.Id == senderUserId)
+                continue;
+
+            var publishResult = await _notificationService.PublishAsync(
+                new CreateNotificationRequestDto(
+                    mentionedUser.Id,
+                    NotificationType.Mention,
+                    "You were mentioned in chat",
+                    $"{senderName} mentioned you in chat session '{session.Title}'.",
+                    session.BoardId,
+                    SourceEntityType: "chat-message",
+                    SourceEntityId: userMessageId,
+                    DeduplicationKey: $"mention:{session.Id}:{userMessageId}:{mentionedUser.Id}"),
+                ct);
+
+            if (!publishResult.IsSuccess)
+                return Result.Failure(publishResult.ErrorCode, publishResult.ErrorMessage);
+        }
+
+        return Result.Success();
     }
 
     private async Task<Result<ProposalDto>> CreateChecklistBootstrapProposalAsync(
