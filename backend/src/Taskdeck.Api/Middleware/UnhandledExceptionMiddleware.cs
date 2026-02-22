@@ -24,6 +24,15 @@ public sealed class UnhandledExceptionMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException ex) when (context.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation(
+                ex,
+                "Request was canceled while processing {Method} {Path} (CorrelationId: {CorrelationId})",
+                context.Request.Method,
+                context.Request.Path,
+                context.TraceIdentifier);
+        }
         catch (Exception ex)
         {
             _logger.LogError(
