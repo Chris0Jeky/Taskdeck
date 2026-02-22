@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
 jobs:
   api-integration:
     name: API Integration (${{ matrix.os }})
