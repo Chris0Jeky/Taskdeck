@@ -17,6 +17,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
 jobs:
   e2e-smoke:
     name: E2E Smoke
