@@ -126,6 +126,12 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
         var getForeignRunLogsResponse = await outsiderClient.GetAsync($"/api/ops/cli/runs/{run!.Id}/logs");
         await ApiTestHarness.AssertForbiddenAsync(getForeignRunLogsResponse);
 
+        var getForeignCorrelationLogsResponse = await outsiderClient.GetAsync($"/api/logs/correlation/{run.CorrelationId}");
+        await ApiTestHarness.AssertForbiddenAsync(getForeignCorrelationLogsResponse);
+
+        var queryForeignUserLogsResponse = await outsiderClient.GetAsync($"/api/logs?userId={owner.UserId}");
+        await ApiTestHarness.AssertForbiddenAsync(queryForeignUserLogsResponse);
+
         var getForeignUserResponse = await outsiderClient.GetAsync($"/api/users/{owner.UserId}");
         await ApiTestHarness.AssertForbiddenAsync(getForeignUserResponse);
     }
