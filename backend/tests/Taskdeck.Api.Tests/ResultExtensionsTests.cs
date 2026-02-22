@@ -59,6 +59,10 @@ public class ResultExtensionsTests
         var objectResult = actionResult as ObjectResult;
         objectResult.Should().NotBeNull();
         objectResult!.StatusCode.Should().Be(500);
+        objectResult.Value.Should().BeOfType<ApiErrorResponse>();
+        var error = (ApiErrorResponse)objectResult.Value!;
+        error.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        error.Message.Should().Be("An unexpected error occurred.");
     }
 
     [Fact]
