@@ -190,7 +190,7 @@ Result:
 
 ## CI Status
 
-Workflow: `.github/workflows/ci-required.yml`
+Required workflow: `.github/workflows/ci-required.yml`
 
 - `docs-governance` (Ubuntu)
 - `backend-architecture` (Ubuntu)
@@ -199,6 +199,24 @@ Workflow: `.github/workflows/ci-required.yml`
 - `frontend-unit` (Ubuntu/Windows)
 - `container-images` (Ubuntu)
 - `e2e-smoke` (Ubuntu, depends on prior jobs)
+
+Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
+
+- `workflow-lint` (Actionlint for workflow YAML drift)
+- `dependency-review` (PR dependency risk check)
+- label/manual-triggered backend solution + E2E regression lanes (`testing` label or `workflow_dispatch`)
+
+Nightly workflow: `.github/workflows/ci-nightly.yml`
+
+- scheduled/manual backend solution regression
+- scheduled/manual E2E regression
+- scheduled/manual container image regression
+
+Release/security workflow: `.github/workflows/release-security.yml`
+
+- release/tag/manual dependency inventory + vulnerability signal artifacts
+- optional strict frontend audit enforcement for manual runs
+- container image artifact/checksum lane reused from container baseline workflow
 
 ## Known Gaps and Risks
 
@@ -251,6 +269,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered OPS-19 CI topology third pass (`#168`): added `merge_group` trigger parity to `.github/workflows/ci-required.yml` so merge-queue evaluation runs the same required checks as PR/push.
 - Delivered OPS-19 CI topology fourth pass (`#168`): extracted backend-unit lane into reusable workflow `.github/workflows/reusable-backend-unit.yml` and routed `ci-required.yml` through it while preserving Ubuntu/Windows matrix behavior and domain/application/CLI split coverage.
 - Delivered OPS-19 CI topology fifth pass (`#168`): extracted container image and E2E smoke lanes into reusable workflows (`.github/workflows/reusable-container-images.yml`, `.github/workflows/reusable-e2e-smoke.yml`) and routed `ci-required.yml` through them while preserving required-gate dependencies and artifact behavior.
+- Delivered OPS-19 CI topology sixth pass (`#168`): added non-blocking and scheduled orchestrator workflows (`.github/workflows/ci-extended.yml`, `.github/workflows/ci-nightly.yml`) plus release/security orchestration (`.github/workflows/release-security.yml`) and reusable full backend regression lane (`.github/workflows/reusable-backend-solution.yml`) to make nightly and release topology explicit.
 - Added docs governance script and architecture boundary tests as CI invariants.
 - Added GitHub operations governance script to enforce issue-template label hygiene and project-automation doc invariants in CI.
 - Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.
