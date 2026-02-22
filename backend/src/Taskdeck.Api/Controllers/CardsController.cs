@@ -89,7 +89,7 @@ public class CardsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _cardService.UpdateCardAsync(boardId, cardId, dto);
+        var result = await _cardService.UpdateCardAsync(boardId, cardId, dto, userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
