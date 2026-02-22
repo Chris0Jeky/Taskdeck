@@ -142,18 +142,19 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "archive-restore-owner");
         var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "archive-restore-owner-board");
 
-        var archiveItem = await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId, entityType: "card");
+        var archiveItem = await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId, entityType: "board");
 
         using var otherClient = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(otherClient, "archive-restore-other");
+        var otherBoard = await ApiTestHarness.CreateBoardAsync(otherClient, "archive-restore-other-board");
 
         var restoreDto = new RestoreArchiveItemDto(
-            TargetBoardId: ownerBoard.Id,
+            TargetBoardId: otherBoard.Id,
             RestoreMode: RestoreMode.InPlace,
             ConflictStrategy: ConflictStrategy.Fail);
 
         var response = await otherClient.PostAsJsonAsync(
-            $"/api/archive/card/{archiveItem.EntityId}/restore",
+            $"/api/archive/board/{archiveItem.EntityId}/restore",
             restoreDto);
 
         await ApiTestHarness.AssertForbiddenAsync(response);
