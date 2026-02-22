@@ -342,6 +342,24 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task RejectProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-reject-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-reject-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-reject-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.PostAsJsonAsync(
+            $"/api/automation/proposals/{proposal.Id}/reject",
+            new UpdateProposalStatusDto("reject-forbidden"));
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
     public async Task GetProposal_ShouldReturnForbidden_WhenProposalIsUserScopedToAnotherUser()
     {
         var ownerClient = _factory.CreateClient();
@@ -378,6 +396,21 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var diffResult = await diffResponse.Content.ReadFromJsonAsync<JsonElement>();
         diffResult.TryGetProperty("diff", out var diff).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetProposalDiff_ShouldReturnForbidden_WhenCallerCannotReadProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-diff-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-diff-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-diff-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
     [Fact]
