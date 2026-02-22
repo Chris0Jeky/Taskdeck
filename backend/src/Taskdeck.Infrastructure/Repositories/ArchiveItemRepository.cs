@@ -11,29 +11,41 @@ public class ArchiveItemRepository : Repository<ArchiveItem>, IArchiveItemReposi
     {
     }
 
-    public async Task<IEnumerable<ArchiveItem>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ArchiveItem>> GetPageAsync(int limit = 100, CancellationToken cancellationToken = default, int offset = 0)
+    {
+        return await _dbSet
+            .OrderByDescending(a => a.ArchivedAt)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IEnumerable<ArchiveItem>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default, int offset = 0)
     {
         return await _dbSet
             .Where(a => a.BoardId == boardId)
             .OrderByDescending(a => a.ArchivedAt)
+            .Skip(offset)
             .Take(limit)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<ArchiveItem>> GetByEntityTypeAsync(string entityType, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ArchiveItem>> GetByEntityTypeAsync(string entityType, int limit = 100, CancellationToken cancellationToken = default, int offset = 0)
     {
         return await _dbSet
             .Where(a => a.EntityType == entityType)
             .OrderByDescending(a => a.ArchivedAt)
+            .Skip(offset)
             .Take(limit)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<ArchiveItem>> GetByStatusAsync(RestoreStatus status, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ArchiveItem>> GetByStatusAsync(RestoreStatus status, int limit = 100, CancellationToken cancellationToken = default, int offset = 0)
     {
         return await _dbSet
             .Where(a => a.RestoreStatus == status)
             .OrderByDescending(a => a.ArchivedAt)
+            .Skip(offset)
             .Take(limit)
             .ToListAsync(cancellationToken);
     }

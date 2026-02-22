@@ -181,7 +181,7 @@ public class ArchiveRecoveryServiceTests
             CreateArchiveItem("card", Guid.NewGuid(), boardId, "Card 2", userId)
         };
 
-        _archiveItemRepoMock.Setup(r => r.GetByEntityTypeAsync("card", 100, default))
+        _archiveItemRepoMock.Setup(r => r.GetByEntityTypeAsync("card", 100, default, 0))
             .ReturnsAsync(cardItems);
 
         // Act
@@ -205,7 +205,7 @@ public class ArchiveRecoveryServiceTests
             CreateArchiveItem("column", Guid.NewGuid(), boardId, "Column 1", userId)
         };
 
-        _archiveItemRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, 100, default))
+        _archiveItemRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, 100, default, 0))
             .ReturnsAsync(items);
 
         // Act
@@ -215,6 +215,110 @@ public class ArchiveRecoveryServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(2);
         result.Value.Should().OnlyContain(i => i.BoardId == boardId);
+    }
+
+    [Fact]
+    public async Task GetArchiveItemsAsync_ShouldReturnForbidden_WhenCallerCannotReadFilteredBoard()
+    {
+        // Arrange
+        var actingUserId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(actingUserId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        // Act
+        var result = await _service.GetArchiveItemsAsync(
+            boardId: boardId,
+            actingUserId: actingUserId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task GetArchiveItemsAsync_ShouldExcludeBoardsCallerCannotRead()
+    {
+        // Arrange
+        var actingUserId = Guid.NewGuid();
+        var archivedByUserId = Guid.NewGuid();
+        var readableBoardId = Guid.NewGuid();
+        var hiddenBoardId = Guid.NewGuid();
+        var items = new List<ArchiveItem>
+        {
+            CreateArchiveItem("card", Guid.NewGuid(), readableBoardId, "Readable Card", archivedByUserId),
+            CreateArchiveItem("card", Guid.NewGuid(), hiddenBoardId, "Hidden Card", archivedByUserId)
+        };
+
+        _archiveItemRepoMock.Setup(r => r.GetPageAsync(100, default, 0))
+            .ReturnsAsync(items);
+
+        _authorizationServiceMock
+            .Setup(s => s.GetReadableBoardIdsAsync(
+                actingUserId,
+                It.Is<IEnumerable<Guid>>(ids =>
+                    ids.Contains(readableBoardId) && ids.Contains(hiddenBoardId)),
+                default))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { readableBoardId }));
+
+        // Act
+        var result = await _service.GetArchiveItemsAsync(actingUserId: actingUserId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(item => item.BoardId == readableBoardId);
+        result.Value.Should().NotContain(item => item.BoardId == hiddenBoardId);
+        _archiveItemRepoMock.Verify(r => r.GetAllAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetArchiveItemsAsync_ShouldApplyLimitAfterAuthorizationFiltering_ForEntityTypeQueries()
+    {
+        // Arrange
+        var actingUserId = Guid.NewGuid();
+        var archivedByUserId = Guid.NewGuid();
+        var readableBoardId = Guid.NewGuid();
+        var hiddenBoardId = Guid.NewGuid();
+        var unreadableWindow = Enumerable.Range(0, 100)
+            .Select(i => CreateArchiveItem("card", Guid.NewGuid(), hiddenBoardId, $"Hidden Card {i}", archivedByUserId))
+            .ToList();
+        var readableItem = CreateArchiveItem("card", Guid.NewGuid(), readableBoardId, "Readable Card", archivedByUserId);
+
+        _archiveItemRepoMock
+            .Setup(r => r.GetByEntityTypeAsync("card", 100, default, 0))
+            .ReturnsAsync(unreadableWindow);
+        _archiveItemRepoMock
+            .Setup(r => r.GetByEntityTypeAsync("card", 100, default, 100))
+            .ReturnsAsync(new List<ArchiveItem> { readableItem });
+
+        _authorizationServiceMock
+            .Setup(s => s.GetReadableBoardIdsAsync(
+                actingUserId,
+                It.Is<IEnumerable<Guid>>(ids => ids.Count() == 1 && ids.Contains(hiddenBoardId)),
+                default))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>()));
+
+        _authorizationServiceMock
+            .Setup(s => s.GetReadableBoardIdsAsync(
+                actingUserId,
+                It.Is<IEnumerable<Guid>>(ids => ids.Count() == 1 && ids.Contains(readableBoardId)),
+                default))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { readableBoardId }));
+
+        // Act
+        var result = await _service.GetArchiveItemsAsync(
+            entityType: "card",
+            limit: 1,
+            actingUserId: actingUserId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(item => item.BoardId == readableBoardId);
+        _archiveItemRepoMock.Verify(r => r.GetByEntityTypeAsync("card", 100, default, 0), Times.Once);
+        _archiveItemRepoMock.Verify(r => r.GetByEntityTypeAsync("card", 100, default, 100), Times.Once);
+        _archiveItemRepoMock.Verify(r => r.GetAllAsync(default), Times.Never);
     }
 
     [Fact]
@@ -228,7 +332,7 @@ public class ArchiveRecoveryServiceTests
             CreateArchiveItem("card", Guid.NewGuid(), boardId, "Card 1", userId, RestoreStatus.Available)
         };
 
-        _archiveItemRepoMock.Setup(r => r.GetByStatusAsync(RestoreStatus.Available, 100, default))
+        _archiveItemRepoMock.Setup(r => r.GetByStatusAsync(RestoreStatus.Available, 100, default, 0))
             .ReturnsAsync(items);
 
         // Act
@@ -299,6 +403,30 @@ public class ArchiveRecoveryServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task GetArchiveItemByIdAsync_ShouldReturnForbidden_WhenCallerCannotReadBoard()
+    {
+        // Arrange
+        var actingUserId = Guid.NewGuid();
+        var archivedByUserId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = CreateArchiveItem("board", Guid.NewGuid(), boardId, "Test Board", archivedByUserId);
+
+        _archiveItemRepoMock.Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(actingUserId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        // Act
+        var result = await _service.GetArchiveItemByIdAsync(item.Id, actingUserId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
     }
 
     #endregion
