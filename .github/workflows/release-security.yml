@@ -60,7 +60,7 @@ jobs:
         run: |
           mkdir -p /tmp/release-security
           dotnet list backend/Taskdeck.sln package --include-transitive --format json > /tmp/release-security/backend-packages.json
-          npm ls --all --json > /tmp/release-security/frontend-packages.json || true
+          npm --prefix frontend/taskdeck-web ls --all --json > /tmp/release-security/frontend-packages.json || true
 
       - name: Run backend vulnerable package report
         run: dotnet list backend/Taskdeck.sln package --vulnerable --include-transitive --format json > /tmp/release-security/backend-vulnerabilities.json
