@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
 jobs:
   backend-architecture:
     name: Backend Architecture

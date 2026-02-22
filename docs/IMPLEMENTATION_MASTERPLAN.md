@@ -181,10 +181,13 @@ Delivered in the latest cycle:
 43. OPS-19 CI topology fourth-pass delivery:
    - extracted backend unit lane into reusable workflow `.github/workflows/reusable-backend-unit.yml` (preserving Ubuntu/Windows matrix behavior and domain/application/CLI split coverage)
    - routed `.github/workflows/ci-required.yml` through the reusable backend unit lane
-44. SEC-11 cross-user convergence progress (`#152`):
+44. OPS-19 CI topology fifth-pass delivery:
+   - extracted container image lane into reusable workflow `.github/workflows/reusable-container-images.yml` and routed `ci-required.yml` through it
+   - extracted E2E smoke lane into reusable workflow `.github/workflows/reusable-e2e-smoke.yml` and routed `ci-required.yml` through it while preserving required-gate dependency ordering and artifact upload behavior
+45. SEC-11 cross-user convergence progress (`#152`):
    - automation proposal lifecycle endpoints now enforce proposal-scope authorization (`get/approve/reject/execute/diff`) via board read/write permission or requester-only fallback for user-scoped proposals
    - API integration authz matrix expanded for additional protected automation/logs/starter-pack routes with `401` assertions, plus focused `403` and `404` regression tests for proposal, logs correlation, and starter-pack apply paths
-45. AUTH-06 register/login hardening progress (`#174`):
+46. AUTH-06 register/login hardening progress (`#174`):
    - login flow now avoids inactive-candidate short-circuit lockout in identifier-collision paths by preferring active password matches before returning inactive-account errors
    - duplicate registration now returns actionable conflict guidance to steer users toward existing-account sign-in
    - regression coverage added for duplicate-register-then-login success sequence and explicit invalid-credentials (`401`) vs inactive-account (`403`) API contract behavior, with frontend session-flow regression for non-poisoned post-error login

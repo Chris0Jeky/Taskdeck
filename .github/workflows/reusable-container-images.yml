@@ -1,0 +1,42 @@
+name: Reusable Container Images
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  container-images:
+    name: Container Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate compose baseline
+        run: TASKDECK_JWT_SECRET=ci-placeholder-secret docker compose -f deploy/docker-compose.yml --profile baseline config > /tmp/taskdeck-compose.resolved.yml
+
+      - name: Build backend container image
+        run: docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:ci .
+
+      - name: Build frontend container image
+        run: docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:ci .
+
+      - name: Export container image artifacts
+        run: |
+          docker save taskdeck-api:ci | gzip -1 > /tmp/taskdeck-api.tar.gz
+          docker save taskdeck-web:ci | gzip -1 > /tmp/taskdeck-web.tar.gz
+          sha256sum /tmp/taskdeck-api.tar.gz /tmp/taskdeck-web.tar.gz /tmp/taskdeck-compose.resolved.yml > /tmp/taskdeck-container-artifacts.sha256
+
+      - name: Upload container image artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-image-artifacts
+          path: |
+            /tmp/taskdeck-api.tar.gz
+            /tmp/taskdeck-web.tar.gz
+            /tmp/taskdeck-compose.resolved.yml
+            /tmp/taskdeck-container-artifacts.sha256
+          if-no-files-found: ignore
