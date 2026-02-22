@@ -103,6 +103,23 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task UpdateBoard_ShouldReturnForbidden_ForDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "board-update-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "board-update");
+
+        using var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(otherClient, "board-update-other");
+
+        var response = await otherClient.PutAsJsonAsync(
+            $"/api/boards/{board.Id}",
+            new UpdateBoardDto("renamed-by-outsider", null, null));
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
     public async Task ListBoards_ShouldReturnOnlyBoardsVisibleToCaller()
     {
         using var ownerClient = _factory.CreateClient();

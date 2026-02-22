@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
 
@@ -10,10 +11,12 @@ namespace Taskdeck.Api.Tests;
 
 public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     public ChatApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -70,6 +73,56 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         var error = await getSessionResponse.Content.ReadFromJsonAsync<JsonElement>();
         error.GetProperty("errorCode").GetString().Should().Be("Forbidden");
         userOneId.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public async Task GetSession_ShouldReturnNotFound_WhenSessionDoesNotExist()
+    {
+        await AuthenticateAsync("chat-missing-session");
+
+        var response = await _client.GetAsync($"/api/llm/chat/sessions/{Guid.NewGuid()}");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task SendMessage_ShouldReturnForbidden_ForDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "chat-message-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "chat-message-outsider");
+
+        var createSessionResponse = await ownerClient.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Private chat session"));
+        createSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+
+        var sendMessageResponse = await outsiderClient.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            new SendChatMessageDto("Cross-user message attempt"));
+
+        await ApiTestHarness.AssertForbiddenAsync(sendMessageResponse);
+    }
+
+    [Fact]
+    public async Task SendMessage_ShouldReturnNotFound_WhenSessionDoesNotExist()
+    {
+        await AuthenticateAsync("chat-send-missing");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{Guid.NewGuid()}/messages",
+            new SendChatMessageDto("Message for missing session"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("errorCode").GetString().Should().Be("NotFound");
     }
 
     [Fact]

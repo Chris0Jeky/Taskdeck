@@ -11,11 +11,13 @@ namespace Taskdeck.Api.Tests;
 
 public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
     public AdvancedFeaturesApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -140,6 +142,42 @@ public class AdvancedFeaturesApiTests : IClassFixture<TestWebApplicationFactory>
         updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var errorPayload = await updateResponse.Content.ReadFromJsonAsync<JsonElement>();
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task BoardAccessEndpoints_ShouldReturnForbidden_WhenUserLacksBoardAccess()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+        using var inviteeClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "board-access-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "board-access-outsider");
+        var invitee = await ApiTestHarness.AuthenticateAsync(inviteeClient, "board-access-invitee");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "board-access-protected");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, invitee.UserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var grantedAccess = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        grantedAccess.Should().NotBeNull();
+
+        await ApiTestHarness.AssertForbiddenAsync(
+            await outsiderClient.GetAsync($"/api/boards/{board.Id}/access"));
+
+        await ApiTestHarness.AssertForbiddenAsync(
+            await outsiderClient.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/access",
+                new GrantAccessDto(board.Id, Guid.NewGuid(), UserRole.Viewer)));
+
+        await ApiTestHarness.AssertForbiddenAsync(
+            await outsiderClient.PutAsJsonAsync(
+                $"/api/boards/{board.Id}/access/{grantedAccess!.Id}",
+                new UpdateAccessDto(UserRole.Editor)));
+
+        await ApiTestHarness.AssertForbiddenAsync(
+            await outsiderClient.DeleteAsync($"/api/boards/{board.Id}/access/{grantedAccess.Id}"));
     }
 
     private async Task<(string Username, string Email, string Password, Guid UserId)> RegisterUserAsync(string stem)
