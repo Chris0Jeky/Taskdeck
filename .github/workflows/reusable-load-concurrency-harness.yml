@@ -1,0 +1,168 @@
+name: Reusable Load Concurrency Harness
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version used for load harness backend setup
+        required: false
+        default: "8.0.x"
+        type: string
+      node-version:
+        description: Node.js version used for Playwright concurrency setup
+        required: false
+        default: "24.13.1"
+        type: string
+      k6-vus:
+        description: Number of concurrent virtual users for k6 board-heavy scenario
+        required: false
+        default: "20"
+        type: string
+      k6-duration:
+        description: k6 scenario duration
+        required: false
+        default: "90s"
+        type: string
+      k6-user-pool:
+        description: Seeded authenticated user pool used by k6 setup
+        required: false
+        default: "6"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  load-concurrency-harness:
+    name: Load and Concurrency Harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('frontend/taskdeck-web/package-lock.json') }}
+
+      - name: Install Playwright browser
+        working-directory: frontend/taskdeck-web
+        run: npx playwright install --with-deps chromium
+
+      - name: Reset harness result folders
+        run: |
+          rm -f frontend/taskdeck-web/taskdeck.load.k6.ci.db
+          rm -f frontend/taskdeck-web/taskdeck.load.e2e.ci.db
+          rm -rf frontend/taskdeck-web/test-results/load
+          mkdir -p frontend/taskdeck-web/test-results/load
+
+      - name: Run k6 board-heavy API profile
+        env:
+          K6_VUS: ${{ inputs.k6-vus }}
+          K6_DURATION: ${{ inputs.k6-duration }}
+          K6_USER_POOL: ${{ inputs.k6-user-pool }}
+          ASPNETCORE_ENVIRONMENT: Development
+          ConnectionStrings__DefaultConnection: Data Source=frontend/taskdeck-web/taskdeck.load.k6.ci.db
+        run: |
+          set -euo pipefail
+
+          dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj --configuration Release --no-restore \
+            > frontend/taskdeck-web/test-results/load/backend-load-api.log 2>&1 &
+          api_pid=$!
+
+          cleanup() {
+            if kill -0 "$api_pid" 2>/dev/null; then
+              kill "$api_pid" || true
+              wait "$api_pid" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5000/health/live >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo "Backend API did not become healthy for k6 harness."
+            exit 1
+          fi
+
+          docker run --rm --network host \
+            -e K6_BASE_URL="http://127.0.0.1:5000/api" \
+            -e K6_VUS="$K6_VUS" \
+            -e K6_DURATION="$K6_DURATION" \
+            -e K6_USER_POOL="$K6_USER_POOL" \
+            -v "$PWD:/work" \
+            -w /work \
+            grafana/k6:0.49.0 \
+            run tests/load/k6/board-heavy-load.js \
+            --summary-export frontend/taskdeck-web/test-results/load/k6-summary.json \
+            | tee frontend/taskdeck-web/test-results/load/k6-output.log
+
+      - name: Run Playwright concurrency harness
+        timeout-minutes: 12
+        working-directory: frontend/taskdeck-web
+        env:
+          CI: "true"
+          TASKDECK_E2E_DB: taskdeck.load.e2e.ci.db
+        run: npx playwright test tests/e2e/concurrency.spec.ts --reporter=line
+
+      - name: Upload k6 harness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-harness-k6-results
+          path: |
+            frontend/taskdeck-web/test-results/load/k6-summary.json
+            frontend/taskdeck-web/test-results/load/k6-output.log
+            frontend/taskdeck-web/test-results/load/backend-load-api.log
+          if-no-files-found: ignore
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-harness-playwright-report
+          path: frontend/taskdeck-web/playwright-report
+          if-no-files-found: ignore
+
+      - name: Upload Playwright test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-harness-playwright-results
+          path: frontend/taskdeck-web/test-results
+          if-no-files-found: ignore

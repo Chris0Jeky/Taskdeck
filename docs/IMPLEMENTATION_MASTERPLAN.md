@@ -212,7 +212,23 @@ Delivered in the latest cycle:
    - expanded cross-user `403` coverage for board update and board-access management (`list/grant/update/revoke`)
    - expanded chat authorization coverage for cross-user forbidden access and true-missing session `404` branches (`get session`, `send message`)
    - API integration suite increased to 185 passing tests with explicit `403/404` branch locking for remaining protected route gaps
-52. FE-11 frontend lint baseline + CI enforcement (`#154`):
+52. API-06 centralized exception/fallback error-contract hardening (`#153`):
+   - added global unhandled-exception middleware in the API pipeline to return deterministic `ApiErrorResponse` payloads for unexpected server failures
+   - standardized unknown-result fallback `500` mapping to `ApiErrorResponse` (`UnexpectedError`) instead of `ProblemDetails` to keep fallback payload shape contract-uniform
+   - added fault-injection API integration coverage validating unhandled-failure contract shape, non-leakage message behavior, and correlation-header continuity under `500` responses
+53. TST-14 architecture-guard expansion (`#157`):
+   - expanded architecture tests beyond csproj references with source-layer purity invariants for Domain/Application forbidden namespace imports
+   - added API controller boundary invariants to restrict direct `ControllerBase` inheritance to auth/health controllers and enforce `[Authorize]` declaration on protected controllers
+   - architecture guard suite now emits deterministic file-scoped diagnostics for quick remediation in CI and local runs
+54. TST-01 load/concurrency harness delivery (`#70`):
+   - added k6 board-heavy API regression profile (`tests/load/k6/board-heavy-load.js`) with seeded-auth setup, read/write traffic mix, thresholds, and failure diagnostics
+   - added multi-session Playwright concurrency harness coverage (`frontend/taskdeck-web/tests/e2e/concurrency.spec.ts`) for conflicting edits and realtime cross-session propagation
+   - added reusable CI lane (`.github/workflows/reusable-load-concurrency-harness.yml`) and wired it into `ci-extended` (testing label/manual) plus `ci-nightly` with persisted k6/Playwright artifacts
+55. ARCH-01 multi-tenancy strategy ADR delivery (`#71`):
+   - added accepted ADR at `docs/analysis/2026-02-22_multi-tenancy-strategy-adr.md` comparing `database-per-tenant`, `schema-per-tenant`, and `shared-schema + TenantId`
+   - selected `shared-schema + TenantId` as immediate rollout model with explicit promotion path to `database-per-tenant` for high-isolation tiers
+   - defined phased migration/enforcement plan plus tenant-isolation readiness checklist and cross-tenant `403` test strategy expectations
+56. FE-11 frontend lint baseline + CI enforcement (`#154`):
    - added pragmatic Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`) with focused rule suppressions to avoid style-churn while catching correctness issues
    - added `npm run lint` script with zero-warning enforcement and integrated lint into reusable frontend CI lane (`reusable-frontend-unit.yml`)
    - documented frontend lint execution and suppression guidance in active testing docs to keep lint policy explicit for contributors
@@ -301,10 +317,10 @@ Exit Criteria:
 
 - Analysis follow-through wave tracker: `#151`
 - CI/workflow topology expansion and governance track: `#168`
-- API/frontend hardening follow-through: `#153`, `#154`, `#155`, `#157`
+- API/frontend hardening follow-through: `#153` (delivered), `#154`, `#155`, `#157`
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
-- Container/deployment and performance harness baseline: `#69` (delivered), `#70`
-- Multi-tenancy strategy and collaboration/integration foundations: `#71`, `#72`, `#73`, `#74`, `#75`, `#76`
+- Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
+- Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72`, `#73`, `#74`, `#75`, `#76`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance)
 
@@ -348,7 +364,8 @@ Covered by seeded issues:
 - Cost guardrails: `#104`
 - Backup/restore disaster recovery: `#86`
 - OpenTelemetry metrics/tracing and alerting runbook: `#68`
-- Load/concurrency harness and budgets: `#70`
+- Load/concurrency harness and budgets: `#70` (delivered)
+- Multi-tenancy strategy ADR: `#71` (delivered)
 - API abuse/rate limiting: `#81`
 - OWASP/security headers and CSRF/XSS baseline: `#80`
 - Dependency vulnerability management policy: `#106`
@@ -359,6 +376,13 @@ Covered by seeded issues:
 
 Outstanding strategy-level gap to monitor:
 - no major out-of-code categories from the reviewed WIP PDFs are currently untracked; residual risk is execution sequencing and closure quality.
+
+## ARCH-01 Follow-Through Stages (Post-ADR)
+
+1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76`).
+2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`).
+3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`).
+4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81`, `#82`, `#83`, `#110`).
 
 
 ## Prepackaged Starter States Track (Roadmap Additions)
@@ -403,7 +427,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Promote remaining Wave A foundation issues (`#70` to `#71`) to active execution only after `Priority I` is materially reduced.
+2. Promote remaining Wave A foundation issues (`#72` onward) to active execution only after `Priority I` is materially reduced.
 3. Keep issue `#107` updated as the canonical expansion-wave index.
 4. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
 

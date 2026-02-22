@@ -5,8 +5,6 @@ namespace Taskdeck.Architecture.Tests;
 
 public class ProjectReferenceBoundariesTests
 {
-    private static readonly string BackendRoot = ResolveBackendRoot();
-
     [Theory]
     [InlineData("src/Taskdeck.Domain/Taskdeck.Domain.csproj", "Taskdeck.Infrastructure.csproj")]
     [InlineData("src/Taskdeck.Domain/Taskdeck.Domain.csproj", "Taskdeck.Api.csproj")]
@@ -23,9 +21,7 @@ public class ProjectReferenceBoundariesTests
 
     private static IReadOnlyList<string> ReadProjectReferenceFileNames(string projectPath)
     {
-        var fullProjectPath = Path.Combine(
-            BackendRoot,
-            projectPath.Replace('/', Path.DirectorySeparatorChar));
+        var fullProjectPath = ArchitectureTestPaths.GetBackendPath(projectPath);
 
         var projectDocument = XDocument.Load(fullProjectPath);
         return projectDocument
@@ -34,22 +30,5 @@ public class ProjectReferenceBoundariesTests
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => Path.GetFileName(value!))
             .ToList();
-    }
-
-    private static string ResolveBackendRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null)
-        {
-            var candidate = Path.Combine(current.FullName, "backend", "Taskdeck.sln");
-            if (File.Exists(candidate))
-            {
-                return Path.GetDirectoryName(candidate)!;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Unable to locate backend/Taskdeck.sln from test execution directory.");
     }
 }

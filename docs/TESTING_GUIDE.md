@@ -11,15 +11,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-22)
 
-- Backend: 632/632 passing
+- Backend: 638/638 passing
   - Domain: 93
   - Application: 346
-  - API integration: 185
+  - API integration: 187
   - CLI contract: 4
-  - Architecture boundaries: 4
+  - Architecture boundaries: 8
 - Frontend unit: 293/293 passing
-- Frontend E2E (smoke + automation/ops + starter-pack fixtures): 19/19 passing
-- Combined automated total: 944/944 passing
+- Frontend E2E (smoke + automation/ops + starter-pack fixtures + concurrency harness): 21/21 passing
+- Combined automated total: 952/952 passing
 
 ## Backend Commands
 
@@ -72,6 +72,34 @@ Run E2E suite:
 cd frontend/taskdeck-web
 npx playwright test --reporter=line
 ```
+
+Run concurrency harness spec only:
+
+```bash
+cd frontend/taskdeck-web
+npm run test:e2e:concurrency
+```
+
+## Load Harness (k6 + Playwright Concurrency)
+
+Run local k6 board-heavy profile (backend API must be reachable at `K6_BASE_URL`):
+
+```bash
+docker run --rm --network host \
+  -e K6_BASE_URL=http://127.0.0.1:5000/api \
+  -e K6_VUS=20 \
+  -e K6_DURATION=90s \
+  -e K6_USER_POOL=6 \
+  -v "$PWD:/work" \
+  -w /work \
+  grafana/k6:0.49.0 \
+  run tests/load/k6/board-heavy-load.js \
+  --summary-export frontend/taskdeck-web/test-results/load/k6-summary.json
+```
+
+Notes:
+- tune `K6_VUS`, `K6_DURATION`, and `K6_USER_POOL` per machine capacity.
+- script thresholds fail on sustained latency/error budget breaches and emit actionable status/body diagnostics.
 
 ## Container Baseline Validation
 
@@ -148,13 +176,15 @@ Extended workflow: `.github/workflows/ci-extended.yml`
   - Actionlint validation for `.github/workflows/**` drift
 - `dependency-review`
   - PR dependency change risk signal (`actions/dependency-review-action`)
-- `backend-solution` + `e2e-smoke`
+- `backend-solution` + `e2e-smoke` + `load-concurrency-harness`
   - opt-in on PRs labeled `testing` or manual `workflow_dispatch` (runs Playwright smoke suite via `reusable-e2e-smoke.yml`)
+  - load harness lane runs k6 board-heavy profile plus Playwright multi-session concurrency spec via `reusable-load-concurrency-harness.yml`
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 
 - scheduled/manual backend solution regression (`dotnet test backend/Taskdeck.sln -c Release -m:1`)
 - scheduled/manual E2E smoke suite (`reusable-e2e-smoke.yml`)
+- scheduled/manual load-concurrency harness (`reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
 
 Release/security workflow: `.github/workflows/release-security.yml`
@@ -180,6 +210,15 @@ Release/security workflow: `.github/workflows/release-security.yml`
   - `backend/tests/Taskdeck.Cli.Tests`
 - Architecture boundaries:
   - `backend/tests/Taskdeck.Architecture.Tests`
+  - Enforces project-reference boundaries between Domain/Application/Infrastructure/API projects
+  - Enforces source-layer purity via forbidden namespace imports in Domain and Application source trees
+  - Enforces API controller boundary invariants:
+    - only `AuthController` and `HealthController` may inherit `ControllerBase` directly
+    - protected controllers must declare `[Authorize]`
+  - Failure remediation:
+    - move forbidden dependencies to the correct layer abstraction/interface
+    - route protected HTTP surface through `AuthenticatedControllerBase`
+    - add/restore `[Authorize]` on protected controller classes
 - Frontend unit behavior:
   - `frontend/taskdeck-web/src/tests`
   - Components, stores, API modules, composables, utilities
@@ -188,6 +227,10 @@ Release/security workflow: `.github/workflows/release-security.yml`
   - `frontend/taskdeck-web/tests/e2e`
   - Includes deterministic starter-pack fixture bootstrap coverage for `small`, `medium`, and `edge` manifest scenarios
   - Includes unauthenticated SignalR negotiate rejection coverage aligned with the runtime client handshake path
+  - Includes dedicated multi-session concurrency regression coverage (`tests/e2e/concurrency.spec.ts`)
+- Load and concurrency API profile:
+  - `tests/load/k6/board-heavy-load.js`
+  - Includes seeded-user board-heavy read/write load mix and threshold-based regression diagnostics
 
 ## Manual Verification
 

@@ -109,7 +109,6 @@ Completed in Phase 4:
 - DEBT-03 database export/import (`#54`): sandbox-gated SQLite file export/import endpoints with payload signature/size validation and file-replacement rollback guardrails
 
 Remaining for Phase 4 completion:
-- repository-wide enforcement of cross-user existence policy (`403` for authenticated-but-unauthorized access; `404` only for true missing resources)
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
@@ -127,7 +126,7 @@ Backlog seeding was expanded from near-horizon only to a staged future roadmap g
 
 Current open backlog is now split into:
 - Phase-4 completion tranche (`#33` to `#57`, `Priority I`)
-- Future expansion tranche (`#70` to `#111`, `Priority II` to `Priority V`)
+- Future expansion tranche (`#72` to `#111`, `Priority II` to `Priority V`)
 
 ## Analysis Follow-through Wave (2026-02-21)
 
@@ -159,10 +158,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 346/346 passing
-- API integration: 185/185 passing
+- API integration: 187/187 passing
 - CLI contract: 4/4 passing
-- Architecture boundaries: 4/4 passing
-- Backend Total: 632/632 passing
+- Architecture boundaries: 8/8 passing
+- Backend Total: 638/638 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -184,11 +183,12 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops + starter-pack fixture flow: 19/19 passing
+- E2E smoke + automation/ops + starter-pack fixture flow: 21/21 passing
 
 ### Total
 
-- Combined automated total: 944/944 passing
+- Combined automated total: 950/950 passing
+- Combined automated total: 952/952 passing
 
 ## CI Status
 
@@ -208,11 +208,13 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 - `workflow-lint` (Actionlint for workflow YAML drift)
 - `dependency-review` (PR dependency risk check)
 - label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`)
+- label/manual-triggered load/concurrency harness lane via `.github/workflows/reusable-load-concurrency-harness.yml`
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 
 - scheduled/manual backend solution regression
 - scheduled/manual E2E smoke (reuses `.github/workflows/reusable-e2e-smoke.yml`)
+- scheduled/manual load/concurrency harness (reuses `.github/workflows/reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
 
 Release/security workflow: `.github/workflows/release-security.yml`
@@ -238,11 +240,11 @@ Automation and data:
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
 - containerized deployment baseline is now shipped (`#69`): backend/frontend Dockerfiles, compose profile, reverse proxy compression/security headers posture, and CI image artifacts
+- multi-tenancy strategy ADR is now documented (`#71`) with shared-schema + `TenantId` as the default rollout target; tenant isolation implementation slices remain pending
 - local developer MCP posture now includes a Docker Marketplace server bundle with a stable default gateway set (`docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`) and optional integrations staged behind credentials/config (`postman`, `dockerhub`, `kubernetes`, `semgrep`)
 - MCP operations runbook and helper scripts are now available for credential wiring and repeatable baseline/optional MCP dry-run verification
 - MCP regression harness now provides actionable optional prerequisite diagnostics and CI-friendly status output modes (`PASS`, `PASS_WITH_WARNINGS`, `FAIL`)
 - out-of-code/platform execution is now tracked, but not yet fully shipped:
-  - load/concurrency harness (`#70`)
   - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
   - backup/restore disaster-recovery playbook (`#86`)
   - staged rollout policy (`#101`), IaC baseline (`#102`), SBOM/provenance (`#103`), cost guardrails (`#104`)
@@ -290,8 +292,12 @@ Security/compliance hardening backlog added from research cross-check:
 - Advanced SEC-11 cross-user convergence (`#152`) with audit entity-history authorization hardening: `GET /api/audit/entities/{entityType}/{entityId}` now resolves board-scoped entities (`Board`/`Column`/`Card`/`Label`) and enforces board-read permissions (`403` cross-user unauthorized, `404` true missing), with expanded API regression matrix coverage.
 - Advanced SEC-11 cross-user convergence (`#152`) with LLM queue board-scope authorization hardening: `POST /api/llm-queue` now enforces board-read permissions when `boardId` is provided (`403` cross-user unauthorized, `404` true missing board), with expanded application/API regression matrix coverage.
 - Advanced SEC-11 cross-user convergence (`#152`) with final API coverage sweep: added explicit cross-user `403` assertions for board update, board-access management endpoints (`list/grant/update/revoke`), and chat session/message endpoints; added explicit chat `404` assertions for true missing session IDs.
-- Delivered FE-11 frontend lint baseline + CI gate (`#154`): added Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`), introduced `npm run lint` with zero-warning enforcement, integrated lint into reusable frontend CI workflow, and documented lint suppression guidance in active testing docs.
+- Delivered API-06 centralized exception/fallback error-contract hardening (`#153`): added global unhandled-exception middleware returning deterministic `ApiErrorResponse` (`UnexpectedError`) without internal exception leakage, standardized unknown-result fallback `500` mapping to the same contract shape, and added fault-injection API integration coverage asserting fallback payload shape plus correlation header expectations.
+- Delivered TST-14 architecture-guard expansion (`#157`): added deterministic architecture invariants for source-layer purity (forbidden namespace imports in Domain/Application), controller boundary rules (`ControllerBase` direct inheritance restricted to auth/health controllers), and protected-controller `[Authorize]` declaration enforcement.
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
+- Delivered TST-01 load/concurrency regression harness (`#70`): added k6 board-heavy API profile with thresholds and diagnostics, added Playwright multi-session concurrency scenarios, and wired reusable load harness workflow into `ci-extended`/`ci-nightly` with artifact uploads.
+- Delivered ARCH-01 multi-tenancy strategy ADR (`#71`): documented option tradeoffs (`database-per-tenant`, `schema-per-tenant`, `shared-schema + TenantId`), selected phased target model, and published tenant-isolation readiness + test strategy checklist.
+- Delivered FE-11 frontend lint baseline + CI gate (`#154`): added Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`), introduced `npm run lint` with zero-warning enforcement, integrated lint into reusable frontend CI workflow, and documented lint suppression guidance in active testing docs.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
