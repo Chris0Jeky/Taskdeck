@@ -27,6 +27,7 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
         var userId = Guid.NewGuid();
         var runId = Guid.NewGuid();
         var proposalId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
 
         var cases = new List<(string Name, Func<Task<HttpResponseMessage>> Send)>
         {
@@ -37,6 +38,7 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
             ("boardAccess.list", () => _client.GetAsync($"/api/boards/{boardId}/access")),
             ("export.board", () => _client.GetAsync($"/api/export/boards/{boardId}")),
             ("audit.board", () => _client.GetAsync($"/api/audit/boards/{boardId}")),
+            ("audit.entity", () => _client.GetAsync($"/api/audit/entities/Card/{entityId}")),
             ("audit.user.me", () => _client.GetAsync("/api/audit/users/me")),
             ("llmQueue.list", () => _client.GetAsync("/api/llm-queue/user")),
             ("users.list", () => _client.GetAsync("/api/users")),
@@ -103,6 +105,19 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "matrix-owner");
         _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "matrix-outsider");
         var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "matrix-board");
+        var createColumnResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Matrix Column", null, null));
+        createColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var column = await createColumnResponse.Content.ReadFromJsonAsync<ColumnDto>();
+        column.Should().NotBeNull();
+
+        var createCardResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column!.Id, "Matrix Card", null, null, null));
+        createCardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = await createCardResponse.Content.ReadFromJsonAsync<CardDto>();
+        card.Should().NotBeNull();
 
         var targetUser = await ApiTestHarness.AuthenticateAsync(_factory.CreateClient(), "matrix-target");
         var grantResponse = await ownerClient.PostAsJsonAsync(
@@ -132,6 +147,9 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
         var queryForeignUserLogsResponse = await outsiderClient.GetAsync($"/api/logs?userId={owner.UserId}");
         await ApiTestHarness.AssertForbiddenAsync(queryForeignUserLogsResponse);
 
+        var getForeignEntityAuditResponse = await outsiderClient.GetAsync($"/api/audit/entities/Card/{card!.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(getForeignEntityAuditResponse);
+
         var getForeignUserResponse = await outsiderClient.GetAsync($"/api/users/{owner.UserId}");
         await ApiTestHarness.AssertForbiddenAsync(getForeignUserResponse);
     }
@@ -146,6 +164,7 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
         var cases = new List<(string Name, Func<Task<HttpResponseMessage>> Send)>
         {
             ("archive.item.missing", () => client.GetAsync($"/api/archive/items/{Guid.NewGuid()}")),
+            ("audit.entity.missing", () => client.GetAsync($"/api/audit/entities/Card/{Guid.NewGuid()}")),
             ("automation.get.missing", () => client.GetAsync($"/api/automation/proposals/{Guid.NewGuid()}")),
             ("automation.approve.missing", () => client.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/approve", content: null)),
             ("ops.getRun.missing", () => client.GetAsync($"/api/ops/cli/runs/{Guid.NewGuid()}")),
