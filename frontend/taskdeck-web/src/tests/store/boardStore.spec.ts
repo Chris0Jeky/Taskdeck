@@ -252,6 +252,27 @@ describe('boardStore', () => {
 
       expect(result).toEqual(updatedCard)
       expect(store.currentBoardCards[0]).toEqual(updatedCard)
+      expect(cardsApi.updateCard).toHaveBeenCalledWith(
+        'board-1',
+        'card-1',
+        expect.objectContaining({
+          expectedUpdatedAt: card1.updatedAt,
+        }),
+      )
+    })
+  })
+
+  describe('presence state', () => {
+    it('should update presence members and editing card state', () => {
+      store.setBoardPresenceMembers([
+        { userId: 'user-1', displayName: 'Tester', editingCardId: null },
+      ])
+      store.setEditingCard('card-1')
+
+      expect(store.boardPresenceMembers).toEqual([
+        { userId: 'user-1', displayName: 'Tester', editingCardId: null },
+      ])
+      expect(store.editingCardId).toBe('card-1')
     })
   })
 
