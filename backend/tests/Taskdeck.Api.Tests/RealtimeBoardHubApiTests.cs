@@ -98,6 +98,78 @@ public class RealtimeBoardHubApiTests : IClassFixture<TestWebApplicationFactory>
         exception.Which.Message.Should().Contain(ErrorCodes.Forbidden);
     }
 
+    [Fact]
+    public async Task JoinBoard_ShouldBroadcastPresenceSnapshot()
+    {
+        var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "hub-presence-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "hub-presence-board");
+
+        await using var connection = CreateHubConnection(owner.Token);
+        var snapshotReceived = new TaskCompletionSource<BoardPresenceSnapshotDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        connection.On<BoardPresenceSnapshotDto>("boardPresence", snapshot =>
+        {
+            if (snapshot.BoardId == board.Id && snapshot.Members.Count > 0)
+            {
+                snapshotReceived.TrySetResult(snapshot);
+            }
+        });
+
+        await connection.StartAsync();
+        await connection.InvokeAsync("JoinBoard", board.Id);
+
+        var snapshot = await snapshotReceived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        snapshot.BoardId.Should().Be(board.Id);
+        snapshot.Members.Should().Contain(member => member.UserId == owner.UserId);
+    }
+
+    [Fact]
+    public async Task SetEditingCard_ShouldBroadcastPresenceSnapshotWithEditingCard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var collaboratorClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "hub-editing-owner");
+        var collaborator = await ApiTestHarness.AuthenticateAsync(collaboratorClient, "hub-editing-collaborator");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "hub-editing-board");
+        var cardId = Guid.NewGuid();
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, collaborator.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var ownerConnection = CreateHubConnection(owner.Token);
+        await using var collaboratorConnection = CreateHubConnection(collaborator.Token);
+
+        var editingSnapshotReceived = new TaskCompletionSource<BoardPresenceSnapshotDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ownerConnection.On<BoardPresenceSnapshotDto>("boardPresence", snapshot =>
+        {
+            if (snapshot.BoardId != board.Id)
+            {
+                return;
+            }
+
+            if (snapshot.Members.Any(member =>
+                    member.UserId == collaborator.UserId
+                    && member.EditingCardId == cardId))
+            {
+                editingSnapshotReceived.TrySetResult(snapshot);
+            }
+        });
+
+        await ownerConnection.StartAsync();
+        await collaboratorConnection.StartAsync();
+
+        await ownerConnection.InvokeAsync("JoinBoard", board.Id);
+        await collaboratorConnection.InvokeAsync("JoinBoard", board.Id);
+        await collaboratorConnection.InvokeAsync("SetEditingCard", board.Id, cardId);
+
+        var snapshot = await editingSnapshotReceived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        snapshot.Members.Should().Contain(member =>
+            member.UserId == collaborator.UserId
+            && member.EditingCardId == cardId);
+    }
+
     private HubConnection CreateHubConnection(string token)
     {
         var apiBaseAddress = _client.BaseAddress ?? new Uri("http://localhost");
@@ -113,4 +185,14 @@ public class RealtimeBoardHubApiTests : IClassFixture<TestWebApplicationFactory>
             })
             .Build();
     }
+
+    private sealed record BoardPresenceSnapshotDto(
+        Guid BoardId,
+        IReadOnlyList<BoardPresenceMemberDto> Members,
+        DateTimeOffset OccurredAt);
+
+    private sealed record BoardPresenceMemberDto(
+        Guid UserId,
+        string? DisplayName,
+        Guid? EditingCardId);
 }
