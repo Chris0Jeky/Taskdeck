@@ -147,6 +147,36 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task UpdateCard_ShouldReturnConflict_WhenExpectedUpdatedAtIsStale()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "To Do", wipLimit: null);
+        var card = await CreateCardAsync(board.Id, column.Id, "Concurrency card");
+
+        var firstUpdateResponse = await _client.PatchAsJsonAsync(
+            $"/api/boards/{board.Id}/cards/{card.Id}",
+            new UpdateCardDto("Updated by another session", null, null, null, null, null));
+        firstUpdateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var staleConflictResponse = await _client.PatchAsJsonAsync(
+            $"/api/boards/{board.Id}/cards/{card.Id}",
+            new UpdateCardDto(
+                "Stale write",
+                null,
+                null,
+                null,
+                null,
+                null,
+                card.UpdatedAt));
+
+        staleConflictResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var errorPayload = await staleConflictResponse.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("Conflict");
+        errorPayload.GetProperty("message").GetString().Should().Contain("updated by another session");
+    }
+
+    [Fact]
     public async Task DeleteCard_ShouldReturnNotFound_WhenCardDoesNotExist()
     {
         var board = await CreateBoardAsync();
