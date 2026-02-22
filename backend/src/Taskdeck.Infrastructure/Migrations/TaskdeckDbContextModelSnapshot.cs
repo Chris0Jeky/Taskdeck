@@ -710,6 +710,114 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("LlmRequests", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("BoardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Cadence")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeduplicationKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SourceEntityId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceEntityType")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoardId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "DeduplicationKey");
+
+                    b.HasIndex("UserId", "IsRead");
+
+                    b.ToTable("Notifications", (string)null);
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.NotificationPreference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("AssignmentDigestEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AssignmentImmediateEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("InAppChannelEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MentionDigestEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MentionImmediateEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ProposalOutcomeDigestEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ProposalOutcomeImmediateEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("NotificationPreferences", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -898,6 +1006,28 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Board");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Notification", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.NotificationPreference", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });
