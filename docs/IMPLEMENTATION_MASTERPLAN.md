@@ -191,6 +191,10 @@ Delivered in the latest cycle:
    - login flow now avoids inactive-candidate short-circuit lockout in identifier-collision paths by preferring active password matches before returning inactive-account errors
    - duplicate registration now returns actionable conflict guidance to steer users toward existing-account sign-in
    - regression coverage added for duplicate-register-then-login success sequence and explicit invalid-credentials (`401`) vs inactive-account (`403`) API contract behavior, with frontend session-flow regression for non-poisoned post-error login
+47. SEC-11 archive authorization follow-through (`#152`):
+   - archive list/detail/entity-lookup read paths now require caller board-read permission and return deterministic `Forbidden` payloads for cross-user unauthorized access
+   - board-filtered archive queries now fail fast with `403` when caller cannot read the target board, while preserving `404` for true missing archive resources
+   - regression coverage expanded in application and API integration suites for archive authorization enforcement and board cross-user policy behavior
 
 ## Roadmap by Horizon
 
