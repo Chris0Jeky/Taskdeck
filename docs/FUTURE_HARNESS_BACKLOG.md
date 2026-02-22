@@ -11,6 +11,11 @@ Promote an item from this backlog **only if** it:
 - reduces high-cost risk (security, data loss, privacy, release confidence), or
 - enables faster iteration (cuts debug time, reduces CI time, improves signal).
 
+## Status Legend
+- `Delivered`: implemented and merged.
+- `Seeded`: issue exists and is currently open.
+- `Deferred`: not yet seeded as an issue.
+
 ---
 
 # A) Optional MCP servers / tool integrations
