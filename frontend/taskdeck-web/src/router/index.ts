@@ -11,6 +11,8 @@ import AutomationChatView from '../views/AutomationChatView.vue'
 import OpsConsoleView from '../views/OpsConsoleView.vue'
 import ExportImportView from '../views/ExportImportView.vue'
 import ArchiveView from '../views/ArchiveView.vue'
+import NotificationInboxView from '../views/NotificationInboxView.vue'
+import NotificationPreferencesView from '../views/NotificationPreferencesView.vue'
 import { isTokenExpired } from '../utils/jwt'
 
 const router = createRouter({
@@ -151,12 +153,24 @@ const router = createRouter({
       component: ExportImportView,
       meta: { requiresShell: true },
     },
+    {
+      path: '/workspace/settings/preferences',
+      name: 'workspace-settings-preferences',
+      component: NotificationPreferencesView,
+      meta: { requiresShell: true },
+    },
 
     // Archive route
     {
       path: '/workspace/archive',
       name: 'workspace-archive',
       component: ArchiveView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/notifications',
+      name: 'workspace-notifications',
+      component: NotificationInboxView,
       meta: { requiresShell: true },
     },
   ],
