@@ -10,12 +10,14 @@ namespace Taskdeck.Api.Tests;
 
 public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
     private bool _isAuthenticated;
     private Guid? _authenticatedUserId;
 
     public LlmQueueApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -97,6 +99,23 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
 
         var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task AddToQueue_ShouldReturnForbidden_WhenBoardBelongsToDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "llm-queue-board-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "llm-queue-board-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "llm-queue-protected-board");
+
+        var response = await outsiderClient.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("summarize", "cross-user payload", board.Id));
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
     [Fact]
