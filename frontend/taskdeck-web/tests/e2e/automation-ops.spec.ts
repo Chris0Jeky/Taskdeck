@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page } from '@playwright/test'
+import type { APIRequestContext } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 
