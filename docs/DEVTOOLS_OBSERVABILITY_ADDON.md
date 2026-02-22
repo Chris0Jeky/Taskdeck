@@ -63,6 +63,37 @@ Prefer converting learnings into:
 - a lint/structural check (if architecture drift)
 - a doc contract update (if behavior is intended but undocumented)
 
+## Required Artifacts Per Investigation
+
+- Repro steps (versioned, not ad-hoc).
+- One UI artifact:
+  - screenshot or video snippet.
+- One protocol artifact:
+  - failing request details (URL, status, response shape) or equivalent DevTools trace.
+- One backend artifact:
+  - log or trace evidence with correlation ID.
+- One guardrail:
+  - test/check/doc update preventing recurrence.
+
+## Command Baseline
+
+UI and regression:
+- `cd frontend/taskdeck-web; npx playwright test --reporter=line`
+- `cd frontend/taskdeck-web; npx vitest --run --reporter=verbose`
+
+MCP profile and optional servers:
+- `powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1`
+- `powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional`
+- strict mode: `powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors`
+
+Deployment/runtime smoke:
+- `powershell -File ./scripts/deploy/Start-TaskdeckStack.ps1`
+- `powershell -File ./scripts/deploy/Smoke-TestTaskdeckStack.ps1`
+
+Docs and ops governance:
+- `node scripts/check-docs-governance.mjs`
+- `node scripts/check-github-ops-governance.mjs`
+
 ---
 
 ## 3) Minimal DevTools integration plan (choose one)
