@@ -3,18 +3,23 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     public ArchiveApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -96,6 +101,40 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
         items!.Count.Should().BeLessOrEqualTo(5);
     }
 
+    [Fact]
+    public async Task GetArchiveItems_ShouldReturnForbidden_WhenFilteringForeignBoard()
+    {
+        using var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "archive-filter-owner");
+        var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "archive-filter-owner-board");
+
+        await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId);
+
+        using var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(otherClient, "archive-filter-other");
+
+        var response = await otherClient.GetAsync($"/api/archive/items?boardId={ownerBoard.Id}");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task GetArchiveItem_ShouldReturnForbidden_WhenItemBelongsToDifferentBoard()
+    {
+        using var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "archive-item-owner");
+        var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "archive-item-owner-board");
+
+        var archiveItemId = await SeedArchiveItemAsync(ownerBoard.Id, owner.UserId);
+
+        using var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(otherClient, "archive-item-other");
+
+        var response = await otherClient.GetAsync($"/api/archive/items/{archiveItemId}");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
     private async Task<Guid> AuthenticateAsync(string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
@@ -113,5 +152,23 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
 
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload!.Token);
         return payload.User.Id;
+    }
+
+    private async Task<Guid> SeedArchiveItemAsync(Guid boardId, Guid archivedByUserId)
+    {
+        var archiveItem = new ArchiveItem(
+            "board",
+            Guid.NewGuid(),
+            boardId,
+            $"archive-{Guid.NewGuid():N}",
+            archivedByUserId,
+            "{\"name\":\"Seeded Archive Item\"}");
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        dbContext.ArchiveItems.Add(archiveItem);
+        await dbContext.SaveChangesAsync();
+
+        return archiveItem.Id;
     }
 }
