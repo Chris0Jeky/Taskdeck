@@ -159,10 +159,10 @@ Command:
 Result:
 - Domain: 93/93 passing
 - Application: 344/344 passing
-- API integration: 176/176 passing
+- API integration: 179/179 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 621/621 passing
+- Backend Total: 624/624 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -186,7 +186,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 933/933 passing
+- Combined automated total: 936/936 passing
 
 ## CI Status
 
@@ -284,6 +284,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
 - Advanced SEC-11 cross-user convergence (`#152`) with proposal-scope authorization enforcement in automation proposal lifecycle endpoints (`get/approve/reject/execute/diff`) and expanded API integration policy coverage for automation/logs/starter-pack protected routes.
 - Advanced SEC-11 cross-user convergence (`#152`) with archive read-path authorization hardening: archive item list/detail/entity-lookup endpoints now enforce board-read permissions for the authenticated caller (`403` for cross-user unauthorized, `404` for true missing), with expanded application/API regression coverage.
+- Advanced SEC-11 cross-user convergence (`#152`) with audit entity-history authorization hardening: `GET /api/audit/entities/{entityType}/{entityId}` now resolves board-scoped entities (`Board`/`Column`/`Card`/`Label`) and enforces board-read permissions (`403` cross-user unauthorized, `404` true missing), with expanded API regression matrix coverage.
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
