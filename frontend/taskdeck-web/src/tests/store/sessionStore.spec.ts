@@ -81,6 +81,33 @@ describe('sessionStore', () => {
     expect(store.isAuthenticated).toBe(true)
   })
 
+  it('allows successful login after duplicate registration failure', async () => {
+    const duplicateRegistrationError = {
+      response: {
+        data: {
+          message: 'An account with that username or email already exists. Sign in with your existing credentials.',
+        },
+      },
+    }
+    const loginResponse = makeAuthResponse()
+
+    vi.mocked(authApi.register).mockRejectedValueOnce(duplicateRegistrationError)
+    vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse)
+
+    await expect(
+      store.register({ username: 'existing-user', email: 'existing@example.com', password: 'new-pass' }),
+    ).rejects.toEqual(duplicateRegistrationError)
+
+    expect(store.isAuthenticated).toBe(false)
+    expect(store.error).toContain('already exists')
+
+    await store.login({ usernameOrEmail: 'existing-user', password: 'password123' })
+
+    expect(store.error).toBeNull()
+    expect(store.isAuthenticated).toBe(true)
+    expect(store.userId).toBe('user-1')
+  })
+
   it('restoreSession restores valid base64url jwt', () => {
     const token = makeAuthResponse().token
     localStorage.setItem('taskdeck_token', token)

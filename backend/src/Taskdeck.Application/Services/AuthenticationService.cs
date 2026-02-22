@@ -12,6 +12,8 @@ namespace Taskdeck.Application.Services;
 
 public class AuthenticationService : IAuthenticationService
 {
+    private const string InvalidCredentialsMessage = "Invalid username/email or password";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtSettings _jwtSettings;
 
@@ -28,25 +30,38 @@ public class AuthenticationService : IAuthenticationService
             if (!TryValidateJwtSettings(out var jwtValidationError))
                 return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
 
-            var users = await ResolveLoginCandidatesAsync(dto.UsernameOrEmail);
+            var loginIdentifier = dto.UsernameOrEmail?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(loginIdentifier))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Username or email is required");
+
+            var users = await ResolveLoginCandidatesAsync(loginIdentifier);
             if (users.Count == 0)
-                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Invalid username/email or password");
+                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, InvalidCredentialsMessage);
 
             User? authenticatedUser = null;
+            var hasInactivePasswordMatch = false;
             foreach (var candidate in users)
             {
                 if (!BCrypt.Net.BCrypt.Verify(dto.Password, candidate.PasswordHash))
                     continue;
 
                 if (!candidate.IsActive)
-                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+                {
+                    hasInactivePasswordMatch = true;
+                    continue;
+                }
 
                 authenticatedUser = candidate;
                 break;
             }
 
             if (authenticatedUser == null)
-                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, "Invalid username/email or password");
+            {
+                if (hasInactivePasswordMatch)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+                return Result.Failure<AuthResultDto>(ErrorCodes.AuthenticationFailed, InvalidCredentialsMessage);
+            }
 
             var token = GenerateJwtToken(authenticatedUser);
             return Result.Success(new AuthResultDto(token, MapToDto(authenticatedUser)));
@@ -68,12 +83,21 @@ public class AuthenticationService : IAuthenticationService
             if (!TryValidateJwtSettings(out var jwtValidationError))
                 return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
 
-            var exists = await _unitOfWork.Users.ExistsAsync(dto.Username, dto.Email);
+            var normalizedUsername = dto.Username?.Trim() ?? string.Empty;
+            var normalizedEmail = dto.Email?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedUsername))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Username is required");
+
+            if (string.IsNullOrWhiteSpace(normalizedEmail))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
+
+            var exists = await _unitOfWork.Users.ExistsAsync(normalizedUsername, normalizedEmail);
             if (exists)
-                return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "A user with that username or email already exists");
+                return Result.Failure<AuthResultDto>(ErrorCodes.Conflict, "An account with that username or email already exists. Sign in with your existing credentials.");
 
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-            var user = new User(dto.Username, dto.Email, passwordHash, dto.DefaultRole);
+            var user = new User(normalizedUsername, normalizedEmail, passwordHash, dto.DefaultRole);
 
             await _unitOfWork.Users.AddAsync(user);
             await _unitOfWork.SaveChangesAsync();

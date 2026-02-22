@@ -46,8 +46,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 599 passing
-   - Frontend unit: 292 passing
+   - Backend: 605 passing
+   - Frontend unit: 293 passing
    - E2E: 19 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -181,6 +181,10 @@ Delivered in the latest cycle:
 43. SEC-11 cross-user convergence progress (`#152`):
    - automation proposal lifecycle endpoints now enforce proposal-scope authorization (`get/approve/reject/execute/diff`) via board read/write permission or requester-only fallback for user-scoped proposals
    - API integration authz matrix expanded for additional protected automation/logs/starter-pack routes with `401` assertions, plus focused `403` and `404` regression tests for proposal, logs correlation, and starter-pack apply paths
+44. AUTH-06 register/login hardening progress (`#174`):
+   - login flow now avoids inactive-candidate short-circuit lockout in identifier-collision paths by preferring active password matches before returning inactive-account errors
+   - duplicate registration now returns actionable conflict guidance to steer users toward existing-account sign-in
+   - regression coverage added for duplicate-register-then-login success sequence and explicit invalid-credentials (`401`) vs inactive-account (`403`) API contract behavior, with frontend session-flow regression for non-poisoned post-error login
 
 ## Roadmap by Horizon
 
