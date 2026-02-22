@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { onBeforeUnmount, ref, computed, watch } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Card, Label } from '../../types/board'
@@ -24,6 +24,7 @@ const dueDate = ref('')
 const isBlocked = ref(false)
 const blockReason = ref('')
 const selectedLabelIds = ref<string[]>([])
+const expectedUpdatedAt = ref<string | null>(null)
 
 // Watch for card changes
 watch(() => props.card, (newCard) => {
@@ -38,6 +39,22 @@ watch(() => props.card, (newCard) => {
     selectedLabelIds.value = newCard.labels.map(l => l.id)
   }
 }, { immediate: true })
+
+watch(
+  () => props.isOpen,
+  (isOpen) => {
+    if (isOpen) {
+      expectedUpdatedAt.value = props.card.updatedAt
+      boardStore.setEditingCard(props.card.id)
+      return
+    }
+
+    if (boardStore.editingCardId === props.card.id) {
+      boardStore.setEditingCard(null)
+    }
+  },
+  { immediate: true }
+)
 
 const formattedDueDate = computed(() => {
   if (!props.card.dueDate) return 'No due date'
@@ -66,7 +83,8 @@ async function handleSave() {
       dueDate: dueDate.value ? new Date(dueDate.value).toISOString() : null,
       isBlocked: isBlocked.value !== props.card.isBlocked ? isBlocked.value : null,
       blockReason: isBlocked.value ? blockReason.value : null,
-      labelIds: selectedLabelIds.value
+      labelIds: selectedLabelIds.value,
+      expectedUpdatedAt: expectedUpdatedAt.value,
     })
 
     emit('updated')
@@ -97,6 +115,14 @@ function clearDueDate() {
 }
 
 useEscapeToClose(() => props.isOpen, handleClose)
+
+onBeforeUnmount(() => {
+  if (boardStore.editingCardId === props.card.id) {
+    boardStore.setEditingCard(null)
+  }
+
+  expectedUpdatedAt.value = null
+})
 </script>
 
 <template>
