@@ -52,6 +52,8 @@ describe('CardModal', () => {
     mockStore = {
       updateCard: vi.fn().mockResolvedValue(card),
       deleteCard: vi.fn().mockResolvedValue(undefined),
+      editingCardId: null,
+      setEditingCard: vi.fn(),
     }
 
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
@@ -176,6 +178,7 @@ describe('CardModal', () => {
       'card-1',
       expect.objectContaining({
         title: 'Updated Title',
+        expectedUpdatedAt: card.updatedAt,
       })
     )
   })
