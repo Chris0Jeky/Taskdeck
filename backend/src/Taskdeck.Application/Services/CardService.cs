@@ -2,6 +2,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -73,13 +74,24 @@ public class CardService
         }
     }
 
-    public async Task<Result<CardDto>> UpdateCardAsync(Guid id, UpdateCardDto dto, CancellationToken cancellationToken = default)
+    public async Task<Result<CardDto>> UpdateCardAsync(
+        Guid id,
+        UpdateCardDto dto,
+        Guid? actorUserId = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             var card = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             if (card == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found");
+            if (dto.ExpectedUpdatedAt.HasValue && dto.ExpectedUpdatedAt.Value != card.UpdatedAt)
+            {
+                await LogUpdateConflictAsync(card, dto.ExpectedUpdatedAt.Value, actorUserId, cancellationToken);
+                return Result.Failure<CardDto>(
+                    ErrorCodes.Conflict,
+                    "Card was updated by another session. Refresh and retry your changes.");
+            }
 
             // Update basic fields
             if (dto.Title != null || dto.Description != null || dto.DueDate.HasValue)
@@ -122,13 +134,35 @@ public class CardService
         }
     }
 
-    public async Task<Result<CardDto>> UpdateCardAsync(Guid boardId, Guid id, UpdateCardDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<CardDto>> UpdateCardAsync(
+        Guid id,
+        UpdateCardDto dto,
+        CancellationToken cancellationToken)
+    {
+        return UpdateCardAsync(id, dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<CardDto>> UpdateCardAsync(
+        Guid boardId,
+        Guid id,
+        UpdateCardDto dto,
+        Guid? actorUserId = null,
+        CancellationToken cancellationToken = default)
     {
         var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
         if (card == null || card.BoardId != boardId)
             return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found in board {boardId}");
 
-        return await UpdateCardAsync(id, dto, cancellationToken);
+        return await UpdateCardAsync(id, dto, actorUserId, cancellationToken);
+    }
+
+    public Task<Result<CardDto>> UpdateCardAsync(
+        Guid boardId,
+        Guid id,
+        UpdateCardDto dto,
+        CancellationToken cancellationToken)
+    {
+        return UpdateCardAsync(boardId, id, dto, actorUserId: null, cancellationToken);
     }
 
     public async Task<Result<CardDto>> MoveCardAsync(Guid id, MoveCardDto dto, CancellationToken cancellationToken = default)
@@ -254,5 +288,22 @@ public class CardService
             card.CreatedAt,
             card.UpdatedAt
         );
+    }
+
+    private async Task LogUpdateConflictAsync(
+        Card card,
+        DateTimeOffset expectedUpdatedAt,
+        Guid? actorUserId,
+        CancellationToken cancellationToken)
+    {
+        var auditLog = new AuditLog(
+            "card",
+            card.Id,
+            AuditAction.Updated,
+            actorUserId,
+            $"update_conflict expected_updated_at={expectedUpdatedAt:O}; actual_updated_at={card.UpdatedAt:O}");
+
+        await _unitOfWork.AuditLogs.AddAsync(auditLog, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }
