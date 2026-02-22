@@ -2,12 +2,23 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-02-21
+Last Updated: 2026-02-22
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+
+## Run Metadata Template (Required)
+
+Record this in the issue or PR comment before and after each manual run:
+- date/time (UTC)
+- commit SHA
+- browser and version
+- OS
+- DB baseline (`fresh` or `existing`)
+- env flags changed (if any)
+- artifacts collected (screenshots, logs, request IDs)
 
 ## Scope and Boundaries
 
