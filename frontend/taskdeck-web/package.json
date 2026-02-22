@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
+    "test:coverage": "node -e \"require('fs').mkdirSync('test-results',{recursive:true})\" && vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=./test-results/vitest.coverage.junit.xml",
     "test:e2e": "playwright test",
     "test:e2e:concurrency": "playwright test tests/e2e/concurrency.spec.ts --reporter=line",
     "test:e2e:headed": "playwright test --headed"

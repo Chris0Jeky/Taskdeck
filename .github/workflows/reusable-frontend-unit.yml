@@ -49,17 +49,16 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npx vite build
 
-      - name: Run frontend tests
+      - name: Run frontend tests with coverage thresholds
         working-directory: frontend/taskdeck-web
-        run: |
-          node -e "require('fs').mkdirSync('test-results',{recursive:true});"
-          npx vitest run --reporter=default --reporter=junit --outputFile.junit=./test-results/vitest.junit.xml
+        run: npm run test:coverage
 
       - name: Upload frontend test artifacts
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: frontend-unit-artifacts-${{ matrix.os }}
           path: |
             frontend/taskdeck-web/test-results
+            frontend/taskdeck-web/coverage
           if-no-files-found: ignore
