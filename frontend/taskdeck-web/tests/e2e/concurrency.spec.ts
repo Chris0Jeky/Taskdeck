@@ -42,30 +42,8 @@ async function addCard(page: Page, columnName: string, cardTitle: string) {
   await expect(cardByTitle(page, cardTitle)).toBeVisible()
 }
 
-async function createSecondarySessionPage(browser: Browser, boardUrl: string, tokenizedPage: Page): Promise<Page> {
-  const authSnapshot = await tokenizedPage.evaluate(() => ({
-    token: localStorage.getItem('taskdeck_token'),
-    session: localStorage.getItem('taskdeck_session'),
-  }))
-
-  const secondaryContext = await browser.newContext()
-  const secondaryPage = await secondaryContext.newPage()
-  await secondaryPage.addInitScript((payload: { token: string | null; session: string | null }) => {
-    if (payload.token) {
-      localStorage.setItem('taskdeck_token', payload.token)
-    }
-
-    if (payload.session) {
-      localStorage.setItem('taskdeck_session', payload.session)
-    }
-  }, authSnapshot)
-
-  await secondaryPage.goto(boardUrl)
-  return secondaryPage
-}
-
 test('concurrent card edits across sessions should converge to last write', async ({ browser, page, request }) => {
-  await registerAndAttachSession(page, request, 'concurrency')
+  const auth = await registerAndAttachSession(page, request, 'concurrency')
   const boardName = `Concurrency Board ${Date.now()}`
   const columnName = `Concurrency Column ${Date.now()}`
   const initialTitle = `Concurrency Card ${Date.now()}`
@@ -77,7 +55,10 @@ test('concurrent card edits across sessions should converge to last write', asyn
   await addCard(page, columnName, initialTitle)
   const boardUrl = page.url()
 
-  const secondaryPage = await createSecondarySessionPage(browser, boardUrl, page)
+  const secondaryContext = await browser.newContext()
+  const secondaryPage = await secondaryContext.newPage()
+  await attachSessionToPage(secondaryPage, auth)
+  await secondaryPage.goto(boardUrl)
 
   try {
     await expect(secondaryPage.getByRole('heading', { name: boardName })).toBeVisible()
@@ -102,7 +83,7 @@ test('concurrent card edits across sessions should converge to last write', asyn
     await expect(cardByTitle(secondaryPage, finalTitle)).toBeVisible({ timeout: 20000 })
     await expect(cardByTitle(secondaryPage, secondaryTitle)).toHaveCount(0)
   } finally {
-    await secondaryPage.context().close()
+    await secondaryContext.close()
   }
 })
 
