@@ -2,8 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -118,6 +122,23 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetEntityHistory_ShouldReturnLogs_WhenStoredEntityTypeUsesDifferentCasing()
+    {
+        var user = await AuthenticateAsAsync("audit-entity-casing");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "audit-casing-board", "Audit casing test board");
+        var column = await CreateColumnAsync(board.Id, "Audit Casing Column");
+        var card = await CreateCardAsync(board.Id, column.Id, "Audit Casing Card");
+        var seededLog = await SeedAuditLogAsync("card", card.Id, user.UserId);
+
+        var response = await _client.GetAsync($"/api/audit/entities/Card/{card.Id}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var logs = await response.Content.ReadFromJsonAsync<List<AuditLogDto>>();
+        logs.Should().NotBeNull();
+        logs!.Should().Contain(log => log.Id == seededLog.Id && log.EntityType == "card");
+    }
+
+    [Fact]
     public async Task GetUserHistory_ShouldReturnOk_ForCurrentUser()
     {
         await EnsureAuthenticatedAsync();
@@ -172,5 +193,17 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
         var card = await response.Content.ReadFromJsonAsync<CardDto>();
         card.Should().NotBeNull();
         return card!;
+    }
+
+    private async Task<AuditLog> SeedAuditLogAsync(string entityType, Guid entityId, Guid? userId = null)
+    {
+        var auditLog = new AuditLog(entityType, entityId, AuditAction.Updated, userId, "seeded audit log");
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        dbContext.AuditLogs.Add(auditLog);
+        await dbContext.SaveChangesAsync();
+
+        return auditLog;
     }
 }
