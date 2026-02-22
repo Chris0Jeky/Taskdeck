@@ -72,18 +72,28 @@ public class LogsController : AuthenticatedControllerBase
         var scopedEntries = result.Value.ToList();
         if (!string.IsNullOrWhiteSpace(correlationId) && scopedEntries.Count == 0)
         {
-            var correlationExistsResult = await _logQueryService.QueryLogsAsync(
-                new LogQueryDto(CorrelationId: correlationId, Limit: 1),
+            var callerCorrelationResult = await _logQueryService.QueryLogsAsync(
+                new LogQueryDto(UserId: callerUserId, CorrelationId: correlationId, Limit: 1),
                 ct);
 
-            if (!correlationExistsResult.IsSuccess)
-                return correlationExistsResult.ToErrorActionResult();
+            if (!callerCorrelationResult.IsSuccess)
+                return callerCorrelationResult.ToErrorActionResult();
 
-            if (correlationExistsResult.Value.Any())
+            if (!callerCorrelationResult.Value.Any())
             {
-                return Result.Failure(
-                    ErrorCodes.Forbidden,
-                    "You do not have permission to access logs for this correlation.").ToErrorActionResult();
+                var correlationExistsResult = await _logQueryService.QueryLogsAsync(
+                    new LogQueryDto(CorrelationId: correlationId, Limit: 1),
+                    ct);
+
+                if (!correlationExistsResult.IsSuccess)
+                    return correlationExistsResult.ToErrorActionResult();
+
+                if (correlationExistsResult.Value.Any())
+                {
+                    return Result.Failure(
+                        ErrorCodes.Forbidden,
+                        "You do not have permission to access logs for this correlation.").ToErrorActionResult();
+                }
             }
         }
 
