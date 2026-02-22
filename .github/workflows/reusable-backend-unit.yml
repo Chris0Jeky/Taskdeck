@@ -1,0 +1,56 @@
+name: Reusable Backend Unit
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version used for backend unit and contract tests
+        required: false
+        default: "8.0.x"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backend-unit:
+    name: Backend Unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Run domain tests
+        run: dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=domain.trx" --results-directory "backend/TestResults/backend-unit/${{ matrix.os }}/domain"
+
+      - name: Run application tests
+        run: dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=application.trx" --results-directory "backend/TestResults/backend-unit/${{ matrix.os }}/application"
+
+      - name: Run CLI contract tests
+        run: dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=cli.trx" --results-directory "backend/TestResults/backend-unit/${{ matrix.os }}/cli"
+
+      - name: Upload backend unit test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-trx-${{ matrix.os }}
+          path: backend/TestResults/backend-unit/${{ matrix.os }}
+          if-no-files-found: ignore
