@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run actionlint
-        uses: rhysd/actionlint@v1
+        uses: rhysd/actionlint@v1.7.11
 
   dependency-review:
     name: Dependency Review
@@ -55,8 +55,8 @@ jobs:
     with:
       dotnet-version: 8.0.x
 
-  e2e-regression:
-    name: E2E Regression
+  e2e-smoke:
+    name: E2E Smoke
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
     needs:
       - backend-solution
