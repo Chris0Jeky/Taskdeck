@@ -1,0 +1,109 @@
+name: Release Security
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforce-audit-failures:
+        description: Fail the run when dependency audit finds high severity vulnerabilities
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - v*
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  dependency-risk:
+    name: Dependency Risk and Inventory
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Build dependency inventory
+        run: |
+          mkdir -p /tmp/release-security
+          dotnet list backend/Taskdeck.sln package --include-transitive --format json > /tmp/release-security/backend-packages.json
+          npm --prefix frontend/taskdeck-web ls --all --json > /tmp/release-security/frontend-packages.json || true
+
+      - name: Run backend vulnerable package report
+        run: dotnet list backend/Taskdeck.sln package --vulnerable --include-transitive --format json > /tmp/release-security/backend-vulnerabilities.json
+
+      - name: Run frontend audit
+        id: npm_audit
+        continue-on-error: true
+        working-directory: frontend/taskdeck-web
+        run: npm audit --omit=dev --audit-level=high --json > /tmp/release-security/frontend-audit.json
+
+      - name: Enforce frontend audit failures when requested
+        if: github.event_name == 'workflow_dispatch' && inputs.enforce-audit-failures && steps.npm_audit.outcome == 'failure'
+        run: |
+          echo "frontend npm audit reported high severity issues and enforcement is enabled"
+          exit 1
+
+      - name: Write release security lane plan
+        run: |
+          cat <<'EOF' > /tmp/release-security/release-security-plan.md
+          # Release Security Lane Plan
+
+          This workflow provides release-time dependency inventory and vulnerability signal.
+
+          Current baseline:
+          - backend dependency inventory (`dotnet list package --include-transitive`)
+          - frontend dependency inventory (`npm ls --all`)
+          - backend vulnerable package report (`dotnet list package --vulnerable`)
+          - frontend high-severity audit signal (`npm audit --audit-level=high`)
+          - container image artifact generation and checksum output via reusable container workflow
+
+          Planned follow-through:
+          - OPS-11 (`#103`): SBOM/provenance generation and attestation policy hardening
+          - SEC-09 (`#106`) / OPS-17 (`#148`): dependency vulnerability policy + automation tightening
+          EOF
+
+      - name: Upload dependency and security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-security-artifacts
+          path: /tmp/release-security
+          if-no-files-found: ignore
+
+  container-images:
+    name: Container Image Artifacts
+    uses: ./.github/workflows/reusable-container-images.yml

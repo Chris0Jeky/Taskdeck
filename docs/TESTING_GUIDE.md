@@ -112,7 +112,7 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailO
 
 ## CI Gates
 
-Workflow: `.github/workflows/ci-required.yml`
+Required workflow: `.github/workflows/ci-required.yml`
 
 - `docs-governance`
   - Enforces required active docs and docs index invariants
@@ -135,6 +135,27 @@ Workflow: `.github/workflows/ci-required.yml`
   - Playwright smoke + automation/ops + fixture bootstrap flow
   - Ubuntu only
   - Depends on all prior gates
+
+Extended workflow: `.github/workflows/ci-extended.yml`
+
+- `workflow-lint`
+  - Actionlint validation for `.github/workflows/**` drift
+- `dependency-review`
+  - PR dependency change risk signal (`actions/dependency-review-action`)
+- `backend-solution` + `e2e-smoke`
+  - opt-in on PRs labeled `testing` or manual `workflow_dispatch` (runs Playwright smoke suite via `reusable-e2e-smoke.yml`)
+
+Nightly workflow: `.github/workflows/ci-nightly.yml`
+
+- scheduled/manual backend solution regression (`dotnet test backend/Taskdeck.sln -c Release -m:1`)
+- scheduled/manual E2E smoke suite (`reusable-e2e-smoke.yml`)
+- scheduled/manual container image regression
+
+Release/security workflow: `.github/workflows/release-security.yml`
+
+- release/tag/manual dependency inventory artifact generation
+- backend/frontend vulnerability signal capture
+- reusable container artifact/checksum lane for release-ready outputs
 
 ## Coverage Map
 
