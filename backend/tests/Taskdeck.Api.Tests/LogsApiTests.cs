@@ -127,6 +127,25 @@ public class LogsApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
+    [Fact]
+    public async Task QueryLogs_ShouldReturnOkWithEmptyList_WhenCallerCorrelationExistsButFiltersExcludeEntries()
+    {
+        using var ownerClient = _factory.CreateClient();
+        await AuthenticateAsync(ownerClient, "logs-filtered-correlation-owner");
+
+        var runResponse = await ownerClient.PostAsJsonAsync("/api/ops/cli/run", new RunCommandDto("health.check"));
+        runResponse.EnsureSuccessStatusCode();
+        var run = await runResponse.Content.ReadFromJsonAsync<CommandRunDto>();
+        run.Should().NotBeNull();
+
+        var response = await ownerClient.GetAsync($"/api/logs?correlationId={run!.CorrelationId}&source=NotARealSource");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var entries = await response.Content.ReadFromJsonAsync<List<LogEntryDto>>();
+        entries.Should().NotBeNull();
+        entries.Should().BeEmpty();
+    }
+
     private async Task<Guid> AuthenticateAsync(string stem)
     {
         return await AuthenticateAsync(_client, stem);
