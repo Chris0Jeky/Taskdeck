@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import FilterPanel from '../../components/board/FilterPanel.vue'
 import type { CardFilters } from '../../store/boardStore'

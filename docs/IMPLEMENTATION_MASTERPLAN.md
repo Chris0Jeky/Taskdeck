@@ -220,14 +220,18 @@ Delivered in the latest cycle:
    - expanded architecture tests beyond csproj references with source-layer purity invariants for Domain/Application forbidden namespace imports
    - added API controller boundary invariants to restrict direct `ControllerBase` inheritance to auth/health controllers and enforce `[Authorize]` declaration on protected controllers
    - architecture guard suite now emits deterministic file-scoped diagnostics for quick remediation in CI and local runs
-53. TST-01 load/concurrency harness delivery (`#70`):
+54. TST-01 load/concurrency harness delivery (`#70`):
    - added k6 board-heavy API regression profile (`tests/load/k6/board-heavy-load.js`) with seeded-auth setup, read/write traffic mix, thresholds, and failure diagnostics
    - added multi-session Playwright concurrency harness coverage (`frontend/taskdeck-web/tests/e2e/concurrency.spec.ts`) for conflicting edits and realtime cross-session propagation
    - added reusable CI lane (`.github/workflows/reusable-load-concurrency-harness.yml`) and wired it into `ci-extended` (testing label/manual) plus `ci-nightly` with persisted k6/Playwright artifacts
-54. ARCH-01 multi-tenancy strategy ADR delivery (`#71`):
+55. ARCH-01 multi-tenancy strategy ADR delivery (`#71`):
    - added accepted ADR at `docs/analysis/2026-02-22_multi-tenancy-strategy-adr.md` comparing `database-per-tenant`, `schema-per-tenant`, and `shared-schema + TenantId`
    - selected `shared-schema + TenantId` as immediate rollout model with explicit promotion path to `database-per-tenant` for high-isolation tiers
    - defined phased migration/enforcement plan plus tenant-isolation readiness checklist and cross-tenant `403` test strategy expectations
+56. FE-11 frontend lint baseline + CI enforcement (`#154`):
+   - added pragmatic Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`) with focused rule suppressions to avoid style-churn while catching correctness issues
+   - added `npm run lint` script with zero-warning enforcement and integrated lint into reusable frontend CI lane (`reusable-frontend-unit.yml`)
+   - documented frontend lint execution and suppression guidance in active testing docs to keep lint policy explicit for contributors
 
 ## Roadmap by Horizon
 

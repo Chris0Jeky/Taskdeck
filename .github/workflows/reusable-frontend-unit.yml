@@ -37,6 +37,10 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
+      - name: Run frontend lint
+        working-directory: frontend/taskdeck-web
+        run: npm run lint
+
       - name: Run frontend typecheck
         working-directory: frontend/taskdeck-web
         run: npm run typecheck

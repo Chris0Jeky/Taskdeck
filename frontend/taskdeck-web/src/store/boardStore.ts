@@ -80,16 +80,20 @@ export const useBoardStore = defineStore('board', () => {
           if (!card.dueDate || new Date(card.dueDate) >= today) return false
           break
         case 'due-today':
+        {
           if (!card.dueDate) return false
           const dueDate = new Date(card.dueDate)
           const dueDateDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
           if (dueDateDay.getTime() !== today.getTime()) return false
           break
+        }
         case 'due-week':
+        {
           if (!card.dueDate) return false
           const due = new Date(card.dueDate)
           if (due < today || due > weekFromNow) return false
           break
+        }
         case 'no-date':
           if (card.dueDate) return false
           break

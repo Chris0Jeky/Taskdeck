@@ -46,10 +46,16 @@ Note:
 
 ```bash
 cd frontend/taskdeck-web
+npm run lint
 npx vitest --run --reporter=verbose
 npm run typecheck
 npm run build
 ```
+
+Frontend lint suppression guidance:
+- Prefer fixing lint violations over suppressing them.
+- Keep suppressions as narrow as possible (`eslint-disable-next-line` with reason).
+- Avoid file-wide disables unless absolutely required and documented with a follow-up issue.
 
 ## Frontend E2E
 
@@ -153,7 +159,7 @@ Required workflow: `.github/workflows/ci-required.yml`
   - API integration tests
   - Ubuntu and Windows matrix
 - `frontend-unit`
-  - Vitest + typecheck + build
+  - Lint + typecheck + build + Vitest
   - Ubuntu and Windows matrix
 - `container-images`
   - Validates compose rendering

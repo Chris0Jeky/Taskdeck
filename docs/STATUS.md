@@ -166,12 +166,14 @@ Result:
 ### Frontend Unit + Build (Executed)
 
 Commands:
+- `cd frontend/taskdeck-web && npm run lint`
 - `cd frontend/taskdeck-web && npx vitest --run`
 - `cd frontend/taskdeck-web && npm run typecheck`
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
 - Frontend unit: 293/293 passing
+- Lint: passing
 - Typecheck: passing
 - Production build: passing
 
@@ -197,6 +199,7 @@ Required workflow: `.github/workflows/ci-required.yml`
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)
 - `frontend-unit` (Ubuntu/Windows)
+  - lint + typecheck + build + unit tests
 - `container-images` (Ubuntu)
 - `e2e-smoke` (Ubuntu, depends on prior jobs)
 
@@ -294,6 +297,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
 - Delivered TST-01 load/concurrency regression harness (`#70`): added k6 board-heavy API profile with thresholds and diagnostics, added Playwright multi-session concurrency scenarios, and wired reusable load harness workflow into `ci-extended`/`ci-nightly` with artifact uploads.
 - Delivered ARCH-01 multi-tenancy strategy ADR (`#71`): documented option tradeoffs (`database-per-tenant`, `schema-per-tenant`, `shared-schema + TenantId`), selected phased target model, and published tenant-isolation readiness + test strategy checklist.
+- Delivered FE-11 frontend lint baseline + CI gate (`#154`): added Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`), introduced `npm run lint` with zero-warning enforcement, integrated lint into reusable frontend CI workflow, and documented lint suppression guidance in active testing docs.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
