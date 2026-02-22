@@ -15,6 +15,8 @@ public interface IUnitOfWork
     IChatSessionRepository ChatSessions { get; }
     IChatMessageRepository ChatMessages { get; }
     ICommandRunRepository CommandRuns { get; }
+    INotificationRepository Notifications { get; }
+    INotificationPreferenceRepository NotificationPreferences { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
