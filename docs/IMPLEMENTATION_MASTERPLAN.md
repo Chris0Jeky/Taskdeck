@@ -232,6 +232,10 @@ Delivered in the latest cycle:
    - added pragmatic Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`) with focused rule suppressions to avoid style-churn while catching correctness issues
    - added `npm run lint` script with zero-warning enforcement and integrated lint into reusable frontend CI lane (`reusable-frontend-unit.yml`)
    - documented frontend lint execution and suppression guidance in active testing docs to keep lint policy explicit for contributors
+57. FE-12 frontend coverage threshold gate (`#155`):
+   - codified global and critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`) in frontend test configuration
+   - switched reusable frontend CI lane to threshold-enforced coverage execution and standardized machine-readable triage artifacts (JUnit + coverage JSON/HTML)
+   - documented explicit ratchet policy (thresholds can remain or increase, never decrease) and local threshold-breach verification command
 
 ## Roadmap by Horizon
 
@@ -317,7 +321,7 @@ Exit Criteria:
 
 - Analysis follow-through wave tracker: `#151`
 - CI/workflow topology expansion and governance track: `#168`
-- API/frontend hardening follow-through: `#153` (delivered), `#154`, `#155`, `#157`
+- API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72`, `#73`, `#74`, `#75`, `#76`
