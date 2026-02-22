@@ -30,6 +30,8 @@ public static class DependencyInjection
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
         services.AddScoped<ICommandRunRepository, CommandRunRepository>();
+        services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<INotificationPreferenceRepository, NotificationPreferenceRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;
