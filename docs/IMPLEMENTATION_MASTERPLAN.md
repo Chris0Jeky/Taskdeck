@@ -212,6 +212,10 @@ Delivered in the latest cycle:
    - expanded cross-user `403` coverage for board update and board-access management (`list/grant/update/revoke`)
    - expanded chat authorization coverage for cross-user forbidden access and true-missing session `404` branches (`get session`, `send message`)
    - API integration suite increased to 185 passing tests with explicit `403/404` branch locking for remaining protected route gaps
+52. TST-14 architecture-guard expansion (`#157`):
+   - expanded architecture tests beyond csproj references with source-layer purity invariants for Domain/Application forbidden namespace imports
+   - added API controller boundary invariants to restrict direct `ControllerBase` inheritance to auth/health controllers and enforce `[Authorize]` declaration on protected controllers
+   - architecture guard suite now emits deterministic file-scoped diagnostics for quick remediation in CI and local runs
 
 ## Roadmap by Horizon
 
