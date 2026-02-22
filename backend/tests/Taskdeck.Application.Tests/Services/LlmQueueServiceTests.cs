@@ -14,23 +14,22 @@ namespace Taskdeck.Application.Tests.Services;
 public class LlmQueueServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<IAuthorizationService> _authorizationServiceMock;
     private readonly Mock<ILlmQueueRepository> _llmQueueRepoMock;
     private readonly Mock<IUserRepository> _userRepoMock;
-    private readonly Mock<IBoardRepository> _boardRepoMock;
     private readonly LlmQueueService _service;
 
     public LlmQueueServiceTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _authorizationServiceMock = new Mock<IAuthorizationService>();
         _llmQueueRepoMock = new Mock<ILlmQueueRepository>();
         _userRepoMock = new Mock<IUserRepository>();
-        _boardRepoMock = new Mock<IBoardRepository>();
 
         _unitOfWorkMock.Setup(u => u.LlmQueue).Returns(_llmQueueRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
-        _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
 
-        _service = new LlmQueueService(_unitOfWorkMock.Object);
+        _service = new LlmQueueService(_unitOfWorkMock.Object, _authorizationServiceMock.Object);
     }
 
     #region AddToQueueAsync Tests
@@ -42,13 +41,12 @@ public class LlmQueueServiceTests
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var user = new User("testuser", "test@example.com", "hashedpassword");
-        var board = new Board("Test Board");
         var dto = new CreateLlmRequestDto("voicenote", "payload text", boardId);
 
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
             .ReturnsAsync(user);
-        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default))
-            .ReturnsAsync(board);
+        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
         _llmQueueRepoMock.Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
             .ReturnsAsync((LlmRequest r, CancellationToken ct) => r);
 
@@ -61,6 +59,53 @@ public class LlmQueueServiceTests
         result.Value.RequestType.Should().Be("voicenote");
         result.Value.Status.Should().Be(RequestStatus.Pending);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddToQueueAsync_ShouldReturnForbidden_WhenUserCannotAccessBoard()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto("voicenote", "payload text", boardId);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        // Act
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("access");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddToQueueAsync_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto("voicenote", "payload text", boardId);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found"));
+
+        // Act
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]
@@ -185,6 +230,7 @@ public class LlmQueueServiceTests
         var request = new LlmRequest(ownerId, "voicenote", "payload text");
         var sandboxService = new LlmQueueService(
             _unitOfWorkMock.Object,
+            _authorizationServiceMock.Object,
             new DevelopmentSandboxSettings { Enabled = true });
 
         _llmQueueRepoMock.Setup(r => r.GetByIdAsync(request.Id, default))
