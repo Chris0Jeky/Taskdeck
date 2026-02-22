@@ -11,15 +11,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-22)
 
-- Backend: 624/624 passing
+- Backend: 632/632 passing
   - Domain: 93
-  - Application: 344
-  - API integration: 179
+  - Application: 346
+  - API integration: 185
   - CLI contract: 4
   - Architecture boundaries: 4
 - Frontend unit: 293/293 passing
 - Frontend E2E (smoke + automation/ops + starter-pack fixtures): 19/19 passing
-- Combined automated total: 936/936 passing
+- Combined automated total: 944/944 passing
 
 ## Backend Commands
 
@@ -46,10 +46,16 @@ Note:
 
 ```bash
 cd frontend/taskdeck-web
+npm run lint
 npx vitest --run --reporter=verbose
 npm run typecheck
 npm run build
 ```
+
+Frontend lint suppression guidance:
+- Prefer fixing lint violations over suppressing them.
+- Keep suppressions as narrow as possible (`eslint-disable-next-line` with reason).
+- Avoid file-wide disables unless absolutely required and documented with a follow-up issue.
 
 ## Frontend E2E
 
@@ -125,7 +131,7 @@ Required workflow: `.github/workflows/ci-required.yml`
   - API integration tests
   - Ubuntu and Windows matrix
 - `frontend-unit`
-  - Vitest + typecheck + build
+  - Lint + typecheck + build + Vitest
   - Ubuntu and Windows matrix
 - `container-images`
   - Validates compose rendering
