@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-21  
+Last Updated: 2026-02-22  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -178,10 +178,13 @@ Delivered in the latest cycle:
    - extracted API integration lane into reusable workflow `.github/workflows/reusable-api-integration.yml` and routed `ci-required.yml` through it (preserving Ubuntu/Windows matrix behavior)
 42. OPS-19 CI topology third-pass delivery:
    - added `merge_group` trigger parity to `.github/workflows/ci-required.yml` to align merge-queue required-check execution with PR/push paths
-43. SEC-11 cross-user convergence progress (`#152`):
+43. OPS-19 CI topology fourth-pass delivery:
+   - extracted backend unit lane into reusable workflow `.github/workflows/reusable-backend-unit.yml` (preserving Ubuntu/Windows matrix behavior and domain/application/CLI split coverage)
+   - routed `.github/workflows/ci-required.yml` through the reusable backend unit lane
+44. SEC-11 cross-user convergence progress (`#152`):
    - automation proposal lifecycle endpoints now enforce proposal-scope authorization (`get/approve/reject/execute/diff`) via board read/write permission or requester-only fallback for user-scoped proposals
    - API integration authz matrix expanded for additional protected automation/logs/starter-pack routes with `401` assertions, plus focused `403` and `404` regression tests for proposal, logs correlation, and starter-pack apply paths
-44. AUTH-06 register/login hardening progress (`#174`):
+45. AUTH-06 register/login hardening progress (`#174`):
    - login flow now avoids inactive-candidate short-circuit lockout in identifier-collision paths by preferring active password matches before returning inactive-account errors
    - duplicate registration now returns actionable conflict guidance to steer users toward existing-account sign-in
    - regression coverage added for duplicate-register-then-login success sequence and explicit invalid-credentials (`401`) vs inactive-account (`403`) API contract behavior, with frontend session-flow regression for non-poisoned post-error login
