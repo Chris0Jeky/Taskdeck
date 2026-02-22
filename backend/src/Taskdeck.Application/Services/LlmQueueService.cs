@@ -10,11 +10,16 @@ namespace Taskdeck.Application.Services;
 public class LlmQueueService : ILlmQueueService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuthorizationService _authorizationService;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
 
-    public LlmQueueService(IUnitOfWork unitOfWork, DevelopmentSandboxSettings? sandboxSettings = null)
+    public LlmQueueService(
+        IUnitOfWork unitOfWork,
+        IAuthorizationService authorizationService,
+        DevelopmentSandboxSettings? sandboxSettings = null)
     {
         _unitOfWork = unitOfWork;
+        _authorizationService = authorizationService;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
@@ -28,9 +33,16 @@ public class LlmQueueService : ILlmQueueService
 
             if (dto.BoardId.HasValue)
             {
-                var board = await _unitOfWork.Boards.GetByIdAsync(dto.BoardId.Value);
-                if (board == null)
-                    return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId.Value} not found");
+                var permissionResult = await _authorizationService.CanReadBoardAsync(userId, dto.BoardId.Value);
+                if (!permissionResult.IsSuccess)
+                {
+                    return Result.Failure<LlmRequestDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+                }
+
+                if (!permissionResult.Value)
+                {
+                    return Result.Failure<LlmRequestDto>(ErrorCodes.Forbidden, "You do not have access to this board");
+                }
             }
 
             var request = new LlmRequest(userId, dto.RequestType, dto.Payload, dto.BoardId);
