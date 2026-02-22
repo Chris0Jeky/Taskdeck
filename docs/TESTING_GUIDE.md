@@ -142,13 +142,13 @@ Extended workflow: `.github/workflows/ci-extended.yml`
   - Actionlint validation for `.github/workflows/**` drift
 - `dependency-review`
   - PR dependency change risk signal (`actions/dependency-review-action`)
-- `backend-solution` + `e2e-regression`
-  - opt-in on PRs labeled `testing` or manual `workflow_dispatch`
+- `backend-solution` + `e2e-smoke`
+  - opt-in on PRs labeled `testing` or manual `workflow_dispatch` (runs Playwright smoke suite via `reusable-e2e-smoke.yml`)
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 
 - scheduled/manual backend solution regression (`dotnet test backend/Taskdeck.sln -c Release -m:1`)
-- scheduled/manual E2E regression
+- scheduled/manual E2E smoke suite (`reusable-e2e-smoke.yml`)
 - scheduled/manual container image regression
 
 Release/security workflow: `.github/workflows/release-security.yml`
