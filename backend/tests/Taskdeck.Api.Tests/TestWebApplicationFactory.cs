@@ -9,7 +9,7 @@ using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Api.Tests;
 
-public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
+public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _dbPath = Path.Combine(
         Path.GetTempPath(),
