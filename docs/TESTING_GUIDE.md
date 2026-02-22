@@ -47,7 +47,7 @@ Note:
 ```bash
 cd frontend/taskdeck-web
 npm run lint
-npx vitest --run --reporter=verbose
+npm run test:coverage
 npm run typecheck
 npm run build
 ```
@@ -56,6 +56,13 @@ Frontend lint suppression guidance:
 - Prefer fixing lint violations over suppressing them.
 - Keep suppressions as narrow as possible (`eslint-disable-next-line` with reason).
 - Avoid file-wide disables unless absolutely required and documented with a follow-up issue.
+
+Frontend coverage threshold policy:
+- Coverage thresholds are enforced via `frontend/taskdeck-web/vitest.config.ts` and are part of the required CI gate.
+- Global thresholds protect against broad regressions; per-surface thresholds protect high-signal areas (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`).
+- Ratchet rule: thresholds may stay flat or increase, but must not decrease.
+- Threshold breach behavior can be validated locally with an override command, for example:
+  - `cd frontend/taskdeck-web && npx vitest run --coverage --coverage.thresholds.lines=99 --coverage.thresholds.statements=99 --coverage.thresholds.functions=99 --coverage.thresholds.branches=99`
 
 ## Frontend E2E
 
@@ -159,8 +166,9 @@ Required workflow: `.github/workflows/ci-required.yml`
   - API integration tests
   - Ubuntu and Windows matrix
 - `frontend-unit`
-  - Lint + typecheck + build + Vitest
+  - Lint + coverage-threshold Vitest + typecheck + build
   - Ubuntu and Windows matrix
+  - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 - `container-images`
   - Validates compose rendering
   - Builds backend/frontend container images
