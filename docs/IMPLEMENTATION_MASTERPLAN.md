@@ -208,6 +208,10 @@ Delivered in the latest cycle:
    - `POST /api/llm-queue` now enforces board-read authorization when `boardId` is supplied
    - queue creation now aligns to policy (`403` for authenticated cross-user unauthorized board access, `404` for true missing boards)
    - regression coverage expanded in `LlmQueueServiceTests`, `LlmQueueApiTests`, and `AuthzRegressionMatrixApiTests`
+51. SEC-11 API regression coverage final sweep (`#152`):
+   - expanded cross-user `403` coverage for board update and board-access management (`list/grant/update/revoke`)
+   - expanded chat authorization coverage for cross-user forbidden access and true-missing session `404` branches (`get session`, `send message`)
+   - API integration suite increased to 185 passing tests with explicit `403/404` branch locking for remaining protected route gaps
 
 ## Roadmap by Horizon
 
