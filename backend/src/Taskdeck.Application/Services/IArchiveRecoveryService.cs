@@ -15,15 +15,18 @@ public interface IArchiveRecoveryService
         Guid? boardId = null, 
         RestoreStatus? status = null,
         int limit = 100,
+        Guid? actingUserId = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<ArchiveItemDto>> GetArchiveItemByIdAsync(
         Guid id, 
+        Guid? actingUserId = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<ArchiveItemDto>> GetArchiveItemByEntityAsync(
         string entityType,
         Guid entityId,
+        Guid? actingUserId = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<RestoreResult>> RestoreArchiveItemAsync(
