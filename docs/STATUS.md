@@ -204,12 +204,12 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 
 - `workflow-lint` (Actionlint for workflow YAML drift)
 - `dependency-review` (PR dependency risk check)
-- label/manual-triggered backend solution + E2E regression lanes (`testing` label or `workflow_dispatch`)
+- label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`)
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 
 - scheduled/manual backend solution regression
-- scheduled/manual E2E regression
+- scheduled/manual E2E smoke (reuses `.github/workflows/reusable-e2e-smoke.yml`)
 - scheduled/manual container image regression
 
 Release/security workflow: `.github/workflows/release-security.yml`
