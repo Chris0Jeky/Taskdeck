@@ -23,7 +23,9 @@ public class UnitOfWork : IUnitOfWork
         IArchiveItemRepository archiveItems,
         IChatSessionRepository chatSessions,
         IChatMessageRepository chatMessages,
-        ICommandRunRepository commandRuns)
+        ICommandRunRepository commandRuns,
+        INotificationRepository notifications,
+        INotificationPreferenceRepository notificationPreferences)
     {
         _context = context;
         Boards = boards;
@@ -39,6 +41,8 @@ public class UnitOfWork : IUnitOfWork
         ChatSessions = chatSessions;
         ChatMessages = chatMessages;
         CommandRuns = commandRuns;
+        Notifications = notifications;
+        NotificationPreferences = notificationPreferences;
     }
 
     public IBoardRepository Boards { get; }
@@ -54,6 +58,8 @@ public class UnitOfWork : IUnitOfWork
     public IChatSessionRepository ChatSessions { get; }
     public IChatMessageRepository ChatMessages { get; }
     public ICommandRunRepository CommandRuns { get; }
+    public INotificationRepository Notifications { get; }
+    public INotificationPreferenceRepository NotificationPreferences { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
