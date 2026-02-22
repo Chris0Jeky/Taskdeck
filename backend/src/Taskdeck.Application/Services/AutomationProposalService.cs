@@ -9,10 +9,14 @@ namespace Taskdeck.Application.Services;
 public class AutomationProposalService : IAutomationProposalService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationService _notificationService;
 
-    public AutomationProposalService(IUnitOfWork unitOfWork)
+    public AutomationProposalService(
+        IUnitOfWork unitOfWork,
+        INotificationService? notificationService = null)
     {
         _unitOfWork = unitOfWork;
+        _notificationService = notificationService ?? NoOpNotificationService.Instance;
     }
 
     public async Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default)
@@ -126,6 +130,9 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
             proposal.Approve(decidedByUserId);
+            var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "approved", cancellationToken);
+            if (!notifyResult.IsSuccess)
+                return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success(MapToDto(proposal));
@@ -145,6 +152,9 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
             proposal.Reject(decidedByUserId, dto.Reason);
+            var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "rejected", cancellationToken);
+            if (!notifyResult.IsSuccess)
+                return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success(MapToDto(proposal));
@@ -164,6 +174,9 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
             proposal.MarkAsApplied();
+            var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "applied", cancellationToken);
+            if (!notifyResult.IsSuccess)
+                return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success(MapToDto(proposal));
@@ -183,6 +196,9 @@ public class AutomationProposalService : IAutomationProposalService
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
             proposal.MarkAsFailed(failureReason);
+            var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "failed", cancellationToken);
+            if (!notifyResult.IsSuccess)
+                return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success(MapToDto(proposal));
@@ -204,6 +220,16 @@ public class AutomationProposalService : IAutomationProposalService
             {
                 proposal.Expire();
                 count++;
+            }
+
+            foreach (var expiredProposal in expiredProposals)
+            {
+                var notifyResult = await PublishProposalOutcomeNotificationAsync(
+                    expiredProposal,
+                    "expired",
+                    cancellationToken);
+                if (!notifyResult.IsSuccess)
+                    return Result.Failure<int>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
             }
 
             if (count > 0)
@@ -280,5 +306,28 @@ public class AutomationProposalService : IAutomationProposalService
             operation.IdempotencyKey,
             operation.ExpectedVersion
         );
+    }
+
+    private async Task<Result> PublishProposalOutcomeNotificationAsync(
+        AutomationProposal proposal,
+        string outcome,
+        CancellationToken cancellationToken)
+    {
+        var publishResult = await _notificationService.PublishAsync(
+            new CreateNotificationRequestDto(
+                proposal.RequestedByUserId,
+                NotificationType.ProposalOutcome,
+                "Automation proposal updated",
+                $"Your proposal '{proposal.Summary}' is now {outcome}.",
+                proposal.BoardId,
+                SourceEntityType: "proposal",
+                SourceEntityId: proposal.Id,
+                DeduplicationKey: $"proposal:{proposal.Id}:{proposal.Status}"),
+            cancellationToken);
+
+        if (!publishResult.IsSuccess)
+            return Result.Failure(publishResult.ErrorCode, publishResult.ErrorMessage);
+
+        return Result.Success();
     }
 }
