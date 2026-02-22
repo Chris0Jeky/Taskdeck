@@ -18,6 +18,7 @@ public class CardServiceTests
     private readonly Mock<IColumnRepository> _columnRepoMock;
     private readonly Mock<ICardRepository> _cardRepoMock;
     private readonly Mock<ILabelRepository> _labelRepoMock;
+    private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly CardService _service;
 
     public CardServiceTests()
@@ -27,11 +28,13 @@ public class CardServiceTests
         _columnRepoMock = new Mock<IColumnRepository>();
         _cardRepoMock = new Mock<ICardRepository>();
         _labelRepoMock = new Mock<ILabelRepository>();
+        _auditLogRepoMock = new Mock<IAuditLogRepository>();
 
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
 
         _service = new CardService(_unitOfWorkMock.Object);
     }
@@ -492,6 +495,51 @@ public class CardServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task UpdateCardAsync_ShouldReturnConflictAndAudit_WhenExpectedUpdatedAtIsStale()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Task");
+        var actorUserId = Guid.NewGuid();
+        var staleTimestamp = card.UpdatedAt.AddMinutes(-10);
+
+        var dto = new UpdateCardDto(
+            Title: "New title",
+            Description: null,
+            DueDate: null,
+            IsBlocked: null,
+            BlockReason: null,
+            LabelIds: null,
+            ExpectedUpdatedAt: staleTimestamp
+        );
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
+            .ReturnsAsync(card);
+        _auditLogRepoMock.Setup(r => r.AddAsync(It.IsAny<AuditLog>(), default))
+            .ReturnsAsync((AuditLog log, CancellationToken _) => log);
+
+        // Act
+        var result = await _service.UpdateCardAsync(card.Id, dto, actorUserId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("updated by another session");
+        _auditLogRepoMock.Verify(
+            r => r.AddAsync(
+                It.Is<AuditLog>(log =>
+                    log.EntityType == "card"
+                    && log.EntityId == card.Id
+                    && log.UserId == actorUserId
+                    && log.Changes != null
+                    && log.Changes.Contains("update_conflict")),
+                default),
+            Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
     #endregion
