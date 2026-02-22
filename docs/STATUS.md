@@ -158,11 +158,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 339/339 passing
+- Application: 343/343 passing
 - API integration: 165/165 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 605/605 passing
+- Backend Total: 609/609 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -186,7 +186,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 917/917 passing
+- Combined automated total: 921/921 passing
 
 ## CI Status
 
@@ -264,6 +264,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
 - Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
 - Advanced SEC-11 cross-user convergence (`#152`) with proposal-scope authorization enforcement in automation proposal lifecycle endpoints (`get/approve/reject/execute/diff`) and expanded API integration policy coverage for automation/logs/starter-pack protected routes.
+- Advanced SEC-11 cross-user convergence (`#152`) with archive read-path authorization hardening: archive item list/detail/entity-lookup endpoints now enforce board-read permissions for the authenticated caller (`403` for cross-user unauthorized, `404` for true missing), with expanded application/API regression coverage.
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
