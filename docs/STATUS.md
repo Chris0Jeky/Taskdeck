@@ -149,7 +149,7 @@ Analysis record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-21
+Verification Date: 2026-02-22
 
 ### Backend (Executed)
 
@@ -158,11 +158,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 343/343 passing
-- API integration: 165/165 passing
+- Application: 344/344 passing
+- API integration: 170/170 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 609/609 passing
+- Backend Total: 615/615 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -186,7 +186,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 921/921 passing
+- Combined automated total: 927/927 passing
 
 ## CI Status
 
