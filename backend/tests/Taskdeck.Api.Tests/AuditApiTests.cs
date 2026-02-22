@@ -10,11 +10,13 @@ namespace Taskdeck.Api.Tests;
 
 public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
     public AuditApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -67,15 +69,52 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetEntityHistory_ShouldReturnOk_ForAnyEntity()
+    public async Task GetEntityHistory_ShouldReturnOk_ForAccessibleEntity()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Audit Entity Column");
+        var card = await CreateCardAsync(board.Id, column.Id, "Audit Entity Card");
+
+        var response = await _client.GetAsync($"/api/audit/entities/Card/{card.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetEntityHistory_ShouldReturnForbidden_WhenEntityBelongsToDifferentBoard()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "audit-entity-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "audit-entity-outsider");
+
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "audit-entity-board", "Audit entity security test");
+        var createColumnResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Audit Entity Column", null, null));
+        createColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var column = await createColumnResponse.Content.ReadFromJsonAsync<ColumnDto>();
+        column.Should().NotBeNull();
+
+        var createCardResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column!.Id, "Audit Entity Card", null, null, null));
+        createCardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = await createCardResponse.Content.ReadFromJsonAsync<CardDto>();
+        card.Should().NotBeNull();
+
+        var response = await outsiderClient.GetAsync($"/api/audit/entities/Card/{card!.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task GetEntityHistory_ShouldReturnNotFound_WhenEntityDoesNotExist()
     {
         await EnsureAuthenticatedAsync();
 
-        var entityId = Guid.NewGuid();
-
-        var response = await _client.GetAsync($"/api/audit/entities/Card/{entityId}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var response = await _client.GetAsync($"/api/audit/entities/Card/{Guid.NewGuid()}");
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
     }
 
     [Fact]
@@ -109,5 +148,29 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
         }
 
         await AuthenticateAsAsync("audit-suite");
+    }
+
+    private async Task<ColumnDto> CreateColumnAsync(Guid boardId, string name)
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/columns",
+            new CreateColumnDto(boardId, name, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var column = await response.Content.ReadFromJsonAsync<ColumnDto>();
+        column.Should().NotBeNull();
+        return column!;
+    }
+
+    private async Task<CardDto> CreateCardAsync(Guid boardId, Guid columnId, string title)
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, columnId, title, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = await response.Content.ReadFromJsonAsync<CardDto>();
+        card.Should().NotBeNull();
+        return card!;
     }
 }
