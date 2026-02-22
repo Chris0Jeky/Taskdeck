@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-02-21
+Last Updated: 2026-02-22
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -79,6 +79,9 @@ Starter packs and debt blockers:
 21. `#54` DEBT-03 export/import implementation vs ADR
 
 ### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
+
+Execution note (2026-02-22):
+- `#168` now includes required-lane reusable extraction plus explicit non-blocking (`ci-extended`), scheduled (`ci-nightly`), and release/security (`release-security`) orchestrators; continue remaining hardening tracks after this topology baseline lands.
 
 Analysis follow-through, CI topology, and hardening:
 1. `#151` ANL-2026-02-21 analysis follow-through umbrella (tracking)

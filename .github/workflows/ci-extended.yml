@@ -1,0 +1,66 @@
+name: CI Extended
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - ready_for_review
+    paths:
+      - .github/workflows/**
+      - backend/**
+      - frontend/**
+      - deploy/**
+      - scripts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: rhysd/actionlint@v1.7.11
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run dependency review
+        uses: actions/dependency-review-action@v4
+
+  backend-solution:
+    name: Backend Solution Regression
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
+    uses: ./.github/workflows/reusable-backend-solution.yml
+    with:
+      dotnet-version: 8.0.x
+
+  e2e-smoke:
+    name: E2E Smoke
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-e2e-smoke.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
