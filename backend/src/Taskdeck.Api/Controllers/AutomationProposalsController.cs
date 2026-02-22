@@ -20,6 +20,10 @@ namespace Taskdeck.Api.Controllers;
 [Route("api/automation/proposals")]
 public class AutomationProposalsController : AuthenticatedControllerBase
 {
+    private const int DefaultProposalListLimit = 100;
+    private const int MaxProposalListLimit = 500;
+    private const int UnscopedProposalOverfetchMultiplier = 4;
+
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationExecutorService _executorService;
     private readonly BoardAuthorizationService _authorizationService;
@@ -68,9 +72,11 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 return permissionError;
         }
 
-        var requestLimit = limit <= 0 ? 100 : limit;
+        var requestLimit = NormalizeRequestLimit(limit);
         var effectiveUserId = userId ?? (boardId.HasValue ? null : callerUserId);
-        var queryLimit = boardId.HasValue ? requestLimit : int.MaxValue;
+        var queryLimit = boardId.HasValue
+            ? requestLimit
+            : Math.Clamp(requestLimit * UnscopedProposalOverfetchMultiplier, requestLimit, MaxProposalListLimit);
         var filter = new ProposalFilterDto(status, boardId, effectiveUserId, riskLevel, queryLimit);
         var result = await _proposalService.GetProposalsAsync(filter, cancellationToken);
         if (!result.IsSuccess)
@@ -262,5 +268,13 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         }
 
         return (proposal, null);
+    }
+
+    private static int NormalizeRequestLimit(int requestedLimit)
+    {
+        if (requestedLimit <= 0)
+            return DefaultProposalListLimit;
+
+        return Math.Clamp(requestedLimit, 1, MaxProposalListLimit);
     }
 }
