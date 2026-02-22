@@ -212,6 +212,10 @@ Delivered in the latest cycle:
    - expanded cross-user `403` coverage for board update and board-access management (`list/grant/update/revoke`)
    - expanded chat authorization coverage for cross-user forbidden access and true-missing session `404` branches (`get session`, `send message`)
    - API integration suite increased to 185 passing tests with explicit `403/404` branch locking for remaining protected route gaps
+52. API-06 centralized exception/fallback error-contract hardening (`#153`):
+   - added global unhandled-exception middleware in the API pipeline to return deterministic `ApiErrorResponse` payloads for unexpected server failures
+   - standardized unknown-result fallback `500` mapping to `ApiErrorResponse` (`UnexpectedError`) instead of `ProblemDetails` to keep fallback payload shape contract-uniform
+   - added fault-injection API integration coverage validating unhandled-failure contract shape, non-leakage message behavior, and correlation-header continuity under `500` responses
 
 ## Roadmap by Horizon
 
