@@ -101,8 +101,9 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         _ = await CreateTestProposalAsync(otherClient, other.UserId, otherBoard.Id, RiskLevel.Low);
 
         var response = await callerClient.GetAsync("/api/automation/proposals?status=PendingReview&limit=1");
+        var errorBody = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {errorBody}");
         var proposals = await response.Content.ReadFromJsonAsync<List<ProposalDto>>();
         var scopedProposals = proposals ?? throw new InvalidOperationException("Proposal list should not be null.");
         scopedProposals.Should().ContainSingle();
@@ -148,6 +149,50 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         proposals.Should().NotBeNull();
         proposals!.Should().Contain(p => p.Id == userScopedProposal!.Id);
         proposals.Should().NotContain(p => p.Id == boardScopedProposal.Id);
+    }
+
+    [Fact]
+    public async Task GetProposals_WithSmallLimit_ShouldReturnReadableProposalAfterAuthorizationFilter()
+    {
+        var ownerClient = _factory.CreateClient();
+        var collaboratorClient = _factory.CreateClient();
+
+        _ = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-limit-owner");
+        var collaborator = await ApiTestHarness.AuthenticateAsync(collaboratorClient, "automation-limit-collaborator");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-limit-board");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, collaborator.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var access = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        access.Should().NotBeNull();
+
+        var userScopedCreateResponse = await collaboratorClient.PostAsJsonAsync(
+            "/api/automation/proposals",
+            new CreateProposalDto(
+                SourceType: ProposalSourceType.Chat,
+                RequestedByUserId: collaborator.UserId,
+                Summary: "Oldest readable proposal",
+                RiskLevel: RiskLevel.Low,
+                CorrelationId: Guid.NewGuid().ToString()));
+        userScopedCreateResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var userScopedProposal = await userScopedCreateResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        userScopedProposal.Should().NotBeNull();
+
+        _ = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+        _ = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+        _ = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+
+        var revokeResponse = await ownerClient.DeleteAsync($"/api/boards/{board.Id}/access/{access!.Id}");
+        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var listResponse = await collaboratorClient.GetAsync("/api/automation/proposals?status=PendingReview&limit=1");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposals = await listResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        var scopedProposals = proposals ?? throw new InvalidOperationException("Proposal list should not be null.");
+        scopedProposals.Should().ContainSingle();
+        scopedProposals[0].Id.Should().Be(userScopedProposal!.Id);
     }
 
     [Fact]
