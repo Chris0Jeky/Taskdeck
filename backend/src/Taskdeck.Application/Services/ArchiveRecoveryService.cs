@@ -109,8 +109,18 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                 {
                     return Result.Failure<IEnumerable<ArchiveItemDto>>(
                         ErrorCodes.Forbidden,
-                        "You do not have access to archive items for this board");
+                    "You do not have access to archive items for this board");
                 }
+            }
+
+            if (_authorizationService is not null && actingUserId.HasValue && !boardId.HasValue)
+            {
+                return await GetArchiveItemsWithDeferredLimitAsync(
+                    entityType,
+                    status,
+                    limit,
+                    actingUserId.Value,
+                    cancellationToken);
             }
 
             IEnumerable<ArchiveItem> items;
@@ -157,25 +167,6 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                 items = items.Where(i => i.BoardId == boardId.Value);
             }
 
-            if (_authorizationService is not null && actingUserId.HasValue)
-            {
-                var candidateBoardIds = items.Select(item => item.BoardId).Distinct().ToList();
-                var readableBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
-                    actingUserId.Value,
-                    candidateBoardIds,
-                    cancellationToken);
-
-                if (!readableBoardIdsResult.IsSuccess)
-                {
-                    return Result.Failure<IEnumerable<ArchiveItemDto>>(
-                        readableBoardIdsResult.ErrorCode,
-                        readableBoardIdsResult.ErrorMessage);
-                }
-
-                var readableBoardIds = readableBoardIdsResult.Value;
-                items = items.Where(item => readableBoardIds.Contains(item.BoardId));
-            }
-
             return Result.Success(items.Select(MapToDto));
         }
         catch (Exception ex)
@@ -185,6 +176,115 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                 $"Failed to retrieve archive items: {ex.Message}");
         }
     }
+
+    private async Task<Result<IEnumerable<ArchiveItemDto>>> GetArchiveItemsWithDeferredLimitAsync(
+        string? entityType,
+        RestoreStatus? status,
+        int limit,
+        Guid actingUserId,
+        CancellationToken cancellationToken)
+    {
+        const int pageSize = 100;
+
+        var readableItems = new List<ArchiveItem>();
+        var offset = 0;
+
+        while (readableItems.Count < limit)
+        {
+            var queryPage = await QueryArchiveItemsPageAsync(
+                entityType,
+                status,
+                pageSize,
+                offset,
+                cancellationToken);
+
+            var pageItems = queryPage.Items;
+
+            if (queryPage.RetrievedCount == 0)
+                break;
+
+            offset += queryPage.RetrievedCount;
+
+            if (pageItems.Count == 0)
+            {
+                if (queryPage.RetrievedCount < pageSize)
+                    break;
+
+                continue;
+            }
+
+            var candidateBoardIds = pageItems.Select(item => item.BoardId).Distinct().ToList();
+            var readableBoardIdsResult = await _authorizationService!.GetReadableBoardIdsAsync(
+                actingUserId,
+                candidateBoardIds,
+                cancellationToken);
+
+            if (!readableBoardIdsResult.IsSuccess)
+            {
+                return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                    readableBoardIdsResult.ErrorCode,
+                    readableBoardIdsResult.ErrorMessage);
+            }
+
+            var readableBoardIds = readableBoardIdsResult.Value;
+            readableItems.AddRange(pageItems.Where(item => readableBoardIds.Contains(item.BoardId)));
+
+            if (queryPage.RetrievedCount < pageSize)
+                break;
+        }
+
+        var limitedItems = readableItems
+            .OrderByDescending(item => item.ArchivedAt)
+            .Take(limit)
+            .Select(MapToDto);
+
+        return Result.Success<IEnumerable<ArchiveItemDto>>(limitedItems);
+    }
+
+    private async Task<ArchiveItemsQueryPage> QueryArchiveItemsPageAsync(
+        string? entityType,
+        RestoreStatus? status,
+        int pageSize,
+        int offset,
+        CancellationToken cancellationToken)
+    {
+        if (entityType is not null)
+        {
+            var entityTypeItems = (await _unitOfWork.ArchiveItems.GetByEntityTypeAsync(
+                entityType,
+                pageSize,
+                cancellationToken,
+                offset)).ToList();
+
+            if (!status.HasValue)
+            {
+                return new ArchiveItemsQueryPage(entityTypeItems, entityTypeItems.Count);
+            }
+
+            var filteredItems = entityTypeItems
+                .Where(item => item.RestoreStatus == status.Value)
+                .ToList();
+            return new ArchiveItemsQueryPage(filteredItems, entityTypeItems.Count);
+        }
+
+        if (status.HasValue)
+        {
+            var statusItems = (await _unitOfWork.ArchiveItems.GetByStatusAsync(
+                status.Value,
+                pageSize,
+                cancellationToken,
+                offset)).ToList();
+            return new ArchiveItemsQueryPage(statusItems, statusItems.Count);
+        }
+
+        var pageItems = (await _unitOfWork.ArchiveItems.GetPageAsync(
+            pageSize,
+            cancellationToken,
+            offset)).ToList();
+        return new ArchiveItemsQueryPage(pageItems, pageItems.Count);
+    }
+
+    private sealed record ArchiveItemsQueryPage(IReadOnlyList<ArchiveItem> Items, int RetrievedCount);
 
     public async Task<Result<ArchiveItemDto>> GetArchiveItemByIdAsync(
         Guid id,
