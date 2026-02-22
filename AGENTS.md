@@ -19,6 +19,13 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
     - Repo search -> native `rg` (ripgrep MCP unreliable on Windows; fallback to GitHub search_code)
     - Issues/PRs/workflows -> GitHub MCP (write actions only when required)
 
+## Multi-Agent Execution (required)
+- Use spawned agents aggressively for independent workstreams.
+- Spawn as many agents as needed to minimize wall-clock time when tasks can run in parallel.
+- Split agent ownership by file/concern so concurrent work does not overlap.
+- Keep one coordinator agent responsible for synthesis, final conflict resolution, and verification.
+- Do not serialize independent exploration, implementation, or verification steps when safe parallel execution is possible.
+
 ## Project Operations Automation (required)
 - Read `docs/GITHUB_PROJECT_AUTOMATION.md` before changing project operations, issue templates, or workflow conventions.
 - Canonical project status model is: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`.
