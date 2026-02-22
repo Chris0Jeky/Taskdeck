@@ -62,10 +62,18 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
         Guid? boardId = null,
         RestoreStatus? status = null,
         int limit = 100,
+        Guid? actingUserId = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            if (actingUserId.HasValue && actingUserId.Value == Guid.Empty)
+            {
+                return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                    ErrorCodes.ValidationError,
+                    "Acting user ID cannot be empty");
+            }
+
             if (limit <= 0 || limit > 1000)
             {
                 return Result.Failure<IEnumerable<ArchiveItemDto>>(
@@ -81,6 +89,27 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                     return Result.Failure<IEnumerable<ArchiveItemDto>>(
                         ErrorCodes.ValidationError,
                         "EntityType must be 'board', 'column', or 'card'");
+                }
+            }
+
+            if (boardId.HasValue && _authorizationService is not null && actingUserId.HasValue)
+            {
+                var boardReadPermission = await _authorizationService.CanReadBoardAsync(
+                    actingUserId.Value,
+                    boardId.Value);
+
+                if (!boardReadPermission.IsSuccess)
+                {
+                    return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                        boardReadPermission.ErrorCode,
+                        boardReadPermission.ErrorMessage);
+                }
+
+                if (!boardReadPermission.Value)
+                {
+                    return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                        ErrorCodes.Forbidden,
+                        "You do not have access to archive items for this board");
                 }
             }
 
@@ -128,6 +157,25 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                 items = items.Where(i => i.BoardId == boardId.Value);
             }
 
+            if (_authorizationService is not null && actingUserId.HasValue)
+            {
+                var candidateBoardIds = items.Select(item => item.BoardId).Distinct().ToList();
+                var readableBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
+                    actingUserId.Value,
+                    candidateBoardIds,
+                    cancellationToken);
+
+                if (!readableBoardIdsResult.IsSuccess)
+                {
+                    return Result.Failure<IEnumerable<ArchiveItemDto>>(
+                        readableBoardIdsResult.ErrorCode,
+                        readableBoardIdsResult.ErrorMessage);
+                }
+
+                var readableBoardIds = readableBoardIdsResult.Value;
+                items = items.Where(item => readableBoardIds.Contains(item.BoardId));
+            }
+
             return Result.Success(items.Select(MapToDto));
         }
         catch (Exception ex)
@@ -140,11 +188,28 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
 
     public async Task<Result<ArchiveItemDto>> GetArchiveItemByIdAsync(
         Guid id,
+        Guid? actingUserId = null,
         CancellationToken cancellationToken = default)
     {
+        if (actingUserId.HasValue && actingUserId.Value == Guid.Empty)
+            return Result.Failure<ArchiveItemDto>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
+
         var archiveItem = await _unitOfWork.ArchiveItems.GetByIdAsync(id, cancellationToken);
         if (archiveItem == null)
             return Result.Failure<ArchiveItemDto>(ErrorCodes.NotFound, $"Archive item with ID {id} not found");
+
+        if (_authorizationService is not null && actingUserId.HasValue)
+        {
+            var boardReadPermission = await _authorizationService.CanReadBoardAsync(
+                actingUserId.Value,
+                archiveItem.BoardId);
+
+            if (!boardReadPermission.IsSuccess)
+                return Result.Failure<ArchiveItemDto>(boardReadPermission.ErrorCode, boardReadPermission.ErrorMessage);
+
+            if (!boardReadPermission.Value)
+                return Result.Failure<ArchiveItemDto>(ErrorCodes.Forbidden, "You do not have access to this archive item");
+        }
 
         return Result.Success(MapToDto(archiveItem));
     }
@@ -152,12 +217,15 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
     public async Task<Result<ArchiveItemDto>> GetArchiveItemByEntityAsync(
         string entityType,
         Guid entityId,
+        Guid? actingUserId = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(entityType))
             return Result.Failure<ArchiveItemDto>(ErrorCodes.ValidationError, "EntityType cannot be empty");
         if (entityId == Guid.Empty)
             return Result.Failure<ArchiveItemDto>(ErrorCodes.ValidationError, "EntityId cannot be empty");
+        if (actingUserId.HasValue && actingUserId.Value == Guid.Empty)
+            return Result.Failure<ArchiveItemDto>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
 
         var normalizedType = entityType.Trim().ToLowerInvariant();
         if (normalizedType != "board" && normalizedType != "column" && normalizedType != "card")
@@ -166,6 +234,19 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
         var archiveItem = await _unitOfWork.ArchiveItems.GetByEntityAsync(normalizedType, entityId, cancellationToken);
         if (archiveItem == null)
             return Result.Failure<ArchiveItemDto>(ErrorCodes.NotFound, $"Archive item for {normalizedType} with entity ID {entityId} not found");
+
+        if (_authorizationService is not null && actingUserId.HasValue)
+        {
+            var boardReadPermission = await _authorizationService.CanReadBoardAsync(
+                actingUserId.Value,
+                archiveItem.BoardId);
+
+            if (!boardReadPermission.IsSuccess)
+                return Result.Failure<ArchiveItemDto>(boardReadPermission.ErrorCode, boardReadPermission.ErrorMessage);
+
+            if (!boardReadPermission.Value)
+                return Result.Failure<ArchiveItemDto>(ErrorCodes.Forbidden, "You do not have access to this archive item");
+        }
 
         return Result.Success(MapToDto(archiveItem));
     }
