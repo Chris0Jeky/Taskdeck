@@ -212,7 +212,11 @@ Delivered in the latest cycle:
    - expanded cross-user `403` coverage for board update and board-access management (`list/grant/update/revoke`)
    - expanded chat authorization coverage for cross-user forbidden access and true-missing session `404` branches (`get session`, `send message`)
    - API integration suite increased to 185 passing tests with explicit `403/404` branch locking for remaining protected route gaps
-52. TST-14 architecture-guard expansion (`#157`):
+52. API-06 centralized exception/fallback error-contract hardening (`#153`):
+   - added global unhandled-exception middleware in the API pipeline to return deterministic `ApiErrorResponse` payloads for unexpected server failures
+   - standardized unknown-result fallback `500` mapping to `ApiErrorResponse` (`UnexpectedError`) instead of `ProblemDetails` to keep fallback payload shape contract-uniform
+   - added fault-injection API integration coverage validating unhandled-failure contract shape, non-leakage message behavior, and correlation-header continuity under `500` responses
+53. TST-14 architecture-guard expansion (`#157`):
    - expanded architecture tests beyond csproj references with source-layer purity invariants for Domain/Application forbidden namespace imports
    - added API controller boundary invariants to restrict direct `ControllerBase` inheritance to auth/health controllers and enforce `[Authorize]` declaration on protected controllers
    - architecture guard suite now emits deterministic file-scoped diagnostics for quick remediation in CI and local runs
@@ -305,7 +309,7 @@ Exit Criteria:
 
 - Analysis follow-through wave tracker: `#151`
 - CI/workflow topology expansion and governance track: `#168`
-- API/frontend hardening follow-through: `#153`, `#154`, `#155`, `#157`
+- API/frontend hardening follow-through: `#153` (delivered), `#154`, `#155`, `#157`
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71`, `#72`, `#73`, `#74`, `#75`, `#76`

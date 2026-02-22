@@ -271,6 +271,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowFrontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<UnhandledExceptionMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();
