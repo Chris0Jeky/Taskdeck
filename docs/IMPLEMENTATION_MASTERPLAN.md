@@ -212,6 +212,10 @@ Delivered in the latest cycle:
    - expanded cross-user `403` coverage for board update and board-access management (`list/grant/update/revoke`)
    - expanded chat authorization coverage for cross-user forbidden access and true-missing session `404` branches (`get session`, `send message`)
    - API integration suite increased to 185 passing tests with explicit `403/404` branch locking for remaining protected route gaps
+52. FE-11 frontend lint baseline + CI enforcement (`#154`):
+   - added pragmatic Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`) with focused rule suppressions to avoid style-churn while catching correctness issues
+   - added `npm run lint` script with zero-warning enforcement and integrated lint into reusable frontend CI lane (`reusable-frontend-unit.yml`)
+   - documented frontend lint execution and suppression guidance in active testing docs to keep lint policy explicit for contributors
 
 ## Roadmap by Horizon
 
