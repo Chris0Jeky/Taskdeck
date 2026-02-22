@@ -6,7 +6,9 @@ namespace Taskdeck.Architecture.Tests;
 public class SourceLayerPurityTests
 {
     private static readonly Regex UsingDirectiveRegex =
-        new(@"^\s*using\s+([A-Za-z0-9_.]+)\s*;", RegexOptions.Compiled | RegexOptions.Multiline);
+        new(
+            @"^\s*(?:global\s+)?using\s+(?:static\s+)?(?:(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?(?<namespace>[A-Za-z_][A-Za-z0-9_.:]*)\s*;",
+            RegexOptions.Compiled | RegexOptions.Multiline);
 
     [Theory]
     [MemberData(nameof(GetForbiddenImportRules))]
@@ -77,10 +79,19 @@ public class SourceLayerPurityTests
     {
         var content = File.ReadAllText(filePath);
         return UsingDirectiveRegex.Matches(content)
-            .Select(match => match.Groups[1].Value)
+            .Select(match => NormalizeImportedNamespace(match.Groups["namespace"].Value))
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.Ordinal)
             .ToList();
+    }
+
+    private static string NormalizeImportedNamespace(string importedNamespace)
+    {
+        const string globalAliasPrefix = "global::";
+
+        return importedNamespace.StartsWith(globalAliasPrefix, StringComparison.Ordinal)
+            ? importedNamespace[globalAliasPrefix.Length..]
+            : importedNamespace;
     }
 
     private static bool IsForbiddenNamespace(string importedNamespace, IReadOnlyCollection<string> forbiddenNamespacePrefixes)
