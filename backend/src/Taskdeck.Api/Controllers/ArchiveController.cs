@@ -44,11 +44,15 @@ public class ArchiveController : AuthenticatedControllerBase
         [FromQuery] int limit = 100,
         CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
         var result = await _archiveService.GetArchiveItemsAsync(
             entityType,
             boardId,
             status,
             limit,
+            callerUserId,
             cancellationToken);
 
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
@@ -63,7 +67,10 @@ public class ArchiveController : AuthenticatedControllerBase
     [HttpGet("items/{id}")]
     public async Task<IActionResult> GetArchiveItem(Guid id, CancellationToken cancellationToken = default)
     {
-        var result = await _archiveService.GetArchiveItemByIdAsync(id, cancellationToken);
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var result = await _archiveService.GetArchiveItemByIdAsync(id, callerUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -91,6 +98,7 @@ public class ArchiveController : AuthenticatedControllerBase
         var archiveItemResult = await _archiveService.GetArchiveItemByEntityAsync(
             normalizedEntityType,
             entityId,
+            restoredByUserId,
             cancellationToken);
 
         if (!archiveItemResult.IsSuccess)
