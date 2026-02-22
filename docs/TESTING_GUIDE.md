@@ -11,15 +11,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-22)
 
-- Backend: 624/624 passing
+- Backend: 636/636 passing
   - Domain: 93
-  - Application: 344
-  - API integration: 179
+  - Application: 346
+  - API integration: 185
   - CLI contract: 4
-  - Architecture boundaries: 4
+  - Architecture boundaries: 8
 - Frontend unit: 293/293 passing
 - Frontend E2E (smoke + automation/ops + starter-pack fixtures): 19/19 passing
-- Combined automated total: 936/936 passing
+- Combined automated total: 948/948 passing
 
 ## Backend Commands
 
@@ -174,6 +174,15 @@ Release/security workflow: `.github/workflows/release-security.yml`
   - `backend/tests/Taskdeck.Cli.Tests`
 - Architecture boundaries:
   - `backend/tests/Taskdeck.Architecture.Tests`
+  - Enforces project-reference boundaries between Domain/Application/Infrastructure/API projects
+  - Enforces source-layer purity via forbidden namespace imports in Domain and Application source trees
+  - Enforces API controller boundary invariants:
+    - only `AuthController` and `HealthController` may inherit `ControllerBase` directly
+    - protected controllers must declare `[Authorize]`
+  - Failure remediation:
+    - move forbidden dependencies to the correct layer abstraction/interface
+    - route protected HTTP surface through `AuthenticatedControllerBase`
+    - add/restore `[Authorize]` on protected controller classes
 - Frontend unit behavior:
   - `frontend/taskdeck-web/src/tests`
   - Components, stores, API modules, composables, utilities
