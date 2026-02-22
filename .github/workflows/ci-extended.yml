@@ -64,3 +64,16 @@ jobs:
     with:
       dotnet-version: 8.0.x
       node-version: 24.13.1
+
+  load-concurrency-harness:
+    name: Load and Concurrency Harness
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-load-concurrency-harness.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+      k6-vus: "20"
+      k6-duration: "90s"
+      k6-user-pool: "6"

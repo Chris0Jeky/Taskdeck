@@ -220,6 +220,10 @@ Delivered in the latest cycle:
    - expanded architecture tests beyond csproj references with source-layer purity invariants for Domain/Application forbidden namespace imports
    - added API controller boundary invariants to restrict direct `ControllerBase` inheritance to auth/health controllers and enforce `[Authorize]` declaration on protected controllers
    - architecture guard suite now emits deterministic file-scoped diagnostics for quick remediation in CI and local runs
+53. TST-01 load/concurrency harness delivery (`#70`):
+   - added k6 board-heavy API regression profile (`tests/load/k6/board-heavy-load.js`) with seeded-auth setup, read/write traffic mix, thresholds, and failure diagnostics
+   - added multi-session Playwright concurrency harness coverage (`frontend/taskdeck-web/tests/e2e/concurrency.spec.ts`) for conflicting edits and realtime cross-session propagation
+   - added reusable CI lane (`.github/workflows/reusable-load-concurrency-harness.yml`) and wired it into `ci-extended` (testing label/manual) plus `ci-nightly` with persisted k6/Playwright artifacts
 
 ## Roadmap by Horizon
 
@@ -307,7 +311,7 @@ Exit Criteria:
 - CI/workflow topology expansion and governance track: `#168`
 - API/frontend hardening follow-through: `#153` (delivered), `#154`, `#155`, `#157`
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
-- Container/deployment and performance harness baseline: `#69` (delivered), `#70`
+- Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71`, `#72`, `#73`, `#74`, `#75`, `#76`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance)
@@ -352,7 +356,7 @@ Covered by seeded issues:
 - Cost guardrails: `#104`
 - Backup/restore disaster recovery: `#86`
 - OpenTelemetry metrics/tracing and alerting runbook: `#68`
-- Load/concurrency harness and budgets: `#70`
+- Load/concurrency harness and budgets: `#70` (delivered)
 - API abuse/rate limiting: `#81`
 - OWASP/security headers and CSRF/XSS baseline: `#80`
 - Dependency vulnerability management policy: `#106`
@@ -407,7 +411,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Promote remaining Wave A foundation issues (`#70` to `#71`) to active execution only after `Priority I` is materially reduced.
+2. Promote remaining Wave A foundation issues (`#71` onward) to active execution only after `Priority I` is materially reduced.
 3. Keep issue `#107` updated as the canonical expansion-wave index.
 4. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
 

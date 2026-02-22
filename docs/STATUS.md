@@ -126,7 +126,7 @@ Backlog seeding was expanded from near-horizon only to a staged future roadmap g
 
 Current open backlog is now split into:
 - Phase-4 completion tranche (`#33` to `#57`, `Priority I`)
-- Future expansion tranche (`#70` to `#111`, `Priority II` to `Priority V`)
+- Future expansion tranche (`#71` to `#111`, `Priority II` to `Priority V`)
 
 ## Analysis Follow-through Wave (2026-02-21)
 
@@ -181,11 +181,12 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops + starter-pack fixture flow: 19/19 passing
+- E2E smoke + automation/ops + starter-pack fixture flow: 21/21 passing
 
 ### Total
 
 - Combined automated total: 950/950 passing
+- Combined automated total: 952/952 passing
 
 ## CI Status
 
@@ -204,11 +205,13 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 - `workflow-lint` (Actionlint for workflow YAML drift)
 - `dependency-review` (PR dependency risk check)
 - label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`)
+- label/manual-triggered load/concurrency harness lane via `.github/workflows/reusable-load-concurrency-harness.yml`
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 
 - scheduled/manual backend solution regression
 - scheduled/manual E2E smoke (reuses `.github/workflows/reusable-e2e-smoke.yml`)
+- scheduled/manual load/concurrency harness (reuses `.github/workflows/reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
 
 Release/security workflow: `.github/workflows/release-security.yml`
@@ -238,7 +241,6 @@ Observability and scalability:
 - MCP operations runbook and helper scripts are now available for credential wiring and repeatable baseline/optional MCP dry-run verification
 - MCP regression harness now provides actionable optional prerequisite diagnostics and CI-friendly status output modes (`PASS`, `PASS_WITH_WARNINGS`, `FAIL`)
 - out-of-code/platform execution is now tracked, but not yet fully shipped:
-  - load/concurrency harness (`#70`)
   - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
   - backup/restore disaster-recovery playbook (`#86`)
   - staged rollout policy (`#101`), IaC baseline (`#102`), SBOM/provenance (`#103`), cost guardrails (`#104`)
@@ -289,6 +291,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered API-06 centralized exception/fallback error-contract hardening (`#153`): added global unhandled-exception middleware returning deterministic `ApiErrorResponse` (`UnexpectedError`) without internal exception leakage, standardized unknown-result fallback `500` mapping to the same contract shape, and added fault-injection API integration coverage asserting fallback payload shape plus correlation header expectations.
 - Delivered TST-14 architecture-guard expansion (`#157`): added deterministic architecture invariants for source-layer purity (forbidden namespace imports in Domain/Application), controller boundary rules (`ControllerBase` direct inheritance restricted to auth/health controllers), and protected-controller `[Authorize]` declaration enforcement.
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
+- Delivered TST-01 load/concurrency regression harness (`#70`): added k6 board-heavy API profile with thresholds and diagnostics, added Playwright multi-session concurrency scenarios, and wired reusable load harness workflow into `ci-extended`/`ci-nightly` with artifact uploads.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
