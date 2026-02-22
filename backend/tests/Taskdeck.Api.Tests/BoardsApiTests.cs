@@ -82,8 +82,8 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         using var otherClient = _factory.CreateClient();
         var other = await ApiTestHarness.AuthenticateAsync(otherClient, "board-other");
 
-        await ApiTestHarness.AssertCrossUserIsolationAsync(
-            () => otherClient.GetAsync($"/api/boards/{board.Id}"));
+        var response = await otherClient.GetAsync($"/api/boards/{board.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
 
         other.UserId.Should().NotBe(owner.UserId);
     }
@@ -98,8 +98,8 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         using var otherClient = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(otherClient, "board-delete-other");
 
-        await ApiTestHarness.AssertCrossUserIsolationAsync(
-            () => otherClient.DeleteAsync($"/api/boards/{board.Id}"));
+        var response = await otherClient.DeleteAsync($"/api/boards/{board.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
     [Fact]
