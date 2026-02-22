@@ -150,6 +150,11 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
         var getForeignEntityAuditResponse = await outsiderClient.GetAsync($"/api/audit/entities/Card/{card!.Id}");
         await ApiTestHarness.AssertForbiddenAsync(getForeignEntityAuditResponse);
 
+        var addForeignBoardQueueRequestResponse = await outsiderClient.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("summarize", "cross-user queue payload", board.Id));
+        await ApiTestHarness.AssertForbiddenAsync(addForeignBoardQueueRequestResponse);
+
         var getForeignUserResponse = await outsiderClient.GetAsync($"/api/users/{owner.UserId}");
         await ApiTestHarness.AssertForbiddenAsync(getForeignUserResponse);
     }
