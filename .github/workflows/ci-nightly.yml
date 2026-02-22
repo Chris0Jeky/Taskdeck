@@ -19,8 +19,8 @@ jobs:
     with:
       dotnet-version: 8.0.x
 
-  e2e-regression:
-    name: E2E Regression
+  e2e-smoke:
+    name: E2E Smoke
     needs:
       - backend-solution
     uses: ./.github/workflows/reusable-e2e-smoke.yml
