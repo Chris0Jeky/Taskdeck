@@ -109,7 +109,6 @@ Completed in Phase 4:
 - DEBT-03 database export/import (`#54`): sandbox-gated SQLite file export/import endpoints with payload signature/size validation and file-replacement rollback guardrails
 
 Remaining for Phase 4 completion:
-- centralized unhandled-exception/fallback error-contract uniformity across API pipeline paths
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
@@ -161,8 +160,8 @@ Result:
 - Application: 346/346 passing
 - API integration: 186/186 passing
 - CLI contract: 4/4 passing
-- Architecture boundaries: 4/4 passing
-- Backend Total: 633/633 passing
+- Architecture boundaries: 8/8 passing
+- Backend Total: 636/636 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -186,7 +185,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 945/945 passing
+- Combined automated total: 948/948 passing
 
 ## CI Status
 
@@ -288,6 +287,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Advanced SEC-11 cross-user convergence (`#152`) with LLM queue board-scope authorization hardening: `POST /api/llm-queue` now enforces board-read permissions when `boardId` is provided (`403` cross-user unauthorized, `404` true missing board), with expanded application/API regression matrix coverage.
 - Advanced SEC-11 cross-user convergence (`#152`) with final API coverage sweep: added explicit cross-user `403` assertions for board update, board-access management endpoints (`list/grant/update/revoke`), and chat session/message endpoints; added explicit chat `404` assertions for true missing session IDs.
 - Delivered API-06 centralized exception/fallback error-contract hardening (`#153`): added global unhandled-exception middleware returning deterministic `ApiErrorResponse` (`UnexpectedError`) without internal exception leakage, standardized unknown-result fallback `500` mapping to the same contract shape, and added fault-injection API integration coverage asserting fallback payload shape plus correlation header expectations.
+- Delivered TST-14 architecture-guard expansion (`#157`): added deterministic architecture invariants for source-layer purity (forbidden namespace imports in Domain/Application), controller boundary rules (`ControllerBase` direct inheritance restricted to auth/health controllers), and protected-controller `[Authorize]` declaration enforcement.
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
