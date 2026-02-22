@@ -87,6 +87,7 @@ describe('cardsApi', () => {
         isBlocked: null,
         blockReason: null,
         labelIds: null,
+        expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
       }
       const result = await cardsApi.updateCard('board-1', 'card-1', updateData)
 
