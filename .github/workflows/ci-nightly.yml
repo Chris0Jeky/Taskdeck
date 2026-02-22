@@ -28,6 +28,18 @@ jobs:
       dotnet-version: 8.0.x
       node-version: 24.13.1
 
+  load-concurrency-harness:
+    name: Load and Concurrency Harness
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-load-concurrency-harness.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+      k6-vus: "20"
+      k6-duration: "90s"
+      k6-user-pool: "6"
+
   container-images:
     name: Container Images Regression
     needs:
