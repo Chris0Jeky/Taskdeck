@@ -1,0 +1,35 @@
+name: CI Nightly
+
+on:
+  schedule:
+    - cron: '25 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-solution:
+    name: Backend Solution Regression
+    uses: ./.github/workflows/reusable-backend-solution.yml
+    with:
+      dotnet-version: 8.0.x
+
+  e2e-regression:
+    name: E2E Regression
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-e2e-smoke.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+
+  container-images:
+    name: Container Images Regression
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-container-images.yml
