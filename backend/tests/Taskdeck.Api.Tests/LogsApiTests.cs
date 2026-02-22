@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
 
@@ -55,6 +56,42 @@ public class LogsApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.GetAsync("/api/logs?limit=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task QueryLogs_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var response = await _client.GetAsync("/api/logs?limit=10");
+        await ApiTestHarness.AssertUnauthorizedAsync(response);
+    }
+
+    [Fact]
+    public async Task StreamLogs_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var response = await _client.GetAsync("/api/logs/stream");
+        await ApiTestHarness.AssertUnauthorizedAsync(response);
+    }
+
+    [Fact]
+    public async Task CorrelationLookup_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var response = await _client.GetAsync($"/api/logs/correlation/{Guid.NewGuid():N}");
+        await ApiTestHarness.AssertUnauthorizedAsync(response);
+    }
+
+    [Fact]
+    public async Task CorrelationLookup_ShouldReturnNotFound_WhenCorrelationIdDoesNotExist()
+    {
+        await AuthenticateAsync("logs-correlation-notfound");
+
+        var response = await _client.GetAsync($"/api/logs/correlation/{Guid.NewGuid():N}");
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
     }
 
     private async Task<Guid> AuthenticateAsync(string stem)

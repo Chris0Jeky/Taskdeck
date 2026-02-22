@@ -3,8 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -12,9 +14,11 @@ namespace Taskdeck.Api.Tests;
 public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly TestWebApplicationFactory _factory;
 
     public AutomationProposalsApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -80,6 +84,115 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         proposals.Should().NotBeEmpty();
         proposals.Should().Contain(p => p.Id == proposal1.Id);
         proposals.Should().Contain(p => p.Id == proposal2.Id);
+    }
+
+    [Fact]
+    public async Task GetProposals_WithStatusAndLimit_ShouldReturnCallerScopedResults()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+
+        var caller = await ApiTestHarness.AuthenticateAsync(callerClient, "automation-list-caller");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-list-other");
+        var callerBoard = await ApiTestHarness.CreateBoardAsync(callerClient, "automation-list-caller-board");
+        var callerProposal = await CreateTestProposalAsync(callerClient, caller.UserId, callerBoard.Id, RiskLevel.Low);
+
+        var otherBoard = await ApiTestHarness.CreateBoardAsync(otherClient, "automation-list-other-board");
+        _ = await CreateTestProposalAsync(otherClient, other.UserId, otherBoard.Id, RiskLevel.Low);
+
+        var response = await callerClient.GetAsync("/api/automation/proposals?status=PendingReview&limit=1");
+        var errorBody = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {errorBody}");
+        var proposals = await response.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        var scopedProposals = proposals ?? throw new InvalidOperationException("Proposal list should not be null.");
+        scopedProposals.Should().ContainSingle();
+        scopedProposals[0].Id.Should().Be(callerProposal.Id);
+    }
+
+    [Fact]
+    public async Task GetProposals_ShouldExcludeBoardScopedProposals_WhenCallerNoLongerHasBoardReadAccess()
+    {
+        var ownerClient = _factory.CreateClient();
+        var collaboratorClient = _factory.CreateClient();
+
+        _ = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-list-owner");
+        var collaborator = await ApiTestHarness.AuthenticateAsync(collaboratorClient, "automation-list-collaborator");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-list-board");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, collaborator.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var access = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        access.Should().NotBeNull();
+
+        var boardScopedProposal = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+        var userScopedCreateResponse = await collaboratorClient.PostAsJsonAsync(
+            "/api/automation/proposals",
+            new CreateProposalDto(
+                SourceType: ProposalSourceType.Chat,
+                RequestedByUserId: collaborator.UserId,
+                Summary: "User scoped proposal",
+                RiskLevel: RiskLevel.Low,
+                CorrelationId: Guid.NewGuid().ToString()));
+        userScopedCreateResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var userScopedProposal = await userScopedCreateResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        userScopedProposal.Should().NotBeNull();
+
+        var revokeResponse = await ownerClient.DeleteAsync($"/api/boards/{board.Id}/access/{access!.Id}");
+        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var listResponse = await collaboratorClient.GetAsync("/api/automation/proposals?status=PendingReview&limit=10");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposals = await listResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        proposals.Should().NotBeNull();
+        proposals!.Should().Contain(p => p.Id == userScopedProposal!.Id);
+        proposals.Should().NotContain(p => p.Id == boardScopedProposal.Id);
+    }
+
+    [Fact]
+    public async Task GetProposals_WithSmallLimit_ShouldReturnReadableProposalAfterAuthorizationFilter()
+    {
+        var ownerClient = _factory.CreateClient();
+        var collaboratorClient = _factory.CreateClient();
+
+        _ = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-limit-owner");
+        var collaborator = await ApiTestHarness.AuthenticateAsync(collaboratorClient, "automation-limit-collaborator");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-limit-board");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, collaborator.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var access = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        access.Should().NotBeNull();
+
+        var userScopedCreateResponse = await collaboratorClient.PostAsJsonAsync(
+            "/api/automation/proposals",
+            new CreateProposalDto(
+                SourceType: ProposalSourceType.Chat,
+                RequestedByUserId: collaborator.UserId,
+                Summary: "Oldest readable proposal",
+                RiskLevel: RiskLevel.Low,
+                CorrelationId: Guid.NewGuid().ToString()));
+        userScopedCreateResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var userScopedProposal = await userScopedCreateResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        userScopedProposal.Should().NotBeNull();
+
+        _ = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+        _ = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+        _ = await CreateTestProposalAsync(collaboratorClient, collaborator.UserId, board.Id, RiskLevel.Low);
+
+        var revokeResponse = await ownerClient.DeleteAsync($"/api/boards/{board.Id}/access/{access!.Id}");
+        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var listResponse = await collaboratorClient.GetAsync("/api/automation/proposals?status=PendingReview&limit=1");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposals = await listResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        var scopedProposals = proposals ?? throw new InvalidOperationException("Proposal list should not be null.");
+        scopedProposals.Should().ContainSingle();
+        scopedProposals[0].Id.Should().Be(userScopedProposal!.Id);
     }
 
     [Fact]
@@ -178,6 +291,82 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task GetProposal_ShouldReturnForbidden_WhenCallerCannotReadProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-access-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-access-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-access-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.GetAsync($"/api/automation/proposals/{proposal.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ApproveProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-approve-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-approve-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-approve-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await outsiderClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-exec-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-exec-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-exec-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var response = await outsiderClient.SendAsync(executeRequest);
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task GetProposal_ShouldReturnForbidden_WhenProposalIsUserScopedToAnotherUser()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-user-scope-owner");
+        _ = await ApiTestHarness.AuthenticateAsync(outsiderClient, "automation-user-scope-outsider");
+
+        var createRequest = new CreateProposalDto(
+            SourceType: ProposalSourceType.Chat,
+            RequestedByUserId: owner.UserId,
+            Summary: "User-scoped proposal",
+            RiskLevel: RiskLevel.Low,
+            CorrelationId: Guid.NewGuid().ToString());
+
+        var createResponse = await ownerClient.PostAsJsonAsync("/api/automation/proposals", createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdProposal = await createResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        createdProposal.Should().NotBeNull();
+
+        var response = await outsiderClient.GetAsync($"/api/automation/proposals/{createdProposal!.Id}");
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
     public async Task GetProposalDiff_ShouldReturnDiffPreview()
     {
         var userId = await AuthenticateAsync("automation-diff");
@@ -237,6 +426,11 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
     private async Task<ProposalDto> CreateTestProposal(Guid userId, Guid boardId, RiskLevel riskLevel)
     {
+        return await CreateTestProposalAsync(_client, userId, boardId, riskLevel);
+    }
+
+    private static async Task<ProposalDto> CreateTestProposalAsync(HttpClient client, Guid userId, Guid boardId, RiskLevel riskLevel)
+    {
         var createRequest = new CreateProposalDto(
             SourceType: ProposalSourceType.Chat,
             RequestedByUserId: userId,
@@ -257,7 +451,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             }
         );
 
-        var response = await _client.PostAsJsonAsync("/api/automation/proposals", createRequest);
+        var response = await client.PostAsJsonAsync("/api/automation/proposals", createRequest);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
     }

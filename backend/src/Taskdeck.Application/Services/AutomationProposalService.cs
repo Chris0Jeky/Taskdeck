@@ -77,17 +77,17 @@ public class AutomationProposalService : IAutomationProposalService
         IEnumerable<AutomationProposal> proposals;
 
         // Apply filters in order of specificity
-        if (filter.Status.HasValue)
+        if (filter.UserId.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByStatusAsync(filter.Status.Value, limit, cancellationToken);
+            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken);
         }
         else if (filter.BoardId.HasValue)
         {
             proposals = await _unitOfWork.AutomationProposals.GetByBoardIdAsync(filter.BoardId.Value, limit, cancellationToken);
         }
-        else if (filter.UserId.HasValue)
+        else if (filter.Status.HasValue)
         {
-            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken);
+            proposals = await _unitOfWork.AutomationProposals.GetByStatusAsync(filter.Status.Value, limit, cancellationToken);
         }
         else if (filter.RiskLevel.HasValue)
         {

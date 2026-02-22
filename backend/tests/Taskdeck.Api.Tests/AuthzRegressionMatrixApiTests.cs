@@ -44,10 +44,21 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
             ("chat.sessions", () => _client.GetAsync("/api/llm/chat/sessions")),
             ("automation.list", () => _client.GetAsync("/api/automation/proposals")),
             ("logs.query", () => _client.GetAsync("/api/logs?limit=10")),
+            ("logs.stream", () => _client.GetAsync("/api/logs/stream")),
+            ("logs.correlation", () => _client.GetAsync($"/api/logs/correlation/{Guid.NewGuid():N}")),
             ("ops.run", () => _client.PostAsJsonAsync("/api/ops/cli/run", new RunCommandDto("health.check"))),
             ("ops.getRun", () => _client.GetAsync($"/api/ops/cli/runs/{runId}")),
             ("ops.getRunLogs", () => _client.GetAsync($"/api/ops/cli/runs/{runId}/logs")),
             ("automation.get", () => _client.GetAsync($"/api/automation/proposals/{proposalId}")),
+            ("automation.diff", () => _client.GetAsync($"/api/automation/proposals/{proposalId}/diff")),
+            ("automation.reject", () => _client.PostAsJsonAsync($"/api/automation/proposals/{proposalId}/reject", new UpdateProposalStatusDto("unauthorized"))),
+            ("automation.execute", async () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposalId}/execute");
+                request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+                return await _client.SendAsync(request);
+            }),
+            ("starterPacks.catalog", () => _client.GetAsync($"/api/boards/{boardId}/starter-packs/catalog")),
             ("starterPacks.apply", () => _client.PostAsJsonAsync(
                 $"/api/boards/{boardId}/starter-packs/apply",
                 new ApplyStarterPackDto(

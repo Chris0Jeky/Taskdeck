@@ -55,6 +55,32 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ApplyStarterPack_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
+    {
+        var board = await CreateBoardAsync();
+        await ApiTestHarness.AuthenticateAsync(_client, "starter-pack-apply-outsider");
+        _isAuthenticated = true;
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildCanonicalManifest(), DryRun: false));
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task ApplyStarterPack_ShouldReturnNotFound_WhenBoardDoesNotExist()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{Guid.NewGuid()}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildCanonicalManifest(), DryRun: false));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+    }
+
+    [Fact]
     public async Task ApplyStarterPack_ShouldCreateBoardArtifacts_WhenManifestIsValid()
     {
         var board = await CreateBoardAsync();

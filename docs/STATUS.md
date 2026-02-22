@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-21  
+Last Updated: 2026-02-22  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -149,7 +149,7 @@ Analysis record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-20
+Verification Date: 2026-02-21
 
 ### Backend (Executed)
 
@@ -158,11 +158,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 336/336 passing
-- API integration: 152/152 passing
+- Application: 339/339 passing
+- API integration: 165/165 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 4/4 passing
-- Backend Total: 589/589 passing
+- Backend Total: 605/605 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -172,7 +172,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 292/292 passing
+- Frontend unit: 293/293 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -186,7 +186,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 900/900 passing
+- Combined automated total: 917/917 passing
 
 ## CI Status
 
@@ -249,6 +249,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered OPS-19 CI topology second pass (`#168`): extracted backend architecture and frontend unit lanes into reusable workflows (`.github/workflows/reusable-backend-architecture.yml`, `.github/workflows/reusable-frontend-unit.yml`) and routed `ci-required.yml` through them.
 - Delivered OPS-19 CI topology API-integration extraction (`#168`): extracted API integration lane into reusable workflow `.github/workflows/reusable-api-integration.yml` and routed `ci-required.yml` through it while preserving Ubuntu/Windows matrix behavior.
 - Delivered OPS-19 CI topology third pass (`#168`): added `merge_group` trigger parity to `.github/workflows/ci-required.yml` so merge-queue evaluation runs the same required checks as PR/push.
+- Delivered OPS-19 CI topology fourth pass (`#168`): extracted backend-unit lane into reusable workflow `.github/workflows/reusable-backend-unit.yml` and routed `ci-required.yml` through it while preserving Ubuntu/Windows matrix behavior and domain/application/CLI split coverage.
 - Added docs governance script and architecture boundary tests as CI invariants.
 - Added GitHub operations governance script to enforce issue-template label hygiene and project-automation doc invariants in CI.
 - Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.
@@ -261,6 +262,8 @@ Security/compliance hardening backlog added from research cross-check:
 - Enforced `[Authorize]` on remaining legacy controllers (columns/cards/labels/export/audit/llm-queue/board-access/users) with expanded API integration `401` coverage.
 - Retrofitted audit/users families to claims-first actor identity and self-scoped access with cross-user `403` coverage.
 - Expanded authz regression matrix tests across legacy + advanced protected controllers for explicit `401/403/404` policy assertions.
+- Advanced SEC-11 cross-user convergence (`#152`) with proposal-scope authorization enforcement in automation proposal lifecycle endpoints (`get/approve/reject/execute/diff`) and expanded API integration policy coverage for automation/logs/starter-pack protected routes.
+- Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
