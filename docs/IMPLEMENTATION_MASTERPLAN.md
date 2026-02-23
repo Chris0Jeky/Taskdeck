@@ -290,6 +290,11 @@ Delivered in the latest cycle:
    - inbox list now renders excerpt-first capture summaries, while full raw capture text is fetched only on detail open
    - inbox detail now supports deterministic ignore/cancel actions with refreshed capture state after mutation calls
    - keyboard-first inbox navigation (`ArrowUp`/`ArrowDown`/`Enter`) plus escape-stack compliant detail close behavior is now covered by frontend regression tests
+70. CAP-08 capture modal + command palette/hotkey delivery (`#207`):
+   - added quick capture modal with keyboard-first submit (`Ctrl+Enter`) and deterministic close behavior
+   - command palette now includes explicit capture action command while preserving inbox navigation command access
+   - global quick capture hotkey (`Ctrl+Shift+C`) now opens capture modal from workspace shell contexts
+   - successful capture submission now routes directly to inbox and surfaces the new item in list state for immediate follow-through
 
 ## Roadmap by Horizon
 
