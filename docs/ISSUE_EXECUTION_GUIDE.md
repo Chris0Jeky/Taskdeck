@@ -117,6 +117,12 @@ Capture realignment wave (2026-02-23):
 27. `#210` CAP-11 capture loop E2E regression
 28. `#211` CAP-12 canonical docs promotion
 
+Provider runtime expansion (2026-02-23):
+29. `#232` AUTO-03 provider-agnostic LLM runtime (`OpenAI` + `Gemini`) with demo-first setup and safe `Mock` fallback
+30. `#235` SEC-15 managed-key threat-model/control-plane tracker
+31. `#236` SEC-16 managed-key identity attribution contract
+32. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails
+
 ### Stage 3: Priority III - Expansion Wave
 
 1. `#77` ANL-01 metrics dashboard
@@ -130,6 +136,9 @@ Capture realignment wave (2026-02-23):
 9. `#110` SEC-10 secrets/configuration management baseline
 10. `#156` SEC-12 session-token storage hardening plan
 11. `#212` SEC-14 logging redaction guardrails
+12. `#238` SEC-18 managed-key abuse detection and automated containment
+13. `#239` SEC-19 managed-key incident response and key-rotation drills
+14. `#240` DOC-05 managed-key fair-use policy and abuse consequence disclosures
 
 ### Stage 4: Priority IV - Maturity Wave
 
