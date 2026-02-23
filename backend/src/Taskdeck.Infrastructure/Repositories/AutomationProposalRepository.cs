@@ -66,6 +66,36 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .FirstOrDefaultAsync(p => p.CorrelationId == correlationId, cancellationToken);
     }
 
+    public async Task<AutomationProposal?> GetLatestByOperationTargetAsync(
+        string targetType,
+        string targetId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetType) || string.IsNullOrWhiteSpace(targetId))
+            return null;
+
+        var matchingOperations = await _context.AutomationProposalOperations
+            .Where(operation => operation.TargetType == targetType && operation.TargetId == targetId)
+            .Select(operation => new
+            {
+                operation.ProposalId,
+                operation.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        var proposalId = matchingOperations
+            .OrderByDescending(operation => operation.UpdatedAt)
+            .Select(operation => operation.ProposalId)
+            .FirstOrDefault();
+
+        if (proposalId == Guid.Empty)
+            return null;
+
+        return await _dbSet
+            .Include(p => p.Operations)
+            .FirstOrDefaultAsync(p => p.Id == proposalId, cancellationToken);
+    }
+
     public async Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;

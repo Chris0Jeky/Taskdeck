@@ -239,7 +239,7 @@ public class AutomationExecutorService : IAutomationExecutorService
         switch (actionType)
         {
             case "create":
-                return await CreateCardAsync(parameters, cancellationToken);
+                return await CreateCardAsync(parameters, operation.TargetId, cancellationToken);
             
             case "update":
                 return await UpdateCardAsync(parameters, cancellationToken);
@@ -255,7 +255,10 @@ public class AutomationExecutorService : IAutomationExecutorService
         }
     }
 
-    private async Task<Result> CreateCardAsync(JsonElement parameters, CancellationToken cancellationToken)
+    private async Task<Result> CreateCardAsync(
+        JsonElement parameters,
+        string? targetId,
+        CancellationToken cancellationToken)
     {
         if (!TryGetRequiredString(parameters, "title", out var title, out var titleError))
             return Result.Failure(ErrorCodes.ValidationError, titleError);
@@ -268,8 +271,17 @@ public class AutomationExecutorService : IAutomationExecutorService
         if (!TryGetRequiredGuid(parameters, "boardId", out var boardId, out var boardIdError))
             return Result.Failure(ErrorCodes.ValidationError, boardIdError);
 
+        Guid? cardId = null;
+        if (!string.IsNullOrWhiteSpace(targetId))
+        {
+            if (!Guid.TryParse(targetId, out var parsedTargetId))
+                return Result.Failure(ErrorCodes.ValidationError, "Invalid targetId");
+
+            cardId = parsedTargetId;
+        }
+
         var dto = new CreateCardDto(boardId, columnId, title, description, null, null);
-        var result = await _cardService.CreateCardAsync(dto, cancellationToken);
+        var result = await _cardService.CreateCardAsync(dto, cardId, cancellationToken);
         
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
