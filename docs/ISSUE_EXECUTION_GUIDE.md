@@ -117,11 +117,20 @@ Capture realignment wave (2026-02-23):
 27. `#210` CAP-11 capture loop E2E regression
 28. `#211` CAP-12 canonical docs promotion
 
+Testing harness guardrails wave (2026-02-23):
+29. `#254` TST-15 testing harness wave tracker
+30. `#255` TST-16 remove residual wall-clock flake patterns + centralize E2E polling helpers
+31. `#256` TST-17 drag/drop persistence regression coverage (refresh-stable)
+32. `#257` TST-18 API error-contract completeness expansion (`400/401/403/404/409`)
+33. `#258` TST-19 OpenAPI generation + parse-validation CI artifact guardrail
+34. `#259` DOC-06 golden principles baseline + minimal enforcement script
+35. `#260` OPS-20 non-blocking nightly quality workflow (coverage + dependency/security signals)
+
 Provider runtime expansion (2026-02-23):
-29. `#232` AUTO-03 provider-agnostic LLM runtime (`OpenAI` + `Gemini`) with demo-first setup and safe `Mock` fallback
-30. `#235` SEC-15 managed-key threat-model/control-plane tracker
-31. `#236` SEC-16 managed-key identity attribution contract
-32. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails
+36. `#232` AUTO-03 provider-agnostic LLM runtime (`OpenAI` + `Gemini`) with demo-first setup and safe `Mock` fallback
+37. `#235` SEC-15 managed-key threat-model/control-plane tracker
+38. `#236` SEC-16 managed-key identity attribution contract
+39. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails
 
 ### Stage 3: Priority III - Expansion Wave
 
@@ -187,6 +196,14 @@ Testing/UX/docs:
 28. `#219` CAP-21 voice capture/transcription (opt-in)
 29. `#220` CAP-22 batch triage + suggestion editing
 30. `#251` UI-12 optional Storybook baseline for primitives
+
+Execution note (testing harness knowledge-transfer):
+- Existing Priority IV items were updated with pack-derived scope clarifications:
+  - `#89` targeted property/fuzz surfaces (manifest/query/import-export boundaries)
+  - `#90` scheduled non-blocking mutation-lane posture
+- Existing Priority III/II items were updated for guardrail routing:
+  - `#106` dependency scan commands and artifact posture
+  - `#168` CI topology coordination for `#258` and `#260`
 
 Maintainability hotspot refactor wave (analysis-driven):
 31. `#158` REF-11 decompose `AppShell.vue`
