@@ -14,6 +14,16 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
     {
         lock (_gate)
         {
+            if (_boardByConnection.TryGetValue(connectionId, out var previousBoardId) && previousBoardId != boardId)
+            {
+                if (_connectionsByBoard.TryGetValue(previousBoardId, out var previousBoardConnections))
+                {
+                    previousBoardConnections.Remove(connectionId);
+                    if (previousBoardConnections.Count == 0)
+                        _connectionsByBoard.Remove(previousBoardId);
+                }
+            }
+
             if (!_connectionsByBoard.TryGetValue(boardId, out var boardConnections))
             {
                 boardConnections = new Dictionary<string, ConnectionPresence>(StringComparer.Ordinal);
@@ -36,8 +46,8 @@ public sealed class InMemoryBoardPresenceTracker : IBoardPresenceTracker
                 return new BoardPresenceSnapshot(boardId, [], DateTimeOffset.UtcNow);
             }
 
-            boardConnections.Remove(connectionId);
-            _boardByConnection.Remove(connectionId);
+            if (boardConnections.Remove(connectionId))
+                _boardByConnection.Remove(connectionId);
 
             if (boardConnections.Count == 0)
             {
