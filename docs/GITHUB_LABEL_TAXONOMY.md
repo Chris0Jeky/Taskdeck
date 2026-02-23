@@ -1,6 +1,6 @@
 # GitHub Label Taxonomy
 
-Last Updated: 2026-02-18
+Last Updated: 2026-02-23
 
 This file is the canonical description source for repository issue labels.
 
@@ -36,6 +36,14 @@ Note:
   - Work specific to package manifests, prepackaged states, and fixture packs.
 - `llm`
   - AI/provider/planner/executor/chat-related implementation and policy work.
+- `feature`
+  - User-facing functionality delivery slices (new capabilities or clear product-surface enhancements).
+- `automation`
+  - Proposal/triage/workflow automation mechanics, orchestration behavior, and automation policy control planes.
+- `worker`
+  - Background worker runtime behavior, queue processing, retry semantics, and worker observability.
+- `performance`
+  - Latency, throughput, responsiveness, and resource-efficiency improvements across API, worker, and frontend surfaces.
 
 ## Priority Labels
 

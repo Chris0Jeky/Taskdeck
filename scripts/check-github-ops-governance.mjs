@@ -8,6 +8,7 @@ const errors = []
 
 const requiredIssueTemplateFiles = [
   '.github/ISSUE_TEMPLATE/bug_report.md',
+  '.github/ISSUE_TEMPLATE/feature.md',
   '.github/ISSUE_TEMPLATE/security_hardening.md',
   '.github/ISSUE_TEMPLATE/tech_debt_refactor.md',
 ]
@@ -25,6 +26,10 @@ const allowedTemplateLabels = new Set([
   'tech-debt',
   'starter-packs',
   'llm',
+  'feature',
+  'automation',
+  'worker',
+  'performance',
 ])
 
 const deprecatedTemplateLabels = new Set([])

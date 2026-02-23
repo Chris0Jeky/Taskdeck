@@ -181,6 +181,8 @@ Seeded issue wave:
 - capture delivery sequence: `#200` to `#211`
 - linked hardening/performance follow-through: `#212`, `#213`
 - existing rate-limit issue updated with capture scope (no duplicate issue): `#81`
+- deferred capture follow-ons seeded: `#218`, `#219`, `#220`
+- adjacent go-to-market and research execution seeds: `#216`, `#217`
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -189,6 +191,7 @@ Execution intent:
 
 Reconciliation record:
 - `docs/analysis/2026-02-23_capture-realignment-synthesis.md`
+- `docs/analysis/2026-02-23_inreview-extraction-audit.md`
 
 ## Test Status (Executed)
 

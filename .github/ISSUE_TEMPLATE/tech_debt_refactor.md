@@ -17,6 +17,10 @@ assignees: []
 
 ## Out of Scope
 
+## Dependencies
+- Depends on:
+- Unblocks:
+
 ## Exit Criteria
 - [ ]
 - [ ]
@@ -24,3 +28,6 @@ assignees: []
 ## Validation Plan
 - Tests to add/update:
 - Manual verification:
+
+## Priority label check
+- [ ] Add exactly one priority label (`Priority I` to `Priority V`) before moving issue to `Now`.

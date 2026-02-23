@@ -21,6 +21,11 @@ Use it alongside the Codex execution plan.
    - One major branch at a time
    - Prefer small merges over long-lived branches
 
+3) Enforce thesis alignment before moving work to `Now`:
+   - Does this slice reduce maintenance overhead/capture friction?
+   - Does this slice preserve or strengthen review-first trust guarantees?
+   - If neither is true, park it in `Pending` unless it is a prerequisite blocker.
+
 ---
 
 # A) One-time setup tasks (do these yourself)
@@ -45,7 +50,7 @@ Create a Project (or use Issues):
 - Status values: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
 - Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`, `No Status`, `WIP Audit`
 - WIP: cap Now/In Progress to 1 major item
-- Labels: `bug`, `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`
+- Labels: `bug`, `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`, `feature`, `automation`, `worker`, `performance`
 - Configure workflows (must be ON):
   - `Auto-add to project` for `Chris0Jeky/Taskdeck` issues + pull requests
   - `Item added to project` -> set `Status=Pending`
@@ -149,6 +154,10 @@ Every week (or every 2-3 merges):
 - `docs/MANUAL_TEST_CHECKLIST.md`: add new critical manual checks
 - archive stale docs under `docs/archive/` and keep `docs/INDEX.md` clean
 - run one backlog seeding pass from `STATUS` + `IMPLEMENTATION_MASTERPLAN` and check `No Status` for empty-status drift
+- run an InReview extraction audit:
+  - list new docs under `docs/InReview/`
+  - map each item to one of: promoted to active docs, seeded issue, explicitly deferred
+  - record the mapping in a dated `docs/analysis/*` note
 
 ## D2) Release-candidate discipline
 Before calling something RC:
