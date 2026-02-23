@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, computed, watch } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useSessionStore } from '../../store/sessionStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Card, Label } from '../../types/board'
+import type { CardComment } from '../../types/comments'
 
 const props = defineProps<{
   card: Card
@@ -16,6 +18,7 @@ const emit = defineEmits<{
 }>()
 
 const boardStore = useBoardStore()
+const sessionStore = useSessionStore()
 
 // Form state
 const title = ref('')
@@ -25,6 +28,13 @@ const isBlocked = ref(false)
 const blockReason = ref('')
 const selectedLabelIds = ref<string[]>([])
 const expectedUpdatedAt = ref<string | null>(null)
+const newCommentContent = ref('')
+const replyDraftByParent = ref<Record<string, string>>({})
+const editingCommentId = ref<string | null>(null)
+const editingCommentContent = ref('')
+
+const comments = computed<CardComment[]>(() => boardStore.getCardComments(props.card.id))
+const topLevelComments = computed(() => comments.value.filter(comment => !comment.parentCommentId))
 
 // Watch for card changes
 watch(() => props.card, (newCard) => {
@@ -42,12 +52,18 @@ watch(() => props.card, (newCard) => {
 
 watch(
   () => props.isOpen,
-  (isOpen) => {
+  async (isOpen) => {
     if (isOpen) {
       expectedUpdatedAt.value = props.card.updatedAt
+      await boardStore.fetchCardComments(props.card.boardId, props.card.id)
       boardStore.setEditingCard(props.card.id)
       return
     }
+
+    newCommentContent.value = ''
+    replyDraftByParent.value = {}
+    editingCommentId.value = null
+    editingCommentContent.value = ''
 
     if (boardStore.editingCardId === props.card.id) {
       boardStore.setEditingCard(null)
@@ -114,6 +130,83 @@ function clearDueDate() {
   dueDate.value = ''
 }
 
+function getReplies(parentCommentId: string) {
+  return comments.value.filter(comment => comment.parentCommentId === parentCommentId)
+}
+
+function canEditComment(comment: CardComment) {
+  return sessionStore.userId === comment.authorUserId
+}
+
+async function handleAddComment(parentCommentId?: string) {
+  const content = parentCommentId
+    ? (replyDraftByParent.value[parentCommentId] ?? '').trim()
+    : newCommentContent.value.trim()
+
+  if (!content) {
+    return
+  }
+
+  try {
+    await boardStore.createCardComment(props.card.boardId, props.card.id, {
+      content,
+      parentCommentId: parentCommentId ?? null,
+    })
+
+    if (parentCommentId) {
+      replyDraftByParent.value[parentCommentId] = ''
+    } else {
+      newCommentContent.value = ''
+    }
+  } catch (error) {
+    console.error('Failed to add comment:', error)
+  }
+}
+
+function handleStartEditComment(comment: CardComment) {
+  if (!canEditComment(comment) || comment.isDeleted) {
+    return
+  }
+
+  editingCommentId.value = comment.id
+  editingCommentContent.value = comment.content
+}
+
+function handleCancelEditComment() {
+  editingCommentId.value = null
+  editingCommentContent.value = ''
+}
+
+async function handleSaveEditComment(commentId: string) {
+  const content = editingCommentContent.value.trim()
+  if (!content) {
+    return
+  }
+
+  try {
+    await boardStore.updateCardComment(props.card.boardId, props.card.id, commentId, { content })
+    handleCancelEditComment()
+  } catch (error) {
+    console.error('Failed to update comment:', error)
+  }
+}
+
+async function handleDeleteComment(comment: CardComment) {
+  if (!canEditComment(comment)) {
+    return
+  }
+
+  if (!confirm('Delete this comment?')) {
+    return
+  }
+
+  try {
+    await boardStore.deleteCardComment(props.card.boardId, props.card.id, comment.id)
+  } catch (error) {
+    console.error('Failed to delete comment:', error)
+  }
+}
+
 useEscapeToClose(() => props.isOpen, handleClose)
 
 onBeforeUnmount(() => {
@@ -122,6 +215,10 @@ onBeforeUnmount(() => {
   }
 
   expectedUpdatedAt.value = null
+  newCommentContent.value = ''
+  replyDraftByParent.value = {}
+  editingCommentId.value = null
+  editingCommentContent.value = ''
 })
 </script>
 
@@ -262,6 +359,140 @@ onBeforeUnmount(() => {
               </label>
             </div>
             <p v-else class="text-sm text-gray-500 italic">No labels available</p>
+          </div>
+
+          <!-- Comments -->
+          <div class="pt-4 border-t border-gray-200 space-y-3">
+            <h3 class="text-sm font-semibold text-gray-800">Comments</h3>
+            <div class="space-y-2">
+              <textarea
+                id="new-card-comment"
+                v-model="newCommentContent"
+                rows="2"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Write a comment... Use @username to mention teammates."
+              ></textarea>
+              <div class="flex justify-end">
+                <button
+                  id="add-card-comment"
+                  type="button"
+                  class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+                  :disabled="newCommentContent.trim().length === 0"
+                  @click="handleAddComment()"
+                >
+                  Add Comment
+                </button>
+              </div>
+            </div>
+
+            <div v-if="topLevelComments.length === 0" class="text-sm text-gray-500 italic">
+              No comments yet.
+            </div>
+
+            <div v-else class="space-y-3">
+              <div
+                v-for="comment in topLevelComments"
+                :key="comment.id"
+                class="border border-gray-200 rounded-md p-3 space-y-2"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div class="text-xs text-gray-500">
+                    <span class="font-medium text-gray-700">{{ comment.authorUsername }}</span>
+                    <span class="mx-1">•</span>
+                    <span>{{ new Date(comment.createdAt).toLocaleString() }}</span>
+                    <span v-if="comment.editedAt" class="ml-1 italic">(edited)</span>
+                  </div>
+                  <div v-if="canEditComment(comment) && !comment.isDeleted" class="flex gap-2 text-xs">
+                    <button
+                      type="button"
+                      class="text-blue-600 hover:text-blue-700"
+                      @click="handleStartEditComment(comment)"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      class="text-red-600 hover:text-red-700"
+                      @click="handleDeleteComment(comment)"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="editingCommentId === comment.id" class="space-y-2">
+                  <textarea
+                    v-model="editingCommentContent"
+                    rows="2"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  ></textarea>
+                  <div class="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      class="px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                      @click="handleCancelEditComment"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      class="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+                      :disabled="editingCommentContent.trim().length === 0"
+                      @click="handleSaveEditComment(comment.id)"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+
+                <p
+                  v-else
+                  class="text-sm whitespace-pre-wrap"
+                  :class="comment.isDeleted ? 'text-gray-400 italic' : 'text-gray-800'"
+                >
+                  {{ comment.content }}
+                </p>
+
+                <div class="pl-3 border-l-2 border-gray-200 space-y-2">
+                  <div
+                    v-for="reply in getReplies(comment.id)"
+                    :key="reply.id"
+                    class="space-y-1"
+                  >
+                    <div class="text-xs text-gray-500">
+                      <span class="font-medium text-gray-700">{{ reply.authorUsername }}</span>
+                      <span class="mx-1">•</span>
+                      <span>{{ new Date(reply.createdAt).toLocaleString() }}</span>
+                    </div>
+                    <p
+                      class="text-sm whitespace-pre-wrap"
+                      :class="reply.isDeleted ? 'text-gray-400 italic' : 'text-gray-800'"
+                    >
+                      {{ reply.content }}
+                    </p>
+                  </div>
+
+                  <div v-if="!comment.isDeleted" class="space-y-2 pt-1">
+                    <textarea
+                      v-model="replyDraftByParent[comment.id]"
+                      rows="2"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Reply..."
+                    ></textarea>
+                    <div class="flex justify-end">
+                      <button
+                        type="button"
+                        class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+                        :disabled="!(replyDraftByParent[comment.id] ?? '').trim().length"
+                        @click="handleAddComment(comment.id)"
+                      >
+                        Reply
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Metadata -->
