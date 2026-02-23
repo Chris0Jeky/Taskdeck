@@ -2,10 +2,13 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -277,6 +280,14 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
             p.RequestedByUserId == user.UserId &&
             p.SourceType == ProposalSourceType.Queue &&
             p.SourceReferenceId == created.Id.ToString());
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+        var payload = CaptureRequestContract.ParsePayload(persistedItem.Payload);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
     }
 
     [Fact]
