@@ -181,6 +181,19 @@ describe('InboxView', () => {
     expect(options[1]?.attributes('id')).toBe('td-inbox-option-1')
   })
 
+  it('updates active descendant when an item is clicked', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const options = wrapper.findAll('[role="option"]')
+    await options[1]?.trigger('click')
+    await waitForUi()
+
+    const listbox = wrapper.get('[role="listbox"]')
+    expect(listbox.attributes('aria-activedescendant')).toBe('td-inbox-option-1')
+    expect(wrapper.text()).toContain('Full text for capture-2')
+  })
+
   it('wraps selection from first to last item on ArrowUp', async () => {
     const wrapper = mount(InboxView)
     await waitForUi()
@@ -232,6 +245,45 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Select an item to view full text')
+  })
+
+  it('does not clear a newer selection when stale detail request fails', async () => {
+    let rejectFirst: ((error: unknown) => void) | null = null
+    mockCaptureStore.fetchDetail.mockImplementation((itemId: string) => {
+      if (itemId === 'capture-1') {
+        return new Promise((_, reject) => {
+          rejectFirst = reject
+        })
+      }
+
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: `Excerpt for ${itemId}`,
+        rawText: `Full text for ${itemId}`,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+      }
+      return Promise.resolve()
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const options = wrapper.findAll('[role="option"]')
+    await options[0]?.trigger('click')
+    await options[1]?.trigger('click')
+    await waitForUi()
+
+    rejectFirst?.(new Error('stale request failure'))
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Full text for capture-2')
+    expect(wrapper.text()).not.toContain('Select an item to view full text')
   })
 
   it('shows loading placeholder while selected detail is still loading', async () => {
