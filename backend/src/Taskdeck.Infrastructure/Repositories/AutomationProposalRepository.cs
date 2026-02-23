@@ -71,22 +71,84 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         string targetId,
         CancellationToken cancellationToken = default)
     {
+        return await GetLatestByOperationTargetCoreAsync(
+            targetType,
+            targetId,
+            actionType: null,
+            sourceType: null,
+            cancellationToken);
+    }
+
+    public async Task<AutomationProposal?> GetLatestByOperationTargetAsync(
+        string targetType,
+        string targetId,
+        string actionType,
+        ProposalSourceType sourceType,
+        CancellationToken cancellationToken = default)
+    {
+        return await GetLatestByOperationTargetCoreAsync(
+            targetType,
+            targetId,
+            actionType,
+            sourceType,
+            cancellationToken);
+    }
+
+    private async Task<AutomationProposal?> GetLatestByOperationTargetCoreAsync(
+        string targetType,
+        string targetId,
+        string? actionType,
+        ProposalSourceType? sourceType,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(targetType) || string.IsNullOrWhiteSpace(targetId))
             return null;
 
-        var matchingOperations = await _context.AutomationProposalOperations
-            .Where(operation => operation.TargetType == targetType && operation.TargetId == targetId)
+        var matchingOperations = _context.AutomationProposalOperations
+            .Where(operation => operation.TargetType == targetType && operation.TargetId == targetId);
+
+        if (!string.IsNullOrWhiteSpace(actionType))
+        {
+            matchingOperations = matchingOperations.Where(operation => operation.ActionType == actionType);
+        }
+
+        var orderedOperations = (await matchingOperations
             .Select(operation => new
             {
                 operation.ProposalId,
-                operation.UpdatedAt
+                operation.UpdatedAt,
             })
-            .ToListAsync(cancellationToken);
-
-        var proposalId = matchingOperations
+            .ToListAsync(cancellationToken))
             .OrderByDescending(operation => operation.UpdatedAt)
-            .Select(operation => operation.ProposalId)
-            .FirstOrDefault();
+            .ToList();
+
+        if (orderedOperations.Count == 0)
+            return null;
+
+        Guid proposalId;
+        if (sourceType.HasValue)
+        {
+            var candidateProposalIds = orderedOperations
+                .Select(operation => operation.ProposalId)
+                .Distinct()
+                .ToList();
+
+            var matchingProposalIds = await _dbSet
+                .Where(proposal => candidateProposalIds.Contains(proposal.Id) && proposal.SourceType == sourceType.Value)
+                .Select(proposal => proposal.Id)
+                .ToListAsync(cancellationToken);
+
+            var matchingProposalIdSet = matchingProposalIds.ToHashSet();
+            proposalId = orderedOperations
+                .Select(operation => operation.ProposalId)
+                .FirstOrDefault(id => matchingProposalIdSet.Contains(id));
+        }
+        else
+        {
+            proposalId = orderedOperations
+                .Select(operation => operation.ProposalId)
+                .FirstOrDefault();
+        }
 
         if (proposalId == Guid.Empty)
             return null;

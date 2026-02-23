@@ -259,19 +259,10 @@ public class CardService
         var proposal = await _unitOfWork.AutomationProposals.GetLatestByOperationTargetAsync(
             "card",
             cardId.ToString(),
+            actionType: "create",
+            sourceType: ProposalSourceType.Queue,
             cancellationToken);
-        if (proposal == null)
-        {
-            return Result.Failure<CardCaptureProvenanceDto>(
-                ErrorCodes.NotFound,
-                $"Capture provenance not found for card {cardId}");
-        }
-
-        var hasCreateOperation = proposal.Operations.Any(operation =>
-            operation.TargetType == "card" &&
-            operation.TargetId == cardId.ToString() &&
-            operation.ActionType == "create");
-        if (!hasCreateOperation || proposal.SourceType != ProposalSourceType.Queue || string.IsNullOrWhiteSpace(proposal.SourceReferenceId))
+        if (proposal == null || string.IsNullOrWhiteSpace(proposal.SourceReferenceId))
         {
             return Result.Failure<CardCaptureProvenanceDto>(
                 ErrorCodes.NotFound,

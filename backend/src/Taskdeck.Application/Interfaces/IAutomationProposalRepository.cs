@@ -11,5 +11,11 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
     Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default);
     Task<AutomationProposal?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default);
     Task<AutomationProposal?> GetLatestByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default);
+    Task<AutomationProposal?> GetLatestByOperationTargetAsync(
+        string targetType,
+        string targetId,
+        string actionType,
+        ProposalSourceType sourceType,
+        CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default);
 }

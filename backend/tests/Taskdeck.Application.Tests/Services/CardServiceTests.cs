@@ -822,7 +822,7 @@ public class CardServiceTests
 
     #endregion
 
-    #region Capture Provanance Tests
+    #region Capture Provenance Tests
 
     [Fact]
     public async Task GetCaptureProvenanceAsync_ShouldReturnCaptureMetadata_WhenCardWasCreatedFromCaptureProposal()
@@ -856,7 +856,12 @@ public class CardServiceTests
 
         _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default))
             .ReturnsAsync(card);
-        _automationProposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", card.Id.ToString(), default))
+        _automationProposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+                "card",
+                card.Id.ToString(),
+                "create",
+                ProposalSourceType.Queue,
+                default))
             .ReturnsAsync(proposal);
 
         var result = await _service.GetCaptureProvenanceAsync(board.Id, card.Id);
@@ -866,6 +871,12 @@ public class CardServiceTests
         result.Value.CaptureItemId.Should().Be(captureItemId);
         result.Value.ProposalId.Should().Be(proposal.Id);
         result.Value.TriageRunId.Should().Be(triageRunId);
+        _automationProposalRepoMock.Verify(r => r.GetLatestByOperationTargetAsync(
+            "card",
+            card.Id.ToString(),
+            "create",
+            ProposalSourceType.Queue,
+            default), Times.Once);
     }
 
     [Fact]
@@ -877,7 +888,12 @@ public class CardServiceTests
 
         _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default))
             .ReturnsAsync(card);
-        _automationProposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync("card", card.Id.ToString(), default))
+        _automationProposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+                "card",
+                card.Id.ToString(),
+                "create",
+                ProposalSourceType.Queue,
+                default))
             .ReturnsAsync((AutomationProposal?)null);
 
         var result = await _service.GetCaptureProvenanceAsync(board.Id, card.Id);
