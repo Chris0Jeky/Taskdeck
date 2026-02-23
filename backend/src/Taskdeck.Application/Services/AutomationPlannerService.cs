@@ -10,6 +10,7 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationPlannerService : IAutomationPlannerService
 {
+    private const int MaxProposalMetadataLength = 100;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly IUnitOfWork _unitOfWork;
@@ -38,6 +39,16 @@ public class AutomationPlannerService : IAutomationPlannerService
 
         if (userId == Guid.Empty)
             return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        if (!TryResolveCorrelationId(correlationId, out var resolvedCorrelationId, out var correlationError))
+        {
+            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, correlationError);
+        }
+
+        if (!TryResolveSourceReferenceId(sourceReferenceId, out var normalizedSourceReferenceId, out var sourceReferenceError))
+        {
+            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, sourceReferenceError);
+        }
 
         try
         {
@@ -378,10 +389,6 @@ public class AutomationPlannerService : IAutomationPlannerService
             var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
             // Create proposal
-            var resolvedCorrelationId = string.IsNullOrWhiteSpace(correlationId)
-                ? Guid.NewGuid().ToString()
-                : correlationId;
-
             var createDto = new CreateProposalDto(
                 sourceType,
                 userId,
@@ -389,7 +396,7 @@ public class AutomationPlannerService : IAutomationPlannerService
                 riskLevel,
                 resolvedCorrelationId,
                 boardId,
-                sourceReferenceId,
+                normalizedSourceReferenceId,
                 1440,
                 operations
             );
@@ -411,5 +418,59 @@ public class AutomationPlannerService : IAutomationPlannerService
         {
             return Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, $"Failed to parse instruction: {ex.Message}");
         }
+    }
+
+    private static bool TryResolveCorrelationId(string? correlationId, out string resolvedCorrelationId, out string error)
+    {
+        if (correlationId == null)
+        {
+            resolvedCorrelationId = Guid.NewGuid().ToString();
+            error = string.Empty;
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(correlationId))
+        {
+            resolvedCorrelationId = string.Empty;
+            error = "CorrelationId cannot be empty when provided";
+            return false;
+        }
+
+        resolvedCorrelationId = correlationId.Trim();
+        if (resolvedCorrelationId.Length > MaxProposalMetadataLength)
+        {
+            error = $"CorrelationId cannot exceed {MaxProposalMetadataLength} characters";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TryResolveSourceReferenceId(string? sourceReferenceId, out string? normalizedSourceReferenceId, out string error)
+    {
+        if (sourceReferenceId == null)
+        {
+            normalizedSourceReferenceId = null;
+            error = string.Empty;
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceReferenceId))
+        {
+            normalizedSourceReferenceId = null;
+            error = "SourceReferenceId cannot be empty when provided";
+            return false;
+        }
+
+        normalizedSourceReferenceId = sourceReferenceId.Trim();
+        if (normalizedSourceReferenceId.Length > MaxProposalMetadataLength)
+        {
+            error = $"SourceReferenceId cannot exceed {MaxProposalMetadataLength} characters";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
     }
 }
