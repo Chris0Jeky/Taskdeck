@@ -373,6 +373,26 @@ public class LlmQueueServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
+    [Fact]
+    public async Task ProcessNextRequestAsync_ShouldPreserveFifo_WhenSkippingCaptureRequests()
+    {
+        var userId = Guid.NewGuid();
+        var oldestNonCapture = new LlmRequest(userId, "summarize", "oldest non-capture");
+        await Task.Delay(5);
+        var captureRequest = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+        await Task.Delay(5);
+        var newestNonCapture = new LlmRequest(userId, "summarize", "newest non-capture");
+
+        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+            .ReturnsAsync(new[] { newestNonCapture, captureRequest, oldestNonCapture });
+
+        var result = await _service.ProcessNextRequestAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(oldestNonCapture.Id);
+        result.Value.Status.Should().Be(RequestStatus.Processing);
+    }
+
     #endregion
 
     #region GetQueueStatsAsync Tests
