@@ -16,10 +16,12 @@ Update this file at the end of each meaningful delivery cycle.
 ## Planning Principles
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
+- Product north star: make capture nearly free and keep automation safe through review-first proposals.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
 - Security and identity convergence remains the highest-priority engineering track.
 - Cross-user existence policy is fixed: return `403` for authenticated-but-unauthorized access and `404` for true missing resources.
 - Automation remains proposal-first and review-first by default.
+- Do not claim or ship silent/destructive autonomy by default; trust posture takes precedence over convenience.
 - MVP should include a dogfooding workflow: paste structured plan text in chat and bootstrap a board/project from approved proposals.
 - UX investments should be modular and reusable (keyboard-first, discoverable selectors, shared input-assist patterns).
 - Every issue must carry exactly one priority label (`Priority I` through `Priority V`).

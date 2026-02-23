@@ -28,6 +28,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave A/B foundation: `#67` to `#76` (`Priority II`)
 - [ ] Wave C analytics/security/compliance: `#77` to `#83`, `#106`, `#110` (`Priority III`)
 - [ ] Wave D/E platform/test/UX/docs maturity: `#84` to `#105`, `#111` (`Priority IV`)
+- [ ] Wave F capture realignment: `#199` to `#213` (Priority II to Priority IV)
 - [ ] Meta index maintenance: `#107` (`Priority V`)
 
 ## Out-of-Code and Configuration Actions Coverage
