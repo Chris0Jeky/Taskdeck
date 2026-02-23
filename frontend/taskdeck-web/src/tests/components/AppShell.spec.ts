@@ -144,6 +144,22 @@ describe('AppShell command palette keyboard model', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/workspace/notifications')
   })
 
+  it('supports inbox route from command palette filtering', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+
+    const input = wrapper.get('.td-command-palette__input')
+    await input.setValue('inbox')
+    await waitForUi()
+    await input.trigger('keydown.enter')
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/inbox')
+  })
+
   it('exposes listbox option accessibility state for keyboard selection', async () => {
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
