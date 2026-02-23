@@ -20,7 +20,7 @@ public class CaptureTriageService : ICaptureTriageService
         RegexOptions.Compiled);
 
     private static readonly Regex BulletPattern = new(
-        @"^\s*[-*•]\s+(.+?)\s*$",
+        @"^\s*[-*\u2022]\s+(.+?)\s*$",
         RegexOptions.Compiled);
 
     private static readonly Regex NumberedPattern = new(
@@ -113,6 +113,17 @@ public class CaptureTriageService : ICaptureTriageService
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
         var triageRunId = Guid.NewGuid();
         var summary = BuildSummary(taskCandidates);
+        var permissionResult = await _policyEngine.ValidatePermissionsAsync(
+            userId,
+            boardId,
+            operationDtos,
+            cancellationToken);
+        if (!permissionResult.IsSuccess)
+        {
+            return Result.Failure<CaptureTriageProposalResultDto>(
+                permissionResult.ErrorCode,
+                permissionResult.ErrorMessage);
+        }
 
         var createProposalResult = await _proposalService.CreateProposalAsync(
             new CreateProposalDto(

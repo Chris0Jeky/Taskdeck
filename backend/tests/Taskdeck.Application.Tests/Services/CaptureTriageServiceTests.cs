@@ -32,6 +32,12 @@ public class CaptureTriageServiceTests
         _unitOfWorkMock.SetupGet(u => u.Columns).Returns(_columnsMock.Object);
         _policyEngineMock.Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
             .Returns(RiskLevel.Low);
+        _policyEngineMock.Setup(p => p.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
 
         _service = new CaptureTriageService(
             _unitOfWorkMock.Object,
@@ -187,6 +193,38 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
         result.ErrorMessage.Should().Contain("No columns found in board");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReturnForbidden_WhenPermissionValidationFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _policyEngineMock.Setup(p => p.ValidatePermissionsAsync(
+                userId,
+                boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                default))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "You do not have permission to access this board"));
+
+        var result = await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] restricted task"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
     }
 
