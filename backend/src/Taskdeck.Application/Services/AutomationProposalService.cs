@@ -220,12 +220,8 @@ public class AutomationProposalService : IAutomationProposalService
             {
                 proposal.Expire();
                 count++;
-            }
-
-            foreach (var expiredProposal in expiredProposals)
-            {
                 var notifyResult = await PublishProposalOutcomeNotificationAsync(
-                    expiredProposal,
+                    proposal,
                     "expired",
                     cancellationToken);
                 if (!notifyResult.IsSuccess)
