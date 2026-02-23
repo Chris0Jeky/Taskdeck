@@ -231,6 +231,23 @@ dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Releas
 cd frontend/taskdeck-web && npx playwright test tests/e2e/smoke.spec.ts tests/e2e/automation-ops.spec.ts tests/e2e/capture-loop.spec.ts --reporter=line
 ```
 
+## Outreach CRM Deferred Wave (Planning, 2026-02-23)
+
+Tracking issues:
+- wave tracker: `#262`
+- deferred execution: `#263` to `#268`
+
+Reuse links (no duplicate implementation issue):
+- `#75` import-adapter foundation for outreach CSV mapping/dedupe profile
+- `#77` analytics model/dashboards for future outreach scoreboard metrics
+- `#175` first-party starter-pack catalog expansion for outreach blueprint inclusion
+
+Planned quality expectations when implementation starts:
+- YAML front-matter parser round-trip stability tests (contact fields + timeline preservation)
+- cadence scheduling determinism + throughput-control guardrail tests
+- API/UX regression for contact logging and dashboard action loops
+- E2E coverage for outreach loop: import/apply -> contact update -> cadence proposal -> dashboard action flow
+
 ## Coverage Map
 
 - Domain invariants:

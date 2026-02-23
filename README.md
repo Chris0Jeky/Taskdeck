@@ -15,6 +15,7 @@ Current direction:
 - capture/inbox pipeline wave is active in backlog (`#199` to `#213`)
 - proposal-first automation remains the default and non-negotiable
 - no destructive/autonomous apply behavior is enabled by default
+- outreach CRM deferred expansion wave is seeded for later maturity-track execution (`#262` to `#268`)
 
 ## What It Does
 

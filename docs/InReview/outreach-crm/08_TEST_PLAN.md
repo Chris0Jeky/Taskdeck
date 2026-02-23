@@ -1,13 +1,13 @@
-# 08 — Test Plan (so this doesn’t rot)
+﻿# 08 - Test Plan (so this does not rot)
 
 ## Unit tests (backend)
 - Cadence schedule function:
   - given `last_touch_at` and `cadence_id`, compute `next_touch_at`
-  - deterministic, time-zone safe
+  - deterministic and timezone-safe
 - Guardrails:
   - daily budget enforcement
   - contact cool-down enforcement
-- Starter Pack manifest validator already exists; add tests for Outreach manifest if added to first-party catalog.
+- Starter-pack manifest validator already exists; add tests for Outreach manifest if added to first-party catalog.
 
 ## Unit tests (frontend)
 - YAML parser/serializer:
@@ -24,10 +24,10 @@
 - Apply Outreach blueprint
 - Create a contact card
 - Set due date
-- Verify “Due today” shows on dashboard
+- Verify Due today shows on dashboard
 - Generate message draft (mock LLM)
 - Log interaction and schedule next follow-up
 
 ## Non-functional tests
 - Performance: parsing YAML on large cards
-- Security: ensure contact notes are not exposed in export unless user chooses
+- Privacy: ensure contact notes are exported only through explicit user-requested paths

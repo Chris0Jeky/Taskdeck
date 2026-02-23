@@ -1,46 +1,44 @@
-# 04 — Automation Guardrails (Stay Safe, Stay Effective)
+﻿# 04 - Automation Controls and Throughput Guardrails
 
-## Why guardrails matter
-The “superuser” goal is throughput, but you must avoid:
-- looking like spam
-- violating platform rules
-- burning your social capital
-
-So you need *hard* rate limits and a human-in-the-loop model.
+## Why controls matter
+The superuser target is throughput with predictable quality.
+Controls keep execution stable by limiting over-scheduling, ensuring review checkpoints, and making higher-risk operations explicit.
 
 ---
 
-## Guardrails (MVP)
-1) **No auto-send**: Taskdeck generates drafts only.
-2) **Daily budget**: configurable caps (e.g., 3 DMs/day).
-3) **Contact cool-down**: no more than 1 follow-up per contact per N days.
-4) **One follow-up rule**: maximum 1 follow-up after initial outreach unless they reply.
-5) **Campaign focus**: only surface top N actions/day to avoid scatter.
+## Guardrails (MVP defaults)
+1) Draft-first execution mode: Taskdeck generates drafts and plans; send/execution can stay manual.
+2) Daily budget: configurable caps (for example 3 DMs/day).
+3) Contact cool-down: configurable minimum days between follow-ups for the same contact.
+4) Follow-up policy: configurable max follow-up attempts before requiring explicit override.
+5) Campaign focus: surface top N actions/day to reduce context switching.
 
 ---
 
 ## Guardrails (technical implementation)
 ### Policy checks (server-side)
 - If an automation proposal tries to:
-  - create/update > X cards at once → require high-risk confirmation
-  - move/delete many entities → reject unless explicitly allowed
-- Enforce `MaxOperationCount` style limits for outreach automation too.
+  - create/update more than X cards at once -> require elevated confirmation
+  - move/delete many entities -> reject unless explicit override policy is enabled
+- Reuse `MaxOperationCount`-style limits for outreach automation paths.
 
 ### UI checks (client-side)
-- “Are you sure?” confirmation when scheduling many follow-ups
-- Show “risk label” for action sets (low/medium/high)
+- Confirmation step when scheduling many follow-ups
+- Risk labels for action sets (low/medium/high)
+- Clear display of why an action was blocked, warned, or allowed
 
 ---
 
-## Compliance constraints (design implications)
-Design for **imports and user-provided inputs**, not scraping or automating platform actions.
+## Integration boundaries (design implications)
+Design for imports and explicit user-provided inputs first.
+Keep connector execution decoupled from core planning so the same workflow can run in manual mode or connector mode.
 
-- Use **official data exports** (connections CSV, account archive).
-- Avoid any component that runs on LinkedIn pages to extract data or automate actions.
+- Use official exports as baseline ingestion paths.
+- Treat direct platform automation as a separate integration layer behind explicit policy/config toggles.
 
 ---
 
 ## Superuser mental model
-- Taskdeck is your cockpit.
-- LinkedIn/GitHub are execution surfaces.
-- Taskdeck proposes; you execute; Taskdeck logs and schedules.
+- Taskdeck is the planning/control cockpit.
+- External platforms are execution surfaces.
+- Taskdeck proposes, user executes (or connectors execute when enabled), Taskdeck logs and schedules.

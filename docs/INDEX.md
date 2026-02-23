@@ -52,6 +52,7 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `analysis/`
   - Dated repository analysis snapshots and follow-through mapping notes (non-authoritative unless promoted into active docs).
   - includes `analysis/2026-02-23_testing-harness-synthesis.md` for testing-harness wave reconciliation (`#254` to `#260`).
+  - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
 - `InReview/`
   - Staging area for human briefs and analysis packs under review before promotion into active docs (`STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, testing/checklists).
 

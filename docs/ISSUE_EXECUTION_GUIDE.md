@@ -196,6 +196,13 @@ Testing/UX/docs:
 28. `#219` CAP-21 voice capture/transcription (opt-in)
 29. `#220` CAP-22 batch triage + suggestion editing
 30. `#251` UI-12 optional Storybook baseline for primitives
+31. `#262` OUT-00 outreach CRM deferred wave tracker
+32. `#263` OUT-01 JSON manifest import path for starter packs
+33. `#264` OUT-02 contact-card YAML parser/serializer contract
+34. `#265` OUT-03 structured contact detail + timeline logging UX
+35. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
+36. `#267` OUT-05 daily outreach dashboard (keyboard-first)
+37. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
 
 Execution note (testing harness knowledge-transfer):
 - Existing Priority IV items were updated with pack-derived scope clarifications:
@@ -204,18 +211,22 @@ Execution note (testing harness knowledge-transfer):
 - Existing Priority III/II items were updated for guardrail routing:
   - `#106` dependency scan commands and artifact posture
   - `#168` CI topology coordination for `#258` and `#260`
+- Outreach CRM wave explicitly reuses existing adjacent tracks instead of duplicating scope:
+  - `#75` import adapters
+  - `#77` analytics model/dashboards
+  - `#175` starter-pack catalog expansion
 
 Maintainability hotspot refactor wave (analysis-driven):
-31. `#158` REF-11 decompose `AppShell.vue`
-32. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
-33. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
-34. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
-35. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
-36. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
-37. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
-38. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
-39. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
-40. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
+38. `#158` REF-11 decompose `AppShell.vue`
+39. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
+40. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
+41. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
+42. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
+43. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
+44. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
+45. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
+46. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
+47. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
 
 ### Stage 5: Priority V - Meta/Historical
 

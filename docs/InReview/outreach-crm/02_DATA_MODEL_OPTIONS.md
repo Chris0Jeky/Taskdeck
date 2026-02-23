@@ -1,21 +1,21 @@
-# 02 — Data Model Options (Card-first vs Structured)
+﻿# 02 - Data Model Options (Card-first vs Structured)
 
 Taskdeck already has:
 - `Card` with `Title`, `Description`, `DueDate`
 - labels, columns, boards
 - automation proposals (operations that create/update/move cards)
 
-This enables a **Card-first CRM** with almost no persistence changes.
+This enables a Card-first CRM with almost no persistence changes.
 
 ---
 
-## Option A (recommended first): Card-first CRM (“Contacts as Cards”)
+## Option A (recommended first): Card-first CRM (Contacts as Cards)
 
 ### How it works
-- Each Contact is a **Card** on a dedicated “Outreach CRM” board.
-- The Card `Description` contains **YAML front matter** with structured contact fields.
-- The card `DueDate` is the `next_touch_at` (single source of truth for follow-ups).
-- Interactions are appended to the card description in a structured “Timeline” section (or stored as checklist items if you prefer short format).
+- Each contact is a card on a dedicated Outreach CRM board.
+- The card `Description` contains YAML front matter with structured contact fields.
+- The card `DueDate` is `next_touch_at` (single source of truth for follow-ups).
+- Interactions are appended to a structured Timeline section (or checklist items for short format).
 
 ### Contact card schema (YAML front matter)
 
@@ -63,7 +63,7 @@ Below the YAML block, maintain:
 - Timeline is text-based until structured entities exist
 
 ### Migration path
-You can later add `Contact` / `Interaction` tables and migrate by parsing YAML blocks.
+You can later add `Contact` and `Interaction` tables and migrate by parsing YAML blocks.
 
 ---
 
@@ -115,8 +115,8 @@ Add domain entities:
 ---
 
 ## Recommendation
-Start with **Option A** for 2–4 weeks to prove the loop.
+Start with Option A for 2-4 weeks to prove the loop.
 Then adopt Option B if:
-- you want analytics and segmentation
-- you want real campaign tracking
-- you want to ship this as a product feature
+- you need deeper analytics and segmentation
+- you need campaign lifecycle reporting
+- you want first-class productization of Outreach CRM
