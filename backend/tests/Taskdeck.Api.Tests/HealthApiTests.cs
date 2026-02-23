@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Tests.Support;
+using Taskdeck.Application.DTOs;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -48,5 +50,35 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         var housekeepingWorker = workers.GetProperty("proposalHousekeeping");
         housekeepingWorker.TryGetProperty("stalenessSeconds", out _).Should().BeTrue();
         housekeepingWorker.TryGetProperty("maxStalenessSeconds", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Ready_ShouldExcludeCaptureBacklogFromAutomationQueueDepth()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, "health-capture-backlog");
+
+        for (var i = 0; i < 3; i++)
+        {
+            var captureResponse = await _client.PostAsJsonAsync(
+                "/api/capture/items",
+                new CreateCaptureItemDto(null, $"capture payload {i}"));
+            captureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        }
+
+        var queueResponse = await _client.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("summarize", "normal queue payload"));
+        queueResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await _client.GetAsync("/health/ready");
+        (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            .Should()
+            .BeTrue();
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var queue = payload.GetProperty("checks").GetProperty("queue");
+        queue.GetProperty("depth").GetInt32().Should().Be(1);
+        queue.GetProperty("captureDepth").GetInt32().Should().BeGreaterOrEqualTo(3);
+        queue.GetProperty("totalDepth").GetInt32().Should().BeGreaterOrEqualTo(4);
     }
 }
