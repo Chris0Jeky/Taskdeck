@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "promptVersion": "triage.v2",
+  "tasks": [
+    {
+      "title": "Task title",
+      "evidence": "Task title"
+    }
+  ]
+}

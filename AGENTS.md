@@ -49,6 +49,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 ### Windows Git Reliability Fallback
 - If `git` resolves to Cygwin or produces signal/pipe-style failures, use `C:\Program Files\Git\cmd\git.exe` explicitly for repo operations.
 - If a commit fails because `.git/index.lock` cannot be created, first check for active `git` processes; remove `.git/index.lock` only when no git process is running.
+- For stacked branches with small conflict surfaces, prefer `merge` over `rebase` when branch reconciliation starts stalling (for example long-running interactive/conflict loops). Resolve conflicts once, merge, and continue delivery.
 
 ### Small Mainline Exception
 - If a change is very small and low-risk (especially minor docs wording/checklist updates), do not automatically create a branch/PR.
