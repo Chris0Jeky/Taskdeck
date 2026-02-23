@@ -194,4 +194,19 @@ describe('captureStore', () => {
     expect(store.actionError).toBe('Failed to triage capture item')
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
   })
+
+  it('emits a single triage error toast when detail refresh fails after enqueue', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c9',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
+
+    await expect(store.triageItem('c9')).rejects.toBeInstanceOf(Error)
+
+    expect(toastMocks.error).toHaveBeenCalledTimes(1)
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
+  })
 })

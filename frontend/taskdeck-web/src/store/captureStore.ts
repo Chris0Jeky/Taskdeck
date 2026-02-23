@@ -57,7 +57,7 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  async function fetchDetail(itemId: string, forceRefresh = false) {
+  async function fetchDetail(itemId: string, forceRefresh = false, showToast = true) {
     if (!forceRefresh && detailById.value[itemId]) {
       return detailById.value[itemId]
     }
@@ -72,7 +72,9 @@ export const useCaptureStore = defineStore('capture', () => {
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox item').message
       detailError.value = message
-      toast.error(message)
+      if (showToast) {
+        toast.error(message)
+      }
       throw e
     } finally {
       loadingDetail.value = false
@@ -152,7 +154,7 @@ export const useCaptureStore = defineStore('capture', () => {
         }
       }
 
-      await fetchDetail(itemId, true)
+      await fetchDetail(itemId, true, false)
       toast.success(triageResult.alreadyTriaging ? 'Capture item is already triaging' : 'Capture item triage queued')
       return triageResult
     } catch (e: unknown) {
