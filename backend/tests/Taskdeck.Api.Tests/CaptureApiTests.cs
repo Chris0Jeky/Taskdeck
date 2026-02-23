@@ -4,6 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Xunit;
 
@@ -241,6 +242,68 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Triage_ShouldCreateProposalAndMarkCaptureAsProposalCreated()
+    {
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "capture-triage-proposal");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-triage-proposal-board");
+        var createColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Inbox", null, null));
+        createColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(
+                board.Id,
+                """
+                - [ ] Write API tests for capture triage
+                - [ ] Update implementation docs
+                """));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var triageResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var finalItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.ProposalCreated);
+        finalItem.Status.Should().Be(CaptureStatus.ProposalCreated);
+
+        var proposalsResponse = await _client.GetAsync($"/api/automation/proposals?boardId={board.Id}&status=PendingReview&limit=20");
+        proposalsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposals = await proposalsResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
+        proposals.Should().NotBeNull();
+        proposals!.Should().Contain(p =>
+            p.RequestedByUserId == user.UserId &&
+            p.SourceType == ProposalSourceType.Queue &&
+            p.SourceReferenceId == created.Id.ToString());
+    }
+
+    [Fact]
+    public async Task Triage_ShouldFailDeterministically_WhenCaptureHasNoBoard()
+    {
+        await AuthenticateAsAsync("capture-triage-fail");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(
+                null,
+                """
+                - [ ] Draft release notes
+                - [ ] Review checklist
+                """));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var triageResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var failedItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.Failed);
+        failedItem.Status.Should().Be(CaptureStatus.Failed);
+    }
+
+    [Fact]
     public async Task Triage_ShouldReturnConflict_WhenCaptureIsIgnored()
     {
         await AuthenticateAsAsync("capture-triage-conflict");
@@ -283,5 +346,33 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     private async Task AuthenticateAsAsync(string stem)
     {
         await ApiTestHarness.AuthenticateAsync(_client, stem);
+    }
+
+    private async Task<CaptureItemDto> WaitForCaptureStatusAsync(Guid itemId, CaptureStatus expectedStatus)
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            var response = await _client.GetAsync($"/api/capture/items/{itemId}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var item = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+            item.Should().NotBeNull();
+            if (item!.Status == expectedStatus)
+            {
+                return item;
+            }
+
+            if (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed)
+            {
+                return item;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+
+        var timeoutResponse = await _client.GetAsync($"/api/capture/items/{itemId}");
+        timeoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var timeoutItem = await timeoutResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        timeoutItem.Should().NotBeNull();
+        return timeoutItem!;
     }
 }

@@ -10,6 +10,9 @@ namespace Taskdeck.Api.Workers;
 
 public class LlmQueueToProposalWorker : BackgroundService
 {
+    private const string QueueNameLlm = "llm";
+    private const string QueueNameCaptureTriage = "capture-triage";
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly WorkerSettings _settings;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
@@ -63,26 +66,36 @@ public class LlmQueueToProposalWorker : BackgroundService
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var pendingItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct))
             .Where(item => !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            .OrderBy(item => item.CreatedAt)
             .ToList();
+        var triagingCaptureItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Processing, ct))
+            .Where(item => CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            .OrderBy(item => item.CreatedAt)
+            .ToList();
+
         TaskdeckTelemetry.AutomationQueueBacklog.Record(
             pendingItems.Count,
-            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, "llm"));
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, QueueNameLlm));
+        TaskdeckTelemetry.AutomationQueueBacklog.Record(
+            triagingCaptureItems.Count,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, QueueNameCaptureTriage));
 
-        var batchItemIds = pendingItems
+        var batchItems = triagingCaptureItems
+            .Select(item => new WorkerBatchItem(item.Id, IsCaptureTriage: true))
+            .Concat(pendingItems.Select(item => new WorkerBatchItem(item.Id, IsCaptureTriage: false)))
             .Take(_settings.MaxBatchSize)
-            .Select(item => item.Id)
             .ToList();
 
-        if (batchItemIds.Count == 0)
+        if (batchItems.Count == 0)
         {
             return;
         }
 
         var maxConcurrency = Math.Clamp(_settings.MaxConcurrency, 1, _settings.MaxBatchSize);
         using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
-        var tasks = new List<Task>(batchItemIds.Count);
+        var tasks = new List<Task>(batchItems.Count);
 
-        foreach (var itemId in batchItemIds)
+        foreach (var batchItem in batchItems)
         {
             await semaphore.WaitAsync(ct);
 
@@ -90,7 +103,14 @@ public class LlmQueueToProposalWorker : BackgroundService
             {
                 try
                 {
-                    await ProcessSingleItemAsync(itemId, ct);
+                    if (batchItem.IsCaptureTriage)
+                    {
+                        await ProcessCaptureTriageItemAsync(batchItem.ItemId, ct);
+                    }
+                    else
+                    {
+                        await ProcessSingleItemAsync(batchItem.ItemId, ct);
+                    }
                 }
                 finally
                 {
@@ -196,12 +216,124 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
     }
 
+    private async Task ProcessCaptureTriageItemAsync(Guid itemId, CancellationToken ct)
+    {
+        using var activity = TaskdeckTelemetry.ActivitySource.StartActivity(
+            "taskdeck.worker.process_capture_triage_item",
+            System.Diagnostics.ActivityKind.Internal);
+        activity?.SetTag(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker));
+        activity?.SetTag(TaskdeckTelemetryTags.LlmRequestId, itemId.ToString());
+
+        var stopWatch = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = "skipped";
+
+        using var scope = _scopeFactory.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var triageService = scope.ServiceProvider.GetRequiredService<ICaptureTriageService>();
+
+        var item = await unitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
+        if (item == null ||
+            item.Status != RequestStatus.Processing ||
+            !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+        {
+            outcome = "already_claimed";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+            return;
+        }
+
+        activity?.SetTag(TaskdeckTelemetryTags.RequestType, item.RequestType);
+        activity?.SetTag(TaskdeckTelemetryTags.UserId, item.UserId.ToString());
+        if (item.BoardId.HasValue)
+        {
+            activity?.SetTag(TaskdeckTelemetryTags.BoardId, item.BoardId.Value.ToString());
+        }
+
+        try
+        {
+            var parsedPayloadResult = CaptureRequestContract.ParsePayload(item.Payload);
+            if (!parsedPayloadResult.IsSuccess)
+            {
+                var scheduledForRetry = await HandleFailureWithRetryAsync(
+                    unitOfWork,
+                    item,
+                    parsedPayloadResult.ErrorCode,
+                    parsedPayloadResult.ErrorMessage ?? "Invalid capture payload",
+                    ct,
+                    retryAsProcessing: true);
+
+                outcome = scheduledForRetry ? "failed_retry" : "failed_permanent";
+                stopWatch.Stop();
+                RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+                return;
+            }
+
+            var triageResult = await triageService.CreateProposalFromCaptureAsync(
+                item.Id,
+                item.UserId,
+                item.BoardId,
+                parsedPayloadResult.Value,
+                ct);
+
+            if (triageResult.IsSuccess)
+            {
+                var linkedPayload = CaptureRequestContract.WithProvenance(
+                    parsedPayloadResult.Value,
+                    item.Id,
+                    triageRunId: triageResult.Value.TriageRunId,
+                    proposalId: triageResult.Value.ProposalId);
+
+                item.UpdatePayload(CaptureRequestContract.SerializePayload(linkedPayload));
+                item.MarkAsCompleted();
+                await unitOfWork.SaveChangesAsync(ct);
+
+                _logger.LogInformation(
+                    "Capture item {ItemId} triaged into proposal {ProposalId}",
+                    item.Id,
+                    triageResult.Value.ProposalId);
+
+                outcome = "completed";
+                stopWatch.Stop();
+                RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+                return;
+            }
+
+            var retryScheduled = await HandleFailureWithRetryAsync(
+                unitOfWork,
+                item,
+                triageResult.ErrorCode,
+                triageResult.ErrorMessage ?? "Capture triage failed",
+                ct,
+                retryAsProcessing: true);
+
+            outcome = retryScheduled ? "failed_retry" : "failed_permanent";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception triaging capture queue item {ItemId}", item.Id);
+            var scheduledForRetry = await HandleFailureWithRetryAsync(
+                unitOfWork,
+                item,
+                ErrorCodes.UnexpectedError,
+                ex.Message,
+                ct,
+                retryAsProcessing: true);
+
+            outcome = scheduledForRetry ? "failed_retry" : "failed_unhandled";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+        }
+    }
+
     private async Task<bool> HandleFailureWithRetryAsync(
         IUnitOfWork unitOfWork,
         Taskdeck.Domain.Entities.LlmRequest item,
         string? errorCode,
         string errorMessage,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool retryAsProcessing = false)
     {
         var currentRetryCount = item.RetryCount;
         var shouldRetry = IsTransientFailure(errorCode) && currentRetryCount + 1 < _settings.MaxRetries;
@@ -227,6 +359,10 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
 
         item.ResetForRetry();
+        if (retryAsProcessing)
+        {
+            item.MarkAsProcessing();
+        }
         await unitOfWork.SaveChangesAsync(ct);
 
         _logger.LogInformation(
@@ -270,4 +406,6 @@ public class LlmQueueToProposalWorker : BackgroundService
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
     }
+
+    private readonly record struct WorkerBatchItem(Guid ItemId, bool IsCaptureTriage);
 }
