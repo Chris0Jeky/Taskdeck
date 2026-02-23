@@ -53,6 +53,7 @@ describe('CardModal', () => {
       updateCard: vi.fn().mockResolvedValue(card),
       deleteCard: vi.fn().mockResolvedValue(undefined),
       fetchCardComments: vi.fn().mockResolvedValue([]),
+      fetchCardProvenance: vi.fn().mockResolvedValue(null),
       getCardComments: vi.fn().mockReturnValue([]),
       createCardComment: vi.fn().mockResolvedValue(undefined),
       updateCardComment: vi.fn().mockResolvedValue(undefined),
@@ -62,6 +63,48 @@ describe('CardModal', () => {
     }
 
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
+  })
+
+  it('should request capture provenance when modal opens', async () => {
+    mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledTimes(1)
+  })
+
+  it('should render capture provenance marker and links when available', async () => {
+    mockStore.fetchCardProvenance.mockResolvedValue({
+      cardId: 'card-1',
+      captureItemId: 'capture-7',
+      proposalId: 'proposal-9',
+      proposalStatus: 'Applied',
+      triageRunId: 'triage-5',
+    })
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Capture Origin')
+    expect(wrapper.find('a[href="/workspace/inbox#capture-capture-7"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/automations/proposals#proposal-proposal-9"]').exists()).toBe(true)
   })
 
   it('should render when isOpen is true', () => {
@@ -334,5 +377,23 @@ describe('CardModal', () => {
       content: 'New card comment',
       parentCommentId: null,
     })
+  })
+
+  it('should render fallback message when capture provenance is unavailable', async () => {
+    mockStore.fetchCardProvenance.mockResolvedValue(null)
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('No capture provenance available.')
   })
 })

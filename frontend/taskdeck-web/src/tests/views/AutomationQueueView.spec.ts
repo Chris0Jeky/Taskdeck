@@ -74,7 +74,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
     requestedByUserId: 'user-1',
     status: 'PendingReview',
     riskLevel: 'Low',
-    summary: 'Proposal summary',
+    summary: 'Queue proposal',
     diffPreview: null,
     validationIssues: null,
     createdAt: now,
@@ -84,7 +84,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
     decidedByUserId: null,
     appliedAt: null,
     failureReason: null,
-    correlationId: 'corr-1',
+    correlationId: 'triage-run-1',
     operations: [],
     ...overrides,
   }
@@ -123,11 +123,47 @@ describe('AutomationQueueView', () => {
     mocks.submitRequest.mockResolvedValue(undefined)
     mocks.cancelRequest.mockResolvedValue(undefined)
     mocks.processNext.mockResolvedValue(undefined)
-    mocks.getProposalDiff.mockResolvedValue('diff')
     mocks.approveProposal.mockResolvedValue(buildProposal({ status: 'Approved' }))
     mocks.rejectProposal.mockResolvedValue(buildProposal({ status: 'Rejected' }))
     mocks.executeProposal.mockResolvedValue(buildProposal({ status: 'Applied' }))
-    mocks.createRequestId.mockReturnValue('req-1')
+    mocks.getProposalDiff.mockResolvedValue('diff')
+    mocks.createRequestId.mockReturnValue('request-1')
+  })
+
+  it('shows capture and triage provenance context for queue proposals', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-99',
+        sourceType: 'Queue',
+        sourceReferenceId: 'capture-99',
+        correlationId: 'triage-run-99',
+      }),
+    ])
+
+    const wrapper = await mountAt('/workspace/automations/proposals')
+
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200 })
+    expect(wrapper.text()).toContain('Capture-linked')
+    expect(wrapper.text()).toContain('Triage run: triage-run-99')
+    expect(wrapper.find('a[href="/workspace/inbox#capture-capture-99"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/automations/proposals#proposal-proposal-99"]').exists()).toBe(true)
+  })
+
+  it('does not render capture link for non-queue proposals', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-manual',
+        sourceType: 'Manual',
+        sourceReferenceId: null,
+        correlationId: 'manual-correlation',
+      }),
+    ])
+
+    const wrapper = await mountAt('/workspace/automations/proposals')
+
+    expect(wrapper.text()).not.toContain('Capture-linked')
+    expect(wrapper.text()).not.toContain('Open Capture')
+    expect(wrapper.text()).not.toContain('Triage run:')
   })
 
   it('scrolls to proposal card when route hash targets a proposal id', async () => {

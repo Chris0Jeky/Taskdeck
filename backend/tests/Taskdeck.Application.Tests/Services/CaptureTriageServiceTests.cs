@@ -99,9 +99,11 @@ public class CaptureTriageServiceTests
         created.SourceType.Should().Be(ProposalSourceType.Queue);
         created.SourceReferenceId.Should().Be(captureId.ToString());
         created.Operations.Should().HaveCount(3);
+        created.Operations.Should().OnlyContain(operation => !string.IsNullOrWhiteSpace(operation.TargetId));
         created.Operations![0].Parameters.Should().Contain("Write regression tests");
         created.Operations[1].Parameters.Should().Contain("Update docs");
         created.Operations[2].Parameters.Should().Contain("Ship follow-up PR");
+        created.Operations.Select(operation => Guid.TryParse(operation.TargetId, out _)).Should().OnlyContain(parsed => parsed);
     }
 
     [Fact]
@@ -150,6 +152,7 @@ public class CaptureTriageServiceTests
         firstProposal!.Operations.Should().ContainSingle();
         secondProposal!.Operations.Should().ContainSingle();
         firstProposal.Operations![0].IdempotencyKey.Should().Be(secondProposal.Operations![0].IdempotencyKey);
+        firstProposal.Operations[0].TargetId.Should().Be(secondProposal.Operations[0].TargetId);
     }
 
     [Fact]

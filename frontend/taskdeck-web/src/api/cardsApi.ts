@@ -1,5 +1,5 @@
 import http from './http'
-import type { Card, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
+import type { Card, CardCaptureProvenance, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
 
 export const cardsApi = {
   async getCards(boardId: string, params?: { search?: string; labelId?: string; columnId?: string }): Promise<Card[]> {
@@ -29,5 +29,10 @@ export const cardsApi = {
 
   async deleteCard(boardId: string, cardId: string): Promise<void> {
     await http.delete(`/boards/${boardId}/cards/${cardId}`)
+  },
+
+  async getCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance> {
+    const { data } = await http.get<CardCaptureProvenance>(`/boards/${boardId}/cards/${cardId}/provenance`)
+    return data
   },
 }
