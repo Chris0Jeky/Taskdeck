@@ -190,6 +190,11 @@ Implementation progress:
   - capture source/status contracts and transition policy added
   - capture payload invariants enforced (schema version, text limits, actor-field rejection)
   - provenance linkage fields added to support `capture item -> triage run -> proposal`
+- `#201` CAP-02 capture API slice implemented in active development:
+  - added authenticated `/api/capture/items` endpoints (create/list/detail/ignore/cancel)
+  - create now returns `201` and uses queue-wrapper persistence with capture payload normalization
+  - list is user-scoped and excerpt-only (full text returned only by detail endpoint)
+  - ignore/cancel paths are idempotent for already-ignored items and enforce cross-user `403`
 - `#202` CAP-03 queue provenance fix implemented in active development:
   - planner now accepts explicit proposal source metadata overrides
   - queue worker now creates proposals with `SourceType = Queue`
