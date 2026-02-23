@@ -258,6 +258,10 @@ Delivered in the latest cycle:
    - seeded go-to-market and user-research execution issues from HUMAN playbooks (`#216`, `#217`)
    - seeded deferred capture follow-ons from the original realignment pack (`#218`, `#219`, `#220`)
    - updated capture wave tracker (`#199`) and wave index (`#107`) to keep extraction coverage explicit
+63. CAP-01 capture model/domain contract delivery (`#200`):
+   - accepted queue-wrapper MVP model (`LlmRequest` + `inbox.capture.v1`) with explicit migration path to dedicated capture entities
+   - added canonical capture source/status contracts plus transition policy mapping from queue lifecycle states
+   - added capture payload schema/invariant enforcement (schema version, raw text bounds, actor-field rejection) and provenance linkage representation for capture item -> triage run -> proposal
 
 ## Roadmap by Horizon
 

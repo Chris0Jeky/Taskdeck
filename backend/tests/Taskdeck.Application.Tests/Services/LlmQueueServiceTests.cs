@@ -62,6 +62,82 @@ public class LlmQueueServiceTests
     }
 
     [Fact]
+    public async Task AddToQueueAsync_ShouldNormalizeCapturePayload_WhenCaptureRequestTypeIsUsed()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto(CaptureRequestContract.RequestTypeV1, "Capture this quick note", boardId);
+        LlmRequest? persistedRequest = null;
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+        _authorizationServiceMock.Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+        _llmQueueRepoMock.Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), default))
+            .Callback<LlmRequest, CancellationToken>((request, _) => persistedRequest = request)
+            .ReturnsAsync((LlmRequest request, CancellationToken _) => request);
+
+        // Act
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        persistedRequest.Should().NotBeNull();
+        persistedRequest!.RequestType.Should().Be(CaptureRequestContract.RequestTypeV1);
+        var payloadResult = CaptureRequestContract.ParsePayload(persistedRequest.Payload);
+        payloadResult.IsSuccess.Should().BeTrue();
+        payloadResult.Value.Text.Should().Be("Capture this quick note");
+        payloadResult.Value.Source.Should().Be(Domain.Enums.CaptureSource.Typed);
+    }
+
+    [Fact]
+    public async Task AddToQueueAsync_ShouldReturnValidationError_WhenCaptureRequestTypeIsUnsupported()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto("inbox.capture.voice.v2", "payload");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+
+        // Act
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Unsupported capture request type");
+        _llmQueueRepoMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddToQueueAsync_ShouldReturnValidationError_WhenCaptureTextExceedsMaxLength()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var longText = new string('x', CaptureRequestContract.MaxRawTextLength + 1);
+        var dto = new CreateLlmRequestDto(CaptureRequestContract.RequestTypeV1, longText);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+
+        // Act
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("cannot exceed");
+        _llmQueueRepoMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task AddToQueueAsync_ShouldReturnForbidden_WhenUserCannotAccessBoard()
     {
         // Arrange
