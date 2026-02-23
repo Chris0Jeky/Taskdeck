@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import CaptureModal from '../common/CaptureModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -13,13 +14,31 @@ const featureFlags = useFeatureFlagStore()
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
 const showKeyboardHelp = ref(false)
+const showCaptureModal = ref(false)
 const commandPaletteInput = ref<HTMLInputElement | null>(null)
 const commandQuery = ref('')
 const selectedCommandIndex = ref(0)
 const commandListboxId = 'td-command-palette-listbox'
 
+type NavItem = {
+  label: string
+  icon: string
+  path: string
+  flag: string | null
+}
+
+type CommandItem = {
+  id: string
+  label: string
+  icon: string
+  path?: string
+  keywords?: string
+  kind: 'navigation' | 'action'
+  action?: () => void
+}
+
 const navItems = computed(() => {
-  const items = [
+  const items: NavItem[] = [
     { label: 'Boards', icon: 'B', path: '/workspace/boards', flag: null as string | null },
     { label: 'Automations', icon: 'A', path: '/workspace/automations/queue', flag: 'newAutomation' as string | null },
     { label: 'Activity', icon: 'T', path: '/workspace/activity', flag: 'newActivity' as string | null },
@@ -38,15 +57,52 @@ const navItems = computed(() => {
   })
 })
 
+function openCaptureModal() {
+  showCaptureModal.value = true
+}
+
+function closeCaptureModal() {
+  showCaptureModal.value = false
+}
+
+function handleCaptureCreated() {
+  closeCaptureModal()
+  void router.push('/workspace/inbox')
+}
+
+const commandItems = computed<CommandItem[]>(() => {
+  const navigationItems = navItems.value.map((item) => ({
+    id: `nav:${item.path}`,
+    label: item.label,
+    icon: item.icon,
+    path: item.path,
+    keywords: item.path,
+    kind: 'navigation' as const,
+  }))
+
+  return [
+    ...navigationItems,
+    {
+      id: 'action:capture',
+      label: 'New Capture',
+      icon: '+',
+      keywords: 'capture inbox quick note modal',
+      kind: 'action',
+      action: openCaptureModal,
+    },
+  ]
+})
+
 const filteredCommandItems = computed(() => {
   const normalizedQuery = commandQuery.value.trim().toLowerCase()
   if (!normalizedQuery) {
-    return navItems.value
+    return commandItems.value
   }
 
-  return navItems.value.filter((item) =>
+  return commandItems.value.filter((item) =>
     item.label.toLowerCase().includes(normalizedQuery) ||
-    item.path.toLowerCase().includes(normalizedQuery)
+    item.path?.toLowerCase().includes(normalizedQuery) ||
+    item.keywords?.toLowerCase().includes(normalizedQuery)
   )
 })
 
@@ -105,15 +161,29 @@ function setSelectedCommand(index: number) {
   selectedCommandIndex.value = index
 }
 
-function activateCommand(path: string) {
-  router.push(path)
+function activateCommand(item: CommandItem) {
+  if (item.action) {
+    item.action()
+    closeCommandPalette()
+    return
+  }
+
+  if (item.path) {
+    router.push(item.path)
+  }
+
   closeCommandPalette()
 }
 
 function activateSelectedCommand() {
   const selectedItem = filteredCommandItems.value[selectedCommandIndex.value]
   if (!selectedItem) return
-  activateCommand(selectedItem.path)
+  activateCommand(selectedItem)
+}
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -126,7 +196,12 @@ function handleKeydown(e: KeyboardEvent) {
     openCommandPalette()
   }
 
-  if (e.key === '?' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c' && !isTextEntryTarget(e.target)) {
+    e.preventDefault()
+    openCaptureModal()
+  }
+
+  if (e.key === '?' && !isTextEntryTarget(e.target)) {
     showKeyboardHelp.value = !showKeyboardHelp.value
   }
 }
@@ -150,6 +225,14 @@ watch(showKeyboardHelp, (isOpen, _, onCleanup) => {
   const unregisterEscapeHandler = registerEscapeHandler(() => {
     showKeyboardHelp.value = false
   })
+  onCleanup(() => {
+    unregisterEscapeHandler()
+  })
+})
+
+watch(showCaptureModal, (isOpen, _, onCleanup) => {
+  if (!isOpen) return
+  const unregisterEscapeHandler = registerEscapeHandler(closeCaptureModal)
   onCleanup(() => {
     unregisterEscapeHandler()
   })
@@ -291,7 +374,7 @@ onUnmounted(() => {
               <div class="td-command-palette__group-title">Navigation</div>
               <div
                 v-for="(item, index) in filteredCommandItems"
-                :key="item.path"
+                :key="item.id"
                 :id="`td-command-option-${index}`"
                 :data-command-index="index"
                 :class="[
@@ -301,10 +384,10 @@ onUnmounted(() => {
                 role="option"
                 :aria-selected="index === selectedCommandIndex"
                 @mouseenter="setSelectedCommand(index)"
-                @click="activateCommand(item.path)"
+                @click="activateCommand(item)"
               >
                 <span>{{ item.icon }}</span>
-                <span>Go to {{ item.label }}</span>
+                <span>{{ item.kind === 'navigation' ? `Go to ${item.label}` : item.label }}</span>
               </div>
               <div v-if="filteredCommandItems.length === 0" class="td-command-palette__empty">
                 No matching commands.
@@ -333,6 +416,7 @@ onUnmounted(() => {
             <div class="td-keyboard-help__section">
               <h3>Global</h3>
               <div class="td-shortcut-row"><kbd>Ctrl+K</kbd><span>Command palette</span></div>
+              <div class="td-shortcut-row"><kbd>Ctrl+Shift+C</kbd><span>Quick capture modal</span></div>
               <div class="td-shortcut-row"><kbd>?</kbd><span>This help</span></div>
               <div class="td-shortcut-row"><kbd>Escape</kbd><span>Close top surface</span></div>
             </div>
@@ -357,6 +441,14 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <CaptureModal
+        v-if="showCaptureModal"
+        @close="closeCaptureModal"
+        @created="handleCaptureCreated"
+      />
     </Teleport>
   </div>
 </template>
