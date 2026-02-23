@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Enums;
@@ -66,7 +67,9 @@ public class HealthController : ControllerBase
             using var scope = _serviceProvider.CreateScope();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             var pending = await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct);
-            var queueDepth = pending.Count();
+            var pendingList = pending.ToList();
+            var queueDepth = pendingList.Count(item => !CaptureRequestContract.IsCaptureRequestType(item.RequestType));
+            var captureDepth = pendingList.Count - queueDepth;
             var queueThreshold = Math.Max(_workerSettings.MaxBatchSize * 20, 100);
             var queueHealthy = queueDepth <= queueThreshold;
 
@@ -74,6 +77,8 @@ public class HealthController : ControllerBase
             {
                 status = queueHealthy ? "Healthy" : "Degraded",
                 depth = queueDepth,
+                totalDepth = pendingList.Count,
+                captureDepth,
                 threshold = queueThreshold
             };
             TaskdeckTelemetry.AutomationQueueBacklog.Record(

@@ -129,6 +129,40 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldApplyDefaultLimit_WhenLimitIsZero()
+    {
+        var userId = Guid.NewGuid();
+        var items = Enumerable.Range(0, 60)
+            .Select(i => new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, $"capture payload {i}"))
+            .ToList();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(items);
+
+        var result = await _service.ListAsync(
+            userId,
+            new CaptureListFilterDto(Limit: 0));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(50);
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldReturnValidationError_WhenLimitIsNegative()
+    {
+        var userId = Guid.NewGuid();
+
+        var result = await _service.ListAsync(
+            userId,
+            new CaptureListFilterDto(Limit: -1));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("negative");
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldReturnForbidden_WhenCaptureBelongsToDifferentUser()
     {
         var ownerId = Guid.NewGuid();
@@ -159,6 +193,63 @@ public class CaptureServiceTests
         var result = await _service.IgnoreAsync(userId, item.Id);
 
         result.IsSuccess.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldTransitionNewCaptureToTriaging()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Triaging);
+        result.Value.AlreadyTriaging.Should().BeFalse();
+        item.Status.Should().Be(RequestStatus.Processing);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldBeIdempotent_WhenItemIsAlreadyTriaging()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+        item.MarkAsProcessing();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Triaging);
+        result.Value.AlreadyTriaging.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnConflict_WhenItemIsIgnored()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+        item.Cancel();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("cannot transition");
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 }

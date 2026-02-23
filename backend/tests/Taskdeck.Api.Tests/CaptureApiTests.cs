@@ -39,6 +39,9 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsync($"/api/capture/items/{itemId}/cancel", null));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsync($"/api/capture/items/{itemId}/triage", null));
     }
 
     [Fact]
@@ -89,6 +92,16 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         captures.Should().HaveCount(1);
         captures[0].TextExcerpt.Should().Contain("capture-only payload");
         raw.ToLowerInvariant().Should().NotContain("rawtext");
+    }
+
+    [Fact]
+    public async Task List_ShouldReturnBadRequest_WhenStatusFilterIsInvalid()
+    {
+        await AuthenticateAsAsync("capture-list-invalid-status");
+
+        var response = await _client.GetAsync("/api/capture/items?status=not-a-real-status");
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
     }
 
     [Fact]
@@ -175,6 +188,96 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.PostAsync($"/api/capture/items/{created!.Id}/cancel", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Triage_ShouldReturnAcceptedAndTriagingState()
+    {
+        await AuthenticateAsAsync("capture-triage");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "triage payload"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var response = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var triageResult = await response.Content.ReadFromJsonAsync<CaptureTriageEnqueueResultDto>();
+        triageResult.Should().NotBeNull();
+        triageResult!.Status.Should().Be(CaptureStatus.Triaging);
+        triageResult.AlreadyTriaging.Should().BeFalse();
+
+        var detailResponse = await _client.GetAsync($"/api/capture/items/{created.Id}");
+        detailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var detail = await detailResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        detail.Should().NotBeNull();
+        detail!.Status.Should().Be(CaptureStatus.Triaging);
+    }
+
+    [Fact]
+    public async Task Triage_ShouldBeIdempotent_WhenAlreadyTriaging()
+    {
+        await AuthenticateAsAsync("capture-triage-repeat");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "triage repeat payload"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var first = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        var second = await _client.PostAsync($"/api/capture/items/{created.Id}/triage", null);
+
+        first.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        second.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var secondResult = await second.Content.ReadFromJsonAsync<CaptureTriageEnqueueResultDto>();
+        secondResult.Should().NotBeNull();
+        secondResult!.Status.Should().Be(CaptureStatus.Triaging);
+        secondResult.AlreadyTriaging.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Triage_ShouldReturnConflict_WhenCaptureIsIgnored()
+    {
+        await AuthenticateAsAsync("capture-triage-conflict");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "triage conflict payload"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var ignoreResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/ignore", null);
+        ignoreResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var response = await _client.PostAsync($"/api/capture/items/{created.Id}/triage", null);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Conflict, "Conflict");
+    }
+
+    [Fact]
+    public async Task Triage_ShouldReturnForbidden_WhenCaptureBelongsToDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "capture-triage-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "capture-triage-outsider");
+
+        var createResponse = await ownerClient.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "owner triage payload"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var response = await outsiderClient.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
     private async Task AuthenticateAsAsync(string stem)

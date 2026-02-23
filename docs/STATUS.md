@@ -199,6 +199,11 @@ Implementation progress:
   - planner now accepts explicit proposal source metadata overrides
   - queue worker now creates proposals with `SourceType = Queue`
   - queue worker forwards `SourceReferenceId` and `CorrelationId` using queue item id for traceability
+- `#203` CAP-04 triage enqueue/state transitions implemented in active development:
+  - added authenticated triage enqueue endpoint: `POST /api/capture/items/{id}/triage` (`202 Accepted`)
+  - triage enqueue now returns deterministic capture state with idempotent `already triaging` behavior
+  - invalid transition attempts now fail with stable `Conflict` error contract payloads
+  - generic queue processing now skips `inbox.capture.v1` pending items so capture triage remains explicit
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)

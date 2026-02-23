@@ -1,4 +1,5 @@
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Domain.Entities;
@@ -60,7 +61,9 @@ public class LlmQueueToProposalWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var pendingItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct)).ToList();
+        var pendingItems = (await unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending, ct))
+            .Where(item => !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            .ToList();
         TaskdeckTelemetry.AutomationQueueBacklog.Record(
             pendingItems.Count,
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, "llm"));

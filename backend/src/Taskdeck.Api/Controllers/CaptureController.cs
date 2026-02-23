@@ -49,7 +49,7 @@ public class CaptureController : AuthenticatedControllerBase
         CaptureStatus? parsedStatus = null;
         if (!string.IsNullOrWhiteSpace(status))
         {
-            if (!Enum.TryParse<CaptureStatus>(status, true, out var parsed) || !Enum.IsDefined(parsed))
+            if (!Enum.TryParse<CaptureStatus>(status, true, out var parsed) || !Enum.IsDefined(typeof(CaptureStatus), parsed))
             {
                 return BadRequest(new ApiErrorResponse(
                     ErrorCodes.ValidationError,
@@ -92,5 +92,15 @@ public class CaptureController : AuthenticatedControllerBase
 
         var result = await _captureService.CancelAsync(userId, id, cancellationToken);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
+    }
+
+    [HttpPost("{id:guid}/triage")]
+    public async Task<IActionResult> EnqueueTriage(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _captureService.EnqueueTriageAsync(userId, id, cancellationToken);
+        return result.IsSuccess ? Accepted(result.Value) : result.ToErrorActionResult();
     }
 }

@@ -29,4 +29,9 @@ public interface ICaptureService
         Guid userId,
         Guid itemId,
         CancellationToken cancellationToken = default);
+
+    Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default);
 }
