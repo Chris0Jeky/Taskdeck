@@ -94,6 +94,12 @@ public static class CaptureTriageOutputContract
         {
             var task = output.Tasks[i];
             var index = i + 1;
+            if (task is null)
+            {
+                return Result.Failure<CaptureTriageOutputV1>(
+                    ErrorCodes.ValidationError,
+                    $"Capture triage task {index} cannot be null");
+            }
 
             if (string.IsNullOrWhiteSpace(task.Title))
             {

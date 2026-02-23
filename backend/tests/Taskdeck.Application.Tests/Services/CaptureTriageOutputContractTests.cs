@@ -57,6 +57,18 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
+    public void ParseAndValidate_ShouldFail_WhenTaskElementIsNull()
+    {
+        var json = ReadFixture("invalid.null-task.json");
+
+        var result = CaptureTriageOutputContract.ParseAndValidate(json);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("cannot be null");
+    }
+
+    [Fact]
     public void TriageSchemaFile_ShouldDeclarePromptVersionAndStrictness()
     {
         var schemaPath = Path.Combine(
@@ -92,7 +104,9 @@ public class CaptureTriageOutputContractTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            if (Directory.Exists(Path.Combine(directory.FullName, ".git")))
+            var gitDirectory = Path.Combine(directory.FullName, ".git");
+            var solutionPath = Path.Combine(directory.FullName, "backend", "Taskdeck.sln");
+            if (Directory.Exists(gitDirectory) || File.Exists(gitDirectory) || File.Exists(solutionPath))
             {
                 return directory.FullName;
             }
