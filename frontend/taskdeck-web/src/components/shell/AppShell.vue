@@ -196,7 +196,7 @@ function handleKeydown(e: KeyboardEvent) {
     openCommandPalette()
   }
 
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'x' && !isTextEntryTarget(e.target)) {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c' && !isTextEntryTarget(e.target)) {
     e.preventDefault()
     openCaptureModal()
   }
