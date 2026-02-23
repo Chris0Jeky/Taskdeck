@@ -329,8 +329,8 @@ public class LlmQueueServiceTests
         var userId = Guid.NewGuid();
         var request = new LlmRequest(userId, "voicenote", "payload text");
 
-        _llmQueueRepoMock.Setup(r => r.GetNextPendingAsync(default))
-            .ReturnsAsync(request);
+        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+            .ReturnsAsync(new[] { request });
 
         // Act
         var result = await _service.ProcessNextRequestAsync();
@@ -345,8 +345,8 @@ public class LlmQueueServiceTests
     public async Task ProcessNextRequestAsync_ShouldReturnNotFound_WhenQueueIsEmpty()
     {
         // Arrange
-        _llmQueueRepoMock.Setup(r => r.GetNextPendingAsync(default))
-            .ReturnsAsync((LlmRequest?)null);
+        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+            .ReturnsAsync(Array.Empty<LlmRequest>());
 
         // Act
         var result = await _service.ProcessNextRequestAsync();
@@ -354,6 +354,23 @@ public class LlmQueueServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task ProcessNextRequestAsync_ShouldSkipCaptureRequests()
+    {
+        var userId = Guid.NewGuid();
+        var captureRequest = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+            .ReturnsAsync(new[] { captureRequest });
+
+        var result = await _service.ProcessNextRequestAsync();
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        captureRequest.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     #endregion

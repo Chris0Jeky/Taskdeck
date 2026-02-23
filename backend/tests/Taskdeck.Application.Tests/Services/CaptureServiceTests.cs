@@ -161,4 +161,61 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeTrue();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldTransitionNewCaptureToTriaging()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Triaging);
+        result.Value.AlreadyTriaging.Should().BeFalse();
+        item.Status.Should().Be(RequestStatus.Processing);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldBeIdempotent_WhenItemIsAlreadyTriaging()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+        item.MarkAsProcessing();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Triaging);
+        result.Value.AlreadyTriaging.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnConflict_WhenItemIsIgnored()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+        item.Cancel();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("cannot transition");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
 }
