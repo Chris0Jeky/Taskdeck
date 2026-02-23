@@ -190,6 +190,10 @@ Implementation progress:
   - capture source/status contracts and transition policy added
   - capture payload invariants enforced (schema version, text limits, actor-field rejection)
   - provenance linkage fields added to support `capture item -> triage run -> proposal`
+- `#202` CAP-03 queue provenance fix implemented in active development:
+  - planner now accepts explicit proposal source metadata overrides
+  - queue worker now creates proposals with `SourceType = Queue`
+  - queue worker forwards `SourceReferenceId` and `CorrelationId` using queue item id for traceability
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)

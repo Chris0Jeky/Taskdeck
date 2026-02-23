@@ -262,6 +262,10 @@ Delivered in the latest cycle:
    - accepted queue-wrapper MVP model (`LlmRequest` + `inbox.capture.v1`) with explicit migration path to dedicated capture entities
    - added canonical capture source/status contracts plus transition policy mapping from queue lifecycle states
    - added capture payload schema/invariant enforcement (schema version, raw text bounds, actor-field rejection) and provenance linkage representation for capture item -> triage run -> proposal
+64. CAP-03 queue provenance fix delivery (`#202`):
+   - extended planner contract to support explicit source metadata (`sourceType`, `sourceReferenceId`, `correlationId`) with manual-safe defaults
+   - queue worker now stamps queue-origin proposals as `ProposalSourceType.Queue` instead of `Manual`
+   - queue item id is now forwarded as source-reference and correlation metadata for deterministic provenance traceability
 
 ## Roadmap by Horizon
 

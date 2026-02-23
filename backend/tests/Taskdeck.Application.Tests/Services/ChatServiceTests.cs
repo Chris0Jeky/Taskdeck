@@ -138,7 +138,14 @@ public class ChatServiceTests
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
             .ReturnsAsync(new LlmCompletionResult("Actionable response", 12, true, "card.create"));
         _plannerMock
-            .Setup(p => p.ParseInstructionAsync(It.IsAny<string>(), userId, boardId, default))
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(),
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()))
             .ReturnsAsync(Result.Success(new ProposalDto(
                 proposalId,
                 ProposalSourceType.Chat,

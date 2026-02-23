@@ -1,6 +1,7 @@
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
@@ -149,7 +150,10 @@ public class LlmQueueToProposalWorker : BackgroundService
                 item.Payload,
                 item.UserId,
                 item.BoardId,
-                ct);
+                ct,
+                sourceType: ProposalSourceType.Queue,
+                sourceReferenceId: item.Id.ToString(),
+                correlationId: item.Id.ToString());
 
             if (proposalResult.IsSuccess)
             {

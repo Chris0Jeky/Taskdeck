@@ -115,11 +115,175 @@ public class AutomationPlannerServiceTests
             It.Is<CreateProposalDto>(dto => 
                 dto.RequestedByUserId == userId && 
                 dto.BoardId == boardId &&
+                dto.SourceType == ProposalSourceType.Manual &&
+                dto.SourceReferenceId == null &&
+                !string.IsNullOrWhiteSpace(dto.CorrelationId) &&
                 dto.Operations != null &&
                 dto.Operations.Count == 1 &&
                 dto.Operations[0].ActionType == "create" &&
                 dto.Operations[0].TargetType == "card"
             ), default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldUseProvidedSourceMetadata_WhenSpecified()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var sourceReferenceId = Guid.NewGuid().ToString();
+        var correlationId = Guid.NewGuid().ToString();
+        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
+
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { column });
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Queue,
+            sourceReferenceId,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            "create card 'Queue Task'",
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            DateTime.UtcNow.AddDays(1),
+            null,
+            null,
+            null,
+            null,
+            correlationId,
+            new List<ProposalOperationDto>());
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: sourceReferenceId,
+            correlationId: correlationId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto =>
+                dto.SourceType == ProposalSourceType.Queue &&
+                dto.SourceReferenceId == sourceReferenceId &&
+                dto.CorrelationId == correlationId &&
+                dto.RequestedByUserId == userId &&
+                dto.BoardId == boardId),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenCorrelationIdExceedsMaxLength()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var correlationId = new string('c', 101);
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: Guid.NewGuid().ToString(),
+            correlationId: correlationId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("CorrelationId cannot exceed 100 characters");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenCorrelationIdIsWhitespace()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: Guid.NewGuid().ToString(),
+            correlationId: "   ");
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("CorrelationId cannot be empty when provided");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenSourceReferenceIdIsWhitespace()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: "   ",
+            correlationId: Guid.NewGuid().ToString());
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("SourceReferenceId cannot be empty when provided");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenSourceReferenceIdExceedsMaxLength()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var sourceReferenceId = new string('s', 101);
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: sourceReferenceId,
+            correlationId: Guid.NewGuid().ToString());
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("SourceReferenceId cannot exceed 100 characters");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
     }
 
     [Fact]
