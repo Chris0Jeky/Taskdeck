@@ -1,14 +1,14 @@
-# 05 — Integrations Plan (Practical + Compliant)
+﻿# 05 - Integrations Plan (Practical Sequence)
 
-## 1) LinkedIn imports (recommended)
-Use LinkedIn’s **official export** features to obtain:
+## 1) LinkedIn imports (recommended baseline)
+Use LinkedIn official export features to obtain:
 - Connections CSV
-- (Optionally) messages archive (if included in your downloaded archive)
+- Optional message archive (if included in downloaded archive)
 
-Then import into Taskdeck as Contact cards (Option A) or Contact entities (Option B).
+Then import into Taskdeck as contact cards (Option A) or contact entities (Option B).
 
 ### Import mapping (connections CSV)
-Typical fields you may receive:
+Typical fields:
 - First Name / Last Name
 - Company
 - Position
@@ -23,23 +23,26 @@ Mapping:
 - `email = Email Address` if present
 
 ### Deduping
-Dedup key:
-- linkedin_url (best)
-- else: email
-- else: normalized(display_name + company)
+Dedup key order:
+- `linkedin_url` (best)
+- else: `email`
+- else: normalized(`display_name + company`)
 
 ## 2) Email + Calendar (optional, later)
 Goal: reduce manual logging.
 
 Options:
-- **ICS export**: generate calendar reminders without deep integrations
-- **Gmail integration**: parse labeled emails to auto-create “follow-up” tasks
-- **Google Calendar integration**: create follow-up events
+- ICS export: generate calendar reminders without deep integrations
+- Gmail integration: parse labeled emails to auto-create follow-up tasks
+- Google Calendar integration: create follow-up events
 
 MVP suggestion: ICS export only (simpler + local-first).
 
 ## 3) GitHub signals (optional)
-Use GitHub’s APIs to:
-- show stars/releases as “signals” for what to post about
-- generate a “release → post draft” workflow
-Avoid automating fake stars, etc.
+Use GitHub APIs to:
+- show stars/releases as signal inputs for posting ideas
+- generate release -> post draft workflows
+
+## 4) Connector execution mode (future)
+Connector-driven execution should be treated as a separate layer with explicit auth and policy controls.
+This keeps planning logic reusable across manual and connected execution modes.
