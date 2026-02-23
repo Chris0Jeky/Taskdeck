@@ -322,6 +322,28 @@ Reconciliation record:
 
 - `docs/analysis/2026-02-23_testing-harness-synthesis.md`
 
+## Outreach CRM Deferred Expansion Track (2026-02-23)
+
+New in-review outreach CRM planning docs were added under:
+
+- `docs/InReview/outreach-crm/`
+
+Issue seeding and reconciliation completed:
+
+- tracker: `#262` (OUT-00 outreach CRM deferred wave)
+- net-new wave issues: `#263` to `#268`
+- explicit reuse (no duplicate issue creation): `#75`, `#77`, `#175`, `#107`
+
+Execution posture:
+
+- keep outreach CRM expansion in Priority IV until higher-priority active tracks complete
+- sequence foundational modeling/UX slices before dashboard/runtime drafting slices
+- keep execution-mode behavior configurable (draft/manual default, connector expansion separately gated)
+
+Reconciliation record:
+
+- `docs/analysis/2026-02-23_outreach-crm-synthesis.md`
+
 ## Test Status (Executed)
 
 Verification Date: 2026-02-23
@@ -414,6 +436,7 @@ Automation and data:
 - capture inbox pipeline is now shipped through end-to-end loop verification (`#200` to `#210`); remaining open dependency is canonical docs promotion (`#211`)
 - premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
 - testing-harness wave guardrails are not yet implemented; tracked in `#255` to `#260`
+- outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to `#75`, `#77`, and `#175`
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
@@ -506,6 +529,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 - Seeded testing-harness wave issues (`#254` to `#260`) and updated in-review extraction records with duplicate prevention notes.
+- Seeded outreach CRM deferred-wave issues (`#262` to `#268`) and reconciled overlapping scope into existing issues (`#75`, `#77`, `#175`, `#107`).
 
 ## Canonical Documentation Policy
 

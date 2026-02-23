@@ -1,6 +1,6 @@
 # Taskdeck Next Work Checklist
 
-Last Updated: 2026-02-18
+Last Updated: 2026-02-23
 Source of truth for issue-level execution is now:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -35,6 +35,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave C analytics/security/compliance: `#77` to `#83`, `#106`, `#110` (`Priority III`)
 - [ ] Wave D/E platform/test/UX/docs maturity: `#84` to `#105`, `#111` (`Priority IV`)
 - [ ] Wave F capture realignment: `#199` to `#213` (`Priority II` to `Priority IV`)
+- [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
 - [ ] Meta index maintenance: `#107` (`Priority V`)
 
 ## Out-of-Code and Configuration Actions Coverage
