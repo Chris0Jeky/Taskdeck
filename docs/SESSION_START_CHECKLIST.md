@@ -14,12 +14,14 @@ Use this at the beginning of every coding session.
 2. `docs/IMPLEMENTATION_MASTERPLAN.md` (priority context)
 3. `docs/ISSUE_EXECUTION_GUIDE.md` (dependency-aware order)
 4. `docs/GITHUB_PROJECT_AUTOMATION.md` (status/workflow rules)
+5. `README.md` (current product positioning and thesis statement)
 
 ## 3) Choose issue correctly
 
 1. Pick the highest-priority issue whose dependencies are complete.
 2. Move project item to `Now` when work starts.
 3. If blocked, move to `Blocked` and note why.
+4. For product-facing work, verify the slice advances current thesis goals (capture friction reduction and review-first trust) rather than adding unrelated surface area.
 
 ## 4) Define execution slice
 
