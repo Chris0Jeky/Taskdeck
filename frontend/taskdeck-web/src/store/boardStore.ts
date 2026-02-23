@@ -3,11 +3,13 @@ import { ref, computed } from 'vue'
 import { boardsApi } from '../api/boardsApi'
 import { columnsApi } from '../api/columnsApi'
 import { cardsApi } from '../api/cardsApi'
+import { cardCommentsApi } from '../api/cardCommentsApi'
 import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
+import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '../types/comments'
 
 export interface CardFilters {
   searchText: string
@@ -25,6 +27,7 @@ export const useBoardStore = defineStore('board', () => {
   const currentBoard = ref<BoardDetail | null>(null)
   const currentBoardCards = ref<Card[]>([])
   const currentBoardLabels = ref<Label[]>([])
+  const cardCommentsByCardId = ref<Record<string, CardComment[]>>({})
   const boardPresenceMembers = ref<BoardPresenceMember[]>([])
   const editingCardId = ref<string | null>(null)
   const loading = ref(false)
@@ -160,6 +163,7 @@ export const useBoardStore = defineStore('board', () => {
       loading.value = true
       error.value = null
       currentBoard.value = await boardsApi.getBoard(id)
+      cardCommentsByCardId.value = {}
 
       // Fetch cards and labels for the board
       await Promise.all([fetchCards(id), fetchLabels(id)])
@@ -232,6 +236,7 @@ export const useBoardStore = defineStore('board', () => {
         currentBoard.value = null
         currentBoardCards.value = []
         currentBoardLabels.value = []
+        cardCommentsByCardId.value = {}
         boardPresenceMembers.value = []
         editingCardId.value = null
       }
@@ -472,6 +477,10 @@ export const useBoardStore = defineStore('board', () => {
 
       // Remove the card from the store
       currentBoardCards.value = currentBoardCards.value.filter((c) => c.id !== cardId)
+      if (cardCommentsByCardId.value[cardId]) {
+        const { [cardId]: _, ...remainingComments } = cardCommentsByCardId.value
+        cardCommentsByCardId.value = remainingComments
+      }
 
       if (existingCard) {
         updateColumnCardCount(existingCard.columnId, -1)
@@ -539,12 +548,95 @@ export const useBoardStore = defineStore('board', () => {
     editingCardId.value = cardId
   }
 
+  function getCardComments(cardId: string): CardComment[] {
+    return cardCommentsByCardId.value[cardId] ?? []
+  }
+
+  async function fetchCardComments(boardId: string, cardId: string) {
+    try {
+      const comments = await cardCommentsApi.getComments(boardId, cardId)
+      cardCommentsByCardId.value = {
+        ...cardCommentsByCardId.value,
+        [cardId]: comments,
+      }
+      return comments
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to fetch card comments')
+      throw e
+    }
+  }
+
+  async function createCardComment(boardId: string, cardId: string, dto: CreateCardCommentDto) {
+    try {
+      loading.value = true
+      error.value = null
+      const createdComment = await cardCommentsApi.createComment(boardId, cardId, dto)
+      const existingComments = cardCommentsByCardId.value[cardId] ?? []
+      cardCommentsByCardId.value = {
+        ...cardCommentsByCardId.value,
+        [cardId]: [...existingComments, createdComment].sort(
+          (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+        ),
+      }
+
+      toast.success('Comment added')
+      return createdComment
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to create card comment')
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function updateCardComment(
+    boardId: string,
+    cardId: string,
+    commentId: string,
+    dto: UpdateCardCommentDto
+  ) {
+    try {
+      loading.value = true
+      error.value = null
+      const updatedComment = await cardCommentsApi.updateComment(boardId, cardId, commentId, dto)
+      const existingComments = cardCommentsByCardId.value[cardId] ?? []
+      cardCommentsByCardId.value = {
+        ...cardCommentsByCardId.value,
+        [cardId]: existingComments.map((comment) => (comment.id === commentId ? updatedComment : comment)),
+      }
+
+      toast.success('Comment updated')
+      return updatedComment
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to update card comment')
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteCardComment(boardId: string, cardId: string, commentId: string) {
+    try {
+      loading.value = true
+      error.value = null
+      await cardCommentsApi.deleteComment(boardId, cardId, commentId)
+      await fetchCardComments(boardId, cardId)
+      toast.success('Comment deleted')
+    } catch (e: unknown) {
+      handleApiError(e, 'Failed to delete card comment')
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     // State
     boards,
     currentBoard,
     currentBoardCards,
     currentBoardLabels,
+    cardCommentsByCardId,
     boardPresenceMembers,
     editingCardId,
     loading,
@@ -576,6 +668,11 @@ export const useBoardStore = defineStore('board', () => {
     clearFilters,
     setBoardPresenceMembers,
     setEditingCard,
+    getCardComments,
+    fetchCardComments,
+    createCardComment,
+    updateCardComment,
+    deleteCardComment,
     fetchCards,
     fetchLabels,
     moveCard,
