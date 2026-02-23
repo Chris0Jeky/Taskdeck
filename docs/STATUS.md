@@ -185,6 +185,11 @@ Seeded issue wave:
 - adjacent go-to-market and research execution seeds: `#216`, `#217`
 
 Implementation progress:
+- `#200` CAP-01 implemented in current active development flow:
+  - queue-wrapper capture model locked (`LlmRequest` + `inbox.capture.v1`)
+  - capture source/status contracts and transition policy added
+  - capture payload invariants enforced (schema version, text limits, actor-field rejection)
+  - provenance linkage fields added to support `capture item -> triage run -> proposal`
 - `#202` CAP-03 queue provenance fix implemented in active development:
   - planner now accepts explicit proposal source metadata overrides
   - queue worker now creates proposals with `SourceType = Queue`
@@ -198,6 +203,7 @@ Execution intent:
 Reconciliation record:
 - `docs/analysis/2026-02-23_capture-realignment-synthesis.md`
 - `docs/analysis/2026-02-23_inreview-extraction-audit.md`
+- `docs/analysis/2026-02-23_capture-model-decision.md`
 
 ## Test Status (Executed)
 

@@ -45,7 +45,27 @@ public class LlmQueueService : ILlmQueueService
                 }
             }
 
-            var request = new LlmRequest(userId, dto.RequestType, dto.Payload, dto.BoardId);
+            var requestTypeValidation = CaptureRequestContract.ValidateRequestType(dto.RequestType);
+            if (!requestTypeValidation.IsSuccess)
+            {
+                return Result.Failure<LlmRequestDto>(requestTypeValidation.ErrorCode, requestTypeValidation.ErrorMessage);
+            }
+
+            var requestType = dto.RequestType;
+            var payload = dto.Payload;
+            if (CaptureRequestContract.IsCaptureRequestType(requestType))
+            {
+                var payloadResult = CaptureRequestContract.ParsePayload(payload);
+                if (!payloadResult.IsSuccess)
+                {
+                    return Result.Failure<LlmRequestDto>(payloadResult.ErrorCode, payloadResult.ErrorMessage);
+                }
+
+                requestType = CaptureRequestContract.RequestTypeV1;
+                payload = CaptureRequestContract.SerializePayload(payloadResult.Value);
+            }
+
+            var request = new LlmRequest(userId, requestType, payload, dto.BoardId);
             await _unitOfWork.LlmQueue.AddAsync(request);
             await _unitOfWork.SaveChangesAsync();
 
