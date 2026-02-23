@@ -2,24 +2,24 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-02-22
+Last Updated: 2026-02-23
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 
-## Current Verified Totals (2026-02-22)
+## Current Verified Totals (2026-02-23)
 
-- Backend: 638/638 passing
-  - Domain: 93
-  - Application: 346
-  - API integration: 187
+- Backend: 752/752 passing
+  - Domain: 107
+  - Application: 411
+  - API integration: 222
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 293/293 passing
-- Frontend E2E (smoke + automation/ops + starter-pack fixtures + concurrency harness): 21/21 passing
-- Combined automated total: 952/952 passing
+- Frontend unit: 377/377 passing
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
+- Combined automated total: 1152/1152 passing
 
 ## Backend Commands
 
