@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useCaptureStore } from '../../store/captureStore'
+import { registerEscapeHandler } from '../../composables/useEscapeStack'
 
 const emit = defineEmits<{
   close: []
@@ -13,6 +14,7 @@ const text = ref('')
 const saving = ref(false)
 const inlineError = ref<string | null>(null)
 const textInput = ref<HTMLTextAreaElement | null>(null)
+let unregisterEscapeHandler: (() => void) | null = null
 
 function requestClose() {
   if (saving.value) {
@@ -65,8 +67,14 @@ async function submit() {
 }
 
 onMounted(async () => {
+  unregisterEscapeHandler = registerEscapeHandler(requestClose)
   await nextTick()
   textInput.value?.focus()
+})
+
+onUnmounted(() => {
+  unregisterEscapeHandler?.()
+  unregisterEscapeHandler = null
 })
 </script>
 
