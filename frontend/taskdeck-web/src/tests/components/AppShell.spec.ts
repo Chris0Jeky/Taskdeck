@@ -49,6 +49,14 @@ function mountShell() {
       stubs: {
         RouterView: true,
         Teleport: true,
+        CaptureModal: {
+          template: `
+            <div aria-label="Capture modal">
+              <button class="capture-close" @click="$emit('close')">Close</button>
+              <button class="capture-created" @click="$emit('created', 'capture-1')">Created</button>
+            </div>
+          `,
+        },
         RouterLink: {
           props: ['to'],
           template: '<a :href="to"><slot /></a>',
@@ -158,6 +166,38 @@ describe('AppShell command palette keyboard model', () => {
     await waitForUi()
 
     expect(mockRouter.push).toHaveBeenCalledWith('/workspace/inbox')
+  })
+
+  it('opens capture modal from command palette action and routes to inbox on created', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await waitForUi()
+
+    const input = wrapper.get('.td-command-palette__input')
+    await input.setValue('capture')
+    await waitForUi()
+    await input.trigger('keydown.enter')
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
+    expect(mockRouter.push).not.toHaveBeenCalledWith('/workspace/capture')
+
+    await wrapper.get('.capture-created').trigger('click')
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/inbox')
+  })
+
+  it('opens capture modal with Ctrl+Shift+C', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'C', ctrlKey: true, shiftKey: true }))
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
   })
 
   it('exposes listbox option accessibility state for keyboard selection', async () => {
