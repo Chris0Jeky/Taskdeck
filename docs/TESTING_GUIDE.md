@@ -201,6 +201,36 @@ Release/security workflow: `.github/workflows/release-security.yml`
 - backend/frontend vulnerability signal capture
 - reusable container artifact/checksum lane for release-ready outputs
 
+## Testing Harness Improvement Wave (2026-02-23)
+
+Tracking issues:
+- wave tracker: `#254`
+- net-new execution: `#255` to `#260`
+
+Already-covered pack scenarios (no duplicate implementation issue required):
+- WIP limit enforcement already covered across application/API/E2E.
+- sandbox-gated database import/export rejection outside Development already covered.
+- starter-pack idempotency/conflict safety already covered.
+
+Knowledge transfer applied to existing seeds:
+- `#89`: targeted property/fuzz pilot surfaces (manifest/query/import-export boundaries)
+- `#90`: non-blocking scheduled mutation-lane posture
+- `#106`: dependency/security signal command baseline (`dotnet list package --vulnerable`, `npm audit`)
+- `#168`: CI topology routing for OpenAPI/nightly-quality lanes
+
+Wave-1 execution intent:
+- remove deterministic test flake vectors first (`#255`)
+- add persistence and contract regression lock-in next (`#256`, `#257`)
+- then add harness-level guardrails (`#258`, `#259`, `#260`) with non-blocking rollout where appropriate
+
+Useful local checks for this wave:
+
+```bash
+rg -n "Thread\\.Sleep|new Promise\\(.*setTimeout" backend/tests frontend/taskdeck-web/tests/e2e
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~ApiErrorContractApiTests"
+cd frontend/taskdeck-web && npx playwright test tests/e2e/smoke.spec.ts tests/e2e/automation-ops.spec.ts tests/e2e/capture-loop.spec.ts --reporter=line
+```
+
 ## Coverage Map
 
 - Domain invariants:

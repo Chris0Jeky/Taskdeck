@@ -2,6 +2,7 @@
 
 **Purpose:** A do later list of optional tools, settings, harness ideas, and workflows we discussed but are *not required right now* (to keep agility high).  
 **Use:** Keep this file in `docs/` and periodically cherry-pick items into your Execution Board.
+Last Updated: 2026-02-23
 
 ---
 
@@ -15,6 +16,14 @@ Promote an item from this backlog **only if** it:
 - `Delivered`: implemented and merged.
 - `Seeded`: issue exists and is currently open.
 - `Deferred`: not yet seeded as an issue.
+
+## Recent Promotion (2026-02-23 testing-harness pack)
+- New testing-harness wave tracker and child issues seeded: `#254` to `#260`.
+- Existing issue seeds updated with extracted knowledge instead of duplicating:
+  - `#89` (property/fuzz target surfaces)
+  - `#90` (mutation scheduling posture)
+  - `#106` (dependency/security signal commands and cadence)
+  - `#168` (CI topology routing for OpenAPI/nightly-quality lanes)
 
 ---
 
@@ -72,6 +81,7 @@ Promote an item from this backlog **only if** it:
 
 ## C3) Golden principles doc + lint
 **Goal:** 5-10 rules that never change (naming, layering, auth posture, error contract) + checks.
+**Status:** Seeded via `#259`.
 
 ## C4) Benchmark guardrails
 **Goal:** simple performance checks for hot paths (log query, automation execution).  
@@ -99,6 +109,10 @@ Promote an item from this backlog **only if** it:
 
 ## D3) Automated Execution Board sync
 **Goal:** turn Masterplan items into issues automatically; keep a project board tidy.
+
+## D4) Non-blocking nightly quality workflow
+**Goal:** run coverage artifact collection + dependency/security signals on schedule/manual without blocking PR-required CI.  
+**Status:** Seeded via `#260`.
 
 ---
 
