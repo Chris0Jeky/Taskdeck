@@ -7,7 +7,7 @@ const escapeHandlers: Array<() => void> = []
 const unregisterEscapeHandlerMock = vi.fn()
 
 const mockCaptureStore = reactive({
-  error: null as string | null,
+  actionError: null as string | null,
   createItem: vi.fn<(dto: { boardId: string | null; text: string; source?: string | null }) => Promise<{ id: string }>>(),
 })
 
@@ -37,7 +37,7 @@ describe('CaptureModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     escapeHandlers.splice(0, escapeHandlers.length)
-    mockCaptureStore.error = null
+    mockCaptureStore.actionError = null
     mockCaptureStore.createItem.mockResolvedValue({ id: 'capture-created' })
   })
 

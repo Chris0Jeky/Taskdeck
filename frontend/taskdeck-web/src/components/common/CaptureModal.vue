@@ -60,7 +60,7 @@ async function submit() {
     emit('created', created.id)
     emit('close')
   } catch {
-    inlineError.value = captureStore.error ?? 'Failed to save capture item.'
+    inlineError.value = captureStore.actionError ?? 'Failed to save capture item.'
   } finally {
     saving.value = false
   }
