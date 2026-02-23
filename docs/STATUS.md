@@ -224,6 +224,16 @@ Implementation progress:
   - command palette now includes capture action entry and retains inbox navigation access
   - added global quick-capture hotkey (`Ctrl+Shift+C`) with escape-stack compliant modal close ordering
   - successful capture submission now provides immediate feedback by routing to inbox with the new item rendered in list state
+- `#208` CAP-09 inbox triage trigger + proposal-linking UX delivered and regression-tested:
+  - inbox detail now includes deterministic triage enqueue action with explicit in-progress/completion button state semantics
+  - capture detail contract now surfaces provenance metadata (`capture item -> triage run -> proposal`) so proposal linkage is visible to UI consumers
+  - inbox detail now renders direct proposal-review navigation when triage yields a linked proposal
+  - capture store/api regression tests now cover triage enqueue success/failure behavior and proposal-link rendering
+- `#209` CAP-10 card/proposal provenance UX delivered and regression-tested:
+  - cards API now exposes capture provenance contract for capture-created cards (`GET /api/boards/{boardId}/cards/{cardId}/provenance`)
+  - triage create-card operations now persist deterministic card target ids so provenance lookup remains stable after proposal execution
+  - card modal now shows explicit capture-origin marker with direct capture/proposal links and triage-run metadata when provenance exists
+  - automations proposal surface now shows capture-linked context (capture artifact link + triage run reference), with frontend/backend regression coverage
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -237,7 +247,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-22
+Verification Date: 2026-02-23
 
 ### Backend (Executed)
 
@@ -245,25 +255,22 @@ Command:
 - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
-- Domain: 93/93 passing
-- Application: 357/357 passing
-- API integration: 200/200 passing
+- Domain: 107/107 passing
+- Application: 411/411 passing
+- API integration: 222/222 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 662/662 passing
+- Backend Total: 752/752 passing
 
 ### Frontend Unit + Build (Executed)
 
 Commands:
-- `cd frontend/taskdeck-web && npm run lint`
-- `cd frontend/taskdeck-web && npm run test:coverage`
+- `cd frontend/taskdeck-web && npx vitest --run`
 - `cd frontend/taskdeck-web && npm run typecheck`
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 317/317 passing
-- Coverage thresholds: passing
-- Lint: passing
+- Frontend unit: 370/370 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -277,7 +284,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 1000/1000 passing
+- Combined automated total (backend + frontend unit/build): 1122/1122 passing
 
 ## CI Status
 
@@ -325,7 +332,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-- capture inbox pipeline is partially shipped (`#200` to `#207`); remaining open dependencies are capture/provenance UX slices (`#208` to `#209`) and end-to-end verification (`#210`)
+- capture inbox pipeline is now shipped through card/proposal provenance UX (`#200` to `#209`); remaining open dependencies are end-to-end loop verification (`#210`) and canonical docs promotion (`#211`)
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway

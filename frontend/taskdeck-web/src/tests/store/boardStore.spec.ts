@@ -582,6 +582,15 @@ describe('boardStore', () => {
       expect(store.getCardComments('card-1')).toEqual([comment])
     })
 
+    it('should propagate errors when fetching card comments', async () => {
+      const fetchError = new Error('fetch failed')
+      vi.mocked(cardCommentsApi.getComments).mockRejectedValue(fetchError)
+
+      await expect(store.fetchCardComments('board-1', 'card-1')).rejects.toThrow('fetch failed')
+
+      expect(store.error).toBe('fetch failed')
+    })
+
     it('should create and update comment state', async () => {
       const createdComment: CardComment = {
         id: 'comment-1',
@@ -612,6 +621,26 @@ describe('boardStore', () => {
 
       await store.updateCardComment('board-1', 'card-1', 'comment-1', { content: 'Updated comment' })
       expect(store.getCardComments('card-1')).toEqual([updatedComment])
+    })
+
+    it('should propagate errors when creating card comments', async () => {
+      const creationError = new Error('create failed')
+      vi.mocked(cardCommentsApi.createComment).mockRejectedValue(creationError)
+
+      await expect(store.createCardComment('board-1', 'card-1', { content: 'Create comment' })).rejects.toThrow('create failed')
+
+      expect(store.error).toBe('create failed')
+      expect(store.loading).toBe(false)
+    })
+
+    it('should propagate errors when updating card comments', async () => {
+      const updateError = new Error('update failed')
+      vi.mocked(cardCommentsApi.updateComment).mockRejectedValue(updateError)
+
+      await expect(store.updateCardComment('board-1', 'card-1', 'comment-1', { content: 'Update comment' })).rejects.toThrow('update failed')
+
+      expect(store.error).toBe('update failed')
+      expect(store.loading).toBe(false)
     })
 
     it('should delete a comment and refresh card comments', async () => {

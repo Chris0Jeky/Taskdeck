@@ -1,3 +1,5 @@
+using Taskdeck.Domain.Entities;
+
 namespace Taskdeck.Application.DTOs;
 
 public record CardDto(
@@ -37,4 +39,12 @@ public record UpdateCardDto(
 public record MoveCardDto(
     Guid TargetColumnId,
     int TargetPosition
+);
+
+public record CardCaptureProvenanceDto(
+    Guid CardId,
+    Guid CaptureItemId,
+    Guid ProposalId,
+    ProposalStatus ProposalStatus,
+    Guid? TriageRunId
 );

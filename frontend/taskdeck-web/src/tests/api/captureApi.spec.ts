@@ -59,4 +59,20 @@ describe('captureApi', () => {
 
     expect(http.post).toHaveBeenCalledWith('/capture/items/capture-2/cancel')
   })
+
+  it('posts triage action and returns enqueue status', async () => {
+    vi.mocked(http.post).mockResolvedValue({
+      data: {
+        id: 'capture-2',
+        status: 'Triaging',
+        alreadyTriaging: false,
+      },
+    })
+
+    const result = await captureApi.enqueueTriage('capture-2')
+
+    expect(http.post).toHaveBeenCalledWith('/capture/items/capture-2/triage')
+    expect(result.status).toBe('Triaging')
+    expect(result.alreadyTriaging).toBe(false)
+  })
 })

@@ -18,6 +18,7 @@ public class CardServiceTests
     private readonly Mock<IColumnRepository> _columnRepoMock;
     private readonly Mock<ICardRepository> _cardRepoMock;
     private readonly Mock<ILabelRepository> _labelRepoMock;
+    private readonly Mock<IAutomationProposalRepository> _automationProposalRepoMock;
     private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly CardService _service;
 
@@ -28,12 +29,14 @@ public class CardServiceTests
         _columnRepoMock = new Mock<IColumnRepository>();
         _cardRepoMock = new Mock<ICardRepository>();
         _labelRepoMock = new Mock<ILabelRepository>();
+        _automationProposalRepoMock = new Mock<IAutomationProposalRepository>();
         _auditLogRepoMock = new Mock<IAuditLogRepository>();
 
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_automationProposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
 
         _service = new CardService(_unitOfWorkMock.Object);
@@ -284,6 +287,33 @@ public class CardServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task CreateCardAsync_ShouldUseProvidedCardId_WhenOverrideIsSet()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var explicitCardId = Guid.NewGuid();
+        var dto = new CreateCardDto(board.Id, column.Id, "Card with deterministic id", null, null, null);
+        Card? addedCard = null;
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default))
+            .ReturnsAsync(column);
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), default))
+            .Callback<Card, CancellationToken>((card, _) => addedCard = card)
+            .ReturnsAsync((Card card, CancellationToken _) => card);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync((Guid id, CancellationToken _) =>
+                new Card(id, board.Id, column.Id, "Card with deterministic id"));
+
+        var result = await _service.CreateCardAsync(dto, explicitCardId);
+
+        result.IsSuccess.Should().BeTrue();
+        addedCard.Should().NotBeNull();
+        addedCard!.Id.Should().Be(explicitCardId);
     }
 
     #endregion
@@ -788,6 +818,88 @@ public class CardServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(1);
+    }
+
+    #endregion
+
+    #region Capture Provenance Tests
+
+    [Fact]
+    public async Task GetCaptureProvenanceAsync_ShouldReturnCaptureMetadata_WhenCardWasCreatedFromCaptureProposal()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Capture-created card");
+        var captureItemId = Guid.NewGuid();
+        var triageRunId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Capture triage proposal",
+            RiskLevel.Low,
+            triageRunId.ToString(),
+            board.Id,
+            captureItemId.ToString());
+
+        var operation = new AutomationProposalOperation(
+            proposal.Id,
+            sequence: 0,
+            actionType: "create",
+            targetType: "card",
+            parameters: "{}",
+            idempotencyKey: "idempotency-key",
+            targetId: card.Id.ToString());
+        proposal.AddOperation(operation);
+        proposal.Approve(Guid.NewGuid());
+
+        _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default))
+            .ReturnsAsync(card);
+        _automationProposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+                "card",
+                card.Id.ToString(),
+                "create",
+                ProposalSourceType.Queue,
+                default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetCaptureProvenanceAsync(board.Id, card.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CardId.Should().Be(card.Id);
+        result.Value.CaptureItemId.Should().Be(captureItemId);
+        result.Value.ProposalId.Should().Be(proposal.Id);
+        result.Value.TriageRunId.Should().Be(triageRunId);
+        _automationProposalRepoMock.Verify(r => r.GetLatestByOperationTargetAsync(
+            "card",
+            card.Id.ToString(),
+            "create",
+            ProposalSourceType.Queue,
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetCaptureProvenanceAsync_ShouldReturnNotFound_WhenCardHasNoCaptureProvenance()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Regular card");
+
+        _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default))
+            .ReturnsAsync(card);
+        _automationProposalRepoMock.Setup(r => r.GetLatestByOperationTargetAsync(
+                "card",
+                card.Id.ToString(),
+                "create",
+                ProposalSourceType.Queue,
+                default))
+            .ReturnsAsync((AutomationProposal?)null);
+
+        var result = await _service.GetCaptureProvenanceAsync(board.Id, card.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
     }
 
     #endregion

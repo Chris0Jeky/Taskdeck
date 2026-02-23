@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { useQueueStore } from '../store/queueStore'
 import { useToastStore } from '../store/toastStore'
 import { getQueueTotal, normalizeQueueStatus } from '../utils/queue'
 import { createRequestId } from '../utils/requestId'
-import { normalizeProposalRiskLevel, normalizeProposalStatus } from '../utils/automation'
+import { normalizeProposalRiskLevel, normalizeProposalSourceType, normalizeProposalStatus } from '../utils/automation'
 import type { QueueStatus } from '../types/queue'
 import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay } from '../composables/useErrorMapper'
@@ -64,6 +64,36 @@ async function loadProposals() {
   } finally {
     proposalsLoading.value = false
   }
+
+  await scrollToProposalFromHash()
+}
+
+function getProposalIdFromHash(hash: string): string | null {
+  if (!hash.startsWith('#proposal-')) {
+    return null
+  }
+
+  const rawId = hash.slice('#proposal-'.length).trim()
+  if (!rawId) {
+    return null
+  }
+
+  try {
+    return decodeURIComponent(rawId)
+  } catch {
+    return null
+  }
+}
+
+async function scrollToProposalFromHash() {
+  const proposalId = getProposalIdFromHash(route.hash)
+  if (!proposalId) {
+    return
+  }
+
+  await nextTick()
+  const element = document.getElementById(`proposal-${proposalId}`)
+  element?.scrollIntoView({ block: 'nearest' })
 }
 
 onMounted(() => {
@@ -82,6 +112,14 @@ onMounted(() => {
 
 watch(() => route.name, () => {
   syncTabFromRoute()
+})
+
+watch(() => route.hash, () => {
+  if (activeTab.value !== 'proposals' || proposals.value.length === 0) {
+    return
+  }
+
+  void scrollToProposalFromHash()
 })
 
 watch(activeTab, (tab) => {
@@ -214,6 +252,36 @@ function formatDate(d: string | null): string {
   return new Date(d).toLocaleString()
 }
 
+function proposalHref(proposalId: string): string {
+  return `/workspace/automations/proposals#proposal-${encodeURIComponent(proposalId)}`
+}
+
+function captureHref(captureItemId: string): string {
+  return `/workspace/inbox#capture-${encodeURIComponent(captureItemId)}`
+}
+
+function captureSourceReference(proposal: ApiProposal): string | null {
+  if (normalizeProposalSourceType(proposal.sourceType) !== 'Queue') {
+    return null
+  }
+
+  if (!proposal.sourceReferenceId) {
+    return null
+  }
+
+  const trimmed = proposal.sourceReferenceId.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function hasProvenanceContext(proposal: ApiProposal): boolean {
+  return !!captureSourceReference(proposal)
+}
+
+function captureHrefForProposal(proposal: ApiProposal): string {
+  const sourceReference = captureSourceReference(proposal)
+  return sourceReference ? captureHref(sourceReference) : '/workspace/inbox'
+}
+
 function statusColor(status: QueueStatus | number): string {
   const normalized = normalizeQueueStatus(status)
   const colors: Record<string, string> = {
@@ -328,7 +396,12 @@ function statusColor(status: QueueStatus | number): string {
       <div v-else-if="proposals.length === 0" class="td-empty">No proposals found.</div>
 
       <div v-else class="td-proposal-list">
-        <div v-for="proposal in proposals" :key="proposal.id" class="td-proposal-card">
+        <div
+          v-for="proposal in proposals"
+          :key="proposal.id"
+          :id="`proposal-${proposal.id}`"
+          class="td-proposal-card"
+        >
           <div class="td-proposal-header">
             <div class="td-proposal-title">{{ proposal.summary }}</div>
             <span class="td-proposal-status">{{ normalizeProposalStatus(proposal.status) }}</span>
@@ -337,6 +410,22 @@ function statusColor(status: QueueStatus | number): string {
             <span>Risk: {{ normalizeProposalRiskLevel(proposal.riskLevel) }}</span>
             <span>Created: {{ formatDate(proposal.createdAt) }}</span>
             <span>Source: {{ proposal.sourceType }}</span>
+          </div>
+          <div v-if="hasProvenanceContext(proposal)" class="td-proposal-provenance">
+            <span class="td-provenance-chip">Capture-linked</span>
+            <a
+              v-if="captureSourceReference(proposal)"
+              class="td-btn td-btn--secondary td-btn--sm"
+              :href="captureHrefForProposal(proposal)"
+            >
+              Open Capture
+            </a>
+            <a class="td-btn td-btn--secondary td-btn--sm" :href="proposalHref(proposal.id)">
+              Proposal Anchor
+            </a>
+            <span v-if="proposal.correlationId.trim().length > 0" class="td-provenance-meta">
+              Triage run: {{ proposal.correlationId }}
+            </span>
           </div>
           <div class="td-proposal-actions">
             <button class="td-btn td-btn--secondary td-btn--sm" @click="handleToggleDiff(proposal.id)">
@@ -413,6 +502,22 @@ function statusColor(status: QueueStatus | number): string {
 .td-request-error { font-size: var(--td-font-sm); color: var(--td-color-error); margin-top: var(--td-space-2); }
 .td-request-actions, .td-proposal-actions { margin-top: var(--td-space-2); display: flex; gap: var(--td-space-2); flex-wrap: wrap; }
 .td-proposal-title { font-weight: 600; font-size: var(--td-font-sm); }
+.td-proposal-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--td-space-2);
+  margin-top: var(--td-space-2);
+}
+.td-provenance-chip {
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  border-radius: var(--td-radius-sm);
+  padding: 1px 8px;
+  color: var(--td-color-primary);
+  background: var(--td-color-primary-light);
+}
+.td-provenance-meta { font-size: var(--td-font-xs); color: var(--td-text-tertiary); }
 .td-proposal-status { font-size: var(--td-font-xs); color: var(--td-text-secondary); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-sm); padding: 1px 8px; }
 .td-diff { margin-top: var(--td-space-2); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-sm); background: var(--td-surface-secondary); padding: var(--td-space-2); font-size: var(--td-font-xs); white-space: pre-wrap; }
 </style>

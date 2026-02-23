@@ -15,6 +15,7 @@ vi.mock('../../api/captureApi', () => ({
     getItem: vi.fn(),
     ignoreItem: vi.fn(),
     cancelItem: vi.fn(),
+    enqueueTriage: vi.fn(),
   },
 }))
 
@@ -153,5 +154,59 @@ describe('captureStore', () => {
     expect(store.actionError).toBe('Failed to cancel capture item')
     expect(store.listError).toBeNull()
     expect(store.detailError).toBeNull()
+  })
+
+  it('enqueues triage and refreshes detail state', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c7',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockResolvedValue({
+      id: 'c7',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'Triaging',
+      source: 'Typed',
+      textExcerpt: 'triaging',
+      rawText: 'triage me',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    })
+
+    await store.triageItem('c7')
+
+    expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7')
+    expect(captureApi.getItem).toHaveBeenCalledWith('c7')
+    expect(store.detailById.c7?.status).toBe('Triaging')
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued')
+  })
+
+  it('stores action error when triage enqueue fails', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.enqueueTriage).mockRejectedValueOnce(new Error('triage-network'))
+
+    await expect(store.triageItem('c8')).rejects.toBeInstanceOf(Error)
+
+    expect(store.actionError).toBe('Failed to triage capture item')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
+  })
+
+  it('emits a single triage error toast when detail refresh fails after enqueue', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c9',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
+
+    await expect(store.triageItem('c9')).rejects.toBeInstanceOf(Error)
+
+    expect(toastMocks.error).toHaveBeenCalledTimes(1)
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
   })
 })

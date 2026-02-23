@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
 import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 
 const captureStore = useCaptureStore()
+const router = useRouter()
 const selectedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
@@ -151,6 +153,18 @@ async function cancelSelected() {
   }
 }
 
+async function triageSelected() {
+  if (!selectedItemId.value) {
+    return
+  }
+
+  try {
+    await captureStore.triageItem(selectedItemId.value)
+  } catch {
+    // Store handles toast + error state.
+  }
+}
+
 async function refreshSelectedDetail() {
   if (!selectedItemId.value) {
     return
@@ -172,6 +186,36 @@ function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
     status === 'New' ||
     status === 6 ||
     status === 'Failed'
+}
+
+const canTriageSelection = canMutateSelection
+
+function triageButtonLabel(status: CaptureStatusValue | undefined): string {
+  if (status === undefined) {
+    return 'Start Triage'
+  }
+
+  const label = statusLabel(status)
+  if (label === 'Triaging') {
+    return 'Triaging...'
+  }
+
+  if (label === 'Triaged' || label === 'Proposal Created') {
+    return 'Triage Complete'
+  }
+
+  if (label === 'Converted') {
+    return 'Converted'
+  }
+
+  return 'Start Triage'
+}
+
+function openProposal(proposalId: string): void {
+  void router.push({
+    name: 'workspace-automations-proposals',
+    hash: `#proposal-${encodeURIComponent(proposalId)}`,
+  })
 }
 
 watch(items, (nextItems) => {
@@ -296,6 +340,16 @@ onMounted(() => {
             <pre v-else class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
           </div>
 
+          <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link">
+            <span>Linked proposal is ready for review.</span>
+            <button
+              class="td-btn td-btn--primary td-btn--sm"
+              @click="openProposal(selectedItem.provenance.proposalId)"
+            >
+              Open Proposal
+            </button>
+          </div>
+
           <footer class="td-inbox-detail__actions">
             <button
               class="td-btn td-btn--secondary"
@@ -303,6 +357,13 @@ onMounted(() => {
               :disabled="captureStore.loadingDetail"
             >
               {{ captureStore.loadingDetail ? 'Refreshing...' : 'Refresh Detail' }}
+            </button>
+            <button
+              class="td-btn td-btn--primary"
+              @click="triageSelected"
+              :disabled="captureStore.actionBusyItemId === selectedItem.id || !canTriageSelection(selectedItem.status)"
+            >
+              {{ captureStore.actionBusyItemId === selectedItem.id ? 'Working...' : triageButtonLabel(selectedItem.status) }}
             </button>
             <button
               class="td-btn td-btn--danger"
@@ -477,6 +538,14 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
+.td-inbox-detail__proposal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+}
+
 .td-placeholder {
   color: var(--td-text-secondary);
   padding: var(--td-space-6);
@@ -502,6 +571,17 @@ onMounted(() => {
   border-radius: var(--td-radius-md);
   border: 1px solid transparent;
   cursor: pointer;
+  text-decoration: none;
+}
+
+.td-btn--sm {
+  padding: var(--td-space-1) var(--td-space-3);
+  font-size: var(--td-font-xs);
+}
+
+.td-btn--primary {
+  background: var(--td-color-primary);
+  color: var(--td-text-inverse);
 }
 
 .td-btn--secondary {

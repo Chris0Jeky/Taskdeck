@@ -25,6 +25,14 @@ public class CardService
 
     public async Task<Result<CardDto>> CreateCardAsync(CreateCardDto dto, CancellationToken cancellationToken = default)
     {
+        return await CreateCardAsync(dto, cardId: null, cancellationToken);
+    }
+
+    public async Task<Result<CardDto>> CreateCardAsync(
+        CreateCardDto dto,
+        Guid? cardId,
+        CancellationToken cancellationToken = default)
+    {
         try
         {
             // Verify board and column exist
@@ -44,7 +52,9 @@ public class CardService
             // Determine position (add to bottom)
             var position = column.Cards.Any() ? column.Cards.Max(c => c.Position) + 1 : 0;
 
-            var card = new Card(dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position);
+            var card = cardId.HasValue
+                ? new Card(cardId.Value, dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position)
+                : new Card(dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position);
             await _unitOfWork.Cards.AddAsync(card, cancellationToken);
 
             // Add labels if provided
@@ -235,6 +245,47 @@ public class CardService
     {
         var cards = await _unitOfWork.Cards.SearchAsync(boardId, searchText, labelId, columnId, cancellationToken);
         return Result.Success(cards.Select(MapToDto));
+    }
+
+    public async Task<Result<CardCaptureProvenanceDto>> GetCaptureProvenanceAsync(
+        Guid boardId,
+        Guid cardId,
+        CancellationToken cancellationToken = default)
+    {
+        var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+        if (card == null || card.BoardId != boardId)
+            return Result.Failure<CardCaptureProvenanceDto>(ErrorCodes.NotFound, $"Card with ID {cardId} not found in board {boardId}");
+
+        var proposal = await _unitOfWork.AutomationProposals.GetLatestByOperationTargetAsync(
+            "card",
+            cardId.ToString(),
+            actionType: "create",
+            sourceType: ProposalSourceType.Queue,
+            cancellationToken);
+        if (proposal == null || string.IsNullOrWhiteSpace(proposal.SourceReferenceId))
+        {
+            return Result.Failure<CardCaptureProvenanceDto>(
+                ErrorCodes.NotFound,
+                $"Capture provenance not found for card {cardId}");
+        }
+
+        if (!Guid.TryParse(proposal.SourceReferenceId, out var captureItemId))
+        {
+            return Result.Failure<CardCaptureProvenanceDto>(
+                ErrorCodes.NotFound,
+                $"Capture provenance not found for card {cardId}");
+        }
+
+        var triageRunId = Guid.TryParse(proposal.CorrelationId, out var parsedTriageRunId)
+            ? parsedTriageRunId
+            : (Guid?)null;
+
+        return Result.Success(new CardCaptureProvenanceDto(
+            card.Id,
+            captureItemId,
+            proposal.Id,
+            proposal.Status,
+            triageRunId));
     }
 
     public async Task<Result> DeleteCardAsync(Guid id, CancellationToken cancellationToken = default)

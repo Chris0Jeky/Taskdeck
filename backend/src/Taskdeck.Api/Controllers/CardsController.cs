@@ -50,6 +50,26 @@ public class CardsController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    [HttpGet("{cardId}/provenance")]
+    public async Task<IActionResult> GetCardProvenance(Guid boardId, Guid cardId)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var permissionError = await EnsureBoardPermissionAsync(
+            _authorizationService,
+            userId,
+            boardId,
+            static (authorizationService, actorId, targetBoardId) => authorizationService.CanReadBoardAsync(actorId, targetBoardId),
+            "You do not have access to this board");
+
+        if (permissionError is not null)
+            return permissionError;
+
+        var result = await _cardService.GetCaptureProvenanceAsync(boardId, cardId);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateCard(Guid boardId, [FromBody] CreateCardDto dto)
     {

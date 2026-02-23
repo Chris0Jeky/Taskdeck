@@ -37,6 +37,16 @@ export interface Card {
   updatedAt: string
 }
 
+export type CardProvenanceProposalStatus = 'PendingReview' | 'Approved' | 'Rejected' | 'Applied' | 'Failed' | 'Expired' | number
+
+export interface CardCaptureProvenance {
+  cardId: string
+  captureItemId: string
+  proposalId: string
+  proposalStatus: CardProvenanceProposalStatus
+  triageRunId: string | null
+}
+
 export interface Label {
   id: string
   boardId: string

@@ -4,17 +4,21 @@ using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
     public CardsApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -27,6 +31,9 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.GetAsync($"/api/boards/{boardId}/cards"));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/boards/{boardId}/cards/{cardId}/provenance"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsJsonAsync(
@@ -257,6 +264,94 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
     }
 
+    [Fact]
+    public async Task GetCardProvenance_ShouldReturnCaptureMetadata_ForCaptureCreatedCard()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, "cards-provenance");
+        _isAuthenticated = true;
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "cards-provenance-board");
+        await CreateColumnAsync(board.Id, "Inbox", wipLimit: null);
+
+        var createCaptureResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(
+                board.Id,
+                """
+                - [ ] Validate capture provenance endpoint
+                """));
+        createCaptureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var captureItem = await createCaptureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        captureItem.Should().NotBeNull();
+
+        var triageResponse = await _client.PostAsync($"/api/capture/items/{captureItem!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var triagedItem = await WaitForCaptureStatusAsync(_client, captureItem.Id, CaptureStatus.ProposalCreated);
+        triagedItem.Provenance.Should().NotBeNull();
+        triagedItem.Provenance!.ProposalId.Should().NotBeNull();
+
+        var proposalId = triagedItem.Provenance.ProposalId!.Value;
+        var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        await ExecuteProposalAsync(_client, proposalId);
+
+        var createdCard = await WaitForSingleCardAsync(_client, board.Id);
+
+        var provenanceResponse = await _client.GetAsync($"/api/boards/{board.Id}/cards/{createdCard.Id}/provenance");
+        provenanceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var provenance = await provenanceResponse.Content.ReadFromJsonAsync<CardCaptureProvenanceDto>();
+        provenance.Should().NotBeNull();
+        provenance!.CardId.Should().Be(createdCard.Id);
+        provenance.CaptureItemId.Should().Be(captureItem.Id);
+        provenance.ProposalId.Should().Be(proposalId);
+        provenance.ProposalStatus.Should().Be(ProposalStatus.Applied);
+        provenance.TriageRunId.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetCardProvenance_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "cards-provenance-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "cards-provenance-outsider");
+
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "cards-provenance-owner-board");
+        var createColumnResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Inbox", null, null));
+        createColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createCaptureResponse = await ownerClient.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(
+                board.Id,
+                """
+                - [ ] Verify cross-user provenance restriction
+                """));
+        createCaptureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var captureItem = await createCaptureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        captureItem.Should().NotBeNull();
+
+        var triageResponse = await ownerClient.PostAsync($"/api/capture/items/{captureItem!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var triagedItem = await WaitForCaptureStatusAsync(ownerClient, captureItem.Id, CaptureStatus.ProposalCreated);
+        triagedItem.Provenance.Should().NotBeNull();
+        triagedItem.Provenance!.ProposalId.Should().NotBeNull();
+        var proposalId = triagedItem.Provenance.ProposalId!.Value;
+
+        var approveResponse = await ownerClient.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        await ExecuteProposalAsync(ownerClient, proposalId);
+
+        var createdCard = await WaitForSingleCardAsync(ownerClient, board.Id);
+        var response = await outsiderClient.GetAsync($"/api/boards/{board.Id}/cards/{createdCard.Id}/provenance");
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         await EnsureAuthenticatedAsync();
@@ -296,5 +391,72 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AuthenticateAsync(_client, "cards-suite");
         _isAuthenticated = true;
+    }
+
+    private async Task<CardDto> WaitForSingleCardAsync(HttpClient client, Guid boardId)
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            var cardsResponse = await client.GetAsync($"/api/boards/{boardId}/cards");
+            cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+            cards.Should().NotBeNull();
+            if (cards!.Count == 1)
+                return cards[0];
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+
+        var timeoutResponse = await client.GetAsync($"/api/boards/{boardId}/cards");
+        timeoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var timeoutCards = await timeoutResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+        timeoutCards.Should().NotBeNull();
+        timeoutCards!.Should().ContainSingle();
+        return timeoutCards![0]!;
+    }
+
+    private async Task<CaptureItemDto> WaitForCaptureStatusAsync(Guid itemId, CaptureStatus expectedStatus)
+    {
+        return await WaitForCaptureStatusAsync(_client, itemId, expectedStatus);
+    }
+
+    private static async Task<CaptureItemDto> WaitForCaptureStatusAsync(
+        HttpClient client,
+        Guid itemId,
+        CaptureStatus expectedStatus)
+    {
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            var response = await client.GetAsync($"/api/capture/items/{itemId}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var item = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+            item.Should().NotBeNull();
+            if (item!.Status == expectedStatus)
+            {
+                return item;
+            }
+
+            if (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed)
+            {
+                return item;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+
+        var timeoutResponse = await client.GetAsync($"/api/capture/items/{itemId}");
+        timeoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var timeoutItem = await timeoutResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        timeoutItem.Should().NotBeNull();
+        return timeoutItem!;
+    }
+
+    private static async Task ExecuteProposalAsync(HttpClient client, Guid proposalId)
+    {
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposalId}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

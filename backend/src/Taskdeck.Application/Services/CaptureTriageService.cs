@@ -262,6 +262,7 @@ public class CaptureTriageService : ICaptureTriageService
         CaptureTriageTaskV1 task,
         int sequence)
     {
+        var cardId = BuildDeterministicCardId(captureItemId, sequence, task.Title);
         var parameters = JsonSerializer.Serialize(new
         {
             title = task.Title,
@@ -275,7 +276,8 @@ public class CaptureTriageService : ICaptureTriageService
             ActionType: "create",
             TargetType: "card",
             Parameters: parameters,
-            IdempotencyKey: BuildIdempotencyKey(captureItemId, sequence, task.Title));
+            IdempotencyKey: BuildIdempotencyKey(captureItemId, sequence, task.Title),
+            TargetId: cardId.ToString());
     }
 
     private static string BuildIdempotencyKey(Guid captureItemId, int sequence, string taskTitle)
@@ -284,6 +286,15 @@ public class CaptureTriageService : ICaptureTriageService
         var material = $"{captureItemId:N}:{sequence}:{normalizedTitle}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static Guid BuildDeterministicCardId(Guid captureItemId, int sequence, string taskTitle)
+    {
+        var normalizedTitle = Regex.Replace(taskTitle.ToLowerInvariant().Trim(), @"\s+", " ");
+        var material = $"capture-card:{captureItemId:N}:{sequence}:{normalizedTitle}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+        var bytes = hash.Take(16).ToArray();
+        return new Guid(bytes);
     }
 
     private static CaptureTriageOutputV1 BuildOutputModel(IReadOnlyCollection<string> taskCandidates)

@@ -224,6 +224,41 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task GetByIdAsync_ShouldIncludeProvenance_WhenCapturePayloadContainsLinkedProposal()
+    {
+        var userId = Guid.NewGuid();
+        var captureItemId = Guid.NewGuid();
+        var triageRunId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "capture payload"),
+                    captureItemId,
+                    triageRunId,
+                    proposalId,
+                    "triage.v1")));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.GetByIdAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provenance.Should().NotBeNull();
+        result.Value.Provenance!.CaptureItemId.Should().Be(captureItemId);
+        result.Value.Provenance.TriageRunId.Should().Be(triageRunId);
+        result.Value.Provenance.ProposalId.Should().Be(proposalId);
+        result.Value.Provenance.PromptVersion.Should().Be("triage.v1");
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldReturnForbidden_WhenCaptureBelongsToDifferentUser()
     {
         var ownerId = Guid.NewGuid();

@@ -3,8 +3,9 @@ import { onBeforeUnmount, ref, computed, watch } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
-import type { Card, Label } from '../../types/board'
+import type { Card, CardCaptureProvenance, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
+import { normalizeProposalStatus } from '../../utils/automation'
 
 const props = defineProps<{
   card: Card
@@ -32,6 +33,9 @@ const newCommentContent = ref('')
 const replyDraftByParent = ref<Record<string, string>>({})
 const editingCommentId = ref<string | null>(null)
 const editingCommentContent = ref('')
+const captureProvenance = ref<CardCaptureProvenance | null>(null)
+const loadingCaptureProvenance = ref(false)
+const loadedCaptureProvenanceCardId = ref<string | null>(null)
 
 const comments = computed<CardComment[]>(() => boardStore.getCardComments(props.card.id))
 const topLevelComments = computed(() => comments.value.filter(comment => !comment.parentCommentId))
@@ -47,6 +51,12 @@ watch(() => props.card, (newCard) => {
     isBlocked.value = newCard.isBlocked
     blockReason.value = newCard.blockReason || ''
     selectedLabelIds.value = newCard.labels.map(l => l.id)
+    captureProvenance.value = null
+    loadedCaptureProvenanceCardId.value = null
+
+    if (props.isOpen) {
+      void loadCaptureProvenance()
+    }
   }
 }, { immediate: true })
 
@@ -56,6 +66,7 @@ watch(
     if (isOpen) {
       expectedUpdatedAt.value = props.card.updatedAt
       await boardStore.fetchCardComments(props.card.boardId, props.card.id)
+      await loadCaptureProvenance()
       boardStore.setEditingCard(props.card.id)
       return
     }
@@ -64,6 +75,9 @@ watch(
     replyDraftByParent.value = {}
     editingCommentId.value = null
     editingCommentContent.value = ''
+    captureProvenance.value = null
+    loadingCaptureProvenance.value = false
+    loadedCaptureProvenanceCardId.value = null
 
     if (boardStore.editingCardId === props.card.id) {
       boardStore.setEditingCard(null)
@@ -88,6 +102,35 @@ const isFormValid = computed(() => {
   if (isBlocked.value && blockReason.value.trim().length === 0) return false
   return true
 })
+
+function captureHref(captureItemId: string): string {
+  return `/workspace/inbox#capture-${encodeURIComponent(captureItemId)}`
+}
+
+function proposalHref(proposalId: string): string {
+  return `/workspace/automations/proposals#proposal-${encodeURIComponent(proposalId)}`
+}
+
+function proposalStatusLabel(status: CardCaptureProvenance['proposalStatus']): string {
+  return normalizeProposalStatus(status)
+}
+
+async function loadCaptureProvenance() {
+  if (loadingCaptureProvenance.value || loadedCaptureProvenanceCardId.value === props.card.id) {
+    return
+  }
+
+  loadingCaptureProvenance.value = true
+  try {
+    captureProvenance.value = await boardStore.fetchCardProvenance(props.card.boardId, props.card.id)
+    loadedCaptureProvenanceCardId.value = props.card.id
+  } catch {
+    captureProvenance.value = null
+    loadedCaptureProvenanceCardId.value = props.card.id
+  } finally {
+    loadingCaptureProvenance.value = false
+  }
+}
 
 async function handleSave() {
   if (!isFormValid.value) return
@@ -219,6 +262,9 @@ onBeforeUnmount(() => {
   replyDraftByParent.value = {}
   editingCommentId.value = null
   editingCommentContent.value = ''
+  captureProvenance.value = null
+  loadingCaptureProvenance.value = false
+  loadedCaptureProvenanceCardId.value = null
 })
 </script>
 
@@ -500,6 +546,37 @@ onBeforeUnmount(() => {
             <div class="text-xs text-gray-500 space-y-1">
               <p>Created: {{ new Date(card.createdAt).toLocaleString() }}</p>
               <p>Last updated: {{ new Date(card.updatedAt).toLocaleString() }}</p>
+            </div>
+            <div class="mt-3 space-y-2">
+              <div v-if="loadingCaptureProvenance" class="text-xs text-gray-500">
+                Loading capture provenance...
+              </div>
+              <div v-else-if="captureProvenance" class="space-y-2">
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <span class="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold uppercase tracking-wide">
+                    Capture Origin
+                  </span>
+                  <span class="text-gray-500">Proposal status: {{ proposalStatusLabel(captureProvenance.proposalStatus) }}</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <a
+                    class="px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    :href="captureHref(captureProvenance.captureItemId)"
+                  >
+                    Open Capture
+                  </a>
+                  <a
+                    class="px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    :href="proposalHref(captureProvenance.proposalId)"
+                  >
+                    Open Proposal
+                  </a>
+                </div>
+                <p v-if="captureProvenance.triageRunId" class="text-xs text-gray-500">
+                  Triage run: {{ captureProvenance.triageRunId }}
+                </p>
+              </div>
+              <p v-else class="text-xs text-gray-500 italic">No capture provenance available.</p>
             </div>
           </div>
         </div>

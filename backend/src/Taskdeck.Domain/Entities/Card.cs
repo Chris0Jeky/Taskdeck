@@ -42,14 +42,16 @@ public class Card : Entity
     public Card(Guid boardId, Guid columnId, string title, string? description = null, DateTimeOffset? dueDate = null, int position = 0)
         : base()
     {
-        BoardId = boardId;
-        ColumnId = columnId;
-        Title = title;
-        SetDescription(description ?? string.Empty);
-        DueDate = dueDate;
-        Position = position;
-        IsBlocked = false;
-        BlockReason = null;
+        Initialize(boardId, columnId, title, description, dueDate, position);
+    }
+
+    public Card(Guid cardId, Guid boardId, Guid columnId, string title, string? description = null, DateTimeOffset? dueDate = null, int position = 0)
+        : base(cardId)
+    {
+        if (cardId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Card ID cannot be empty");
+
+        Initialize(boardId, columnId, title, description, dueDate, position);
     }
 
     public void Update(string? title = null, string? description = null, DateTimeOffset? dueDate = null)
@@ -124,5 +126,23 @@ public class Card : Entity
     public void ClearLabels()
     {
         _cardLabels.Clear();
+    }
+
+    private void Initialize(
+        Guid boardId,
+        Guid columnId,
+        string title,
+        string? description,
+        DateTimeOffset? dueDate,
+        int position)
+    {
+        BoardId = boardId;
+        ColumnId = columnId;
+        Title = title;
+        SetDescription(description ?? string.Empty);
+        DueDate = dueDate;
+        Position = position;
+        IsBlocked = false;
+        BlockReason = null;
     }
 }

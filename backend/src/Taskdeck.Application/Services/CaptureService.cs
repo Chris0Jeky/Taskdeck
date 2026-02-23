@@ -281,7 +281,8 @@ public class CaptureService : ICaptureService
             excerpt,
             item.CreatedAt,
             item.ProcessedAt,
-            item.RetryCount);
+            item.RetryCount,
+            payload.Provenance);
     }
 
     private static CapturePayloadV1 ParsePayload(LlmRequest item)
