@@ -7,34 +7,66 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class CommandRunRepository : Repository<CommandRun>, ICommandRunRepository
 {
+    private const int DefaultLimit = 100;
+
     public CommandRunRepository(TaskdeckDbContext context) : base(context)
     {
     }
 
     public async Task<IEnumerable<CommandRun>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL to keep ORDER BY + LIMIT in DB.
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM CommandRuns WHERE RequestedByUserId = {userId} ORDER BY CreatedAt DESC LIMIT {boundedLimit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await _dbSet
             .Where(c => c.RequestedByUserId == userId)
             .OrderByDescending(c => c.CreatedAt)
-            .Take(limit)
+            .Take(boundedLimit)
             .ToListAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<CommandRun>> GetByStatusAsync(CommandRunStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL to keep ORDER BY + LIMIT in DB.
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM CommandRuns WHERE Status = {(int)status} ORDER BY CreatedAt DESC LIMIT {boundedLimit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await _dbSet
             .Where(c => c.Status == status)
             .OrderByDescending(c => c.CreatedAt)
-            .Take(limit)
+            .Take(boundedLimit)
             .ToListAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<CommandRun>> GetByTemplateNameAsync(string templateName, int limit = 100, CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL to keep ORDER BY + LIMIT in DB.
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM CommandRuns WHERE TemplateName = {templateName} ORDER BY CreatedAt DESC LIMIT {boundedLimit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await _dbSet
             .Where(c => c.TemplateName == templateName)
             .OrderByDescending(c => c.CreatedAt)
-            .Take(limit)
+            .Take(boundedLimit)
             .ToListAsync(cancellationToken);
     }
 
@@ -61,6 +93,7 @@ public class CommandRunRepository : Repository<CommandRun>, ICommandRunRepositor
         int limit = 100,
         CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
         var query = _context.CommandRunLogs
             .AsNoTracking()
             .Include(log => log.CommandRun)
@@ -91,7 +124,12 @@ public class CommandRunRepository : Repository<CommandRun>, ICommandRunRepositor
 
         return await query
             .OrderByDescending(log => log.Timestamp)
-            .Take(limit)
+            .Take(boundedLimit)
             .ToListAsync(cancellationToken);
+    }
+
+    private static int NormalizeLimit(int limit)
+    {
+        return limit <= 0 ? DefaultLimit : limit;
     }
 }

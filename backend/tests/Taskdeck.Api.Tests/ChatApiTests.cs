@@ -55,6 +55,63 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetMySessions_ShouldReturnSessions_ForAuthenticatedUser()
+    {
+        await AuthenticateAsync("chat-list");
+
+        var createSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("List sessions smoke test"));
+        createSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdSession = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        createdSession.Should().NotBeNull();
+
+        var listSessionsResponse = await _client.GetAsync("/api/llm/chat/sessions");
+        listSessionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sessions = await listSessionsResponse.Content.ReadFromJsonAsync<List<ChatSessionDto>>();
+        sessions.Should().NotBeNull();
+        sessions!.Should().Contain(session => session.Id == createdSession!.Id);
+    }
+
+    [Fact]
+    public async Task GetMySessions_ShouldReturnMostRecentlyUpdatedSessionFirst()
+    {
+        await AuthenticateAsync("chat-list-order");
+
+        var olderSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Older session"));
+        olderSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var olderSession = await olderSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        olderSession.Should().NotBeNull();
+
+        var newerSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Newer session"));
+        newerSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var newerSession = await newerSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        newerSession.Should().NotBeNull();
+
+        var bumpOlderSessionResponse = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{olderSession!.Id}/messages",
+            new SendChatMessageDto("Bump updated-at ordering"));
+        bumpOlderSessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var listSessionsResponse = await _client.GetAsync("/api/llm/chat/sessions");
+        listSessionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sessions = await listSessionsResponse.Content.ReadFromJsonAsync<List<ChatSessionDto>>();
+        sessions.Should().NotBeNull();
+        var orderedSessions = sessions!;
+        orderedSessions.Should().BeInDescendingOrder(session => session.UpdatedAt);
+
+        orderedSessions
+            .Select(session => session.Id)
+            .Take(2)
+            .Should()
+            .ContainInOrder(olderSession.Id, newerSession!.Id);
+    }
+
+    [Fact]
     public async Task GetSession_ShouldReturnForbidden_ForDifferentUser()
     {
         var userOneId = await AuthenticateAsync("chat-owner");
