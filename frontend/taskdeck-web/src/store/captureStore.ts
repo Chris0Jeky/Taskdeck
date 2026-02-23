@@ -26,7 +26,9 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   const actionBusyItemId = ref<string | null>(null)
-  const error = ref<string | null>(null)
+  const listError = ref<string | null>(null)
+  const detailError = ref<string | null>(null)
+  const actionError = ref<string | null>(null)
 
   const hasItems = computed(() => items.value.length > 0)
 
@@ -43,11 +45,11 @@ export const useCaptureStore = defineStore('capture', () => {
   async function fetchItems(query?: CaptureListQuery) {
     try {
       loadingList.value = true
-      error.value = null
+      listError.value = null
       items.value = await captureApi.listItems(query)
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox items').message
-      error.value = message
+      listError.value = message
       toast.error(message)
       throw e
     } finally {
@@ -62,14 +64,14 @@ export const useCaptureStore = defineStore('capture', () => {
 
     try {
       loadingDetail.value = true
-      error.value = null
+      detailError.value = null
       const detail = await captureApi.getItem(itemId)
       detailById.value[itemId] = detail
       upsertSummary(toSummary(detail))
       return detail
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox item').message
-      error.value = message
+      detailError.value = message
       toast.error(message)
       throw e
     } finally {
@@ -79,7 +81,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
   async function createItem(dto: CreateCaptureItemDto) {
     try {
-      error.value = null
+      actionError.value = null
       const created = await captureApi.createItem(dto)
       detailById.value[created.id] = created
       upsertSummary(toSummary(created))
@@ -87,7 +89,7 @@ export const useCaptureStore = defineStore('capture', () => {
       return created
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to capture item').message
-      error.value = message
+      actionError.value = message
       toast.error(message)
       throw e
     }
@@ -96,13 +98,13 @@ export const useCaptureStore = defineStore('capture', () => {
   async function ignoreItem(itemId: string) {
     try {
       actionBusyItemId.value = itemId
-      error.value = null
+      actionError.value = null
       await captureApi.ignoreItem(itemId)
       await fetchDetail(itemId, true)
       toast.success('Capture item ignored')
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to ignore capture item').message
-      error.value = message
+      actionError.value = message
       toast.error(message)
       throw e
     } finally {
@@ -113,13 +115,13 @@ export const useCaptureStore = defineStore('capture', () => {
   async function cancelItem(itemId: string) {
     try {
       actionBusyItemId.value = itemId
-      error.value = null
+      actionError.value = null
       await captureApi.cancelItem(itemId)
       await fetchDetail(itemId, true)
       toast.success('Capture item cancelled')
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to cancel capture item').message
-      error.value = message
+      actionError.value = message
       toast.error(message)
       throw e
     } finally {
@@ -133,7 +135,9 @@ export const useCaptureStore = defineStore('capture', () => {
     loadingList,
     loadingDetail,
     actionBusyItemId,
-    error,
+    listError,
+    detailError,
+    actionError,
     hasItems,
     fetchItems,
     fetchDetail,

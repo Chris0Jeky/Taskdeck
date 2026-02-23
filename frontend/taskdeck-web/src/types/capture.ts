@@ -38,13 +38,13 @@ export interface CaptureItem extends CaptureItemSummary {
 export interface CreateCaptureItemDto {
   boardId: string | null
   text: string
-  source?: string | null
+  source?: CaptureSource | null
   titleHint?: string | null
   externalRef?: string | null
 }
 
 export interface CaptureListQuery {
-  status?: string
+  status?: CaptureStatus
   boardId?: string
   limit?: number
 }

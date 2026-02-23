@@ -128,7 +128,30 @@ describe('captureStore', () => {
 
     await expect(store.fetchItems()).rejects.toBeInstanceOf(Error)
 
-    expect(store.error).toBe('Failed to load inbox items')
+    expect(store.listError).toBe('Failed to load inbox items')
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to load inbox items')
+  })
+
+  it('keeps list error intact when detail loading fails', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.listItems).mockRejectedValueOnce(new Error('network'))
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-network'))
+
+    await expect(store.fetchItems()).rejects.toBeInstanceOf(Error)
+    await expect(store.fetchDetail('c5')).rejects.toBeInstanceOf(Error)
+
+    expect(store.listError).toBe('Failed to load inbox items')
+    expect(store.detailError).toBe('Failed to load inbox item')
+  })
+
+  it('stores action errors separately from list/detail errors', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.cancelItem).mockRejectedValueOnce(new Error('cancel-network'))
+
+    await expect(store.cancelItem('c6')).rejects.toBeInstanceOf(Error)
+
+    expect(store.actionError).toBe('Failed to cancel capture item')
+    expect(store.listError).toBeNull()
+    expect(store.detailError).toBeNull()
   })
 })
