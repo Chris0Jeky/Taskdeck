@@ -50,6 +50,9 @@ Reused existing issues (no duplication):
 - `#92` UX-06 accessibility remediation pass (mapped from UI-08)
 - `#213` PERF-07 virtualization pass (performance playbook partial coverage)
 
+Note:
+- UI-09 motion tokens + reduced-motion support is intentionally merged into UI-01 scope (`#243`) as part of the design tokens/theme-density-motion foundation.
+
 ## Sequencing Rules Adopted
 
 1. Foundations before reskins:

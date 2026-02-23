@@ -141,12 +141,12 @@ Provider runtime expansion (2026-02-23):
 14. `#240` DOC-05 managed-key fair-use policy and abuse consequence disclosures
 15. `#242` UI-00 frontend premium UI wave tracker
 16. `#243` UI-01 design tokens/theme-density-motion foundations
-17. `#244` UI-02 shared UI primitives foundation
-18. `#245` UI-03 primitive stack decision spike
+17. `#245` UI-03 primitive stack decision spike
+18. `#244` UI-02 shared UI primitives foundation
 19. `#246` UI-04 AppShell premium reskin (no behavior changes)
 20. `#247` UI-05 board card/surface polish pass
-21. `#248` UI-06 drag/drop premium behavior + keyboard alternatives
-22. `#249` UI-07 inbox premium primitives pass
+21. `#249` UI-07 inbox premium primitives pass
+22. `#248` UI-06 drag/drop premium behavior + keyboard alternatives
 23. `#250` PERF-08 frontend interaction latency budgets + instrumentation
 
 Execution note (premium UI wave):
