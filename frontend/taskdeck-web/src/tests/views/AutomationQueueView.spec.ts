@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../types/automation'
@@ -112,12 +112,17 @@ async function mountAt(path: string) {
   await Promise.resolve()
   await Promise.resolve()
   await wrapper.vm.$nextTick()
+  mountedWrapper = wrapper
   return wrapper
 }
+
+let mountedWrapper: ReturnType<typeof mount> | null = null
+let originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView
 
 describe('AutomationQueueView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    originalScrollIntoView = HTMLElement.prototype.scrollIntoView
     mocks.fetchByStatus.mockResolvedValue(undefined)
     mocks.fetchStats.mockResolvedValue(undefined)
     mocks.submitRequest.mockResolvedValue(undefined)
@@ -128,6 +133,17 @@ describe('AutomationQueueView', () => {
     mocks.executeProposal.mockResolvedValue(buildProposal({ status: 'Applied' }))
     mocks.getProposalDiff.mockResolvedValue('diff')
     mocks.createRequestId.mockReturnValue('request-1')
+  })
+
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: originalScrollIntoView,
+    })
   })
 
   it('shows capture and triage provenance context for queue proposals', async () => {
@@ -171,6 +187,7 @@ describe('AutomationQueueView', () => {
     const scrollSpy = vi.fn()
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
+      writable: true,
       value: scrollSpy,
     })
 
@@ -185,11 +202,27 @@ describe('AutomationQueueView', () => {
     const scrollSpy = vi.fn()
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
+      writable: true,
       value: scrollSpy,
     })
 
     await mountAt('/workspace/automations/proposals')
 
+    expect(scrollSpy).not.toHaveBeenCalled()
+  })
+
+  it('ignores malformed proposal hash fragments without throwing', async () => {
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-42' })])
+    const scrollSpy = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollSpy,
+    })
+
+    const wrapper = await mountAt('/workspace/automations/proposals#proposal-%E0%A4%A')
+
+    expect(wrapper.exists()).toBe(true)
     expect(scrollSpy).not.toHaveBeenCalled()
   })
 })

@@ -78,7 +78,11 @@ function getProposalIdFromHash(hash: string): string | null {
     return null
   }
 
-  return decodeURIComponent(rawId)
+  try {
+    return decodeURIComponent(rawId)
+  } catch {
+    return null
+  }
 }
 
 async function scrollToProposalFromHash() {
