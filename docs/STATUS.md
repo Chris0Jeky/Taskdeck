@@ -214,6 +214,11 @@ Implementation progress:
   - triage pipeline now enforces schema version + prompt version invariants before proposal generation
   - triage provenance now persists prompt version `triage.v1` per triage run for capture item linkage/audit visibility
   - added golden and negative fixture coverage for schema validation failures (missing tasks, wrong prompt version, unknown properties)
+- `#206` CAP-07 inbox frontend route/list/detail implemented in active development:
+  - added workspace inbox route (`/workspace/inbox`) with shell navigation integration
+  - inbox list now renders excerpt-first capture summaries and loads full text only on explicit detail open
+  - inbox detail now supports deterministic ignore/cancel actions with refreshed state from capture API
+  - keyboard-first navigation (`ArrowUp`/`ArrowDown`/`Enter`) and escape-stack compliant detail close behavior are now regression-tested
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -315,7 +320,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-- capture inbox backend pipeline is partially shipped (`#200` to `#205`); remaining open dependencies are inbox/provenance UX slices (`#206` to `#209`) and end-to-end verification (`#210`)
+- capture inbox pipeline is partially shipped (`#200` to `#206`); remaining open dependencies are capture UX and provenance slices (`#207` to `#209`) and end-to-end verification (`#210`)
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway

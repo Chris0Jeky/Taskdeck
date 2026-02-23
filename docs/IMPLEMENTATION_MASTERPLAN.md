@@ -285,6 +285,11 @@ Delivered in the latest cycle:
    - triage proposal generation now validates structured output against schema constraints before creating proposals, with deterministic `ValidationError` outcomes on contract violations
    - triage provenance persistence now includes `promptVersion` (`triage.v1`) for each successful triage run (`capture item -> triage run -> proposal`)
    - added deterministic fixture-backed validation coverage (golden + negative cases for missing tasks, wrong prompt version, unknown properties)
+69. CAP-07 inbox frontend route/list/detail delivery (`#206`):
+   - added workspace inbox surface (`/workspace/inbox`) with shell navigation and router integration
+   - inbox list now renders excerpt-first capture summaries, while full raw capture text is fetched only on detail open
+   - inbox detail now supports deterministic ignore/cancel actions with refreshed capture state after mutation calls
+   - keyboard-first inbox navigation (`ArrowUp`/`ArrowDown`/`Enter`) plus escape-stack compliant detail close behavior is now covered by frontend regression tests
 
 ## Roadmap by Horizon
 
