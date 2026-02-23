@@ -101,8 +101,10 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         listSessionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var sessions = await listSessionsResponse.Content.ReadFromJsonAsync<List<ChatSessionDto>>();
         sessions.Should().NotBeNull();
+        var orderedSessions = sessions!;
+        orderedSessions.Should().BeInDescendingOrder(session => session.UpdatedAt);
 
-        sessions!
+        orderedSessions
             .Select(session => session.Id)
             .Take(2)
             .Should()

@@ -15,25 +15,55 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
 
     public async Task<IEnumerable<ChatSession>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL to keep ORDER BY + LIMIT in DB.
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM ChatSessions WHERE UserId = {userId} ORDER BY UpdatedAt DESC LIMIT {boundedLimit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await GetLimitedOrderedByUpdatedAtAsync(
             _dbSet.Where(s => s.UserId == userId),
-            limit,
+            boundedLimit,
             cancellationToken);
     }
 
     public async Task<IEnumerable<ChatSession>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL to keep ORDER BY + LIMIT in DB.
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM ChatSessions WHERE BoardId = {boardId} ORDER BY UpdatedAt DESC LIMIT {boundedLimit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await GetLimitedOrderedByUpdatedAtAsync(
             _dbSet.Where(s => s.BoardId == boardId),
-            limit,
+            boundedLimit,
             cancellationToken);
     }
 
     public async Task<IEnumerable<ChatSession>> GetByStatusAsync(ChatSessionStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL to keep ORDER BY + LIMIT in DB.
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM ChatSessions WHERE Status = {(int)status} ORDER BY UpdatedAt DESC LIMIT {boundedLimit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await GetLimitedOrderedByUpdatedAtAsync(
             _dbSet.Where(s => s.Status == status),
-            limit,
+            boundedLimit,
             cancellationToken);
     }
 
@@ -49,12 +79,14 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
         int limit,
         CancellationToken cancellationToken)
     {
-        var boundedLimit = limit <= 0 ? DefaultLimit : limit;
-        var sessions = await query.ToListAsync(cancellationToken);
-
-        return sessions
+        return await query
             .OrderByDescending(s => s.UpdatedAt)
-            .Take(boundedLimit)
-            .ToList();
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    private static int NormalizeLimit(int limit)
+    {
+        return limit <= 0 ? DefaultLimit : limit;
     }
 }
