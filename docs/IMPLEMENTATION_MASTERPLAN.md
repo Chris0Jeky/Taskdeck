@@ -463,9 +463,9 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Start capture-wave foundation in dependency order: `#200` -> `#201` -> `#203` -> `#204` -> `#205`.
-2. Resolve queue provenance correctness early (`#202`) so all capture/queue proposal UX is trust-aligned.
-3. Land capture-linked hardening prerequisites in parallel where non-conflicting: rate-limit scope update in `#81` and logging redaction in `#212`.
+1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
+2. Keep capture wave (`#199` to `#211`) in `Pending/Next` readiness with dependency grooming until Priority I path is materially reduced.
+3. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
 4. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 
 ## Documentation Operating Model
