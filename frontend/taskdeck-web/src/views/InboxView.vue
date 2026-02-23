@@ -10,6 +10,13 @@ const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
 
 const items = computed(() => captureStore.items)
+const activeDescendantId = computed(() => {
+  if (items.value.length === 0) {
+    return undefined
+  }
+
+  return `td-inbox-option-${activeItemIndex.value}`
+})
 const selectedItem = computed(() => {
   if (!selectedItemId.value) {
     return null
@@ -40,12 +47,21 @@ function sourceLabel(source: CaptureSourceValue): string {
 }
 
 async function loadInbox() {
-  await captureStore.fetchItems({ limit: 200 })
+  try {
+    await captureStore.fetchItems({ limit: 200 })
+  } catch {
+    // Store handles toast + error state.
+  }
 }
 
 async function openItem(item: CaptureItemSummary) {
   selectedItemId.value = item.id
-  await captureStore.fetchDetail(item.id)
+  try {
+    await captureStore.fetchDetail(item.id)
+  } catch {
+    // Keep detail state coherent when open fails.
+    selectedItemId.value = null
+  }
 }
 
 function closeDetail() {
@@ -67,7 +83,7 @@ function scrollActiveItemIntoView() {
 
   const targetRow = listContainer.value.querySelector<HTMLElement>(
     `[data-inbox-index="${activeItemIndex.value}"]`)
-  targetRow?.scrollIntoView({ block: 'nearest' })
+  targetRow?.scrollIntoView?.({ block: 'nearest' })
 }
 
 async function openActiveItem() {
@@ -121,6 +137,18 @@ async function cancelSelected() {
 
   try {
     await captureStore.cancelItem(selectedItemId.value)
+  } catch {
+    // Store handles toast + error state.
+  }
+}
+
+async function refreshSelectedDetail() {
+  if (!selectedItemId.value) {
+    return
+  }
+
+  try {
+    await captureStore.fetchDetail(selectedItemId.value, true)
   } catch {
     // Store handles toast + error state.
   }
@@ -194,6 +222,7 @@ onMounted(() => {
           tabindex="0"
           role="listbox"
           aria-label="Inbox items"
+          :aria-activedescendant="activeDescendantId"
           @keydown="handleKeydown"
         >
           <div v-if="captureStore.loadingList" class="td-placeholder">Loading inbox items...</div>
@@ -203,12 +232,14 @@ onMounted(() => {
           <button
             v-for="(item, index) in items"
             :key="item.id"
+            :id="`td-inbox-option-${index}`"
             :data-inbox-index="index"
             :class="[
               'td-inbox-row',
               index === activeItemIndex ? 'td-inbox-row--active' : '',
               selectedItemId === item.id ? 'td-inbox-row--selected' : ''
             ]"
+            tabindex="-1"
             role="option"
             :aria-selected="selectedItemId === item.id"
             @mouseenter="setActiveIndex(index)"
@@ -226,8 +257,17 @@ onMounted(() => {
       </section>
 
       <section class="td-inbox__detail-panel">
-        <div v-if="!selectedItem" class="td-placeholder td-placeholder--detail">
+        <div v-if="!selectedItemId" class="td-placeholder td-placeholder--detail">
           Select an item to view full text and actions.
+        </div>
+        <div
+          v-else-if="captureStore.loadingDetail && !selectedItem"
+          class="td-placeholder td-placeholder--detail-loading"
+        >
+          Loading detail...
+        </div>
+        <div v-else-if="!selectedItem" class="td-placeholder td-placeholder--detail">
+          Unable to load capture detail.
         </div>
 
         <article v-else class="td-inbox-detail">
@@ -252,7 +292,7 @@ onMounted(() => {
           <footer class="td-inbox-detail__actions">
             <button
               class="td-btn td-btn--secondary"
-              @click="captureStore.fetchDetail(selectedItem.id, true)"
+              @click="refreshSelectedDetail"
               :disabled="captureStore.loadingDetail"
             >
               {{ captureStore.loadingDetail ? 'Refreshing...' : 'Refresh Detail' }}
