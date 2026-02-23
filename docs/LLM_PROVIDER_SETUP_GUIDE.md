@@ -109,7 +109,7 @@ Model values above are examples only; confirm available models per provider docs
 OpenAI requirements to reflect in implementation:
 
 - authenticate with bearer token on API requests
-- Responses API is the recommended direction, while Chat Completions remains supported for incremental migration
+- Responses API is the recommended direction, while Chat Completions remain supported for incremental migration
 - structured output paths should prefer schema-constrained JSON contracts
 
 Gemini requirements to reflect in implementation:
