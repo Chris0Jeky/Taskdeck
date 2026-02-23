@@ -55,6 +55,25 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetMySessions_ShouldReturnSessions_ForAuthenticatedUser()
+    {
+        await AuthenticateAsync("chat-list");
+
+        var createSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("List sessions smoke test"));
+        createSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdSession = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        createdSession.Should().NotBeNull();
+
+        var listSessionsResponse = await _client.GetAsync("/api/llm/chat/sessions");
+        listSessionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sessions = await listSessionsResponse.Content.ReadFromJsonAsync<List<ChatSessionDto>>();
+        sessions.Should().NotBeNull();
+        sessions!.Should().Contain(session => session.Id == createdSession!.Id);
+    }
+
+    [Fact]
     public async Task GetSession_ShouldReturnForbidden_ForDifferentUser()
     {
         var userOneId = await AuthenticateAsync("chat-owner");
