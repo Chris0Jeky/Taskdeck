@@ -93,6 +93,7 @@ public class CaptureTriageServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.OperationCount.Should().Be(3);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
         createdProposal.Should().NotBeNull();
         var created = createdProposal!;
         created.SourceType.Should().Be(ProposalSourceType.Queue);

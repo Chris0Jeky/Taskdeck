@@ -209,6 +209,11 @@ Implementation progress:
   - deterministic extraction baseline now converts checklist/bullet/numbered capture text into proposal operations with stable idempotency keys
   - triage outcomes now persist capture provenance linkage (`capture item -> triage run -> proposal`) and surface `ProposalCreated` status when linkage exists
   - invalid capture triage inputs (for example boardless capture triage) now fail deterministically without direct board mutation and remain bounded by existing worker retry policy
+- `#205` CAP-06 strict triage schema/prompt versioning implemented in active development:
+  - added strict capture triage output contract (`capture-triage-output.v1`) with machine-validated schema and contract tests
+  - triage pipeline now enforces schema version + prompt version invariants before proposal generation
+  - triage provenance now persists prompt version `triage.v1` per triage run for capture item linkage/audit visibility
+  - added golden and negative fixture coverage for schema validation failures (missing tasks, wrong prompt version, unknown properties)
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -310,7 +315,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-- capture inbox backend pipeline is partially shipped (`#200` to `#204`); remaining open dependencies are strict schema/prompt-version enforcement (`#205`), inbox/provenance UX slices (`#206` to `#209`), and end-to-end verification (`#210`)
+- capture inbox backend pipeline is partially shipped (`#200` to `#205`); remaining open dependencies are inbox/provenance UX slices (`#206` to `#209`) and end-to-end verification (`#210`)
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway

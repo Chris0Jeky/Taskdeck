@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "promptVersion": "triage.v1",
+  "tasks": [
+    {
+      "title": "Write CAP-06 contract tests",
+      "evidence": "Write CAP-06 contract tests"
+    },
+    {
+      "title": "Update triage docs",
+      "evidence": "Update triage docs"
+    }
+  ]
+}

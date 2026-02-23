@@ -12,8 +12,7 @@ namespace Taskdeck.Application.Services;
 
 public class CaptureTriageService : ICaptureTriageService
 {
-    private const int MaxExtractedTasks = 20;
-    private const int MaxTaskTitleLength = 180;
+    private const int MaxExtractedTasks = CaptureTriageOutputContract.MaxTasks;
 
     private static readonly Regex ChecklistPattern = new(
         @"^\s*[-*]\s+\[[xX ]\]\s+(.+?)\s*$",
@@ -88,12 +87,21 @@ public class CaptureTriageService : ICaptureTriageService
                 "Capture text did not produce actionable triage items");
         }
 
-        var operations = taskCandidates
-            .Select((taskTitle, sequence) => BuildCreateCardOperation(
+        var outputModel = BuildOutputModel(taskCandidates);
+        var outputValidation = CaptureTriageOutputContract.Validate(outputModel);
+        if (!outputValidation.IsSuccess)
+        {
+            return Result.Failure<CaptureTriageProposalResultDto>(
+                outputValidation.ErrorCode,
+                outputValidation.ErrorMessage);
+        }
+
+        var operations = outputValidation.Value.Tasks
+            .Select((task, sequence) => BuildCreateCardOperation(
                 captureItemId,
                 boardId.Value,
                 defaultColumn.Id,
-                taskTitle,
+                task,
                 sequence))
             .ToList();
 
@@ -112,7 +120,7 @@ public class CaptureTriageService : ICaptureTriageService
 
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
         var triageRunId = Guid.NewGuid();
-        var summary = BuildSummary(taskCandidates);
+        var summary = BuildSummary(outputValidation.Value.Tasks);
         var permissionResult = await _policyEngine.ValidatePermissionsAsync(
             userId,
             boardId,
@@ -148,7 +156,8 @@ public class CaptureTriageService : ICaptureTriageService
             captureItemId,
             triageRunId,
             createProposalResult.Value.Id,
-            operations.Count));
+            operations.Count,
+            outputValidation.Value.PromptVersion));
     }
 
     private static List<string> ExtractTaskCandidates(string rawText)
@@ -238,9 +247,9 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         var normalized = Regex.Replace(trimmed, @"\s+", " ").Trim();
-        if (normalized.Length > MaxTaskTitleLength)
+        if (normalized.Length > CaptureTriageOutputContract.MaxTaskTitleLength)
         {
-            normalized = normalized[..MaxTaskTitleLength].TrimEnd();
+            normalized = normalized[..CaptureTriageOutputContract.MaxTaskTitleLength].TrimEnd();
         }
 
         return normalized;
@@ -250,12 +259,13 @@ public class CaptureTriageService : ICaptureTriageService
         Guid captureItemId,
         Guid boardId,
         Guid columnId,
-        string taskTitle,
+        CaptureTriageTaskV1 task,
         int sequence)
     {
         var parameters = JsonSerializer.Serialize(new
         {
-            title = taskTitle,
+            title = task.Title,
+            description = task.Evidence,
             columnId,
             boardId
         });
@@ -265,7 +275,7 @@ public class CaptureTriageService : ICaptureTriageService
             ActionType: "create",
             TargetType: "card",
             Parameters: parameters,
-            IdempotencyKey: BuildIdempotencyKey(captureItemId, sequence, taskTitle));
+            IdempotencyKey: BuildIdempotencyKey(captureItemId, sequence, task.Title));
     }
 
     private static string BuildIdempotencyKey(Guid captureItemId, int sequence, string taskTitle)
@@ -276,14 +286,27 @@ public class CaptureTriageService : ICaptureTriageService
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static string BuildSummary(IReadOnlyCollection<string> taskCandidates)
+    private static CaptureTriageOutputV1 BuildOutputModel(IReadOnlyCollection<string> taskCandidates)
     {
-        var lead = taskCandidates.FirstOrDefault() ?? "capture triage";
-        if (taskCandidates.Count == 1)
+        var tasks = taskCandidates
+            .Take(CaptureTriageOutputContract.MaxTasks)
+            .Select(task => new CaptureTriageTaskV1(task, task))
+            .ToList();
+
+        return new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            CaptureTriageOutputContract.PromptVersionV1,
+            tasks);
+    }
+
+    private static string BuildSummary(IReadOnlyCollection<CaptureTriageTaskV1> tasks)
+    {
+        var lead = tasks.FirstOrDefault()?.Title ?? "capture triage";
+        if (tasks.Count == 1)
         {
             return $"Capture triage: {lead}";
         }
 
-        return $"Capture triage ({taskCandidates.Count} tasks): {lead}";
+        return $"Capture triage ({tasks.Count} tasks): {lead}";
     }
 }
