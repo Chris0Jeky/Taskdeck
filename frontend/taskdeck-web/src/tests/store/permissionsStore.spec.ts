@@ -59,6 +59,15 @@ describe('permissionsStore', () => {
       expect(store.boardAccess.get('board-1')).toEqual(accessList)
       expect(store.loading).toBe(false)
     })
+
+    it('sets error when fetching board access fails', async () => {
+      vi.mocked(boardAccessApi.getAccess).mockRejectedValue(new Error('network down'))
+
+      await expect(store.fetchBoardAccess('board-1')).rejects.toBeInstanceOf(Error)
+
+      expect(store.error).toBe('network down')
+      expect(store.loading).toBe(false)
+    })
   })
 
   describe('grantAccess', () => {
@@ -91,6 +100,19 @@ describe('permissionsStore', () => {
 
       const list = store.boardAccess.get('board-1')!
       expect(list[0].role).toBe('Admin')
+    })
+
+    it('returns updated access even when local entry is missing', async () => {
+      sessionStore.userId = 'user-1'
+      store.boardAccess.set('board-1', [makeAccess({ id: 'a1', userId: 'user-2', role: 'Viewer' })])
+      const updated = makeAccess({ id: 'a2', userId: 'user-3', role: 'Admin' })
+      vi.mocked(boardAccessApi.updateAccess).mockResolvedValue(updated)
+
+      const result = await store.updateAccess('board-1', 'a2', { role: 'Admin' })
+
+      expect(result).toEqual(updated)
+      expect(store.boardAccess.get('board-1')).toHaveLength(1)
+      expect(store.boardAccess.get('board-1')?.[0].id).toBe('a1')
     })
   })
 
@@ -168,6 +190,15 @@ describe('permissionsStore', () => {
         .rejects
         .toThrow('You must be logged in to use board access management.')
       expect(boardAccessApi.grantAccess).not.toHaveBeenCalled()
+    })
+
+    it('returns null role checks when no session user exists', () => {
+      store.boardAccess.set('board-1', [makeAccess({ userId: 'user-1', role: 'Owner' })])
+
+      expect(store.currentUserRole('board-1')).toBeNull()
+      expect(store.canEdit('board-1')).toBe(false)
+      expect(store.canAdmin('board-1')).toBe(false)
+      expect(store.isOwner('board-1')).toBe(false)
     })
   })
 })
