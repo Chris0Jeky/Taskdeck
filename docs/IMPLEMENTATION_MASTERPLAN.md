@@ -266,6 +266,10 @@ Delivered in the latest cycle:
    - extended planner contract to support explicit source metadata (`sourceType`, `sourceReferenceId`, `correlationId`) with manual-safe defaults
    - queue worker now stamps queue-origin proposals as `ProposalSourceType.Queue` instead of `Manual`
    - queue item id is now forwarded as source-reference and correlation metadata for deterministic provenance traceability
+65. CAP-02 capture API slice delivery (`#201`):
+   - added authenticated `/api/capture/items` API surface for create/list/detail/ignore/cancel actions with claims-derived user scoping
+   - create endpoint now returns `201 Created` and persists capture payloads via queue-wrapper model (`LlmRequest` + `inbox.capture.v1`)
+   - list/detail contracts now enforce excerpt-only list payloads and detail-only full text visibility, with idempotent ignore/cancel action behavior and cross-user `403` vs true-missing `404` policy coverage
 
 ## Roadmap by Horizon
 
