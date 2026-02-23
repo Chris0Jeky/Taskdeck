@@ -83,7 +83,7 @@ function isOverdue(dateString: string | null): boolean {
         type="button"
         data-action="drag-card-handle"
         draggable="true"
-        class="flex-shrink-0 rounded p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-grab active:cursor-grabbing"
+        class="flex-shrink-0 rounded p-2 -m-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-grab active:cursor-grabbing"
         title="Drag Card"
         aria-label="Drag Card"
         @click.stop

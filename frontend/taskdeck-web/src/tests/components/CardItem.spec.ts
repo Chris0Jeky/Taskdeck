@@ -22,6 +22,18 @@ function createCard(): Card {
 }
 
 describe('CardItem drag guardrails', () => {
+  it('uses enlarged drag handle hit area classes', () => {
+    const wrapper = mount(CardItem, {
+      props: {
+        card: createCard(),
+      },
+    })
+
+    const handleClasses = wrapper.get('[data-action="drag-card-handle"]').classes()
+    expect(handleClasses).toContain('p-2')
+    expect(handleClasses).toContain('-m-1')
+  })
+
   it('blocks dragstart when not initiated from drag handle', async () => {
     const wrapper = mount(CardItem, {
       props: {
