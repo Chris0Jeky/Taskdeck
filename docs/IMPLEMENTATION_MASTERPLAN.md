@@ -300,6 +300,11 @@ Delivered in the latest cycle:
    - capture detail contract now surfaces provenance linkage metadata (`capture item -> triage run -> proposal`) for UI consumers
    - inbox detail now renders direct proposal review navigation when triage yields a linked proposal id
    - frontend regression suite now covers triage action success/failure and proposal-link rendering paths
+72. CAP-10 card/proposal provenance UX delivery (`#209`):
+   - added card provenance API contract for capture-created cards (`GET /api/boards/{boardId}/cards/{cardId}/provenance`) with board-scope authz guardrails (`403` cross-user)
+   - capture triage create-card operations now persist deterministic card target ids so provenance lookup remains stable after proposal execution
+   - card modal now surfaces capture-origin marker, capture/proposal deep-links, proposal status, and triage-run metadata when provenance exists
+   - automations proposal surface now exposes capture-linked context (capture artifact link + triage-run reference), with frontend/backend regression coverage
 
 ## Roadmap by Horizon
 
@@ -518,7 +523,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Continue capture wave delivery on completed dependencies by sequencing `#209` then `#210` then `#211`, while preserving Priority I policy guardrails.
+2. Continue capture wave delivery on completed dependencies by sequencing `#210` then `#211`, while preserving Priority I policy guardrails.
 3. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
 4. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 
