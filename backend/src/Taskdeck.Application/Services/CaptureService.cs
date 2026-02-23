@@ -144,6 +144,65 @@ public class CaptureService : ICaptureService
         return CancelInternalAsync(userId, itemId, cancellationToken);
     }
 
+    public async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
+        if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");
+
+        if (item.UserId != userId)
+            return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
+
+        var currentStatus = CaptureStatusPolicy.MapFromQueueStatus(item.Status);
+        if (currentStatus == CaptureStatus.Triaging)
+        {
+            return Result.Success(new CaptureTriageEnqueueResultDto(
+                item.Id,
+                CaptureStatus.Triaging,
+                AlreadyTriaging: true));
+        }
+
+        if (!CaptureStatusPolicy.CanTransition(currentStatus, CaptureStatus.Triaging))
+        {
+            return Result.Failure<CaptureTriageEnqueueResultDto>(
+                ErrorCodes.Conflict,
+                $"Capture item cannot transition from {currentStatus} to {CaptureStatus.Triaging}");
+        }
+
+        if (item.Status != RequestStatus.Pending && item.Status != RequestStatus.Failed)
+        {
+            return Result.Failure<CaptureTriageEnqueueResultDto>(
+                ErrorCodes.Conflict,
+                $"Capture item cannot transition from {currentStatus} to {CaptureStatus.Triaging}");
+        }
+
+        try
+        {
+            if (item.Status == RequestStatus.Failed)
+            {
+                item.ResetForRetry();
+            }
+
+            item.MarkAsProcessing();
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success(new CaptureTriageEnqueueResultDto(
+                item.Id,
+                CaptureStatus.Triaging,
+                AlreadyTriaging: false));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Conflict, ex.Message);
+        }
+    }
+
     private async Task<Result> CancelInternalAsync(
         Guid userId,
         Guid itemId,

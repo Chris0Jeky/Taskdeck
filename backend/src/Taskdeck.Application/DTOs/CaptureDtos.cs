@@ -35,3 +35,8 @@ public record CaptureListFilterDto(
     CaptureStatus? Status = null,
     Guid? BoardId = null,
     int Limit = 50);
+
+public record CaptureTriageEnqueueResultDto(
+    Guid Id,
+    CaptureStatus Status,
+    bool AlreadyTriaging);
