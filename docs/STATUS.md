@@ -21,6 +21,7 @@ Current constraints are mostly hardening and consistency:
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
+- capture/inbox realignment has been backlog-seeded (`#199` to `#213`) but is not yet part of shipped runtime behavior
 
 ## Current Implementation Snapshot
 
@@ -153,6 +154,28 @@ Analysis record:
 - `docs/analysis/2026-02-21_repo-scan-analysis.md`
 - `docs/analysis/2026-02-21_ci-github-actions-expansion-plan.md`
 
+## Capture Realignment Wave (2026-02-23)
+
+Realignment packs under `docs/InReview` were reviewed and reconciled into active backlog seeding:
+- automation realignment pack:
+  - `docs/InReview/REPO_PACK/docs/analysis/2026-02-21_capture-automation_realignment_pack/`
+- security/performance addendum:
+  - `docs/InReview/docs/analysis/2026-02-21_capture-security-performance-addendum/`
+
+Seeded issue wave:
+- umbrella tracker: `#199`
+- capture delivery sequence: `#200` to `#211`
+- linked hardening/performance follow-through: `#212`, `#213`
+- existing rate-limit issue updated with capture scope (no duplicate issue): `#81`
+
+Execution intent:
+- preserve proposal-first trust posture (no direct model auto-apply)
+- keep claims-first identity and `401/403/404` policy semantics
+- require deterministic schema/error handling and provenance visibility for capture-generated changes
+
+Reconciliation record:
+- `docs/analysis/2026-02-23_capture-realignment-synthesis.md`
+
 ## Test Status (Executed)
 
 Verification Date: 2026-02-22
@@ -243,6 +266,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
+- capture inbox pipeline is planned but not shipped; key open dependencies are capture model/storage decision (`#200`), API surface (`#201`), triage worker path (`#204`), and end-to-end verification (`#210`)
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
@@ -331,6 +355,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Expanded local Docker MCP Marketplace setup: enabled additional Docker catalog servers (including SQLite/JetBrains/Postman candidates), configured Docker gateway defaults in project Codex config, and documented optional credential-gated integrations.
 - Added MCP operator runbook + scripts (`Set-MarketplaceMcpCredentials.ps1`, `Test-DockerMcpProfile.ps1`) for daily/weekly workflow integration and deterministic optional-server verification.
 - Delivered TST-07 MCP integration smoke/regression harness (`#141`): optional-server prerequisite diagnostics are now explicit, strict/warning/skip policies are codified, and CI-friendly deterministic status output is documented and shipped.
+- Seeded capture realignment wave issues (`#199` to `#213`), updated the wave index (`#107`) with a dedicated capture wave, and extended SEC-06 rate-limiting scope (`#81`) to include capture endpoints.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 
