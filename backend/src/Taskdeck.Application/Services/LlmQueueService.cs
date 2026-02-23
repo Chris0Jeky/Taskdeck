@@ -115,7 +115,9 @@ public class LlmQueueService : ILlmQueueService
     {
         try
         {
-            var request = await _unitOfWork.LlmQueue.GetNextPendingAsync();
+            var pendingRequests = await _unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending);
+            var request = pendingRequests.FirstOrDefault(
+                candidate => !CaptureRequestContract.IsCaptureRequestType(candidate.RequestType));
             if (request == null)
                 return Result.Failure<LlmRequestDto>(ErrorCodes.NotFound, "No pending requests in the queue");
 
