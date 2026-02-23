@@ -179,6 +179,37 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldNotReturnProposalCreatedStatus_WhenProvenanceProposalIdIsEmpty()
+    {
+        var userId = Guid.NewGuid();
+        var captureRequest = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "captured text"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: Guid.Empty)));
+        captureRequest.MarkAsProcessing();
+        captureRequest.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(new[] { captureRequest });
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle();
+        result.Value[0].Status.Should().NotBe(CaptureStatus.ProposalCreated);
+        result.Value[0].Status.Should().Be(CaptureStatus.Triaged);
+    }
+
+    [Fact]
     public async Task ListAsync_ShouldReturnValidationError_WhenLimitIsNegative()
     {
         var userId = Guid.NewGuid();

@@ -80,9 +80,7 @@ public class LlmQueueToProposalWorker : BackgroundService
             triagingCaptureItems.Count,
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, QueueNameCaptureTriage));
 
-        var batchItems = triagingCaptureItems
-            .ToList();
-        var workBatch = BuildFairBatchItems(batchItems, pendingItems, _settings.MaxBatchSize);
+        var workBatch = BuildFairBatchItems(triagingCaptureItems, pendingItems, _settings.MaxBatchSize);
 
         if (workBatch.Count == 0)
         {

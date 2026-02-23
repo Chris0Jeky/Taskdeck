@@ -298,7 +298,8 @@ public class CaptureService : ICaptureService
 
     private static CaptureStatus ResolveCaptureStatus(LlmRequest item, CapturePayloadV1 payload)
     {
-        var hasLinkedProposal = payload.Provenance?.ProposalId.HasValue == true;
+        var hasLinkedProposal = payload.Provenance?.ProposalId is { } proposalId &&
+                                proposalId != Guid.Empty;
         return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal);
     }
 
