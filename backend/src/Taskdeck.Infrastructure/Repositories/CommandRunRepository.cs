@@ -93,6 +93,7 @@ public class CommandRunRepository : Repository<CommandRun>, ICommandRunRepositor
         int limit = 100,
         CancellationToken cancellationToken = default)
     {
+        var boundedLimit = NormalizeLimit(limit);
         var query = _context.CommandRunLogs
             .AsNoTracking()
             .Include(log => log.CommandRun)
@@ -123,7 +124,7 @@ public class CommandRunRepository : Repository<CommandRun>, ICommandRunRepositor
 
         return await query
             .OrderByDescending(log => log.Timestamp)
-            .Take(limit)
+            .Take(boundedLimit)
             .ToListAsync(cancellationToken);
     }
 
