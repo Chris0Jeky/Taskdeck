@@ -8,7 +8,7 @@ import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import type { BoardPresenceMember } from '../types/realtime'
-import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
+import type { Board, BoardDetail, Card, CardCaptureProvenance, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '../types/comments'
 
 export interface CardFilters {
@@ -37,6 +37,11 @@ export const useBoardStore = defineStore('board', () => {
     const message = getErrorMessage(err, fallback)
     error.value = message
     toast.error(message)
+  }
+
+  const isHttpNotFound = (err: unknown): boolean => {
+    const candidate = err as { response?: { status?: number } } | null
+    return candidate?.response?.status === 404
   }
 
   // Filter state
@@ -526,6 +531,19 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  async function fetchCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance | null> {
+    try {
+      return await cardsApi.getCardProvenance(boardId, cardId)
+    } catch (e: unknown) {
+      if (isHttpNotFound(e)) {
+        return null
+      }
+
+      handleApiError(e, 'Failed to fetch card provenance')
+      throw e
+    }
+  }
+
   // Filter actions
   const updateFilters = (newFilters: CardFilters) => {
     filters.value = { ...newFilters }
@@ -676,5 +694,6 @@ export const useBoardStore = defineStore('board', () => {
     fetchCards,
     fetchLabels,
     moveCard,
+    fetchCardProvenance,
   }
 })

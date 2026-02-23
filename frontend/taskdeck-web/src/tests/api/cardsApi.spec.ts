@@ -118,4 +118,22 @@ describe('cardsApi', () => {
       expect(http.delete).toHaveBeenCalledWith('/boards/board-1/cards/card-1')
     })
   })
+
+  describe('getCardProvenance', () => {
+    it('should fetch card provenance by board and card IDs', async () => {
+      const provenance = {
+        cardId: 'card-1',
+        captureItemId: 'capture-1',
+        proposalId: 'proposal-1',
+        proposalStatus: 'Applied',
+        triageRunId: 'triage-1',
+      }
+      vi.mocked(http.get).mockResolvedValue({ data: provenance })
+
+      const result = await cardsApi.getCardProvenance('board-1', 'card-1')
+
+      expect(http.get).toHaveBeenCalledWith('/boards/board-1/cards/card-1/provenance')
+      expect(result).toEqual(provenance)
+    })
+  })
 })
