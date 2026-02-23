@@ -45,4 +45,5 @@ public record CaptureTriageProposalResultDto(
     Guid CaptureItemId,
     Guid TriageRunId,
     Guid ProposalId,
-    int OperationCount);
+    int OperationCount,
+    string PromptVersion);
