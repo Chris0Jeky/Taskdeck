@@ -3,6 +3,9 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import CaptureModal from '../../components/common/CaptureModal.vue'
 
+const escapeHandlers: Array<() => void> = []
+const unregisterEscapeHandlerMock = vi.fn()
+
 const mockCaptureStore = reactive({
   error: null as string | null,
   createItem: vi.fn<(dto: { boardId: string | null; text: string; source?: string | null }) => Promise<{ id: string }>>(),
@@ -10,6 +13,19 @@ const mockCaptureStore = reactive({
 
 vi.mock('../../store/captureStore', () => ({
   useCaptureStore: () => mockCaptureStore,
+}))
+
+vi.mock('../../composables/useEscapeStack', () => ({
+  registerEscapeHandler: vi.fn((handler: () => void) => {
+    escapeHandlers.push(handler)
+    return () => {
+      const index = escapeHandlers.indexOf(handler)
+      if (index >= 0) {
+        escapeHandlers.splice(index, 1)
+      }
+      unregisterEscapeHandlerMock()
+    }
+  }),
 }))
 
 async function waitForUi() {
@@ -20,6 +36,7 @@ async function waitForUi() {
 describe('CaptureModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    escapeHandlers.splice(0, escapeHandlers.length)
     mockCaptureStore.error = null
     mockCaptureStore.createItem.mockResolvedValue({ id: 'capture-created' })
   })
@@ -52,10 +69,11 @@ describe('CaptureModal', () => {
     expect(mockCaptureStore.createItem).not.toHaveBeenCalled()
   })
 
-  it('closes on Escape key', async () => {
+  it('closes via escape stack handler', async () => {
     const wrapper = mount(CaptureModal)
 
-    await wrapper.get('.td-capture-modal').trigger('keydown', { key: 'Escape' })
+    expect(escapeHandlers.length).toBeGreaterThan(0)
+    escapeHandlers[escapeHandlers.length - 1]?.()
     await waitForUi()
 
     expect(wrapper.emitted('close')).toHaveLength(1)
@@ -96,9 +114,19 @@ describe('CaptureModal', () => {
     await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true })
     await waitForUi()
 
-    await wrapper.get('.td-capture-modal').trigger('keydown', { key: 'Escape' })
+    expect(escapeHandlers.length).toBeGreaterThan(0)
+    escapeHandlers[escapeHandlers.length - 1]?.()
     await waitForUi()
 
     expect(wrapper.emitted('close')).toBeUndefined()
+  })
+
+  it('unregisters escape handler on unmount', async () => {
+    const wrapper = mount(CaptureModal)
+    await waitForUi()
+
+    wrapper.unmount()
+
+    expect(unregisterEscapeHandlerMock).toHaveBeenCalledTimes(1)
   })
 })
