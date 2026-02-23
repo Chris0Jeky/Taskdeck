@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-22  
+Last Updated: 2026-02-23  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -20,6 +20,7 @@ Current constraints are mostly hardening and consistency:
 - LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
+- card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 
 ## Current Implementation Snapshot
 
@@ -99,6 +100,7 @@ Completed in Phase 4:
 - archive lifecycle coherence for boards across board settings and archive workspace flows
 - drag/edit interaction safety guardrails via explicit card/column drag handles and non-handle drag blocking
 - collaborative presence/conflict policy (`#73`): SignalR-backed board/card presence snapshots with editor markers, optimistic stale-write conflict handling, and conflict-audit capture with actor identity
+- collaborative comments/mentions workflow (`#74`): board-scoped threaded card comments (create/list/reply/edit/delete), mention-to-user linking, mention notification publication, and authz-safe moderation boundaries
 - maintainability refactor across API/controller error handling and frontend API/store utilities (PR #23)
 - CI hardening follow-up: workflow concurrency cancellation, frontend typecheck/build parity, TRX artifacts, caching
 - mechanical checks added: docs governance CI checks (`check-docs-governance` + `check-github-ops-governance`) and architecture boundary test project
@@ -162,11 +164,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 353/353 passing
-- API integration: 195/195 passing
+- Application: 357/357 passing
+- API integration: 200/200 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 653/653 passing
+- Backend Total: 662/662 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -177,7 +179,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 310/310 passing
+- Frontend unit: 317/317 passing
 - Coverage thresholds: passing
 - Lint: passing
 - Typecheck: passing
@@ -193,7 +195,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 984/984 passing
+- Combined automated total: 1000/1000 passing
 
 ## CI Status
 
@@ -305,6 +307,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered FE-11 frontend lint baseline + CI gate (`#154`): added Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`), introduced `npm run lint` with zero-warning enforcement, integrated lint into reusable frontend CI workflow, and documented lint suppression guidance in active testing docs.
 - Delivered FE-12 frontend coverage threshold gate (`#155`): enforced global + critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`), switched required frontend CI lane to thresholded coverage execution, and standardized JUnit+coverage artifact upload for triage.
 - Delivered COL-02 notification framework (`#72`): added notification domain/persistence + preferences model, shipped authenticated inbox/preferences/read-state APIs with preference-aware deduped event publication for mention/assignment/proposal-outcome families, integrated frontend inbox/preferences routes + stores, and expanded backend/frontend regression coverage.
+- Delivered COL-04 card comments/mentions workflow (`#74`): added threaded card comments with reply constraints and moderation-aware edit/delete policy, integrated mention parsing with board-scope user linking and notification publication, shipped board/card comment APIs + frontend modal interactions, and expanded backend/frontend regression coverage.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.

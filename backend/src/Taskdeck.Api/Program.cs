@@ -46,6 +46,7 @@ builder.Services.AddSingleton(databaseExportImportSettings);
 builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ColumnService>();
 builder.Services.AddScoped<CardService>();
+builder.Services.AddScoped<CardCommentService>();
 builder.Services.AddScoped<LabelService>();
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<AuthorizationService>();

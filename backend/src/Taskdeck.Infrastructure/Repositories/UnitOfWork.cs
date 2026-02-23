@@ -16,6 +16,7 @@ public class UnitOfWork : IUnitOfWork
         IBoardRepository boards,
         IColumnRepository columns,
         ICardRepository cards,
+        ICardCommentRepository cardComments,
         ILabelRepository labels,
         IUserRepository users,
         IBoardAccessRepository boardAccesses,
@@ -33,6 +34,7 @@ public class UnitOfWork : IUnitOfWork
         Boards = boards;
         Columns = columns;
         Cards = cards;
+        CardComments = cardComments;
         Labels = labels;
         Users = users;
         BoardAccesses = boardAccesses;
@@ -50,6 +52,7 @@ public class UnitOfWork : IUnitOfWork
     public IBoardRepository Boards { get; }
     public IColumnRepository Columns { get; }
     public ICardRepository Cards { get; }
+    public ICardCommentRepository CardComments { get; }
     public ILabelRepository Labels { get; }
     public IUserRepository Users { get; }
     public IBoardAccessRepository BoardAccesses { get; }

@@ -32,11 +32,12 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
             query = query.Where(n => n.BoardId == boardId.Value);
         }
 
-        return await query
+        var notifications = await query.ToListAsync(cancellationToken);
+        return notifications
             .OrderByDescending(n => n.CreatedAt)
             .Skip(offset)
             .Take(limit)
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 
     public async Task<Notification?> GetByUserAndDeduplicationKeyAsync(

@@ -52,6 +52,11 @@ describe('CardModal', () => {
     mockStore = {
       updateCard: vi.fn().mockResolvedValue(card),
       deleteCard: vi.fn().mockResolvedValue(undefined),
+      fetchCardComments: vi.fn().mockResolvedValue([]),
+      getCardComments: vi.fn().mockReturnValue([]),
+      createCardComment: vi.fn().mockResolvedValue(undefined),
+      updateCardComment: vi.fn().mockResolvedValue(undefined),
+      deleteCardComment: vi.fn().mockResolvedValue(undefined),
       editingCardId: null,
       setEditingCard: vi.fn(),
     }
@@ -308,5 +313,26 @@ describe('CardModal', () => {
     const bugLabelCheckbox = labelCheckboxes[1] as any
 
     expect(bugLabelCheckbox.element.checked).toBe(true)
+  })
+
+  it('should create a new comment from modal comment input', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    const commentInput = wrapper.find('#new-card-comment')
+    await commentInput.setValue('New card comment')
+
+    const addCommentButton = wrapper.find('#add-card-comment')
+    await addCommentButton.trigger('click')
+
+    expect(mockStore.createCardComment).toHaveBeenCalledWith('board-1', 'card-1', {
+      content: 'New card comment',
+      parentCommentId: null,
+    })
   })
 })

@@ -3,9 +3,11 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useBoardStore } from '../../store/boardStore'
 import { boardsApi } from '../../api/boardsApi'
 import { cardsApi } from '../../api/cardsApi'
+import { cardCommentsApi } from '../../api/cardCommentsApi'
 import { columnsApi } from '../../api/columnsApi'
 import { labelsApi } from '../../api/labelsApi'
 import type { Board, Card, Column, Label } from '../../types/board'
+import type { CardComment } from '../../types/comments'
 
 // Mock all API modules
 vi.mock('../../api/boardsApi', () => ({
@@ -25,6 +27,15 @@ vi.mock('../../api/cardsApi', () => ({
     updateCard: vi.fn(),
     moveCard: vi.fn(),
     deleteCard: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/cardCommentsApi', () => ({
+  cardCommentsApi: {
+    getComments: vi.fn(),
+    createComment: vi.fn(),
+    updateComment: vi.fn(),
+    deleteComment: vi.fn(),
   },
 }))
 
@@ -539,6 +550,106 @@ describe('boardStore', () => {
 
       expect(grouped.get('column-1')).toEqual([card2, card1])
       expect(grouped.get('column-2')).toEqual([card3])
+    })
+  })
+
+  describe('card comment actions', () => {
+    it('should return empty card comments when none are cached', () => {
+      expect(store.getCardComments('missing-card')).toEqual([])
+    })
+
+    it('should fetch and cache comments per card', async () => {
+      const comment: CardComment = {
+        id: 'comment-1',
+        boardId: 'board-1',
+        cardId: 'card-1',
+        parentCommentId: null,
+        authorUserId: 'user-1',
+        authorUsername: 'user_one',
+        content: 'Test comment',
+        isDeleted: false,
+        editedAt: null,
+        mentions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      vi.mocked(cardCommentsApi.getComments).mockResolvedValue([comment])
+
+      const result = await store.fetchCardComments('board-1', 'card-1')
+
+      expect(result).toEqual([comment])
+      expect(store.getCardComments('card-1')).toEqual([comment])
+    })
+
+    it('should create and update comment state', async () => {
+      const createdComment: CardComment = {
+        id: 'comment-1',
+        boardId: 'board-1',
+        cardId: 'card-1',
+        parentCommentId: null,
+        authorUserId: 'user-1',
+        authorUsername: 'user_one',
+        content: 'Created comment',
+        isDeleted: false,
+        editedAt: null,
+        mentions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      const updatedComment: CardComment = {
+        ...createdComment,
+        content: 'Updated comment',
+        editedAt: new Date().toISOString(),
+      }
+
+      vi.mocked(cardCommentsApi.createComment).mockResolvedValue(createdComment)
+      vi.mocked(cardCommentsApi.updateComment).mockResolvedValue(updatedComment)
+
+      await store.createCardComment('board-1', 'card-1', { content: 'Created comment' })
+      expect(store.getCardComments('card-1')).toEqual([createdComment])
+
+      await store.updateCardComment('board-1', 'card-1', 'comment-1', { content: 'Updated comment' })
+      expect(store.getCardComments('card-1')).toEqual([updatedComment])
+    })
+
+    it('should delete a comment and refresh card comments', async () => {
+      const refreshedComment: CardComment = {
+        id: 'comment-2',
+        boardId: 'board-1',
+        cardId: 'card-1',
+        parentCommentId: null,
+        authorUserId: 'user-2',
+        authorUsername: 'user_two',
+        content: 'Remaining comment',
+        isDeleted: false,
+        editedAt: null,
+        mentions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      vi.mocked(cardCommentsApi.deleteComment).mockResolvedValue()
+      vi.mocked(cardCommentsApi.getComments).mockResolvedValue([refreshedComment])
+
+      await store.deleteCardComment('board-1', 'card-1', 'comment-1')
+
+      expect(cardCommentsApi.deleteComment).toHaveBeenCalledWith('board-1', 'card-1', 'comment-1')
+      expect(cardCommentsApi.getComments).toHaveBeenCalledWith('board-1', 'card-1')
+      expect(store.getCardComments('card-1')).toEqual([refreshedComment])
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+    })
+
+    it('should propagate errors when deleting card comments', async () => {
+      const deletionError = new Error('delete failed')
+      vi.mocked(cardCommentsApi.deleteComment).mockRejectedValue(deletionError)
+
+      await expect(store.deleteCardComment('board-1', 'card-1', 'comment-1')).rejects.toThrow('delete failed')
+
+      expect(store.error).toBe('delete failed')
+      expect(store.loading).toBe(false)
     })
   })
 })

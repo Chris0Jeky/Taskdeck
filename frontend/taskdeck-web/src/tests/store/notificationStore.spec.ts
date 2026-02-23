@@ -75,6 +75,21 @@ describe('notificationStore', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
+      {
+        id: 'n2',
+        userId: 'u1',
+        boardId: null,
+        type: 'Mention',
+        cadence: 'Immediate',
+        title: 'Another',
+        message: 'Untouched',
+        sourceEntityType: 'chat-message',
+        sourceEntityId: 'm2',
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
     ]
 
     vi.mocked(notificationsApi.markAsRead).mockResolvedValue({
@@ -86,6 +101,17 @@ describe('notificationStore', () => {
     await store.markAsRead('n1')
 
     expect(store.notifications[0].isRead).toBe(true)
+    expect(store.notifications[1].isRead).toBe(false)
+  })
+
+  it('sets error when markAsRead fails', async () => {
+    const store = useNotificationStore()
+    vi.mocked(notificationsApi.markAsRead).mockRejectedValue(new Error('read failed'))
+
+    await expect(store.markAsRead('missing')).rejects.toBeInstanceOf(Error)
+
+    expect(store.error).toBe('Failed to mark notification as read')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to mark notification as read')
   })
 
   it('loads and updates preferences', async () => {
@@ -154,5 +180,15 @@ describe('notificationStore', () => {
 
     expect(store.error).toBe('Failed to save notification preferences')
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to save notification preferences')
+  })
+
+  it('sets error and toasts when fetching preferences fails', async () => {
+    const store = useNotificationStore()
+    vi.mocked(notificationsApi.getPreferences).mockRejectedValue(new Error('prefs failed'))
+
+    await expect(store.fetchPreferences()).rejects.toBeInstanceOf(Error)
+
+    expect(store.error).toBe('Failed to load notification preferences')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to load notification preferences')
   })
 })

@@ -12,6 +12,8 @@ public class TaskdeckDbContext : DbContext
     public DbSet<Board> Boards => Set<Board>();
     public DbSet<Column> Columns => Set<Column>();
     public DbSet<Card> Cards => Set<Card>();
+    public DbSet<CardComment> CardComments => Set<CardComment>();
+    public DbSet<CardCommentMention> CardCommentMentions => Set<CardCommentMention>();
     public DbSet<Label> Labels => Set<Label>();
     public DbSet<CardLabel> CardLabels => Set<CardLabel>();
     public DbSet<User> Users => Set<User>();
