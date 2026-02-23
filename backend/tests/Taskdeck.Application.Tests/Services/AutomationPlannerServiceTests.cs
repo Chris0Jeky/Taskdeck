@@ -189,6 +189,55 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenCorrelationIdExceedsMaxLength()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var correlationId = new string('c', 101);
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: Guid.NewGuid().ToString(),
+            correlationId: correlationId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("CorrelationId cannot exceed 100 characters");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenSourceReferenceIdIsWhitespace()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: "   ",
+            correlationId: Guid.NewGuid().ToString());
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("SourceReferenceId cannot be empty when provided");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
     public async Task ParseInstruction_ShouldCreateProposal_ForCreateCardWithColumnName()
     {
         // Arrange

@@ -142,7 +142,7 @@ public class ChatServiceTests
                 It.IsAny<string>(),
                 userId,
                 boardId,
-                default,
+                It.IsAny<CancellationToken>(),
                 It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(),
                 It.IsAny<string?>()))
