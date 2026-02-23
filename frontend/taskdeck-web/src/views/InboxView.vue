@@ -151,6 +151,18 @@ async function cancelSelected() {
   }
 }
 
+async function triageSelected() {
+  if (!selectedItemId.value) {
+    return
+  }
+
+  try {
+    await captureStore.triageItem(selectedItemId.value)
+  } catch {
+    // Store handles toast + error state.
+  }
+}
+
 async function refreshSelectedDetail() {
   if (!selectedItemId.value) {
     return
@@ -172,6 +184,37 @@ function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
     status === 'New' ||
     status === 6 ||
     status === 'Failed'
+}
+
+function canTriageSelection(status: CaptureStatusValue | undefined): boolean {
+  if (status === undefined) {
+    return false
+  }
+
+  return status === 0 ||
+    status === 'New' ||
+    status === 6 ||
+    status === 'Failed'
+}
+
+function triageButtonLabel(status: CaptureStatusValue | undefined): string {
+  if (status === 1 || status === 'Triaging') {
+    return 'Triaging...'
+  }
+
+  if (status === 2 || status === 'Triaged' || status === 3 || status === 'ProposalCreated') {
+    return 'Triage Complete'
+  }
+
+  if (status === 4 || status === 'Converted') {
+    return 'Converted'
+  }
+
+  return 'Start Triage'
+}
+
+function proposalHref(proposalId: string): string {
+  return `/workspace/automations/proposals#proposal-${encodeURIComponent(proposalId)}`
 }
 
 watch(items, (nextItems) => {
@@ -296,6 +339,16 @@ onMounted(() => {
             <pre v-else class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
           </div>
 
+          <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link">
+            <span>Linked proposal is ready for review.</span>
+            <a
+              class="td-btn td-btn--primary td-btn--sm"
+              :href="proposalHref(selectedItem.provenance.proposalId)"
+            >
+              Open Proposal
+            </a>
+          </div>
+
           <footer class="td-inbox-detail__actions">
             <button
               class="td-btn td-btn--secondary"
@@ -303,6 +356,13 @@ onMounted(() => {
               :disabled="captureStore.loadingDetail"
             >
               {{ captureStore.loadingDetail ? 'Refreshing...' : 'Refresh Detail' }}
+            </button>
+            <button
+              class="td-btn td-btn--primary"
+              @click="triageSelected"
+              :disabled="captureStore.actionBusyItemId === selectedItem.id || !canTriageSelection(selectedItem.status)"
+            >
+              {{ captureStore.actionBusyItemId === selectedItem.id ? 'Working...' : triageButtonLabel(selectedItem.status) }}
             </button>
             <button
               class="td-btn td-btn--danger"
@@ -477,6 +537,14 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
+.td-inbox-detail__proposal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+}
+
 .td-placeholder {
   color: var(--td-text-secondary);
   padding: var(--td-space-6);
@@ -502,6 +570,17 @@ onMounted(() => {
   border-radius: var(--td-radius-md);
   border: 1px solid transparent;
   cursor: pointer;
+  text-decoration: none;
+}
+
+.td-btn--sm {
+  padding: var(--td-space-1) var(--td-space-3);
+  font-size: var(--td-font-xs);
+}
+
+.td-btn--primary {
+  background: var(--td-color-primary);
+  color: var(--td-text-inverse);
 }
 
 .td-btn--secondary {

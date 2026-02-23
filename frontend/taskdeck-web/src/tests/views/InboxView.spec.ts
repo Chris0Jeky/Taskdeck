@@ -27,6 +27,12 @@ const mockCaptureStore = reactive({
     createdAt: string
     processedAt: string | null
     retryCount: number
+    provenance?: {
+      captureItemId: string
+      triageRunId: string | null
+      proposalId: string | null
+      promptVersion: string | null
+    } | null
   }>,
   loadingList: false,
   loadingDetail: false,
@@ -39,6 +45,7 @@ const mockCaptureStore = reactive({
   fetchDetail: vi.fn<(itemId: string, forceRefresh?: boolean) => Promise<void>>(),
   ignoreItem: vi.fn<(itemId: string) => Promise<void>>(),
   cancelItem: vi.fn<(itemId: string) => Promise<void>>(),
+  triageItem: vi.fn<(itemId: string) => Promise<void>>(),
 })
 
 vi.mock('../../store/captureStore', () => ({
@@ -114,10 +121,12 @@ describe('InboxView', () => {
         createdAt: new Date().toISOString(),
         processedAt: null,
         retryCount: 0,
+        provenance: null,
       }
     })
     mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
     mockCaptureStore.cancelItem.mockResolvedValue(undefined)
+    mockCaptureStore.triageItem.mockResolvedValue(undefined)
     seedItems()
   })
 
@@ -236,6 +245,69 @@ describe('InboxView', () => {
     expect(cancelButton?.attributes('disabled')).toBeDefined()
   })
 
+  it('enqueues triage from detail actions when selection is triageable', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: 'board-1',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: `Excerpt for ${itemId}`,
+        rawText: `Full text for ${itemId}`,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    const triageButton = wrapper.findAll('button').find((node) => node.text() === 'Start Triage')
+    await triageButton?.trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-1')
+  })
+
+  it('renders linked proposal action when detail includes proposal provenance', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: 'board-1',
+        status: 'ProposalCreated',
+        source: 'Typed',
+        textExcerpt: `Excerpt for ${itemId}`,
+        rawText: `Full text for ${itemId}`,
+        createdAt: new Date().toISOString(),
+        processedAt: new Date().toISOString(),
+        retryCount: 0,
+        provenance: {
+          captureItemId: itemId,
+          triageRunId: 'triage-1',
+          proposalId: 'proposal-42',
+          promptVersion: 'triage.v1',
+        },
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    const proposalLink = wrapper.find('a[href="/workspace/automations/proposals#proposal-proposal-42"]')
+    expect(proposalLink.exists()).toBe(true)
+    expect(proposalLink.text()).toContain('Open Proposal')
+  })
+
   it('clears selection when opening detail fails', async () => {
     mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('detail failed'))
     const wrapper = mount(InboxView)
@@ -267,6 +339,7 @@ describe('InboxView', () => {
         createdAt: new Date().toISOString(),
         processedAt: null,
         retryCount: 0,
+        provenance: null,
       }
       return Promise.resolve()
     })

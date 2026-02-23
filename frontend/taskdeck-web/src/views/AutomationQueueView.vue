@@ -328,7 +328,12 @@ function statusColor(status: QueueStatus | number): string {
       <div v-else-if="proposals.length === 0" class="td-empty">No proposals found.</div>
 
       <div v-else class="td-proposal-list">
-        <div v-for="proposal in proposals" :key="proposal.id" class="td-proposal-card">
+        <div
+          v-for="proposal in proposals"
+          :key="proposal.id"
+          :id="`proposal-${proposal.id}`"
+          class="td-proposal-card"
+        >
           <div class="td-proposal-header">
             <div class="td-proposal-title">{{ proposal.summary }}</div>
             <span class="td-proposal-status">{{ normalizeProposalStatus(proposal.status) }}</span>
