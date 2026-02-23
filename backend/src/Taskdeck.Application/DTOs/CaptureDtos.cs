@@ -40,3 +40,10 @@ public record CaptureTriageEnqueueResultDto(
     Guid Id,
     CaptureStatus Status,
     bool AlreadyTriaging);
+
+public record CaptureTriageProposalResultDto(
+    Guid CaptureItemId,
+    Guid TriageRunId,
+    Guid ProposalId,
+    int OperationCount,
+    string PromptVersion);

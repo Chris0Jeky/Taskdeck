@@ -125,4 +125,13 @@ public class LlmRequest : Entity
         ProcessedAt = null;
         Touch();
     }
+
+    public void UpdatePayload(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            throw new DomainException(ErrorCodes.ValidationError, "Payload cannot be empty");
+
+        Payload = payload;
+        Touch();
+    }
 }

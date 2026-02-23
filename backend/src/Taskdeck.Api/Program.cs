@@ -56,6 +56,7 @@ builder.Services.AddScoped<BoardAccessService>();
 builder.Services.AddScoped<IExportImportService, ExportImportService>();
 builder.Services.AddScoped<LlmQueueService>();
 builder.Services.AddScoped<ICaptureService, CaptureService>();
+builder.Services.AddScoped<ICaptureTriageService, CaptureTriageService>();
 builder.Services.AddScoped<HistoryService>();
 builder.Services.AddScoped<IAutomationProposalService, AutomationProposalService>();
 builder.Services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();

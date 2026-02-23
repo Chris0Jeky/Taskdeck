@@ -252,7 +252,7 @@ public class CaptureService : ICaptureService
     {
         var payload = ParsePayload(item);
         var excerpt = BuildExcerpt(payload.Text);
-        var status = CaptureStatusPolicy.MapFromQueueStatus(item.Status);
+        var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemSummaryDto(
             item.Id,
@@ -269,7 +269,7 @@ public class CaptureService : ICaptureService
     {
         var payload = ParsePayload(item);
         var excerpt = BuildExcerpt(payload.Text);
-        var status = CaptureStatusPolicy.MapFromQueueStatus(item.Status);
+        var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemDto(
             item.Id,
@@ -294,6 +294,13 @@ public class CaptureService : ICaptureService
             CaptureRequestContract.CurrentSchemaVersion,
             CaptureSource.Typed,
             item.Payload);
+    }
+
+    private static CaptureStatus ResolveCaptureStatus(LlmRequest item, CapturePayloadV1 payload)
+    {
+        var hasLinkedProposal = payload.Provenance?.ProposalId is { } proposalId &&
+                                proposalId != Guid.Empty;
+        return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal);
     }
 
     private static string BuildExcerpt(string rawText)

@@ -27,7 +27,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             var overrideSettings = new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}"
+                ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}",
+                ["Workers:QueuePollIntervalSeconds"] = "1",
+                ["Workers:MaxBatchSize"] = "10",
+                ["Workers:MaxConcurrency"] = "1",
+                ["Workers:RetryBackoffSeconds:0"] = "0"
             };
 
             configBuilder.AddInMemoryCollection(overrideSettings);

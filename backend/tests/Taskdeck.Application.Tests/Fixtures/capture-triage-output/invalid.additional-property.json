@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "promptVersion": "triage.v1",
+  "tasks": [
+    {
+      "title": "Task title",
+      "evidence": "Task title",
+      "extra": "not allowed"
+    }
+  ]
+}
