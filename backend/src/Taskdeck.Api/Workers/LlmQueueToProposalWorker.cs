@@ -81,21 +81,19 @@ public class LlmQueueToProposalWorker : BackgroundService
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.QueueName, QueueNameCaptureTriage));
 
         var batchItems = triagingCaptureItems
-            .Select(item => new WorkerBatchItem(item.Id, IsCaptureTriage: true))
-            .Concat(pendingItems.Select(item => new WorkerBatchItem(item.Id, IsCaptureTriage: false)))
-            .Take(_settings.MaxBatchSize)
             .ToList();
+        var workBatch = BuildFairBatchItems(batchItems, pendingItems, _settings.MaxBatchSize);
 
-        if (batchItems.Count == 0)
+        if (workBatch.Count == 0)
         {
             return;
         }
 
         var maxConcurrency = Math.Clamp(_settings.MaxConcurrency, 1, _settings.MaxBatchSize);
         using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
-        var tasks = new List<Task>(batchItems.Count);
+        var tasks = new List<Task>(workBatch.Count);
 
-        foreach (var batchItem in batchItems)
+        foreach (var batchItem in workBatch)
         {
             await semaphore.WaitAsync(ct);
 
@@ -105,7 +103,12 @@ public class LlmQueueToProposalWorker : BackgroundService
                 {
                     if (batchItem.IsCaptureTriage)
                     {
-                        await ProcessCaptureTriageItemAsync(batchItem.ItemId, ct);
+                        if (!batchItem.ExpectedUpdatedAt.HasValue)
+                        {
+                            return;
+                        }
+
+                        await ProcessCaptureTriageItemAsync(batchItem.ItemId, batchItem.ExpectedUpdatedAt.Value, ct);
                     }
                     else
                     {
@@ -216,7 +219,7 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
     }
 
-    private async Task ProcessCaptureTriageItemAsync(Guid itemId, CancellationToken ct)
+    private async Task ProcessCaptureTriageItemAsync(Guid itemId, DateTimeOffset expectedUpdatedAt, CancellationToken ct)
     {
         using var activity = TaskdeckTelemetry.ActivitySource.StartActivity(
             "taskdeck.worker.process_capture_triage_item",
@@ -230,6 +233,15 @@ public class LlmQueueToProposalWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var triageService = scope.ServiceProvider.GetRequiredService<ICaptureTriageService>();
+
+        var claimed = await unitOfWork.LlmQueue.TryClaimProcessingCaptureAsync(itemId, expectedUpdatedAt, ct);
+        if (!claimed)
+        {
+            outcome = "already_claimed";
+            stopWatch.Stop();
+            RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+            return;
+        }
 
         var item = await unitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
         if (item == null ||
@@ -263,6 +275,22 @@ public class LlmQueueToProposalWorker : BackgroundService
                     retryAsProcessing: true);
 
                 outcome = scheduledForRetry ? "failed_retry" : "failed_permanent";
+                stopWatch.Stop();
+                RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+                return;
+            }
+
+            if (parsedPayloadResult.Value.Provenance?.ProposalId is { } existingProposalId &&
+                existingProposalId != Guid.Empty)
+            {
+                item.MarkAsCompleted();
+                await unitOfWork.SaveChangesAsync(ct);
+                _logger.LogInformation(
+                    "Capture item {ItemId} already linked to proposal {ProposalId}; marking completed",
+                    item.Id,
+                    existingProposalId);
+
+                outcome = "completed_existing";
                 stopWatch.Stop();
                 RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
                 return;
@@ -325,6 +353,64 @@ public class LlmQueueToProposalWorker : BackgroundService
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
         }
+    }
+
+    private static List<WorkerBatchItem> BuildFairBatchItems(
+        IReadOnlyList<LlmRequest> triagingCaptureItems,
+        IReadOnlyList<LlmRequest> pendingItems,
+        int maxBatchSize)
+    {
+        var batch = new List<WorkerBatchItem>(Math.Max(maxBatchSize, 0));
+        if (maxBatchSize <= 0)
+        {
+            return batch;
+        }
+
+        var captureIndex = 0;
+        var pendingIndex = 0;
+        var takeCaptureFirst = triagingCaptureItems.Count > 0 &&
+                               (pendingItems.Count == 0 || triagingCaptureItems[0].CreatedAt <= pendingItems[0].CreatedAt);
+
+        while (batch.Count < maxBatchSize &&
+               (captureIndex < triagingCaptureItems.Count || pendingIndex < pendingItems.Count))
+        {
+            if (takeCaptureFirst)
+            {
+                if (captureIndex < triagingCaptureItems.Count)
+                {
+                    var capture = triagingCaptureItems[captureIndex++];
+                    batch.Add(new WorkerBatchItem(capture.Id, IsCaptureTriage: true, ExpectedUpdatedAt: capture.UpdatedAt));
+                    if (batch.Count == maxBatchSize)
+                    {
+                        break;
+                    }
+                }
+
+                if (pendingIndex < pendingItems.Count)
+                {
+                    batch.Add(new WorkerBatchItem(pendingItems[pendingIndex++].Id, IsCaptureTriage: false));
+                }
+            }
+            else
+            {
+                if (pendingIndex < pendingItems.Count)
+                {
+                    batch.Add(new WorkerBatchItem(pendingItems[pendingIndex++].Id, IsCaptureTriage: false));
+                    if (batch.Count == maxBatchSize)
+                    {
+                        break;
+                    }
+                }
+
+                if (captureIndex < triagingCaptureItems.Count)
+                {
+                    var capture = triagingCaptureItems[captureIndex++];
+                    batch.Add(new WorkerBatchItem(capture.Id, IsCaptureTriage: true, ExpectedUpdatedAt: capture.UpdatedAt));
+                }
+            }
+        }
+
+        return batch;
     }
 
     private async Task<bool> HandleFailureWithRetryAsync(
@@ -407,5 +493,5 @@ public class LlmQueueToProposalWorker : BackgroundService
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
     }
 
-    private readonly record struct WorkerBatchItem(Guid ItemId, bool IsCaptureTriage);
+    private readonly record struct WorkerBatchItem(Guid ItemId, bool IsCaptureTriage, DateTimeOffset? ExpectedUpdatedAt = null);
 }

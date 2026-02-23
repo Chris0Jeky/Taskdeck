@@ -11,6 +11,8 @@ namespace Taskdeck.Infrastructure.Repositories;
 /// </summary>
 public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 {
+    private const string CaptureRequestTypeLike = "inbox.capture.%";
+
     public LlmQueueRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -90,5 +92,25 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .Where(lr => lr.Status == RequestStatus.Pending)
             .OrderBy(lr => lr.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<bool> TryClaimProcessingCaptureAsync(
+        Guid requestId,
+        DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var claimedAt = DateTimeOffset.UtcNow;
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE LlmRequests
+            SET UpdatedAt = {claimedAt}
+            WHERE Id = {requestId}
+              AND Status = {(int)RequestStatus.Processing}
+              AND UpdatedAt = {expectedUpdatedAt}
+              AND RequestType LIKE {CaptureRequestTypeLike}
+            """,
+            cancellationToken);
+
+        return rowsAffected > 0;
     }
 }
