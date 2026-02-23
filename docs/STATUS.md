@@ -214,12 +214,12 @@ Implementation progress:
   - triage pipeline now enforces schema version + prompt version invariants before proposal generation
   - triage provenance now persists prompt version `triage.v1` per triage run for capture item linkage/audit visibility
   - added golden and negative fixture coverage for schema validation failures (missing tasks, wrong prompt version, unknown properties)
-- `#206` CAP-07 inbox frontend route/list/detail implemented in active development:
+- `#206` CAP-07 inbox frontend route/list/detail delivered and regression-tested:
   - added workspace inbox route (`/workspace/inbox`) with shell navigation integration
   - inbox list now renders excerpt-first capture summaries and loads full text only on explicit detail open
   - inbox detail now supports deterministic ignore/cancel actions with refreshed state from capture API
   - keyboard-first navigation (`ArrowUp`/`ArrowDown`/`Enter`) and escape-stack compliant detail close behavior are now regression-tested
-- `#207` CAP-08 capture modal + command palette/hotkey integration implemented in active development:
+- `#207` CAP-08 capture modal + command palette/hotkey integration delivered and regression-tested:
   - added keyboard-first quick-capture modal with deterministic submit (`Ctrl+Enter`) and close (`Escape`) behavior
   - command palette now includes capture action entry and retains inbox navigation access
   - added global quick-capture hotkey (`Ctrl+Shift+C`) with escape-stack compliant modal close ordering
