@@ -31,7 +31,9 @@ const mockCaptureStore = reactive({
   loadingList: false,
   loadingDetail: false,
   actionBusyItemId: null as string | null,
-  error: null as string | null,
+  listError: null as string | null,
+  detailError: null as string | null,
+  actionError: null as string | null,
   hasItems: true,
   fetchItems: vi.fn<(...args: unknown[]) => Promise<void>>(),
   fetchDetail: vi.fn<(itemId: string, forceRefresh?: boolean) => Promise<void>>(),
@@ -96,7 +98,9 @@ describe('InboxView', () => {
     mockCaptureStore.loadingList = false
     mockCaptureStore.loadingDetail = false
     mockCaptureStore.actionBusyItemId = null
-    mockCaptureStore.error = null
+    mockCaptureStore.listError = null
+    mockCaptureStore.detailError = null
+    mockCaptureStore.actionError = null
     mockCaptureStore.fetchItems.mockResolvedValue(undefined)
     mockCaptureStore.fetchDetail.mockImplementation(async (itemId: string) => {
       mockCaptureStore.detailById[itemId] = {
@@ -173,7 +177,7 @@ describe('InboxView', () => {
 
     expect(listbox.attributes('aria-activedescendant')).toBe('td-inbox-option-1')
     const options = wrapper.findAll('[role="option"]')
-    expect(options[0]?.attributes('tabindex')).toBe('-1')
+    expect(options[0]?.attributes('tabindex')).toBeUndefined()
     expect(options[1]?.attributes('id')).toBe('td-inbox-option-1')
   })
 

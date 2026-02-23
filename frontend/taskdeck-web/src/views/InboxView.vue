@@ -226,10 +226,10 @@ onMounted(() => {
           @keydown="handleKeydown"
         >
           <div v-if="captureStore.loadingList" class="td-placeholder">Loading inbox items...</div>
-          <div v-else-if="captureStore.error" class="td-alert td-alert--error">{{ captureStore.error }}</div>
+          <div v-else-if="captureStore.listError" class="td-alert td-alert--error">{{ captureStore.listError }}</div>
           <div v-else-if="!captureStore.hasItems" class="td-placeholder">No capture items yet.</div>
 
-          <button
+          <div
             v-for="(item, index) in items"
             :key="item.id"
             :id="`td-inbox-option-${index}`"
@@ -239,11 +239,9 @@ onMounted(() => {
               index === activeItemIndex ? 'td-inbox-row--active' : '',
               selectedItemId === item.id ? 'td-inbox-row--selected' : ''
             ]"
-            tabindex="-1"
             role="option"
             :aria-selected="selectedItemId === item.id"
             @mouseenter="setActiveIndex(index)"
-            @focus="setActiveIndex(index)"
             @click="openItem(item)"
           >
             <div class="td-inbox-row__head">
@@ -252,7 +250,7 @@ onMounted(() => {
             </div>
             <p class="td-inbox-row__excerpt">{{ item.textExcerpt }}</p>
             <p class="td-inbox-row__meta">{{ new Date(item.createdAt).toLocaleString() }}</p>
-          </button>
+          </div>
         </div>
       </section>
 
