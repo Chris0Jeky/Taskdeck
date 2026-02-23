@@ -5,6 +5,7 @@ public interface IUnitOfWork
     IBoardRepository Boards { get; }
     IColumnRepository Columns { get; }
     ICardRepository Cards { get; }
+    ICardCommentRepository CardComments { get; }
     ILabelRepository Labels { get; }
     IUserRepository Users { get; }
     IBoardAccessRepository BoardAccesses { get; }
