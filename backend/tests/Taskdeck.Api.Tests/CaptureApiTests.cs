@@ -271,6 +271,11 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
         var finalItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.ProposalCreated);
         finalItem.Status.Should().Be(CaptureStatus.ProposalCreated);
+        finalItem.Provenance.Should().NotBeNull();
+        finalItem.Provenance!.CaptureItemId.Should().Be(created.Id);
+        finalItem.Provenance.ProposalId.Should().NotBeNull();
+        finalItem.Provenance.ProposalId.Should().NotBe(Guid.Empty);
+        finalItem.Provenance.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
 
         var proposalsResponse = await _client.GetAsync($"/api/automation/proposals?boardId={board.Id}&status=PendingReview&limit=20");
         proposalsResponse.StatusCode.Should().Be(HttpStatusCode.OK);

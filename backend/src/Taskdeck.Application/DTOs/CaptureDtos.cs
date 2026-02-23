@@ -19,7 +19,8 @@ public record CaptureItemDto(
     string TextExcerpt,
     DateTimeOffset CreatedAt,
     DateTimeOffset? ProcessedAt,
-    int RetryCount);
+    int RetryCount,
+    CaptureProvenanceV1? Provenance = null);
 
 public record CaptureItemSummaryDto(
     Guid Id,
