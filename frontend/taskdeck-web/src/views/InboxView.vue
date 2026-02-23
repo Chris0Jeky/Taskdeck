@@ -55,13 +55,22 @@ async function loadInbox() {
 }
 
 async function openItem(item: CaptureItemSummary) {
-  selectedItemId.value = item.id
+  const openingId = item.id
+  selectedItemId.value = openingId
   try {
-    await captureStore.fetchDetail(item.id)
+    await captureStore.fetchDetail(openingId)
   } catch {
-    // Keep detail state coherent when open fails.
-    selectedItemId.value = null
+    // Keep detail state coherent when open fails, but avoid clearing
+    // a newer selection if this request becomes stale.
+    if (selectedItemId.value === openingId) {
+      selectedItemId.value = null
+    }
   }
+}
+
+async function openItemFromList(item: CaptureItemSummary, index: number) {
+  setActiveIndex(index)
+  await openItem(item)
 }
 
 function closeDetail() {
@@ -242,7 +251,7 @@ onMounted(() => {
             role="option"
             :aria-selected="selectedItemId === item.id"
             @mouseenter="setActiveIndex(index)"
-            @click="openItem(item)"
+            @click="openItemFromList(item, index)"
           >
             <div class="td-inbox-row__head">
               <span class="td-status-chip">{{ statusLabel(item.status) }}</span>
