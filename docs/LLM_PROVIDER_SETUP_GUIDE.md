@@ -61,6 +61,23 @@ Target behavior:
 - invalid live-provider config degrades safely to `Mock` with actionable logs
 - provenance remains explicit (`provider`, `model`, `promptVersion`) for triage/chat flows
 
+## Managed-Key Abuse-Control Track (`#235` to `#240`)
+
+Supporting provider-agnostic runtime is not enough if users can consume model calls through a shared platform key.
+Managed-key mode must include explicit control-plane work before broad exposure.
+
+Seeded issue wave:
+
+- `#235` tracker: managed-key threat model and sequencing
+- `#236` identity attribution contract for each managed-key call
+- `#237` quota/budget/kill-switch guardrails
+- `#238` abuse detection and automated containment
+- `#239` incident response and key-rotation drills
+- `#240` user-facing fair-use and enforcement policy
+
+Design rule:
+- Treat managed-key mode as a security feature with rollout gates, not as a simple provider-configuration toggle.
+
 ## Target Config Shape (Post-`#232`)
 
 ```json

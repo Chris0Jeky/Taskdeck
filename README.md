@@ -94,6 +94,7 @@ Current shipped runtime:
 - `Mock` provider is default.
 - `OpenAI` is supported behind explicit config gates.
 - `Gemini` runtime support is tracked as `#232` and not shipped yet.
+- managed-key abuse-control strategy wave is tracked in `#235` to `#240`.
 
 Use `docs/LLM_PROVIDER_SETUP_GUIDE.md` for:
 - current demo setup with OpenAI
