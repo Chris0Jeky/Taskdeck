@@ -110,26 +110,35 @@ async function waitForProposalCreated(
   throw new Error(`Timed out waiting for capture proposal creation for ${captureId}`)
 }
 
-async function waitForSingleCard(
+async function listBoardCards(
   request: APIRequestContext,
   auth: AuthResult,
   boardId: string,
-): Promise<CardDto> {
-  for (let i = 0; i < 40; i += 1) {
-    const response = await request.get(`${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`, {
-      headers: { Authorization: `Bearer ${auth.token}` },
-    })
-    expect(response.ok()).toBeTruthy()
+): Promise<CardDto[]> {
+  const response = await request.get(`${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+  })
+  expect(response.ok()).toBeTruthy()
+  return await response.json() as CardDto[]
+}
 
-    const cards = await response.json() as CardDto[]
-    if (cards.length === 1) {
-      return cards[0]!
+async function waitForCardWithTitle(
+  request: APIRequestContext,
+  auth: AuthResult,
+  boardId: string,
+  expectedTitle: string,
+): Promise<CardDto> {
+  for (let i = 0; i < 80; i += 1) {
+    const cards = await listBoardCards(request, auth, boardId)
+    const matchingCard = cards.find((card) => card.title === expectedTitle)
+    if (matchingCard) {
+      return matchingCard
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250))
+    await new Promise((resolve) => setTimeout(resolve, 500))
   }
 
-  throw new Error(`Timed out waiting for single card in board ${boardId}`)
+  throw new Error(`Timed out waiting for card '${expectedTitle}' in board ${boardId}`)
 }
 
 let auth: AuthResult
@@ -160,6 +169,8 @@ test('capture triage should create proposal and apply card with provenance links
   const proposalId = triagedCapture.provenance?.proposalId
   const triageRunId = triagedCapture.provenance?.triageRunId
   expect(proposalId).toBeTruthy()
+  const cardsAfterTriage = await listBoardCards(request, auth, boardId)
+  expect(cardsAfterTriage.length).toBe(0)
 
   await page.getByRole('button', { name: 'Refresh Detail' }).click()
   const openProposalButton = page.getByRole('button', { name: 'Open Proposal' })
@@ -172,12 +183,14 @@ test('capture triage should create proposal and apply card with provenance links
 
   await proposalCard.getByRole('button', { name: 'Approve' }).click()
   await expect(proposalCard.getByText('Approved')).toBeVisible()
+  const cardsAfterApprove = await listBoardCards(request, auth, boardId)
+  expect(cardsAfterApprove.length).toBe(0)
 
   page.once('dialog', (dialog) => dialog.accept())
   await proposalCard.getByRole('button', { name: 'Execute' }).click()
   await expect(proposalCard.getByText('Applied')).toBeVisible()
 
-  const createdCard = await waitForSingleCard(request, auth, boardId)
+  const createdCard = await waitForCardWithTitle(request, auth, boardId, checklistTaskTitle)
 
   await page.goto(`/workspace/boards/${boardId}`)
   const card = page.locator('[data-card-id]').filter({ hasText: createdCard.title }).first()
