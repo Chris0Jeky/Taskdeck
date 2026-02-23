@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useCaptureStore } from '../store/captureStore'
 import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
@@ -60,6 +60,16 @@ function setActiveIndex(index: number) {
   activeItemIndex.value = index
 }
 
+function scrollActiveItemIntoView() {
+  if (!listContainer.value) {
+    return
+  }
+
+  const targetRow = listContainer.value.querySelector<HTMLElement>(
+    `[data-inbox-index="${activeItemIndex.value}"]`)
+  targetRow?.scrollIntoView({ block: 'nearest' })
+}
+
 async function openActiveItem() {
   const target = items.value[activeItemIndex.value]
   if (!target) {
@@ -97,7 +107,11 @@ async function ignoreSelected() {
     return
   }
 
-  await captureStore.ignoreItem(selectedItemId.value)
+  try {
+    await captureStore.ignoreItem(selectedItemId.value)
+  } catch {
+    // Store handles toast + error state.
+  }
 }
 
 async function cancelSelected() {
@@ -105,7 +119,11 @@ async function cancelSelected() {
     return
   }
 
-  await captureStore.cancelItem(selectedItemId.value)
+  try {
+    await captureStore.cancelItem(selectedItemId.value)
+  } catch {
+    // Store handles toast + error state.
+  }
 }
 
 function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
@@ -113,7 +131,10 @@ function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
     return false
   }
 
-  return status !== 4 && status !== 'Converted' && status !== 5 && status !== 'Ignored'
+  return status === 0 ||
+    status === 'New' ||
+    status === 6 ||
+    status === 'Failed'
 }
 
 watch(items, (nextItems) => {
@@ -125,6 +146,11 @@ watch(items, (nextItems) => {
   if (activeItemIndex.value >= nextItems.length) {
     activeItemIndex.value = nextItems.length - 1
   }
+})
+
+watch(activeItemIndex, async () => {
+  await nextTick()
+  scrollActiveItemIntoView()
 })
 
 watch(selectedItemId, (itemId, _, onCleanup) => {
@@ -177,6 +203,7 @@ onMounted(() => {
           <button
             v-for="(item, index) in items"
             :key="item.id"
+            :data-inbox-index="index"
             :class="[
               'td-inbox-row',
               index === activeItemIndex ? 'td-inbox-row--active' : '',
@@ -216,7 +243,10 @@ onMounted(() => {
           </header>
 
           <div class="td-inbox-detail__content">
-            <pre class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
+            <div v-if="captureStore.loadingDetail" class="td-placeholder td-placeholder--detail-loading">
+              Loading detail...
+            </div>
+            <pre v-else class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
           </div>
 
           <footer class="td-inbox-detail__actions">

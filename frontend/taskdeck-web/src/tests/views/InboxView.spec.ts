@@ -152,6 +152,19 @@ describe('InboxView', () => {
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
+  it('wraps selection from first to last item on ArrowUp', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const listbox = wrapper.get('[role="listbox"]')
+    await listbox.trigger('keydown', { key: 'ArrowUp' })
+    await listbox.trigger('keydown', { key: 'Enter' })
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
+    expect(wrapper.text()).toContain('Full text for capture-2')
+  })
+
   it('closes detail with escape handler', async () => {
     const wrapper = mount(InboxView)
     await waitForUi()
@@ -165,5 +178,19 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Select an item to view full text')
+  })
+
+  it('disables ignore and cancel for non-cancellable statuses', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    const ignoreButton = wrapper.get('button.td-btn--danger')
+    const cancelButton = wrapper.findAll('button.td-btn--secondary').find((node) => node.text() === 'Cancel')
+
+    expect(ignoreButton.attributes('disabled')).toBeDefined()
+    expect(cancelButton?.attributes('disabled')).toBeDefined()
   })
 })
