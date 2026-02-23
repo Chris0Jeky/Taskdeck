@@ -95,6 +95,16 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task List_ShouldReturnBadRequest_WhenStatusFilterIsInvalid()
+    {
+        await AuthenticateAsAsync("capture-list-invalid-status");
+
+        var response = await _client.GetAsync("/api/capture/items?status=not-a-real-status");
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
     public async Task GetById_ShouldReturnForbidden_WhenItemBelongsToDifferentUser()
     {
         using var ownerClient = _factory.CreateClient();

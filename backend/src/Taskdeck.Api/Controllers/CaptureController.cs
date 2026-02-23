@@ -49,7 +49,7 @@ public class CaptureController : AuthenticatedControllerBase
         CaptureStatus? parsedStatus = null;
         if (!string.IsNullOrWhiteSpace(status))
         {
-            if (!Enum.TryParse<CaptureStatus>(status, true, out var parsed) || !Enum.IsDefined(parsed))
+            if (!Enum.TryParse<CaptureStatus>(status, true, out var parsed) || !Enum.IsDefined(typeof(CaptureStatus), parsed))
             {
                 return BadRequest(new ApiErrorResponse(
                     ErrorCodes.ValidationError,

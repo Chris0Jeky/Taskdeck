@@ -86,8 +86,8 @@ public class CaptureService : ICaptureService
         if (userId == Guid.Empty)
             return Result.Failure<IReadOnlyList<CaptureItemSummaryDto>>(ErrorCodes.ValidationError, "UserId cannot be empty");
 
-        if (filter.Limit <= 0)
-            return Result.Failure<IReadOnlyList<CaptureItemSummaryDto>>(ErrorCodes.ValidationError, "Limit must be greater than zero");
+        if (filter.Limit < 0)
+            return Result.Failure<IReadOnlyList<CaptureItemSummaryDto>>(ErrorCodes.ValidationError, "Limit cannot be negative");
 
         var limit = Math.Min(filter.Limit == 0 ? DefaultListLimit : filter.Limit, MaxListLimit);
 

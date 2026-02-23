@@ -129,6 +129,40 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldApplyDefaultLimit_WhenLimitIsZero()
+    {
+        var userId = Guid.NewGuid();
+        var items = Enumerable.Range(0, 60)
+            .Select(i => new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, $"capture payload {i}"))
+            .ToList();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(items);
+
+        var result = await _service.ListAsync(
+            userId,
+            new CaptureListFilterDto(Limit: 0));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(50);
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldReturnValidationError_WhenLimitIsNegative()
+    {
+        var userId = Guid.NewGuid();
+
+        var result = await _service.ListAsync(
+            userId,
+            new CaptureListFilterDto(Limit: -1));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("negative");
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldReturnForbidden_WhenCaptureBelongsToDifferentUser()
     {
         var ownerId = Guid.NewGuid();
