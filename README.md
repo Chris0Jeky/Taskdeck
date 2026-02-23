@@ -88,6 +88,18 @@ Default URLs:
 - Swagger: `http://localhost:5000/swagger`
 - Frontend: `http://localhost:5173`
 
+## LLM Provider Setup
+
+Current shipped runtime:
+- `Mock` provider is default.
+- `OpenAI` is supported behind explicit config gates.
+- `Gemini` runtime support is tracked as `#232` and not shipped yet.
+
+Use `docs/LLM_PROVIDER_SETUP_GUIDE.md` for:
+- current demo setup with OpenAI
+- provider-agnostic runtime plan (`OpenAI` + `Gemini`)
+- security/reliability constraints for live-provider usage
+
 ## Container Baseline
 
 From repository root:
