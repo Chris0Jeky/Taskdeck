@@ -24,6 +24,7 @@ Current constraints are mostly hardening and consistency:
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
 - LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture; provider-agnostic OpenAI+Gemini runtime expansion is tracked in `#232` (`Priority II`)
 - managed-key shared-token abuse-control strategy is now explicitly seeded in `#235` to `#240` before broad external exposure
+- testing-harness guardrail expansion (flake cleanup, OpenAPI drift checks, golden principles, nightly quality artifacts) is seeded in `#254` to `#260` and not shipped yet
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
@@ -295,6 +296,32 @@ Reconciliation record:
 
 - `docs/analysis/2026-02-23_frontend-premium-ui-synthesis.md`
 
+## Testing Harness Improvement Wave (2026-02-23)
+
+Commit `909db0d` introduced a testing-harness improvement pack under:
+
+- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/`
+
+Issue seeding and reconciliation completed:
+
+- tracker: `#254` (TST-15 testing harness wave)
+- net-new wave issues: `#255` to `#260`
+- existing seeds updated with extracted pack guidance: `#89`, `#90`, `#106`, `#168`
+- explicit non-duplicate mapping to already-covered scenarios:
+  - WIP limit enforcement tests already present (`CardServiceTests`, `CardsApiTests`, `tests/e2e/smoke.spec.ts`)
+  - sandbox gate behavior already present (`ExportApiTests`)
+  - starter-pack idempotency/conflict safety already present (`StarterPacksApiTests`)
+
+Execution posture:
+
+- eliminate deterministic flake vectors first (`#255`)
+- then expand high-signal regression coverage (`#256`, `#257`)
+- then add harness-level CI guardrails with non-blocking rollout (`#258`, `#259`, `#260`)
+
+Reconciliation record:
+
+- `docs/analysis/2026-02-23_testing-harness-synthesis.md`
+
 ## Test Status (Executed)
 
 Verification Date: 2026-02-23
@@ -384,12 +411,9 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-<<<<<<< docs/frontend-premium-ui-wave-seeding-sync
-- capture inbox pipeline is now shipped through card/proposal provenance UX (`#200` to `#209`); remaining open dependencies are end-to-end loop verification (`#210`) and canonical docs promotion (`#211`)
-- premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
-=======
 - capture inbox pipeline is now shipped through end-to-end loop verification (`#200` to `#210`); remaining open dependency is canonical docs promotion (`#211`)
->>>>>>> main
+- premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
+- testing-harness wave guardrails are not yet implemented; tracked in `#255` to `#260`
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
@@ -481,6 +505,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Seeded capture realignment wave issues (`#199` to `#213`), updated the wave index (`#107`) with a dedicated capture wave, and extended SEC-06 rate-limiting scope (`#81`) to include capture endpoints.
 - Seeded future-expansion backlog issues (`#67` to `#111`) and added execution-wave index (`#107`).
 - Applied `Priority I` through `Priority V` labels to every repository issue.
+- Seeded testing-harness wave issues (`#254` to `#260`) and updated in-review extraction records with duplicate prevention notes.
 
 ## Canonical Documentation Policy
 

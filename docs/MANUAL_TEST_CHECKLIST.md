@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-02-22
+Last Updated: 2026-02-23
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -340,3 +340,29 @@ Slice checks:
 5. Policy/contract checks:
    - verify unauthenticated/cross-user/missing-resource behavior remains `401/403/404`
    - verify error payload shape remains `{ errorCode, message }`
+
+## O. Testing Harness Wave 1 Manual Slice (`#254` to `#260`)
+
+Status:
+- planned; execute while TST-16/TST-17/TST-18 and harness guardrail issues are being implemented
+
+Goal:
+- provide manual confidence on persistence and error-contract paths that are being regression-hardened in the testing-harness wave
+
+Slice checks:
+1. Drag/drop persistence roundtrip (`#256`):
+   - reorder columns and refresh page
+   - move a card to another column and refresh page
+   - expected: both persisted orders remain intact after refresh
+2. WIP enforcement UX confirmation (already-covered, keep monitoring):
+   - fill a limited column then try add/move one extra card
+   - expected: operation blocked with visible feedback and no state mutation on refresh
+3. Representative API error-contract checks (`#257`):
+   - run one request each for `400/401/403/404/409`
+   - expected: JSON payload includes non-empty `errorCode` and `message`; request-id echo present where middleware guarantees it
+4. Sandbox safety check (already-covered, keep monitoring):
+   - call database export/import endpoints in non-sandbox posture
+   - expected: deterministic `403` rejection
+5. Starter-pack idempotency/conflict confirmation (already-covered, keep monitoring):
+   - apply the same pack twice and verify no duplicates
+   - execute a known conflict path and verify dry-run conflict report with no mutation
