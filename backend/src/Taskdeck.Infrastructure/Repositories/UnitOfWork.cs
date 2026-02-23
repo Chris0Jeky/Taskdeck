@@ -1,5 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
@@ -23,7 +25,9 @@ public class UnitOfWork : IUnitOfWork
         IArchiveItemRepository archiveItems,
         IChatSessionRepository chatSessions,
         IChatMessageRepository chatMessages,
-        ICommandRunRepository commandRuns)
+        ICommandRunRepository commandRuns,
+        INotificationRepository notifications,
+        INotificationPreferenceRepository notificationPreferences)
     {
         _context = context;
         Boards = boards;
@@ -39,6 +43,8 @@ public class UnitOfWork : IUnitOfWork
         ChatSessions = chatSessions;
         ChatMessages = chatMessages;
         CommandRuns = commandRuns;
+        Notifications = notifications;
+        NotificationPreferences = notificationPreferences;
     }
 
     public IBoardRepository Boards { get; }
@@ -54,10 +60,19 @@ public class UnitOfWork : IUnitOfWork
     public IChatSessionRepository ChatSessions { get; }
     public IChatMessageRepository ChatMessages { get; }
     public ICommandRunRepository CommandRuns { get; }
+    public INotificationRepository Notifications { get; }
+    public INotificationPreferenceRepository NotificationPreferences { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        return await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            return await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (TryResolveDuplicateNotificationDeduplicationConflicts(ex))
+        {
+            return await _context.SaveChangesAsync(cancellationToken);
+        }
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
@@ -83,5 +98,48 @@ public class UnitOfWork : IUnitOfWork
             await _transaction.DisposeAsync();
             _transaction = null;
         }
+    }
+
+    private bool TryResolveDuplicateNotificationDeduplicationConflicts(DbUpdateException exception)
+    {
+        if (!IsNotificationDeduplicationUniqueViolation(exception))
+            return false;
+
+        var duplicateNotificationFound = false;
+        var pendingNotifications = _context.ChangeTracker
+            .Entries<Notification>()
+            .Where(entry => entry.State == EntityState.Added && !string.IsNullOrWhiteSpace(entry.Entity.DeduplicationKey))
+            .ToList();
+
+        foreach (var pendingNotification in pendingNotifications)
+        {
+            var deduplicationKey = pendingNotification.Entity.DeduplicationKey!;
+            var duplicateExists = _context.Notifications
+                .AsNoTracking()
+                .Any(notification =>
+                    notification.UserId == pendingNotification.Entity.UserId
+                    && notification.DeduplicationKey == deduplicationKey);
+
+            if (!duplicateExists)
+                continue;
+
+            pendingNotification.State = EntityState.Detached;
+            duplicateNotificationFound = true;
+        }
+
+        return duplicateNotificationFound;
+    }
+
+    private static bool IsNotificationDeduplicationUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "Notifications.UserId, Notifications.DeduplicationKey",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_Notifications_UserId_DeduplicationKey",
+                StringComparison.OrdinalIgnoreCase);
     }
 }

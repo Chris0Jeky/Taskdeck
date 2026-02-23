@@ -14,16 +14,21 @@ public class AutomationProposalServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IAutomationProposalRepository> _proposalRepoMock;
+    private readonly Mock<INotificationService> _notificationServiceMock;
     private readonly AutomationProposalService _service;
 
     public AutomationProposalServiceTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _proposalRepoMock = new Mock<IAutomationProposalRepository>();
+        _notificationServiceMock = new Mock<INotificationService>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
+        _notificationServiceMock
+            .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
+            .ReturnsAsync(Result.Success(true));
 
-        _service = new AutomationProposalService(_unitOfWorkMock.Object);
+        _service = new AutomationProposalService(_unitOfWorkMock.Object, _notificationServiceMock.Object);
     }
 
     #region CreateProposalAsync Tests
@@ -177,6 +182,13 @@ public class AutomationProposalServiceTests
         result.Value.DecidedByUserId.Should().Be(deciderId);
         result.Value.DecidedAt.Should().NotBeNull();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(
+                It.Is<CreateNotificationRequestDto>(n =>
+                    n.UserId == proposal.RequestedByUserId &&
+                    n.Type == NotificationType.ProposalOutcome),
+                default),
+            Times.Once);
     }
 
     [Fact]

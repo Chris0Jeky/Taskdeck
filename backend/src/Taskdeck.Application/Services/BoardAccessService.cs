@@ -10,11 +10,16 @@ public class BoardAccessService : IBoardAccessService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
+    private readonly INotificationService _notificationService;
 
-    public BoardAccessService(IUnitOfWork unitOfWork, DevelopmentSandboxSettings? sandboxSettings = null)
+    public BoardAccessService(
+        IUnitOfWork unitOfWork,
+        DevelopmentSandboxSettings? sandboxSettings = null,
+        INotificationService? notificationService = null)
     {
         _unitOfWork = unitOfWork;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
+        _notificationService = notificationService ?? NoOpNotificationService.Instance;
     }
 
     public async Task<Result<BoardAccessDto>> GrantAccessAsync(GrantAccessDto dto, Guid grantedBy)
@@ -43,6 +48,20 @@ public class BoardAccessService : IBoardAccessService
 
             var access = new BoardAccess(dto.BoardId, dto.UserId, dto.Role, grantedBy);
             await _unitOfWork.BoardAccesses.AddAsync(access);
+
+            var notificationResult = await _notificationService.PublishAsync(
+                new CreateNotificationRequestDto(
+                    dto.UserId,
+                    NotificationType.Assignment,
+                    "Board access granted",
+                    $"You were granted {dto.Role} access to board '{board.Name}'.",
+                    dto.BoardId,
+                    SourceEntityType: "board-access",
+                    SourceEntityId: access.Id,
+                    DeduplicationKey: $"assignment:grant:{dto.BoardId}:{dto.UserId}:{dto.Role}"));
+            if (!notificationResult.IsSuccess)
+                return Result.Failure<BoardAccessDto>(notificationResult.ErrorCode, notificationResult.ErrorMessage);
+
             await _unitOfWork.SaveChangesAsync();
 
             return Result.Success(MapToDto(access));
@@ -74,6 +93,20 @@ public class BoardAccessService : IBoardAccessService
                 return Result.Failure<BoardAccessDto>(canManage.ErrorCode, canManage.ErrorMessage);
 
             access.UpdateRole(dto.Role, updatedBy);
+
+            var notificationResult = await _notificationService.PublishAsync(
+                new CreateNotificationRequestDto(
+                    access.UserId,
+                    NotificationType.Assignment,
+                    "Board access role updated",
+                    $"Your role for board '{board.Name}' is now {dto.Role}.",
+                    boardId,
+                    SourceEntityType: "board-access",
+                    SourceEntityId: access.Id,
+                    DeduplicationKey: $"assignment:update:{boardId}:{access.UserId}:{dto.Role}"));
+            if (!notificationResult.IsSuccess)
+                return Result.Failure<BoardAccessDto>(notificationResult.ErrorCode, notificationResult.ErrorMessage);
+
             await _unitOfWork.SaveChangesAsync();
 
             return Result.Success(MapToDto(access));

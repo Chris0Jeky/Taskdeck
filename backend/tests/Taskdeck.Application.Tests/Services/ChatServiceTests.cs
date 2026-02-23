@@ -16,10 +16,13 @@ public class ChatServiceTests
     private readonly Mock<IChatSessionRepository> _chatSessionRepoMock = new();
     private readonly Mock<IChatMessageRepository> _chatMessageRepoMock = new();
     private readonly Mock<IColumnRepository> _columnRepoMock = new();
+    private readonly Mock<IUserRepository> _userRepoMock = new();
     private readonly Mock<ILlmProvider> _llmProviderMock = new();
     private readonly Mock<IAutomationPlannerService> _plannerMock = new();
     private readonly Mock<IAutomationProposalService> _proposalServiceMock = new();
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock = new();
+    private readonly Mock<INotificationService> _notificationServiceMock = new();
+    private readonly Mock<IAuthorizationService> _authorizationServiceMock = new();
     private readonly ChatService _service;
 
     public ChatServiceTests()
@@ -27,6 +30,7 @@ public class ChatServiceTests
         _unitOfWorkMock.SetupGet(u => u.ChatSessions).Returns(_chatSessionRepoMock.Object);
         _unitOfWorkMock.SetupGet(u => u.ChatMessages).Returns(_chatMessageRepoMock.Object);
         _unitOfWorkMock.SetupGet(u => u.Columns).Returns(_columnRepoMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default)).ReturnsAsync(1);
         _chatMessageRepoMock
             .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
@@ -34,13 +38,18 @@ public class ChatServiceTests
         _llmProviderMock
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
             .ReturnsAsync(new LlmCompletionResult("Assistant response", 12, false, null));
+        _notificationServiceMock
+            .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
+            .ReturnsAsync(Result.Success(true));
 
         _service = new ChatService(
             _unitOfWorkMock.Object,
             _llmProviderMock.Object,
             _plannerMock.Object,
             _proposalServiceMock.Object,
-            _policyEngineMock.Object);
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object);
     }
 
     [Fact]
@@ -79,6 +88,39 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("error");
         result.Value.Content.Should().Contain("blocked by safety guardrails");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldPublishMentionNotification_ForMentionedUser()
+    {
+        var sender = new User("sender_user", "sender_user@example.com", "hash");
+        var mentioned = new User("mention_target", "mention_target@example.com", "hash");
+        var session = new ChatSession(sender.Id, "Mention session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(sender.Id, default))
+            .ReturnsAsync(sender);
+        _userRepoMock
+            .Setup(r => r.GetByUsernameAsync("mention_target", default))
+            .ReturnsAsync(mentioned);
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            sender.Id,
+            new SendChatMessageDto("Hello @mention_target can you review this?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(
+                It.Is<CreateNotificationRequestDto>(n =>
+                    n.UserId == mentioned.Id &&
+                    n.Type == NotificationType.Mention),
+                default),
+            Times.Once);
     }
 
     [Fact]
@@ -127,6 +169,41 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("proposal-reference");
         result.Value.ProposalId.Should().Be(proposalId);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldSkipMentionNotification_WhenMentionedUserCannotReadBoard()
+    {
+        var sender = new User("sender_user", "sender_user@example.com", "hash");
+        var mentioned = new User("mention_target", "mention_target@example.com", "hash");
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(sender.Id, "Mention session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(sender.Id, default))
+            .ReturnsAsync(sender);
+        _userRepoMock
+            .Setup(r => r.GetByUsernameAsync("mention_target", default))
+            .ReturnsAsync(mentioned);
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(mentioned.Id, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            sender.Id,
+            new SendChatMessageDto("Hello @mention_target can you review this?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(
+                It.IsAny<CreateNotificationRequestDto>(),
+                default),
+            Times.Never);
     }
 
     [Fact]

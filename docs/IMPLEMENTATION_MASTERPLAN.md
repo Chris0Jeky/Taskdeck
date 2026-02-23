@@ -236,6 +236,10 @@ Delivered in the latest cycle:
    - codified global and critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`) in frontend test configuration
    - switched reusable frontend CI lane to threshold-enforced coverage execution and standardized machine-readable triage artifacts (JUnit + coverage JSON/HTML)
    - documented explicit ratchet policy (thresholds can remain or increase, never decrease) and local threshold-breach verification command
+58. COL-02 notifications framework delivery (`#72`):
+   - added notification persistence model (`Notifications`, `NotificationPreferences`) with user-scoped preference toggles for event-family cadence controls and in-app channel enablement
+   - shipped authenticated notification APIs (`GET /api/notifications`, `POST /api/notifications/{id}/read`, `GET/PUT /api/notifications/preferences`) with board-filter authorization guardrails and deduplication-aware publish semantics
+   - integrated frontend notification inbox/preferences routes + Pinia store/api clients and added regression coverage for backend event publication, API auth/filter behavior, and frontend inbox/preferences interactions
 
 ## Roadmap by Horizon
 
@@ -324,7 +328,7 @@ Exit Criteria:
 - API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
-- Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72`, `#73`, `#74`, `#75`, `#76`
+- Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance)
 

@@ -27,7 +27,7 @@ Current constraints are mostly hardening and consistency:
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core + SQLite
 - Core controllers: boards, columns, cards, labels
-- Extended controllers: auth, users, board-access, audit, export/import, llm-queue, automation proposals, archive, chat, ops-cli, logs, health, starter-packs
+- Extended controllers: auth, users, board-access, audit, export/import, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
@@ -42,13 +42,14 @@ Current constraints are mostly hardening and consistency:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
   - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI` behind explicit gates)
+  - `NotificationService` with per-user preference filtering and deduplication safeguards
   - `OpsCliService` + `LogQueryService`
   - `StarterPackManifestValidator` + `StarterPackApplyService` (idempotent apply with dry-run conflict reporting)
   - SignalR realtime baseline: `BoardsHub` with board-scoped subscription authz and application-level board mutation event publishing
   - OpenTelemetry baseline for API + worker metrics/traces with configurable OTLP/console exporters
 - Auth posture today:
   - JWT middleware is wired
-  - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, automation-proposals, archive, ops-cli, and logs controllers
+  - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, notifications, automation-proposals, archive, ops-cli, and logs controllers
 
 ### Frontend
 
@@ -57,14 +58,16 @@ Current constraints are mostly hardening and consistency:
   - boards
   - activity
   - automations (queue/proposals/chat)
+  - notifications (inbox + read-state actions)
   - ops (cli/endpoints/logs)
-  - settings (profile/access/export-import)
+  - settings (profile/preferences/access/export-import)
   - archive
 - Feature slices integrated end to end:
   - proposal review/approve/reject/execute and diff viewing
   - chat session flow with proposal handoff
   - ops template execution and log querying
   - archive listing and restore operations
+  - notification inbox and per-user notification preference controls
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
@@ -157,11 +160,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 346/346 passing
-- API integration: 187/187 passing
+- Application: 352/352 passing
+- API integration: 192/192 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 638/638 passing
+- Backend Total: 649/649 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -172,7 +175,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 293/293 passing
+- Frontend unit: 306/306 passing
 - Coverage thresholds: passing
 - Lint: passing
 - Typecheck: passing
@@ -188,7 +191,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 952/952 passing
+- Combined automated total: 976/976 passing
 
 ## CI Status
 
@@ -299,6 +302,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered ARCH-01 multi-tenancy strategy ADR (`#71`): documented option tradeoffs (`database-per-tenant`, `schema-per-tenant`, `shared-schema + TenantId`), selected phased target model, and published tenant-isolation readiness + test strategy checklist.
 - Delivered FE-11 frontend lint baseline + CI gate (`#154`): added Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`), introduced `npm run lint` with zero-warning enforcement, integrated lint into reusable frontend CI workflow, and documented lint suppression guidance in active testing docs.
 - Delivered FE-12 frontend coverage threshold gate (`#155`): enforced global + critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`), switched required frontend CI lane to thresholded coverage execution, and standardized JUnit+coverage artifact upload for triage.
+- Delivered COL-02 notification framework (`#72`): added notification domain/persistence + preferences model, shipped authenticated inbox/preferences/read-state APIs with preference-aware deduped event publication for mention/assignment/proposal-outcome families, integrated frontend inbox/preferences routes + stores, and expanded backend/frontend regression coverage.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.

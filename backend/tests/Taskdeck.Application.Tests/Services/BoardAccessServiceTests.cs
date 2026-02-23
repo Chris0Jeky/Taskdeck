@@ -3,6 +3,7 @@ using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
@@ -16,6 +17,7 @@ public class BoardAccessServiceTests
     private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly Mock<IBoardRepository> _boardRepoMock;
     private readonly Mock<IUserRepository> _userRepoMock;
+    private readonly Mock<INotificationService> _notificationServiceMock;
     private readonly BoardAccessService _service;
 
     public BoardAccessServiceTests()
@@ -24,6 +26,7 @@ public class BoardAccessServiceTests
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
         _boardRepoMock = new Mock<IBoardRepository>();
         _userRepoMock = new Mock<IUserRepository>();
+        _notificationServiceMock = new Mock<INotificationService>();
 
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
@@ -78,6 +81,40 @@ public class BoardAccessServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GrantAccessAsync_ShouldPublishAssignmentNotification_WhenGrantSucceeds()
+    {
+        var granter = CreateUser("granter");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: granter.Id);
+        var dto = new GrantAccessDto(board.Id, targetUser.Id, UserRole.Editor);
+        var notificationAwareService = new BoardAccessService(
+            _unitOfWorkMock.Object,
+            sandboxSettings: null,
+            notificationService: _notificationServiceMock.Object);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByIdAsync(targetUser.Id, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, targetUser.Id, default))
+            .ReturnsAsync((BoardAccess?)null);
+        _boardAccessRepoMock.Setup(r => r.AddAsync(It.IsAny<BoardAccess>(), default))
+            .ReturnsAsync((BoardAccess a, CancellationToken _) => a);
+        _notificationServiceMock
+            .Setup(s => s.PublishAsync(
+                It.Is<CreateNotificationRequestDto>(n =>
+                    n.UserId == targetUser.Id &&
+                    n.Type == NotificationType.Assignment &&
+                    n.BoardId == board.Id),
+                default))
+            .ReturnsAsync(Result.Success(true));
+
+        var result = await notificationAwareService.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        _notificationServiceMock.Verify(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default), Times.Once);
     }
 
     [Fact]

@@ -25,6 +25,8 @@ public class TaskdeckDbContext : DbContext
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<CommandRun> CommandRuns => Set<CommandRun>();
     public DbSet<CommandRunLog> CommandRunLogs => Set<CommandRunLog>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

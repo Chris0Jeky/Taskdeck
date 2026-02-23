@@ -23,8 +23,10 @@ const navItems = computed(() => {
     { label: 'Boards', icon: 'B', path: '/workspace/boards', flag: null as string | null },
     { label: 'Automations', icon: 'A', path: '/workspace/automations/queue', flag: 'newAutomation' as string | null },
     { label: 'Activity', icon: 'T', path: '/workspace/activity', flag: 'newActivity' as string | null },
+    { label: 'Notifications', icon: 'N', path: '/workspace/notifications', flag: null as string | null },
     { label: 'Ops', icon: 'O', path: '/workspace/ops/cli', flag: 'newOps' as string | null },
     { label: 'Settings', icon: 'S', path: '/workspace/settings/profile', flag: 'newAuth' as string | null },
+    { label: 'Preferences', icon: 'P', path: '/workspace/settings/preferences', flag: null as string | null },
     { label: 'Access', icon: 'R', path: '/workspace/settings/access', flag: 'newAccess' as string | null },
     { label: 'Archive', icon: 'H', path: '/workspace/archive', flag: 'newArchive' as string | null },
   ]
