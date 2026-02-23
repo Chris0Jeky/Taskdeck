@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-02-22
+Last Updated: 2026-02-23
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -141,7 +141,7 @@ Provider runtime expansion (2026-02-23):
 14. `#240` DOC-05 managed-key fair-use policy and abuse consequence disclosures
 15. `#242` UI-00 frontend premium UI wave tracker
 16. `#243` UI-01 design tokens/theme-density-motion foundations
-17. `#245` UI-03 primitive stack decision spike
+17. `#245` UI-03: Decision spike for frontend primitive stack (Radix Vue vs shadcn-vue vs Headless UI)
 18. `#244` UI-02 shared UI primitives foundation
 19. `#246` UI-04 AppShell premium reskin (no behavior changes)
 20. `#247` UI-05 board card/surface polish pass

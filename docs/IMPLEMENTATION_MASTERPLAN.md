@@ -411,7 +411,8 @@ Focus:
 
 Execution tracker and seeded issues:
 - `#242` UI-00 tracker
-- `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`, `#251`
+- `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
+- optional Priority IV add-on: `#251`
 - reused dependencies (no duplicate wave issue): `#154`, `#88`, `#92`, `#213`
 
 Exit Criteria:

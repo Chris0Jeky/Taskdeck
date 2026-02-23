@@ -2,6 +2,12 @@
 
 Date: 2026-02-23  
 Source commit: `0aef077f6d46262a844eb796cb9e95f83132ca09`
+Status: Working-note synthesis (non-authoritative planning artifact)
+Purpose: Record extraction/reconciliation decisions from `docs/InReview` into issue seeding and sequencing notes.
+
+Canonical sources of truth for active project state and execution order:
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
 
 ## Source Materials Reviewed
 
@@ -56,14 +62,14 @@ Note:
 ## Sequencing Rules Adopted
 
 1. Foundations before reskins:
-- execute `#243`, `#245`, `#244` before `#246`/`#247`/`#249`.
+  - execute `#243`, `#245`, `#244` before `#246`/`#247`/`#249`.
 
 2. High-risk interaction surfaces after primitives:
-- execute `#248` after primitive foundations and board interaction baselines.
+  - execute `#248` after primitive foundations and board interaction baselines.
 
 3. Performance and quality gating remain explicit:
-- keep `#154`, `#88`, `#92`, `#213` linked to tracker `#242`.
-- execute `#250` to cover performance instrumentation gaps not addressed by virtualization alone.
+  - keep `#154`, `#88`, `#92`, `#213` linked to tracker `#242`.
+  - execute `#250` to cover performance instrumentation gaps not addressed by virtualization alone.
 
 ## Canonical Docs Promotion Requirements
 
