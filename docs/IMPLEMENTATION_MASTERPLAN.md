@@ -258,6 +258,10 @@ Delivered in the latest cycle:
    - seeded go-to-market and user-research execution issues from HUMAN playbooks (`#216`, `#217`)
    - seeded deferred capture follow-ons from the original realignment pack (`#218`, `#219`, `#220`)
    - updated capture wave tracker (`#199`) and wave index (`#107`) to keep extraction coverage explicit
+63. CAP-03 queue provenance fix delivery (`#202`):
+   - extended planner contract to support explicit source metadata (`sourceType`, `sourceReferenceId`, `correlationId`) with manual-safe defaults
+   - queue worker now stamps queue-origin proposals as `ProposalSourceType.Queue` instead of `Manual`
+   - queue item id is now forwarded as source-reference and correlation metadata for deterministic provenance traceability
 
 ## Roadmap by Horizon
 

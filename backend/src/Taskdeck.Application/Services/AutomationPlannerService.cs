@@ -24,7 +24,14 @@ public class AutomationPlannerService : IAutomationPlannerService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<ProposalDto>> ParseInstructionAsync(string instruction, Guid userId, Guid? boardId = null, CancellationToken cancellationToken = default)
+    public async Task<Result<ProposalDto>> ParseInstructionAsync(
+        string instruction,
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default,
+        ProposalSourceType sourceType = ProposalSourceType.Manual,
+        string? sourceReferenceId = null,
+        string? correlationId = null)
     {
         if (string.IsNullOrWhiteSpace(instruction))
             return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Instruction cannot be empty");
@@ -371,14 +378,18 @@ public class AutomationPlannerService : IAutomationPlannerService
             var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
             // Create proposal
+            var resolvedCorrelationId = string.IsNullOrWhiteSpace(correlationId)
+                ? Guid.NewGuid().ToString()
+                : correlationId;
+
             var createDto = new CreateProposalDto(
-                ProposalSourceType.Manual,
+                sourceType,
                 userId,
                 instruction.Length > 500 ? instruction.Substring(0, 497) + "..." : instruction,
                 riskLevel,
-                Guid.NewGuid().ToString(),
+                resolvedCorrelationId,
                 boardId,
-                null,
+                sourceReferenceId,
                 1440,
                 operations
             );

@@ -184,6 +184,12 @@ Seeded issue wave:
 - deferred capture follow-ons seeded: `#218`, `#219`, `#220`
 - adjacent go-to-market and research execution seeds: `#216`, `#217`
 
+Implementation progress:
+- `#202` CAP-03 queue provenance fix implemented in active development:
+  - planner now accepts explicit proposal source metadata overrides
+  - queue worker now creates proposals with `SourceType = Queue`
+  - queue worker forwards `SourceReferenceId` and `CorrelationId` using queue item id for traceability
+
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
 - keep claims-first identity and `401/403/404` policy semantics
