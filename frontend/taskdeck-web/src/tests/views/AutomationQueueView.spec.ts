@@ -90,18 +90,20 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
   }
 }
 
-async function mountOnProposalsRoute() {
+async function mountAt(path: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/workspace/automations/queue', name: 'workspace-automations-queue', component: { template: '<div />' } },
+      { path: '/workspace/automations/queue', name: 'workspace-automations-queue', component: AutomationQueueView },
       { path: '/workspace/automations/proposals', name: 'workspace-automations-proposals', component: AutomationQueueView },
     ],
   })
-  await router.push({ name: 'workspace-automations-proposals' })
+
+  await router.push(path)
   await router.isReady()
 
   const wrapper = mount(AutomationQueueView, {
+    attachTo: document.body,
     global: {
       plugins: [router],
     },
@@ -138,7 +140,7 @@ describe('AutomationQueueView', () => {
       }),
     ])
 
-    const wrapper = await mountOnProposalsRoute()
+    const wrapper = await mountAt('/workspace/automations/proposals')
 
     expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200 })
     expect(wrapper.text()).toContain('Capture-linked')
@@ -153,13 +155,41 @@ describe('AutomationQueueView', () => {
         id: 'proposal-manual',
         sourceType: 'Manual',
         sourceReferenceId: null,
-        correlationId: '',
+        correlationId: 'manual-correlation',
       }),
     ])
 
-    const wrapper = await mountOnProposalsRoute()
+    const wrapper = await mountAt('/workspace/automations/proposals')
 
     expect(wrapper.text()).not.toContain('Capture-linked')
     expect(wrapper.text()).not.toContain('Open Capture')
+    expect(wrapper.text()).not.toContain('Triage run:')
+  })
+
+  it('scrolls to proposal card when route hash targets a proposal id', async () => {
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-42' })])
+    const scrollSpy = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollSpy,
+    })
+
+    await mountAt('/workspace/automations/proposals#proposal-proposal-42')
+
+    expect(mocks.getProposals).toHaveBeenCalled()
+    expect(scrollSpy).toHaveBeenCalled()
+  })
+
+  it('does not attempt proposal scrolling when no proposal hash is present', async () => {
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-42' })])
+    const scrollSpy = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollSpy,
+    })
+
+    await mountAt('/workspace/automations/proposals')
+
+    expect(scrollSpy).not.toHaveBeenCalled()
   })
 })

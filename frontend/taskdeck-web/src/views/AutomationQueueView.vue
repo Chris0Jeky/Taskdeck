@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { useQueueStore } from '../store/queueStore'
@@ -64,6 +64,32 @@ async function loadProposals() {
   } finally {
     proposalsLoading.value = false
   }
+
+  await scrollToProposalFromHash()
+}
+
+function getProposalIdFromHash(hash: string): string | null {
+  if (!hash.startsWith('#proposal-')) {
+    return null
+  }
+
+  const rawId = hash.slice('#proposal-'.length).trim()
+  if (!rawId) {
+    return null
+  }
+
+  return decodeURIComponent(rawId)
+}
+
+async function scrollToProposalFromHash() {
+  const proposalId = getProposalIdFromHash(route.hash)
+  if (!proposalId) {
+    return
+  }
+
+  await nextTick()
+  const element = document.getElementById(`proposal-${proposalId}`)
+  element?.scrollIntoView({ block: 'nearest' })
 }
 
 onMounted(() => {
@@ -82,6 +108,14 @@ onMounted(() => {
 
 watch(() => route.name, () => {
   syncTabFromRoute()
+})
+
+watch(() => route.hash, () => {
+  if (activeTab.value !== 'proposals' || proposals.value.length === 0) {
+    return
+  }
+
+  void scrollToProposalFromHash()
 })
 
 watch(activeTab, (tab) => {
