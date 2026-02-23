@@ -1,0 +1,462 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { useCaptureStore } from '../store/captureStore'
+import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
+import { registerEscapeHandler } from '../composables/useEscapeStack'
+
+const captureStore = useCaptureStore()
+const selectedItemId = ref<string | null>(null)
+const activeItemIndex = ref(0)
+const listContainer = ref<HTMLElement | null>(null)
+
+const items = computed(() => captureStore.items)
+const selectedItem = computed(() => {
+  if (!selectedItemId.value) {
+    return null
+  }
+
+  return captureStore.detailById[selectedItemId.value] ?? null
+})
+
+function statusLabel(status: CaptureStatusValue): string {
+  if (status === 0 || status === 'New') return 'New'
+  if (status === 1 || status === 'Triaging') return 'Triaging'
+  if (status === 2 || status === 'Triaged') return 'Triaged'
+  if (status === 3 || status === 'ProposalCreated') return 'Proposal Created'
+  if (status === 4 || status === 'Converted') return 'Converted'
+  if (status === 5 || status === 'Ignored') return 'Ignored'
+  if (status === 6 || status === 'Failed') return 'Failed'
+  return String(status)
+}
+
+function sourceLabel(source: CaptureSourceValue): string {
+  if (source === 0 || source === 'Typed') return 'Typed'
+  if (source === 1 || source === 'Paste') return 'Paste'
+  if (source === 2 || source === 'TranscriptPaste') return 'Transcript'
+  if (source === 3 || source === 'Import') return 'Import'
+  if (source === 4 || source === 'Voice') return 'Voice'
+  if (source === 5 || source === 'MeetingIntegration') return 'Meeting'
+  return String(source)
+}
+
+async function loadInbox() {
+  await captureStore.fetchItems({ limit: 200 })
+}
+
+async function openItem(item: CaptureItemSummary) {
+  selectedItemId.value = item.id
+  await captureStore.fetchDetail(item.id)
+}
+
+function closeDetail() {
+  selectedItemId.value = null
+}
+
+function setActiveIndex(index: number) {
+  if (index < 0 || index >= items.value.length) {
+    return
+  }
+
+  activeItemIndex.value = index
+}
+
+async function openActiveItem() {
+  const target = items.value[activeItemIndex.value]
+  if (!target) {
+    return
+  }
+
+  await openItem(target)
+}
+
+async function handleKeydown(event: KeyboardEvent) {
+  if (items.value.length === 0) {
+    return
+  }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    activeItemIndex.value = (activeItemIndex.value + 1) % items.value.length
+    return
+  }
+
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    activeItemIndex.value = (activeItemIndex.value - 1 + items.value.length) % items.value.length
+    return
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    await openActiveItem()
+  }
+}
+
+async function ignoreSelected() {
+  if (!selectedItemId.value) {
+    return
+  }
+
+  await captureStore.ignoreItem(selectedItemId.value)
+}
+
+async function cancelSelected() {
+  if (!selectedItemId.value) {
+    return
+  }
+
+  await captureStore.cancelItem(selectedItemId.value)
+}
+
+function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
+  if (status === undefined) {
+    return false
+  }
+
+  return status !== 4 && status !== 'Converted' && status !== 5 && status !== 'Ignored'
+}
+
+watch(items, (nextItems) => {
+  if (nextItems.length === 0) {
+    activeItemIndex.value = 0
+    return
+  }
+
+  if (activeItemIndex.value >= nextItems.length) {
+    activeItemIndex.value = nextItems.length - 1
+  }
+})
+
+watch(selectedItemId, (itemId, _, onCleanup) => {
+  if (!itemId) {
+    return
+  }
+
+  const unregister = registerEscapeHandler(closeDetail)
+  onCleanup(() => {
+    unregister()
+  })
+})
+
+onMounted(() => {
+  void loadInbox()
+})
+</script>
+
+<template>
+  <div class="td-inbox">
+    <header class="td-inbox__header">
+      <div>
+        <h1 class="td-page-title">Inbox</h1>
+        <p class="td-inbox__subtitle">Capture artifacts and triage-ready context.</p>
+      </div>
+      <button class="td-btn td-btn--secondary" @click="loadInbox" :disabled="captureStore.loadingList">
+        {{ captureStore.loadingList ? 'Refreshing...' : 'Refresh' }}
+      </button>
+    </header>
+
+    <div class="td-inbox__layout">
+      <section class="td-inbox__list-panel">
+        <div class="td-inbox__list-header">
+          <h2>Items</h2>
+          <span class="td-inbox__count">{{ items.length }}</span>
+        </div>
+
+        <div
+          ref="listContainer"
+          class="td-inbox__list"
+          tabindex="0"
+          role="listbox"
+          aria-label="Inbox items"
+          @keydown="handleKeydown"
+        >
+          <div v-if="captureStore.loadingList" class="td-placeholder">Loading inbox items...</div>
+          <div v-else-if="captureStore.error" class="td-alert td-alert--error">{{ captureStore.error }}</div>
+          <div v-else-if="!captureStore.hasItems" class="td-placeholder">No capture items yet.</div>
+
+          <button
+            v-for="(item, index) in items"
+            :key="item.id"
+            :class="[
+              'td-inbox-row',
+              index === activeItemIndex ? 'td-inbox-row--active' : '',
+              selectedItemId === item.id ? 'td-inbox-row--selected' : ''
+            ]"
+            role="option"
+            :aria-selected="selectedItemId === item.id"
+            @mouseenter="setActiveIndex(index)"
+            @focus="setActiveIndex(index)"
+            @click="openItem(item)"
+          >
+            <div class="td-inbox-row__head">
+              <span class="td-status-chip">{{ statusLabel(item.status) }}</span>
+              <span class="td-meta-chip">{{ sourceLabel(item.source) }}</span>
+            </div>
+            <p class="td-inbox-row__excerpt">{{ item.textExcerpt }}</p>
+            <p class="td-inbox-row__meta">{{ new Date(item.createdAt).toLocaleString() }}</p>
+          </button>
+        </div>
+      </section>
+
+      <section class="td-inbox__detail-panel">
+        <div v-if="!selectedItem" class="td-placeholder td-placeholder--detail">
+          Select an item to view full text and actions.
+        </div>
+
+        <article v-else class="td-inbox-detail">
+          <header class="td-inbox-detail__header">
+            <div>
+              <h2>Capture Detail</h2>
+              <p class="td-inbox-detail__meta">
+                {{ statusLabel(selectedItem.status) }} | {{ sourceLabel(selectedItem.source) }} | created
+                {{ new Date(selectedItem.createdAt).toLocaleString() }}
+              </p>
+            </div>
+            <button class="td-btn td-btn--ghost" @click="closeDetail">Close (Esc)</button>
+          </header>
+
+          <div class="td-inbox-detail__content">
+            <pre class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
+          </div>
+
+          <footer class="td-inbox-detail__actions">
+            <button
+              class="td-btn td-btn--secondary"
+              @click="captureStore.fetchDetail(selectedItem.id, true)"
+              :disabled="captureStore.loadingDetail"
+            >
+              {{ captureStore.loadingDetail ? 'Refreshing...' : 'Refresh Detail' }}
+            </button>
+            <button
+              class="td-btn td-btn--danger"
+              @click="ignoreSelected"
+              :disabled="captureStore.actionBusyItemId === selectedItem.id || !canMutateSelection(selectedItem.status)"
+            >
+              {{ captureStore.actionBusyItemId === selectedItem.id ? 'Working...' : 'Ignore' }}
+            </button>
+            <button
+              class="td-btn td-btn--secondary"
+              @click="cancelSelected"
+              :disabled="captureStore.actionBusyItemId === selectedItem.id || !canMutateSelection(selectedItem.status)"
+            >
+              {{ captureStore.actionBusyItemId === selectedItem.id ? 'Working...' : 'Cancel' }}
+            </button>
+          </footer>
+        </article>
+      </section>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.td-inbox {
+  max-width: 1200px;
+}
+
+.td-inbox__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--td-space-4);
+  margin-bottom: var(--td-space-4);
+}
+
+.td-inbox__subtitle {
+  margin-top: var(--td-space-1);
+  color: var(--td-text-secondary);
+}
+
+.td-inbox__layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.4fr);
+  gap: var(--td-space-4);
+}
+
+.td-inbox__list-panel,
+.td-inbox__detail-panel {
+  background: var(--td-surface-primary);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  min-height: 580px;
+}
+
+.td-inbox__list-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.td-inbox__list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--td-space-4);
+  border-bottom: 1px solid var(--td-border-default);
+}
+
+.td-inbox__count {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+}
+
+.td-inbox__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+  padding: var(--td-space-3);
+  overflow-y: auto;
+  outline: none;
+}
+
+.td-inbox__list:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--td-border-focus);
+}
+
+.td-inbox-row {
+  text-align: left;
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-primary);
+  padding: var(--td-space-3);
+  cursor: pointer;
+}
+
+.td-inbox-row--active {
+  border-color: var(--td-border-focus);
+}
+
+.td-inbox-row--selected {
+  background: var(--td-surface-tertiary);
+}
+
+.td-inbox-row__head {
+  display: flex;
+  gap: var(--td-space-2);
+  margin-bottom: var(--td-space-2);
+}
+
+.td-status-chip,
+.td-meta-chip {
+  font-size: var(--td-font-xs);
+  border-radius: var(--td-radius-sm);
+  padding: 2px 8px;
+  border: 1px solid var(--td-border-default);
+  color: var(--td-text-secondary);
+}
+
+.td-inbox-row__excerpt {
+  color: var(--td-text-primary);
+  margin-bottom: var(--td-space-2);
+}
+
+.td-inbox-row__meta {
+  color: var(--td-text-tertiary);
+  font-size: var(--td-font-xs);
+}
+
+.td-inbox__detail-panel {
+  padding: var(--td-space-4);
+}
+
+.td-inbox-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: var(--td-space-4);
+}
+
+.td-inbox-detail__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--td-space-3);
+}
+
+.td-inbox-detail__meta {
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-sm);
+  margin-top: var(--td-space-1);
+}
+
+.td-inbox-detail__content {
+  flex: 1;
+}
+
+.td-inbox-detail__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--td-surface-secondary);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  padding: var(--td-space-3);
+  min-height: 320px;
+  margin: 0;
+  font-size: var(--td-font-sm);
+  line-height: 1.45;
+}
+
+.td-inbox-detail__actions {
+  display: flex;
+  gap: var(--td-space-2);
+  justify-content: flex-end;
+}
+
+.td-placeholder {
+  color: var(--td-text-secondary);
+  padding: var(--td-space-6);
+  text-align: center;
+}
+
+.td-placeholder--detail {
+  padding-top: calc(var(--td-space-8) * 2);
+}
+
+.td-alert {
+  border-radius: var(--td-radius-md);
+  padding: var(--td-space-3);
+}
+
+.td-alert--error {
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+.td-btn {
+  padding: var(--td-space-2) var(--td-space-3);
+  border-radius: var(--td-radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.td-btn--secondary {
+  background: var(--td-surface-tertiary);
+  color: var(--td-text-primary);
+  border-color: var(--td-border-default);
+}
+
+.td-btn--ghost {
+  background: transparent;
+  border-color: var(--td-border-default);
+  color: var(--td-text-secondary);
+}
+
+.td-btn--danger {
+  background: var(--td-color-error);
+  color: var(--td-text-inverse);
+}
+
+.td-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1024px) {
+  .td-inbox__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .td-inbox__list-panel,
+  .td-inbox__detail-panel {
+    min-height: 320px;
+  }
+}
+</style>

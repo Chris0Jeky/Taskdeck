@@ -13,6 +13,7 @@ import ExportImportView from '../views/ExportImportView.vue'
 import ArchiveView from '../views/ArchiveView.vue'
 import NotificationInboxView from '../views/NotificationInboxView.vue'
 import NotificationPreferencesView from '../views/NotificationPreferencesView.vue'
+import InboxView from '../views/InboxView.vue'
 import { isTokenExpired } from '../utils/jwt'
 
 const router = createRouter({
@@ -165,6 +166,12 @@ const router = createRouter({
       path: '/workspace/archive',
       name: 'workspace-archive',
       component: ArchiveView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/inbox',
+      name: 'workspace-inbox',
+      component: InboxView,
       meta: { requiresShell: true },
     },
     {
