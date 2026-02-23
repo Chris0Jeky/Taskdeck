@@ -1,0 +1,339 @@
+openapi: 3.0.3
+info:
+  title: Taskdeck Capture API (Draft)
+  version: "0.1.0"
+  description: |
+    Draft OpenAPI specification for Taskdeck "Capture Inbox" endpoints.
+    This spec is designed to be consistent with Taskdeck's existing API patterns:
+    - Bearer JWT auth (Authorization: Bearer <token>)
+    - Stable error contract: { errorCode, message }
+    - Resource IDs are UUIDs
+servers:
+  - url: http://localhost:5000
+    description: Local dev
+  - url: /
+    description: Relative
+
+tags:
+  - name: Capture
+    description: Capture inbox endpoints
+
+paths:
+  /api/capture/items:
+    post:
+      tags: [Capture]
+      summary: Create a capture item
+      description: |
+        Creates a new capture item in the user's inbox.
+        The backend persists the raw capture payload and enqueues it for triage.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCaptureItemRequest"
+            examples:
+              keyboard:
+                summary: Simple keyboard capture
+                value:
+                  boardId: "00000000-0000-0000-0000-000000000000"
+                  source: keyboard
+                  text: "Follow up with Alice about contract. Book call next week."
+              meeting:
+                summary: Meeting notes capture
+                value:
+                  boardId: "00000000-0000-0000-0000-000000000000"
+                  source: meeting
+                  text: |
+                    - Decide pricing tiers
+                    - Update landing page copy
+                    - Send proposal to client
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location:
+              description: URL of the created capture item
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      tags: [Capture]
+      summary: List capture items
+      description: Returns capture items for the current user (most recent first).
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: status
+          in: query
+          description: Optional status filter.
+          required: false
+          schema:
+            $ref: "#/components/schemas/CaptureStatus"
+        - name: boardId
+          in: query
+          description: Optional board filter.
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          description: Maximum items to return (default 50).
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CaptureItemSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/capture/items/{itemId}:
+    get:
+      tags: [Capture]
+      summary: Get a capture item
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/capture/items/{itemId}/cancel:
+    post:
+      tags: [Capture]
+      summary: Cancel a capture item
+      description: |
+        Cancels an item (soft-discard). Cancellation is idempotent.
+        Intended for removing a capture item from active triage.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/capture/items/{itemId}/proposal:
+    get:
+      tags: [Capture]
+      summary: Get the proposal created from this capture item
+      description: |
+        Returns the linked proposal identifier, if triage has produced a proposal.
+        If triage has not completed (or produced no proposal), returns 404 or a null proposalId based on implementation choice.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureProposalLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Optional request correlation ID. Echoed back by the API.
+      schema:
+        type: string
+        maxLength: 100
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+  schemas:
+    ApiErrorResponse:
+      type: object
+      required: [errorCode, message]
+      properties:
+        errorCode:
+          type: string
+          description: Stable error identifier (Taskdeck.Domain.Exceptions.ErrorCodes)
+        message:
+          type: string
+
+    CaptureStatus:
+      type: string
+      description: Mirrors Taskdeck.Domain.Enums.RequestStatus.
+      enum: [Pending, Processing, Completed, Failed, Cancelled]
+
+    CaptureSource:
+      type: string
+      enum: [keyboard, voice, meeting, import, api]
+      description: |
+        Origin of the captured text. Used for UX and provenance only.
+
+    CreateCaptureItemRequest:
+      type: object
+      required: [text]
+      properties:
+        boardId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional board to triage into. If omitted, backend may use a default board policy.
+        source:
+          $ref: "#/components/schemas/CaptureSource"
+        text:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: Raw captured text (notes, commands, meeting transcript excerpt, etc).
+
+    CaptureItemSummary:
+      type: object
+      required: [id, boardId, status, source, textExcerpt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: "#/components/schemas/CaptureStatus"
+        source:
+          $ref: "#/components/schemas/CaptureSource"
+        textExcerpt:
+          type: string
+          maxLength: 200
+        proposalId:
+          type: string
+          format: uuid
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+          maxLength: 1000
+        createdAt:
+          type: string
+          format: date-time
+        processedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CaptureItem:
+      allOf:
+        - $ref: "#/components/schemas/CaptureItemSummary"
+        - type: object
+          required: [text]
+          properties:
+            text:
+              type: string
+              description: Full captured text.
+
+    CaptureProposalLink:
+      type: object
+      required: [proposalId]
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+          nullable: true

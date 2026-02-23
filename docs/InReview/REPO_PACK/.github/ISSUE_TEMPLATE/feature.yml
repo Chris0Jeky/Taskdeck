@@ -1,0 +1,54 @@
+name: Feature (Taskdeck)
+description: Propose a new feature slice with explicit acceptance criteria and tests.
+title: "FEAT: <short description>"
+labels: ["Priority V"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for feature work. Keep scope small and test-backed.
+        Label rules: exactly one `Priority I-V` label is required; update it after creation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / user value
+      description: What user pain does this solve? Why now?
+      placeholder: "Users struggle to..."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in-scope and explicitly out-of-scope?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: Bullet list of verifiable outcomes.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests and verification
+      description: What automated/manual verification is required?
+      placeholder: |
+        - Unit:
+        - Integration:
+        - E2E:
+        - Manual checklist updates:
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / security / privacy notes
+      description: Any risks, mitigations, and relevant policies.
+    validations:
+      required: false
