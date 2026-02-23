@@ -88,7 +88,7 @@ onUnmounted(() => {
         </button>
       </header>
 
-      <p class="td-capture-modal__hint">Write or paste anything. Press Ctrl+Enter to save.</p>
+      <p class="td-capture-modal__hint">Write or paste anything. Press Ctrl/Cmd+Enter to save.</p>
 
       <textarea
         ref="textInput"
