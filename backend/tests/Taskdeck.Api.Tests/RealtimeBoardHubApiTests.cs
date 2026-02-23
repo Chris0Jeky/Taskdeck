@@ -81,6 +81,24 @@ public class RealtimeBoardHubApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task LeaveBoard_ShouldReturnForbidden_WhenUserCannotReadBoard()
+    {
+        var ownerClient = _factory.CreateClient();
+        var outsiderClient = _factory.CreateClient();
+
+        _ = await ApiTestHarness.AuthenticateAsync(ownerClient, "hub-owner");
+        var outsider = await ApiTestHarness.AuthenticateAsync(outsiderClient, "hub-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "hub-board");
+
+        await using var connection = CreateHubConnection(outsider.Token);
+        await connection.StartAsync();
+
+        var leaveAction = async () => await connection.InvokeAsync("LeaveBoard", board.Id);
+        var exception = await leaveAction.Should().ThrowAsync<HubException>();
+        exception.Which.Message.Should().Contain(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
     public async Task JoinBoard_ShouldBroadcastPresenceSnapshot()
     {
         var ownerClient = _factory.CreateClient();

@@ -40,6 +40,15 @@ public class BoardsHub : Hub
 
     public async Task LeaveBoard(Guid boardId)
     {
+        var (userId, _) = ResolveCurrentUser();
+
+        var permission = await _authorizationService.CanReadBoardAsync(userId, boardId);
+        if (!permission.IsSuccess)
+            throw new HubException($"{permission.ErrorCode}:{permission.ErrorMessage}");
+
+        if (!permission.Value)
+            throw new HubException($"{ErrorCodes.Forbidden}:You do not have access to this board");
+
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, BoardHubGroups.ForBoard(boardId));
         var presence = _presenceTracker.Leave(boardId, Context.ConnectionId);
         await PublishPresenceSnapshotAsync(presence);
@@ -91,4 +100,5 @@ public class BoardsHub : Hub
             .Group(BoardHubGroups.ForBoard(snapshot.BoardId))
             .SendAsync("boardPresence", snapshot);
     }
+
 }
