@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "1.0",
+  "packId": "board-blueprint-outreach-crm",
+  "displayName": "Board Blueprint - Outreach CRM",
+  "description": "Minimalistic networking + follow-up system (contacts as cards) with cadences and templates.",
+  "compatibility": {
+    "minTaskdeckVersion": "1.0.0",
+    "requiredFeatures": [
+      "boards",
+      "labels",
+      "cards",
+      "columns"
+    ]
+  },
+  "tags": [
+    "starter",
+    "blueprint",
+    "outreach",
+    "career"
+  ],
+  "labels": [
+    {
+      "name": "tier-a",
+      "color": "#2563EB",
+      "description": "High priority relationship"
+    },
+    {
+      "name": "tier-b",
+      "color": "#10B981",
+      "description": "Warm relationship"
+    },
+    {
+      "name": "tier-c",
+      "color": "#6B7280",
+      "description": "Cold/unknown"
+    },
+    {
+      "name": "ask-feedback",
+      "color": "#7C3AED",
+      "description": "Asking for feedback"
+    },
+    {
+      "name": "ask-intro",
+      "color": "#F59E0B",
+      "description": "Asking for an intro"
+    },
+    {
+      "name": "ask-referral",
+      "color": "#DC2626",
+      "description": "Asking for referral"
+    },
+    {
+      "name": "waiting-reply",
+      "color": "#0D9488",
+      "description": "Waiting on reply"
+    },
+    {
+      "name": "scheduled-call",
+      "color": "#059669",
+      "description": "Call scheduled"
+    }
+  ],
+  "columns": [
+    {
+      "name": "Inbox",
+      "position": 0
+    },
+    {
+      "name": "Warm Up",
+      "position": 1,
+      "wipLimit": 10
+    },
+    {
+      "name": "Active Outreach",
+      "position": 2,
+      "wipLimit": 7
+    },
+    {
+      "name": "Waiting",
+      "position": 3,
+      "wipLimit": 15
+    },
+    {
+      "name": "Calls",
+      "position": 4,
+      "wipLimit": 5
+    },
+    {
+      "name": "Referrals",
+      "position": 5,
+      "wipLimit": 5
+    },
+    {
+      "name": "Closed",
+      "position": 6
+    }
+  ],
+  "templates": [
+    {
+      "templateId": "contact-card",
+      "title": "Contact Card",
+      "description": "Structured contact card using YAML front matter + timeline.",
+      "checklist": [
+        "Set relationship tier (A/B/C)",
+        "Add LinkedIn URL and/or email",
+        "Write 1-line context: how you know them",
+        "Set next follow-up date (due date)"
+      ]
+    },
+    {
+      "templateId": "outreach-message",
+      "title": "Outreach Message",
+      "description": "Template for initial outreach or follow-up.",
+      "checklist": [
+        "One-sentence context",
+        "One specific ask",
+        "One link (demo/case study)",
+        "Schedule follow-up (+3 to +7 days)"
+      ]
+    }
+  ],
+  "seedCards": [
+    {
+      "title": "Import LinkedIn connections CSV",
+      "description": "Export connections via LinkedIn settings \u2192 download data. Then import into Taskdeck (manual for now).",
+      "columnName": "Inbox",
+      "labels": [
+        "tier-c",
+        "ask-feedback"
+      ]
+    },
+    {
+      "title": "Create 20 contact cards (top targets)",
+      "description": "Start with ex-colleagues, alumni at target companies, and people who engage with your posts.",
+      "columnName": "Warm Up",
+      "templateId": "contact-card",
+      "labels": [
+        "tier-b"
+      ]
+    },
+    {
+      "title": "Write 1-page GE DevOps/security case study (sanitized)",
+      "description": "Create an artifact you can link in outreach messages. Keep it tight and technical.",
+      "columnName": "Active Outreach",
+      "labels": [
+        "tier-a",
+        "ask-feedback"
+      ]
+    },
+    {
+      "title": "Publish Taskdeck 90s demo + ask for 10-min feedback",
+      "description": "Post demo \u2192 DM 5 people asking for feedback using the outreach template.",
+      "columnName": "Active Outreach",
+      "templateId": "outreach-message",
+      "labels": [
+        "ask-feedback"
+      ]
+    }
+  ]
+}
