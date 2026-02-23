@@ -386,6 +386,54 @@ public class AutomationExecutorServiceTests
         _auditLogRepoMock.Verify(r => r.AddAsync(It.IsAny<AuditLog>(), default), Times.Never);
     }
 
+    [Fact]
+    public async Task ExecuteProposal_ShouldCreateCardWithOperationTargetId_WhenProvided()
+    {
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "Inbox");
+        var deterministicCardId = Guid.NewGuid();
+        Card? createdCard = null;
+        var operations = new List<ProposalOperationDto>
+        {
+            new(
+                Guid.NewGuid(),
+                proposalId,
+                0,
+                "create",
+                "card",
+                deterministicCardId.ToString(),
+                $$"""{"title":"Capture-created task","description":"from capture","columnId":"{{column.Id}}","boardId":"{{board.Id}}"}""",
+                "key1",
+                null)
+        };
+
+        var proposal = CreateApprovedProposal(proposalId, userId, board.Id, operations);
+        var proposalEntity = CreateApprovedProposalEntity(userId, board.Id);
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+            .ReturnsAsync(Result.Success());
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default)).ReturnsAsync(column);
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), default))
+            .Callback<Card, CancellationToken>((card, _) => createdCard = card)
+            .ReturnsAsync((Card card, CancellationToken _) => card);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync((Guid id, CancellationToken _) =>
+                new Card(id, board.Id, column.Id, "Capture-created task", "from capture"));
+
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        createdCard.Should().NotBeNull();
+        createdCard!.Id.Should().Be(deterministicCardId);
+    }
+
     #endregion
 
     private static ProposalDto CreateApprovedProposal(
