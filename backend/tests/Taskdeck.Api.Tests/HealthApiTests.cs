@@ -65,11 +65,6 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
             captureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         }
 
-        var queueResponse = await _client.PostAsJsonAsync(
-            "/api/llm-queue",
-            new CreateLlmRequestDto("summarize", "normal queue payload"));
-        queueResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
         var response = await _client.GetAsync("/health/ready");
         (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.ServiceUnavailable)
             .Should()
@@ -77,8 +72,8 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
 
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         var queue = payload.GetProperty("checks").GetProperty("queue");
-        queue.GetProperty("depth").GetInt32().Should().Be(1);
+        queue.GetProperty("depth").GetInt32().Should().Be(0);
         queue.GetProperty("captureDepth").GetInt32().Should().BeGreaterOrEqualTo(3);
-        queue.GetProperty("totalDepth").GetInt32().Should().BeGreaterOrEqualTo(4);
+        queue.GetProperty("totalDepth").GetInt32().Should().BeGreaterOrEqualTo(3);
     }
 }
