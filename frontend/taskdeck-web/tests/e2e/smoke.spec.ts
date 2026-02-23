@@ -50,6 +50,12 @@ function cardDragHandleByTitle(page: Page, cardTitle: string) {
     .first()
 }
 
+function cardDragSurfaceByTitle(page: Page, cardTitle: string) {
+  return cardByTitle(page, cardTitle)
+    .locator('.td-card-drag-surface')
+    .first()
+}
+
 async function addColumn(page: Page, columnName: string) {
   await page.getByRole('button', { name: '+ Add Column' }).click()
   await page.getByPlaceholder('Column name').fill(columnName)
@@ -239,25 +245,34 @@ test('card drag and drop should move card between columns', async ({ page }) => 
   await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
 })
 
-test('card body drag should be ignored unless drag handle is used', async ({ page }) => {
-  const boardName = `Card Guard Board ${Date.now()}`
+test('card drag should work from broad surface while edit inputs stay safe', async ({ page }) => {
+  const boardName = `Card Surface Board ${Date.now()}`
   const sourceColumn = `To Do ${Date.now()}`
   const targetColumn = `Done ${Date.now()}`
-  const cardTitle = `Do Not Move ${Date.now()}`
+  const cardTitle = `Surface Move ${Date.now()}`
 
   await createBoard(page, boardName)
   await addColumn(page, sourceColumn)
   await addColumn(page, targetColumn)
   await addCard(page, sourceColumn, cardTitle)
 
-  const sourceCard = cardByTitle(page, cardTitle)
+  const sourceCardSurface = cardDragSurfaceByTitle(page, cardTitle)
   const sourceLane = columnByName(page, sourceColumn)
   const targetLane = columnByName(page, targetColumn)
+  const addCardButton = sourceLane.getByRole('button', { name: 'Add Card' })
+  await addCardButton.click()
+  const addCardInput = sourceLane.getByPlaceholder('Enter card title...')
+  await addCardInput.fill(`Editing ${Date.now()}`)
 
-  await sourceCard.dragTo(targetLane)
+  await addCardInput.dragTo(targetLane)
 
   await expect(sourceLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
   await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(0)
+
+  await sourceCardSurface.dragTo(targetLane)
+
+  await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
+  await expect(sourceLane.locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(0)
 })
 
 test('board settings lifecycle should support rename archive unarchive and archive action', async ({ page }) => {

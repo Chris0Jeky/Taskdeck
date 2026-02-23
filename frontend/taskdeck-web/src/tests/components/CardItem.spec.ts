@@ -22,16 +22,16 @@ function createCard(): Card {
 }
 
 describe('CardItem drag guardrails', () => {
-  it('uses enlarged drag handle hit area classes', () => {
+  it('exposes a broad drag surface handle', () => {
     const wrapper = mount(CardItem, {
       props: {
         card: createCard(),
       },
     })
 
-    const handleClasses = wrapper.get('[data-action="drag-card-handle"]').classes()
-    expect(handleClasses).toContain('p-2')
-    expect(handleClasses).toContain('-m-1')
+    const dragSurface = wrapper.get('.td-card-drag-surface')
+    expect(dragSurface.attributes('data-action')).toBe('drag-card-handle')
+    expect(dragSurface.attributes('draggable')).toBe('true')
   })
 
   it('blocks dragstart when not initiated from drag handle', async () => {
@@ -50,7 +50,7 @@ describe('CardItem drag guardrails', () => {
     expect(setData).not.toHaveBeenCalled()
   })
 
-  it('allows dragstart from drag handle', async () => {
+  it('allows dragstart from card content inside the drag surface', async () => {
     const card = createCard()
     const wrapper = mount(CardItem, {
       props: {
@@ -59,7 +59,7 @@ describe('CardItem drag guardrails', () => {
     })
 
     const setData = vi.fn()
-    await wrapper.get('[data-action="drag-card-handle"]').trigger('dragstart', {
+    await wrapper.get('h4').trigger('dragstart', {
       dataTransfer: { effectAllowed: 'move', setData },
     })
 
