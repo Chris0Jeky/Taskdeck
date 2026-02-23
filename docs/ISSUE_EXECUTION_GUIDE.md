@@ -102,6 +102,26 @@ Foundation wave:
 14. `#75` INT-01 import adapters foundation
 15. `#76` INT-02 webhooks/integration security model
 
+Capture realignment wave (2026-02-23):
+16. `#199` CAP-00 capture wave tracker (tracking)
+17. `#200` CAP-01 capture persistence model/domain contract
+18. `#201` CAP-02 capture API slice
+19. `#202` CAP-03 queue proposal provenance fix
+20. `#203` CAP-04 triage enqueue + status transitions
+21. `#204` CAP-05 worker triage path -> proposal generation
+22. `#205` CAP-06 strict triage schema + prompt versioning
+23. `#206` CAP-07 inbox frontend route/list/detail
+24. `#207` CAP-08 capture modal + command palette integration
+25. `#208` CAP-09 triage trigger + proposal-linking UX
+26. `#209` CAP-10 card/proposal provenance UX
+27. `#210` CAP-11 capture loop E2E regression
+28. `#211` CAP-12 canonical docs promotion
+
+Capture-linked security/performance follow-through:
+29. `#81` SEC-06 rate limiting (capture scope extension)
+30. `#212` SEC-14 logging redaction guardrails
+31. `#213` PERF-07 long-list virtualization
+
 ### Stage 3: Priority III - Expansion Wave
 
 1. `#77` ANL-01 metrics dashboard
