@@ -400,6 +400,26 @@ Non-goals for this horizon:
 - no requirement to ship voice/transcription sources before typed/paste capture loop retention is proven
 - no bypass of Priority I security/policy ordering rules
 
+### Horizon G (Frontend Premium UI Foundations Track)
+
+Focus:
+- establish frontend design-system foundations (semantic tokens, theme/density/motion contracts)
+- build a shared primitives layer for shell/board/inbox surfaces
+- execute focused premium reskin passes for AppShell, Board, and Inbox without behavior regression
+- harden board interaction quality (drag/drop responsiveness + keyboard alternatives)
+- integrate premium UX performance instrumentation and keep existing quality gates explicit
+
+Execution tracker and seeded issues:
+- `#242` UI-00 tracker
+- `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`, `#251`
+- reused dependencies (no duplicate wave issue): `#154`, `#88`, `#92`, `#213`
+
+Exit Criteria:
+- token + primitive foundations are in place and reused by multiple major surfaces
+- AppShell/Board/Inbox premium passes are shipped with regression coverage
+- accessibility/keyboard and reduced-motion contracts are explicit and test-backed
+- visual/performance gates are reconciled with ongoing frontend CI/test operations
+
 ## Active Backlog (Priority-Labeled)
 
 ### Priority I (Current Phase 4 Completion Path)
@@ -421,10 +441,12 @@ Non-goals for this horizon:
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76`
 
-### Priority III (Expansion Tranche: Analytics, Security, Compliance)
+### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
 - Security/compliance expansion: `#80`, `#81` (capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
+- Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
+- Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
@@ -432,6 +454,7 @@ Non-goals for this horizon:
 - Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`, `#96`
 - Frontend responsiveness maturity: `#213`
+- Optional premium UI documentation/component tooling: `#251`
 - Developer/user docs maturity: `#99`, `#100`, `#216`, `#217`
 - Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
 - Codebase maintainability hotspot refactors (analysis wave): `#158`, `#159`, `#160`, `#161`, `#162`, `#163`, `#164`, `#165`, `#166`, `#167`
@@ -452,6 +475,7 @@ Strategic reconciliation applied:
 - Translate research recommendations into dependency-aware issues rather than broad unscoped themes.
 - Treat non-code operations/configuration work as a mandatory delivery track, not "later ops".
 - Added capture/inbox realignment wave from `docs/InReview` planning packs with explicit dependency-mapped issue seeding (`#199` to `#213`).
+- Added frontend premium UI foundations wave from `docs/InReview` premium UI pack with deduplicated issue mapping (`#242` to `#251`, reusing `#154`, `#88`, `#92`, `#213`).
 
 ## Out-of-Code and Configuration Coverage Matrix
 
@@ -533,8 +557,9 @@ Initial implementation shape:
 3. After `#211`, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
 4. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
 5. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
-6. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
-7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
+7. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
+8. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 
 ## Documentation Operating Model
 Active docs:

@@ -267,6 +267,29 @@ To capture the security and operational risk of letting users consume model call
 - `#239` incident response + key rotation drills (`Priority III`)
 - `#240` user-facing fair-use and abuse consequence policy (`Priority III`)
 
+## Frontend Premium UI Wave (2026-02-23)
+
+Commit `0aef077f6d46262a844eb796cb9e95f83132ca09` introduced a new in-review premium UI planning pack under:
+
+- `docs/InReview/HUMAN/07_FRONTEND_PREMIUM_UI_OVERVIEW.md`
+- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/`
+
+Issue seeding and reconciliation completed:
+
+- tracker: `#242` (UI-00 frontend premium UI wave)
+- net-new wave issues: `#243` to `#251`
+- explicit reuse (no duplicate issue creation): `#154`, `#88`, `#92`, `#213`
+
+Execution posture:
+
+- foundations-first sequencing is mandatory (`#243`, `#245`, `#244` before screen reskins)
+- no broad global reskin until shared primitives and token contracts are established
+- accessibility/keyboard and visual/performance quality gates remain explicit dependencies
+
+Reconciliation record:
+
+- `docs/analysis/2026-02-23_frontend-premium-ui-synthesis.md`
+
 ## Test Status (Executed)
 
 Verification Date: 2026-02-23
@@ -357,6 +380,7 @@ Automation and data:
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
 - capture inbox pipeline is now shipped through card/proposal provenance UX (`#200` to `#209`); remaining open dependencies are end-to-end loop verification (`#210`) and canonical docs promotion (`#211`)
+- premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway

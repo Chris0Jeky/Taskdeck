@@ -139,6 +139,18 @@ Provider runtime expansion (2026-02-23):
 12. `#238` SEC-18 managed-key abuse detection and automated containment
 13. `#239` SEC-19 managed-key incident response and key-rotation drills
 14. `#240` DOC-05 managed-key fair-use policy and abuse consequence disclosures
+15. `#242` UI-00 frontend premium UI wave tracker
+16. `#243` UI-01 design tokens/theme-density-motion foundations
+17. `#244` UI-02 shared UI primitives foundation
+18. `#245` UI-03 primitive stack decision spike
+19. `#246` UI-04 AppShell premium reskin (no behavior changes)
+20. `#247` UI-05 board card/surface polish pass
+21. `#248` UI-06 drag/drop premium behavior + keyboard alternatives
+22. `#249` UI-07 inbox premium primitives pass
+23. `#250` PERF-08 frontend interaction latency budgets + instrumentation
+
+Execution note (premium UI wave):
+- Reused dependencies are intentionally not re-seeded as duplicates: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization).
 
 ### Stage 4: Priority IV - Maturity Wave
 
@@ -174,18 +186,19 @@ Testing/UX/docs:
 27. `#218` CAP-20 transcript capture source
 28. `#219` CAP-21 voice capture/transcription (opt-in)
 29. `#220` CAP-22 batch triage + suggestion editing
+30. `#251` UI-12 optional Storybook baseline for primitives
 
 Maintainability hotspot refactor wave (analysis-driven):
-30. `#158` REF-11 decompose `AppShell.vue`
-31. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
-32. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
-33. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
-34. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
-35. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
-36. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
-37. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
-38. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
-39. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
+31. `#158` REF-11 decompose `AppShell.vue`
+32. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
+33. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
+34. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
+35. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
+36. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
+37. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
+38. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
+39. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
+40. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
 
 ### Stage 5: Priority V - Meta/Historical
 
