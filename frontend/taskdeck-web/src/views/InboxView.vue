@@ -186,16 +186,7 @@ function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
     status === 'Failed'
 }
 
-function canTriageSelection(status: CaptureStatusValue | undefined): boolean {
-  if (status === undefined) {
-    return false
-  }
-
-  return status === 0 ||
-    status === 'New' ||
-    status === 6 ||
-    status === 'Failed'
-}
+const canTriageSelection = canMutateSelection
 
 function triageButtonLabel(status: CaptureStatusValue | undefined): string {
   if (status === 1 || status === 'Triaging') {
