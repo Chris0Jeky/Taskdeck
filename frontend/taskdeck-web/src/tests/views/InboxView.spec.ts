@@ -3,6 +3,10 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import InboxView from '../../views/InboxView.vue'
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+}))
+
 const escapeHandlers: Array<() => void> = []
 
 const mockCaptureStore = reactive({
@@ -50,6 +54,12 @@ const mockCaptureStore = reactive({
 
 vi.mock('../../store/captureStore', () => ({
   useCaptureStore: () => mockCaptureStore,
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: routerMocks.push,
+  }),
 }))
 
 vi.mock('../../composables/useEscapeStack', () => ({
@@ -127,6 +137,7 @@ describe('InboxView', () => {
     mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
     mockCaptureStore.cancelItem.mockResolvedValue(undefined)
     mockCaptureStore.triageItem.mockResolvedValue(undefined)
+    routerMocks.push.mockReset()
     seedItems()
   })
 
@@ -275,7 +286,7 @@ describe('InboxView', () => {
     expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-1')
   })
 
-  it('renders linked proposal action when detail includes proposal provenance', async () => {
+  it('navigates to linked proposal route when detail includes proposal provenance', async () => {
     mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
       mockCaptureStore.detailById[itemId] = {
         id: itemId,
@@ -303,9 +314,15 @@ describe('InboxView', () => {
     await wrapper.get('[role="option"]').trigger('click')
     await waitForUi()
 
-    const proposalLink = wrapper.find('a[href="/workspace/automations/proposals#proposal-proposal-42"]')
-    expect(proposalLink.exists()).toBe(true)
-    expect(proposalLink.text()).toContain('Open Proposal')
+    const proposalButton = wrapper.findAll('button').find((node) => node.text() === 'Open Proposal')
+    expect(proposalButton?.exists()).toBe(true)
+
+    await proposalButton?.trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-automations-proposals',
+      hash: '#proposal-proposal-42',
+    })
   })
 
   it('clears selection when opening detail fails', async () => {

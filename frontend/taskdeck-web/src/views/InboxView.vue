@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
 import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 
 const captureStore = useCaptureStore()
+const router = useRouter()
 const selectedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
@@ -189,23 +191,31 @@ function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
 const canTriageSelection = canMutateSelection
 
 function triageButtonLabel(status: CaptureStatusValue | undefined): string {
-  if (status === 1 || status === 'Triaging') {
+  if (status === undefined) {
+    return 'Start Triage'
+  }
+
+  const label = statusLabel(status)
+  if (label === 'Triaging') {
     return 'Triaging...'
   }
 
-  if (status === 2 || status === 'Triaged' || status === 3 || status === 'ProposalCreated') {
+  if (label === 'Triaged' || label === 'Proposal Created') {
     return 'Triage Complete'
   }
 
-  if (status === 4 || status === 'Converted') {
+  if (label === 'Converted') {
     return 'Converted'
   }
 
   return 'Start Triage'
 }
 
-function proposalHref(proposalId: string): string {
-  return `/workspace/automations/proposals#proposal-${encodeURIComponent(proposalId)}`
+function openProposal(proposalId: string): void {
+  void router.push({
+    name: 'workspace-automations-proposals',
+    hash: `#proposal-${encodeURIComponent(proposalId)}`,
+  })
 }
 
 watch(items, (nextItems) => {
@@ -332,12 +342,12 @@ onMounted(() => {
 
           <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link">
             <span>Linked proposal is ready for review.</span>
-            <a
+            <button
               class="td-btn td-btn--primary td-btn--sm"
-              :href="proposalHref(selectedItem.provenance.proposalId)"
+              @click="openProposal(selectedItem.provenance.proposalId)"
             >
               Open Proposal
-            </a>
+            </button>
           </div>
 
           <footer class="td-inbox-detail__actions">
