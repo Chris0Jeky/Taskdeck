@@ -1,0 +1,216 @@
+using FluentAssertions;
+using Moq;
+using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
+using Xunit;
+
+namespace Taskdeck.Application.Tests.Services;
+
+public class CaptureTriageServiceTests
+{
+    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<IBoardRepository> _boardsMock;
+    private readonly Mock<IColumnRepository> _columnsMock;
+    private readonly Mock<IAutomationProposalService> _proposalServiceMock;
+    private readonly Mock<IAutomationPolicyEngine> _policyEngineMock;
+    private readonly CaptureTriageService _service;
+
+    public CaptureTriageServiceTests()
+    {
+        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _boardsMock = new Mock<IBoardRepository>();
+        _columnsMock = new Mock<IColumnRepository>();
+        _proposalServiceMock = new Mock<IAutomationProposalService>();
+        _policyEngineMock = new Mock<IAutomationPolicyEngine>();
+
+        _unitOfWorkMock.SetupGet(u => u.Boards).Returns(_boardsMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.Columns).Returns(_columnsMock.Object);
+        _policyEngineMock.Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+
+        _service = new CaptureTriageService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldExtractChecklistAndBulletTasks()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                Guid.NewGuid(),
+                ProposalSourceType.Queue,
+                captureId.ToString(),
+                boardId,
+                userId,
+                ProposalStatus.PendingReview,
+                RiskLevel.Low,
+                "Capture triage",
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddDays(1),
+                null,
+                null,
+                null,
+                null,
+                Guid.NewGuid().ToString(),
+                new List<ProposalOperationDto>())));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            """
+            - [ ] Write regression tests
+            - [x] Update docs
+            1. Ship follow-up PR
+            """);
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(3);
+        createdProposal.Should().NotBeNull();
+        var created = createdProposal!;
+        created.SourceType.Should().Be(ProposalSourceType.Queue);
+        created.SourceReferenceId.Should().Be(captureId.ToString());
+        created.Operations.Should().HaveCount(3);
+        created.Operations![0].Parameters.Should().Contain("Write regression tests");
+        created.Operations[1].Parameters.Should().Contain("Update docs");
+        created.Operations[2].Parameters.Should().Contain("Ship follow-up PR");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldFallbackToSingleTask_WhenNoStructuredLinesExist()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? firstProposal = null;
+        CreateProposalDto? secondProposal = null;
+        var invocationCount = 0;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock
+            .Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) =>
+            {
+                if (invocationCount == 0)
+                {
+                    firstProposal = dto;
+                }
+                else
+                {
+                    secondProposal = dto;
+                }
+
+                invocationCount++;
+            })
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "Need to clarify deployment checklist and prepare release notes for Friday.");
+
+        var firstResult = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+        var secondResult = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        firstResult.IsSuccess.Should().BeTrue();
+        secondResult.IsSuccess.Should().BeTrue();
+        firstProposal.Should().NotBeNull();
+        secondProposal.Should().NotBeNull();
+        firstProposal!.Operations.Should().ContainSingle();
+        secondProposal!.Operations.Should().ContainSingle();
+        firstProposal.Operations![0].IdempotencyKey.Should().Be(secondProposal.Operations![0].IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReturnValidationError_WhenBoardIdIsMissing()
+    {
+        var result = await _service.CreateProposalFromCaptureAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            null,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] task"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("BoardId is required");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReturnNotFound_WhenBoardHasNoColumns()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default))
+            .ReturnsAsync(new Board("Capture board", ownerId: userId));
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(Array.Empty<Column>());
+
+        var result = await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] task"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.ErrorMessage.Should().Contain("No columns found in board");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)
+    {
+        return new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Queue,
+            captureId.ToString(),
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            "Capture triage",
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            DateTime.UtcNow.AddDays(1),
+            null,
+            null,
+            null,
+            null,
+            Guid.NewGuid().ToString(),
+            new List<ProposalOperationDto>());
+    }
+}
