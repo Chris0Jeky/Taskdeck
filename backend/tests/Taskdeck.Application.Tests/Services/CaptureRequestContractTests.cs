@@ -20,6 +20,18 @@ public class CaptureRequestContractTests
     }
 
     [Fact]
+    public void ParsePayload_ShouldTreatMalformedJsonPrefixAsPlainTextPayload()
+    {
+        var payload = "{not-json payload";
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Source.Should().Be(CaptureSource.Typed);
+        result.Value.Text.Should().Be(payload);
+    }
+
+    [Fact]
     public void ParsePayload_ShouldParseJsonPayloadCaseInsensitive()
     {
         var payload = """
@@ -89,6 +101,58 @@ public class CaptureRequestContractTests
     }
 
     [Fact]
+    public void ParsePayload_ShouldFail_WhenSourceIsInvalidString()
+    {
+        var payload = """
+                      {
+                        "version": 1,
+                        "source": "invalid_source",
+                        "text": "capture text"
+                      }
+                      """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Invalid capture source");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldFail_WhenSourceIsOutOfRangeNumericString()
+    {
+        var payload = """
+                      {
+                        "version": 1,
+                        "source": "9999",
+                        "text": "capture text"
+                      }
+                      """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldFail_WhenSourceIsOutOfRangeNumericValue()
+    {
+        var payload = """
+                      {
+                        "version": 1,
+                        "source": 9999,
+                        "text": "capture text"
+                      }
+                      """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void WithProvenance_ShouldLinkCaptureToTriageAndProposal()
     {
         var captureId = Guid.NewGuid();
@@ -111,6 +175,20 @@ public class CaptureRequestContractTests
         linked.Provenance.TriageRunId.Should().Be(triageRunId);
         linked.Provenance.ProposalId.Should().Be(proposalId);
         linked.Provenance.PromptVersion.Should().Be("triage.v1");
+    }
+
+    [Fact]
+    public void WithProvenance_ShouldThrow_WhenCaptureItemIdIsEmpty()
+    {
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "capture text");
+
+        var act = () => CaptureRequestContract.WithProvenance(payload, Guid.Empty);
+
+        act.Should().Throw<DomainException>()
+            .Where(ex => ex.ErrorCode == ErrorCodes.ValidationError);
     }
 
     [Fact]

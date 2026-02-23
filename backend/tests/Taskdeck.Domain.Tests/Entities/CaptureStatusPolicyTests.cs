@@ -25,6 +25,14 @@ public class CaptureStatusPolicyTests
     }
 
     [Fact]
+    public void MapFromQueueStatus_ShouldMapCompletedToTriaged_WhenProposalDoesNotExist()
+    {
+        var status = CaptureStatusPolicy.MapFromQueueStatus(RequestStatus.Completed);
+
+        status.Should().Be(CaptureStatus.Triaged);
+    }
+
+    [Fact]
     public void MapFromQueueStatus_ShouldMapToConverted_WhenConvertedFlagIsSet()
     {
         var status = CaptureStatusPolicy.MapFromQueueStatus(
@@ -33,6 +41,30 @@ public class CaptureStatusPolicyTests
             isConverted: true);
 
         status.Should().Be(CaptureStatus.Converted);
+    }
+
+    [Fact]
+    public void MapFromQueueStatus_ShouldMapProcessingToTriaging()
+    {
+        var status = CaptureStatusPolicy.MapFromQueueStatus(RequestStatus.Processing);
+
+        status.Should().Be(CaptureStatus.Triaging);
+    }
+
+    [Fact]
+    public void MapFromQueueStatus_ShouldMapCancelledToIgnored()
+    {
+        var status = CaptureStatusPolicy.MapFromQueueStatus(RequestStatus.Cancelled);
+
+        status.Should().Be(CaptureStatus.Ignored);
+    }
+
+    [Fact]
+    public void MapFromQueueStatus_ShouldMapFailedToFailed()
+    {
+        var status = CaptureStatusPolicy.MapFromQueueStatus(RequestStatus.Failed);
+
+        status.Should().Be(CaptureStatus.Failed);
     }
 
     [Theory]
