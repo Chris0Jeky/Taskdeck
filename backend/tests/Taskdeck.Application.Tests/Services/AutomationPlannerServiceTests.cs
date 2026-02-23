@@ -214,6 +214,30 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenCorrelationIdIsWhitespace()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: Guid.NewGuid().ToString(),
+            correlationId: "   ");
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("CorrelationId cannot be empty when provided");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
     public async Task ParseInstruction_ShouldReturnFailure_WhenSourceReferenceIdIsWhitespace()
     {
         // Arrange
@@ -234,6 +258,31 @@ public class AutomationPlannerServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("SourceReferenceId cannot be empty when provided");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnFailure_WhenSourceReferenceIdExceedsMaxLength()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var sourceReferenceId = new string('s', 101);
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Queue Task'",
+            userId,
+            boardId,
+            default,
+            sourceType: ProposalSourceType.Queue,
+            sourceReferenceId: sourceReferenceId,
+            correlationId: Guid.NewGuid().ToString());
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("SourceReferenceId cannot exceed 100 characters");
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
     }
 
