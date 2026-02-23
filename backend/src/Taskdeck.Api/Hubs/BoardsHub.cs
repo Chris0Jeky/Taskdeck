@@ -100,4 +100,5 @@ public class BoardsHub : Hub
             .Group(BoardHubGroups.ForBoard(snapshot.BoardId))
             .SendAsync("boardPresence", snapshot);
     }
+
 }
