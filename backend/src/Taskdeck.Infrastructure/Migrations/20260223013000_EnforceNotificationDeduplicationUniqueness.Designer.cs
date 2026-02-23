@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260223013000_EnforceNotificationDeduplicationUniqueness")]
+    partial class EnforceNotificationDeduplicationUniqueness
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
@@ -384,92 +387,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasIndex("ColumnId");
 
                     b.ToTable("Cards", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.CardComment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("AuthorUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("BoardId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("CardId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("DeletedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("EditedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("ParentCommentId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuthorUserId");
-
-                    b.HasIndex("BoardId");
-
-                    b.HasIndex("CardId");
-
-                    b.HasIndex("ParentCommentId");
-
-                    b.HasIndex("CardId", "CreatedAt");
-
-                    b.ToTable("CardComments", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.CardCommentMention", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("CardCommentId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("MentionedUserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MentionedUsername")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CardCommentId");
-
-                    b.HasIndex("MentionedUserId");
-
-                    b.HasIndex("CardCommentId", "MentionedUserId")
-                        .IsUnique();
-
-                    b.ToTable("CardCommentMentions", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.CardLabel", b =>
@@ -1016,51 +933,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Column");
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.CardComment", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.User", "AuthorUser")
-                        .WithMany()
-                        .HasForeignKey("AuthorUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Taskdeck.Domain.Entities.Card", "Card")
-                        .WithMany()
-                        .HasForeignKey("CardId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Taskdeck.Domain.Entities.CardComment", "ParentComment")
-                        .WithMany("Replies")
-                        .HasForeignKey("ParentCommentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("AuthorUser");
-
-                    b.Navigation("Card");
-
-                    b.Navigation("ParentComment");
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.CardCommentMention", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.CardComment", "CardComment")
-                        .WithMany("Mentions")
-                        .HasForeignKey("CardCommentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Taskdeck.Domain.Entities.User", "MentionedUser")
-                        .WithMany()
-                        .HasForeignKey("MentionedUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CardComment");
-
-                    b.Navigation("MentionedUser");
-                });
-
             modelBuilder.Entity("Taskdeck.Domain.Entities.CardLabel", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.Card", "Card")
@@ -1183,13 +1055,6 @@ namespace Taskdeck.Infrastructure.Migrations
             modelBuilder.Entity("Taskdeck.Domain.Entities.Card", b =>
                 {
                     b.Navigation("CardLabels");
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.CardComment", b =>
-                {
-                    b.Navigation("Mentions");
-
-                    b.Navigation("Replies");
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ChatSession", b =>
