@@ -6,6 +6,7 @@ import { cardsApi } from '../api/cardsApi'
 import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
+import type { BoardPresenceMember } from '../types/realtime'
 import type { Board, BoardDetail, Card, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 
 export interface CardFilters {
@@ -24,6 +25,8 @@ export const useBoardStore = defineStore('board', () => {
   const currentBoard = ref<BoardDetail | null>(null)
   const currentBoardCards = ref<Card[]>([])
   const currentBoardLabels = ref<Label[]>([])
+  const boardPresenceMembers = ref<BoardPresenceMember[]>([])
+  const editingCardId = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -229,6 +232,8 @@ export const useBoardStore = defineStore('board', () => {
         currentBoard.value = null
         currentBoardCards.value = []
         currentBoardLabels.value = []
+        boardPresenceMembers.value = []
+        editingCardId.value = null
       }
 
       toast.success('Board archived successfully')
@@ -435,7 +440,12 @@ export const useBoardStore = defineStore('board', () => {
     try {
       loading.value = true
       error.value = null
-      const updatedCard = await cardsApi.updateCard(boardId, cardId, card)
+      const existingCard = currentBoardCards.value.find((c) => c.id === cardId)
+      const request = {
+        ...card,
+        expectedUpdatedAt: card.expectedUpdatedAt ?? existingCard?.updatedAt ?? null,
+      }
+      const updatedCard = await cardsApi.updateCard(boardId, cardId, request)
 
       // Update the card in the store
       const index = currentBoardCards.value.findIndex((c) => c.id === cardId)
@@ -521,12 +531,22 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  function setBoardPresenceMembers(members: BoardPresenceMember[]) {
+    boardPresenceMembers.value = members
+  }
+
+  function setEditingCard(cardId: string | null) {
+    editingCardId.value = cardId
+  }
+
   return {
     // State
     boards,
     currentBoard,
     currentBoardCards,
     currentBoardLabels,
+    boardPresenceMembers,
+    editingCardId,
     loading,
     error,
     filters,
@@ -554,6 +574,8 @@ export const useBoardStore = defineStore('board', () => {
     deleteLabel,
     updateFilters,
     clearFilters,
+    setBoardPresenceMembers,
+    setEditingCard,
     fetchCards,
     fetchLabels,
     moveCard,

@@ -68,6 +68,7 @@ builder.Services.AddScoped<IStarterPackManifestValidator, StarterPackManifestVal
 builder.Services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
 builder.Services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
 builder.Services.AddSingleton<IBoardRealtimeNotifier, SignalRBoardRealtimeNotifier>();
+builder.Services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
 
 // LLM provider settings and deterministic provider selection policy
 var llmProviderSettings = builder.Configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();

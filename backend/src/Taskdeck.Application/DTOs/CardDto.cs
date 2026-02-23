@@ -30,7 +30,8 @@ public record UpdateCardDto(
     DateTimeOffset? DueDate,
     bool? IsBlocked,
     string? BlockReason,
-    List<Guid>? LabelIds
+    List<Guid>? LabelIds,
+    DateTimeOffset? ExpectedUpdatedAt = null
 );
 
 public record MoveCardDto(

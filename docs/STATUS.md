@@ -19,6 +19,7 @@ Current constraints are mostly hardening and consistency:
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
 - LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
+- collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 
 ## Current Implementation Snapshot
 
@@ -97,6 +98,7 @@ Completed in Phase 4:
 - frontend integration for automations/chat/ops/archive
 - archive lifecycle coherence for boards across board settings and archive workspace flows
 - drag/edit interaction safety guardrails via explicit card/column drag handles and non-handle drag blocking
+- collaborative presence/conflict policy (`#73`): SignalR-backed board/card presence snapshots with editor markers, optimistic stale-write conflict handling, and conflict-audit capture with actor identity
 - maintainability refactor across API/controller error handling and frontend API/store utilities (PR #23)
 - CI hardening follow-up: workflow concurrency cancellation, frontend typecheck/build parity, TRX artifacts, caching
 - mechanical checks added: docs governance CI checks (`check-docs-governance` + `check-github-ops-governance`) and architecture boundary test project
@@ -160,11 +162,11 @@ Command:
 
 Result:
 - Domain: 93/93 passing
-- Application: 352/352 passing
-- API integration: 192/192 passing
+- Application: 353/353 passing
+- API integration: 195/195 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 649/649 passing
+- Backend Total: 653/653 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -175,7 +177,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 306/306 passing
+- Frontend unit: 310/310 passing
 - Coverage thresholds: passing
 - Lint: passing
 - Typecheck: passing
@@ -191,7 +193,7 @@ Result:
 
 ### Total
 
-- Combined automated total: 976/976 passing
+- Combined automated total: 984/984 passing
 
 ## CI Status
 

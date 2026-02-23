@@ -85,6 +85,7 @@ export interface UpdateCardDto {
   isBlocked?: boolean | null
   blockReason?: string | null
   labelIds?: string[] | null
+  expectedUpdatedAt?: string | null
 }
 
 export interface MoveCardDto {

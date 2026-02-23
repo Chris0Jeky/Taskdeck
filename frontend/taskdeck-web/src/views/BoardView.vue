@@ -11,6 +11,7 @@ import StarterPackCatalogModal from '../components/board/StarterPackCatalogModal
 import KeyboardShortcutsHelp from '../components/KeyboardShortcutsHelp.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
 import type { Column, Card } from '../types/board'
+import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
 
 const route = useRoute()
@@ -27,6 +28,7 @@ const showFilterPanel = ref(false)
 const draggedColumn = ref<Column | null>(null)
 const dragOverColumnId = ref<string | null>(null)
 const draggedCard = ref<Card | null>(null)
+const presenceMembers = ref<BoardPresenceMember[]>([])
 
 // Card selection state for keyboard navigation
 const selectedCardId = ref<string | null>(null)
@@ -36,6 +38,14 @@ const boardId = ref(route.params.id as string)
 const realtime = createBoardRealtimeController({
   fetchBoard: async (id: string) => {
     await boardStore.fetchBoard(id)
+  },
+  onPresenceChanged: (snapshot) => {
+    if (snapshot.boardId !== boardId.value) {
+      return
+    }
+
+    presenceMembers.value = snapshot.members
+    boardStore.setBoardPresenceMembers(snapshot.members)
   },
 })
 
@@ -47,6 +57,9 @@ const sortedColumns = computed(() => {
 
 onMounted(async () => {
   try {
+    presenceMembers.value = []
+    boardStore.setBoardPresenceMembers([])
+    boardStore.setEditingCard(null)
     await boardStore.fetchBoard(boardId.value)
     await realtime.start(boardId.value)
   } catch (error) {
@@ -65,6 +78,9 @@ watch(
     boardId.value = nextBoardId
     selectedCardId.value = null
     selectedColumnIndex.value = 0
+    presenceMembers.value = []
+    boardStore.setBoardPresenceMembers([])
+    boardStore.setEditingCard(null)
 
     try {
       await boardStore.fetchBoard(boardId.value)
@@ -75,7 +91,17 @@ watch(
   }
 )
 
+watch(
+  () => boardStore.editingCardId,
+  async (nextEditingCardId) => {
+    await realtime.setEditingCard(nextEditingCardId)
+  }
+)
+
 onBeforeUnmount(() => {
+  presenceMembers.value = []
+  boardStore.setBoardPresenceMembers([])
+  boardStore.setEditingCard(null)
   void realtime.stop()
 })
 
@@ -408,6 +434,24 @@ useKeyboardShortcuts([
               <p v-if="boardStore.currentBoard.description" class="text-sm text-gray-600">
                 {{ boardStore.currentBoard.description }}
               </p>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Live</span>
+                <span
+                  v-if="presenceMembers.length === 0"
+                  class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                >
+                  No active collaborators
+                </span>
+                <span
+                  v-for="member in presenceMembers"
+                  :key="member.userId"
+                  class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                  data-presence-user
+                >
+                  <span>{{ member.displayName || member.userId.slice(0, 8) }}</span>
+                  <span v-if="member.editingCardId" class="font-medium text-amber-700">(editing)</span>
+                </span>
+              </div>
             </div>
           </div>
 

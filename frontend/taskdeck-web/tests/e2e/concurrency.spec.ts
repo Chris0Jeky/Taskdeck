@@ -42,13 +42,13 @@ async function addCard(page: Page, columnName: string, cardTitle: string) {
   await expect(cardByTitle(page, cardTitle)).toBeVisible()
 }
 
-test('concurrent card edits across sessions should converge to last write', async ({ browser, page, request }) => {
+test('concurrent stale card edit should return conflict hint and preserve latest saved state', async ({ browser, page, request }) => {
   const auth = await registerAndAttachSession(page, request, 'concurrency')
   const boardName = `Concurrency Board ${Date.now()}`
   const columnName = `Concurrency Column ${Date.now()}`
   const initialTitle = `Concurrency Card ${Date.now()}`
   const secondaryTitle = `${initialTitle} Secondary`
-  const finalTitle = `${initialTitle} Final`
+  const staleTitle = `${initialTitle} Stale`
 
   await createBoard(page, boardName)
   await addColumn(page, columnName)
@@ -66,7 +66,7 @@ test('concurrent card edits across sessions should converge to last write', asyn
 
     await cardByTitle(page, initialTitle).click()
     await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
-    await page.locator('#card-title').fill(finalTitle)
+    await page.locator('#card-title').fill(staleTitle)
 
     await cardByTitle(secondaryPage, initialTitle).click()
     await expect(secondaryPage.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
@@ -76,12 +76,14 @@ test('concurrent card edits across sessions should converge to last write', asyn
     await expect(cardByTitle(secondaryPage, secondaryTitle)).toBeVisible({ timeout: 15000 })
 
     await page.getByRole('button', { name: 'Save Changes' }).click()
-    await expect(page.getByRole('heading', { name: 'Edit Card' })).toHaveCount(0)
+    await expect(page.getByText('updated by another session', { exact: false }).first()).toBeVisible({ timeout: 15000 })
 
-    await expect(cardByTitle(page, finalTitle)).toBeVisible({ timeout: 20000 })
+    await expect(cardByTitle(page, secondaryTitle)).toBeVisible({ timeout: 20000 })
+    await expect(cardByTitle(page, staleTitle)).toHaveCount(0)
+
     await secondaryPage.reload()
-    await expect(cardByTitle(secondaryPage, finalTitle)).toBeVisible({ timeout: 20000 })
-    await expect(cardByTitle(secondaryPage, secondaryTitle)).toHaveCount(0)
+    await expect(cardByTitle(secondaryPage, secondaryTitle)).toBeVisible({ timeout: 20000 })
+    await expect(cardByTitle(secondaryPage, staleTitle)).toHaveCount(0)
   } finally {
     await secondaryContext.close()
   }
