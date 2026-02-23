@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-22  
+Last Updated: 2026-02-23  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -46,8 +46,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 653 passing
-   - Frontend unit: 310 passing
+   - Backend: 662 passing
+   - Frontend unit: 317 passing
    - E2E: 21 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -244,6 +244,10 @@ Delivered in the latest cycle:
    - added SignalR-backed board/card presence snapshots with active viewer/editor state publication on join/leave/disconnect and card editing focus changes
    - added optimistic card update conflict policy via `ExpectedUpdatedAt` with deterministic `409 Conflict` user feedback and stale-write conflict audit logging (actor + expected/actual timestamps)
    - expanded backend/frontend regression coverage, including multi-session Playwright conflict scenario validation and realtime presence broadcast assertions
+60. COL-04 threaded card comments and mentions workflow delivery (`#74`):
+   - added authenticated board/card comment APIs for create/list/reply/update/delete with reply-depth guardrails and moderation constraints (author or board owner/admin)
+   - added mention parsing + actor-linking for card comment bodies with board-read permission checks before mention notification publication
+   - added card-comment audit entries and frontend card-modal comment UI flow (thread list, reply, edit, delete), with backend/frontend test coverage for mention parsing and authorization boundaries
 
 ## Roadmap by Horizon
 
