@@ -3,7 +3,9 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
@@ -108,6 +110,56 @@ public class NotificationsApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await otherClient.GetAsync($"/api/notifications?boardId={ownerBoard.Id}&unreadOnly=true");
 
         await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task SaveChanges_ShouldIgnoreConcurrentNotificationDeduplicationConflicts()
+    {
+        var userId = Guid.NewGuid();
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var userSuffix = Guid.NewGuid().ToString("N")[..8];
+            var user = new User($"dedupe-{userSuffix}", $"dedupe-{userSuffix}@example.com", "hash");
+            dbContext.Users.Add(user);
+            dbContext.NotificationPreferences.Add(NotificationPreference.CreateDefault(user.Id));
+            await dbContext.SaveChangesAsync();
+            userId = user.Id;
+        }
+
+        using var scopeA = _factory.Services.CreateScope();
+        using var scopeB = _factory.Services.CreateScope();
+        var notificationServiceA = scopeA.ServiceProvider.GetRequiredService<INotificationService>();
+        var notificationServiceB = scopeB.ServiceProvider.GetRequiredService<INotificationService>();
+        var unitOfWorkA = scopeA.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var unitOfWorkB = scopeB.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        const string deduplicationKey = "race-deduplication-key";
+        var request = new CreateNotificationRequestDto(
+            userId,
+            NotificationType.Mention,
+            "Concurrent notification",
+            "Concurrent dedupe test",
+            DeduplicationKey: deduplicationKey);
+
+        var publishResultA = await notificationServiceA.PublishAsync(request);
+        var publishResultB = await notificationServiceB.PublishAsync(request);
+
+        publishResultA.IsSuccess.Should().BeTrue();
+        publishResultA.Value.Should().BeTrue();
+        publishResultB.IsSuccess.Should().BeTrue();
+        publishResultB.Value.Should().BeTrue();
+
+        await unitOfWorkA.SaveChangesAsync();
+        var saveB = async () => await unitOfWorkB.SaveChangesAsync();
+        await saveB.Should().NotThrowAsync();
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var duplicateCount = verifyContext.Notifications.Count(notification =>
+            notification.UserId == userId && notification.DeduplicationKey == deduplicationKey);
+
+        duplicateCount.Should().Be(1);
     }
 
     private async Task<Notification> SeedNotificationAsync(Guid userId, Guid? boardId = null)
