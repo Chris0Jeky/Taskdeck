@@ -248,6 +248,10 @@ Delivered in the latest cycle:
    - added authenticated board/card comment APIs for create/list/reply/update/delete with reply-depth guardrails and moderation constraints (author or board owner/admin)
    - added mention parsing + actor-linking for card comment bodies with board-read permission checks before mention notification publication
    - added card-comment audit entries and frontend card-modal comment UI flow (thread list, reply, edit, delete), with backend/frontend test coverage for mention parsing and authorization boundaries
+61. Capture realignment backlog seeding delivery (`#199` to `#213`):
+   - reconciled in-review capture/security/performance planning packs into dependency-mapped GitHub issues
+   - seeded a dedicated capture wave tracker (`#199`) with execution issues (`#200` to `#211`) plus linked security/performance follow-through (`#212`, `#213`)
+   - updated existing SEC-06 rate-limiting issue (`#81`) and wave index (`#107`) to integrate capture-specific scope without duplicate issue creation
 
 ## Roadmap by Horizon
 
@@ -320,6 +324,20 @@ Exit Criteria:
 - collaboration and integration foundations are production-safe and test-backed
 - growth-oriented UX and analytics features remain consistent with security and operability controls
 
+### Horizon F (Realignment Track): Capture Inbox MVP and Trust Guardrails
+
+Focus:
+- inbox-first capture flow for low-friction thought/task ingestion
+- deterministic triage pipeline that feeds proposal-first automation (never direct auto-apply)
+- provenance visibility from capture artifact to proposal and resulting cards
+- capture-specific security/performance hardening (rate limiting, logging redaction, long-list responsiveness)
+
+Exit Criteria:
+- capture create/list/detail/triage loop is shipped with policy-correct API behavior
+- proposal linkage/provenance is visible in UI and audit-safe
+- end-to-end capture -> triage -> review -> apply regression is stable
+- canonical docs and manual verification steps reflect the new workflow
+
 ## Active Backlog (Priority-Labeled)
 
 ### Priority I (Current Phase 4 Completion Path)
@@ -332,6 +350,7 @@ Exit Criteria:
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
 - Analysis follow-through wave tracker: `#151`
+- Capture realignment wave tracker and delivery sequence: `#199` to `#211`
 - CI/workflow topology expansion and governance track: `#168`
 - API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
@@ -341,13 +360,14 @@ Exit Criteria:
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80`, `#81`, `#82`, `#83`, `#106`, `#110`, `#156`
+- Security/compliance expansion: `#80`, `#81` (capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
 - Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
 - Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`, `#96`
+- Frontend responsiveness maturity: `#213`
 - Developer/user docs maturity: `#99`, `#100`
 - Codebase maintainability hotspot refactors (analysis wave): `#158`, `#159`, `#160`, `#161`, `#162`, `#163`, `#164`, `#165`, `#166`, `#167`
 
@@ -366,6 +386,7 @@ Strategic reconciliation applied:
 - Keep current sequence: finish Phase 4 consistency/security first (`Priority I`) before broad feature expansion.
 - Translate research recommendations into dependency-aware issues rather than broad unscoped themes.
 - Treat non-code operations/configuration work as a mandatory delivery track, not "later ops".
+- Added capture/inbox realignment wave from `docs/InReview` planning packs with explicit dependency-mapped issue seeding (`#199` to `#213`).
 
 ## Out-of-Code and Configuration Coverage Matrix
 
@@ -442,10 +463,10 @@ Initial implementation shape:
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
 ## Next Best Steps (Immediate)
 
-1. Maintain completed `Priority I` security/policy tranche (`#33`, `#34`, `#44`) with regression coverage while closing remaining auth/contract drift.
-2. Promote remaining Wave A foundation issues (`#72` onward) to active execution only after `Priority I` is materially reduced.
-3. Keep issue `#107` updated as the canonical expansion-wave index.
-4. Maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`) and re-evaluate quarterly.
+1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
+2. Keep capture wave (`#199` to `#211`) in `Pending/Next` readiness with dependency grooming until Priority I path is materially reduced.
+3. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
+4. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 
 ## Documentation Operating Model
 Active docs:

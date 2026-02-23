@@ -102,18 +102,34 @@ Foundation wave:
 14. `#75` INT-01 import adapters foundation
 15. `#76` INT-02 webhooks/integration security model
 
+Capture realignment wave (2026-02-23):
+16. `#199` CAP-00 capture wave tracker (tracking)
+17. `#200` CAP-01 capture persistence model/domain contract
+18. `#201` CAP-02 capture API slice
+19. `#202` CAP-03 queue proposal provenance fix
+20. `#203` CAP-04 triage enqueue + status transitions
+21. `#204` CAP-05 worker triage path -> proposal generation
+22. `#205` CAP-06 strict triage schema + prompt versioning
+23. `#206` CAP-07 inbox frontend route/list/detail
+24. `#207` CAP-08 capture modal + command palette integration
+25. `#208` CAP-09 triage trigger + proposal-linking UX
+26. `#209` CAP-10 card/proposal provenance UX
+27. `#210` CAP-11 capture loop E2E regression
+28. `#211` CAP-12 canonical docs promotion
+
 ### Stage 3: Priority III - Expansion Wave
 
 1. `#77` ANL-01 metrics dashboard
 2. `#78` ANL-02 exportable reports
 3. `#79` ANL-03 forecasting/capacity heuristics
 4. `#80` SEC-05 OWASP baseline hardening
-5. `#81` SEC-06 API rate limiting
+5. `#81` SEC-06 API rate limiting (includes capture endpoint scope extension)
 6. `#82` SEC-07 SSO/OIDC + optional MFA
 7. `#83` SEC-08 data portability/deletion flow
 8. `#106` SEC-09 dependency vulnerability policy
 9. `#110` SEC-10 secrets/configuration management baseline
 10. `#156` SEC-12 session-token storage hardening plan
+11. `#212` SEC-14 logging redaction guardrails
 
 ### Stage 4: Priority IV - Maturity Wave
 
@@ -139,22 +155,23 @@ Testing/UX/docs:
 17. `#94` UX-08 calendar/timeline views
 18. `#95` UX-09 PWA/offline readiness
 19. `#96` UX-10 onboarding/help
-20. `#97` INT-03 plugin architecture RFC
-21. `#98` INT-04 connector framework
-22. `#99` DOC-03 developer portal generation
-23. `#100` DOC-04 user guides/tutorials/FAQ
+20. `#213` PERF-07 long-list virtualization
+21. `#97` INT-03 plugin architecture RFC
+22. `#98` INT-04 connector framework
+23. `#99` DOC-03 developer portal generation
+24. `#100` DOC-04 user guides/tutorials/FAQ
 
 Maintainability hotspot refactor wave (analysis-driven):
-24. `#158` REF-11 decompose `AppShell.vue`
-25. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
-26. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
-27. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
-28. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
-29. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
-30. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
-31. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
-32. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
-33. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
+25. `#158` REF-11 decompose `AppShell.vue`
+26. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
+27. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
+28. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
+29. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
+30. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
+31. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
+32. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
+33. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
+34. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
 
 ### Stage 5: Priority V - Meta/Historical
 
