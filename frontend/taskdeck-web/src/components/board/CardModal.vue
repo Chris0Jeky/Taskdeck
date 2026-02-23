@@ -35,6 +35,7 @@ const editingCommentId = ref<string | null>(null)
 const editingCommentContent = ref('')
 const captureProvenance = ref<CardCaptureProvenance | null>(null)
 const loadingCaptureProvenance = ref(false)
+const loadedCaptureProvenanceCardId = ref<string | null>(null)
 
 const comments = computed<CardComment[]>(() => boardStore.getCardComments(props.card.id))
 const topLevelComments = computed(() => comments.value.filter(comment => !comment.parentCommentId))
@@ -50,6 +51,8 @@ watch(() => props.card, (newCard) => {
     isBlocked.value = newCard.isBlocked
     blockReason.value = newCard.blockReason || ''
     selectedLabelIds.value = newCard.labels.map(l => l.id)
+    captureProvenance.value = null
+    loadedCaptureProvenanceCardId.value = null
 
     if (props.isOpen) {
       void loadCaptureProvenance()
@@ -74,6 +77,7 @@ watch(
     editingCommentContent.value = ''
     captureProvenance.value = null
     loadingCaptureProvenance.value = false
+    loadedCaptureProvenanceCardId.value = null
 
     if (boardStore.editingCardId === props.card.id) {
       boardStore.setEditingCard(null)
@@ -112,11 +116,17 @@ function proposalStatusLabel(status: CardCaptureProvenance['proposalStatus']): s
 }
 
 async function loadCaptureProvenance() {
+  if (loadingCaptureProvenance.value || loadedCaptureProvenanceCardId.value === props.card.id) {
+    return
+  }
+
   loadingCaptureProvenance.value = true
   try {
     captureProvenance.value = await boardStore.fetchCardProvenance(props.card.boardId, props.card.id)
+    loadedCaptureProvenanceCardId.value = props.card.id
   } catch {
     captureProvenance.value = null
+    loadedCaptureProvenanceCardId.value = props.card.id
   } finally {
     loadingCaptureProvenance.value = false
   }
@@ -254,6 +264,7 @@ onBeforeUnmount(() => {
   editingCommentContent.value = ''
   captureProvenance.value = null
   loadingCaptureProvenance.value = false
+  loadedCaptureProvenanceCardId.value = null
 })
 </script>
 

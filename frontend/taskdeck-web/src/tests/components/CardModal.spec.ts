@@ -78,6 +78,7 @@ describe('CardModal', () => {
     await Promise.resolve()
 
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledTimes(1)
   })
 
   it('should render capture provenance marker and links when available', async () => {
