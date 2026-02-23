@@ -22,6 +22,7 @@ public class ChatServiceTests
     private readonly Mock<IAutomationProposalService> _proposalServiceMock = new();
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock = new();
     private readonly Mock<INotificationService> _notificationServiceMock = new();
+    private readonly Mock<IAuthorizationService> _authorizationServiceMock = new();
     private readonly ChatService _service;
 
     public ChatServiceTests()
@@ -47,7 +48,8 @@ public class ChatServiceTests
             _plannerMock.Object,
             _proposalServiceMock.Object,
             _policyEngineMock.Object,
-            _notificationServiceMock.Object);
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object);
     }
 
     [Fact]
@@ -167,6 +169,41 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("proposal-reference");
         result.Value.ProposalId.Should().Be(proposalId);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldSkipMentionNotification_WhenMentionedUserCannotReadBoard()
+    {
+        var sender = new User("sender_user", "sender_user@example.com", "hash");
+        var mentioned = new User("mention_target", "mention_target@example.com", "hash");
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(sender.Id, "Mention session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _userRepoMock
+            .Setup(r => r.GetByIdAsync(sender.Id, default))
+            .ReturnsAsync(sender);
+        _userRepoMock
+            .Setup(r => r.GetByUsernameAsync("mention_target", default))
+            .ReturnsAsync(mentioned);
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(mentioned.Id, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            sender.Id,
+            new SendChatMessageDto("Hello @mention_target can you review this?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(
+                It.IsAny<CreateNotificationRequestDto>(),
+                default),
+            Times.Never);
     }
 
     [Fact]

@@ -29,6 +29,7 @@ public class ChatService : IChatService
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly INotificationService _notificationService;
+    private readonly IAuthorizationService? _authorizationService;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -36,7 +37,8 @@ public class ChatService : IChatService
         IAutomationPlannerService automationPlanner,
         IAutomationProposalService proposalService,
         IAutomationPolicyEngine policyEngine,
-        INotificationService? notificationService = null)
+        INotificationService? notificationService = null,
+        IAuthorizationService? authorizationService = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -44,6 +46,7 @@ public class ChatService : IChatService
         _proposalService = proposalService;
         _policyEngine = policyEngine;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
+        _authorizationService = authorizationService;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -276,6 +279,9 @@ public class ChatService : IChatService
             if (mentionedUser == null || mentionedUser.Id == senderUserId)
                 continue;
 
+            if (!await CanReceiveBoardScopedMentionAsync(mentionedUser.Id, session.BoardId, ct))
+                continue;
+
             var publishResult = await _notificationService.PublishAsync(
                 new CreateNotificationRequestDto(
                     mentionedUser.Id,
@@ -293,6 +299,28 @@ public class ChatService : IChatService
         }
 
         return Result.Success();
+    }
+
+    private async Task<bool> CanReceiveBoardScopedMentionAsync(Guid userId, Guid? boardId, CancellationToken ct)
+    {
+        if (!boardId.HasValue)
+            return true;
+
+        if (_authorizationService is not null)
+        {
+            var permission = await _authorizationService.CanReadBoardAsync(userId, boardId.Value);
+            return permission.IsSuccess && permission.Value;
+        }
+
+        var board = await _unitOfWork.Boards.GetByIdAsync(boardId.Value, ct);
+        if (board is null)
+            return false;
+
+        if (board.OwnerId == userId)
+            return true;
+
+        var access = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(boardId.Value, userId, ct);
+        return access is not null && access.CanRead();
     }
 
     private async Task<Result<ProposalDto>> CreateChecklistBootstrapProposalAsync(
