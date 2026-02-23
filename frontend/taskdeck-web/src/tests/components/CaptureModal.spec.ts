@@ -60,4 +60,45 @@ describe('CaptureModal', () => {
 
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
+
+  it('prevents re-entrant submit while save is in flight', async () => {
+    let resolveCreate: ((value: { id: string }) => void) | null = null
+    mockCaptureStore.createItem.mockImplementation(() => new Promise((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    const wrapper = mount(CaptureModal)
+    const textarea = wrapper.get('textarea')
+    await textarea.setValue('Capture this task once')
+
+    await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true })
+    await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true })
+    await waitForUi()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    resolveCreate?.({ id: 'capture-created' })
+    await waitForUi()
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('does not close with Escape while saving', async () => {
+    mockCaptureStore.createItem.mockImplementation(
+      () => new Promise(() => {
+        // Intentionally unresolved to keep saving state active.
+      }))
+
+    const wrapper = mount(CaptureModal)
+    const textarea = wrapper.get('textarea')
+    await textarea.setValue('Slow capture')
+    await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true })
+    await waitForUi()
+
+    await wrapper.get('.td-capture-modal').trigger('keydown', { key: 'Escape' })
+    await waitForUi()
+
+    expect(wrapper.emitted('close')).toBeUndefined()
+  })
 })

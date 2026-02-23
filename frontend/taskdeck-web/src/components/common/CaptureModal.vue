@@ -36,6 +36,10 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 async function submit() {
+  if (saving.value) {
+    return
+  }
+
   const normalizedText = text.value.trim()
   if (!normalizedText) {
     inlineError.value = 'Capture text is required.'
