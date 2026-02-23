@@ -66,6 +66,20 @@ function isOverdue(dateString: string | null): boolean {
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
   >
+    <button
+      type="button"
+      data-action="drag-card-handle"
+      draggable="true"
+      class="td-card-drag-handle -mx-1 mb-2 flex w-full items-center justify-end rounded-md px-2 py-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-grab active:cursor-grabbing"
+      title="Drag Card"
+      aria-label="Drag Card"
+      @click.stop
+    >
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
+      </svg>
+    </button>
+
     <!-- Blocked Badge -->
     <div v-if="card.isBlocked" class="mb-2">
       <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">
@@ -76,23 +90,8 @@ function isOverdue(dateString: string | null): boolean {
       </span>
     </div>
 
-    <!-- Card Title + Drag Handle -->
-    <div class="flex items-start justify-between gap-2 mb-2">
-      <h4 class="text-sm font-medium text-gray-900 min-w-0 break-words flex-1">{{ card.title }}</h4>
-      <button
-        type="button"
-        data-action="drag-card-handle"
-        draggable="true"
-        class="flex-shrink-0 rounded p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-grab active:cursor-grabbing"
-        title="Drag Card"
-        aria-label="Drag Card"
-        @click.stop
-      >
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
-        </svg>
-      </button>
-    </div>
+    <!-- Card Title -->
+    <h4 class="text-sm font-medium text-gray-900 min-w-0 break-words mb-2">{{ card.title }}</h4>
 
     <!-- Card Description (if exists) -->
     <p v-if="card.description" class="text-xs text-gray-600 mb-2 line-clamp-2">

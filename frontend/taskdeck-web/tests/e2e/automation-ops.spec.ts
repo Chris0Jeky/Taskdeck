@@ -1,11 +1,7 @@
 import type { APIRequestContext } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
-
-interface ImportResultDto {
-  success: boolean
-  boardId: string | null
-}
+import { createBoardWithColumn } from './support/boardHelpers'
 
 interface ChatMessageDto {
   proposalId: string | null
@@ -18,32 +14,6 @@ interface ChatSessionDto {
 interface ProposalDto {
   id: string
   summary: string
-}
-
-async function createBoardWithColumn(request: APIRequestContext, auth: AuthResult, seed: string): Promise<string> {
-  const authHeader = { Authorization: `Bearer ${auth.token}` }
-  const importResponse = await request.post(`${API_BASE_URL}/import/boards?userId=${encodeURIComponent(auth.user.id)}`, {
-    headers: authHeader,
-    data: {
-      name: `Automation E2E ${seed}`,
-      description: 'automation e2e board',
-      columns: [
-        {
-          name: `Backlog ${seed}`,
-          position: 0,
-          wipLimit: null,
-        },
-      ],
-      cards: [],
-      labels: [],
-    },
-  })
-  expect(importResponse.ok()).toBeTruthy()
-  const importResult = await importResponse.json() as ImportResultDto
-  expect(importResult.success).toBeTruthy()
-  expect(importResult.boardId).toBeTruthy()
-
-  return importResult.boardId!
 }
 
 async function waitForProposalInSession(
@@ -103,7 +73,11 @@ test('ops cli should run health.check template', async ({ page }) => {
 
 test('chat proposal flow should create, approve, and execute proposal', async ({ page, request }) => {
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
-  const boardId = await createBoardWithColumn(request, auth, seed)
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Automation E2E',
+    description: 'automation e2e board',
+    columnNamePrefix: 'Backlog',
+  })
   const uniqueCardTitle = `E2E Card ${seed}`
 
   await page.goto('/workspace/automations/chat')

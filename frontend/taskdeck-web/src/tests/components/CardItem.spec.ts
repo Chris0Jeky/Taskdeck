@@ -22,6 +22,21 @@ function createCard(): Card {
 }
 
 describe('CardItem drag guardrails', () => {
+  it('exposes an explicit enlarged drag handle control', () => {
+    const wrapper = mount(CardItem, {
+      props: {
+        card: createCard(),
+      },
+    })
+
+    const handle = wrapper.get('.td-card-drag-handle')
+    expect(handle.attributes('data-action')).toBe('drag-card-handle')
+    expect(handle.attributes('draggable')).toBe('true')
+    expect(handle.classes()).toContain('w-full')
+    expect(handle.classes()).toContain('px-2')
+    expect(handle.classes()).toContain('py-1.5')
+  })
+
   it('blocks dragstart when not initiated from drag handle', async () => {
     const wrapper = mount(CardItem, {
       props: {
@@ -38,7 +53,7 @@ describe('CardItem drag guardrails', () => {
     expect(setData).not.toHaveBeenCalled()
   })
 
-  it('allows dragstart from drag handle', async () => {
+  it('allows dragstart from the dedicated drag handle', async () => {
     const card = createCard()
     const wrapper = mount(CardItem, {
       props: {

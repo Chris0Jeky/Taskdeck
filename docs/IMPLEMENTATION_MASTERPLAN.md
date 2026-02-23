@@ -305,6 +305,11 @@ Delivered in the latest cycle:
    - capture triage create-card operations now persist deterministic card target ids so provenance lookup remains stable after proposal execution
    - card modal now surfaces capture-origin marker, capture/proposal deep-links, proposal status, and triage-run metadata when provenance exists
    - automations proposal surface now exposes capture-linked context (capture artifact link + triage-run reference), with frontend/backend regression coverage
+73. CAP-11 capture loop end-to-end regression delivery (`#210`):
+   - added dedicated Playwright regression (`tests/e2e/capture-loop.spec.ts`) for capture create -> triage -> proposal approve/execute -> card provenance verification
+   - end-to-end flow now validates proposal-first trust posture by asserting board mutation only after explicit proposal approval and execute action
+   - regression asserts resulting card provenance links (`Open Capture`, `Open Proposal`) and triage-run metadata visibility in card modal
+   - full Playwright suite now exercises capture-loop path by default to guard against cross-surface regressions
 
 ## Roadmap by Horizon
 
@@ -554,7 +559,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Continue capture wave delivery on completed dependencies by sequencing `#210` then `#211`, while preserving Priority I policy guardrails.
+2. Continue capture wave delivery on completed dependencies by sequencing `#211`, while preserving Priority I policy guardrails.
 3. After `#211`, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
 4. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
 5. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.

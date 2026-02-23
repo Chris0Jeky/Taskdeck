@@ -235,6 +235,11 @@ Implementation progress:
   - triage create-card operations now persist deterministic card target ids so provenance lookup remains stable after proposal execution
   - card modal now shows explicit capture-origin marker with direct capture/proposal links and triage-run metadata when provenance exists
   - automations proposal surface now shows capture-linked context (capture artifact link + triage run reference), with frontend/backend regression coverage
+- `#210` CAP-11 capture loop E2E regression delivered and regression-tested:
+  - added dedicated Playwright regression (`tests/e2e/capture-loop.spec.ts`) covering capture create -> triage -> proposal approve/execute -> card provenance verification
+  - coverage validates proposal-first review gate behavior (no direct board mutation from triage output before explicit approve/execute)
+  - coverage validates provenance deep-links (`Open Capture`, `Open Proposal`) and triage-run metadata visibility from resulting card surfaces
+  - full Playwright suite now includes capture-loop verification in the default regression path
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -315,7 +320,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 370/370 passing
+- Frontend unit: 377/377 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -325,11 +330,11 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops + starter-pack fixture flow: 21/21 passing
+- E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build): 1122/1122 passing
+- Combined automated total (backend + frontend unit/build): 1129/1129 passing
 
 ## CI Status
 
@@ -379,8 +384,12 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
+<<<<<<< docs/frontend-premium-ui-wave-seeding-sync
 - capture inbox pipeline is now shipped through card/proposal provenance UX (`#200` to `#209`); remaining open dependencies are end-to-end loop verification (`#210`) and canonical docs promotion (`#211`)
 - premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
+=======
+- capture inbox pipeline is now shipped through end-to-end loop verification (`#200` to `#210`); remaining open dependency is canonical docs promotion (`#211`)
+>>>>>>> main
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
