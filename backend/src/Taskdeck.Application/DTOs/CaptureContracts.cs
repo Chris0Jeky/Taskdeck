@@ -80,9 +80,19 @@ public static class CaptureRequestContract
             return ValidatePayload(new CapturePayloadV1(CurrentSchemaVersion, CaptureSource.Typed, payload));
         }
 
+        JsonDocument jsonDocument;
         try
         {
-            using var jsonDocument = JsonDocument.Parse(payload);
+            jsonDocument = JsonDocument.Parse(payload);
+        }
+        catch (JsonException)
+        {
+            // Keep backward compatibility for plaintext payloads that begin with '{'.
+            return ValidatePayload(new CapturePayloadV1(CurrentSchemaVersion, CaptureSource.Typed, payload));
+        }
+
+        using (jsonDocument)
+        {
             if (jsonDocument.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return Result.Failure<CapturePayloadV1>(ErrorCodes.ValidationError, "Capture payload JSON must be an object");
@@ -94,7 +104,16 @@ public static class CaptureRequestContract
                 return Result.Failure<CapturePayloadV1>(identityFieldValidation.ErrorCode, identityFieldValidation.ErrorMessage);
             }
 
-            var wire = JsonSerializer.Deserialize<CapturePayloadWireModel>(payload, JsonOptions);
+            CapturePayloadWireModel? wire;
+            try
+            {
+                wire = JsonSerializer.Deserialize<CapturePayloadWireModel>(payload, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return Result.Failure<CapturePayloadV1>(ErrorCodes.ValidationError, "Capture payload JSON is invalid");
+            }
+
             if (wire == null)
             {
                 return Result.Failure<CapturePayloadV1>(ErrorCodes.ValidationError, "Capture payload JSON is invalid");
@@ -122,10 +141,6 @@ public static class CaptureRequestContract
                 wire.Provenance);
 
             return ValidatePayload(payloadModel);
-        }
-        catch (JsonException)
-        {
-            return Result.Failure<CapturePayloadV1>(ErrorCodes.ValidationError, "Capture payload JSON is invalid");
         }
     }
 
@@ -181,6 +196,11 @@ public static class CaptureRequestContract
         Guid? proposalId = null,
         string? promptVersion = null)
     {
+        if (captureItemId == Guid.Empty)
+        {
+            throw new DomainException(ErrorCodes.ValidationError, "Capture item ID cannot be empty");
+        }
+
         return payload with
         {
             Provenance = new CaptureProvenanceV1(captureItemId, triageRunId, proposalId, promptVersion)
@@ -204,8 +224,39 @@ public static class CaptureRequestContract
         return trimmed.StartsWith("{", StringComparison.Ordinal);
     }
 
-    private static bool TryParseSource(string? source, out CaptureSource parsedSource, out string error)
+    private static bool TryParseSource(JsonElement? sourceElement, out CaptureSource parsedSource, out string error)
     {
+        if (!sourceElement.HasValue ||
+            sourceElement.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            parsedSource = CaptureSource.Typed;
+            error = string.Empty;
+            return true;
+        }
+
+        if (sourceElement.Value.ValueKind == JsonValueKind.Number)
+        {
+            if (sourceElement.Value.TryGetInt32(out var sourceCode) &&
+                Enum.IsDefined(typeof(CaptureSource), sourceCode))
+            {
+                parsedSource = (CaptureSource)sourceCode;
+                error = string.Empty;
+                return true;
+            }
+
+            parsedSource = default;
+            error = "Invalid capture source value";
+            return false;
+        }
+
+        if (sourceElement.Value.ValueKind != JsonValueKind.String)
+        {
+            parsedSource = default;
+            error = "Invalid capture source value";
+            return false;
+        }
+
+        var source = sourceElement.Value.GetString();
         if (string.IsNullOrWhiteSpace(source))
         {
             parsedSource = CaptureSource.Typed;
@@ -213,12 +264,14 @@ public static class CaptureRequestContract
             return true;
         }
 
-        if (Enum.TryParse<CaptureSource>(source, true, out parsedSource))
+        if (Enum.TryParse<CaptureSource>(source, true, out parsedSource) &&
+            Enum.IsDefined(typeof(CaptureSource), parsedSource))
         {
             error = string.Empty;
             return true;
         }
 
+        parsedSource = default;
         error = $"Invalid capture source '{source}'";
         return false;
     }
@@ -250,7 +303,7 @@ public static class CaptureRequestContract
     private sealed class CapturePayloadWireModel
     {
         public int? Version { get; init; }
-        public string? Source { get; init; }
+        public JsonElement? Source { get; init; }
         public string? Text { get; init; }
         public DateTimeOffset? ClientCreatedAt { get; init; }
         public string? TitleHint { get; init; }
