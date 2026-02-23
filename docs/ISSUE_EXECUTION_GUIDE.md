@@ -117,6 +117,9 @@ Capture realignment wave (2026-02-23):
 27. `#210` CAP-11 capture loop E2E regression
 28. `#211` CAP-12 canonical docs promotion
 
+Provider runtime expansion (2026-02-23):
+29. `#232` AUTO-03 provider-agnostic LLM runtime (`OpenAI` + `Gemini`) with demo-first setup and safe `Mock` fallback
+
 ### Stage 3: Priority III - Expansion Wave
 
 1. `#77` ANL-01 metrics dashboard

@@ -326,12 +326,14 @@ Exit Criteria:
 
 Focus:
 - operationalize real-provider usage with deterministic policy gates and safe defaults across environments
+- deliver provider-agnostic live-provider runtime expansion (`OpenAI` + `Gemini`) with demo-first setup (`#232`)
 - expand planner operation extraction in a structured, test-backed way
 - harden executor behavior for partial failure semantics and audit quality
 - improve archive and automation coherence for board-level restore/execution workflows
 
 Exit Criteria:
 - provider strategy supports safe mock/prod switching
+- provider selection/runtime behavior is provider-agnostic at app-service boundaries (`ILlmProvider`) and test-backed for `OpenAI` + `Gemini` + `Mock` fallback
 - planner/executor coverage materially expanded with explicit safety constraints
 - archive + automation workflows are behaviorally consistent in UI/API
 
@@ -409,6 +411,7 @@ Non-goals for this horizon:
 
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave tracker and delivery sequence: `#199` to `#211`
+- Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232`
 - CI/workflow topology expansion and governance track: `#168`
 - API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
@@ -524,8 +527,9 @@ Initial implementation shape:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Continue capture wave delivery on completed dependencies by sequencing `#210` then `#211`, while preserving Priority I policy guardrails.
-3. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
-4. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+3. After `#211`, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
+4. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
+5. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 
 ## Documentation Operating Model
 Active docs:

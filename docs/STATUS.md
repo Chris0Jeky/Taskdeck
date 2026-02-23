@@ -22,7 +22,7 @@ Rebranding thesis (2026-02-23):
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
-- LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture
+- LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture; provider-agnostic OpenAI+Gemini runtime expansion is tracked in `#232` (`Priority II`)
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
@@ -245,6 +245,16 @@ Reconciliation record:
 - `docs/analysis/2026-02-23_inreview-extraction-audit.md`
 - `docs/analysis/2026-02-23_capture-model-decision.md`
 
+## LLM Provider Expansion Track (2026-02-23)
+
+To preserve provider agnosticism while unblocking live demos/development flows, a dedicated provider runtime issue was seeded:
+
+- `#232` AUTO-03 provider-agnostic runtime (`OpenAI` + `Gemini`) with deterministic `Mock` fallback and demo-first setup path
+
+Documentation baseline for this track:
+
+- `docs/LLM_PROVIDER_SETUP_GUIDE.md`
+
 ## Test Status (Executed)
 
 Verification Date: 2026-02-23
@@ -329,6 +339,7 @@ Security and identity:
 
 Automation and data:
 - active LLM provider policy supports explicit mock vs OpenAI switching with safe defaults for development/test environments
+- provider-agnostic multi-live-provider runtime (`OpenAI` + `Gemini`) is not shipped yet; tracked in `#232` with `Priority II`
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
