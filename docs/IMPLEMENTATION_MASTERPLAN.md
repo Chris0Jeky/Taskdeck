@@ -295,6 +295,11 @@ Delivered in the latest cycle:
    - command palette now includes explicit capture action command while preserving inbox navigation command access
    - global quick capture hotkey (`Ctrl+Shift+C`) now opens capture modal from workspace shell contexts
    - successful capture submission now routes directly to inbox and surfaces the new item in list state for immediate follow-through
+71. CAP-09 inbox triage trigger + proposal-linking UX delivery (`#208`):
+   - inbox detail now includes explicit triage enqueue action with deterministic in-progress/completion state handling
+   - capture detail contract now surfaces provenance linkage metadata (`capture item -> triage run -> proposal`) for UI consumers
+   - inbox detail now renders direct proposal review navigation when triage yields a linked proposal id
+   - frontend regression suite now covers triage action success/failure and proposal-link rendering paths
 
 ## Roadmap by Horizon
 
@@ -513,7 +518,7 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Keep capture wave (`#199` to `#211`) in `Pending/Next` readiness with dependency grooming until Priority I path is materially reduced.
+2. Continue capture wave delivery on completed dependencies by sequencing `#209` then `#210` then `#211`, while preserving Priority I policy guardrails.
 3. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
 4. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 

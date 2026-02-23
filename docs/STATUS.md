@@ -224,6 +224,11 @@ Implementation progress:
   - command palette now includes capture action entry and retains inbox navigation access
   - added global quick-capture hotkey (`Ctrl+Shift+C`) with escape-stack compliant modal close ordering
   - successful capture submission now provides immediate feedback by routing to inbox with the new item rendered in list state
+- `#208` CAP-09 inbox triage trigger + proposal-linking UX delivered and regression-tested:
+  - inbox detail now includes deterministic triage enqueue action with explicit in-progress/completion button state semantics
+  - capture detail contract now surfaces provenance metadata (`capture item -> triage run -> proposal`) so proposal linkage is visible to UI consumers
+  - inbox detail now renders direct proposal-review navigation when triage yields a linked proposal
+  - capture store/api regression tests now cover triage enqueue success/failure behavior and proposal-link rendering
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -325,7 +330,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-- capture inbox pipeline is partially shipped (`#200` to `#207`); remaining open dependencies are capture/provenance UX slices (`#208` to `#209`) and end-to-end verification (`#210`)
+- capture inbox pipeline is partially shipped (`#200` to `#208`); remaining open dependencies are capture/provenance UX follow-through (`#209`) and end-to-end verification (`#210`)
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
