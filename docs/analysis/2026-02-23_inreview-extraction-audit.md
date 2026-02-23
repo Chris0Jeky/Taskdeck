@@ -12,6 +12,7 @@ Purpose:
 
 - Capture automation/security/performance packs: extracted and issue-seeded (`#199` to `#213`, `#218` to `#220`).
 - Human thesis/positioning pack: promoted into active docs and extended backlog (`#216`, `#217`; plus scope updates to `#77` and `#100`).
+- Testing harness improvement pack (`commit 909db0d`): reconciled and net-new issue-seeded (`#254` to `#260`) with duplicate prevention for already-covered scenarios.
 - No high-value untracked items remain in `docs/InReview` as of this audit.
 
 ## Source-to-Target Matrix
@@ -41,6 +42,7 @@ Purpose:
 | `docs/InReview/docs/.../PERFORMANCE_RESPONSIVENESS_PLAYBOOK.md` | responsiveness/virtualization/perf expectations | `#213`, `#77` | seeded |
 | `docs/InReview/docs/.../ISSUE_SEEDS_capture_security_performance.md` | capture+security+perf issue list | `#81`, `#201` to `#205`, `#212`, `#213` | seeded |
 | `docs/InReview/docs/.../OPENAPI_capture_inbox_v1.yaml` | detailed API schema draft | `#201` implementation contract reference | seeded |
+| `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/` | testing-harness wave recommendations and CI guardrails | `docs/analysis/2026-02-23_testing-harness-synthesis.md`, issues `#254` to `#260` | promoted + seeded |
 
 ## Explicit Deferrals
 
