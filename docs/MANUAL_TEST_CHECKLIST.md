@@ -25,7 +25,7 @@ Record this in the issue or PR comment before and after each manual run:
 In scope:
 - Core board workflow: boards, columns, cards, labels, filters, drag/drop, keyboard flows.
 - Workspace shell: navigation, command palette keyboard model, shortcuts help.
-- Advanced surfaces: automations (queue/proposals/chat), ops (CLI templates/logs), archive, activity.
+- Advanced surfaces: automations (queue/proposals/chat), capture inbox/triage/provenance flow, ops (CLI templates/logs), archive, activity.
 - API contract spot checks for auth, access, queue, archive, automation, chat, and ops endpoints.
 
 Out of scope (known implementation boundaries on current `main`):
@@ -316,10 +316,10 @@ If behavior, commands, or known gaps changed, update:
 3. Frontend E2E:
    - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line`
 
-## N. Capture Realignment Manual Slice (Activate As CAP Wave Ships)
+## N. Capture Realignment Manual Slice (Shipped CAP MVP)
 
 Status:
-- planned; run this slice when CAP implementation issues (`#200` onward) land
+- active; run this slice as part of regular regression/manual confidence checks for shipped capture behavior (`#200` to `#211`)
 
 Goal:
 - validate thesis-critical behavior: low-friction capture + review-first trusted automation
