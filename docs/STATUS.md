@@ -28,9 +28,9 @@ Current constraints are mostly hardening and consistency:
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
-- capture/inbox realignment has been backlog-seeded (`#199` to `#213`) but is not yet part of shipped runtime behavior
+- capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`), with hardening follow-through tracked in `#81`, `#212`, and `#213`
 
-Target experience metrics for the capture direction (not yet verified as shipped):
+Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
 - capture artifact to reviewed/applicable proposal should be achievable inside a ~60-second loop
 
@@ -176,7 +176,7 @@ Realignment packs under `docs/InReview` were reviewed and reconciled into active
 - automation realignment pack:
   - `docs/InReview/REPO_PACK/docs/analysis/2026-02-21_capture-automation_realignment_pack/`
 - security/performance addendum:
-  - `docs/InReview/docs/analysis/2026-02-21_capture-security-performance-addendum/`
+  - `docs/InReview/REPO_PACK/docs/analysis/2026-02-21_capture-security-performance-addendum/`
 
 Seeded issue wave:
 - umbrella tracker: `#199`
@@ -186,32 +186,32 @@ Seeded issue wave:
 - deferred capture follow-ons seeded: `#218`, `#219`, `#220`
 - adjacent go-to-market and research execution seeds: `#216`, `#217`
 
-Implementation progress:
-- `#200` CAP-01 implemented in current active development flow:
+Implementation delivery (shipped):
+- `#200` CAP-01 delivered and regression-tested:
   - queue-wrapper capture model locked (`LlmRequest` + `inbox.capture.v1`)
   - capture source/status contracts and transition policy added
   - capture payload invariants enforced (schema version, text limits, actor-field rejection)
   - provenance linkage fields added to support `capture item -> triage run -> proposal`
-- `#201` CAP-02 capture API slice implemented in active development:
+- `#201` CAP-02 capture API slice delivered and regression-tested:
   - added authenticated `/api/capture/items` endpoints (create/list/detail/ignore/cancel)
   - create now returns `201` and uses queue-wrapper persistence with capture payload normalization
   - list is user-scoped and excerpt-only (full text returned only by detail endpoint)
   - ignore/cancel paths are idempotent for already-ignored items and enforce cross-user `403`
-- `#202` CAP-03 queue provenance fix implemented in active development:
+- `#202` CAP-03 queue provenance fix delivered and regression-tested:
   - planner now accepts explicit proposal source metadata overrides
   - queue worker now creates proposals with `SourceType = Queue`
   - queue worker forwards `SourceReferenceId` and `CorrelationId` using queue item id for traceability
-- `#203` CAP-04 triage enqueue/state transitions implemented in active development:
+- `#203` CAP-04 triage enqueue/state transitions delivered and regression-tested:
   - added authenticated triage enqueue endpoint: `POST /api/capture/items/{id}/triage` (`202 Accepted`)
   - triage enqueue now returns deterministic capture state with idempotent `already triaging` behavior
   - invalid transition attempts now fail with stable `Conflict` error contract payloads
   - generic queue processing now skips `inbox.capture.v1` pending items so capture triage remains explicit
-- `#204` CAP-05 worker triage path implemented in active development:
+- `#204` CAP-05 worker triage path delivered and regression-tested:
   - queue worker now routes `inbox.capture.*` triaging items through a dedicated capture-triage proposal path (separate from generic instruction parsing)
   - deterministic extraction baseline now converts checklist/bullet/numbered capture text into proposal operations with stable idempotency keys
   - triage outcomes now persist capture provenance linkage (`capture item -> triage run -> proposal`) and surface `ProposalCreated` status when linkage exists
   - invalid capture triage inputs (for example boardless capture triage) now fail deterministically without direct board mutation and remain bounded by existing worker retry policy
-- `#205` CAP-06 strict triage schema/prompt versioning implemented in active development:
+- `#205` CAP-06 strict triage schema/prompt versioning delivered and regression-tested:
   - added strict capture triage output contract (`capture-triage-output.v1`) with machine-validated schema and contract tests
   - triage pipeline now enforces schema version + prompt version invariants before proposal generation
   - triage provenance now persists prompt version `triage.v1` per triage run for capture item linkage/audit visibility
@@ -241,6 +241,10 @@ Implementation progress:
   - coverage validates proposal-first review gate behavior (no direct board mutation from triage output before explicit approve/execute)
   - coverage validates provenance deep-links (`Open Capture`, `Open Proposal`) and triage-run metadata visibility from resulting card surfaces
   - full Playwright suite now includes capture-loop verification in the default regression path
+- `#211` CAP-12 canonical docs promotion delivered:
+  - updated canonical docs (`STATUS`, `IMPLEMENTATION_MASTERPLAN`, `TESTING_GUIDE`, `MANUAL_TEST_CHECKLIST`) to reflect shipped capture runtime behavior and verification posture
+  - promoted capture validation and manual-run guidance into active docs as baseline expectations
+  - marked the original in-review capture pack READMEs as historical/stale after promotion to canonical docs
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -433,7 +437,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-- capture inbox pipeline is now shipped through end-to-end loop verification (`#200` to `#210`); remaining open dependency is canonical docs promotion (`#211`)
+- capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); remaining capture-linked follow-through is tracked in `#81`, `#212`, and `#213`
 - premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
 - testing-harness wave guardrails are not yet implemented; tracked in `#255` to `#260`
 - outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to `#75`, `#77`, and `#175`
