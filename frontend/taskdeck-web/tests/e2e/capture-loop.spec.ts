@@ -1,11 +1,8 @@
 import type { APIRequestContext } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
-
-interface ImportResultDto {
-  success: boolean
-  boardId: string | null
-}
+import { createBoardWithColumn } from './support/boardHelpers'
+import { assertOk } from './support/httpAsserts'
 
 interface CaptureProvenanceDto {
   captureItemId: string
@@ -39,32 +36,6 @@ function isStatus(value: number | string, target: keyof typeof captureStatus): b
   return value === captureStatus[target] || value === target
 }
 
-async function createBoardWithColumn(request: APIRequestContext, auth: AuthResult, seed: string): Promise<string> {
-  const authHeader = { Authorization: `Bearer ${auth.token}` }
-  const importResponse = await request.post(`${API_BASE_URL}/import/boards?userId=${encodeURIComponent(auth.user.id)}`, {
-    headers: authHeader,
-    data: {
-      name: `Capture Loop ${seed}`,
-      description: 'capture triage e2e board',
-      columns: [
-        {
-          name: `Inbox ${seed}`,
-          position: 0,
-          wipLimit: null,
-        },
-      ],
-      cards: [],
-      labels: [],
-    },
-  })
-
-  expect(importResponse.ok()).toBeTruthy()
-  const importResult = await importResponse.json() as ImportResultDto
-  expect(importResult.success).toBeTruthy()
-  expect(importResult.boardId).toBeTruthy()
-  return importResult.boardId!
-}
-
 async function createCaptureItem(
   request: APIRequestContext,
   auth: AuthResult,
@@ -80,7 +51,7 @@ async function createCaptureItem(
     },
   })
 
-  expect(response.ok()).toBeTruthy()
+  await assertOk(response, `Create capture item for board ${boardId}`)
   return await response.json() as CaptureItemDto
 }
 
@@ -93,7 +64,7 @@ async function waitForProposalCreated(
     const response = await request.get(`${API_BASE_URL}/capture/items/${encodeURIComponent(captureId)}`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     })
-    expect(response.ok()).toBeTruthy()
+    await assertOk(response, `Fetch capture item ${captureId}`)
 
     const item = await response.json() as CaptureItemDto
     if (isStatus(item.status, 'ProposalCreated') && item.provenance?.proposalId) {
@@ -118,7 +89,7 @@ async function listBoardCards(
   const response = await request.get(`${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`, {
     headers: { Authorization: `Bearer ${auth.token}` },
   })
-  expect(response.ok()).toBeTruthy()
+  await assertOk(response, `List cards for board ${boardId}`)
   return await response.json() as CardDto[]
 }
 
@@ -149,7 +120,11 @@ test.beforeEach(async ({ page, request }) => {
 
 test('capture triage should create proposal and apply card with provenance links', async ({ page, request }) => {
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
-  const boardId = await createBoardWithColumn(request, auth, seed)
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Capture Loop',
+    description: 'capture triage e2e board',
+    columnNamePrefix: 'Inbox',
+  })
   const checklistTaskTitle = `Capture loop card ${seed}`
   const captureText = `- [ ] ${checklistTaskTitle}`
 
