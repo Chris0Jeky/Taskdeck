@@ -62,6 +62,7 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
         builder.HasIndex(n => new { n.UserId, n.IsRead });
         builder.HasIndex(n => n.BoardId);
         builder.HasIndex(n => n.CreatedAt);
-        builder.HasIndex(n => new { n.UserId, n.DeduplicationKey });
+        builder.HasIndex(n => new { n.UserId, n.DeduplicationKey })
+            .IsUnique();
     }
 }
