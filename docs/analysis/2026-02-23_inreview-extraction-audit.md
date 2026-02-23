@@ -13,6 +13,7 @@ Purpose:
 - Capture automation/security/performance packs: extracted and issue-seeded (`#199` to `#213`, `#218` to `#220`).
 - Human thesis/positioning pack: promoted into active docs and extended backlog (`#216`, `#217`; plus scope updates to `#77` and `#100`).
 - Testing harness improvement pack (`commit 909db0d`): reconciled and net-new issue-seeded (`#254` to `#260`) with duplicate prevention for already-covered scenarios.
+- Outreach CRM pack (`docs/InReview/outreach-crm`): wording-normalized for engineering-neutral framing, reconciled into deferred issue wave (`#262` to `#268`), and transferred into related existing issues (`#75`, `#77`, `#175`, `#107`).
 - No high-value untracked items remain in `docs/InReview` as of this audit.
 
 ## Source-to-Target Matrix
@@ -43,6 +44,10 @@ Purpose:
 | `docs/InReview/docs/.../ISSUE_SEEDS_capture_security_performance.md` | capture+security+perf issue list | `#81`, `#201` to `#205`, `#212`, `#213` | seeded |
 | `docs/InReview/docs/.../OPENAPI_capture_inbox_v1.yaml` | detailed API schema draft | `#201` implementation contract reference | seeded |
 | `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/` | testing-harness wave recommendations and CI guardrails | `docs/analysis/2026-02-23_testing-harness-synthesis.md`, issues `#254` to `#260` | promoted + seeded |
+| `docs/InReview/outreach-crm/` | outreach CRM scope/data-model/UX/guardrails/integrations/test strategy pack | `docs/analysis/2026-02-23_outreach-crm-synthesis.md`, issues `#262` to `#268`, wave index `#107` | promoted + seeded |
+| `docs/InReview/outreach-crm/05_INTEGRATIONS_PLAN.md` | outreach CSV mapping + dedupe-key strategy | existing issue `#75` | seeded via issue update |
+| `docs/InReview/outreach-crm/06_IMPLEMENTATION_PLAN_WAVES.md` | deferred outreach wave sequencing and acceptance criteria | `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, issue tracker `#262` | promoted + seeded |
+| `docs/InReview/outreach-crm/OUTREACH_STARTER_PACK_MANIFEST.json` | outreach starter-pack blueprint candidate | existing issue `#175` + deferred wave governance `#262` | seeded via issue update |
 
 ## Explicit Deferrals
 
@@ -50,5 +55,6 @@ Deferred in backlog (not immediate delivery):
 - `#218` transcript capture source
 - `#219` voice capture/transcription
 - `#220` batch triage and suggestion editing
+- `#262` to `#268` outreach CRM deferred expansion wave
 
-These are intentionally parked in Priority IV until capture MVP retention/trust baseline is proven.
+These are intentionally parked in Priority IV until higher-priority foundation tracks are closed and retention/trust baseline evidence is available.
