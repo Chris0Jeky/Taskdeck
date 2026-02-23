@@ -270,7 +270,7 @@ function captureSourceReference(proposal: ApiProposal): string | null {
 }
 
 function hasProvenanceContext(proposal: ApiProposal): boolean {
-  return !!captureSourceReference(proposal) || proposal.correlationId.trim().length > 0
+  return !!captureSourceReference(proposal)
 }
 
 function captureHrefForProposal(proposal: ApiProposal): string {
