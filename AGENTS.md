@@ -44,6 +44,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - After edits: run required checks and report results.
 - If you cannot run checks, state exactly why and what you would run.
 - In this Windows PowerShell environment, do not chain commands with `&&`; use `;` and check `$LASTEXITCODE` when failure handling matters.
+- For product-facing slices, ensure issue scope and acceptance criteria explicitly align with the current thesis (reduce maintenance overhead/capture friction and preserve review-first trust).
 
 ### Windows Git Reliability Fallback
 - If `git` resolves to Cygwin or produces signal/pipe-style failures, use `C:\Program Files\Git\cmd\git.exe` explicitly for repo operations.

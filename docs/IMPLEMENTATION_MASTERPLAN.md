@@ -16,10 +16,12 @@ Update this file at the end of each meaningful delivery cycle.
 ## Planning Principles
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
+- Product north star: make capture nearly free and keep automation safe through review-first proposals.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
 - Security and identity convergence remains the highest-priority engineering track.
 - Cross-user existence policy is fixed: return `403` for authenticated-but-unauthorized access and `404` for true missing resources.
 - Automation remains proposal-first and review-first by default.
+- Do not claim or ship silent/destructive autonomy by default; trust posture takes precedence over convenience.
 - MVP should include a dogfooding workflow: paste structured plan text in chat and bootstrap a board/project from approved proposals.
 - UX investments should be modular and reusable (keyboard-first, discoverable selectors, shared input-assist patterns).
 - Every issue must carry exactly one priority label (`Priority I` through `Priority V`).
@@ -252,6 +254,10 @@ Delivered in the latest cycle:
    - reconciled in-review capture/security/performance planning packs into dependency-mapped GitHub issues
    - seeded a dedicated capture wave tracker (`#199`) with execution issues (`#200` to `#211`) plus linked security/performance follow-through (`#212`, `#213`)
    - updated existing SEC-06 rate-limiting issue (`#81`) and wave index (`#107`) to integrate capture-specific scope without duplicate issue creation
+62. InReview extraction coverage expansion (`#216` to `#220`):
+   - seeded go-to-market and user-research execution issues from HUMAN playbooks (`#216`, `#217`)
+   - seeded deferred capture follow-ons from the original realignment pack (`#218`, `#219`, `#220`)
+   - updated capture wave tracker (`#199`) and wave index (`#107`) to keep extraction coverage explicit
 
 ## Roadmap by Horizon
 
@@ -338,6 +344,11 @@ Exit Criteria:
 - end-to-end capture -> triage -> review -> apply regression is stable
 - canonical docs and manual verification steps reflect the new workflow
 
+Non-goals for this horizon:
+- no full-autonomy agent mode for destructive operations
+- no requirement to ship voice/transcription sources before typed/paste capture loop retention is proven
+- no bypass of Priority I security/policy ordering rules
+
 ## Active Backlog (Priority-Labeled)
 
 ### Priority I (Current Phase 4 Completion Path)
@@ -368,7 +379,8 @@ Exit Criteria:
 - Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`, `#96`
 - Frontend responsiveness maturity: `#213`
-- Developer/user docs maturity: `#99`, `#100`
+- Developer/user docs maturity: `#99`, `#100`, `#216`, `#217`
+- Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
 - Codebase maintainability hotspot refactors (analysis wave): `#158`, `#159`, `#160`, `#161`, `#162`, `#163`, `#164`, `#165`, `#166`, `#167`
 
 ### Priority V (Meta/Historical)

@@ -1,7 +1,20 @@
 # Taskdeck
 
-Taskdeck is a local-first Kanban and execution system for developers.
-It combines a .NET 8 backend, Vue 3 frontend, and automation workflows designed for safe, review-first operations.
+Taskdeck is a local-first execution workspace for developers.
+It is being shaped around one thesis: capture should be near-zero friction, and automation should stay safe via review-first proposals.
+
+## Product Thesis
+
+Taskdeck focuses on the failure mode that kills most personal task systems: maintenance overhead.
+
+- Fast capture should feel easier than postponing.
+- The board should stay organized through proposals, not silent mutations.
+- Trust comes from provenance, auditability, and explicit approval.
+
+Current direction:
+- capture/inbox pipeline wave is active in backlog (`#199` to `#213`)
+- proposal-first automation remains the default and non-negotiable
+- no destructive/autonomous apply behavior is enabled by default
 
 ## What It Does
 
@@ -10,6 +23,29 @@ It combines a .NET 8 backend, Vue 3 frontend, and automation workflows designed 
 - Workspace activity and operational surfaces
 - Proposal-first automation flows (review before apply)
 - Local-first persistence via SQLite
+
+## Core Loop (Direction)
+
+North-star loop:
+1. Capture messy input quickly.
+2. Triage into structured board changes.
+3. Generate a proposal diff.
+4. Review and apply explicitly.
+
+What is shipped today:
+- proposal-first automation, chat/bootstrap, archive, ops/logs, notifications, realtime collaboration baseline
+
+What is being delivered in the capture wave:
+- inbox route and capture modal
+- capture triage pipeline to proposal
+- capture provenance visibility and end-to-end regression coverage
+
+## Direction Success Criteria (Next 8-12 Weeks)
+
+- capture remains low-friction (target: under 10 seconds from intent to saved artifact)
+- review-first proposal loop is practical (target: capture to applicable proposal around 60 seconds)
+- automation trust is preserved (no silent/destructive apply behavior by default)
+- dogfooding retention improves (consistent weekly use without maintenance fatigue)
 
 ## Tech Stack
 
@@ -30,7 +66,7 @@ It combines a .NET 8 backend, Vue 3 frontend, and automation workflows designed 
 
 Prerequisites:
 - .NET 8 SDK
-- Node.js 20+ and npm
+- Node.js 24.x (minimum 24.13.1 LTS) and npm
 
 Backend:
 
@@ -119,6 +155,10 @@ Start here:
 - `docs/STATUS.md` for current shipped reality
 - `docs/IMPLEMENTATION_MASTERPLAN.md` for delivery sequencing
 - `docs/INDEX.md` for documentation map
+
+Rebranding/thesis alignment inputs:
+- `docs/InReview/HUMAN/01_PRODUCT_THESIS.md`
+- `docs/InReview/HUMAN/03_EXECUTION_ROADMAP.md`
 
 ## Contributing
 

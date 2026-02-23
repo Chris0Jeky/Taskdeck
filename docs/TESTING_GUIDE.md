@@ -245,6 +245,24 @@ Release/security workflow: `.github/workflows/release-security.yml`
 Use `docs/MANUAL_TEST_CHECKLIST.md` for action-by-action manual validation.
 Use `docs/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
 
+## Thesis Alignment Validation (Capture Realignment)
+
+This section defines validation expectations for the capture-first direction.
+
+Current state:
+- capture/inbox pipeline issues (`#199` to `#213`) are backlog-seeded
+- capture loop assertions below become required as those slices ship
+
+Required assertions once capture endpoints/UI ship:
+- capture action is fast and deterministic (target under 10 seconds to persisted artifact in normal local conditions)
+- triage path stays proposal-first (no direct board mutation from model output)
+- provenance links are visible from proposal/card surfaces back to capture source
+- error and auth contracts remain stable (`ApiErrorResponse`, `401/403/404` policy)
+
+Recommended execution pairing:
+- automated: API + frontend unit + E2E capture loop (`#210`)
+- manual: capture friction/trust checks in `docs/MANUAL_TEST_CHECKLIST.md`
+
 ## Development Sandbox Mode
 
 For local development only, authorization bypass can be enabled via:

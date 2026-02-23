@@ -16,6 +16,12 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Planned verification commands are known in advance.
 - [ ] Required docs-update impact is identified (`STATUS`, `MASTERPLAN`, testing docs).
 
+## Thesis Alignment Gate (Capture Realignment)
+
+- [ ] Slice materially reduces maintenance overhead or capture friction.
+- [ ] Slice preserves review-first trust model (no silent destructive apply).
+- [ ] Slice includes provenance/error-policy implications where relevant.
+
 ## Current Priority I Completion Tranche
 
 - [ ] Security/policy convergence: `#33`, `#34`, `#44`
@@ -28,6 +34,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave A/B foundation: `#67` to `#76` (`Priority II`)
 - [ ] Wave C analytics/security/compliance: `#77` to `#83`, `#106`, `#110` (`Priority III`)
 - [ ] Wave D/E platform/test/UX/docs maturity: `#84` to `#105`, `#111` (`Priority IV`)
+- [ ] Wave F capture realignment: `#199` to `#213` (`Priority II` to `Priority IV`)
 - [ ] Meta index maintenance: `#107` (`Priority V`)
 
 ## Out-of-Code and Configuration Actions Coverage

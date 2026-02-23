@@ -2,7 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
-Last Updated: 2026-02-18
+Last Updated: 2026-02-23
 
 ## Canonical Status Model
 
@@ -37,6 +37,10 @@ Operational labels:
 - `tech-debt`
 - `starter-packs`
 - `llm`
+- `feature`
+- `automation`
+- `worker`
+- `performance`
 - `Priority I`
 - `Priority II`
 - `Priority III`
@@ -152,8 +156,11 @@ Weekly process:
 2. Select the highest-priority items whose dependencies are complete.
 3. Create/update issues with explicit acceptance criteria and required labels.
 4. Ensure each issue body includes dependency mapping (`Depends on #...`, `Unblocks #...` when applicable).
-5. Sync project `Priority` field for issues and PRs per policy above.
-6. Place items into project statuses according to WIP rules.
+5. For product-facing slices, include thesis-alignment notes:
+   - how the slice reduces maintenance overhead/capture friction, or
+   - how the slice strengthens review-first trust/safety guarantees.
+6. Sync project `Priority` field for issues and PRs per policy above.
+7. Place items into project statuses according to WIP rules.
 
 WIP-aware intake limits:
 - Maximum 5 newly-seeded issues per week.

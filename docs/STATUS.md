@@ -11,8 +11,13 @@ Companion Active Docs:
 
 ## Project Summary
 
-Taskdeck is a local-first Kanban system with a .NET 8 backend and a Vue 3 frontend.
+Taskdeck is a local-first execution system for developers, built with a .NET 8 backend and a Vue 3 frontend.
 Core board workflows are stable, and advanced slices are implemented for automation proposals, chat, ops/log querying, archive recovery, and worker health reporting.
+
+Rebranding thesis (2026-02-23):
+- capture should be near-zero friction
+- automation should remain review-first and provenance-visible
+- product value is reducing maintenance overhead, not maximizing opaque autonomy
 
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
@@ -22,6 +27,15 @@ Current constraints are mostly hardening and consistency:
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment has been backlog-seeded (`#199` to `#213`) but is not yet part of shipped runtime behavior
+
+Target experience metrics for the capture direction (not yet verified as shipped):
+- capture action to saved artifact should feel under 10 seconds in normal use
+- capture artifact to reviewed/applicable proposal should be achievable inside a ~60-second loop
+
+Direction guardrails (explicit):
+- no silent/destructive automation by default
+- keep proposal-first review gate for board mutations driven by capture triage
+- preserve claims-first identity and stable error-contract behavior while expanding surface area
 
 ## Current Implementation Snapshot
 
@@ -167,6 +181,8 @@ Seeded issue wave:
 - capture delivery sequence: `#200` to `#211`
 - linked hardening/performance follow-through: `#212`, `#213`
 - existing rate-limit issue updated with capture scope (no duplicate issue): `#81`
+- deferred capture follow-ons seeded: `#218`, `#219`, `#220`
+- adjacent go-to-market and research execution seeds: `#216`, `#217`
 
 Execution intent:
 - preserve proposal-first trust posture (no direct model auto-apply)
@@ -175,6 +191,7 @@ Execution intent:
 
 Reconciliation record:
 - `docs/analysis/2026-02-23_capture-realignment-synthesis.md`
+- `docs/analysis/2026-02-23_inreview-extraction-audit.md`
 
 ## Test Status (Executed)
 

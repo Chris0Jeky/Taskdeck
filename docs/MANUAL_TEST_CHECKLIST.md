@@ -315,3 +315,28 @@ If behavior, commands, or known gaps changed, update:
    - `cd frontend/taskdeck-web && npm run typecheck && npm run build`
 3. Frontend E2E:
    - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line`
+
+## N. Capture Realignment Manual Slice (Activate As CAP Wave Ships)
+
+Status:
+- planned; run this slice when CAP implementation issues (`#200` onward) land
+
+Goal:
+- validate thesis-critical behavior: low-friction capture + review-first trusted automation
+
+Slice checks:
+1. Capture speed and UX:
+   - open capture surface from keyboard-first entrypoint
+   - submit artifact and verify immediate feedback
+   - expected: capture flow feels under 10 seconds in normal local use
+2. Inbox behavior:
+   - verify list/detail semantics (excerpt in list, full text in detail)
+   - verify status transitions and explicit user actions
+3. Proposal trust gate:
+   - trigger triage from inbox
+   - verify board mutations occur only through proposal review/apply flow
+4. Provenance visibility:
+   - verify created proposal/card references capture source and remains user-legible
+5. Policy/contract checks:
+   - verify unauthenticated/cross-user/missing-resource behavior remains `401/403/404`
+   - verify error payload shape remains `{ errorCode, message }`

@@ -160,18 +160,23 @@ Testing/UX/docs:
 22. `#98` INT-04 connector framework
 23. `#99` DOC-03 developer portal generation
 24. `#100` DOC-04 user guides/tutorials/FAQ
+25. `#216` GTM-01 thesis-aligned demo/landing baseline
+26. `#217` RES-01 user-research execution slice
+27. `#218` CAP-20 transcript capture source
+28. `#219` CAP-21 voice capture/transcription (opt-in)
+29. `#220` CAP-22 batch triage + suggestion editing
 
 Maintainability hotspot refactor wave (analysis-driven):
-25. `#158` REF-11 decompose `AppShell.vue`
-26. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
-27. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
-28. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
-29. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
-30. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
-31. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
-32. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
-33. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
-34. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
+30. `#158` REF-11 decompose `AppShell.vue`
+31. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
+32. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
+33. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
+34. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
+35. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
+36. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
+37. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
+38. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
+39. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
 
 ### Stage 5: Priority V - Meta/Historical
 

@@ -12,6 +12,10 @@ assignees: []
 
 ## Threat / Misuse Case
 
+## Dependencies
+- Depends on:
+- Unblocks:
+
 ## Required Matrix
 - [ ] Unauthenticated request returns `401`
 - [ ] Authenticated request without access returns `403`
@@ -27,3 +31,6 @@ assignees: []
 ## Verification
 - Integration tests added/updated:
 - Manual checks performed:
+
+## Priority label check
+- [ ] Add exactly one priority label (`Priority I` to `Priority V`) before moving issue to `Now`.
