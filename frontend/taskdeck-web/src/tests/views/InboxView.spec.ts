@@ -124,6 +124,15 @@ describe('InboxView', () => {
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
   })
 
+  it('swallows fetchItems errors on mount', async () => {
+    mockCaptureStore.fetchItems.mockRejectedValueOnce(new Error('load failed'))
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
+    expect(wrapper.exists()).toBe(true)
+  })
+
   it('does not load full detail until an item is opened', async () => {
     const wrapper = mount(InboxView)
     await waitForUi()
@@ -150,6 +159,22 @@ describe('InboxView', () => {
 
     expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
     expect(wrapper.text()).toContain('Full text for capture-2')
+  })
+
+  it('keeps listbox accessibility state in sync with active selection', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const listbox = wrapper.get('[role="listbox"]')
+    expect(listbox.attributes('aria-activedescendant')).toBe('td-inbox-option-0')
+
+    await listbox.trigger('keydown', { key: 'ArrowDown' })
+    await waitForUi()
+
+    expect(listbox.attributes('aria-activedescendant')).toBe('td-inbox-option-1')
+    const options = wrapper.findAll('[role="option"]')
+    expect(options[0]?.attributes('tabindex')).toBe('-1')
+    expect(options[1]?.attributes('id')).toBe('td-inbox-option-1')
   })
 
   it('wraps selection from first to last item on ArrowUp', async () => {
@@ -192,5 +217,47 @@ describe('InboxView', () => {
 
     expect(ignoreButton.attributes('disabled')).toBeDefined()
     expect(cancelButton?.attributes('disabled')).toBeDefined()
+  })
+
+  it('clears selection when opening detail fails', async () => {
+    mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('detail failed'))
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Select an item to view full text')
+  })
+
+  it('shows loading placeholder while selected detail is still loading', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async () => {
+      mockCaptureStore.loadingDetail = true
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Loading detail...')
+  })
+
+  it('refresh detail action swallows fetch errors', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+    mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('refresh failed'))
+
+    const refreshButton = wrapper.findAll('button.td-btn--secondary')
+      .find((node) => node.text() === 'Refresh Detail')
+    await refreshButton?.trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1', true)
+    expect(wrapper.text()).toContain('Capture Detail')
   })
 })
