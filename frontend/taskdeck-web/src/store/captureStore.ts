@@ -129,6 +129,42 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  async function triageItem(itemId: string) {
+    try {
+      actionBusyItemId.value = itemId
+      actionError.value = null
+      const triageResult = await captureApi.enqueueTriage(itemId)
+
+      const existingDetail = detailById.value[itemId]
+      if (existingDetail) {
+        detailById.value[itemId] = {
+          ...existingDetail,
+          status: triageResult.status,
+        }
+        upsertSummary(toSummary(detailById.value[itemId]))
+      } else {
+        const existingSummary = items.value.find((item) => item.id === itemId)
+        if (existingSummary) {
+          upsertSummary({
+            ...existingSummary,
+            status: triageResult.status,
+          })
+        }
+      }
+
+      await fetchDetail(itemId, true)
+      toast.success(triageResult.alreadyTriaging ? 'Capture item is already triaging' : 'Capture item triage queued')
+      return triageResult
+    } catch (e: unknown) {
+      const message = getErrorDisplay(e, 'Failed to triage capture item').message
+      actionError.value = message
+      toast.error(message)
+      throw e
+    } finally {
+      actionBusyItemId.value = null
+    }
+  }
+
   return {
     items,
     detailById,
@@ -144,5 +180,6 @@ export const useCaptureStore = defineStore('capture', () => {
     createItem,
     ignoreItem,
     cancelItem,
+    triageItem,
   }
 })

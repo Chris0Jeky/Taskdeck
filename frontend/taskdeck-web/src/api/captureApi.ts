@@ -4,6 +4,7 @@ import type {
   CaptureItem,
   CaptureItemSummary,
   CaptureListQuery,
+  CaptureTriageEnqueueResult,
   CreateCaptureItemDto,
 } from '../types/capture'
 
@@ -36,5 +37,11 @@ export const captureApi = {
   async cancelItem(itemId: string): Promise<void> {
     const pathItemId = encodePathSegment(itemId)
     await http.post(`/capture/items/${pathItemId}/cancel`)
+  },
+
+  async enqueueTriage(itemId: string): Promise<CaptureTriageEnqueueResult> {
+    const pathItemId = encodePathSegment(itemId)
+    const { data } = await http.post<CaptureTriageEnqueueResult>(`/capture/items/${pathItemId}/triage`)
+    return data
   },
 }

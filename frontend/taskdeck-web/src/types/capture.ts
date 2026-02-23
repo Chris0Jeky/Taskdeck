@@ -30,9 +30,17 @@ export interface CaptureItemSummary {
   processedAt: string | null
 }
 
+export interface CaptureProvenance {
+  captureItemId: string
+  triageRunId: string | null
+  proposalId: string | null
+  promptVersion: string | null
+}
+
 export interface CaptureItem extends CaptureItemSummary {
   rawText: string
   retryCount: number
+  provenance?: CaptureProvenance | null
 }
 
 export interface CreateCaptureItemDto {
@@ -47,4 +55,10 @@ export interface CaptureListQuery {
   status?: CaptureStatus
   boardId?: string
   limit?: number
+}
+
+export interface CaptureTriageEnqueueResult {
+  id: string
+  status: CaptureStatusValue
+  alreadyTriaging: boolean
 }
