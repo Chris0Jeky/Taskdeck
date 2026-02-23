@@ -230,14 +230,6 @@ watch(showKeyboardHelp, (isOpen, _, onCleanup) => {
   })
 })
 
-watch(showCaptureModal, (isOpen, _, onCleanup) => {
-  if (!isOpen) return
-  const unregisterEscapeHandler = registerEscapeHandler(closeCaptureModal)
-  onCleanup(() => {
-    unregisterEscapeHandler()
-  })
-})
-
 watch(filteredCommandItems, (items) => {
   if (items.length === 0) {
     selectedCommandIndex.value = 0
@@ -368,10 +360,10 @@ onUnmounted(() => {
             :id="commandListboxId"
             class="td-command-palette__results"
             role="listbox"
-            aria-label="Navigation commands"
+            aria-label="Commands"
           >
             <div class="td-command-palette__group">
-              <div class="td-command-palette__group-title">Navigation</div>
+              <div class="td-command-palette__group-title">Commands</div>
               <div
                 v-for="(item, index) in filteredCommandItems"
                 :key="item.id"
