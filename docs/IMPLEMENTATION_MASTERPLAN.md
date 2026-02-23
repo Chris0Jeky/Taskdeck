@@ -426,6 +426,27 @@ Exit Criteria:
 - accessibility/keyboard and reduced-motion contracts are explicit and test-backed
 - visual/performance gates are reconciled with ongoing frontend CI/test operations
 
+### Horizon H (Testing Harness and Guardrails Track)
+
+Focus:
+- eliminate deterministic flake vectors in automated suites (`Thread.Sleep`, ad-hoc polling loops)
+- strengthen high-signal regression coverage for drag/drop persistence and API error-contract completeness
+- add harness-level contract guardrails (OpenAPI generation + parse validation artifacts)
+- codify golden principles and enforce a minimal mechanical subset
+- add non-blocking nightly quality telemetry (coverage artifacts + dependency/security signal collection)
+
+Execution tracker and seeded issues:
+- `#254` TST-15 tracker
+- `#255`, `#256`, `#257`, `#258`, `#259`, `#260`
+- explicit reuse (no duplicate wave issue): existing WIP limit, sandbox gate, and starter-pack idempotency coverage already implemented
+
+Exit Criteria:
+- deterministic flake vectors identified in the wave are removed from current suites
+- drag/drop persistence and representative error-contract classes are regression-locked
+- OpenAPI artifact generation/parse validation is visible in CI
+- golden principles are documented and mechanically enforced for a stable subset
+- nightly quality workflow runs with actionable artifacts without blocking PR-required gates
+
 ## Active Backlog (Priority-Labeled)
 
 ### Priority I (Current Phase 4 Completion Path)
@@ -439,6 +460,7 @@ Exit Criteria:
 
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave tracker and delivery sequence: `#199` to `#211`
+- Testing harness guardrails wave tracker and delivery sequence: `#254` to `#260`
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232`
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236`, `#237`
 - CI/workflow topology expansion and governance track: `#168`
@@ -482,6 +504,7 @@ Strategic reconciliation applied:
 - Treat non-code operations/configuration work as a mandatory delivery track, not "later ops".
 - Added capture/inbox realignment wave from `docs/InReview` planning packs with explicit dependency-mapped issue seeding (`#199` to `#213`).
 - Added frontend premium UI foundations wave from `docs/InReview` premium UI pack with deduplicated issue mapping (`#242` to `#251`, reusing `#154`, `#88`, `#92`, `#213`).
+- Added testing harness/guardrails wave from `docs/InReview` testing-harness pack with duplicate prevention for already-covered scenarios (`#254` to `#260`).
 
 ## Out-of-Code and Configuration Coverage Matrix
 
@@ -560,12 +583,13 @@ Initial implementation shape:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Continue capture wave delivery on completed dependencies by sequencing `#211`, while preserving Priority I policy guardrails.
-3. After `#211`, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
-4. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
-5. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
-6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
-7. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
-8. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+3. Sequence testing harness wave immediately after CAP docs promotion: `#255` -> (`#256`, `#257`) -> (`#258`, `#259`, `#260`), and keep aligned existing seeds `#89`, `#90`, `#106`, `#168`.
+4. After testing harness Wave 1 net-new slices, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
+5. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
+6. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
+7. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
+8. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
+9. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 
 ## Documentation Operating Model
 Active docs:
