@@ -340,6 +340,11 @@ Exit Criteria:
 - end-to-end capture -> triage -> review -> apply regression is stable
 - canonical docs and manual verification steps reflect the new workflow
 
+Non-goals for this horizon:
+- no full-autonomy agent mode for destructive operations
+- no requirement to ship voice/transcription sources before typed/paste capture loop retention is proven
+- no bypass of Priority I security/policy ordering rules
+
 ## Active Backlog (Priority-Labeled)
 
 ### Priority I (Current Phase 4 Completion Path)

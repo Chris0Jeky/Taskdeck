@@ -50,7 +50,7 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `analysis/`
   - Dated repository analysis snapshots and follow-through mapping notes (non-authoritative unless promoted into active docs).
 - `InReview/`
-  - Staging area for human briefs and analysis packs under review before promotion into active docs (`STATUS`, `MASTERPLAN`, testing/checklists).
+  - Staging area for human briefs and analysis packs under review before promotion into active docs (`STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, testing/checklists).
 
 ## Archive
 

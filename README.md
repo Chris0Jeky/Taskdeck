@@ -40,6 +40,13 @@ What is being delivered in the capture wave:
 - capture triage pipeline to proposal
 - capture provenance visibility and end-to-end regression coverage
 
+## Direction Success Criteria (Next 8-12 Weeks)
+
+- capture remains low-friction (target: under 10 seconds from intent to saved artifact)
+- review-first proposal loop is practical (target: capture to applicable proposal around 60 seconds)
+- automation trust is preserved (no silent/destructive apply behavior by default)
+- dogfooding retention improves (consistent weekly use without maintenance fatigue)
+
 ## Tech Stack
 
 - Backend: .NET 8, ASP.NET Core Web API, EF Core, SQLite
@@ -59,7 +66,7 @@ What is being delivered in the capture wave:
 
 Prerequisites:
 - .NET 8 SDK
-- Node.js 24.13.1 (LTS) and npm
+- Node.js 24.x (minimum 24.13.1 LTS) and npm
 
 Backend:
 

@@ -29,8 +29,13 @@ Current constraints are mostly hardening and consistency:
 - capture/inbox realignment has been backlog-seeded (`#199` to `#213`) but is not yet part of shipped runtime behavior
 
 Target experience metrics for the capture direction (not yet verified as shipped):
-- capture action to saved artifact should feel sub-10-seconds in normal use
+- capture action to saved artifact should feel under 10 seconds in normal use
 - capture artifact to reviewed/applicable proposal should be achievable inside a ~60-second loop
+
+Direction guardrails (explicit):
+- no silent/destructive automation by default
+- keep proposal-first review gate for board mutations driven by capture triage
+- preserve claims-first identity and stable error-contract behavior while expanding surface area
 
 ## Current Implementation Snapshot
 
