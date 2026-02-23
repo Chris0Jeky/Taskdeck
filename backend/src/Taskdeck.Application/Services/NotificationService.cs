@@ -12,6 +12,9 @@ public class NotificationService : INotificationService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService? _authorizationService;
+    private readonly Dictionary<Guid, NotificationPreference> _preferenceCache = new();
+    private readonly HashSet<Guid> _pendingPreferencePersists = new();
+    private readonly HashSet<(Guid UserId, string DeduplicationKey)> _pendingDeduplicationKeys = new();
 
     public NotificationService(
         IUnitOfWork unitOfWork,
@@ -39,10 +42,7 @@ public class NotificationService : INotificationService
         if (query.BoardId.HasValue && _authorizationService is not null)
         {
             var boardPermission = await _authorizationService.CanReadBoardAsync(userId, query.BoardId.Value);
-            if (!boardPermission.IsSuccess)
-                return Result.Failure<IEnumerable<NotificationDto>>(boardPermission.ErrorCode, boardPermission.ErrorMessage);
-
-            if (!boardPermission.Value)
+            if (!boardPermission.IsSuccess || !boardPermission.Value)
             {
                 return Result.Failure<IEnumerable<NotificationDto>>(
                     ErrorCodes.Forbidden,
@@ -130,8 +130,13 @@ public class NotificationService : INotificationService
             if (!TryResolveCadence(preference, dto.Type, out var cadence))
                 return Result.Success(false);
 
+            (Guid UserId, string DeduplicationKey)? pendingDeduplicationKey = null;
             if (!string.IsNullOrWhiteSpace(dto.DeduplicationKey))
             {
+                var deduplicationKey = (dto.UserId, dto.DeduplicationKey!);
+                if (_pendingDeduplicationKeys.Contains(deduplicationKey))
+                    return Result.Success(false);
+
                 var existing = await _unitOfWork.Notifications.GetByUserAndDeduplicationKeyAsync(
                     dto.UserId,
                     dto.DeduplicationKey,
@@ -139,6 +144,7 @@ public class NotificationService : INotificationService
 
                 if (existing is not null)
                     return Result.Success(false);
+                pendingDeduplicationKey = deduplicationKey;
             }
 
             var notification = new Notification(
@@ -153,6 +159,9 @@ public class NotificationService : INotificationService
                 dto.DeduplicationKey);
 
             await _unitOfWork.Notifications.AddAsync(notification, cancellationToken);
+            if (pendingDeduplicationKey.HasValue)
+                _pendingDeduplicationKeys.Add(pendingDeduplicationKey.Value);
+
             return Result.Success(true);
         }
         catch (DomainException ex)
@@ -166,14 +175,34 @@ public class NotificationService : INotificationService
         CancellationToken cancellationToken,
         bool persistOnCreate = true)
     {
+        if (_preferenceCache.TryGetValue(userId, out var cachedPreference))
+        {
+            if (persistOnCreate && _pendingPreferencePersists.Remove(userId))
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return cachedPreference;
+        }
+
         var preference = await _unitOfWork.NotificationPreferences.GetByUserIdAsync(userId, cancellationToken);
         if (preference is not null)
+        {
+            _preferenceCache[userId] = preference;
             return preference;
+        }
 
         preference = NotificationPreference.CreateDefault(userId);
         await _unitOfWork.NotificationPreferences.AddAsync(preference, cancellationToken);
+        _preferenceCache[userId] = preference;
+
         if (persistOnCreate)
+        {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        else
+        {
+            _pendingPreferencePersists.Add(userId);
+        }
+
         return preference;
     }
 

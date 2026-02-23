@@ -144,4 +144,56 @@ public class NotificationServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
     }
+
+    [Fact]
+    public async Task GetNotificationsAsync_ShouldReturnForbidden_WhenBoardLookupFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.NotFound, "board missing"));
+
+        var result = await _service.GetNotificationsAsync(
+            userId,
+            new NotificationQueryDto(UnreadOnly: false, BoardId: boardId, Limit: 20));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be("You do not have access to notifications for this board");
+    }
+
+    [Fact]
+    public async Task PublishAsync_ShouldAvoidDuplicatesWithinSameUnitOfWork_WhenPreferenceIsNotPersistedYet()
+    {
+        var userId = Guid.NewGuid();
+        _preferenceRepositoryMock
+            .Setup(r => r.GetByUserIdAsync(userId, default))
+            .ReturnsAsync((NotificationPreference?)null);
+        _notificationRepositoryMock
+            .Setup(r => r.GetByUserAndDeduplicationKeyAsync(userId, "dup-key", default))
+            .ReturnsAsync((Notification?)null);
+
+        var firstResult = await _service.PublishAsync(new CreateNotificationRequestDto(
+            userId,
+            NotificationType.Mention,
+            "Mentioned",
+            "You were mentioned",
+            DeduplicationKey: "dup-key"));
+
+        var secondResult = await _service.PublishAsync(new CreateNotificationRequestDto(
+            userId,
+            NotificationType.Mention,
+            "Mentioned again",
+            "You were mentioned again",
+            DeduplicationKey: "dup-key"));
+
+        firstResult.IsSuccess.Should().BeTrue();
+        firstResult.Value.Should().BeTrue();
+        secondResult.IsSuccess.Should().BeTrue();
+        secondResult.Value.Should().BeFalse();
+        _preferenceRepositoryMock.Verify(r => r.AddAsync(It.IsAny<NotificationPreference>(), default), Times.Once);
+        _notificationRepositoryMock.Verify(r => r.AddAsync(It.IsAny<Notification>(), default), Times.Once);
+    }
 }
