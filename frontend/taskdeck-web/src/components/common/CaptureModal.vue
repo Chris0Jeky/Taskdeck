@@ -25,12 +25,6 @@ function requestClose() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    requestClose()
-    return
-  }
-
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault()
     void submit()
