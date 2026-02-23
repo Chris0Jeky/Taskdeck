@@ -22,16 +22,19 @@ function createCard(): Card {
 }
 
 describe('CardItem drag guardrails', () => {
-  it('exposes a broad drag surface handle', () => {
+  it('exposes an explicit enlarged drag handle control', () => {
     const wrapper = mount(CardItem, {
       props: {
         card: createCard(),
       },
     })
 
-    const dragSurface = wrapper.get('.td-card-drag-surface')
-    expect(dragSurface.attributes('data-action')).toBe('drag-card-handle')
-    expect(dragSurface.attributes('draggable')).toBe('true')
+    const handle = wrapper.get('.td-card-drag-handle')
+    expect(handle.attributes('data-action')).toBe('drag-card-handle')
+    expect(handle.attributes('draggable')).toBe('true')
+    expect(handle.classes()).toContain('w-full')
+    expect(handle.classes()).toContain('px-2')
+    expect(handle.classes()).toContain('py-1.5')
   })
 
   it('blocks dragstart when not initiated from drag handle', async () => {
@@ -50,7 +53,7 @@ describe('CardItem drag guardrails', () => {
     expect(setData).not.toHaveBeenCalled()
   })
 
-  it('allows dragstart from card content inside the drag surface', async () => {
+  it('allows dragstart from the dedicated drag handle', async () => {
     const card = createCard()
     const wrapper = mount(CardItem, {
       props: {
@@ -59,7 +62,7 @@ describe('CardItem drag guardrails', () => {
     })
 
     const setData = vi.fn()
-    await wrapper.get('h4').trigger('dragstart', {
+    await wrapper.get('[data-action="drag-card-handle"]').trigger('dragstart', {
       dataTransfer: { effectAllowed: 'move', setData },
     })
 
