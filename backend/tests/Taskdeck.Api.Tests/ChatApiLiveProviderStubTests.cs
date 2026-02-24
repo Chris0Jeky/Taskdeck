@@ -70,8 +70,10 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
 
         public async IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             yield return new LlmTokenEvent("OpenAI", false);
-            await Task.Yield();
+            await Task.Delay(1, ct);
+            ct.ThrowIfCancellationRequested();
             yield return new LlmTokenEvent(" stub", true);
         }
 
