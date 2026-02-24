@@ -32,10 +32,14 @@ jobs:
             backend/Taskdeck.sln
             backend/**/*.csproj
 
+      - name: Restore backend dependencies
+        run: dotnet restore backend/Taskdeck.sln
+
       - name: Run Domain coverage
         run: >
           dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj
           -c Release
+          --no-restore
           --collect:"XPlat Code Coverage"
           --results-directory artifacts/nightly-quality/backend/domain
 
@@ -43,6 +47,7 @@ jobs:
         run: >
           dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj
           -c Release
+          --no-restore
           --collect:"XPlat Code Coverage"
           --results-directory artifacts/nightly-quality/backend/application
 
@@ -134,7 +139,7 @@ jobs:
           backend_exit=$?
           echo "$backend_exit" > artifacts/nightly-quality/dependency/backend-vulnerable.exitcode
 
-          npm audit --json --audit-level=high --prefix frontend/taskdeck-web > artifacts/nightly-quality/dependency/frontend-audit.json 2>&1
+          npm audit --json --audit-level=high --prefix frontend/taskdeck-web > artifacts/nightly-quality/dependency/frontend-audit.json 2> artifacts/nightly-quality/dependency/frontend-audit.stderr
           frontend_exit=$?
           echo "$frontend_exit" > artifacts/nightly-quality/dependency/frontend-audit.exitcode
           set -e
