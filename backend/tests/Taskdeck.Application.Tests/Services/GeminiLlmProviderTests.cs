@@ -186,6 +186,23 @@ public class GeminiLlmProviderTests
     }
 
     [Fact]
+    public async Task GetHealthAsync_ShouldReportUnavailable_WhenConfigurationIsInvalid()
+    {
+        var settings = BuildSettings();
+        settings.Gemini.ApiKey = string.Empty;
+        var provider = new GeminiLlmProvider(
+            new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+            settings,
+            NullLogger<GeminiLlmProvider>.Instance);
+
+        var health = await provider.GetHealthAsync();
+
+        health.IsAvailable.Should().BeFalse();
+        health.ProviderName.Should().Be("Gemini");
+        health.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task CompleteAsync_ShouldDefaultNullRoleToUser_WhenMappingMessages()
     {
         var settings = BuildSettings();
