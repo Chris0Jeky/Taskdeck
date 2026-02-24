@@ -129,6 +129,9 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
+      - name: Restore backend dependencies
+        run: dotnet restore backend/Taskdeck.sln
+
       - name: Collect dependency and security reports
         shell: bash
         run: |
