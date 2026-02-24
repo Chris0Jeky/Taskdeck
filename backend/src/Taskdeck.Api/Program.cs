@@ -80,7 +80,13 @@ builder.Services.AddSingleton(llmProviderSettings);
 builder.Services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
 {
     var settings = sp.GetRequiredService<LlmProviderSettings>();
-    var timeoutSeconds = settings.OpenAi.TimeoutSeconds <= 0 ? 30 : settings.OpenAi.TimeoutSeconds;
+    var timeoutSeconds = settings.OpenAi?.TimeoutSeconds > 0 ? settings.OpenAi.TimeoutSeconds : 30;
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+builder.Services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
+{
+    var settings = sp.GetRequiredService<LlmProviderSettings>();
+    var timeoutSeconds = settings.Gemini?.TimeoutSeconds > 0 ? settings.Gemini.TimeoutSeconds : 30;
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
 builder.Services.AddScoped<MockLlmProvider>();
@@ -96,9 +102,12 @@ builder.Services.AddScoped<ILlmProvider>(sp =>
         decision.ProviderKind,
         decision.Reason);
 
-    return decision.ProviderKind == LlmProviderKind.OpenAi
-        ? sp.GetRequiredService<OpenAiLlmProvider>()
-        : sp.GetRequiredService<MockLlmProvider>();
+    return decision.ProviderKind switch
+    {
+        LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
+        LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
+        _ => sp.GetRequiredService<MockLlmProvider>()
+    };
 });
 
 // Add IUserContext for claim-based identity

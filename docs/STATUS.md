@@ -23,7 +23,7 @@ Rebranding thesis (2026-02-23):
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
-- LLM flow now supports feature-gated OpenAI usage, but defaults to mock for safe local/test posture; provider-agnostic OpenAI+Gemini runtime expansion is tracked in `#232` (`Priority II`)
+- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture
 - managed-key shared-token abuse-control strategy is now explicitly seeded in `#235` to `#240` before broad external exposure
 - testing-harness guardrail expansion (flake cleanup, OpenAPI drift checks, golden principles, nightly quality artifacts) is seeded in `#254` to `#260` and not shipped yet
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
@@ -61,7 +61,7 @@ Direction guardrails (explicit):
 - Implemented automation stack:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
-  - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI` behind explicit gates)
+  - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI`/`Gemini` behind explicit gates with config validation fallback)
   - `NotificationService` with per-user preference filtering and deduplication safeguards
   - `OpsCliService` + `LogQueryService`
   - `StarterPackManifestValidator` + `StarterPackApplyService` (idempotent apply with dry-run conflict reporting)
@@ -257,11 +257,14 @@ Reconciliation record:
 - `docs/analysis/2026-02-23_inreview-extraction-audit.md`
 - `docs/analysis/2026-02-23_capture-model-decision.md`
 
-## LLM Provider Expansion Track (2026-02-23)
+## LLM Provider Expansion Track (2026-02-24)
 
-To preserve provider agnosticism while unblocking live demos/development flows, a dedicated provider runtime issue was seeded:
+`#232` AUTO-03 is now delivered:
 
-- `#232` AUTO-03 provider-agnostic runtime (`OpenAI` + `Gemini`) with deterministic `Mock` fallback and demo-first setup path
+- provider runtime supports `OpenAI` + `Gemini` with deterministic config/environment-aware `Mock` fallback
+- live-provider misconfiguration degrades safely without request crashes
+- capture triage provenance now persists `provider` + `model` alongside `promptVersion`
+- provider adapter coverage now includes Gemini success/failure/invalid-response/cancellation and chat integration coverage with a non-mock provider stub
 
 Documentation baseline for this track:
 
@@ -445,8 +448,7 @@ Security and identity:
 - policy decision is now explicit: cross-user authenticated access failures should return `403`; remaining work is consistent enforcement across all families/tests
 
 Automation and data:
-- active LLM provider policy supports explicit mock vs OpenAI switching with safe defaults for development/test environments
-- provider-agnostic multi-live-provider runtime (`OpenAI` + `Gemini`) is not shipped yet; tracked in `#232` with `Priority II`
+- active LLM provider policy supports explicit mock vs live-provider switching (`OpenAI`/`Gemini`) with safe defaults for development/test environments
 - managed-key shared-token controls (identity attribution, quotas, abuse containment, incident response) are not yet shipped; tracked in `#235` to `#240`
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
@@ -528,6 +530,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered UX-04 shared input-assist scaffolding: shared combobox/listbox input-assist is now integrated into Ops template selection and automation chat board targeting with keyboard-first option navigation and dedicated unit coverage.
 - Delivered UX-05 escape behavior contract: Escape now closes only the top-most transient surface per key press, board routes exit to `/workspace/boards` when clean, and regression coverage spans shell/unit and board keyboard-flow E2E paths.
 - Delivered AUTO-01 provider strategy: deterministic environment-aware `ILlmProvider` selection now gates OpenAI usage behind explicit config while keeping mock default safety, with policy + provider tests for switching behavior.
+- Delivered AUTO-03 provider-agnostic runtime (`#232`): expanded `ILlmProvider` runtime support to `OpenAI` + `Gemini` with deterministic config validation fallback to `Mock`, added Gemini provider adapter + policy/test coverage, and extended capture/chat integration assertions for provider/model provenance and non-mock provider stubs.
 - Delivered AUTO-02 planner/executor hardening: expanded deterministic planner instruction coverage (board/column intents), hardened executor parameter validation and partial-failure semantics, and improved audit entity attribution with new regression coverage.
 - Delivered MVP-01 chat-to-project bootstrap: canonical Markdown checklist paste now creates a proposal-first board bootstrap plan in chat, with one-click approve+execute path and regression coverage for happy path + key validation failures.
 - Delivered PACK-01 starter-pack manifest foundation: added v1 manifest schema documentation and deterministic backend validator/test coverage for parsing, compatibility rules, and cross-reference validation.

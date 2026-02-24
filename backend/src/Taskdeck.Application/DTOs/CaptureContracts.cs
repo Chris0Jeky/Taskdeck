@@ -19,7 +19,9 @@ public record CaptureProvenanceV1(
     Guid CaptureItemId,
     Guid? TriageRunId = null,
     Guid? ProposalId = null,
-    string? PromptVersion = null);
+    string? PromptVersion = null,
+    string? Provider = null,
+    string? Model = null);
 
 public static class CaptureRequestContract
 {
@@ -30,6 +32,8 @@ public static class CaptureRequestContract
     public const int MaxTitleHintLength = 240;
     public const int MaxExternalRefLength = 2_048;
     public const int MaxPromptVersionLength = 64;
+    public const int MaxProviderLength = 64;
+    public const int MaxModelLength = 128;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -186,6 +190,20 @@ public static class CaptureRequestContract
                 $"Capture prompt version cannot exceed {MaxPromptVersionLength} characters");
         }
 
+        if (payload.Provenance?.Provider?.Length > MaxProviderLength)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture provider cannot exceed {MaxProviderLength} characters");
+        }
+
+        if (payload.Provenance?.Model?.Length > MaxModelLength)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture model cannot exceed {MaxModelLength} characters");
+        }
+
         return Result.Success(payload);
     }
 
@@ -194,7 +212,9 @@ public static class CaptureRequestContract
         Guid captureItemId,
         Guid? triageRunId = null,
         Guid? proposalId = null,
-        string? promptVersion = null)
+        string? promptVersion = null,
+        string? provider = null,
+        string? model = null)
     {
         if (captureItemId == Guid.Empty)
         {
@@ -203,8 +223,24 @@ public static class CaptureRequestContract
 
         return payload with
         {
-            Provenance = new CaptureProvenanceV1(captureItemId, triageRunId, proposalId, promptVersion)
+            Provenance = new CaptureProvenanceV1(captureItemId, triageRunId, proposalId, promptVersion, provider, model)
         };
+    }
+
+    public static string SanitizeProvenanceMetadata(string? value, int maxLength, string fallback = "unknown")
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length <= maxLength)
+        {
+            return trimmed;
+        }
+
+        return trimmed[..maxLength];
     }
 
     public static string SerializePayload(CapturePayloadV1 payload)

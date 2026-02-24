@@ -19,5 +19,19 @@ public class MockLlmProviderTests
 
         result.IsActionable.Should().BeTrue();
         result.ActionIntent.Should().Be("card.create");
+        result.Provider.Should().Be("Mock");
+        result.Model.Should().Be("mock-default");
+    }
+
+    [Fact]
+    public async Task GetHealthAsync_ShouldReportMockProviderMetadata()
+    {
+        var provider = new MockLlmProvider();
+
+        var health = await provider.GetHealthAsync();
+
+        health.IsAvailable.Should().BeTrue();
+        health.ProviderName.Should().Be("Mock");
+        health.Model.Should().Be("mock-default");
     }
 }
