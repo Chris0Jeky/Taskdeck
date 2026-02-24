@@ -56,7 +56,9 @@ export async function pollUntil<T>(
     const desc = options.description ?? 'Polling condition'
     const diag = lastValue === undefined ? 'no values observed' : `last value: ${serializeForDiagnostics(lastValue)}`
     const wrapped = new Error(`${desc} failed after ${timeoutMs}ms (${diag}). ${(error as Error).message}`)
-    wrapped.stack = (error as Error).stack
+    if (wrapped.stack && (error as Error).stack) {
+      wrapped.stack = `${wrapped.stack}\nCaused by: ${(error as Error).stack}`
+    }
     throw wrapped
   }
 
