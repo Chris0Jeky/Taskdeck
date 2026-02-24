@@ -101,6 +101,18 @@ public class OutboundWebhooksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateSubscription_ShouldAllowLocalhostEndpoint_InDevelopment()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/webhooks",
+            new CreateOutboundWebhookSubscriptionDto("http://localhost:5173/webhook", ["card.*"]));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
     public async Task CreateSubscription_ShouldReturnBadRequest_WhenEndpointUsesBlockedIpHost()
     {
         var board = await CreateBoardAsync();

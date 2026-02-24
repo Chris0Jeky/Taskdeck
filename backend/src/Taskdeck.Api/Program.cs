@@ -137,6 +137,13 @@ builder.Services.AddSingleton(sandboxSettings);
 // Worker settings and runtime services
 var workerSettings = builder.Configuration.GetSection("Workers").Get<WorkerSettings>() ?? new WorkerSettings();
 builder.Services.AddSingleton(workerSettings);
+var outboundWebhookSecuritySection = builder.Configuration.GetSection("OutboundWebhooks:Security");
+var outboundWebhookSecuritySettings = outboundWebhookSecuritySection.Get<OutboundWebhookSecuritySettings>() ?? new OutboundWebhookSecuritySettings();
+if (builder.Environment.IsDevelopment() && outboundWebhookSecuritySection["AllowLocalhostEndpoints"] is null)
+{
+    outboundWebhookSecuritySettings.AllowLocalhostEndpoints = true;
+}
+builder.Services.AddSingleton(outboundWebhookSecuritySettings);
 builder.Services.AddSingleton<WorkerHeartbeatRegistry>();
 builder.Services.AddHostedService<LlmQueueToProposalWorker>();
 builder.Services.AddHostedService<ProposalHousekeepingWorker>();

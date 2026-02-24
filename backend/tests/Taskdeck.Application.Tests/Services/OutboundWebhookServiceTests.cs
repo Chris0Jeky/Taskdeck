@@ -70,7 +70,9 @@ public class OutboundWebhookServiceTests
     [Fact]
     public async Task CreateSubscriptionAsync_ShouldAllowLocalhostHttpEndpoint()
     {
-        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+        var service = new OutboundWebhookService(
+            _unitOfWorkMock.Object,
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = true });
         OutboundWebhookSubscription? persistedSubscription = null;
         _subscriptionRepositoryMock
             .Setup(repository => repository.AddAsync(It.IsAny<OutboundWebhookSubscription>(), It.IsAny<CancellationToken>()))
@@ -85,6 +87,21 @@ public class OutboundWebhookServiceTests
         result.IsSuccess.Should().BeTrue();
         persistedSubscription.Should().NotBeNull();
         persistedSubscription!.EndpointUrl.Should().StartWith("http://localhost:5173/webhook");
+    }
+
+    [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectLocalhostEndpoint_WhenNotExplicitlyAllowed()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("http://localhost:5173/webhook"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("not allowed");
     }
 
     [Fact]

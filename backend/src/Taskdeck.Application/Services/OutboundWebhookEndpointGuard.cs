@@ -22,7 +22,10 @@ public static partial class OutboundWebhookEndpointGuard
         "sslip.io"
     ];
 
-    public static async Task<bool> IsHostBlockedAsync(string host, CancellationToken cancellationToken = default)
+    public static async Task<bool> IsHostBlockedAsync(
+        string host,
+        bool allowLocalhostEndpoints,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(host))
         {
@@ -32,7 +35,7 @@ public static partial class OutboundWebhookEndpointGuard
         var normalizedHost = host.Trim().TrimEnd('.').ToLowerInvariant();
         if (string.Equals(normalizedHost, "localhost", StringComparison.Ordinal))
         {
-            return false;
+            return !allowLocalhostEndpoints;
         }
 
         if (IsBlockedByHostnamePolicy(normalizedHost))

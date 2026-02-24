@@ -26,10 +26,14 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
     };
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly OutboundWebhookSecuritySettings _securitySettings;
 
-    public OutboundWebhookService(IUnitOfWork unitOfWork)
+    public OutboundWebhookService(
+        IUnitOfWork unitOfWork,
+        OutboundWebhookSecuritySettings? securitySettings = null)
     {
         _unitOfWork = unitOfWork;
+        _securitySettings = securitySettings ?? new OutboundWebhookSecuritySettings();
     }
 
     public async Task<Result<OutboundWebhookSubscriptionSecretDto>> CreateSubscriptionAsync(
@@ -45,7 +49,10 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
                 "Request body is required.");
         }
 
-        var endpointValidation = await ValidateEndpointUrlAsync(dto.EndpointUrl, cancellationToken);
+        var endpointValidation = await ValidateEndpointUrlAsync(
+            dto.EndpointUrl,
+            _securitySettings.AllowLocalhostEndpoints,
+            cancellationToken);
         if (!endpointValidation.IsValid)
         {
             return Result.Failure<OutboundWebhookSubscriptionSecretDto>(
@@ -202,6 +209,7 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
 
     private static async Task<(bool IsValid, string? NormalizedEndpoint, string? ValidationError)> ValidateEndpointUrlAsync(
         string? endpointUrl,
+        bool allowLocalhostEndpoints,
         CancellationToken cancellationToken)
     {
         string? normalizedEndpoint = null;
@@ -230,7 +238,10 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             return (false, null, "Non-localhost webhook endpoints must use https.");
         }
 
-        if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(parsed.Host, cancellationToken))
+        if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(
+                parsed.Host,
+                allowLocalhostEndpoints,
+                cancellationToken))
         {
             return (false, null, "Endpoint host is not allowed.");
         }
