@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
@@ -8,7 +9,19 @@ namespace Taskdeck.Application.Services;
 
 public sealed class CsvExternalImportAdapter : IExternalImportAdapter
 {
-    private const string ImportMetadataPrefix = "[taskdeck-import-meta] ";
+    private const int MaxCardTitleLength = 200;
+    private const int MaxCardDescriptionLength = 2000;
+    private static readonly string[] SupportedLastTouchDateFormats =
+    [
+        "O",
+        "yyyy-MM-dd",
+        "yyyy-MM-ddTHH:mm",
+        "yyyy-MM-ddTHH:mm:ss",
+        "yyyy-MM-ddTHH:mm:ss.fff",
+        "yyyy-MM-ddTHH:mmK",
+        "yyyy-MM-ddTHH:mm:ssK",
+        "yyyy-MM-ddTHH:mm:ss.fffK"
+    ];
 
     private static readonly JsonSerializerOptions MetadataSerializerOptions = new()
     {
@@ -81,7 +94,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         var indexByHeader = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         for (var index = 0; index < header.Values.Count; index++)
         {
-            var headerName = (header.Values[index] ?? string.Empty).Trim();
+            var headerName = NormalizeHeaderName(header.Values[index]);
             if (string.IsNullOrWhiteSpace(headerName))
             {
                 continue;
@@ -175,7 +188,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
             DateTimeOffset? lastTouchAt = null;
             if (!string.IsNullOrWhiteSpace(lastTouchRaw))
             {
-                if (DateTimeOffset.TryParse(lastTouchRaw, out var parsedDate))
+                if (TryParseLastTouchAt(lastTouchRaw, out var parsedDate))
                 {
                     lastTouchAt = parsedDate;
                 }
@@ -192,6 +205,26 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
 
             var title = BuildTitle(displayName, email, linkedInUrl, row.RowNumber);
             var description = BuildDescription(profile, dedupeKey, displayName, company, role, email, linkedInUrl, lastTouchAt);
+
+            if (title.Length > MaxCardTitleLength)
+            {
+                conflicts.Add(new ExternalImportConflictDto(
+                    "TitleTooLong",
+                    $"$.rows[{row.RowNumber}].title",
+                    $"Card title exceeds max length of {MaxCardTitleLength} characters.",
+                    IncomingValue: $"length={title.Length}"));
+                continue;
+            }
+
+            if (description.Length > MaxCardDescriptionLength)
+            {
+                conflicts.Add(new ExternalImportConflictDto(
+                    "DescriptionTooLong",
+                    $"$.rows[{row.RowNumber}].description",
+                    $"Card description exceeds max length of {MaxCardDescriptionLength} characters.",
+                    IncomingValue: $"length={description.Length}"));
+                continue;
+            }
 
             candidates.Add(new ExternalImportCandidate(
                 row.RowNumber,
@@ -231,6 +264,26 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         }
 
         return null;
+    }
+
+    private static string NormalizeHeaderName(string? header)
+    {
+        if (string.IsNullOrWhiteSpace(header))
+        {
+            return string.Empty;
+        }
+
+        return header.Trim().TrimStart('\uFEFF');
+    }
+
+    private static bool TryParseLastTouchAt(string rawValue, out DateTimeOffset parsedDate)
+    {
+        return DateTimeOffset.TryParseExact(
+            rawValue.Trim(),
+            SupportedLastTouchDateFormats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
+            out parsedDate);
     }
 
     private static Result ValidateExplicitColumnMappings(
@@ -331,7 +384,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
 
         var lines = new List<string>
         {
-            $"{ImportMetadataPrefix}{metadataJson}",
+            $"{ExternalImportMetadata.CardDescriptionPrefix}{metadataJson}",
             string.Empty,
             $"Display Name: {displayName}",
             $"Company: {company}",

@@ -9,11 +9,11 @@ namespace Taskdeck.Application.Services;
 
 public sealed class ExternalImportService : IExternalImportService
 {
-    private const string ImportMetadataPrefix = "[taskdeck-import-meta] ";
     private static readonly JsonSerializerOptions MetadataDeserializerOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
+    private static readonly ImportMatchKeyComparer MatchKeyComparer = new();
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IReadOnlyDictionary<string, IExternalImportAdapter> _adaptersByProvider;
@@ -118,41 +118,47 @@ public sealed class ExternalImportService : IExternalImportService
         var parsed = parseResult.Value;
         var conflicts = new List<ExternalImportConflictDto>(parsed.Conflicts);
 
-        var existingCardsByDedupeKey = new Dictionary<string, List<Card>>(StringComparer.OrdinalIgnoreCase);
+        var existingCardsByMatchKey = new Dictionary<ImportMatchKey, List<Card>>(MatchKeyComparer);
         foreach (var card in board.Columns.SelectMany(column => column.Cards))
         {
             if (!TryReadImportMetadata(card.Description, out var metadata) ||
+                string.IsNullOrWhiteSpace(metadata.Provider) ||
+                string.IsNullOrWhiteSpace(metadata.Profile) ||
                 string.IsNullOrWhiteSpace(metadata.DedupeKey))
             {
                 continue;
             }
 
-            if (!existingCardsByDedupeKey.TryGetValue(metadata.DedupeKey, out var matchingCards))
+            var matchKey = new ImportMatchKey(metadata.Provider.Trim(), metadata.Profile.Trim(), metadata.DedupeKey.Trim());
+            if (!existingCardsByMatchKey.TryGetValue(matchKey, out var matchingCards))
             {
                 matchingCards = [];
-                existingCardsByDedupeKey[metadata.DedupeKey] = matchingCards;
+                existingCardsByMatchKey[matchKey] = matchingCards;
             }
 
             matchingCards.Add(card);
         }
 
-        var existingByDedupeKey = existingCardsByDedupeKey
+        var existingByMatchKey = existingCardsByMatchKey
             .Where(entry => entry.Value.Count == 1)
-            .ToDictionary(entry => entry.Key, entry => entry.Value[0], StringComparer.OrdinalIgnoreCase);
-        var duplicateExistingKeys = existingCardsByDedupeKey
+            .ToDictionary(entry => entry.Key, entry => entry.Value[0], MatchKeyComparer);
+        var duplicateExistingKeys = existingCardsByMatchKey
             .Where(entry => entry.Value.Count > 1)
             .Select(entry => entry.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(MatchKeyComparer);
 
-        foreach (var duplicateKey in duplicateExistingKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase))
+        foreach (var duplicateKey in duplicateExistingKeys
+                     .OrderBy(key => key.Provider, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(key => key.Profile, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(key => key.DedupeKey, StringComparer.OrdinalIgnoreCase))
         {
-            var existingCards = existingCardsByDedupeKey[duplicateKey];
+            var existingCards = existingCardsByMatchKey[duplicateKey];
             conflicts.Add(new ExternalImportConflictDto(
                 "ExistingDuplicateDedupeKey",
                 "$.board.cards",
-                $"Board already contains multiple cards with dedupe key '{duplicateKey}'. Resolve duplicates before applying import.",
+                $"Board already contains multiple cards with dedupe key '{duplicateKey.DedupeKey}' for provider '{duplicateKey.Provider}' and profile '{duplicateKey.Profile}'. Resolve duplicates before applying import.",
                 ExistingValue: BuildCardReference(existingCards),
-                IncomingValue: duplicateKey));
+                IncomingValue: duplicateKey.DedupeKey));
         }
 
         var plannedUpserts = new List<PlannedUpsert>();
@@ -162,19 +168,21 @@ public sealed class ExternalImportService : IExternalImportService
 
         foreach (var candidate in parsed.Candidates)
         {
-            if (duplicateExistingKeys.Contains(candidate.DedupeKey))
+            var candidateMatchKey = new ImportMatchKey(parsed.Provider, parsed.Profile, candidate.DedupeKey);
+
+            if (duplicateExistingKeys.Contains(candidateMatchKey))
             {
-                var existingCards = existingCardsByDedupeKey[candidate.DedupeKey];
+                var existingCards = existingCardsByMatchKey[candidateMatchKey];
                 conflicts.Add(new ExternalImportConflictDto(
                     "AmbiguousExistingMatch",
                     $"$.rows[{candidate.SourceRowNumber}]",
-                    $"Cannot resolve target card for dedupe key '{candidate.DedupeKey}' because multiple existing cards match.",
+                    $"Cannot resolve target card for dedupe key '{candidate.DedupeKey}' because multiple existing cards match for provider '{parsed.Provider}' and profile '{parsed.Profile}'.",
                     ExistingValue: BuildCardReference(existingCards),
                     IncomingValue: candidate.DedupeKey));
                 continue;
             }
 
-            if (existingByDedupeKey.TryGetValue(candidate.DedupeKey, out var existingCard))
+            if (existingByMatchKey.TryGetValue(candidateMatchKey, out var existingCard))
             {
                 var requiresTitleUpdate = !string.Equals(existingCard.Title, candidate.Title, StringComparison.Ordinal);
                 var requiresDescriptionUpdate = !string.Equals(existingCard.Description, candidate.Description, StringComparison.Ordinal);
@@ -272,7 +280,7 @@ public sealed class ExternalImportService : IExternalImportService
         metadata = new ExistingCardImportMetadata(string.Empty, string.Empty, string.Empty);
 
         if (string.IsNullOrWhiteSpace(description) ||
-            !description.StartsWith(ImportMetadataPrefix, StringComparison.Ordinal))
+            !description.StartsWith(ExternalImportMetadata.CardDescriptionPrefix, StringComparison.Ordinal))
         {
             return false;
         }
@@ -281,7 +289,7 @@ public sealed class ExternalImportService : IExternalImportService
         var metadataLine = lineBreakIndex >= 0
             ? description[..lineBreakIndex]
             : description;
-        var jsonPayload = metadataLine[ImportMetadataPrefix.Length..].Trim();
+        var jsonPayload = metadataLine[ExternalImportMetadata.CardDescriptionPrefix.Length..].Trim();
         if (string.IsNullOrWhiteSpace(jsonPayload))
         {
             return false;
@@ -307,9 +315,38 @@ public sealed class ExternalImportService : IExternalImportService
     private sealed record PlannedUpsert(Card? ExistingCard, ExternalImportCandidate Candidate);
 
     private sealed record ExistingCardImportMetadata(string Provider, string Profile, string DedupeKey);
+    private sealed record ImportMatchKey(string Provider, string Profile, string DedupeKey);
 
     private static string BuildCardReference(IEnumerable<Card> cards)
     {
         return string.Join(", ", cards.Select(card => $"{card.Id}:{card.Title}"));
+    }
+
+    private sealed class ImportMatchKeyComparer : IEqualityComparer<ImportMatchKey>
+    {
+        public bool Equals(ImportMatchKey? x, ImportMatchKey? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            return string.Equals(x.Provider, y.Provider, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(x.Profile, y.Profile, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(x.DedupeKey, y.DedupeKey, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode(ImportMatchKey obj)
+        {
+            return HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Provider),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Profile),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.DedupeKey));
+        }
     }
 }

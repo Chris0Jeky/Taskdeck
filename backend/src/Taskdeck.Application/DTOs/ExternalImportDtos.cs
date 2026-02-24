@@ -10,6 +10,11 @@ public static class ExternalImportProfiles
     public const string OutreachContactsV1 = "outreach.contacts.v1";
 }
 
+public static class ExternalImportMetadata
+{
+    public const string CardDescriptionPrefix = "[taskdeck-import-meta] ";
+}
+
 public sealed record ExternalImportRequestDto(
     string Provider,
     string Payload,

@@ -39,6 +39,22 @@ public class ExternalImportsController : AuthenticatedControllerBase
             return errorResult!;
         }
 
+        var readableBoardsResult = await _authorizationService.GetReadableBoardIdsAsync(
+            userId,
+            [boardId],
+            cancellationToken);
+        if (!readableBoardsResult.IsSuccess)
+        {
+            return readableBoardsResult.ToErrorActionResult();
+        }
+
+        if (!readableBoardsResult.Value.Contains(boardId))
+        {
+            return Result
+                .Failure(ErrorCodes.Forbidden, "You do not have permission to modify this board")
+                .ToErrorActionResult();
+        }
+
         var permissionError = await EnsureBoardPermissionAsync(
             _authorizationService,
             userId,
