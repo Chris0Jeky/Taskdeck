@@ -6,6 +6,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 ## Always start here (required)
 - Read `docs/STATUS.md` for Current Focus and constraints (source of truth).
 - Use `docs/IMPLEMENTATION_MASTERPLAN.md` for roadmap context.
+- Use `docs/GOLDEN_PRINCIPLES.md` for stable repository invariants and guardrails.
 - Use `docs/ISSUE_EXECUTION_GUIDE.md` for dependency-aware issue execution order.
 - For test operations, see `docs/TESTING_GUIDE.md`.
 - Precedence when instructions conflict: `docs/STATUS.md` > this file > subfolder `AGENTS.md`.
@@ -75,7 +76,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Backend tests: `backend/tests` with project-per-layer test suites.
 - Frontend (Vue 3 + Vite): `frontend/taskdeck-web` with app source in `src`, static assets in `public`.
 - Docs and planning: Start with `docs/STATUS.md` (source of truth),
-  `docs/IMPLEMENTATION_MASTERPLAN.md` (active roadmap), and `docs/TESTING_GUIDE.md` (test operations).
+  `docs/IMPLEMENTATION_MASTERPLAN.md` (active roadmap), `docs/GOLDEN_PRINCIPLES.md` (stable invariants), and `docs/TESTING_GUIDE.md` (test operations).
   Historical context lives under `docs/archive/`.
 
 ## Build, Test & Run

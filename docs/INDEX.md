@@ -12,6 +12,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Canonical automated test commands, coverage map, and CI gate mapping.
 - `MANUAL_TEST_CHECKLIST.md`
   - Canonical manual validation script for UI/API/ops workflows.
+- `GOLDEN_PRINCIPLES.md`
+  - Stable repository invariants and lightweight mechanically enforced principles.
 
 ## Active Operational Docs
 
