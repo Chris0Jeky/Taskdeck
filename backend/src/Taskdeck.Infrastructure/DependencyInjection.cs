@@ -33,6 +33,8 @@ public static class DependencyInjection
         services.AddScoped<ICommandRunRepository, CommandRunRepository>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<INotificationPreferenceRepository, NotificationPreferenceRepository>();
+        services.AddScoped<IOutboundWebhookSubscriptionRepository, OutboundWebhookSubscriptionRepository>();
+        services.AddScoped<IOutboundWebhookDeliveryRepository, OutboundWebhookDeliveryRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;
