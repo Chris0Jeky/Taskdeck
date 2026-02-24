@@ -328,6 +328,9 @@ Reconciliation record:
 - `docs/analysis/2026-02-23_testing-harness-synthesis.md`
 
 Recent follow-through (2026-02-24):
+- `#258` adds a reusable OpenAPI guardrail lane (`reusable-openapi-guardrail.yml`) wired into `ci-extended` (PR/manual) and `ci-nightly`
+- guardrail now generates `artifacts/openapi/taskdeck-api.json`, validates JSON/top-level contract shape, and uploads artifact/log outputs for inspection
+- snapshot/diff gating remains explicitly deferred to follow-up work; current scope is generation + parse-validation + artifact publication
 - `#257` expanded `ApiErrorContractApiTests` with representative `400/401/403/404/409` coverage in one suite
 - representative error-path tests now assert `X-Request-Id` echo behavior alongside stable JSON error-contract shape assertions
 

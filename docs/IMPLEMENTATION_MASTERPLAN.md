@@ -449,6 +449,8 @@ Execution tracker and seeded issues:
 - explicit reuse (no duplicate wave issue): existing WIP limit, sandbox gate, and starter-pack idempotency coverage already implemented
 
 Recent progress (2026-02-24):
+- `#258` adds a reusable OpenAPI generation/parse-validation lane with artifact upload wired into `ci-extended` and `ci-nightly`
+- OpenAPI drift snapshot/diff hard-gating is intentionally deferred; current lane enforces generation + parse-contract validity and publishes inspection artifacts
 - `#257` now centralizes representative API error-contract assertions for `400/401/403/404/409` in `ApiErrorContractApiTests`
 - representative error-path coverage now includes `X-Request-Id` response echo assertions where middleware applies
 

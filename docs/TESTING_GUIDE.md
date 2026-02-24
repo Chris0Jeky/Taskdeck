@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-02-23
+Last Updated: 2026-02-24
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -230,6 +230,24 @@ rg -n "Thread\\.Sleep|new Promise\\(.*setTimeout" backend/tests frontend/taskdec
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~ApiErrorContractApiTests"
 cd frontend/taskdeck-web && npx playwright test tests/e2e/smoke.spec.ts tests/e2e/automation-ops.spec.ts tests/e2e/capture-loop.spec.ts --reporter=line
 ```
+
+OpenAPI guardrail local checks (`#258`):
+
+```powershell
+./scripts/ci/generate-openapi-artifact.ps1 -OutputPath "artifacts/openapi/taskdeck-api.json"
+./scripts/ci/validate-openapi.ps1 -SpecPath "artifacts/openapi/taskdeck-api.json"
+```
+
+Malformed-output simulation (deterministic parse failure check):
+
+```powershell
+"not-json" | Set-Content -Path artifacts/openapi/invalid-openapi.json
+./scripts/ci/validate-openapi.ps1 -SpecPath "artifacts/openapi/invalid-openapi.json"
+```
+
+Follow-up intentionally deferred from this issue:
+- snapshot/diff enforcement against a checked-in OpenAPI baseline remains a future enhancement
+- current guardrail scope is generation + parse/shape validation + CI artifact publication
 
 ## Outreach CRM Deferred Wave (Planning, 2026-02-23)
 
