@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -46,11 +45,12 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
                 "Request body is required.");
         }
 
-        if (!TryValidateEndpointUrl(dto.EndpointUrl, out var normalizedEndpoint, out var endpointValidationError))
+        var endpointValidation = await ValidateEndpointUrlAsync(dto.EndpointUrl, cancellationToken);
+        if (!endpointValidation.IsValid)
         {
             return Result.Failure<OutboundWebhookSubscriptionSecretDto>(
                 ErrorCodes.ValidationError,
-                endpointValidationError!);
+                endpointValidation.ValidationError!);
         }
 
         var normalizedFiltersResult = NormalizeEventFilters(dto.EventFilters);
@@ -68,7 +68,7 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             var subscription = new OutboundWebhookSubscription(
                 boardId,
                 actorUserId,
-                normalizedEndpoint!,
+                endpointValidation.NormalizedEndpoint!,
                 signingSecret,
                 normalizedFiltersResult.Value);
             await _unitOfWork.OutboundWebhookSubscriptions.AddAsync(subscription, cancellationToken);
@@ -198,56 +198,48 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
         return Result.Success();
     }
 
-    private static bool TryValidateEndpointUrl(
+    private static async Task<(bool IsValid, string? NormalizedEndpoint, string? ValidationError)> ValidateEndpointUrlAsync(
         string? endpointUrl,
-        out string? normalizedEndpoint,
-        out string? validationError)
+        CancellationToken cancellationToken)
     {
-        normalizedEndpoint = null;
-        validationError = null;
+        string? normalizedEndpoint = null;
+        string? validationError = null;
 
         if (string.IsNullOrWhiteSpace(endpointUrl))
         {
-            validationError = "Endpoint URL is required.";
-            return false;
+            return (false, null, "Endpoint URL is required.");
         }
 
         var trimmed = endpointUrl.Trim();
         if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed))
         {
-            validationError = "Endpoint URL must be an absolute URI.";
-            return false;
+            return (false, null, "Endpoint URL must be an absolute URI.");
         }
 
         var isHttps = string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
         var isHttp = string.Equals(parsed.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
         if (!isHttps && !isHttp)
         {
-            validationError = "Endpoint URL must use http or https.";
-            return false;
+            return (false, null, "Endpoint URL must use http or https.");
         }
 
         if (isHttp && !string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase))
         {
-            validationError = "Non-localhost webhook endpoints must use https.";
-            return false;
+            return (false, null, "Non-localhost webhook endpoints must use https.");
         }
 
-        if (IsBlockedIpHost(parsed.Host))
+        if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(parsed.Host, cancellationToken))
         {
-            validationError = "Endpoint host is not allowed.";
-            return false;
+            return (false, null, "Endpoint host is not allowed.");
         }
 
         normalizedEndpoint = parsed.ToString();
         if (normalizedEndpoint.Length > MaxEndpointUrlLength)
         {
-            validationError = $"Endpoint URL must be {MaxEndpointUrlLength} characters or fewer.";
-            normalizedEndpoint = null;
-            return false;
+            return (false, null, $"Endpoint URL must be {MaxEndpointUrlLength} characters or fewer.");
         }
 
-        return true;
+        return (true, normalizedEndpoint, validationError);
     }
 
     private static Result<List<string>> NormalizeEventFilters(List<string>? filters)
@@ -297,57 +289,6 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
         }
 
         return Result.Success(normalized);
-    }
-
-    private static bool IsBlockedIpHost(string host)
-    {
-        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (!IPAddress.TryParse(host, out var ipAddress))
-        {
-            return false;
-        }
-
-        if (IPAddress.IsLoopback(ipAddress))
-        {
-            return true;
-        }
-
-        if (ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            var bytes = ipAddress.GetAddressBytes();
-            var first = bytes[0];
-            var second = bytes[1];
-
-            return first == 0 ||
-                   first == 10 ||
-                   first == 127 ||
-                   (first == 100 && second >= 64 && second <= 127) ||
-                   (first == 169 && second == 254) ||
-                   (first == 172 && second >= 16 && second <= 31) ||
-                   (first == 192 && second == 168) ||
-                   first >= 224;
-        }
-
-        if (ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-        {
-            if (ipAddress.Equals(IPAddress.IPv6None) ||
-                ipAddress.IsIPv6LinkLocal ||
-                ipAddress.IsIPv6SiteLocal ||
-                ipAddress.IsIPv6Multicast)
-            {
-                return true;
-            }
-
-            var bytes = ipAddress.GetAddressBytes();
-            // RFC4193 Unique local addresses (fc00::/7).
-            return (bytes[0] & 0xFE) == 0xFC;
-        }
-
-        return false;
     }
 
     private static string GenerateSigningSecret()

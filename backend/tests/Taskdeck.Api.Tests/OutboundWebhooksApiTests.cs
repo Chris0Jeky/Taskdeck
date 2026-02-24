@@ -113,6 +113,18 @@ public class OutboundWebhooksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateSubscription_ShouldReturnBadRequest_WhenEndpointUsesBlockedPrivateHostname()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/webhooks",
+            new CreateOutboundWebhookSubscriptionDto("https://127-0-0-1.nip.io/webhook", ["card.*"]));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
     public async Task CreateSubscription_ShouldReturnBadRequest_WhenEndpointExceedsMaxLength()
     {
         var board = await CreateBoardAsync();

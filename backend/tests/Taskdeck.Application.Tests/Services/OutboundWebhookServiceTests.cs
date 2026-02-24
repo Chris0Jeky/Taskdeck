@@ -103,6 +103,21 @@ public class OutboundWebhookServiceTests
     }
 
     [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectDynamicDnsPrivateHostname()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://127-0-0-1.nip.io/webhook"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("not allowed");
+    }
+
+    [Fact]
     public async Task CreateSubscriptionAsync_ShouldRejectEndpointLongerThan500Characters()
     {
         var service = new OutboundWebhookService(_unitOfWorkMock.Object);
