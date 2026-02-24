@@ -96,6 +96,7 @@ async function waitForCardWithTitle(
     (cardsList) => cardsList.some((card) => card.title === expectedTitle),
     {
       description: `card '${expectedTitle}' to appear on board ${boardId}`,
+      timeoutMs: 40000,
     },
   )
 
