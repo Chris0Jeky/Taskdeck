@@ -20,7 +20,9 @@ public class MockLlmProvider : ILlmProvider
             content,
             TokensUsed: lastUserMessage.Length / 4 + content.Length / 4,
             IsActionable: isActionable,
-            ActionIntent: actionIntent
+            ActionIntent: actionIntent,
+            Provider: "Mock",
+            Model: "mock-default"
         ));
     }
 
@@ -40,6 +42,6 @@ public class MockLlmProvider : ILlmProvider
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        return Task.FromResult(new LlmHealthStatus(true, "MockLlmProvider"));
+        return Task.FromResult(new LlmHealthStatus(true, "Mock", Model: "mock-default"));
     }
 }

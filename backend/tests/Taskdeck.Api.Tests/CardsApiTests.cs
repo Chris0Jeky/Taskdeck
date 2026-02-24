@@ -289,6 +289,8 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         var triagedItem = await WaitForCaptureStatusAsync(_client, captureItem.Id, CaptureStatus.ProposalCreated);
         triagedItem.Provenance.Should().NotBeNull();
         triagedItem.Provenance!.ProposalId.Should().NotBeNull();
+        triagedItem.Provenance.Provider.Should().Be("Mock");
+        triagedItem.Provenance.Model.Should().Be("mock-default");
 
         var proposalId = triagedItem.Provenance.ProposalId!.Value;
         var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);

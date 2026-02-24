@@ -168,13 +168,59 @@ public class CaptureRequestContractTests
             captureId,
             triageRunId,
             proposalId,
-            "triage.v1");
+            "triage.v1",
+            "OpenAI",
+            "gpt-4o-mini");
 
         linked.Provenance.Should().NotBeNull();
         linked.Provenance!.CaptureItemId.Should().Be(captureId);
         linked.Provenance.TriageRunId.Should().Be(triageRunId);
         linked.Provenance.ProposalId.Should().Be(proposalId);
         linked.Provenance.PromptVersion.Should().Be("triage.v1");
+        linked.Provenance.Provider.Should().Be("OpenAI");
+        linked.Provenance.Model.Should().Be("gpt-4o-mini");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldFail_WhenProvenanceProviderExceedsMaxLength()
+    {
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "provider": "{{new string('p', CaptureRequestContract.MaxProviderLength + 1)}}"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Capture provider cannot exceed");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldFail_WhenProvenanceModelExceedsMaxLength()
+    {
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "model": "{{new string('m', CaptureRequestContract.MaxModelLength + 1)}}"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Capture model cannot exceed");
     }
 
     [Fact]
@@ -203,5 +249,28 @@ public class CaptureRequestContractTests
 
         act.Should().Throw<DomainException>()
             .Where(ex => ex.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void SanitizeProvenanceMetadata_ShouldTrimAndClampValues()
+    {
+        var raw = $"  {new string('x', CaptureRequestContract.MaxProviderLength + 5)}  ";
+
+        var sanitized = CaptureRequestContract.SanitizeProvenanceMetadata(
+            raw,
+            CaptureRequestContract.MaxProviderLength);
+
+        sanitized.Should().HaveLength(CaptureRequestContract.MaxProviderLength);
+        sanitized.Should().Be(new string('x', CaptureRequestContract.MaxProviderLength));
+    }
+
+    [Fact]
+    public void SanitizeProvenanceMetadata_ShouldReturnFallback_WhenValueIsMissing()
+    {
+        var sanitized = CaptureRequestContract.SanitizeProvenanceMetadata(
+            " ",
+            CaptureRequestContract.MaxProviderLength);
+
+        sanitized.Should().Be("unknown");
     }
 }

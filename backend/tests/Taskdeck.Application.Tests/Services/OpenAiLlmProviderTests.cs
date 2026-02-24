@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Tests.TestUtilities;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -49,6 +50,8 @@ public class OpenAiLlmProviderTests
         result.TokensUsed.Should().Be(42);
         result.IsActionable.Should().BeTrue();
         result.ActionIntent.Should().Be("card.create");
+        result.Provider.Should().Be("OpenAI");
+        result.Model.Should().Be(settings.OpenAi.Model);
     }
 
     [Fact]
@@ -69,6 +72,8 @@ public class OpenAiLlmProviderTests
         result.Content.Should().Contain("request failed");
         result.IsActionable.Should().BeTrue();
         result.ActionIntent.Should().Be("card.create");
+        result.Provider.Should().Be("OpenAI");
+        result.Model.Should().Be(settings.OpenAi.Model);
     }
 
     [Fact]
@@ -83,6 +88,7 @@ public class OpenAiLlmProviderTests
         health.IsAvailable.Should().BeFalse();
         health.ProviderName.Should().Be("OpenAI");
         health.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        health.Model.Should().Be(settings.OpenAi.Model);
     }
 
     [Fact]
@@ -190,23 +196,4 @@ public class OpenAiLlmProviderTests
         };
     }
 
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _responseFactory;
-
-        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        {
-            _responseFactory = (request, _) => Task.FromResult(responseFactory(request));
-        }
-
-        public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responseFactory)
-        {
-            _responseFactory = responseFactory;
-        }
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            return await _responseFactory(request, cancellationToken);
-        }
-    }
 }

@@ -242,7 +242,9 @@ public class CaptureServiceTests
                     captureItemId,
                     triageRunId,
                     proposalId,
-                    "triage.v1")));
+                    "triage.v1",
+                    "OpenAI",
+                    "gpt-4o-mini")));
 
         _llmQueueRepositoryMock
             .Setup(r => r.GetByIdAsync(item.Id, default))
@@ -256,6 +258,8 @@ public class CaptureServiceTests
         result.Value.Provenance.TriageRunId.Should().Be(triageRunId);
         result.Value.Provenance.ProposalId.Should().Be(proposalId);
         result.Value.Provenance.PromptVersion.Should().Be("triage.v1");
+        result.Value.Provenance.Provider.Should().Be("OpenAI");
+        result.Value.Provenance.Model.Should().Be("gpt-4o-mini");
     }
 
     [Fact]

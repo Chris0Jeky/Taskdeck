@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -29,15 +30,21 @@ public class CaptureTriageService : ICaptureTriageService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
+    private readonly ILlmProvider _llmProvider;
+    private readonly ILogger<CaptureTriageService>? _logger;
 
     public CaptureTriageService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
-        IAutomationPolicyEngine policyEngine)
+        IAutomationPolicyEngine policyEngine,
+        ILlmProvider llmProvider,
+        ILogger<CaptureTriageService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
+        _llmProvider = llmProvider;
+        _logger = logger;
     }
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
@@ -104,6 +111,7 @@ public class CaptureTriageService : ICaptureTriageService
                 task,
                 sequence))
             .ToList();
+        var captureReferenceId = captureItemId.ToString();
 
         var operationDtos = operations
             .Select((operation, sequence) => new ProposalOperationDto(
@@ -133,6 +141,23 @@ public class CaptureTriageService : ICaptureTriageService
                 permissionResult.ErrorMessage);
         }
 
+        var existingProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+            ProposalSourceType.Queue,
+            captureReferenceId,
+            cancellationToken);
+        if (existingProposal != null)
+        {
+            var (existingProvider, existingModel) = await GetProviderMetadataAsync(cancellationToken);
+            return Result.Success(new CaptureTriageProposalResultDto(
+                captureItemId,
+                ResolveTriageRunId(existingProposal.CorrelationId, triageRunId),
+                existingProposal.Id,
+                existingProposal.Operations.Count == 0 ? operations.Count : existingProposal.Operations.Count,
+                outputValidation.Value.PromptVersion,
+                existingProvider,
+                existingModel));
+        }
+
         var createProposalResult = await _proposalService.CreateProposalAsync(
             new CreateProposalDto(
                 SourceType: ProposalSourceType.Queue,
@@ -141,7 +166,7 @@ public class CaptureTriageService : ICaptureTriageService
                 RiskLevel: riskLevel,
                 CorrelationId: triageRunId.ToString(),
                 BoardId: boardId.Value,
-                SourceReferenceId: captureItemId.ToString(),
+                SourceReferenceId: captureReferenceId,
                 Operations: operations),
             cancellationToken);
 
@@ -152,12 +177,48 @@ public class CaptureTriageService : ICaptureTriageService
                 createProposalResult.ErrorMessage);
         }
 
+        var (provider, model) = await GetProviderMetadataAsync(cancellationToken);
+
         return Result.Success(new CaptureTriageProposalResultDto(
             captureItemId,
             triageRunId,
             createProposalResult.Value.Id,
             operations.Count,
-            outputValidation.Value.PromptVersion));
+            outputValidation.Value.PromptVersion,
+            provider,
+            model));
+    }
+
+    private static Guid ResolveTriageRunId(string? correlationId, Guid fallback)
+    {
+        return Guid.TryParse(correlationId, out var parsed) && parsed != Guid.Empty
+            ? parsed
+            : fallback;
+    }
+
+    private async Task<(string Provider, string Model)> GetProviderMetadataAsync(CancellationToken ct)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            var health = await _llmProvider.GetHealthAsync(ct);
+            var provider = CaptureRequestContract.SanitizeProvenanceMetadata(
+                health.ProviderName,
+                CaptureRequestContract.MaxProviderLength);
+            var model = CaptureRequestContract.SanitizeProvenanceMetadata(
+                health.Model,
+                CaptureRequestContract.MaxModelLength);
+            return (provider, model);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to resolve LLM provider metadata for capture triage provenance. Falling back to unknown values.");
+            return ("unknown", "unknown");
+        }
     }
 
     private static List<string> ExtractTaskCandidates(string rawText)

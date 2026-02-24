@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -6,16 +5,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Taskdeck.Application.Services;
 
-public class OpenAiLlmProvider : ILlmProvider
+public class GeminiLlmProvider : ILlmProvider
 {
     private readonly HttpClient _httpClient;
     private readonly LlmProviderSettings _settings;
-    private readonly ILogger<OpenAiLlmProvider> _logger;
+    private readonly ILogger<GeminiLlmProvider> _logger;
 
-    public OpenAiLlmProvider(
+    public GeminiLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
-        ILogger<OpenAiLlmProvider> logger)
+        ILogger<GeminiLlmProvider> logger)
     {
         _httpClient = httpClient;
         _settings = settings;
@@ -28,23 +27,24 @@ public class OpenAiLlmProvider : ILlmProvider
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
 
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var validationError))
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var validationError))
         {
-            _logger.LogWarning("OpenAI provider configuration invalid: {Error}", validationError);
+            _logger.LogWarning("Gemini provider configuration invalid: {Error}", validationError);
             return BuildFallbackResult(lastUserMessage, "Live provider configuration is invalid.", GetConfiguredModelOrDefault());
         }
 
         try
         {
-            using var message = new HttpRequestMessage(HttpMethod.Post, BuildChatCompletionsEndpoint());
-            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.OpenAi.ApiKey.Trim());
+            using var message = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
+            message.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
             message.Content = JsonContent.Create(new
             {
-                model = _settings.OpenAi.Model.Trim(),
-                messages = request.Messages.Select(MapMessage).ToArray(),
-                max_tokens = request.MaxTokens,
-                temperature = request.Temperature,
-                stream = false
+                contents = request.Messages.Select(MapMessage).ToArray(),
+                generationConfig = new
+                {
+                    temperature = request.Temperature,
+                    maxOutputTokens = request.MaxTokens
+                }
             });
 
             using var response = await _httpClient.SendAsync(message, ct);
@@ -53,19 +53,19 @@ public class OpenAiLlmProvider : ILlmProvider
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning(
-                    "OpenAI completion request failed with status code {StatusCode}.",
+                    "Gemini completion request failed with status code {StatusCode}.",
                     (int)response.StatusCode);
                 return BuildFallbackResult(lastUserMessage, "Live provider request failed.", GetConfiguredModelOrDefault());
             }
 
             if (!TryParseResponse(body, out var content, out var tokensUsed))
             {
-                _logger.LogWarning("OpenAI completion response could not be parsed.");
+                _logger.LogWarning("Gemini completion response could not be parsed.");
                 return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.", GetConfiguredModelOrDefault());
             }
 
             var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
-            return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "OpenAI", GetConfiguredModelOrDefault());
+            return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "Gemini", GetConfiguredModelOrDefault());
         }
         catch (OperationCanceledException)
         {
@@ -73,7 +73,7 @@ public class OpenAiLlmProvider : ILlmProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OpenAI completion request failed with unexpected error.");
+            _logger.LogError(ex, "Gemini completion request failed with unexpected error.");
             return BuildFallbackResult(lastUserMessage, "Live provider request errored.", GetConfiguredModelOrDefault());
         }
     }
@@ -93,39 +93,50 @@ public class OpenAiLlmProvider : ILlmProvider
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var error))
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var error))
         {
-            return Task.FromResult(new LlmHealthStatus(false, "OpenAI", error, GetConfiguredModelOrDefault()));
+            return Task.FromResult(new LlmHealthStatus(false, "Gemini", error, GetConfiguredModelOrDefault()));
         }
 
-        return Task.FromResult(new LlmHealthStatus(true, "OpenAI", Model: GetConfiguredModelOrDefault()));
+        return Task.FromResult(new LlmHealthStatus(true, "Gemini", Model: GetConfiguredModelOrDefault()));
     }
 
-    private string BuildChatCompletionsEndpoint()
+    private string BuildGenerateContentEndpoint()
     {
-        var baseUrl = (_settings.OpenAi?.BaseUrl ?? "https://api.openai.com/v1").TrimEnd('/');
-        return $"{baseUrl}/chat/completions";
+        var baseUrl = (_settings.Gemini?.BaseUrl ?? "https://generativelanguage.googleapis.com/v1beta").TrimEnd('/');
+        var model = GetConfiguredModelOrDefault();
+        if (!model.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+        {
+            model = $"models/{model}";
+        }
+
+        return $"{baseUrl}/{model}:generateContent";
     }
 
     private string GetConfiguredModelOrDefault()
     {
-        return string.IsNullOrWhiteSpace(_settings.OpenAi?.Model)
-            ? "openai-unknown-model"
-            : _settings.OpenAi.Model.Trim();
+        return string.IsNullOrWhiteSpace(_settings.Gemini?.Model)
+            ? "gemini-unknown-model"
+            : _settings.Gemini.Model.Trim();
     }
 
     private static object MapMessage(ChatCompletionMessage message)
     {
         var normalizedRole = (message.Role ?? string.Empty).Trim().ToLowerInvariant();
+        var geminiRole = normalizedRole switch
+        {
+            "assistant" => "model",
+            "system" => "user",
+            _ => "user"
+        };
+
         return new
         {
-            role = normalizedRole switch
+            role = geminiRole,
+            parts = new[]
             {
-                "assistant" => "assistant",
-                "system" => "system",
-                _ => "user"
-            },
-            content = message.Content
+                new { text = message.Content }
+            }
         };
     }
 
@@ -144,25 +155,43 @@ public class OpenAiLlmProvider : ILlmProvider
             using var json = JsonDocument.Parse(responseBody);
             var root = json.RootElement;
 
-            if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
+            if (!root.TryGetProperty("candidates", out var candidates) ||
+                candidates.ValueKind != JsonValueKind.Array ||
+                candidates.GetArrayLength() == 0)
             {
                 return false;
             }
 
-            var first = choices[0];
-            if (!first.TryGetProperty("message", out var message) || !message.TryGetProperty("content", out var contentElement))
+            var firstCandidate = candidates[0];
+            if (!firstCandidate.TryGetProperty("content", out var candidateContent) ||
+                !candidateContent.TryGetProperty("parts", out var parts) ||
+                parts.ValueKind != JsonValueKind.Array ||
+                parts.GetArrayLength() == 0)
             {
                 return false;
             }
 
-            content = contentElement.GetString() ?? string.Empty;
+            var textParts = new List<string>();
+            foreach (var part in parts.EnumerateArray())
+            {
+                if (part.TryGetProperty("text", out var textElement))
+                {
+                    var text = textElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        textParts.Add(text);
+                    }
+                }
+            }
+
+            content = string.Join(Environment.NewLine, textParts).Trim();
             if (string.IsNullOrWhiteSpace(content))
             {
                 return false;
             }
 
-            if (root.TryGetProperty("usage", out var usage) &&
-                usage.TryGetProperty("total_tokens", out var totalTokens) &&
+            if (root.TryGetProperty("usageMetadata", out var usage) &&
+                usage.TryGetProperty("totalTokenCount", out var totalTokens) &&
                 totalTokens.TryGetInt32(out var parsedTokens))
             {
                 tokensUsed = parsedTokens;
@@ -192,8 +221,8 @@ public class OpenAiLlmProvider : ILlmProvider
             TokensUsed: EstimateTokens(userMessage) + EstimateTokens(content),
             IsActionable: isActionable,
             ActionIntent: actionIntent,
-            Provider: "OpenAI",
-            Model: string.IsNullOrWhiteSpace(model) ? "openai-unknown-model" : model.Trim());
+            Provider: "Gemini",
+            Model: string.IsNullOrWhiteSpace(model) ? "gemini-unknown-model" : model.Trim());
     }
 
     private static int EstimateTokens(string text)
