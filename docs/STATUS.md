@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-23  
+Last Updated: 2026-02-24  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -319,7 +319,8 @@ Issue seeding and reconciliation completed:
 Execution posture:
 
 - eliminate deterministic flake vectors first (`#255`)
-- then expand high-signal regression coverage (`#256`, `#257`)
+- expand high-signal regression coverage with drag/drop persistence locked after full reload (`#256`)
+- continue error-contract coverage expansion (`#257`)
 - then add harness-level CI guardrails with non-blocking rollout (`#258`, `#259`, `#260`)
 
 Reconciliation record:
