@@ -443,8 +443,12 @@ public class LlmQueueServiceTests
         typeof(Entity).GetProperty(nameof(Entity.CreatedAt))
         ?? throw new InvalidOperationException("Expected Entity.CreatedAt property to exist.");
 
+    private static readonly MethodInfo CreatedAtSetter =
+        CreatedAtProperty.GetSetMethod(true)
+        ?? throw new InvalidOperationException("Expected Entity.CreatedAt setter to exist.");
+
     private static void SetCreatedAt(LlmRequest request, DateTimeOffset createdAt)
     {
-        CreatedAtProperty.SetValue(request, createdAt);
+        CreatedAtSetter.Invoke(request, new object[] { createdAt });
     }
 }
