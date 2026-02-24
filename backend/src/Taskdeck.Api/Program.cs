@@ -70,7 +70,10 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
 builder.Services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
 builder.Services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
-builder.Services.AddSingleton<IBoardRealtimeNotifier, SignalRBoardRealtimeNotifier>();
+builder.Services.AddScoped<IOutboundWebhookService, OutboundWebhookService>();
+builder.Services.AddScoped<SignalRBoardRealtimeNotifier>();
+builder.Services.AddScoped<WebhookBoardMutationNotifier>();
+builder.Services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
 builder.Services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
 
 // LLM provider settings and deterministic provider selection policy
@@ -88,6 +91,10 @@ builder.Services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
     var settings = sp.GetRequiredService<LlmProviderSettings>();
     var timeoutSeconds = settings.Gemini?.TimeoutSeconds > 0 ? settings.Gemini.TimeoutSeconds : 30;
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
+builder.Services.AddHttpClient("OutboundWebhookDelivery", (_, client) =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddScoped<MockLlmProvider>();
 builder.Services.AddScoped<ILlmProvider>(sp =>
@@ -129,6 +136,7 @@ builder.Services.AddSingleton(workerSettings);
 builder.Services.AddSingleton<WorkerHeartbeatRegistry>();
 builder.Services.AddHostedService<LlmQueueToProposalWorker>();
 builder.Services.AddHostedService<ProposalHousekeepingWorker>();
+builder.Services.AddHostedService<OutboundWebhookDeliveryWorker>();
 
 if (observabilitySettings.EnableOpenTelemetry)
 {
