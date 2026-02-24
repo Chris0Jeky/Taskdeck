@@ -92,6 +92,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         }
 
         var indexByHeader = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var duplicateHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var index = 0; index < header.Values.Count; index++)
         {
             var headerName = NormalizeHeaderName(header.Values[index]);
@@ -100,7 +101,23 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
                 continue;
             }
 
-            indexByHeader[headerName] = index;
+            if (!indexByHeader.TryAdd(headerName, index))
+            {
+                duplicateHeaders.Add(headerName);
+            }
+        }
+
+        if (duplicateHeaders.Count > 0)
+        {
+            var duplicateHeaderList = string.Join(
+                ", ",
+                duplicateHeaders
+                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                    .Select(value => $"'{value}'"));
+
+            return Result.Failure<ExternalImportParseResult>(
+                ErrorCodes.ValidationError,
+                $"CSV header row contains duplicate column names after normalization: {duplicateHeaderList}.");
         }
 
         var explicitColumnValidation = ValidateExplicitColumnMappings(indexByHeader, request.Csv);
