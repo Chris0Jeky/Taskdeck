@@ -308,7 +308,9 @@ public class LlmQueueToProposalWorker : BackgroundService
                     item.Id,
                     triageRunId: triageResult.Value.TriageRunId,
                     proposalId: triageResult.Value.ProposalId,
-                    promptVersion: triageResult.Value.PromptVersion);
+                    promptVersion: triageResult.Value.PromptVersion,
+                    provider: triageResult.Value.Provider,
+                    model: triageResult.Value.Model);
 
                 item.UpdatePayload(CaptureRequestContract.SerializePayload(linkedPayload));
                 item.MarkAsCompleted();

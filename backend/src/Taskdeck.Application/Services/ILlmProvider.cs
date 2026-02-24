@@ -19,9 +19,11 @@ public record LlmCompletionResult(
     string Content,
     int TokensUsed,
     bool IsActionable,
-    string? ActionIntent = null
+    string? ActionIntent = null,
+    string Provider = "Mock",
+    string Model = "mock-default"
 );
 
 public record LlmTokenEvent(string Token, bool IsComplete);
 
-public record LlmHealthStatus(bool IsAvailable, string ProviderName, string? ErrorMessage = null);
+public record LlmHealthStatus(bool IsAvailable, string ProviderName, string? ErrorMessage = null, string? Model = null);

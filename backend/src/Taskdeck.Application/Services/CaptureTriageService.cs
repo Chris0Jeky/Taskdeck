@@ -29,15 +29,18 @@ public class CaptureTriageService : ICaptureTriageService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
+    private readonly ILlmProvider _llmProvider;
 
     public CaptureTriageService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
-        IAutomationPolicyEngine policyEngine)
+        IAutomationPolicyEngine policyEngine,
+        ILlmProvider llmProvider)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
+        _llmProvider = llmProvider;
     }
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
@@ -121,6 +124,7 @@ public class CaptureTriageService : ICaptureTriageService
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
         var triageRunId = Guid.NewGuid();
         var summary = BuildSummary(outputValidation.Value.Tasks);
+        var (provider, model) = await GetProviderMetadataAsync(cancellationToken);
         var permissionResult = await _policyEngine.ValidatePermissionsAsync(
             userId,
             boardId,
@@ -157,7 +161,28 @@ public class CaptureTriageService : ICaptureTriageService
             triageRunId,
             createProposalResult.Value.Id,
             operations.Count,
-            outputValidation.Value.PromptVersion));
+            outputValidation.Value.PromptVersion,
+            provider,
+            model));
+    }
+
+    private async Task<(string Provider, string Model)> GetProviderMetadataAsync(CancellationToken ct)
+    {
+        try
+        {
+            var health = await _llmProvider.GetHealthAsync(ct);
+            var provider = string.IsNullOrWhiteSpace(health.ProviderName) ? "unknown" : health.ProviderName.Trim();
+            var model = string.IsNullOrWhiteSpace(health.Model) ? "unknown" : health.Model.Trim();
+            return (provider, model);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return ("unknown", "unknown");
+        }
     }
 
     private static List<string> ExtractTaskCandidates(string rawText)

@@ -6,6 +6,7 @@ public sealed class LlmProviderSettings
     public bool AllowLiveProvidersInDevelopment { get; set; }
     public string Provider { get; set; } = "Mock";
     public OpenAiProviderSettings OpenAi { get; set; } = new();
+    public GeminiProviderSettings Gemini { get; set; } = new();
 }
 
 public sealed class OpenAiProviderSettings
@@ -13,5 +14,13 @@ public sealed class OpenAiProviderSettings
     public string ApiKey { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = "https://api.openai.com/v1";
     public string Model { get; set; } = "gpt-4o-mini";
+    public int TimeoutSeconds { get; set; } = 30;
+}
+
+public sealed class GeminiProviderSettings
+{
+    public string ApiKey { get; set; } = string.Empty;
+    public string BaseUrl { get; set; } = "https://generativelanguage.googleapis.com/v1beta";
+    public string Model { get; set; } = "gemini-2.5-flash";
     public int TimeoutSeconds { get; set; } = 30;
 }
