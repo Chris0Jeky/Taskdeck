@@ -18,4 +18,10 @@ public interface IOutboundWebhookDeliveryRepository : IRepository<OutboundWebhoo
         DateTimeOffset staleBefore,
         int limit = 100,
         CancellationToken cancellationToken = default);
+
+    Task<bool> TryClaimPendingAsync(
+        Guid deliveryId,
+        DateTimeOffset expectedUpdatedAt,
+        DateTimeOffset claimedAt,
+        CancellationToken cancellationToken = default);
 }

@@ -3,6 +3,7 @@ using System.Text;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Api.Workers;
@@ -86,8 +87,18 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
 
             try
             {
+                var claimedAt = DateTimeOffset.UtcNow;
+                var wasClaimed = await unitOfWork.OutboundWebhookDeliveries.TryClaimPendingAsync(
+                    delivery.Id,
+                    delivery.UpdatedAt,
+                    claimedAt,
+                    cancellationToken);
+                if (!wasClaimed)
+                {
+                    continue;
+                }
+
                 delivery.MarkProcessing();
-                await unitOfWork.SaveChangesAsync(cancellationToken);
 
                 var timestamp = DateTimeOffset.UtcNow;
                 var signature = OutboundWebhookSignature.Compute(
@@ -192,7 +203,7 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
     }
 
     private string MarkFailure(
-        Domain.Entities.OutboundWebhookDelivery delivery,
+        OutboundWebhookDelivery delivery,
         string errorMessage,
         int? responseStatusCode = null)
     {

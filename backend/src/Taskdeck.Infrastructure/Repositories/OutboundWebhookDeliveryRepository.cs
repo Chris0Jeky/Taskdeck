@@ -114,6 +114,28 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<bool> TryClaimPendingAsync(
+        Guid deliveryId,
+        DateTimeOffset expectedUpdatedAt,
+        DateTimeOffset claimedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE OutboundWebhookDeliveries
+            SET Status = {(int)WebhookDeliveryStatus.Processing},
+                LastAttemptAt = {claimedAt},
+                UpdatedAt = {claimedAt}
+            WHERE Id = {deliveryId}
+              AND Status = {(int)WebhookDeliveryStatus.Pending}
+              AND UpdatedAt = {expectedUpdatedAt}
+              AND NextAttemptAt <= {claimedAt}
+            """,
+            cancellationToken);
+
+        return rowsAffected > 0;
+    }
+
     private static int NormalizeLimit(int limit)
     {
         return limit <= 0 ? DefaultLimit : limit;
