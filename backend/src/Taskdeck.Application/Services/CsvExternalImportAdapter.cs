@@ -74,13 +74,9 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         var parsedRows = parseRowsResult.Value;
         if (parsedRows.Count == 0)
         {
-            return Result.Success(new ExternalImportParseResult(
-                Provider,
-                profile,
-                0,
-                0,
-                [],
-                []));
+            return Result.Failure<ExternalImportParseResult>(
+                ErrorCodes.ValidationError,
+                "CSV payload must contain at least one non-empty header row.");
         }
 
         var header = parsedRows[0];

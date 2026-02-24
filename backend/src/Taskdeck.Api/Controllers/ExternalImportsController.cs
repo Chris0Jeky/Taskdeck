@@ -39,27 +39,11 @@ public class ExternalImportsController : AuthenticatedControllerBase
             return errorResult!;
         }
 
-        var readableBoardsResult = await _authorizationService.GetReadableBoardIdsAsync(
-            userId,
-            [boardId],
-            cancellationToken);
-        if (!readableBoardsResult.IsSuccess)
-        {
-            return readableBoardsResult.ToErrorActionResult();
-        }
-
-        if (!readableBoardsResult.Value.Contains(boardId))
-        {
-            return Result
-                .Failure(ErrorCodes.Forbidden, "You do not have permission to modify this board")
-                .ToErrorActionResult();
-        }
-
         var permissionError = await EnsureBoardPermissionAsync(
             _authorizationService,
             userId,
             boardId,
-            static (authorizationService, actorId, targetBoardId) => authorizationService.CanWriteBoardAsync(actorId, targetBoardId),
+            CanWriteBoardWithoutExistenceLeakAsync,
             "You do not have permission to modify this board");
 
         if (permissionError is not null)
@@ -86,5 +70,19 @@ public class ExternalImportsController : AuthenticatedControllerBase
         }
 
         return Ok(result.Value);
+    }
+
+    private static async Task<Result<bool>> CanWriteBoardWithoutExistenceLeakAsync(
+        BoardAuthorizationService authorizationService,
+        Guid actorId,
+        Guid targetBoardId)
+    {
+        var permission = await authorizationService.CanWriteBoardAsync(actorId, targetBoardId);
+        if (!permission.IsSuccess && permission.ErrorCode == ErrorCodes.NotFound)
+        {
+            return Result.Success<bool>(false);
+        }
+
+        return permission;
     }
 }
