@@ -395,7 +395,7 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
 
     private async Task<CardDto> WaitForSingleCardAsync(HttpClient client, Guid boardId)
     {
-        var cards = await ApiTestHarness.PollUntilAsync(
+        var cardList = await ApiTestHarness.PollUntilAsync(
             async () =>
             {
                 var cardsResponse = await client.GetAsync($"/api/boards/{boardId}/cards");
@@ -412,7 +412,7 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
                 ? "cardList=null"
                 : $"cardCount={cardList.Count}, cardIds=[{string.Join(",", cardList.Select(card => card.Id))}]");
 
-        return cards[0];
+        return cardList[0];
     }
 
     private async Task<CaptureItemDto> WaitForCaptureStatusAsync(Guid itemId, CaptureStatus expectedStatus)

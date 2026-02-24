@@ -100,12 +100,12 @@ try
         $stdoutLogPath,
         [System.IO.FileMode]::Create,
         [System.IO.FileAccess]::Write,
-        [System.IO.FileShare]::Read)
+        [System.IO.FileShare]::ReadWrite)
     $stderrLogStream = [System.IO.FileStream]::new(
         $stderrLogPath,
         [System.IO.FileMode]::Create,
         [System.IO.FileAccess]::Write,
-        [System.IO.FileShare]::Read)
+        [System.IO.FileShare]::ReadWrite)
 
     $stdoutCopyTask = $apiProcess.StandardOutput.BaseStream.CopyToAsync($stdoutLogStream)
     $stderrCopyTask = $apiProcess.StandardError.BaseStream.CopyToAsync($stderrLogStream)
