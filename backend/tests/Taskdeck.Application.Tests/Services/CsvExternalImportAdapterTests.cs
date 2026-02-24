@@ -138,6 +138,74 @@ public class CsvExternalImportAdapterTests
     }
 
     [Fact]
+    public void Parse_ShouldTreatNonIsoLastTouchDateAsInvalid()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,last_touch_at
+                     Alice Example,Acme,01/02/2024
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Candidates.Should().BeEmpty();
+        result.Value.Conflicts.Should().ContainSingle(conflict =>
+            conflict.Code == "InvalidDate" &&
+            conflict.IncomingValue == "01/02/2024");
+    }
+
+    [Fact]
+    public void Parse_ShouldHandleUtf8BomInFirstHeaderCell()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: $"""
+                      {"\uFEFF"}Display Name,Company,Email Address
+                      Alice Example,Acme,
+                      """,
+            TargetColumnName: "Imported",
+            DryRun: true,
+            Csv: new ExternalImportCsvOptionsDto(
+                DisplayNameColumn: "Display Name",
+                CompanyColumn: "Company",
+                EmailColumn: "Email Address"));
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Candidates.Should().ContainSingle(candidate =>
+            candidate.DedupeKey == "name-company:aliceexample|acme" &&
+            candidate.Title == "Alice Example");
+    }
+
+    [Fact]
+    public void Parse_ShouldEmitConflict_WhenCardTitleExceedsDomainLimit()
+    {
+        var overlyLongName = new string('A', 250);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: $"""
+                      Display Name,Company,Email Address
+                      {overlyLongName},Acme,alice@example.com
+                      """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Candidates.Should().BeEmpty();
+        result.Value.Conflicts.Should().ContainSingle(conflict =>
+            conflict.Code == "TitleTooLong" &&
+            conflict.Path == "$.rows[2].title" &&
+            conflict.IncomingValue == "length=250");
+    }
+
+    [Fact]
     public void Parse_ShouldPopulateIncomingValues_ForActionableConflicts()
     {
         var request = new ExternalImportRequestDto(

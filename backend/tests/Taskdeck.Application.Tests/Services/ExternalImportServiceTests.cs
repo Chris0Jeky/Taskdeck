@@ -115,6 +115,54 @@ public class ExternalImportServiceTests
     }
 
     [Fact]
+    public async Task ImportToBoardAsync_DryRun_ShouldNotMatchExistingCards_FromDifferentProviderOrProfile()
+    {
+        var board = BuildBoardWithColumn("Imported");
+        var boardId = board.Id;
+        var targetColumnId = board.Columns.Single().Id;
+
+        var existingCard = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: boardId,
+            columnId: targetColumnId,
+            title: "Alice Existing",
+            description: "[taskdeck-import-meta] {\"provider\":\"other-provider\",\"profile\":\"other.profile.v1\",\"dedupeKey\":\"email:alice@example.com\"}",
+            dueDate: null,
+            position: 0);
+        AttachCard(board, existingCard, targetColumnId);
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates:
+            [
+                new ExternalImportCandidate(2, "email:alice@example.com", "Alice Incoming", "incoming")
+            ],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "unused",
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = await service.ImportToBoardAsync(boardId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.RowsCreated.Should().Be(1);
+        result.Value.RowsUpdated.Should().Be(0);
+        result.Value.RowsSkipped.Should().Be(0);
+        result.Value.Conflicts.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ImportToBoardAsync_ShouldRollback_WhenPersistenceFails()
     {
         var board = BuildBoardWithColumn("Imported");

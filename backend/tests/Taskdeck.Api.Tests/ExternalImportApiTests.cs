@@ -11,10 +11,12 @@ namespace Taskdeck.Api.Tests;
 public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly TestWebApplicationFactory _factory;
     private bool _isAuthenticated;
 
     public ExternalImportApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -109,7 +111,7 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Apply_ShouldRollback_WhenOneRecordFailsValidation()
+    public async Task Apply_ShouldReturnConflictWithoutMutation_WhenOneRecordViolatesCardConstraints()
     {
         await EnsureAuthenticatedAsync();
         var boardId = await CreateBoardAsync("external-import-rollback");
@@ -127,7 +129,15 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var result = await response.Content.ReadFromJsonAsync<ExternalImportResultDto>();
+        result.Should().NotBeNull();
+        result!.Applied.Should().BeFalse();
+        result.HasConflicts.Should().BeTrue();
+        result.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "TitleTooLong" &&
+            conflict.Path == "$.rows[3].title");
+
         var boardExportResponse = await _client.GetAsync($"/api/export/boards/{boardId}");
         boardExportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var export = await boardExportResponse.Content.ReadFromJsonAsync<ExportBoardDto>();
@@ -211,6 +221,74 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
             conflict.ExistingValue != null &&
             conflict.ExistingValue.Contains("Alice Existing One", StringComparison.Ordinal) &&
             conflict.ExistingValue.Contains("Alice Existing Two", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Apply_ShouldNotUpdateRecords_WhenExistingMetadataHasDifferentProviderOrProfile()
+    {
+        await EnsureAuthenticatedAsync();
+
+        const string dedupeKey = "email:alice@example.com";
+        var boardId = await CreateBoardAsync(
+            "external-import-provider-scope",
+            [
+                new ImportCardDto(
+                    "Alice Existing",
+                    $"[taskdeck-import-meta] {{\"provider\":\"other-provider\",\"profile\":\"other.profile.v1\",\"dedupeKey\":\"{dedupeKey}\"}}",
+                    "Imported",
+                    0,
+                    null,
+                    null)
+            ]);
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address,Role
+                     Alice Incoming,Acme,alice@example.com,Engineer
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ExternalImportResultDto>();
+        result.Should().NotBeNull();
+        result!.Applied.Should().BeTrue();
+        result.RowsCreated.Should().Be(1);
+        result.RowsUpdated.Should().Be(0);
+        result.RowsSkipped.Should().Be(0);
+
+        var boardExportResponse = await _client.GetAsync($"/api/export/boards/{boardId}");
+        boardExportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var export = await boardExportResponse.Content.ReadFromJsonAsync<ExportBoardDto>();
+        export.Should().NotBeNull();
+        export!.Cards.Should().HaveCount(2);
+        export.Cards.Should().Contain(card => card.Title == "Alice Existing");
+        export.Cards.Should().Contain(card => card.Title == "Alice Incoming");
+    }
+
+    [Fact]
+    public async Task ImportEndpoint_ShouldReturnForbidden_ForBothForeignAndMissingBoards()
+    {
+        await EnsureAuthenticatedAsync();
+        var foreignBoardId = await CreateBoardAsync("external-import-foreign-board");
+
+        var otherClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(otherClient, "external-import-other-user");
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "Display Name,Company\nAlice Example,Acme",
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var foreignResponse = await otherClient.PostAsJsonAsync($"/api/boards/{foreignBoardId}/imports/external", request);
+        var missingResponse = await otherClient.PostAsJsonAsync($"/api/boards/{Guid.NewGuid()}/imports/external", request);
+
+        await ApiTestHarness.AssertForbiddenAsync(foreignResponse);
+        await ApiTestHarness.AssertForbiddenAsync(missingResponse);
     }
 
     private async Task EnsureAuthenticatedAsync()
