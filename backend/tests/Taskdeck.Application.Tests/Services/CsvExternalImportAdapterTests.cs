@@ -80,6 +80,52 @@ public class CsvExternalImportAdapterTests
     }
 
     [Fact]
+    public void Parse_ShouldStripLinkedInQueryAndFragment_WhenBuildingDedupeKey()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,LinkedIn URL
+                     Alice Canonical,Acme,https://linkedin.com/in/alice
+                     Alice Tracked,Acme,https://linkedin.com/in/alice?trk=feed#top
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Candidates.Should().ContainSingle(candidate =>
+            candidate.DedupeKey == "linkedin:https://linkedin.com/in/alice");
+        result.Value.Conflicts.Should().ContainSingle(conflict =>
+            conflict.Code == "DuplicateInputRecord" &&
+            conflict.IncomingValue == "linkedin:https://linkedin.com/in/alice");
+    }
+
+    [Fact]
+    public void Parse_ShouldIgnoreMalformedLinkedInAndFallbackToEmailDedupe()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,LinkedIn URL,Email Address
+                     Alice One,Acme,N/A,alice.one@example.com
+                     Alice Two,Acme,N/A,alice.two@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Candidates.Should().HaveCount(2);
+        result.Value.Candidates.Select(candidate => candidate.DedupeKey).Should().ContainInOrder(
+            "email:alice.one@example.com",
+            "email:alice.two@example.com");
+        result.Value.Conflicts.Should().NotContain(conflict => conflict.Code == "DuplicateInputRecord");
+    }
+
+    [Fact]
     public void Parse_ShouldReturnValidationError_WhenCsvHasUnclosedQuote()
     {
         var request = new ExternalImportRequestDto(

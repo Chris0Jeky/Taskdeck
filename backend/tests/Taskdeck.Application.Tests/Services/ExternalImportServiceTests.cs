@@ -349,6 +349,57 @@ public class ExternalImportServiceTests
     }
 
     [Fact]
+    public async Task ImportToBoardAsync_ShouldAllowInPlaceUpdate_WhenTargetColumnIsAtWipLimit()
+    {
+        var board = BuildBoardWithColumn("Imported", wipLimit: 1);
+        var boardId = board.Id;
+        var targetColumnId = board.Columns.Single().Id;
+        const string dedupeKey = "email:alice@example.com";
+
+        var existingCard = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: boardId,
+            columnId: targetColumnId,
+            title: "Alice Old",
+            description: $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{dedupeKey}\"}}",
+            dueDate: null,
+            position: 0);
+        AttachCard(board, existingCard, targetColumnId);
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates:
+            [
+                new ExternalImportCandidate(2, dedupeKey, "Alice Updated", "updated")
+            ],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "unused",
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var result = await service.ImportToBoardAsync(boardId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Applied.Should().BeTrue();
+        result.Value.RowsCreated.Should().Be(0);
+        result.Value.RowsUpdated.Should().Be(1);
+        result.Value.RowsSkipped.Should().Be(0);
+        result.Value.Conflicts.Should().BeEmpty();
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ImportToBoardAsync_ShouldReturnUnexpectedError_WhenBeginTransactionFails()
     {
         var board = BuildBoardWithColumn("Imported");

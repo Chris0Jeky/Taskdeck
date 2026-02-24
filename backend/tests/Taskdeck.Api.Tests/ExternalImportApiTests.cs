@@ -303,6 +303,46 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Apply_ShouldAllowInPlaceUpdate_WhenTargetColumnIsAtWipLimit()
+    {
+        await EnsureAuthenticatedAsync();
+
+        const string dedupeKey = "email:alice@example.com";
+        var boardId = await CreateBoardAsync(
+            "external-import-wip-limit-update",
+            cards:
+            [
+                new ImportCardDto(
+                    "Alice Existing",
+                    $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{dedupeKey}\"}}\n\nDisplay Name: Alice Existing\nCompany: Acme\nRole: Engineer\nEmail: alice@example.com\nLinkedIn: \nLast Touch At: ",
+                    "Imported",
+                    0,
+                    null,
+                    null)
+            ],
+            importedColumnWipLimit: 1);
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address,Role
+                     Alice Existing,Acme,alice@example.com,Principal Engineer
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ExternalImportResultDto>();
+        result.Should().NotBeNull();
+        result!.Applied.Should().BeTrue();
+        result.RowsCreated.Should().Be(0);
+        result.RowsUpdated.Should().Be(1);
+        result.RowsSkipped.Should().Be(0);
+    }
+
+    [Fact]
     public async Task ImportEndpoint_ShouldReturnForbidden_ForBothForeignAndMissingBoards()
     {
         await EnsureAuthenticatedAsync();

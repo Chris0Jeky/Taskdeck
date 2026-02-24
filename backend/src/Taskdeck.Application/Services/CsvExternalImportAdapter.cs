@@ -459,7 +459,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
             return normalizedLinkedInUri;
         }
 
-        return Normalize(trimmed);
+        return string.Empty;
     }
 
     private static bool TryNormalizeLinkedInUri(string value, out string normalizedLinkedInUri)
@@ -478,7 +478,9 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         var builder = new UriBuilder(uri)
         {
             Scheme = Uri.UriSchemeHttps,
-            Port = -1
+            Port = -1,
+            Query = string.Empty,
+            Fragment = string.Empty
         };
         normalizedLinkedInUri = builder.Uri.ToString().TrimEnd('/').ToLowerInvariant();
         return true;
