@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
@@ -130,24 +131,33 @@ public static class ApiTestHarness
         Func<Task<T>> probe,
         Func<T, bool> isComplete,
         string description,
-        TimeSpan? timeout = null,
+        int maxAttempts = 40,
         TimeSpan? interval = null,
-        Func<T, string>? diagnostics = null)
+        Func<T?, string>? diagnostics = null)
     {
-        var timeoutValue = timeout ?? TimeSpan.FromSeconds(10);
         var intervalValue = interval ?? TimeSpan.FromMilliseconds(250);
-        var deadline = DateTimeOffset.UtcNow + timeoutValue;
+        if (maxAttempts <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxAttempts), maxAttempts, "maxAttempts must be greater than zero.");
+        }
+
+        if (intervalValue <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(interval), intervalValue, "interval must be greater than zero.");
+        }
+
+        var stopwatch = Stopwatch.StartNew();
         T? lastValue = default;
 
-        while (DateTimeOffset.UtcNow <= deadline)
+        for (var attempt = 1; attempt <= maxAttempts; attempt += 1)
         {
             lastValue = await probe();
-            if (isComplete(lastValue))
+            if (lastValue is not null && isComplete(lastValue))
             {
                 return lastValue;
             }
 
-            if (DateTimeOffset.UtcNow > deadline)
+            if (attempt >= maxAttempts)
             {
                 break;
             }
@@ -160,7 +170,7 @@ public static class ApiTestHarness
             : diagnostics?.Invoke(lastValue) ?? JsonSerializer.Serialize(lastValue, JsonOptionsForDiagnostics);
 
         throw new XunitException(
-            $"{description} did not complete within {timeoutValue.TotalMilliseconds:0}ms. Last observed value: {diagnosticsText}");
+            $"{description} did not complete after {maxAttempts} attempts (~{stopwatch.ElapsedMilliseconds}ms). Last observed value: {diagnosticsText}");
     }
 
     private static readonly JsonSerializerOptions JsonOptionsForDiagnostics = new()

@@ -406,9 +406,11 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
             },
             cards => cards.Count == 1,
             $"single card to appear on board {boardId}",
-            timeout: TimeSpan.FromSeconds(10),
+            maxAttempts: 40,
             interval: TimeSpan.FromMilliseconds(250),
-            diagnostics: cardList => $"cardCount={cardList.Count}, cardIds=[{string.Join(",", cardList.Select(card => card.Id))}]");
+            diagnostics: cardList => cardList is null
+                ? "cardList=null"
+                : $"cardCount={cardList.Count}, cardIds=[{string.Join(",", cardList.Select(card => card.Id))}]");
 
         return cards[0];
     }
@@ -434,10 +436,11 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
             },
             item => item.Status == expectedStatus || (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed),
             $"capture item {itemId} status to become {expectedStatus}",
-            timeout: TimeSpan.FromSeconds(10),
+            maxAttempts: 40,
             interval: TimeSpan.FromMilliseconds(250),
-            diagnostics: item =>
-                $"status={item.Status}, proposalId={item.Provenance?.ProposalId?.ToString() ?? "null"}, triageRunId={item.Provenance?.TriageRunId?.ToString() ?? "null"}");
+            diagnostics: item => item is null
+                ? "item=null"
+                : $"status={item.Status}, proposalId={item.Provenance?.ProposalId?.ToString() ?? "null"}, triageRunId={item.Provenance?.TriageRunId?.ToString() ?? "null"}");
     }
 
     private static async Task ExecuteProposalAsync(HttpClient client, Guid proposalId)
