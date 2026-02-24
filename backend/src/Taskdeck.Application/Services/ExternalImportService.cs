@@ -23,8 +23,12 @@ public sealed class ExternalImportService : IExternalImportService
         IEnumerable<IExternalImportAdapter> adapters)
     {
         _unitOfWork = unitOfWork;
-        var adapterGroups = adapters
-            .GroupBy(adapter => adapter.Provider, StringComparer.OrdinalIgnoreCase)
+        var normalizedAdapters = adapters
+            .Select(adapter => (Adapter: adapter, Provider: NormalizeProviderKey(adapter.Provider)))
+            .ToList();
+
+        var adapterGroups = normalizedAdapters
+            .GroupBy(entry => entry.Provider, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var duplicateProviders = adapterGroups
@@ -41,7 +45,7 @@ public sealed class ExternalImportService : IExternalImportService
         }
 
         _adaptersByProvider = adapterGroups
-            .ToDictionary(group => group.Key, group => group.Single(), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(group => group.Key, group => group.Single().Adapter, StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<Result<ExternalImportResultDto>> ImportToBoardAsync(
@@ -116,6 +120,8 @@ public sealed class ExternalImportService : IExternalImportService
         }
 
         var parsed = parseResult.Value;
+        var parsedProvider = parsed.Provider.Trim();
+        var parsedProfile = parsed.Profile.Trim();
         var conflicts = new List<ExternalImportConflictDto>(parsed.Conflicts);
 
         var existingCardsByMatchKey = new Dictionary<ImportMatchKey, List<Card>>(MatchKeyComparer);
@@ -129,7 +135,15 @@ public sealed class ExternalImportService : IExternalImportService
                 continue;
             }
 
-            var matchKey = new ImportMatchKey(metadata.Provider.Trim(), metadata.Profile.Trim(), metadata.DedupeKey.Trim());
+            var metadataProvider = metadata.Provider.Trim();
+            var metadataProfile = metadata.Profile.Trim();
+            if (!string.Equals(metadataProvider, parsedProvider, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(metadataProfile, parsedProfile, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var matchKey = new ImportMatchKey(metadataProvider, metadataProfile, metadata.DedupeKey.Trim());
             if (!existingCardsByMatchKey.TryGetValue(matchKey, out var matchingCards))
             {
                 matchingCards = [];
@@ -168,7 +182,7 @@ public sealed class ExternalImportService : IExternalImportService
 
         foreach (var candidate in parsed.Candidates)
         {
-            var candidateMatchKey = new ImportMatchKey(parsed.Provider, parsed.Profile, candidate.DedupeKey);
+            var candidateMatchKey = new ImportMatchKey(parsedProvider, parsedProfile, candidate.DedupeKey.Trim());
 
             if (duplicateExistingKeys.Contains(candidateMatchKey))
             {
@@ -176,7 +190,7 @@ public sealed class ExternalImportService : IExternalImportService
                 conflicts.Add(new ExternalImportConflictDto(
                     "AmbiguousExistingMatch",
                     $"$.rows[{candidate.SourceRowNumber}]",
-                    $"Cannot resolve target card for dedupe key '{candidate.DedupeKey}' because multiple existing cards match for provider '{parsed.Provider}' and profile '{parsed.Profile}'.",
+                    $"Cannot resolve target card for dedupe key '{candidate.DedupeKey}' because multiple existing cards match for provider '{parsedProvider}' and profile '{parsedProfile}'.",
                     ExistingValue: BuildCardReference(existingCards),
                     IncomingValue: candidate.DedupeKey));
                 continue;
@@ -205,8 +219,8 @@ public sealed class ExternalImportService : IExternalImportService
 
         var preview = new ExternalImportResultDto(
             board.Id,
-            parsed.Provider,
-            parsed.Profile,
+            parsedProvider,
+            parsedProfile,
             targetColumn.Name,
             request.DryRun,
             Applied: false,
@@ -310,6 +324,18 @@ public sealed class ExternalImportService : IExternalImportService
         {
             return false;
         }
+    }
+
+    private static string NormalizeProviderKey(string? provider)
+    {
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            throw new InvalidOperationException(
+                "External import adapter registration contains an empty provider key. " +
+                "Each adapter must declare a non-empty provider.");
+        }
+
+        return provider.Trim();
     }
 
     private sealed record PlannedUpsert(Card? ExistingCard, ExternalImportCandidate Candidate);
