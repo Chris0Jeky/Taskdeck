@@ -166,7 +166,11 @@ finally
 
         try
         {
-            $apiProcess.WaitForExit()
+            $processExitWaitMilliseconds = 5000
+            if (-not $apiProcess.WaitForExit($processExitWaitMilliseconds))
+            {
+                Add-Content -LiteralPath $stderrLogPath -Value "Taskdeck.Api process did not exit within $processExitWaitMilliseconds ms during cleanup."
+            }
         }
         catch
         {
