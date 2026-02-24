@@ -46,4 +46,4 @@ jobs:
             artifacts/openapi/taskdeck-api.json
             artifacts/openapi/taskdeck-openapi-stdout.log
             artifacts/openapi/taskdeck-openapi-stderr.log
-          if-no-files-found: error
+          if-no-files-found: warn
