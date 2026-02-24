@@ -370,29 +370,21 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
     private async Task<CaptureItemDto> WaitForCaptureStatusAsync(Guid itemId, CaptureStatus expectedStatus)
     {
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            var response = await _client.GetAsync($"/api/capture/items/{itemId}");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var item = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
-            item.Should().NotBeNull();
-            if (item!.Status == expectedStatus)
+        return await ApiTestHarness.PollUntilAsync(
+            async () =>
             {
-                return item;
-            }
-
-            if (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed)
-            {
-                return item;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-
-        var timeoutResponse = await _client.GetAsync($"/api/capture/items/{itemId}");
-        timeoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var timeoutItem = await timeoutResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
-        timeoutItem.Should().NotBeNull();
-        return timeoutItem!;
+                var response = await _client.GetAsync($"/api/capture/items/{itemId}");
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                var item = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+                item.Should().NotBeNull();
+                return item!;
+            },
+            item => item.Status == expectedStatus || (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed),
+            $"capture item {itemId} status to become {expectedStatus}",
+            maxAttempts: 40,
+            interval: TimeSpan.FromMilliseconds(250),
+            diagnostics: item => item is null
+                ? "item=null"
+                : $"status={item.Status}, proposalId={item.Provenance?.ProposalId?.ToString() ?? "null"}, triageRunId={item.Provenance?.TriageRunId?.ToString() ?? "null"}");
     }
 }

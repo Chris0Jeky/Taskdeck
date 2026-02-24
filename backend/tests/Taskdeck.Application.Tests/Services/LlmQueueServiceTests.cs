@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -378,10 +379,12 @@ public class LlmQueueServiceTests
     {
         var userId = Guid.NewGuid();
         var oldestNonCapture = new LlmRequest(userId, "summarize", "oldest non-capture");
-        await Task.Delay(5);
         var captureRequest = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
-        await Task.Delay(5);
         var newestNonCapture = new LlmRequest(userId, "summarize", "newest non-capture");
+        var baseTime = DateTimeOffset.UtcNow;
+        SetCreatedAt(oldestNonCapture, baseTime);
+        SetCreatedAt(captureRequest, baseTime.AddMilliseconds(1));
+        SetCreatedAt(newestNonCapture, baseTime.AddMilliseconds(2));
 
         _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
             .ReturnsAsync(new[] { newestNonCapture, captureRequest, oldestNonCapture });
@@ -435,4 +438,17 @@ public class LlmQueueServiceTests
     }
 
     #endregion
+
+    private static readonly PropertyInfo CreatedAtProperty =
+        typeof(Entity).GetProperty(nameof(Entity.CreatedAt))
+        ?? throw new InvalidOperationException("Expected Entity.CreatedAt property to exist.");
+
+    private static readonly MethodInfo CreatedAtSetter =
+        CreatedAtProperty.GetSetMethod(true)
+        ?? throw new InvalidOperationException("Expected Entity.CreatedAt setter to exist.");
+
+    private static void SetCreatedAt(LlmRequest request, DateTimeOffset createdAt)
+    {
+        CreatedAtSetter.Invoke(request, new object[] { createdAt });
+    }
 }

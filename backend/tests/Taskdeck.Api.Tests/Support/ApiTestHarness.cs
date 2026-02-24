@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Taskdeck.Application.DTOs;
+using Xunit.Sdk;
 
 namespace Taskdeck.Api.Tests.Support;
 
@@ -124,4 +127,65 @@ public static class ApiTestHarness
         }
     }
 
+    public static async Task<T> PollUntilAsync<T>(
+        Func<Task<T>> probe,
+        Func<T, bool> isComplete,
+        string description,
+        int maxAttempts = 40,
+        TimeSpan? interval = null,
+        Func<T?, string>? diagnostics = null)
+    {
+        var intervalValue = interval ?? TimeSpan.FromMilliseconds(250);
+        if (maxAttempts <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxAttempts), maxAttempts, "maxAttempts must be greater than zero.");
+        }
+
+        if (intervalValue <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(interval), intervalValue, "interval must be greater than zero.");
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        T? lastValue = default;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt += 1)
+        {
+            lastValue = await probe();
+            if (lastValue is not null && isComplete(lastValue))
+            {
+                return lastValue;
+            }
+
+            if (attempt >= maxAttempts)
+            {
+                break;
+            }
+
+            await Task.Delay(intervalValue);
+        }
+
+        string? diagnosticsText = null;
+        if (diagnostics is not null)
+        {
+            diagnosticsText = diagnostics(lastValue);
+            if (string.IsNullOrWhiteSpace(diagnosticsText))
+            {
+                diagnosticsText = null;
+            }
+        }
+
+        diagnosticsText ??= lastValue == null
+            ? "no value observed"
+            : JsonSerializer.Serialize(lastValue, JsonOptionsForDiagnostics);
+
+        throw new XunitException(
+            $"{description} did not complete after {maxAttempts} attempts (~{stopwatch.ElapsedMilliseconds}ms). Last observed value: {diagnosticsText}");
+    }
+
+    private static readonly JsonSerializerOptions JsonOptionsForDiagnostics = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = false,
+    };
 }

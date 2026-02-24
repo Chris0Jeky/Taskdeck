@@ -22,6 +22,7 @@ New-Item -Path $outputDirectory -ItemType Directory -Force | Out-Null
 
 $stdoutLogPath = Join-Path $outputDirectory "taskdeck-openapi-stdout.log"
 $stderrLogPath = Join-Path $outputDirectory "taskdeck-openapi-stderr.log"
+$streamDrainTimeoutMilliseconds = 15000
 
 Remove-Item -LiteralPath $resolvedOutputPath, $stdoutLogPath, $stderrLogPath -ErrorAction SilentlyContinue
 
@@ -35,16 +36,83 @@ $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 
 $apiProcess = $null
+$stdoutLogStream = $null
+$stderrLogStream = $null
+$stdoutCopyTask = $null
+$stderrCopyTask = $null
+
+function Complete-CopyTask
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Threading.Tasks.Task]$Task,
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath,
+        [Parameter(Mandatory = $true)]
+        [string]$StreamName,
+        [Parameter(Mandatory = $true)]
+        [int]$TimeoutMilliseconds
+    )
+
+    try
+    {
+        $completed = $Task.Wait($TimeoutMilliseconds)
+        if (-not $completed)
+        {
+            Add-Content -LiteralPath $LogPath -Value "Timed out waiting for $StreamName stream drain after $TimeoutMilliseconds ms."
+            return
+        }
+
+        if ($Task.IsFaulted -and $Task.Exception)
+        {
+            Add-Content -LiteralPath $LogPath -Value "Failed to finalize $StreamName capture: $($Task.Exception.GetBaseException().Message)"
+        }
+        elseif ($Task.IsCanceled)
+        {
+            Add-Content -LiteralPath $LogPath -Value "Finalizing $StreamName capture was canceled."
+        }
+    }
+    catch
+    {
+        Add-Content -LiteralPath $LogPath -Value "Failed to finalize $StreamName capture: $($_.Exception.Message)"
+    }
+}
+
 try
 {
     dotnet restore $apiProjectPath
     dotnet build $apiProjectPath -c Release --no-restore
 
-    $apiProcess = Start-Process dotnet `
-        -ArgumentList @("run", "--project", $apiProjectPath, "--configuration", "Release", "--no-build", "--no-launch-profile") `
-        -PassThru `
-        -RedirectStandardOutput $stdoutLogPath `
-        -RedirectStandardError $stderrLogPath
+    $processStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $processStartInfo.FileName = "dotnet"
+    $processStartInfo.WorkingDirectory = $repoRoot
+    $processStartInfo.UseShellExecute = $false
+    $processStartInfo.RedirectStandardOutput = $true
+    $processStartInfo.RedirectStandardError = $true
+    $escapedProjectPath = '"' + ($apiProjectPath -replace '"', '\"') + '"'
+    $processStartInfo.Arguments = "run --project $escapedProjectPath --configuration Release --no-build --no-launch-profile"
+
+    $apiProcess = [System.Diagnostics.Process]::new()
+    $apiProcess.StartInfo = $processStartInfo
+    $apiProcess.EnableRaisingEvents = $true
+    if (-not $apiProcess.Start())
+    {
+        throw "Failed to start Taskdeck.Api process for OpenAPI generation."
+    }
+
+    $stdoutLogStream = [System.IO.FileStream]::new(
+        $stdoutLogPath,
+        [System.IO.FileMode]::Create,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::ReadWrite)
+    $stderrLogStream = [System.IO.FileStream]::new(
+        $stderrLogPath,
+        [System.IO.FileMode]::Create,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::ReadWrite)
+
+    $stdoutCopyTask = $apiProcess.StandardOutput.BaseStream.CopyToAsync($stdoutLogStream)
+    $stderrCopyTask = $apiProcess.StandardError.BaseStream.CopyToAsync($stderrLogStream)
 
     $isReady = $false
     for ($attempt = 1; $attempt -le $StartupTimeoutSeconds; $attempt += 1)
@@ -84,19 +152,15 @@ finally
         {
             if (-not $apiProcess.HasExited)
             {
-                # Prefer graceful stop first to avoid redirected-output reader races
-                # that can surface as ObjectDisposedException in pwsh on Linux.
-                Stop-Process -Id $apiProcess.Id -ErrorAction SilentlyContinue
-
-                if (-not $apiProcess.WaitForExit(10000))
+                $killWithTree = $apiProcess.GetType().GetMethod("Kill", [Type[]]@([bool]))
+                if ($null -ne $killWithTree)
                 {
-                    Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
-                    $null = $apiProcess.WaitForExit(5000)
+                    $apiProcess.Kill($true)
                 }
-            }
-            else
-            {
-                $apiProcess.WaitForExit()
+                else
+                {
+                    $apiProcess.Kill()
+                }
             }
         }
         catch
@@ -106,15 +170,63 @@ finally
 
         try
         {
-            $boundedWaitMs = 5000
-            if (-not $apiProcess.WaitForExit($boundedWaitMs))
+            $processExitWaitMilliseconds = 5000
+            if (-not $apiProcess.WaitForExit($processExitWaitMilliseconds))
             {
-                Write-Warning "Taskdeck.Api (PID $($apiProcess.Id)) still running after waiting $boundedWaitMs ms. Refer to $stdoutLogPath and $stderrLogPath for diagnostics."
+                Add-Content -LiteralPath $stderrLogPath -Value "Taskdeck.Api process did not exit within $processExitWaitMilliseconds ms during cleanup."
             }
         }
         catch
         {
             # Ignore wait races during cleanup.
+        }
+    }
+
+    if ($stdoutCopyTask)
+    {
+        Complete-CopyTask -Task $stdoutCopyTask -LogPath $stdoutLogPath -StreamName "stdout" -TimeoutMilliseconds $streamDrainTimeoutMilliseconds
+    }
+
+    if ($stderrCopyTask)
+    {
+        Complete-CopyTask -Task $stderrCopyTask -LogPath $stderrLogPath -StreamName "stderr" -TimeoutMilliseconds $streamDrainTimeoutMilliseconds
+    }
+
+    if ($stdoutLogStream)
+    {
+        try
+        {
+            $stdoutLogStream.Flush()
+            $stdoutLogStream.Dispose()
+        }
+        catch
+        {
+            # Ignore stdout stream cleanup races.
+        }
+    }
+
+    if ($stderrLogStream)
+    {
+        try
+        {
+            $stderrLogStream.Flush()
+            $stderrLogStream.Dispose()
+        }
+        catch
+        {
+            # Ignore stderr stream cleanup races.
+        }
+    }
+
+    if ($apiProcess)
+    {
+        try
+        {
+            $apiProcess.Dispose()
+        }
+        catch
+        {
+            # Ignore process disposal races.
         }
     }
 
