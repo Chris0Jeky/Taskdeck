@@ -94,8 +94,21 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
                     delivery.Subscription.SigningSecret,
                     timestamp,
                     delivery.Payload);
+                if (!Uri.TryCreate(delivery.Subscription.EndpointUrl, UriKind.Absolute, out var endpointUri))
+                {
+                    outcome = MarkFailure(delivery, "Webhook endpoint URI is invalid.");
+                    await unitOfWork.SaveChangesAsync(cancellationToken);
+                    continue;
+                }
 
-                using var request = new HttpRequestMessage(HttpMethod.Post, delivery.Subscription.EndpointUrl)
+                if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(endpointUri.Host, cancellationToken))
+                {
+                    outcome = MarkFailure(delivery, "Webhook endpoint host is not allowed.");
+                    await unitOfWork.SaveChangesAsync(cancellationToken);
+                    continue;
+                }
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, endpointUri)
                 {
                     Content = new StringContent(delivery.Payload, Encoding.UTF8, "application/json")
                 };

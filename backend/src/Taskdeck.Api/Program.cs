@@ -95,6 +95,10 @@ builder.Services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
 builder.Services.AddHttpClient("OutboundWebhookDelivery", (_, client) =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false
 });
 builder.Services.AddScoped<MockLlmProvider>();
 builder.Services.AddScoped<ILlmProvider>(sp =>
