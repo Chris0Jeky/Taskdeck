@@ -10,7 +10,7 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-02-23)
+## Current Verified Totals (2026-02-24)
 
 - Backend: 752/752 passing
   - Domain: 107
@@ -195,6 +195,23 @@ Nightly workflow: `.github/workflows/ci-nightly.yml`
 - scheduled/manual E2E smoke suite (`reusable-e2e-smoke.yml`)
 - scheduled/manual load-concurrency harness (`reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
+
+Nightly quality workflow: `.github/workflows/nightly-quality.yml`
+
+- scheduled/manual reporting lane for quality telemetry (non-blocking for required PR CI checks)
+- backend coverage artifacts:
+  - Domain coverage (`Taskdeck.Domain.Tests` with XPlat Code Coverage)
+  - Application coverage (`Taskdeck.Application.Tests` with XPlat Code Coverage)
+- frontend coverage artifacts:
+  - `npm run test:coverage` output (`coverage/` + `test-results/`)
+- dependency/security signal artifacts:
+  - `dotnet list package --vulnerable --include-transitive` output + exit code
+  - `npm audit --audit-level=high --json` output + exit code
+
+Triage usage:
+- check workflow step summary first for signal exit codes
+- inspect uploaded artifacts to differentiate command failures from dependency findings
+- treat this lane as reporting-first; promote to stricter gating only through a dedicated follow-up issue/decision
 
 Release/security workflow: `.github/workflows/release-security.yml`
 

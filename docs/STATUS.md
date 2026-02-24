@@ -329,6 +329,9 @@ Reconciliation record:
 - `docs/analysis/2026-02-23_testing-harness-synthesis.md`
 
 Recent follow-through (2026-02-24):
+- `#260` adds `.github/workflows/nightly-quality.yml` (scheduled + manual) to collect non-blocking quality telemetry artifacts on `main`
+- workflow now publishes backend (Domain/Application) coverage artifacts, frontend coverage artifacts, and dependency/security signal artifacts (`dotnet list package --vulnerable`, `npm audit`)
+- workflow surfaces signal exits in step summary/warnings while keeping required PR CI path unchanged (reporting-first nightly lane)
 - `#259` adds `docs/GOLDEN_PRINCIPLES.md` as a concise invariant baseline and cross-links it from canonical active docs/index and contributor guidance
 - governance lane now runs `scripts/check-golden-principles.mjs` and docs-governance now requires/validates the golden-principles document alongside canonical active docs
 - `#258` adds a reusable OpenAPI guardrail lane (`reusable-openapi-guardrail.yml`) wired into `ci-extended` (PR/manual) and `ci-nightly`

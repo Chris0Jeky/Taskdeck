@@ -450,6 +450,8 @@ Execution tracker and seeded issues:
 - explicit reuse (no duplicate wave issue): existing WIP limit, sandbox gate, and starter-pack idempotency coverage already implemented
 
 Recent progress (2026-02-24):
+- `#260` adds a dedicated non-blocking nightly-quality workflow (`.github/workflows/nightly-quality.yml`) for scheduled/manual coverage and dependency/security signal collection
+- nightly-quality artifacts now provide reporting-first telemetry (coverage outputs + vulnerability/audit command results) without changing required PR gate behavior
 - `#259` adds `docs/GOLDEN_PRINCIPLES.md` and a lightweight mechanical enforcement script (`scripts/check-golden-principles.mjs`) in the reusable docs-governance lane
 - docs-governance now also requires/index-checks `docs/GOLDEN_PRINCIPLES.md` and validates a date-stamp line to keep principle governance deterministic
 - `#258` adds a reusable OpenAPI generation/parse-validation lane with artifact upload wired into `ci-extended` and `ci-nightly`
