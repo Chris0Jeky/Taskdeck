@@ -136,6 +136,16 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
         return rowsAffected > 0;
     }
 
+    public async Task ReloadWithSubscriptionAsync(
+        OutboundWebhookDelivery delivery,
+        CancellationToken cancellationToken = default)
+    {
+        await _context.Entry(delivery).ReloadAsync(cancellationToken);
+        await _context.Entry(delivery)
+            .Reference(entity => entity.Subscription)
+            .LoadAsync(cancellationToken);
+    }
+
     private static int NormalizeLimit(int limit)
     {
         return limit <= 0 ? DefaultLimit : limit;

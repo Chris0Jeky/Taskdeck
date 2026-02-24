@@ -13,6 +13,7 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly WorkerSettings _workerSettings;
+    private readonly OutboundWebhookSecuritySettings _securitySettings;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly ILogger<OutboundWebhookDeliveryWorker> _logger;
 
@@ -20,12 +21,14 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
         IServiceScopeFactory scopeFactory,
         IHttpClientFactory httpClientFactory,
         WorkerSettings workerSettings,
+        OutboundWebhookSecuritySettings securitySettings,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
         ILogger<OutboundWebhookDeliveryWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _httpClientFactory = httpClientFactory;
         _workerSettings = workerSettings;
+        _securitySettings = securitySettings;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _logger = logger;
     }
@@ -98,7 +101,11 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
                     continue;
                 }
 
-                delivery.MarkProcessing();
+                await unitOfWork.OutboundWebhookDeliveries.ReloadWithSubscriptionAsync(delivery, cancellationToken);
+                if (delivery.Status != WebhookDeliveryStatus.Processing || !delivery.Subscription.IsActive)
+                {
+                    continue;
+                }
 
                 var timestamp = DateTimeOffset.UtcNow;
                 var signature = OutboundWebhookSignature.Compute(
@@ -112,7 +119,10 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
                     continue;
                 }
 
-                if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(endpointUri.Host, cancellationToken))
+                if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(
+                        endpointUri.Host,
+                        _securitySettings.AllowLocalhostEndpoints,
+                        cancellationToken))
                 {
                     outcome = MarkFailure(delivery, "Webhook endpoint host is not allowed.");
                     await unitOfWork.SaveChangesAsync(cancellationToken);

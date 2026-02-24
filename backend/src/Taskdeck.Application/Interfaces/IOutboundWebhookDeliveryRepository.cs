@@ -24,4 +24,8 @@ public interface IOutboundWebhookDeliveryRepository : IRepository<OutboundWebhoo
         DateTimeOffset expectedUpdatedAt,
         DateTimeOffset claimedAt,
         CancellationToken cancellationToken = default);
+
+    Task ReloadWithSubscriptionAsync(
+        OutboundWebhookDelivery delivery,
+        CancellationToken cancellationToken = default);
 }

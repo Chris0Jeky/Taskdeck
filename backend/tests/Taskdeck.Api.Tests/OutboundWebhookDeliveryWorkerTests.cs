@@ -37,6 +37,7 @@ public class OutboundWebhookDeliveryWorkerTests
             serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             httpClientFactory,
             new WorkerSettings { MaxBatchSize = 5, QueuePollIntervalSeconds = 1 },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
             new WorkerHeartbeatRegistry(),
             NullLogger<OutboundWebhookDeliveryWorker>.Instance);
 
@@ -77,6 +78,7 @@ public class OutboundWebhookDeliveryWorkerTests
             serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             httpClientFactory,
             new WorkerSettings { MaxBatchSize = 5, QueuePollIntervalSeconds = 1 },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
             new WorkerHeartbeatRegistry(),
             NullLogger<OutboundWebhookDeliveryWorker>.Instance);
 
@@ -181,6 +183,18 @@ public class OutboundWebhookDeliveryWorkerTests
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_tryClaimResult);
+        }
+
+        public Task ReloadWithSubscriptionAsync(
+            OutboundWebhookDelivery delivery,
+            CancellationToken cancellationToken = default)
+        {
+            if (delivery.Status == WebhookDeliveryStatus.Pending)
+            {
+                delivery.MarkProcessing();
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<OutboundWebhookDelivery>> GetDuePendingAsync(
