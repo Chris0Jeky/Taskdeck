@@ -1,12 +1,13 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-23  
+Last Updated: 2026-02-24  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Purpose
 
@@ -443,6 +444,10 @@ Execution tracker and seeded issues:
 - `#254` TST-15 tracker
 - `#255`, `#256`, `#257`, `#258`, `#259`, `#260`
 - explicit reuse (no duplicate wave issue): existing WIP limit, sandbox gate, and starter-pack idempotency coverage already implemented
+
+Recent progress (2026-02-24):
+- `#259` adds `docs/GOLDEN_PRINCIPLES.md` and a lightweight mechanical enforcement script (`scripts/check-golden-principles.mjs`) in the reusable docs-governance lane
+- docs-governance now also requires/index-checks `docs/GOLDEN_PRINCIPLES.md` and validates a date-stamp line to keep principle governance deterministic
 
 Exit Criteria:
 - deterministic flake vectors identified in the wave are removed from current suites

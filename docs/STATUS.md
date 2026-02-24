@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-23  
+Last Updated: 2026-02-24  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -8,6 +8,7 @@ Companion Active Docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Project Summary
 
@@ -325,6 +326,10 @@ Execution posture:
 Reconciliation record:
 
 - `docs/analysis/2026-02-23_testing-harness-synthesis.md`
+
+Recent follow-through (2026-02-24):
+- `#259` adds `docs/GOLDEN_PRINCIPLES.md` as a concise invariant baseline and cross-links it from canonical active docs/index and contributor guidance
+- governance lane now runs `scripts/check-golden-principles.mjs` and docs-governance now requires/validates the golden-principles document alongside canonical active docs
 
 ## Outreach CRM Deferred Expansion Track (2026-02-23)
 
