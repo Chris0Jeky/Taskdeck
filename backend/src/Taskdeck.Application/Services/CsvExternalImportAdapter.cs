@@ -1,0 +1,448 @@
+using System.Text;
+using System.Text.Json;
+using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
+
+namespace Taskdeck.Application.Services;
+
+public sealed class CsvExternalImportAdapter : IExternalImportAdapter
+{
+    private const string ImportMetadataPrefix = "[taskdeck-import-meta] ";
+
+    private static readonly JsonSerializerOptions MetadataSerializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    private static readonly string[] DisplayNameAliases = ["display_name", "display name", "name"];
+    private static readonly string[] FirstNameAliases = ["first_name", "first name"];
+    private static readonly string[] LastNameAliases = ["last_name", "last name"];
+    private static readonly string[] CompanyAliases = ["company"];
+    private static readonly string[] RoleAliases = ["role", "position"];
+    private static readonly string[] EmailAliases = ["email", "email_address", "email address"];
+    private static readonly string[] LinkedInAliases = ["linkedin_url", "linkedin url", "profile_url", "profile url"];
+    private static readonly string[] LastTouchAliases = ["last_touch_at", "last touch at", "connected_on", "connected on"];
+
+    public string Provider => ExternalImportProviders.Csv;
+
+    public Result<ExternalImportParseResult> Parse(ExternalImportRequestDto request)
+    {
+        if (!string.Equals(request.Provider, Provider, StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure<ExternalImportParseResult>(
+                ErrorCodes.ValidationError,
+                $"CSV adapter cannot parse provider '{request.Provider}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Payload))
+        {
+            return Result.Failure<ExternalImportParseResult>(
+                ErrorCodes.ValidationError,
+                "CSV import payload cannot be empty.");
+        }
+
+        var profile = string.IsNullOrWhiteSpace(request.Profile)
+            ? ExternalImportProfiles.OutreachContactsV1
+            : request.Profile.Trim();
+        if (!string.Equals(profile, ExternalImportProfiles.OutreachContactsV1, StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure<ExternalImportParseResult>(
+                ErrorCodes.ValidationError,
+                $"Unsupported import profile '{profile}'.");
+        }
+
+        var parseRowsResult = ParseRows(request.Payload);
+        if (!parseRowsResult.IsSuccess)
+        {
+            return Result.Failure<ExternalImportParseResult>(parseRowsResult.ErrorCode, parseRowsResult.ErrorMessage);
+        }
+
+        var parsedRows = parseRowsResult.Value;
+        if (parsedRows.Count == 0)
+        {
+            return Result.Success(new ExternalImportParseResult(
+                Provider,
+                profile,
+                0,
+                0,
+                [],
+                []));
+        }
+
+        var header = parsedRows[0];
+        if (header.Values.Count == 0)
+        {
+            return Result.Failure<ExternalImportParseResult>(
+                ErrorCodes.ValidationError,
+                "CSV header row cannot be empty.");
+        }
+
+        var indexByHeader = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < header.Values.Count; index++)
+        {
+            var headerName = (header.Values[index] ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(headerName))
+            {
+                continue;
+            }
+
+            indexByHeader[headerName] = index;
+        }
+
+        var displayNameIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.DisplayNameColumn,
+            DisplayNameAliases);
+        var firstNameIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.FirstNameColumn,
+            FirstNameAliases);
+        var lastNameIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.LastNameColumn,
+            LastNameAliases);
+        var companyIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.CompanyColumn,
+            CompanyAliases);
+        var roleIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.RoleColumn,
+            RoleAliases);
+        var emailIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.EmailColumn,
+            EmailAliases);
+        var linkedInIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.LinkedInUrlColumn,
+            LinkedInAliases);
+        var lastTouchIndex = ResolveHeaderIndex(
+            indexByHeader,
+            request.Csv?.LastTouchAtColumn,
+            LastTouchAliases);
+
+        var conflicts = new List<ExternalImportConflictDto>();
+        var candidates = new List<ExternalImportCandidate>();
+        var seenDedupeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in parsedRows.Skip(1))
+        {
+            var displayName = GetCell(row.Values, displayNameIndex);
+            var firstName = GetCell(row.Values, firstNameIndex);
+            var lastName = GetCell(row.Values, lastNameIndex);
+            var company = GetCell(row.Values, companyIndex);
+            var role = GetCell(row.Values, roleIndex);
+            var email = GetCell(row.Values, emailIndex);
+            var linkedInUrl = GetCell(row.Values, linkedInIndex);
+            var lastTouchRaw = GetCell(row.Values, lastTouchIndex);
+
+            if (string.IsNullOrWhiteSpace(displayName))
+            {
+                displayName = string.Join(" ", new[] { firstName, lastName }.Where(value => !string.IsNullOrWhiteSpace(value))).Trim();
+            }
+
+            var dedupeKey = BuildDedupeKey(linkedInUrl, email, displayName, company);
+            if (dedupeKey is null)
+            {
+                conflicts.Add(new ExternalImportConflictDto(
+                    "MissingDedupeKey",
+                    $"$.rows[{row.RowNumber}]",
+                    "Record is missing required dedupe fields. Expected linkedin_url, email, or display_name+company."));
+                continue;
+            }
+
+            if (!seenDedupeKeys.Add(dedupeKey))
+            {
+                conflicts.Add(new ExternalImportConflictDto(
+                    "DuplicateInputRecord",
+                    $"$.rows[{row.RowNumber}]",
+                    $"Input contains duplicate record for dedupe key '{dedupeKey}'."));
+                continue;
+            }
+
+            DateTimeOffset? lastTouchAt = null;
+            if (!string.IsNullOrWhiteSpace(lastTouchRaw))
+            {
+                if (DateTimeOffset.TryParse(lastTouchRaw, out var parsedDate))
+                {
+                    lastTouchAt = parsedDate;
+                }
+                else
+                {
+                    conflicts.Add(new ExternalImportConflictDto(
+                        "InvalidDate",
+                        $"$.rows[{row.RowNumber}].last_touch_at",
+                        $"Could not parse last_touch_at value '{lastTouchRaw}'."));
+                    continue;
+                }
+            }
+
+            var title = BuildTitle(displayName, email, linkedInUrl, row.RowNumber);
+            var description = BuildDescription(profile, dedupeKey, displayName, company, role, email, linkedInUrl, lastTouchAt);
+
+            candidates.Add(new ExternalImportCandidate(
+                row.RowNumber,
+                dedupeKey,
+                title,
+                description));
+        }
+
+        return Result.Success(new ExternalImportParseResult(
+            Provider,
+            profile,
+            parsedRows.Count - 1,
+            candidates.Count,
+            candidates,
+            conflicts));
+    }
+
+    private static int? ResolveHeaderIndex(
+        Dictionary<string, int> indexByHeader,
+        string? requestedHeader,
+        IReadOnlyList<string> aliases)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedHeader))
+        {
+            var trimmed = requestedHeader.Trim();
+            return indexByHeader.TryGetValue(trimmed, out var explicitIndex)
+                ? explicitIndex
+                : null;
+        }
+
+        foreach (var alias in aliases)
+        {
+            if (indexByHeader.TryGetValue(alias, out var index))
+            {
+                return index;
+            }
+        }
+
+        return null;
+    }
+
+    private static string GetCell(IReadOnlyList<string> rowValues, int? index)
+    {
+        if (!index.HasValue || index.Value < 0 || index.Value >= rowValues.Count)
+        {
+            return string.Empty;
+        }
+
+        return rowValues[index.Value].Trim();
+    }
+
+    private static string BuildTitle(string? displayName, string? email, string? linkedInUrl, int rowNumber)
+    {
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            return displayName.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            return email.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(linkedInUrl))
+        {
+            return linkedInUrl.Trim();
+        }
+
+        return $"Imported Contact {rowNumber}";
+    }
+
+    private static string BuildDescription(
+        string profile,
+        string dedupeKey,
+        string displayName,
+        string company,
+        string role,
+        string email,
+        string linkedInUrl,
+        DateTimeOffset? lastTouchAt)
+    {
+        var metadata = new CsvImportCardMetadata(
+            ExternalImportProviders.Csv,
+            profile,
+            dedupeKey,
+            displayName,
+            company,
+            role,
+            email,
+            linkedInUrl,
+            lastTouchAt?.UtcDateTime);
+        var metadataJson = JsonSerializer.Serialize(metadata, MetadataSerializerOptions);
+
+        var lines = new List<string>
+        {
+            $"{ImportMetadataPrefix}{metadataJson}",
+            string.Empty,
+            $"Display Name: {displayName}",
+            $"Company: {company}",
+            $"Role: {role}",
+            $"Email: {email}",
+            $"LinkedIn: {linkedInUrl}",
+            $"Last Touch At: {(lastTouchAt.HasValue ? lastTouchAt.Value.ToString("O") : string.Empty)}"
+        };
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string? BuildDedupeKey(
+        string linkedInUrl,
+        string email,
+        string displayName,
+        string company)
+    {
+        var normalizedLinkedIn = NormalizeLinkedInUrl(linkedInUrl);
+        if (!string.IsNullOrWhiteSpace(normalizedLinkedIn))
+        {
+            return $"linkedin:{normalizedLinkedIn}";
+        }
+
+        var normalizedEmail = Normalize(email);
+        if (!string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return $"email:{normalizedEmail}";
+        }
+
+        var normalizedDisplayName = Normalize(displayName);
+        var normalizedCompany = Normalize(company);
+        if (!string.IsNullOrWhiteSpace(normalizedDisplayName) && !string.IsNullOrWhiteSpace(normalizedCompany))
+        {
+            return $"name-company:{normalizedDisplayName}|{normalizedCompany}";
+        }
+
+        return null;
+    }
+
+    private static string NormalizeLinkedInUrl(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.EndsWith("/"))
+        {
+            trimmed = trimmed.TrimEnd('/');
+        }
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            return uri.ToString().ToLowerInvariant();
+        }
+
+        return Normalize(trimmed);
+    }
+
+    private static string Normalize(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(ch);
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static Result<List<CsvParsedRow>> ParseRows(string payload)
+    {
+        var rows = new List<CsvParsedRow>();
+        var currentRow = new List<string>();
+        var currentField = new StringBuilder();
+        var inQuotes = false;
+        var rowNumber = 1;
+
+        for (var index = 0; index < payload.Length; index++)
+        {
+            var ch = payload[index];
+
+            if (ch == '"')
+            {
+                if (inQuotes && index + 1 < payload.Length && payload[index + 1] == '"')
+                {
+                    currentField.Append('"');
+                    index++;
+                    continue;
+                }
+
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (ch == ',' && !inQuotes)
+            {
+                currentRow.Add(currentField.ToString());
+                currentField.Clear();
+                continue;
+            }
+
+            if ((ch == '\r' || ch == '\n') && !inQuotes)
+            {
+                currentRow.Add(currentField.ToString());
+                currentField.Clear();
+
+                if (currentRow.Any(cell => !string.IsNullOrWhiteSpace(cell)))
+                {
+                    rows.Add(new CsvParsedRow(rowNumber, currentRow.ToList()));
+                }
+
+                currentRow.Clear();
+                rowNumber++;
+
+                if (ch == '\r' && index + 1 < payload.Length && payload[index + 1] == '\n')
+                {
+                    index++;
+                }
+
+                continue;
+            }
+
+            currentField.Append(ch);
+        }
+
+        if (inQuotes)
+        {
+            return Result.Failure<List<CsvParsedRow>>(
+                ErrorCodes.ValidationError,
+                "CSV payload contains an unclosed quoted field.");
+        }
+
+        if (currentField.Length > 0 || currentRow.Count > 0)
+        {
+            currentRow.Add(currentField.ToString());
+            if (currentRow.Any(cell => !string.IsNullOrWhiteSpace(cell)))
+            {
+                rows.Add(new CsvParsedRow(rowNumber, currentRow.ToList()));
+            }
+        }
+
+        return Result.Success(rows);
+    }
+
+    private sealed record CsvParsedRow(int RowNumber, List<string> Values);
+
+    private sealed record CsvImportCardMetadata(
+        string Provider,
+        string Profile,
+        string DedupeKey,
+        string DisplayName,
+        string Company,
+        string Role,
+        string Email,
+        string LinkedInUrl,
+        DateTime? LastTouchAtUtc);
+}
