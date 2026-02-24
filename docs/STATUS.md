@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-23  
+Last Updated: 2026-02-24  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -325,6 +325,11 @@ Execution posture:
 Reconciliation record:
 
 - `docs/analysis/2026-02-23_testing-harness-synthesis.md`
+
+Recent follow-through (2026-02-24):
+- `#260` adds `.github/workflows/nightly-quality.yml` (scheduled + manual) to collect non-blocking quality telemetry artifacts on `main`
+- workflow now publishes backend (Domain/Application) coverage artifacts, frontend coverage artifacts, and dependency/security signal artifacts (`dotnet list package --vulnerable`, `npm audit`)
+- workflow surfaces signal exits in step summary/warnings while keeping required PR CI path unchanged (reporting-first nightly lane)
 
 ## Outreach CRM Deferred Expansion Track (2026-02-23)
 
