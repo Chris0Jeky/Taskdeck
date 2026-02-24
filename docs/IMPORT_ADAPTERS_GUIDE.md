@@ -75,6 +75,8 @@ Deterministic order:
 2. `email`
 3. normalized(`display_name + company`)
 
+Existing card matches are scoped by `provider + profile + dedupe_key` to avoid cross-provider/profile overwrite collisions.
+
 If no dedupe key can be derived, the record is reported as a conflict.
 
 ## Conflict Classes
@@ -84,11 +86,14 @@ Representative conflict codes:
 - `MissingDedupeKey`
 - `DuplicateInputRecord`
 - `InvalidDate`
+- `TitleTooLong`
+- `DescriptionTooLong`
 - `ExistingDuplicateDedupeKey`
 - `AmbiguousExistingMatch`
 
 `path` points to row/field context (for example `$.rows[4].last_touch_at`).
 Where available, `incomingValue` and `existingValue` are populated to make conflict resolution actionable.
+`last_touch_at` parsing is deterministic and restricted to ISO-style formats (`yyyy-MM-dd`, RFC3339/ISO date-time).
 
 ## Adapter Extensibility
 
