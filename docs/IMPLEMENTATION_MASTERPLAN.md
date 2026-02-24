@@ -7,6 +7,7 @@ Companion Active Docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Purpose
 
@@ -449,6 +450,8 @@ Execution tracker and seeded issues:
 - explicit reuse (no duplicate wave issue): existing WIP limit, sandbox gate, and starter-pack idempotency coverage already implemented
 
 Recent progress (2026-02-24):
+- `#259` adds `docs/GOLDEN_PRINCIPLES.md` and a lightweight mechanical enforcement script (`scripts/check-golden-principles.mjs`) in the reusable docs-governance lane
+- docs-governance now also requires/index-checks `docs/GOLDEN_PRINCIPLES.md` and validates a date-stamp line to keep principle governance deterministic
 - `#258` adds a reusable OpenAPI generation/parse-validation lane with artifact upload wired into `ci-extended` and `ci-nightly`
 - OpenAPI drift snapshot/diff hard-gating is intentionally deferred; current lane enforces generation + parse-contract validity and publishes inspection artifacts
 - `#257` now centralizes representative API error-contract assertions for `400/401/403/404/409` in `ApiErrorContractApiTests`

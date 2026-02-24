@@ -8,6 +8,7 @@ Companion Active Docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Current Verified Totals (2026-02-23)
 
@@ -228,7 +229,9 @@ Useful local checks for this wave:
 ```bash
 rg -n "Thread\\.Sleep|new Promise\\(.*setTimeout" backend/tests frontend/taskdeck-web/tests/e2e
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~ApiErrorContractApiTests"
-cd frontend/taskdeck-web && npx playwright test tests/e2e/smoke.spec.ts tests/e2e/automation-ops.spec.ts tests/e2e/capture-loop.spec.ts --reporter=line
+(cd frontend/taskdeck-web && npx playwright test tests/e2e/smoke.spec.ts tests/e2e/automation-ops.spec.ts tests/e2e/capture-loop.spec.ts --reporter=line)
+node scripts/check-golden-principles.mjs
+node scripts/check-docs-governance.mjs
 ```
 
 OpenAPI guardrail local checks (`#258`):
