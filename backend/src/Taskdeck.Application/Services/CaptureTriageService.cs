@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -30,17 +31,20 @@ public class CaptureTriageService : ICaptureTriageService
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly ILlmProvider _llmProvider;
+    private readonly ILogger<CaptureTriageService>? _logger;
 
     public CaptureTriageService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
         IAutomationPolicyEngine policyEngine,
-        ILlmProvider llmProvider)
+        ILlmProvider llmProvider,
+        ILogger<CaptureTriageService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
         _llmProvider = llmProvider;
+        _logger = logger;
     }
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
@@ -171,18 +175,35 @@ public class CaptureTriageService : ICaptureTriageService
         try
         {
             var health = await _llmProvider.GetHealthAsync(ct);
-            var provider = string.IsNullOrWhiteSpace(health.ProviderName) ? "unknown" : health.ProviderName.Trim();
-            var model = string.IsNullOrWhiteSpace(health.Model) ? "unknown" : health.Model.Trim();
+            var provider = SanitizeMetadata(health.ProviderName, CaptureRequestContract.MaxProviderLength);
+            var model = SanitizeMetadata(health.Model, CaptureRequestContract.MaxModelLength);
             return (provider, model);
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "Failed to resolve LLM provider metadata for capture triage provenance. Falling back to unknown values.");
             return ("unknown", "unknown");
         }
+    }
+
+    private static string SanitizeMetadata(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "unknown";
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length <= maxLength)
+        {
+            return trimmed;
+        }
+
+        return trimmed[..maxLength];
     }
 
     private static List<string> ExtractTaskCandidates(string rawText)

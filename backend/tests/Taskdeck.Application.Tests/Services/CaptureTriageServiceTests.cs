@@ -268,6 +268,39 @@ public class CaptureTriageServiceTests
         result.Value.Model.Should().Be("unknown");
     }
 
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldClampProviderMetadataToContractLimits()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        var longProvider = new string('p', CaptureRequestContract.MaxProviderLength + 10);
+        var longModel = new string('m', CaptureRequestContract.MaxModelLength + 10);
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock
+            .Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+        _llmProviderMock.Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, longProvider, Model: longModel));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "- [ ] metadata clamp");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().HaveLength(CaptureRequestContract.MaxProviderLength);
+        result.Value.Model.Should().HaveLength(CaptureRequestContract.MaxModelLength);
+        result.Value.Provider.Should().Be(longProvider[..CaptureRequestContract.MaxProviderLength]);
+        result.Value.Model.Should().Be(longModel[..CaptureRequestContract.MaxModelLength]);
+    }
+
     private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)
     {
         return new ProposalDto(

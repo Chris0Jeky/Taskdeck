@@ -36,6 +36,7 @@ public class GeminiLlmProvider : ILlmProvider
         try
         {
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
+            message.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
             message.Content = JsonContent.Create(new
             {
                 contents = request.Messages.Select(MapMessage).ToArray(),
@@ -109,8 +110,7 @@ public class GeminiLlmProvider : ILlmProvider
             model = $"models/{model}";
         }
 
-        var encodedApiKey = Uri.EscapeDataString((_settings.Gemini?.ApiKey ?? string.Empty).Trim());
-        return $"{baseUrl}/{model}:generateContent?key={encodedApiKey}";
+        return $"{baseUrl}/{model}:generateContent";
     }
 
     private string GetConfiguredModelOrDefault()

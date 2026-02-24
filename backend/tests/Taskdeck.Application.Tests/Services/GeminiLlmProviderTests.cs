@@ -14,8 +14,11 @@ public class GeminiLlmProviderTests
     public async Task CompleteAsync_ShouldReturnParsedCompletion_WhenGeminiResponseIsValid()
     {
         var settings = BuildSettings();
+        HttpRequestMessage? capturedRequest = null;
         var handler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            capturedRequest = _;
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
                     """
@@ -37,7 +40,8 @@ public class GeminiLlmProviderTests
                     """,
                     Encoding.UTF8,
                     "application/json")
-            });
+            };
+        });
 
         var provider = new GeminiLlmProvider(new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
 
@@ -54,6 +58,11 @@ public class GeminiLlmProviderTests
         result.ActionIntent.Should().Be("card.create");
         result.Provider.Should().Be("Gemini");
         result.Model.Should().Be(settings.Gemini.Model);
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.RequestUri.Should().NotBeNull();
+        capturedRequest.RequestUri!.Query.Should().NotContain("key=");
+        capturedRequest.Headers.TryGetValues("x-goog-api-key", out var headerValues).Should().BeTrue();
+        headerValues.Should().ContainSingle().Which.Should().Be(settings.Gemini.ApiKey);
     }
 
     [Fact]

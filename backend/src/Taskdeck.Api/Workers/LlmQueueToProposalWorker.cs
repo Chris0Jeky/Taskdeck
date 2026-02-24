@@ -309,8 +309,8 @@ public class LlmQueueToProposalWorker : BackgroundService
                     triageRunId: triageResult.Value.TriageRunId,
                     proposalId: triageResult.Value.ProposalId,
                     promptVersion: triageResult.Value.PromptVersion,
-                    provider: triageResult.Value.Provider,
-                    model: triageResult.Value.Model);
+                    provider: SanitizeProvenanceMetadata(triageResult.Value.Provider, CaptureRequestContract.MaxProviderLength),
+                    model: SanitizeProvenanceMetadata(triageResult.Value.Model, CaptureRequestContract.MaxModelLength));
 
                 item.UpdatePayload(CaptureRequestContract.SerializePayload(linkedPayload));
                 item.MarkAsCompleted();
@@ -412,6 +412,22 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
 
         return batch;
+    }
+
+    private static string SanitizeProvenanceMetadata(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "unknown";
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length <= maxLength)
+        {
+            return trimmed;
+        }
+
+        return trimmed[..maxLength];
     }
 
     private async Task<bool> HandleFailureWithRetryAsync(
