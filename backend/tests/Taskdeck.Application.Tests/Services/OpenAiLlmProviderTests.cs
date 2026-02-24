@@ -49,6 +49,8 @@ public class OpenAiLlmProviderTests
         result.TokensUsed.Should().Be(42);
         result.IsActionable.Should().BeTrue();
         result.ActionIntent.Should().Be("card.create");
+        result.Provider.Should().Be("OpenAI");
+        result.Model.Should().Be(settings.OpenAi.Model);
     }
 
     [Fact]
@@ -69,6 +71,8 @@ public class OpenAiLlmProviderTests
         result.Content.Should().Contain("request failed");
         result.IsActionable.Should().BeTrue();
         result.ActionIntent.Should().Be("card.create");
+        result.Provider.Should().Be("OpenAI");
+        result.Model.Should().Be(settings.OpenAi.Model);
     }
 
     [Fact]
@@ -83,6 +87,7 @@ public class OpenAiLlmProviderTests
         health.IsAvailable.Should().BeFalse();
         health.ProviderName.Should().Be("OpenAI");
         health.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        health.Model.Should().Be(settings.OpenAi.Model);
     }
 
     [Fact]
