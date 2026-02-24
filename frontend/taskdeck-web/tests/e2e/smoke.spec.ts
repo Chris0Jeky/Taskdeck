@@ -64,6 +64,12 @@ async function addCard(page: Page, columnName: string, cardTitle: string) {
   await column.getByRole('button', { name: 'Add', exact: true }).click()
 }
 
+async function expectColumnOrder(page: Page, expectedOrder: string[]) {
+  for (const [index, expectedHeading] of expectedOrder.entries()) {
+    await expect(page.locator('[data-column-dnd-id] h3').nth(index)).toHaveText(expectedHeading)
+  }
+}
+
 test('board to card workflow smoke test', async ({ page }) => {
   const boardName = `Smoke Board ${Date.now()}`
   const columnName = `To Do ${Date.now()}`
@@ -220,7 +226,7 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
   await expect(page.locator('text=has reached its WIP limit').first()).toBeVisible()
 })
 
-test('card drag and drop should move card between columns', async ({ page }) => {
+test('card drag and drop should move card between columns and persist after refresh', async ({ page }) => {
   const boardName = `Move Board ${Date.now()}`
   const sourceColumn = `To Do ${Date.now()}`
   const targetColumn = `Done ${Date.now()}`
@@ -230,16 +236,24 @@ test('card drag and drop should move card between columns', async ({ page }) => 
   await addColumn(page, sourceColumn)
   await addColumn(page, targetColumn)
   await addCard(page, sourceColumn, cardTitle)
+  const boardUrl = page.url()
 
   const sourceCardHandle = cardDragHandleByTitle(page, cardTitle)
-  const targetLane = columnByName(page, targetColumn)
+  const sourceLane = columnByName(page, sourceColumn)
+  let targetLane = columnByName(page, targetColumn)
 
   await sourceCardHandle.dragTo(targetLane)
 
   await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
+  await expect(sourceLane.locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(0)
+
+  await page.goto(boardUrl)
+  targetLane = columnByName(page, targetColumn)
+  await expect(targetLane.locator('[data-card-id]').filter({ hasText: cardTitle }).first()).toBeVisible()
+  await expect(columnByName(page, sourceColumn).locator('[data-card-id]').filter({ hasText: cardTitle })).toHaveCount(0)
 })
 
-test('card drag should use explicit enlarged handle while add-card input stays safe', async ({ page }) => {
+test('card drag should use explicit enlarged handle while add-card controls stay safe', async ({ page }) => {
   const boardName = `Card Handle Board ${Date.now()}`
   const sourceColumn = `To Do ${Date.now()}`
   const targetColumn = `Done ${Date.now()}`
@@ -254,23 +268,14 @@ test('card drag should use explicit enlarged handle while add-card input stays s
   const sourceLane = columnByName(page, sourceColumn)
   const targetLane = columnByName(page, targetColumn)
   const addCardButton = sourceLane.getByRole('button', { name: 'Add Card' })
-  const addCardInput = sourceLane.getByPlaceholder('Enter card title...')
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (await addCardInput.isVisible()) {
-      break
-    }
-
-    await addCardButton.click()
-  }
-  await expect(addCardInput).toBeVisible()
-  const addCardInputBox = await addCardInput.boundingBox()
+  const addCardButtonBox = await addCardButton.boundingBox()
   const targetLaneBox = await targetLane.boundingBox()
-  expect(addCardInputBox).not.toBeNull()
+  expect(addCardButtonBox).not.toBeNull()
   expect(targetLaneBox).not.toBeNull()
 
   await page.mouse.move(
-    addCardInputBox!.x + addCardInputBox!.width / 2,
-    addCardInputBox!.y + addCardInputBox!.height / 2
+    addCardButtonBox!.x + addCardButtonBox!.width / 2,
+    addCardButtonBox!.y + addCardButtonBox!.height / 2
   )
   await page.mouse.down()
   await page.mouse.move(
@@ -323,7 +328,7 @@ test('board settings lifecycle should support rename archive unarchive and archi
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
 })
 
-test('column drag and drop should reorder columns', async ({ page }) => {
+test('column drag and drop should reorder columns and persist after refresh', async ({ page }) => {
   const boardName = `Reorder Board ${Date.now()}`
   const firstColumn = `First ${Date.now()}`
   const secondColumn = `Second ${Date.now()}`
@@ -333,6 +338,7 @@ test('column drag and drop should reorder columns', async ({ page }) => {
   await addColumn(page, firstColumn)
   await addColumn(page, secondColumn)
   await addColumn(page, thirdColumn)
+  const boardUrl = page.url()
 
   await expect(page.locator('[data-column-dnd-id] h3').first()).toHaveText(firstColumn)
 
@@ -351,9 +357,10 @@ test('column drag and drop should reorder columns', async ({ page }) => {
   const firstHandle = columnDragHandleByName(page, firstColumn)
   await firstHandle.dragTo(third)
 
-  await expect(page.locator('[data-column-dnd-id] h3').first()).toHaveText(secondColumn)
-  await expect(page.locator('[data-column-dnd-id] h3').nth(1)).toHaveText(thirdColumn)
-  await expect(page.locator('[data-column-dnd-id] h3').nth(2)).toHaveText(firstColumn)
+  await expectColumnOrder(page, [secondColumn, thirdColumn, firstColumn])
+
+  await page.goto(boardUrl)
+  await expectColumnOrder(page, [secondColumn, thirdColumn, firstColumn])
 })
 
 test('keyboard flow should open card and escape should close modal and inline forms', async ({ page }) => {
