@@ -94,7 +94,11 @@ finally
 
         try
         {
-            $apiProcess.WaitForExit()
+            $boundedWaitMs = 5000
+            if (-not $apiProcess.WaitForExit($boundedWaitMs))
+            {
+                Write-Warning "Taskdeck.Api (PID $($apiProcess.Id)) still running after waiting $boundedWaitMs ms. Refer to $stdoutLogPath and $stderrLogPath for diagnostics."
+            }
         }
         catch
         {
