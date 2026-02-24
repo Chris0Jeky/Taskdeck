@@ -77,4 +77,23 @@ public class OutboundWebhookDeliveryTests
         act.Should().Throw<DomainException>()
             .Where(ex => ex.ErrorCode == ErrorCodes.InvalidOperation);
     }
+
+    [Fact]
+    public void ReturnToPending_ShouldNotIncrementAttemptCount()
+    {
+        var nextAttemptAt = DateTimeOffset.UtcNow.AddSeconds(10);
+        var delivery = new OutboundWebhookDelivery(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "card.updated",
+            "{\"event\":\"card.updated\"}");
+        delivery.MarkProcessing();
+
+        delivery.ReturnToPending(nextAttemptAt, "interrupted on shutdown");
+
+        delivery.Status.Should().Be(WebhookDeliveryStatus.Pending);
+        delivery.AttemptCount.Should().Be(0);
+        delivery.NextAttemptAt.Should().Be(nextAttemptAt);
+        delivery.LastErrorMessage.Should().Contain("interrupted on shutdown");
+    }
 }

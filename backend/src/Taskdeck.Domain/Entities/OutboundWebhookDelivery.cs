@@ -104,4 +104,20 @@ public class OutboundWebhookDelivery : Entity
         LastErrorMessage = errorMessage.Trim();
         Touch();
     }
+
+    public void ReturnToPending(DateTimeOffset nextAttemptAt, string? errorMessage = null, int? responseStatusCode = null)
+    {
+        if (Status != WebhookDeliveryStatus.Processing)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Only processing deliveries can be returned to pending.");
+
+        Status = WebhookDeliveryStatus.Pending;
+        NextAttemptAt = nextAttemptAt;
+        LastResponseStatusCode = responseStatusCode;
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            LastErrorMessage = errorMessage.Trim();
+        }
+
+        Touch();
+    }
 }

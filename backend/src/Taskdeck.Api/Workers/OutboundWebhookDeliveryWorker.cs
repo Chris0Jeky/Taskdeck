@@ -3,6 +3,7 @@ using System.Text;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Api.Workers;
 
@@ -59,8 +60,11 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var now = DateTimeOffset.UtcNow;
+        await RecoverStuckProcessingDeliveriesAsync(unitOfWork, now, cancellationToken);
+
         var dueDeliveries = await unitOfWork.OutboundWebhookDeliveries.GetDuePendingAsync(
-            DateTimeOffset.UtcNow,
+            now,
             _workerSettings.MaxBatchSize,
             cancellationToken);
         if (dueDeliveries.Count == 0)
@@ -115,6 +119,14 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                if (delivery.Status == WebhookDeliveryStatus.Processing)
+                {
+                    delivery.ReturnToPending(
+                        DateTimeOffset.UtcNow,
+                        "Webhook delivery interrupted during worker shutdown.");
+                    await unitOfWork.SaveChangesAsync(CancellationToken.None);
+                }
+
                 return;
             }
             catch (Exception ex)
@@ -134,6 +146,36 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(OutboundWebhookDeliveryWorker)),
                 new KeyValuePair<string, object?>("outcome", outcome));
         }
+    }
+
+    private async Task RecoverStuckProcessingDeliveriesAsync(
+        IUnitOfWork unitOfWork,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var processingLeaseSeconds = Math.Max(30, _workerSettings.ProcessingLeaseSeconds);
+        var staleBefore = now.AddSeconds(-processingLeaseSeconds);
+        var stuckDeliveries = await unitOfWork.OutboundWebhookDeliveries.GetStuckProcessingAsync(
+            staleBefore,
+            _workerSettings.MaxBatchSize,
+            cancellationToken);
+        if (stuckDeliveries.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var stuckDelivery in stuckDeliveries)
+        {
+            stuckDelivery.ReturnToPending(
+                now,
+                "Recovered stale processing webhook delivery for retry.");
+        }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        _logger.LogWarning(
+            "Recovered {RecoveredCount} stale webhook deliveries older than {ProcessingLeaseSeconds}s.",
+            stuckDeliveries.Count,
+            processingLeaseSeconds);
     }
 
     private string MarkFailure(
