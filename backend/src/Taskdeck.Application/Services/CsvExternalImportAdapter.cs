@@ -90,6 +90,14 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
             indexByHeader[headerName] = index;
         }
 
+        var explicitColumnValidation = ValidateExplicitColumnMappings(indexByHeader, request.Csv);
+        if (!explicitColumnValidation.IsSuccess)
+        {
+            return Result.Failure<ExternalImportParseResult>(
+                explicitColumnValidation.ErrorCode,
+                explicitColumnValidation.ErrorMessage);
+        }
+
         var displayNameIndex = ResolveHeaderIndex(
             indexByHeader,
             request.Csv?.DisplayNameColumn,
@@ -149,7 +157,8 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
                 conflicts.Add(new ExternalImportConflictDto(
                     "MissingDedupeKey",
                     $"$.rows[{row.RowNumber}]",
-                    "Record is missing required dedupe fields. Expected linkedin_url, email, or display_name+company."));
+                    "Record is missing required dedupe fields. Expected linkedin_url, email, or display_name+company.",
+                    IncomingValue: BuildDedupeSourceSummary(displayName, company, email, linkedInUrl)));
                 continue;
             }
 
@@ -158,7 +167,8 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
                 conflicts.Add(new ExternalImportConflictDto(
                     "DuplicateInputRecord",
                     $"$.rows[{row.RowNumber}]",
-                    $"Input contains duplicate record for dedupe key '{dedupeKey}'."));
+                    $"Input contains duplicate record for dedupe key '{dedupeKey}'.",
+                    IncomingValue: dedupeKey));
                 continue;
             }
 
@@ -174,7 +184,8 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
                     conflicts.Add(new ExternalImportConflictDto(
                         "InvalidDate",
                         $"$.rows[{row.RowNumber}].last_touch_at",
-                        $"Could not parse last_touch_at value '{lastTouchRaw}'."));
+                        $"Could not parse last_touch_at value '{lastTouchRaw}'.",
+                        IncomingValue: lastTouchRaw));
                     continue;
                 }
             }
@@ -220,6 +231,50 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         }
 
         return null;
+    }
+
+    private static Result ValidateExplicitColumnMappings(
+        Dictionary<string, int> indexByHeader,
+        ExternalImportCsvOptionsDto? csvOptions)
+    {
+        var explicitColumns = new (string OptionName, string? Header)[]
+        {
+            ("displayNameColumn", csvOptions?.DisplayNameColumn),
+            ("firstNameColumn", csvOptions?.FirstNameColumn),
+            ("lastNameColumn", csvOptions?.LastNameColumn),
+            ("companyColumn", csvOptions?.CompanyColumn),
+            ("roleColumn", csvOptions?.RoleColumn),
+            ("emailColumn", csvOptions?.EmailColumn),
+            ("linkedInUrlColumn", csvOptions?.LinkedInUrlColumn),
+            ("lastTouchAtColumn", csvOptions?.LastTouchAtColumn)
+        };
+
+        foreach (var (optionName, header) in explicitColumns)
+        {
+            if (string.IsNullOrWhiteSpace(header))
+            {
+                continue;
+            }
+
+            var trimmed = header.Trim();
+            if (!indexByHeader.ContainsKey(trimmed))
+            {
+                return Result.Failure(
+                    ErrorCodes.ValidationError,
+                    $"CSV column mapping '{optionName}' references header '{trimmed}' but it was not found in the payload header row.");
+            }
+        }
+
+        return Result.Success();
+    }
+
+    private static string BuildDedupeSourceSummary(
+        string displayName,
+        string company,
+        string email,
+        string linkedInUrl)
+    {
+        return $"display_name='{displayName}', company='{company}', email='{email}', linkedin_url='{linkedInUrl}'";
     }
 
     private static string GetCell(IReadOnlyList<string> rowValues, int? index)
@@ -301,7 +356,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
             return $"linkedin:{normalizedLinkedIn}";
         }
 
-        var normalizedEmail = Normalize(email);
+        var normalizedEmail = NormalizeEmail(email);
         if (!string.IsNullOrWhiteSpace(normalizedEmail))
         {
             return $"email:{normalizedEmail}";
@@ -336,6 +391,26 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         }
 
         return Normalize(trimmed);
+    }
+
+    private static string NormalizeEmail(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            if (!char.IsWhiteSpace(ch))
+            {
+                sb.Append(ch);
+            }
+        }
+
+        return sb.ToString();
     }
 
     private static string Normalize(string value)

@@ -23,9 +23,25 @@ public sealed class ExternalImportService : IExternalImportService
         IEnumerable<IExternalImportAdapter> adapters)
     {
         _unitOfWork = unitOfWork;
-        _adaptersByProvider = adapters
+        var adapterGroups = adapters
             .GroupBy(adapter => adapter.Provider, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            .ToList();
+
+        var duplicateProviders = adapterGroups
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(provider => provider, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (duplicateProviders.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "Multiple external import adapters are registered for provider(s): " +
+                string.Join(", ", duplicateProviders) +
+                ". Each provider must have exactly one adapter implementation.");
+        }
+
+        _adaptersByProvider = adapterGroups
+            .ToDictionary(group => group.Key, group => group.Single(), StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<Result<ExternalImportResultDto>> ImportToBoardAsync(
@@ -102,8 +118,7 @@ public sealed class ExternalImportService : IExternalImportService
         var parsed = parseResult.Value;
         var conflicts = new List<ExternalImportConflictDto>(parsed.Conflicts);
 
-        var existingByDedupeKey = new Dictionary<string, Card>(StringComparer.OrdinalIgnoreCase);
-        var duplicateExistingKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var existingCardsByDedupeKey = new Dictionary<string, List<Card>>(StringComparer.OrdinalIgnoreCase);
         foreach (var card in board.Columns.SelectMany(column => column.Cards))
         {
             if (!TryReadImportMetadata(card.Description, out var metadata) ||
@@ -112,18 +127,32 @@ public sealed class ExternalImportService : IExternalImportService
                 continue;
             }
 
-            if (!existingByDedupeKey.TryAdd(metadata.DedupeKey, card))
+            if (!existingCardsByDedupeKey.TryGetValue(metadata.DedupeKey, out var matchingCards))
             {
-                duplicateExistingKeys.Add(metadata.DedupeKey);
+                matchingCards = [];
+                existingCardsByDedupeKey[metadata.DedupeKey] = matchingCards;
             }
+
+            matchingCards.Add(card);
         }
+
+        var existingByDedupeKey = existingCardsByDedupeKey
+            .Where(entry => entry.Value.Count == 1)
+            .ToDictionary(entry => entry.Key, entry => entry.Value[0], StringComparer.OrdinalIgnoreCase);
+        var duplicateExistingKeys = existingCardsByDedupeKey
+            .Where(entry => entry.Value.Count > 1)
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var duplicateKey in duplicateExistingKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase))
         {
+            var existingCards = existingCardsByDedupeKey[duplicateKey];
             conflicts.Add(new ExternalImportConflictDto(
                 "ExistingDuplicateDedupeKey",
                 "$.board.cards",
-                $"Board already contains multiple cards with dedupe key '{duplicateKey}'. Resolve duplicates before applying import."));
+                $"Board already contains multiple cards with dedupe key '{duplicateKey}'. Resolve duplicates before applying import.",
+                ExistingValue: BuildCardReference(existingCards),
+                IncomingValue: duplicateKey));
         }
 
         var plannedUpserts = new List<PlannedUpsert>();
@@ -135,10 +164,13 @@ public sealed class ExternalImportService : IExternalImportService
         {
             if (duplicateExistingKeys.Contains(candidate.DedupeKey))
             {
+                var existingCards = existingCardsByDedupeKey[candidate.DedupeKey];
                 conflicts.Add(new ExternalImportConflictDto(
                     "AmbiguousExistingMatch",
                     $"$.rows[{candidate.SourceRowNumber}]",
-                    $"Cannot resolve target card for dedupe key '{candidate.DedupeKey}' because multiple existing cards match."));
+                    $"Cannot resolve target card for dedupe key '{candidate.DedupeKey}' because multiple existing cards match.",
+                    ExistingValue: BuildCardReference(existingCards),
+                    IncomingValue: candidate.DedupeKey));
                 continue;
             }
 
@@ -275,4 +307,9 @@ public sealed class ExternalImportService : IExternalImportService
     private sealed record PlannedUpsert(Card? ExistingCard, ExternalImportCandidate Candidate);
 
     private sealed record ExistingCardImportMetadata(string Provider, string Profile, string DedupeKey);
+
+    private static string BuildCardReference(IEnumerable<Card> cards)
+    {
+        return string.Join(", ", cards.Select(card => $"{card.Id}:{card.Title}"));
+    }
 }
