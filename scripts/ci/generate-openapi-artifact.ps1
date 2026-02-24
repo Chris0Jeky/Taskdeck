@@ -84,21 +84,24 @@ finally
         {
             if (-not $apiProcess.HasExited)
             {
-                Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
+                # Prefer graceful stop first to avoid redirected-output reader races
+                # that can surface as ObjectDisposedException in pwsh on Linux.
+                Stop-Process -Id $apiProcess.Id -ErrorAction SilentlyContinue
+
+                if (-not $apiProcess.WaitForExit(10000))
+                {
+                    Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
+                    $null = $apiProcess.WaitForExit(5000)
+                }
+            }
+            else
+            {
+                $apiProcess.WaitForExit()
             }
         }
         catch
         {
-            # Ignore process stop races during cleanup.
-        }
-
-        try
-        {
-            $apiProcess.WaitForExit()
-        }
-        catch
-        {
-            # Ignore wait races during cleanup.
+            # Ignore process stop/wait races during cleanup.
         }
     }
 
