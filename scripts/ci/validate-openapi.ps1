@@ -52,7 +52,13 @@ if ($null -eq $pathsProperty)
     throw "OpenAPI spec is missing 'paths' object."
 }
 
-$pathCount = ($pathsProperty.Value.PSObject.Properties | Measure-Object).Count
+$pathsValue = $pathsProperty.Value
+if ($null -eq $pathsValue -or $pathsValue -isnot [PSCustomObject])
+{
+    throw "OpenAPI spec 'paths' must be a JSON object."
+}
+
+$pathCount = ($pathsValue.PSObject.Properties | Measure-Object).Count
 if ($pathCount -lt 1)
 {
     throw "OpenAPI spec contains zero paths."
