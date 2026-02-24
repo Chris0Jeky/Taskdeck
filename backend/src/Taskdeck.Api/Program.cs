@@ -54,6 +54,8 @@ builder.Services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<Au
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<BoardAccessService>();
 builder.Services.AddScoped<IExportImportService, ExportImportService>();
+builder.Services.AddScoped<IExternalImportService, ExternalImportService>();
+builder.Services.AddScoped<IExternalImportAdapter, CsvExternalImportAdapter>();
 builder.Services.AddScoped<LlmQueueService>();
 builder.Services.AddScoped<ICaptureService, CaptureService>();
 builder.Services.AddScoped<ICaptureTriageService, CaptureTriageService>();

@@ -12,15 +12,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-02-24)
 
-- Backend: 752/752 passing
+- Backend: 825/825 passing
   - Domain: 107
-  - Application: 411
-  - API integration: 222
+  - Application: 465
+  - API integration: 241
   - CLI contract: 4
   - Architecture boundaries: 8
 - Frontend unit: 377/377 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1152/1152 passing
+- Combined automated total: 1225/1225 passing
 
 ## Backend Commands
 
@@ -276,7 +276,7 @@ Tracking issues:
 - deferred execution: `#263` to `#268`
 
 Reuse links (no duplicate implementation issue):
-- `#75` import-adapter foundation for outreach CSV mapping/dedupe profile
+- `#75` delivered import-adapter foundation for outreach CSV mapping/dedupe profile
 - `#77` analytics model/dashboards for future outreach scoreboard metrics
 - `#175` first-party starter-pack catalog expansion for outreach blueprint inclusion
 
@@ -294,10 +294,12 @@ Planned quality expectations when implementation starts:
   - `backend/tests/Taskdeck.Application.Tests`
   - Includes board/card/column/label/auth/authorization/board-access/export-import/history/queue plus automation/archive/chat/ops/log services
   - Includes database export/import guardrail coverage (sandbox gating, payload validation, file replacement)
+  - Includes external import-adapter parsing and board upsert orchestration coverage (CSV/outreach profile, dedupe policy, rollback safety path)
   - Includes starter-pack manifest parsing/validation, first-party catalog validity, and apply-planning coverage
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
+  - Includes board-scoped external import endpoint coverage (authz, malformed input, duplicate handling, apply/update flow, rollback safety)
   - Includes `ResultExtensions` mapping tests for standardized API error/status behavior
 - CLI contracts:
   - `backend/tests/Taskdeck.Cli.Tests`

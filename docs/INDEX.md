@@ -35,6 +35,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Container deployment runbook for Docker images, compose baseline, reverse-proxy posture, and staging bootstrap.
 - `LLM_PROVIDER_SETUP_GUIDE.md`
   - Provider runtime posture and demo setup guide (`Mock`/`OpenAI` current, `Gemini` expansion tracked in `#232`).
+- `IMPORT_ADAPTERS_GUIDE.md`
+  - External import adapter runtime contract and CSV outreach-profile mapping/dedupe guide (`#75`).
 
 ## Active Tooling Docs
 
