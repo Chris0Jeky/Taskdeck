@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
@@ -12,6 +13,7 @@ namespace Taskdeck.Api.Tests;
 public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly TestWebApplicationFactory _factory;
+    private const string RequestIdHeaderName = CorrelationIdMiddleware.HeaderName;
 
     public ApiErrorContractApiTests(TestWebApplicationFactory factory)
     {
@@ -22,7 +24,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
 
     private static void AssertRequestIdEcho(HttpResponseMessage response, string requestId)
     {
-        response.Headers.TryGetValues("X-Request-Id", out var requestIdValues).Should().BeTrue();
+        response.Headers.TryGetValues(RequestIdHeaderName, out var requestIdValues).Should().BeTrue();
         requestIdValues.Should().ContainSingle().Which.Should().Be(requestId);
     }
 
@@ -46,7 +48,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         using var anonymousClient = _factory.CreateClient();
         var requestId = CreateRequestId("unauthorized-contract");
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/boards");
-        request.Headers.Add("X-Request-Id", requestId);
+        request.Headers.Add(RequestIdHeaderName, requestId);
 
         var response = await anonymousClient.SendAsync(request);
 
@@ -95,7 +97,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         {
             Content = JsonContent.Create(new CreateUserDto(username, email, "different-password"))
         };
-        request.Headers.Add("X-Request-Id", requestId);
+        request.Headers.Add(RequestIdHeaderName, requestId);
 
         var duplicateRegisterResponse = await client.SendAsync(request);
 
@@ -142,7 +144,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AuthenticateAsync(crossUserClient, "error-contract-other");
         var requestId = CreateRequestId("forbidden-contract");
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/boards/{board.Id}");
-        request.Headers.Add("X-Request-Id", requestId);
+        request.Headers.Add(RequestIdHeaderName, requestId);
 
         var response = await crossUserClient.SendAsync(request);
 
@@ -221,7 +223,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         var missingBoardId = Guid.NewGuid();
         var requestId = CreateRequestId("notfound-contract");
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/boards/{missingBoardId}");
-        request.Headers.Add("X-Request-Id", requestId);
+        request.Headers.Add(RequestIdHeaderName, requestId);
 
         var response = await client.SendAsync(request);
 
@@ -252,7 +254,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         {
             Content = JsonContent.Create(new CreateBoardDto(string.Empty, "invalid"))
         };
-        request.Headers.Add("X-Request-Id", requestId);
+        request.Headers.Add(RequestIdHeaderName, requestId);
 
         var response = await client.SendAsync(request);
 
