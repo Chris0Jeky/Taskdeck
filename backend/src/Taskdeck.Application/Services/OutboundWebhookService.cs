@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -11,9 +12,19 @@ namespace Taskdeck.Application.Services;
 
 public sealed class OutboundWebhookService : IOutboundWebhookService
 {
+    private const int MaxEndpointUrlLength = 500;
+    private const int MaxEventFilterCount = 20;
+    private const int MaxEventFilterLength = 120;
+    private const int MaxSerializedEventFiltersLength = 400;
+    private const string EventFilterDelimiter = "|";
+
     private static readonly Regex EventFilterRegex = new(
         @"^\*$|^[a-z]+(\.[a-z]+)?\.(\*|[a-z]+)$|^[a-z]+\.(\*|[a-z]+)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly JsonSerializerOptions WebhookEnvelopeJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     private readonly IUnitOfWork _unitOfWork;
 
@@ -172,7 +183,8 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
                 mutation.EntityType,
                 mutation.Operation,
                 mutation.EntityId,
-                mutation.OccurredAt));
+                mutation.OccurredAt),
+                WebhookEnvelopeJsonOptions);
             var delivery = new OutboundWebhookDelivery(
                 subscription.Id,
                 mutation.BoardId,
@@ -221,7 +233,20 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             return false;
         }
 
+        if (IsBlockedIpHost(parsed.Host))
+        {
+            validationError = "Endpoint host is not allowed.";
+            return false;
+        }
+
         normalizedEndpoint = parsed.ToString();
+        if (normalizedEndpoint.Length > MaxEndpointUrlLength)
+        {
+            validationError = $"Endpoint URL must be {MaxEndpointUrlLength} characters or fewer.";
+            normalizedEndpoint = null;
+            return false;
+        }
+
         return true;
     }
 
@@ -239,15 +264,22 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             normalized.Add("*");
         }
 
-        if (normalized.Count > 20)
+        if (normalized.Count > MaxEventFilterCount)
         {
             return Result.Failure<List<string>>(
                 ErrorCodes.ValidationError,
-                "A webhook subscription can contain at most 20 event filters.");
+                $"A webhook subscription can contain at most {MaxEventFilterCount} event filters.");
         }
 
         foreach (var filter in normalized)
         {
+            if (filter!.Length > MaxEventFilterLength)
+            {
+                return Result.Failure<List<string>>(
+                    ErrorCodes.ValidationError,
+                    $"Event filter '{filter}' exceeds the maximum length of {MaxEventFilterLength} characters.");
+            }
+
             if (!EventFilterRegex.IsMatch(filter!))
             {
                 return Result.Failure<List<string>>(
@@ -256,7 +288,66 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             }
         }
 
+        var serializedFilters = string.Join(EventFilterDelimiter, normalized);
+        if (serializedFilters.Length > MaxSerializedEventFiltersLength)
+        {
+            return Result.Failure<List<string>>(
+                ErrorCodes.ValidationError,
+                $"Serialized event filters must be {MaxSerializedEventFiltersLength} characters or fewer.");
+        }
+
         return Result.Success(normalized);
+    }
+
+    private static bool IsBlockedIpHost(string host)
+    {
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!IPAddress.TryParse(host, out var ipAddress))
+        {
+            return false;
+        }
+
+        if (IPAddress.IsLoopback(ipAddress))
+        {
+            return true;
+        }
+
+        if (ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var bytes = ipAddress.GetAddressBytes();
+            var first = bytes[0];
+            var second = bytes[1];
+
+            return first == 0 ||
+                   first == 10 ||
+                   first == 127 ||
+                   (first == 100 && second >= 64 && second <= 127) ||
+                   (first == 169 && second == 254) ||
+                   (first == 172 && second >= 16 && second <= 31) ||
+                   (first == 192 && second == 168) ||
+                   first >= 224;
+        }
+
+        if (ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            if (ipAddress.Equals(IPAddress.IPv6None) ||
+                ipAddress.IsIPv6LinkLocal ||
+                ipAddress.IsIPv6SiteLocal ||
+                ipAddress.IsIPv6Multicast)
+            {
+                return true;
+            }
+
+            var bytes = ipAddress.GetAddressBytes();
+            // RFC4193 Unique local addresses (fc00::/7).
+            return (bytes[0] & 0xFE) == 0xFC;
+        }
+
+        return false;
     }
 
     private static string GenerateSigningSecret()

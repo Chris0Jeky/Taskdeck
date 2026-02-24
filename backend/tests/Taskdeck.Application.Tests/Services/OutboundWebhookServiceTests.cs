@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -87,6 +88,37 @@ public class OutboundWebhookServiceTests
     }
 
     [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectLoopbackIpHost()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://127.0.0.1/webhook"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("not allowed");
+    }
+
+    [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectEndpointLongerThan500Characters()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+        var path = new string('a', 490);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto($"https://example.com/{path}"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("500 characters");
+    }
+
+    [Fact]
     public async Task CreateSubscriptionAsync_ShouldRejectInvalidEventFilter()
     {
         var service = new OutboundWebhookService(_unitOfWorkMock.Object);
@@ -99,6 +131,40 @@ public class OutboundWebhookServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("Invalid event filter");
+    }
+
+    [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectEventFilterThatExceedsMaxLength()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+        var longFilter = $"{new string('a', 121)}.*";
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://example.com/hook", [longFilter]));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("maximum length");
+    }
+
+    [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectSerializedEventFiltersLongerThanColumn()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+        var filters = Enumerable.Range(0, 20)
+            .Select(index => $"{new string((char)('a' + (index % 26)), 18)}.{new string((char)('a' + ((index + 1) % 26)), 18)}")
+            .ToList();
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://example.com/hook", filters));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Serialized event filters");
     }
 
     [Fact]
@@ -156,6 +222,11 @@ public class OutboundWebhookServiceTests
         createdDeliveries.Should().ContainSingle();
         createdDeliveries[0].SubscriptionId.Should().Be(matching.Id);
         createdDeliveries[0].EventType.Should().Be("card.updated");
+        using var payload = JsonDocument.Parse(createdDeliveries[0].Payload);
+        payload.RootElement.TryGetProperty("deliveryId", out _).Should().BeTrue();
+        payload.RootElement.TryGetProperty("eventType", out _).Should().BeTrue();
+        payload.RootElement.TryGetProperty("boardId", out _).Should().BeTrue();
+        payload.RootElement.TryGetProperty("DeliveryId", out _).Should().BeFalse();
     }
 
     [Fact]

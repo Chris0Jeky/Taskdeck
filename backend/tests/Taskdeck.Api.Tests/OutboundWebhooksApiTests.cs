@@ -100,6 +100,31 @@ public class OutboundWebhooksApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
     }
 
+    [Fact]
+    public async Task CreateSubscription_ShouldReturnBadRequest_WhenEndpointUsesBlockedIpHost()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/webhooks",
+            new CreateOutboundWebhookSubscriptionDto("https://127.0.0.1/webhook", ["card.*"]));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task CreateSubscription_ShouldReturnBadRequest_WhenEndpointExceedsMaxLength()
+    {
+        var board = await CreateBoardAsync();
+        var longPath = new string('a', 490);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/webhooks",
+            new CreateOutboundWebhookSubscriptionDto($"https://example.com/{longPath}", ["card.*"]));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         await EnsureAuthenticatedAsync();
