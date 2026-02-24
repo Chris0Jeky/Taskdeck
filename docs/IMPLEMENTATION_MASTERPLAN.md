@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-23  
+Last Updated: 2026-02-24  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -443,6 +443,10 @@ Execution tracker and seeded issues:
 - `#254` TST-15 tracker
 - `#255`, `#256`, `#257`, `#258`, `#259`, `#260`
 - explicit reuse (no duplicate wave issue): existing WIP limit, sandbox gate, and starter-pack idempotency coverage already implemented
+
+Recent progress (2026-02-24):
+- `#257` now centralizes representative API error-contract assertions for `400/401/403/404/409` in `ApiErrorContractApiTests`
+- representative error-path coverage now includes `X-Request-Id` response echo assertions where middleware applies
 
 Exit Criteria:
 - deterministic flake vectors identified in the wave are removed from current suites
