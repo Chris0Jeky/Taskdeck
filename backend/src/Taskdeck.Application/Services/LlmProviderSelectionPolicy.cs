@@ -13,6 +13,21 @@ public static class LlmProviderSelectionPolicy
 {
     public static LlmProviderDecision Evaluate(LlmProviderSettings settings, string? environmentName)
     {
+        var requestedProvider = ResolveRequestedProviderKind(settings.Provider);
+        if (!requestedProvider.HasValue)
+        {
+            return new LlmProviderDecision(
+                LlmProviderKind.Mock,
+                $"Provider mode '{settings.Provider}' resolves to mock.");
+        }
+
+        if (requestedProvider.Value == LlmProviderKind.Mock)
+        {
+            return new LlmProviderDecision(
+                LlmProviderKind.Mock,
+                "Mock provider selected.");
+        }
+
         if (!settings.EnableLiveProviders)
         {
             return new LlmProviderDecision(
@@ -25,14 +40,6 @@ public static class LlmProviderSelectionPolicy
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
                 "Live providers are disabled for development-like environments.");
-        }
-
-        var requestedProvider = ResolveRequestedProviderKind(settings.Provider);
-        if (!requestedProvider.HasValue)
-        {
-            return new LlmProviderDecision(
-                LlmProviderKind.Mock,
-                $"Provider mode '{settings.Provider}' resolves to mock.");
         }
 
         if (requestedProvider.Value == LlmProviderKind.OpenAi)
@@ -155,6 +162,11 @@ public static class LlmProviderSelectionPolicy
         if (normalized.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
         {
             return LlmProviderKind.Gemini;
+        }
+
+        if (normalized.Equals("Mock", StringComparison.OrdinalIgnoreCase))
+        {
+            return LlmProviderKind.Mock;
         }
 
         return null;

@@ -228,6 +228,20 @@ public class LlmProviderSelectionPolicyTests
         result.Reason.Should().Contain("resolves to mock");
     }
 
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenProviderModeIsExplicitMock_AndLiveProvidersAreDisabled()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = false;
+        settings.AllowLiveProvidersInDevelopment = false;
+        settings.Provider = "Mock";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Be("Mock provider selected.");
+    }
+
     private static LlmProviderSettings BuildValidSettings()
     {
         return new LlmProviderSettings
