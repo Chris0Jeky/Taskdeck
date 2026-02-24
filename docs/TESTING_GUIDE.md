@@ -9,7 +9,7 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 
-## Current Verified Totals (2026-02-23)
+## Current Verified Totals (2026-02-24)
 
 - Backend: 752/752 passing
   - Domain: 107
@@ -197,7 +197,7 @@ Nightly workflow: `.github/workflows/ci-nightly.yml`
 
 Nightly quality workflow: `.github/workflows/nightly-quality.yml`
 
-- schedule/manual reporting lane for quality telemetry (non-blocking for required PR CI checks)
+- scheduled/manual reporting lane for quality telemetry (non-blocking for required PR CI checks)
 - backend coverage artifacts:
   - Domain coverage (`Taskdeck.Domain.Tests` with XPlat Code Coverage)
   - Application coverage (`Taskdeck.Application.Tests` with XPlat Code Coverage)
