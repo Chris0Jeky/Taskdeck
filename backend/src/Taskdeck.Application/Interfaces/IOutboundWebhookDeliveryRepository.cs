@@ -1,0 +1,16 @@
+using Taskdeck.Domain.Entities;
+
+namespace Taskdeck.Application.Interfaces;
+
+public interface IOutboundWebhookDeliveryRepository : IRepository<OutboundWebhookDelivery>
+{
+    Task<IReadOnlyList<OutboundWebhookDelivery>> GetDuePendingAsync(
+        DateTimeOffset now,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<OutboundWebhookDelivery>> GetBySubscriptionAsync(
+        Guid subscriptionId,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+}

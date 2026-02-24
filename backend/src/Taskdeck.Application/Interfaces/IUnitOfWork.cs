@@ -18,6 +18,8 @@ public interface IUnitOfWork
     ICommandRunRepository CommandRuns { get; }
     INotificationRepository Notifications { get; }
     INotificationPreferenceRepository NotificationPreferences { get; }
+    IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
+    IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
