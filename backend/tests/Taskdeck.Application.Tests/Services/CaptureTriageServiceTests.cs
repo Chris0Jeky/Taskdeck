@@ -328,6 +328,38 @@ public class CaptureTriageServiceTests
         _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldPropagateCancellation_WhenMetadataLookupTokenIsCancelled()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { column });
+        _proposalServiceMock
+            .Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = async () => await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] cancelled metadata lookup"),
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)
     {
         return new ProposalDto(

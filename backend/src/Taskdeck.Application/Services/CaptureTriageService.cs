@@ -175,6 +175,7 @@ public class CaptureTriageService : ICaptureTriageService
     {
         try
         {
+            ct.ThrowIfCancellationRequested();
             var health = await _llmProvider.GetHealthAsync(ct);
             var provider = CaptureRequestContract.SanitizeProvenanceMetadata(
                 health.ProviderName,
@@ -183,6 +184,10 @@ public class CaptureTriageService : ICaptureTriageService
                 health.Model,
                 CaptureRequestContract.MaxModelLength);
             return (provider, model);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
