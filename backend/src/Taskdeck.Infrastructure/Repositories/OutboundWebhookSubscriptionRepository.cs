@@ -26,13 +26,17 @@ public sealed class OutboundWebhookSubscriptionRepository : Repository<OutboundW
         Guid boardId,
         CancellationToken cancellationToken = default)
     {
-        // SQLite cannot translate DateTimeOffset ordering from LINQ; load filtered set first, then order in memory.
-        var subscriptions = await _context.OutboundWebhookSubscriptions
-            .Where(subscription => subscription.BoardId == boardId && subscription.IsActive)
-            .ToListAsync(cancellationToken);
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.OutboundWebhookSubscriptions
+                .FromSqlInterpolated(
+                    $"SELECT * FROM OutboundWebhookSubscriptions WHERE BoardId = {boardId} AND IsActive = 1 ORDER BY CreatedAt DESC")
+                .ToListAsync(cancellationToken);
+        }
 
-        return subscriptions
+        return await _context.OutboundWebhookSubscriptions
+            .Where(subscription => subscription.BoardId == boardId && subscription.IsActive)
             .OrderByDescending(subscription => subscription.CreatedAt)
-            .ToList();
+            .ToListAsync(cancellationToken);
     }
 }

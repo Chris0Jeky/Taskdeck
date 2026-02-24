@@ -8,6 +8,8 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebhookDelivery>, IOutboundWebhookDeliveryRepository
 {
+    private const int DefaultLimit = 100;
+
     public OutboundWebhookDeliveryRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -17,20 +19,35 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
         int limit = 100,
         CancellationToken cancellationToken = default)
     {
-        var duePending = await _context.OutboundWebhookDeliveries
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.OutboundWebhookDeliveries
+                .FromSqlInterpolated(
+                    $"""
+                    SELECT d.*
+                    FROM OutboundWebhookDeliveries AS d
+                    INNER JOIN OutboundWebhookSubscriptions AS s ON s.Id = d.SubscriptionId
+                    WHERE d.Status = {(int)WebhookDeliveryStatus.Pending}
+                      AND d.NextAttemptAt <= {now}
+                      AND s.IsActive = 1
+                    ORDER BY d.NextAttemptAt ASC, d.CreatedAt ASC
+                    LIMIT {boundedLimit}
+                    """)
+                .Include(delivery => delivery.Subscription)
+                .ToListAsync(cancellationToken);
+        }
+
+        return await _context.OutboundWebhookDeliveries
             .Include(delivery => delivery.Subscription)
             .Where(delivery =>
                 delivery.Status == WebhookDeliveryStatus.Pending &&
                 delivery.NextAttemptAt <= now &&
                 delivery.Subscription.IsActive)
-            .ToListAsync(cancellationToken);
-
-        // SQLite cannot translate DateTimeOffset ordering from LINQ; order and limit in memory.
-        return duePending
             .OrderBy(delivery => delivery.NextAttemptAt)
             .ThenBy(delivery => delivery.CreatedAt)
-            .Take(limit)
-            .ToList();
+            .Take(boundedLimit)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<OutboundWebhookDelivery>> GetBySubscriptionAsync(
@@ -38,13 +55,67 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
         int limit = 100,
         CancellationToken cancellationToken = default)
     {
-        var deliveries = await _context.OutboundWebhookDeliveries
-            .Where(delivery => delivery.SubscriptionId == subscriptionId)
-            .ToListAsync(cancellationToken);
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.OutboundWebhookDeliveries
+                .FromSqlInterpolated(
+                    $"""
+                    SELECT *
+                    FROM OutboundWebhookDeliveries
+                    WHERE SubscriptionId = {subscriptionId}
+                    ORDER BY CreatedAt DESC
+                    LIMIT {boundedLimit}
+                    """)
+                .ToListAsync(cancellationToken);
+        }
 
-        return deliveries
+        return await _context.OutboundWebhookDeliveries
+            .Where(delivery => delivery.SubscriptionId == subscriptionId)
             .OrderByDescending(delivery => delivery.CreatedAt)
-            .Take(limit)
-            .ToList();
+            .Take(boundedLimit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<OutboundWebhookDelivery>> GetStuckProcessingAsync(
+        DateTimeOffset staleBefore,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var boundedLimit = NormalizeLimit(limit);
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.OutboundWebhookDeliveries
+                .FromSqlInterpolated(
+                    $"""
+                    SELECT d.*
+                    FROM OutboundWebhookDeliveries AS d
+                    INNER JOIN OutboundWebhookSubscriptions AS s ON s.Id = d.SubscriptionId
+                    WHERE d.Status = {(int)WebhookDeliveryStatus.Processing}
+                      AND d.LastAttemptAt IS NOT NULL
+                      AND d.LastAttemptAt <= {staleBefore}
+                      AND s.IsActive = 1
+                    ORDER BY d.LastAttemptAt ASC
+                    LIMIT {boundedLimit}
+                    """)
+                .Include(delivery => delivery.Subscription)
+                .ToListAsync(cancellationToken);
+        }
+
+        return await _context.OutboundWebhookDeliveries
+            .Include(delivery => delivery.Subscription)
+            .Where(delivery =>
+                delivery.Status == WebhookDeliveryStatus.Processing &&
+                delivery.LastAttemptAt.HasValue &&
+                delivery.LastAttemptAt <= staleBefore &&
+                delivery.Subscription.IsActive)
+            .OrderBy(delivery => delivery.LastAttemptAt)
+            .Take(boundedLimit)
+            .ToListAsync(cancellationToken);
+    }
+
+    private static int NormalizeLimit(int limit)
+    {
+        return limit <= 0 ? DefaultLimit : limit;
     }
 }

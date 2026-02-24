@@ -13,4 +13,9 @@ public interface IOutboundWebhookDeliveryRepository : IRepository<OutboundWebhoo
         Guid subscriptionId,
         int limit = 100,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<OutboundWebhookDelivery>> GetStuckProcessingAsync(
+        DateTimeOffset staleBefore,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
 }
