@@ -20,7 +20,7 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 
 - live providers must be enabled (`EnableLiveProviders=true`)
 - development-like environments must explicitly allow live mode (`AllowLiveProvidersInDevelopment=true`)
-- provider mode must be valid (`Provider=OpenAI` or `Provider=Gemini`)
+- provider mode may be explicitly set to `Mock`, `OpenAI`, or `Gemini` (unknown values also fall back deterministically to `Mock`)
 - selected provider config must pass validation (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
