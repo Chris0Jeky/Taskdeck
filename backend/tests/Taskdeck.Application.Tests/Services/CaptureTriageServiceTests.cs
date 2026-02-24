@@ -18,6 +18,7 @@ public class CaptureTriageServiceTests
     private readonly Mock<IColumnRepository> _columnsMock;
     private readonly Mock<IAutomationProposalService> _proposalServiceMock;
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock;
+    private readonly Mock<ILlmProvider> _llmProviderMock;
     private readonly CaptureTriageService _service;
 
     public CaptureTriageServiceTests()
@@ -27,6 +28,7 @@ public class CaptureTriageServiceTests
         _columnsMock = new Mock<IColumnRepository>();
         _proposalServiceMock = new Mock<IAutomationProposalService>();
         _policyEngineMock = new Mock<IAutomationPolicyEngine>();
+        _llmProviderMock = new Mock<ILlmProvider>();
 
         _unitOfWorkMock.SetupGet(u => u.Boards).Returns(_boardsMock.Object);
         _unitOfWorkMock.SetupGet(u => u.Columns).Returns(_columnsMock.Object);
@@ -38,11 +40,14 @@ public class CaptureTriageServiceTests
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
+        _llmProviderMock.Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", Model: "mock-default"));
 
         _service = new CaptureTriageService(
             _unitOfWorkMock.Object,
             _proposalServiceMock.Object,
-            _policyEngineMock.Object);
+            _policyEngineMock.Object,
+            _llmProviderMock.Object);
     }
 
     [Fact]
@@ -94,6 +99,8 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.OperationCount.Should().Be(3);
         result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
+        result.Value.Provider.Should().Be("Mock");
+        result.Value.Model.Should().Be("mock-default");
         createdProposal.Should().NotBeNull();
         var created = createdProposal!;
         created.SourceType.Should().Be(ProposalSourceType.Queue);
@@ -230,6 +237,35 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldUseUnknownProviderMetadata_WhenProviderHealthFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock
+            .Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+        _llmProviderMock.Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("health unavailable"));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "- [ ] provider metadata fallback");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be("unknown");
+        result.Value.Model.Should().Be("unknown");
     }
 
     private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)
