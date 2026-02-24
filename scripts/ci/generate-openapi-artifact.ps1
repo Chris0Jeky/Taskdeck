@@ -67,6 +67,10 @@ function Complete-CopyTask
         {
             Add-Content -LiteralPath $LogPath -Value "Failed to finalize $StreamName capture: $($Task.Exception.GetBaseException().Message)"
         }
+        elseif ($Task.IsCanceled)
+        {
+            Add-Content -LiteralPath $LogPath -Value "Finalizing $StreamName capture was canceled."
+        }
     }
     catch
     {
