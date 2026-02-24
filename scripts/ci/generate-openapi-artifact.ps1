@@ -101,7 +101,20 @@ finally
         }
         catch
         {
-            # Ignore process stop/wait races during cleanup.
+            # Ignore process stop races during cleanup.
+        }
+
+        try
+        {
+            $boundedWaitMs = 5000
+            if (-not $apiProcess.WaitForExit($boundedWaitMs))
+            {
+                Write-Warning "Taskdeck.Api (PID $($apiProcess.Id)) still running after waiting $boundedWaitMs ms. Refer to $stdoutLogPath and $stderrLogPath for diagnostics."
+            }
+        }
+        catch
+        {
+            # Ignore wait races during cleanup.
         }
     }
 
