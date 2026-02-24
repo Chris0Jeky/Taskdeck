@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Xunit;
@@ -12,10 +13,19 @@ namespace Taskdeck.Api.Tests;
 public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly TestWebApplicationFactory _factory;
+    private const string RequestIdHeaderName = CorrelationIdMiddleware.HeaderName;
 
     public ApiErrorContractApiTests(TestWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+    private static string CreateRequestId(string stem) => $"{stem}-{Guid.NewGuid():N}";
+
+    private static void AssertRequestIdEcho(HttpResponseMessage response, string requestId)
+    {
+        response.Headers.TryGetValues(RequestIdHeaderName, out var requestIdValues).Should().BeTrue();
+        requestIdValues.Should().ContainSingle().Which.Should().Be(requestId);
     }
 
     [Fact]
@@ -30,6 +40,20 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         response.Headers.WwwAuthenticate
             .Should()
             .Contain(header => string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ProtectedEndpoint_ShouldEchoRequestId_ForUnauthorizedErrorContract()
+    {
+        using var anonymousClient = _factory.CreateClient();
+        var requestId = CreateRequestId("unauthorized-contract");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/boards");
+        request.Headers.Add(RequestIdHeaderName, requestId);
+
+        var response = await anonymousClient.SendAsync(request);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized, "Unauthorized");
+        AssertRequestIdEcho(response, requestId);
     }
 
     [Fact]
@@ -52,6 +76,33 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
             new LoginDto(username, "wrong-password"));
 
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized, "AuthenticationFailed");
+    }
+
+    [Fact]
+    public async Task Register_ShouldEchoRequestId_ForConflictErrorContract()
+    {
+        using var client = _factory.CreateClient();
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var username = $"register_conflict_header_{suffix}";
+        var email = $"register_conflict_header_{suffix}@example.com";
+        const string password = "password123";
+
+        var initialRegisterResponse = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new CreateUserDto(username, email, password));
+        initialRegisterResponse.EnsureSuccessStatusCode();
+
+        var requestId = CreateRequestId("conflict-contract");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/register")
+        {
+            Content = JsonContent.Create(new CreateUserDto(username, email, "different-password"))
+        };
+        request.Headers.Add(RequestIdHeaderName, requestId);
+
+        var duplicateRegisterResponse = await client.SendAsync(request);
+
+        await ApiTestHarness.AssertErrorContractAsync(duplicateRegisterResponse, HttpStatusCode.Conflict, "Conflict");
+        AssertRequestIdEcho(duplicateRegisterResponse, requestId);
     }
 
     [Fact]
@@ -80,6 +131,25 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
         var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
         loginPayload.Should().NotBeNull();
         loginPayload!.Token.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task BoardRead_ShouldEchoRequestId_ForCrossUserForbiddenErrorContract()
+    {
+        using var ownerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "error-contract-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, stem: "forbidden-contract");
+
+        using var crossUserClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(crossUserClient, "error-contract-other");
+        var requestId = CreateRequestId("forbidden-contract");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/boards/{board.Id}");
+        request.Headers.Add(RequestIdHeaderName, requestId);
+
+        var response = await crossUserClient.SendAsync(request);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Forbidden, "Forbidden");
+        AssertRequestIdEcho(response, requestId);
     }
 
     [Fact]
@@ -146,6 +216,22 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BoardRead_ShouldEchoRequestId_ForMissingResourceNotFoundErrorContract()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "missing-error-contract");
+        var missingBoardId = Guid.NewGuid();
+        var requestId = CreateRequestId("notfound-contract");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/boards/{missingBoardId}");
+        request.Headers.Add(RequestIdHeaderName, requestId);
+
+        var response = await client.SendAsync(request);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+        AssertRequestIdEcho(response, requestId);
+    }
+
+    [Fact]
     public async Task CreateBoard_ShouldReturnValidationErrorContract_WhenNameIsEmpty()
     {
         using var client = _factory.CreateClient();
@@ -156,5 +242,23 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
             new CreateBoardDto(string.Empty, "invalid"));
 
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task CreateBoard_ShouldEchoRequestId_ForValidationErrorContract()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "validation-header-contract");
+        var requestId = CreateRequestId("validation-contract");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/boards")
+        {
+            Content = JsonContent.Create(new CreateBoardDto(string.Empty, "invalid"))
+        };
+        request.Headers.Add(RequestIdHeaderName, requestId);
+
+        var response = await client.SendAsync(request);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+        AssertRequestIdEcho(response, requestId);
     }
 }

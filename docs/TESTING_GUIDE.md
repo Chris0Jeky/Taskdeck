@@ -234,6 +234,24 @@ node scripts/check-golden-principles.mjs
 node scripts/check-docs-governance.mjs
 ```
 
+OpenAPI guardrail local checks (`#258`):
+
+```powershell
+./scripts/ci/generate-openapi-artifact.ps1 -OutputPath "artifacts/openapi/taskdeck-api.json"
+./scripts/ci/validate-openapi.ps1 -SpecPath "artifacts/openapi/taskdeck-api.json"
+```
+
+Malformed-output simulation (deterministic parse failure check):
+
+```powershell
+"not-json" | Set-Content -Path artifacts/openapi/invalid-openapi.json
+./scripts/ci/validate-openapi.ps1 -SpecPath "artifacts/openapi/invalid-openapi.json"
+```
+
+Follow-up intentionally deferred from this issue:
+- snapshot/diff enforcement against a checked-in OpenAPI baseline remains a future enhancement
+- current guardrail scope is generation + parse/shape validation + CI artifact publication
+
 ## Outreach CRM Deferred Wave (Planning, 2026-02-23)
 
 Tracking issues:

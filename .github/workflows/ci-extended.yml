@@ -48,6 +48,12 @@ jobs:
       - name: Run dependency review
         uses: actions/dependency-review-action@v4
 
+  openapi-guardrail:
+    name: OpenAPI Guardrail
+    uses: ./.github/workflows/reusable-openapi-guardrail.yml
+    with:
+      dotnet-version: 8.0.x
+
   backend-solution:
     name: Backend Solution Regression
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
