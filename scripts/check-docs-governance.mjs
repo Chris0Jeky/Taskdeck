@@ -9,6 +9,7 @@ const requiredDocs = [
   'docs/IMPLEMENTATION_MASTERPLAN.md',
   'docs/TESTING_GUIDE.md',
   'docs/MANUAL_TEST_CHECKLIST.md',
+  'docs/GOLDEN_PRINCIPLES.md',
 ]
 
 const errors = []
@@ -49,11 +50,20 @@ async function main() {
     }
   }
 
-  if (await fileExists('docs/STATUS.md')) {
-    const statusText = await readFile(resolve('docs/STATUS.md'), 'utf8')
-    const hasLastUpdatedLine = /^Last Updated:\s*\d{4}-\d{2}-\d{2}\s*$/m.test(statusText)
+  const docsRequiringLastUpdated = [
+    'docs/STATUS.md',
+    'docs/GOLDEN_PRINCIPLES.md',
+  ]
+
+  for (const path of docsRequiringLastUpdated) {
+    if (!(await fileExists(path))) {
+      continue
+    }
+
+    const text = await readFile(resolve(path), 'utf8')
+    const hasLastUpdatedLine = /^Last Updated:\s*\d{4}-\d{2}-\d{2}\s*$/m.test(text)
     if (!hasLastUpdatedLine) {
-      errors.push('docs/STATUS.md must contain a "Last Updated: YYYY-MM-DD" line')
+      errors.push(`${path} must contain a "Last Updated: YYYY-MM-DD" line`)
     }
   }
 
