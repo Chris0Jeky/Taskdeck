@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-23  
+Last Updated: 2026-02-24  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -325,6 +325,11 @@ Execution posture:
 Reconciliation record:
 
 - `docs/analysis/2026-02-23_testing-harness-synthesis.md`
+
+Recent follow-through (2026-02-24):
+- `#258` adds a reusable OpenAPI guardrail lane (`reusable-openapi-guardrail.yml`) wired into `ci-extended` (PR/manual) and `ci-nightly`
+- guardrail now generates `artifacts/openapi/taskdeck-api.json`, validates JSON/top-level contract shape, and uploads artifact/log outputs for inspection
+- snapshot/diff gating remains explicitly deferred to follow-up work; current scope is generation + parse-validation + artifact publication
 
 ## Outreach CRM Deferred Expansion Track (2026-02-23)
 
