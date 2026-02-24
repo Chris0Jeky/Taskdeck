@@ -22,6 +22,7 @@ New-Item -Path $outputDirectory -ItemType Directory -Force | Out-Null
 
 $stdoutLogPath = Join-Path $outputDirectory "taskdeck-openapi-stdout.log"
 $stderrLogPath = Join-Path $outputDirectory "taskdeck-openapi-stderr.log"
+$streamDrainTimeoutMilliseconds = 15000
 
 Remove-Item -LiteralPath $resolvedOutputPath, $stdoutLogPath, $stderrLogPath -ErrorAction SilentlyContinue
 
@@ -39,6 +40,40 @@ $stdoutLogStream = $null
 $stderrLogStream = $null
 $stdoutCopyTask = $null
 $stderrCopyTask = $null
+
+function Complete-CopyTask
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Threading.Tasks.Task]$Task,
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath,
+        [Parameter(Mandatory = $true)]
+        [string]$StreamName,
+        [Parameter(Mandatory = $true)]
+        [int]$TimeoutMilliseconds
+    )
+
+    try
+    {
+        $completed = $Task.Wait($TimeoutMilliseconds)
+        if (-not $completed)
+        {
+            Add-Content -LiteralPath $LogPath -Value "Timed out waiting for $StreamName stream drain after $TimeoutMilliseconds ms."
+            return
+        }
+
+        if ($Task.IsFaulted -and $Task.Exception)
+        {
+            Add-Content -LiteralPath $LogPath -Value "Failed to finalize $StreamName capture: $($Task.Exception.GetBaseException().Message)"
+        }
+    }
+    catch
+    {
+        Add-Content -LiteralPath $LogPath -Value "Failed to finalize $StreamName capture: $($_.Exception.Message)"
+    }
+}
+
 try
 {
     dotnet restore $apiProjectPath
@@ -139,28 +174,14 @@ finally
         }
     }
 
-    try
+    if ($stdoutCopyTask)
     {
-        if ($stdoutCopyTask)
-        {
-            [void]$stdoutCopyTask.GetAwaiter().GetResult()
-        }
-    }
-    catch
-    {
-        Add-Content -LiteralPath $stdoutLogPath -Value "Failed to finalize stdout capture: $($_.Exception.Message)"
+        Complete-CopyTask -Task $stdoutCopyTask -LogPath $stdoutLogPath -StreamName "stdout" -TimeoutMilliseconds $streamDrainTimeoutMilliseconds
     }
 
-    try
+    if ($stderrCopyTask)
     {
-        if ($stderrCopyTask)
-        {
-            [void]$stderrCopyTask.GetAwaiter().GetResult()
-        }
-    }
-    catch
-    {
-        Add-Content -LiteralPath $stderrLogPath -Value "Failed to finalize stderr capture: $($_.Exception.Message)"
+        Complete-CopyTask -Task $stderrCopyTask -LogPath $stderrLogPath -StreamName "stderr" -TimeoutMilliseconds $streamDrainTimeoutMilliseconds
     }
 
     if ($stdoutLogStream)
