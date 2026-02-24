@@ -1,0 +1,166 @@
+name: Nightly Quality Signals
+
+on:
+  schedule:
+    - cron: '55 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-coverage:
+    name: Backend Coverage (Domain + Application)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Run Domain coverage
+        run: >
+          dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj
+          -c Release
+          --collect:"XPlat Code Coverage"
+          --results-directory artifacts/nightly-quality/backend/domain
+
+      - name: Run Application coverage
+        run: >
+          dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj
+          -c Release
+          --collect:"XPlat Code Coverage"
+          --results-directory artifacts/nightly-quality/backend/application
+
+      - name: Upload backend coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-quality-backend-coverage
+          path: artifacts/nightly-quality/backend
+          if-no-files-found: ignore
+          retention-days: 14
+
+  frontend-coverage:
+    name: Frontend Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Run frontend coverage
+        working-directory: frontend/taskdeck-web
+        run: npm run test:coverage
+
+      - name: Collect frontend coverage artifacts
+        if: always()
+        run: |
+          mkdir -p artifacts/nightly-quality/frontend
+          cp -R frontend/taskdeck-web/coverage artifacts/nightly-quality/frontend/coverage || true
+          cp -R frontend/taskdeck-web/test-results artifacts/nightly-quality/frontend/test-results || true
+
+      - name: Upload frontend coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-quality-frontend-coverage
+          path: artifacts/nightly-quality/frontend
+          if-no-files-found: ignore
+          retention-days: 14
+
+  dependency-security-signals:
+    name: Dependency and Security Signals (Non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Collect dependency and security reports
+        shell: bash
+        run: |
+          mkdir -p artifacts/nightly-quality/dependency
+
+          set +e
+          dotnet list backend/Taskdeck.sln package --vulnerable --include-transitive > artifacts/nightly-quality/dependency/backend-vulnerable.txt 2>&1
+          backend_exit=$?
+          echo "$backend_exit" > artifacts/nightly-quality/dependency/backend-vulnerable.exitcode
+
+          npm audit --json --audit-level=high --prefix frontend/taskdeck-web > artifacts/nightly-quality/dependency/frontend-audit.json 2>&1
+          frontend_exit=$?
+          echo "$frontend_exit" > artifacts/nightly-quality/dependency/frontend-audit.exitcode
+          set -e
+
+          {
+            echo "## Nightly Quality Signal Summary"
+            echo ""
+            echo "- dotnet vulnerable package scan exit code: $backend_exit"
+            echo "- npm audit (high) exit code: $frontend_exit"
+            echo ""
+            echo "Exit code non-zero indicates signal findings or command issues; this workflow is reporting-first and non-blocking for required PR gates."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$backend_exit" -ne 0 ]; then
+            echo "::warning::dotnet vulnerable package scan exited with code $backend_exit"
+          fi
+
+          if [ "$frontend_exit" -ne 0 ]; then
+            echo "::warning::npm audit exited with code $frontend_exit"
+          fi
+
+      - name: Upload dependency and security signal artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-quality-dependency-security-signals
+          path: artifacts/nightly-quality/dependency
+          if-no-files-found: ignore
+          retention-days: 14
