@@ -46,6 +46,25 @@ public class ExternalImportServiceTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenDuplicateProviderAdaptersAreRegistered()
+    {
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 0,
+            RowsParsed: 0,
+            Candidates: [],
+            Conflicts: []);
+
+        Action action = () => new ExternalImportService(
+            _unitOfWorkMock.Object,
+            [new FakeAdapter(parseResult), new FakeAdapter(parseResult)]);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*provider(s): csv*");
+    }
+
+    [Fact]
     public async Task ImportToBoardAsync_DryRun_ShouldReportCreateUpdateAndSkipCounts()
     {
         var board = BuildBoardWithColumn("Imported");
@@ -133,6 +152,79 @@ public class ExternalImportServiceTests
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportToBoardAsync_DryRun_ShouldIncludeConflictValues_ForAmbiguousExistingMatches()
+    {
+        var board = BuildBoardWithColumn("Imported");
+        var boardId = board.Id;
+        var targetColumnId = board.Columns.Single().Id;
+
+        var duplicateKey = "email:alice@example.com";
+        var firstCard = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: boardId,
+            columnId: targetColumnId,
+            title: "Alice Existing One",
+            description: $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{duplicateKey}\"}}",
+            dueDate: null,
+            position: 0);
+        var secondCard = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: boardId,
+            columnId: targetColumnId,
+            title: "Alice Existing Two",
+            description: $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{duplicateKey}\"}}",
+            dueDate: null,
+            position: 1);
+        AttachCard(board, firstCard, targetColumnId);
+        AttachCard(board, secondCard, targetColumnId);
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates:
+            [
+                new ExternalImportCandidate(2, duplicateKey, "Alice Incoming", "incoming")
+            ],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "unused",
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = await service.ImportToBoardAsync(boardId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Applied.Should().BeFalse();
+        result.Value.RowsCreated.Should().Be(0);
+        result.Value.RowsUpdated.Should().Be(0);
+        result.Value.RowsSkipped.Should().Be(0);
+
+        result.Value.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "ExistingDuplicateDedupeKey" &&
+            conflict.IncomingValue == duplicateKey &&
+            conflict.ExistingValue != null &&
+            conflict.ExistingValue.Contains(firstCard.Id.ToString(), StringComparison.Ordinal) &&
+            conflict.ExistingValue.Contains(secondCard.Id.ToString(), StringComparison.Ordinal));
+
+        result.Value.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "AmbiguousExistingMatch" &&
+            conflict.Path == "$.rows[2]" &&
+            conflict.IncomingValue == duplicateKey &&
+            conflict.ExistingValue != null &&
+            conflict.ExistingValue.Contains("Alice Existing One", StringComparison.Ordinal) &&
+            conflict.ExistingValue.Contains("Alice Existing Two", StringComparison.Ordinal));
     }
 
     private static Board BuildBoardWithColumn(string columnName)

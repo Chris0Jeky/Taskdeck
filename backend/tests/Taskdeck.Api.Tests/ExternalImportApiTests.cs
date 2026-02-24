@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -55,7 +56,9 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
         result.RowsUpdated.Should().Be(0);
         result.RowsSkipped.Should().Be(0);
         result.HasConflicts.Should().BeTrue();
-        result.Conflicts.Should().ContainSingle(conflict => conflict.Code == "DuplicateInputRecord");
+        result.Conflicts.Should().ContainSingle(conflict =>
+            conflict.Code == "DuplicateInputRecord" &&
+            conflict.IncomingValue == "email:alice@example.com");
     }
 
     [Fact]
@@ -132,6 +135,84 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
         export!.Cards.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Import_ShouldReturnValidationError_WhenExplicitCsvMappingHeaderDoesNotExist()
+    {
+        await EnsureAuthenticatedAsync();
+        var boardId = await CreateBoardAsync("external-import-invalid-mapping");
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address
+                     Alice Example,Acme,alice@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true,
+            Csv: new ExternalImportCsvOptionsDto(EmailColumn: "Email Typo"));
+
+        var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+        var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        payload.GetProperty("message").GetString().Should().Contain("Email Typo");
+        payload.GetProperty("message").GetString().Should().Contain("emailColumn");
+    }
+
+    [Fact]
+    public async Task DryRun_ShouldIncludeConflictValues_ForAmbiguousExistingBoardMatches()
+    {
+        await EnsureAuthenticatedAsync();
+
+        const string duplicateKey = "email:alice@example.com";
+        var boardId = await CreateBoardAsync(
+            "external-import-ambiguous",
+            [
+                new ImportCardDto(
+                    "Alice Existing One",
+                    $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{duplicateKey}\"}}",
+                    "Imported",
+                    0,
+                    null,
+                    null),
+                new ImportCardDto(
+                    "Alice Existing Two",
+                    $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{duplicateKey}\"}}",
+                    "Backlog",
+                    1,
+                    null,
+                    null)
+            ]);
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address
+                     Alice Incoming,Acme,alice@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ExternalImportResultDto>();
+        result.Should().NotBeNull();
+        result!.HasConflicts.Should().BeTrue();
+        result.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "ExistingDuplicateDedupeKey" &&
+            conflict.IncomingValue == duplicateKey &&
+            conflict.ExistingValue != null &&
+            conflict.ExistingValue.Contains("Alice Existing One", StringComparison.Ordinal) &&
+            conflict.ExistingValue.Contains("Alice Existing Two", StringComparison.Ordinal));
+        result.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "AmbiguousExistingMatch" &&
+            conflict.Path == "$.rows[2]" &&
+            conflict.IncomingValue == duplicateKey &&
+            conflict.ExistingValue != null &&
+            conflict.ExistingValue.Contains("Alice Existing One", StringComparison.Ordinal) &&
+            conflict.ExistingValue.Contains("Alice Existing Two", StringComparison.Ordinal));
+    }
+
     private async Task EnsureAuthenticatedAsync()
     {
         if (_isAuthenticated)
@@ -143,7 +224,7 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
         _isAuthenticated = true;
     }
 
-    private async Task<Guid> CreateBoardAsync(string stem)
+    private async Task<Guid> CreateBoardAsync(string stem, IEnumerable<ImportCardDto>? cards = null)
     {
         await EnsureAuthenticatedAsync();
 
@@ -157,7 +238,7 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
                     new ImportColumnDto("Imported", 0, null),
                     new ImportColumnDto("Backlog", 1, null)
                 ],
-                Cards: Array.Empty<ImportCardDto>(),
+                Cards: cards ?? Array.Empty<ImportCardDto>(),
                 Labels: Array.Empty<ImportLabelDto>()));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

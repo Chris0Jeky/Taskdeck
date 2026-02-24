@@ -29,8 +29,31 @@ public class CsvExternalImportAdapterTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Candidates.Select(candidate => candidate.DedupeKey).Should().ContainInOrder(
             "linkedin:https://linkedin.com/in/alice",
-            "email:bobexamplecom",
+            "email:bob@example.com",
             "name-company:carolexample|acme");
+    }
+
+    [Fact]
+    public void Parse_ShouldPreserveEmailPunctuation_WhenBuildingDedupeKey()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address
+                     Alice Dot,Acme,a.b@example.com
+                     Alice Plain,Acme,ab@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Candidates.Should().HaveCount(2);
+        var dedupeKeys = result.Value.Candidates.Select(candidate => candidate.DedupeKey).ToList();
+        dedupeKeys.Should().Contain("email:a.b@example.com");
+        dedupeKeys.Should().Contain("email:ab@example.com");
+        result.Value.Conflicts.Should().NotContain(conflict => conflict.Code == "DuplicateInputRecord");
     }
 
     [Fact]
@@ -73,6 +96,27 @@ public class CsvExternalImportAdapterTests
     }
 
     [Fact]
+    public void Parse_ShouldReturnValidationError_WhenExplicitMappedHeaderDoesNotExist()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address
+                     Alice Example,Acme,alice@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true,
+            Csv: new ExternalImportCsvOptionsDto(EmailColumn: "Email Typo"));
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("emailColumn");
+        result.ErrorMessage.Should().Contain("Email Typo");
+    }
+
+    [Fact]
     public void Parse_ShouldEmitConflict_WhenLastTouchDateCannotBeParsed()
     {
         var request = new ExternalImportRequestDto(
@@ -91,5 +135,34 @@ public class CsvExternalImportAdapterTests
         result.Value.Conflicts.Should().ContainSingle(conflict =>
             conflict.Code == "InvalidDate" &&
             conflict.Path == "$.rows[2].last_touch_at");
+    }
+
+    [Fact]
+    public void Parse_ShouldPopulateIncomingValues_ForActionableConflicts()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address,last_touch_at
+                     Alice Example,Acme,alice@example.com,not-a-date
+                     Alice Duplicate,Acme,alice@example.com,2024-01-01T00:00:00Z
+                     Charlie,,,
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "InvalidDate" &&
+            conflict.IncomingValue == "not-a-date");
+        result.Value.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "DuplicateInputRecord" &&
+            conflict.IncomingValue == "email:alice@example.com");
+        result.Value.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "MissingDedupeKey" &&
+            conflict.IncomingValue != null &&
+            conflict.IncomingValue.Contains("display_name='Charlie'"));
     }
 }
