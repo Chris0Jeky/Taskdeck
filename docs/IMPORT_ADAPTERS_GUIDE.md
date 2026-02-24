@@ -47,6 +47,7 @@ Behavior:
 
 - `dryRun=true`: preview only, no mutation.
 - `dryRun=false`: apply only when no conflicts exist.
+- If a `csv.*Column` mapping is explicitly provided and that header does not exist in the CSV header row, the request fails with `ValidationError`.
 
 ## Outreach Mapping Preset
 
@@ -87,6 +88,7 @@ Representative conflict codes:
 - `AmbiguousExistingMatch`
 
 `path` points to row/field context (for example `$.rows[4].last_touch_at`).
+Where available, `incomingValue` and `existingValue` are populated to make conflict resolution actionable.
 
 ## Adapter Extensibility
 
