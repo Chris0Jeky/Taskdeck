@@ -343,6 +343,54 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Apply_ShouldNotBlockUnrelatedImport_WhenBoardHasHistoricalDuplicateDedupeKey()
+    {
+        await EnsureAuthenticatedAsync();
+
+        const string historicalDuplicateKey = "email:historical@example.com";
+        var boardId = await CreateBoardAsync(
+            "external-import-unrelated-duplicate",
+            cards:
+            [
+                new ImportCardDto(
+                    "Historical One",
+                    $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{historicalDuplicateKey}\"}}",
+                    "Imported",
+                    0,
+                    null,
+                    null),
+                new ImportCardDto(
+                    "Historical Two",
+                    $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{historicalDuplicateKey}\"}}",
+                    "Backlog",
+                    1,
+                    null,
+                    null)
+            ]);
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address
+                     New Contact,Acme,new.contact@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ExternalImportResultDto>();
+        result.Should().NotBeNull();
+        result!.Applied.Should().BeTrue();
+        result.RowsCreated.Should().Be(1);
+        result.RowsUpdated.Should().Be(0);
+        result.RowsSkipped.Should().Be(0);
+        result.Conflicts.Should().NotContain(conflict => conflict.Code == "ExistingDuplicateDedupeKey");
+        result.Conflicts.Should().NotContain(conflict => conflict.Code == "AmbiguousExistingMatch");
+    }
+
+    [Fact]
     public async Task ImportEndpoint_ShouldReturnForbidden_ForBothForeignAndMissingBoards()
     {
         await EnsureAuthenticatedAsync();

@@ -160,8 +160,12 @@ public sealed class ExternalImportService : IExternalImportService
             .Where(entry => entry.Value.Count > 1)
             .Select(entry => entry.Key)
             .ToHashSet(MatchKeyComparer);
+        var incomingMatchKeys = parsed.Candidates
+            .Select(candidate => new ImportMatchKey(parsedProvider, parsedProfile, candidate.DedupeKey.Trim()))
+            .ToHashSet(MatchKeyComparer);
 
         foreach (var duplicateKey in duplicateExistingKeys
+                     .Where(duplicateKey => incomingMatchKeys.Contains(duplicateKey))
                      .OrderBy(key => key.Provider, StringComparer.OrdinalIgnoreCase)
                      .ThenBy(key => key.Profile, StringComparer.OrdinalIgnoreCase)
                      .ThenBy(key => key.DedupeKey, StringComparer.OrdinalIgnoreCase))
