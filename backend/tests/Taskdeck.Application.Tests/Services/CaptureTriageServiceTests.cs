@@ -16,6 +16,7 @@ public class CaptureTriageServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IBoardRepository> _boardsMock;
     private readonly Mock<IColumnRepository> _columnsMock;
+    private readonly Mock<IAutomationProposalRepository> _automationProposalsMock;
     private readonly Mock<IAutomationProposalService> _proposalServiceMock;
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock;
     private readonly Mock<ILlmProvider> _llmProviderMock;
@@ -26,12 +27,20 @@ public class CaptureTriageServiceTests
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _boardsMock = new Mock<IBoardRepository>();
         _columnsMock = new Mock<IColumnRepository>();
+        _automationProposalsMock = new Mock<IAutomationProposalRepository>();
         _proposalServiceMock = new Mock<IAutomationProposalService>();
         _policyEngineMock = new Mock<IAutomationPolicyEngine>();
         _llmProviderMock = new Mock<ILlmProvider>();
 
         _unitOfWorkMock.SetupGet(u => u.Boards).Returns(_boardsMock.Object);
         _unitOfWorkMock.SetupGet(u => u.Columns).Returns(_columnsMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.AutomationProposals).Returns(_automationProposalsMock.Object);
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AutomationProposal?)null);
         _policyEngineMock.Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
             .Returns(RiskLevel.Low);
         _policyEngineMock.Setup(p => p.ValidatePermissionsAsync(
@@ -48,6 +57,56 @@ public class CaptureTriageServiceTests
             _proposalServiceMock.Object,
             _policyEngineMock.Object,
             _llmProviderMock.Object);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReuseExistingProposal_WhenSourceReferenceAlreadyExists()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var existingTriageRunId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        var existingProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Capture triage",
+            RiskLevel.Low,
+            existingTriageRunId.ToString(),
+            boardId,
+            captureId.ToString());
+        existingProposal.AddOperation(new AutomationProposalOperation(
+            existingProposal.Id,
+            sequence: 0,
+            actionType: "create",
+            targetType: "card",
+            parameters: "{\"title\":\"existing\"}",
+            idempotencyKey: "existing-op-1"));
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(
+                ProposalSourceType.Queue,
+                captureId.ToString(),
+                default))
+            .ReturnsAsync(existingProposal);
+
+        var result = await _service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] Should reuse existing proposal"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().Be(existingProposal.Id);
+        result.Value.TriageRunId.Should().Be(existingTriageRunId);
+        result.Value.OperationCount.Should().Be(1);
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
     }
 
     [Fact]

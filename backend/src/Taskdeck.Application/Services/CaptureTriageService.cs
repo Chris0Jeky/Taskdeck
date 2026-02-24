@@ -111,6 +111,7 @@ public class CaptureTriageService : ICaptureTriageService
                 task,
                 sequence))
             .ToList();
+        var captureReferenceId = captureItemId.ToString();
 
         var operationDtos = operations
             .Select((operation, sequence) => new ProposalOperationDto(
@@ -140,6 +141,23 @@ public class CaptureTriageService : ICaptureTriageService
                 permissionResult.ErrorMessage);
         }
 
+        var existingProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+            ProposalSourceType.Queue,
+            captureReferenceId,
+            cancellationToken);
+        if (existingProposal != null)
+        {
+            var (existingProvider, existingModel) = await GetProviderMetadataAsync(cancellationToken);
+            return Result.Success(new CaptureTriageProposalResultDto(
+                captureItemId,
+                ResolveTriageRunId(existingProposal.CorrelationId, triageRunId),
+                existingProposal.Id,
+                existingProposal.Operations.Count == 0 ? operations.Count : existingProposal.Operations.Count,
+                outputValidation.Value.PromptVersion,
+                existingProvider,
+                existingModel));
+        }
+
         var createProposalResult = await _proposalService.CreateProposalAsync(
             new CreateProposalDto(
                 SourceType: ProposalSourceType.Queue,
@@ -148,7 +166,7 @@ public class CaptureTriageService : ICaptureTriageService
                 RiskLevel: riskLevel,
                 CorrelationId: triageRunId.ToString(),
                 BoardId: boardId.Value,
-                SourceReferenceId: captureItemId.ToString(),
+                SourceReferenceId: captureReferenceId,
                 Operations: operations),
             cancellationToken);
 
@@ -169,6 +187,13 @@ public class CaptureTriageService : ICaptureTriageService
             outputValidation.Value.PromptVersion,
             provider,
             model));
+    }
+
+    private static Guid ResolveTriageRunId(string? correlationId, Guid fallback)
+    {
+        return Guid.TryParse(correlationId, out var parsed) && parsed != Guid.Empty
+            ? parsed
+            : fallback;
     }
 
     private async Task<(string Provider, string Model)> GetProviderMetadataAsync(CancellationToken ct)
