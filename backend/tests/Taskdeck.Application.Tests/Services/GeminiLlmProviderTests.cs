@@ -4,6 +4,7 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Tests.TestUtilities;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -184,6 +185,58 @@ public class GeminiLlmProviderTests
         health.Model.Should().Be(settings.Gemini.Model);
     }
 
+    [Fact]
+    public async Task CompleteAsync_ShouldDefaultNullRoleToUser_WhenMappingMessages()
+    {
+        var settings = BuildSettings();
+        var capturedRoles = new List<string>();
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            var body = request.Content is null
+                ? "{}"
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            using var json = System.Text.Json.JsonDocument.Parse(body);
+            var contents = json.RootElement.GetProperty("contents");
+            foreach (var content in contents.EnumerateArray())
+            {
+                capturedRoles.Add(content.GetProperty("role").GetString() ?? string.Empty);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "candidates": [
+                        {
+                          "content": {
+                            "parts": [
+                              { "text": "ok" }
+                            ]
+                          }
+                        }
+                      ],
+                      "usageMetadata": {
+                        "totalTokenCount": 3
+                      }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var provider = new GeminiLlmProvider(new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
+
+        var _ = await provider.CompleteAsync(new ChatCompletionRequest(
+            new List<ChatCompletionMessage>
+            {
+                new(null!, "raw prompt")
+            }));
+
+        capturedRoles.Should().ContainSingle().Which.Should().Be("user");
+    }
+
     private static LlmProviderSettings BuildSettings()
     {
         return new LlmProviderSettings
@@ -200,23 +253,4 @@ public class GeminiLlmProviderTests
         };
     }
 
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _responseFactory;
-
-        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        {
-            _responseFactory = (request, _) => Task.FromResult(responseFactory(request));
-        }
-
-        public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responseFactory)
-        {
-            _responseFactory = responseFactory;
-        }
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            return await _responseFactory(request, cancellationToken);
-        }
-    }
 }

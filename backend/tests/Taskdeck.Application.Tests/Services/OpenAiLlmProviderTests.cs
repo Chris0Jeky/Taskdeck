@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Tests.TestUtilities;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -195,23 +196,4 @@ public class OpenAiLlmProviderTests
         };
     }
 
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _responseFactory;
-
-        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
-        {
-            _responseFactory = (request, _) => Task.FromResult(responseFactory(request));
-        }
-
-        public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responseFactory)
-        {
-            _responseFactory = responseFactory;
-        }
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            return await _responseFactory(request, cancellationToken);
-        }
-    }
 }
