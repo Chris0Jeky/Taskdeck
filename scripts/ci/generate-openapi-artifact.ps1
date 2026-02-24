@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$repoRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, "..", ".."))
 $resolvedOutputPath = if ([System.IO.Path]::IsPathRooted($OutputPath))
 {
     $OutputPath
@@ -78,10 +78,28 @@ try
 }
 finally
 {
-    if ($apiProcess -and -not $apiProcess.HasExited)
+    if ($apiProcess)
     {
-        Stop-Process -Id $apiProcess.Id -Force
-        $apiProcess.WaitForExit()
+        try
+        {
+            if (-not $apiProcess.HasExited)
+            {
+                Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+        catch
+        {
+            # Ignore process stop races during cleanup.
+        }
+
+        try
+        {
+            $apiProcess.WaitForExit()
+        }
+        catch
+        {
+            # Ignore wait races during cleanup.
+        }
     }
 
     if ($null -eq $previousUrls)
