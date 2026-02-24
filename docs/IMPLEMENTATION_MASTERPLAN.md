@@ -391,7 +391,7 @@ Exit Criteria:
 
 Focus:
 - realtime collaboration and notification ecosystem
-- integrations/webhooks/connectors foundation
+- integrations/webhooks/connectors foundation (initial webhook integration security model delivered in `#76`)
 - analytics and planning surfaces
 - compliance/security expansion (SSO/MFA, data portability, dependency-security policy)
 - UX maturity (accessibility, search, onboarding, offline readiness)
@@ -510,7 +510,7 @@ Exit Criteria:
 - API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
-- Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76`
+- Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76` (delivered)
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
@@ -580,7 +580,7 @@ Outstanding strategy-level gap to monitor:
 
 ## ARCH-01 Follow-Through Stages (Post-ADR)
 
-1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76`).
+1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered).
 2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`).
 3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`).
 4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81`, `#82`, `#83`, `#110`).
