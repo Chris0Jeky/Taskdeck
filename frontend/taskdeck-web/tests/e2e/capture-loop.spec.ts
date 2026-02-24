@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
+import { pollUntil } from './support/polling'
 
 interface CaptureProvenanceDto {
   captureItemId: string
@@ -60,25 +61,16 @@ async function waitForProposalCreated(
   auth: AuthResult,
   captureId: string,
 ): Promise<CaptureItemDto> {
-  for (let i = 0; i < 40; i += 1) {
+  return await pollUntil(async () => {
     const response = await request.get(`${API_BASE_URL}/capture/items/${encodeURIComponent(captureId)}`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     })
     await assertOk(response, `Fetch capture item ${captureId}`)
-
-    const item = await response.json() as CaptureItemDto
-    if (isStatus(item.status, 'ProposalCreated') && item.provenance?.proposalId) {
-      return item
-    }
-
-    if (isStatus(item.status, 'Failed')) {
-      throw new Error(`Capture triage failed for ${captureId}`)
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 500))
-  }
-
-  throw new Error(`Timed out waiting for capture proposal creation for ${captureId}`)
+    return await response.json() as CaptureItemDto
+  }, (item) => isStatus(item.status, 'ProposalCreated') && !!item.provenance?.proposalId, {
+    description: `capture triage for ${captureId} completed`,
+    abortIf: (item) => (isStatus(item.status, 'Failed') ? `Capture triage failed for ${captureId}` : undefined),
+  })
 }
 
 async function listBoardCards(
@@ -99,17 +91,21 @@ async function waitForCardWithTitle(
   boardId: string,
   expectedTitle: string,
 ): Promise<CardDto> {
-  for (let i = 0; i < 80; i += 1) {
-    const cards = await listBoardCards(request, auth, boardId)
-    const matchingCard = cards.find((card) => card.title === expectedTitle)
-    if (matchingCard) {
-      return matchingCard
-    }
+  const cards = await pollUntil(
+    () => listBoardCards(request, auth, boardId),
+    (cardsList) => cardsList.some((card) => card.title === expectedTitle),
+    {
+      description: `card '${expectedTitle}' to appear on board ${boardId}`,
+      timeoutMs: 40000,
+    },
+  )
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
+  const matchingCard = cards.find((card) => card.title === expectedTitle)
+  if (!matchingCard) {
+    throw new Error(`Expected card '${expectedTitle}' to appear on board ${boardId} but it was not present`)
   }
 
-  throw new Error(`Timed out waiting for card '${expectedTitle}' in board ${boardId}`)
+  return matchingCard
 }
 
 let auth: AuthResult

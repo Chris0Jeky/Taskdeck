@@ -2,6 +2,8 @@ import type { APIRequestContext } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
+import { assertOk } from './support/httpAsserts'
+import { pollUntil } from './support/polling'
 
 interface ChatMessageDto {
   proposalId: string | null
@@ -21,22 +23,24 @@ async function waitForProposalInSession(
   token: string,
   sessionId: string,
 ): Promise<string> {
-  for (let i = 0; i < 30; i += 1) {
-    const response = await request.get(`${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(response.ok()).toBeTruthy()
+  const sessionWithProposal = await pollUntil(
+    async () => {
+      const response = await request.get(`${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      await assertOk(response, `fetch chat session ${sessionId}`)
+      return await response.json() as ChatSessionDto
+    },
+    (session) => session.recentMessages.some((m) => !!m.proposalId),
+    { description: 'proposal reference in chat session' },
+  )
 
-    const session = await response.json() as ChatSessionDto
-    const proposalId = session.recentMessages.find((m) => !!m.proposalId)?.proposalId
-    if (proposalId) {
-      return proposalId
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 500))
+  const proposalId = sessionWithProposal.recentMessages.find((m) => !!m.proposalId)?.proposalId
+  if (!proposalId) {
+    throw new Error('Expected a proposal reference in chat session')
   }
 
-  throw new Error('Timed out waiting for proposal reference in chat session')
+  return proposalId
 }
 
 let auth: AuthResult
@@ -100,7 +104,7 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
   const proposalResponse = await request.get(`${API_BASE_URL}/automation/proposals/${encodeURIComponent(proposalId)}`, {
     headers: { Authorization: `Bearer ${auth.token}` },
   })
-  expect(proposalResponse.ok()).toBeTruthy()
+  await assertOk(proposalResponse, `fetch proposal ${proposalId}`)
   const proposal = await proposalResponse.json() as ProposalDto
 
   await page.goto('/workspace/automations/proposals')

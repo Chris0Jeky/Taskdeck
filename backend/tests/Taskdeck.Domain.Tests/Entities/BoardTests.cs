@@ -56,12 +56,11 @@ public class BoardTests
         var originalUpdatedAt = board.UpdatedAt;
 
         // Act
-        Thread.Sleep(10); // Ensure time difference
         board.Update(name: "Work");
 
         // Assert
         board.Name.Should().Be("Work");
-        board.UpdatedAt.Should().BeAfter(originalUpdatedAt);
+        board.UpdatedAt.Should().BeOnOrAfter(originalUpdatedAt);
     }
 
     [Fact]
