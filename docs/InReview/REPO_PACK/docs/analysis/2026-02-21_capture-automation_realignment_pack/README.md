@@ -1,5 +1,15 @@
 # 2026-02-21 Capture/Automation Realignment Pack (Repo Add)
 
+## Status (2026-02-23)
+
+- Historical/stale planning pack after CAP-12 docs promotion (`#211`).
+- Canonical shipped behavior now lives in:
+  - `docs/STATUS.md`
+  - `docs/IMPLEMENTATION_MASTERPLAN.md`
+  - `docs/TESTING_GUIDE.md`
+  - `docs/MANUAL_TEST_CHECKLIST.md`
+- Keep this pack for historical context only; do not treat it as authoritative.
+
 This directory is a **planning pack** intended to be copied into the Taskdeck repo under:
 
 `docs/analysis/2026-02-21_capture-automation_realignment_pack/`

@@ -1,6 +1,16 @@
 # 2026-02-21 Capture + Security + Performance Addendum
 
-This folder contains an “extra explicit” addendum pack for Taskdeck.
+## Status (2026-02-23)
+
+- Historical/stale planning addendum after CAP-12 docs promotion (`#211`).
+- Canonical shipped behavior and test posture now live in:
+  - `docs/STATUS.md`
+  - `docs/IMPLEMENTATION_MASTERPLAN.md`
+  - `docs/TESTING_GUIDE.md`
+  - `docs/MANUAL_TEST_CHECKLIST.md`
+- Keep this addendum for historical context only; do not treat it as authoritative implementation guidance.
+
+This folder contains an "extra explicit" addendum pack for Taskdeck.
 
 ## Files
 
@@ -11,7 +21,7 @@ Draft OpenAPI spec for `/api/capture/*` endpoints.
 File-path-level backend implementation skeleton for a Capture Inbox MVP.
 
 3) `SECURITY_TRUSTWORTHINESS_PLAYBOOK.md`  
-Practical security + trust roadmap, aligned with Taskdeck’s current architecture (proposals, worker, gating).
+Practical security + trust roadmap, aligned with Taskdeck's current architecture (proposals, worker, gating).
 
 4) `PERFORMANCE_RESPONSIVENESS_PLAYBOOK.md`  
 Practical performance and responsiveness plan for API + worker + UI.

@@ -297,17 +297,17 @@ Use `docs/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and 
 This section defines validation expectations for the capture-first direction.
 
 Current state:
-- capture/inbox pipeline issues (`#199` to `#213`) are backlog-seeded
-- capture loop assertions below become required as those slices ship
+- capture MVP loop is shipped end-to-end (`#200` to `#211`)
+- capture loop assertions below are required baseline checks for regression safety
 
-Required assertions once capture endpoints/UI ship:
+Required assertions:
 - capture action is fast and deterministic (target under 10 seconds to persisted artifact in normal local conditions)
 - triage path stays proposal-first (no direct board mutation from model output)
 - provenance links are visible from proposal/card surfaces back to capture source
 - error and auth contracts remain stable (`ApiErrorResponse`, `401/403/404` policy)
 
 Recommended execution pairing:
-- automated: API + frontend unit + E2E capture loop (`#210`)
+- automated: API + frontend unit + E2E capture loop (`#210` delivered, retained as active regression path)
 - manual: capture friction/trust checks in `docs/MANUAL_TEST_CHECKLIST.md`
 
 ## Development Sandbox Mode

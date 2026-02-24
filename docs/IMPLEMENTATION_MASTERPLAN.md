@@ -310,6 +310,10 @@ Delivered in the latest cycle:
    - end-to-end flow now validates proposal-first trust posture by asserting board mutation only after explicit proposal approval and execute action
    - regression asserts resulting card provenance links (`Open Capture`, `Open Proposal`) and triage-run metadata visibility in card modal
    - full Playwright suite now exercises capture-loop path by default to guard against cross-surface regressions
+74. CAP-12 canonical docs promotion delivery (`#211`):
+   - updated canonical docs (`docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/TESTING_GUIDE.md`, `docs/MANUAL_TEST_CHECKLIST.md`) to represent capture MVP as shipped behavior
+   - moved capture validation language from planned-only posture to active regression posture in testing and manual guides
+   - marked original in-review capture pack READMEs as historical/stale after canonical promotion
 
 ## Roadmap by Horizon
 
@@ -478,7 +482,7 @@ Exit Criteria:
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
 - Analysis follow-through wave tracker: `#151`
-- Capture realignment wave tracker and delivery sequence: `#199` to `#211`
+- Capture realignment wave: `#199` to `#211` (delivered); remaining linked hardening/performance follow-through: `#81`, `#212`, `#213`
 - Testing harness guardrails wave tracker and delivery sequence: `#254` to `#260`
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232`
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236`, `#237`
@@ -604,15 +608,14 @@ Initial implementation shape:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Continue capture wave delivery on completed dependencies by sequencing `#211`, while preserving Priority I policy guardrails.
-3. Sequence testing harness wave immediately after CAP docs promotion: `#255` -> (`#256`, `#257`) -> (`#258`, `#259`, `#260`), and keep aligned existing seeds `#89`, `#90`, `#106`, `#168`.
-4. After testing harness Wave 1 net-new slices, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
-5. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
-6. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
-7. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
-8. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
-9. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
-10. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing import/analytics/starter-pack tracks (`#75`, `#77`, `#175`).
+2. Sequence testing harness wave from the completed tracker handoff: `#255` -> (`#256`, `#257`) -> (`#258`, `#259`, `#260`), and keep aligned existing seeds `#89`, `#90`, `#106`, `#168`.
+3. After testing harness Wave 1 net-new slices, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
+4. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
+5. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
+6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
+7. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
+8. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+9. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing import/analytics/starter-pack tracks (`#75`, `#77`, `#175`).
 
 ## Documentation Operating Model
 Active docs:
