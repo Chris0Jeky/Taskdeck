@@ -1,84 +1,31 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-02-23  
-Scope: Provider setup posture for chat/capture automation, including current behavior and planned provider-agnostic expansion.
+Last Updated: 2026-02-24  
+Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
 
-Taskdeck must stay provider-agnostic at the application layer while still being easy to demo locally.
-This guide defines:
-
-- what is shipped now
-- how to run safe live-provider demos now
-- what `#232` must deliver for OpenAI + Gemini parity
-- security and reliability constraints for any live provider
+Taskdeck keeps application services provider-agnostic through `ILlmProvider`, while retaining a safe default posture.
+This guide defines what is now shipped and how to run OpenAI/Gemini demos without code changes.
 
 ## Current Shipped State
 
-Backend provider runtime currently supports:
+Backend provider runtime now supports:
 
 - `Mock` provider (default)
-- `OpenAI` provider (explicitly gated)
+- `OpenAI` provider (config-gated)
+- `Gemini` provider (config-gated)
 
-Current settings live under `Llm` in API config (`appsettings*.json`), with deterministic selection via `LlmProviderSelectionPolicy`:
+Selection is deterministic through `LlmProviderSelectionPolicy`:
 
-- `EnableLiveProviders`
-- `AllowLiveProvidersInDevelopment`
-- `Provider` (`Mock` or `OpenAI`)
-- `OpenAi` provider settings (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
+- live providers must be enabled (`EnableLiveProviders=true`)
+- development-like environments must explicitly allow live mode (`AllowLiveProvidersInDevelopment=true`)
+- provider mode must be valid (`Provider=OpenAI` or `Provider=Gemini`)
+- selected provider config must pass validation (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
 
-Important: Gemini is not implemented in runtime yet. That work is tracked in `#232`.
+If any live-provider condition fails, runtime degrades safely to `Mock`.
 
-## Current Demo Setup (Today)
-
-For local demo runs that require a live model, set:
-
-- `Llm__EnableLiveProviders=true`
-- `Llm__AllowLiveProvidersInDevelopment=true`
-- `Llm__Provider=OpenAI`
-- `Llm__OpenAi__ApiKey=<your_openai_key>`
-
-Optional overrides:
-
-- `Llm__OpenAi__Model=<model_name>`
-- `Llm__OpenAi__BaseUrl=https://api.openai.com/v1`
-- `Llm__OpenAi__TimeoutSeconds=30`
-
-Keep `Mock` as the default for test and CI unless a test explicitly requires provider stubbing.
-
-## Planned Expansion (`#232`)
-
-`#232` delivers provider-agnostic runtime support for:
-
-- `OpenAI`
-- `Gemini`
-- deterministic `Mock` fallback on misconfiguration or disabled live mode
-
-Target behavior:
-
-- application services continue to depend only on `ILlmProvider`
-- provider selection remains config-driven and environment-aware
-- invalid live-provider config degrades safely to `Mock` with actionable logs
-- provenance remains explicit (`provider`, `model`, `promptVersion`) for triage/chat flows
-
-## Managed-Key Abuse-Control Track (`#235` to `#240`)
-
-Supporting provider-agnostic runtime is not enough if users can consume model calls through a shared platform key.
-Managed-key mode must include explicit control-plane work before broad exposure.
-
-Seeded issue wave:
-
-- `#235` tracker: managed-key threat model and sequencing
-- `#236` identity attribution contract for each managed-key call
-- `#237` quota/budget/kill-switch guardrails
-- `#238` abuse detection and automated containment
-- `#239` incident response and key-rotation drills
-- `#240` user-facing fair-use and enforcement policy
-
-Design rule:
-- Treat managed-key mode as a security feature with rollout gates, not as a simple provider-configuration toggle.
-
-## Target Config Shape (Post-`#232`)
+## Config Shape
 
 ```json
 {
@@ -94,7 +41,7 @@ Design rule:
     },
     "Gemini": {
       "ApiKey": "",
-      "BaseUrl": "https://generativelanguage.googleapis.com",
+      "BaseUrl": "https://generativelanguage.googleapis.com/v1beta",
       "Model": "gemini-2.5-flash",
       "TimeoutSeconds": 30
     }
@@ -102,51 +49,70 @@ Design rule:
 }
 ```
 
-Model values above are examples only; confirm available models per provider docs at rollout time.
+## Demo Setup (OpenAI)
 
-## Provider-Specific Requirements (External Docs)
+Set:
 
-OpenAI requirements to reflect in implementation:
+- `Llm__EnableLiveProviders=true`
+- `Llm__AllowLiveProvidersInDevelopment=true`
+- `Llm__Provider=OpenAI`
+- `Llm__OpenAi__ApiKey=<your_openai_key>`
 
-- authenticate with bearer token on API requests
-- Responses API is the recommended direction, while Chat Completions remain supported for incremental migration
-- structured output paths should prefer schema-constrained JSON contracts
+Optional:
 
-Gemini requirements to reflect in implementation:
+- `Llm__OpenAi__Model=<model_name>`
+- `Llm__OpenAi__BaseUrl=https://api.openai.com/v1`
+- `Llm__OpenAi__TimeoutSeconds=30`
 
-- authenticate via API key (`x-goog-api-key` header or `key` query param)
-- use `models/*:generateContent` invocation pattern for text generation
-- structured output can be constrained with JSON response MIME type and schema fields
+## Demo Setup (Gemini)
 
-## Security and Trust Constraints (Non-negotiable)
+Set:
 
-- no direct board mutations from raw model output; proposal-first review gate remains required
-- no logging of raw secrets/tokens/provider keys
-- avoid logging full raw capture text in provider request payloads unless explicitly debug-gated
-- preserve existing auth/error contract behavior (`401/403/404`, `ApiErrorResponse`)
-- keep external-provider usage explicitly gated (no silent exfiltration defaults)
+- `Llm__EnableLiveProviders=true`
+- `Llm__AllowLiveProvidersInDevelopment=true`
+- `Llm__Provider=Gemini`
+- `Llm__Gemini__ApiKey=<your_gemini_key>`
 
-## Reliability Constraints
+Optional:
 
-- implement bounded timeouts per provider
-- implement retry/backoff policy for transient provider failures
-- classify provider failures into deterministic actionable errors for operator triage
-- keep queue/worker behavior resilient when provider is unavailable (safe fallback and no silent destructive behavior)
+- `Llm__Gemini__Model=<model_name>`
+- `Llm__Gemini__BaseUrl=https://generativelanguage.googleapis.com/v1beta`
+- `Llm__Gemini__TimeoutSeconds=30`
 
-## Test Expectations for `#232`
+## Behavior Guarantees
 
-- provider selection policy unit tests covering `Mock`, `OpenAI`, `Gemini`, and invalid configuration paths
-- provider adapter tests for success/failure/timeout/invalid-response branches
-- API/integration regression for chat/capture path using provider stubs
-- provenance assertions for provider/model visibility where triage metadata is exposed
+- application services remain provider-agnostic (`ChatService`, capture triage paths depend on `ILlmProvider` only)
+- invalid/missing live-provider configuration does not crash requests
+- provider adapters return deterministic fallback responses when upstream calls fail
+- capture triage provenance persists `promptVersion`, `provider`, and `model`
+
+## Test Coverage Expectations (Implemented)
+
+- selection-policy unit coverage for `Mock`/`OpenAI`/`Gemini` and invalid-config fallback
+- provider adapter unit coverage:
+  - OpenAI: success/failure + metadata checks
+  - Gemini: success/failure/invalid-response/invalid-config/cancellation + health
+- API integration coverage:
+  - capture triage provenance includes provider/model
+  - chat flow validated using a non-mock provider stub
+
+## Security and Trust Constraints
+
+- no direct board mutations from raw model output; proposal review remains mandatory
+- do not log API keys or other secrets
+- preserve auth/error contract behavior (`401/403/404`, `ApiErrorResponse`)
+- keep live-provider usage explicitly opt-in
+
+## Managed-Key Abuse-Control Follow-Through
+
+Provider runtime support does not replace managed-key control-plane requirements.
+Continue tracked work in:
+
+- `#235` to `#240`
 
 ## References
 
-- OpenAI API reference (authentication + API shape): https://platform.openai.com/docs/api-reference/introduction
-- OpenAI migration guidance (Chat Completions -> Responses): https://developers.openai.com/api/docs/guides/migrate-to-responses/
-- OpenAI structured outputs guide: https://platform.openai.com/docs/guides/structured-outputs
-- OpenAI rate limits guide: https://developers.openai.com/api/docs/guides/rate-limits/
-- Gemini API key authentication: https://ai.google.dev/gemini-api/docs/api-key
-- Gemini text generation (`generateContent`) docs: https://ai.google.dev/gemini-api/docs/text-generation
-- Gemini structured output docs: https://ai.google.dev/gemini-api/docs/structured-output
-- Gemini rate limits docs: https://ai.google.dev/gemini-api/docs/rate-limits
+- OpenAI API reference: https://platform.openai.com/docs/api-reference/introduction
+- OpenAI responses migration guidance: https://developers.openai.com/api/docs/guides/migrate-to-responses/
+- Gemini API key docs: https://ai.google.dev/gemini-api/docs/api-key
+- Gemini generateContent docs: https://ai.google.dev/gemini-api/docs/text-generation

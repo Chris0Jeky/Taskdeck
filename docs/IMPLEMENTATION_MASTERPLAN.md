@@ -319,6 +319,11 @@ Delivered in the latest cycle:
    - `tests/e2e/smoke.spec.ts` now asserts card drag/move persistence after a full page reload by validating target-column presence and source-column absence post-refresh
    - `tests/e2e/smoke.spec.ts` now asserts column reorder persistence after a full page reload using explicit ordered heading checks
    - drag-handle safety coverage in smoke was hardened to use stable add-card control coordinates for non-handle drag attempts, reducing intermittent setup flake while preserving behavior assertions
+76. AUTO-03 provider-agnostic runtime delivery (`#232`):
+   - expanded runtime provider support to `OpenAI` + `Gemini` behind deterministic environment/config gates with explicit `Mock` fallback on invalid live-provider configuration
+   - added Gemini provider adapter (`generateContent`) and parity fallback behavior across success/failure/invalid-response/cancellation branches
+   - capture triage provenance now persists provider/model metadata (`provider`, `model`) alongside `promptVersion` for linked triage/proposal flows
+   - expanded regression coverage across selection policy, provider adapters, capture provenance surfaces, and API chat integration with non-mock provider stubs
 
 ## Roadmap by Horizon
 
@@ -340,7 +345,7 @@ Exit Criteria:
 
 Focus:
 - operationalize real-provider usage with deterministic policy gates and safe defaults across environments
-- deliver provider-agnostic live-provider runtime expansion (`OpenAI` + `Gemini`) with demo-first setup (`#232`)
+- maintain shipped provider-agnostic live-provider runtime (`OpenAI` + `Gemini`) and demo-first setup posture (`#232`, delivered)
 - define managed-key control-plane foundations (identity attribution + quota/budget guardrails) for shared provider-token exposure (`#235`, `#236`, `#237`)
 - expand planner operation extraction in a structured, test-backed way
 - harden executor behavior for partial failure semantics and audit quality
@@ -499,7 +504,7 @@ Exit Criteria:
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave: `#199` to `#211` (delivered); remaining linked hardening/performance follow-through: `#81`, `#212`, `#213`
 - Testing harness guardrails wave tracker and delivery sequence: `#254` to `#260`
-- Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232`
+- Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236`, `#237`
 - CI/workflow topology expansion and governance track: `#168`
 - API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
@@ -624,13 +629,12 @@ Initial implementation shape:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Sequence testing harness wave from the completed tracker handoff: `#255` -> (`#256`, `#257`) -> (`#258`, `#259`, `#260`), and keep aligned existing seeds `#89`, `#90`, `#106`, `#168`.
-3. After testing harness Wave 1 net-new slices, execute provider runtime expansion `#232` to add provider-agnostic live setup (`OpenAI` + `Gemini`) while preserving safe mock defaults.
-4. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
-5. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
-6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
-7. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
-8. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
-9. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing import/analytics/starter-pack tracks (`#75`, `#77`, `#175`).
+3. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
+4. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
+5. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
+6. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
+7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing import/analytics/starter-pack tracks (`#75`, `#77`, `#175`).
 
 ## Documentation Operating Model
 Active docs:
