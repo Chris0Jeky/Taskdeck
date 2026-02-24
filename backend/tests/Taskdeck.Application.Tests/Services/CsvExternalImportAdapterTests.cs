@@ -117,6 +117,46 @@ public class CsvExternalImportAdapterTests
     }
 
     [Fact]
+    public void Parse_ShouldReturnValidationError_WhenHeaderNamesNormalizeToDuplicateValue()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name, Display Name ,Email Address
+                     Alice Example,Alice Alias,alice@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("duplicate column names after normalization");
+        result.ErrorMessage.Should().ContainEquivalentOf("Display Name");
+    }
+
+    [Fact]
+    public void Parse_ShouldReturnValidationError_WhenHeadersDifferOnlyByCaseOrWhitespace()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Email Address,email address
+                     alice@example.com,alice+alt@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("duplicate column names after normalization");
+        result.ErrorMessage.Should().ContainEquivalentOf("email address");
+    }
+
+    [Fact]
     public void Parse_ShouldEmitConflict_WhenLastTouchDateCannotBeParsed()
     {
         var request = new ExternalImportRequestDto(
