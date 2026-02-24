@@ -29,8 +29,21 @@ public class OutboundWebhookDelivery : Entity
         Guid boardId,
         string eventType,
         string payload)
-        : base()
+        : this(Guid.NewGuid(), subscriptionId, boardId, eventType, payload)
     {
+    }
+
+    public OutboundWebhookDelivery(
+        Guid id,
+        Guid subscriptionId,
+        Guid boardId,
+        string eventType,
+        string payload)
+        : base(id)
+    {
+        if (id == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Delivery ID cannot be empty.");
+
         if (subscriptionId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "Subscription ID cannot be empty.");
 

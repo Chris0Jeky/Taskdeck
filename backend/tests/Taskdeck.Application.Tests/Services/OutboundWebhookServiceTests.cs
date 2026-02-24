@@ -242,6 +242,7 @@ public class OutboundWebhookServiceTests
         payload.RootElement.TryGetProperty("eventType", out _).Should().BeTrue();
         payload.RootElement.TryGetProperty("boardId", out _).Should().BeTrue();
         payload.RootElement.TryGetProperty("DeliveryId", out _).Should().BeFalse();
+        payload.RootElement.GetProperty("deliveryId").GetGuid().Should().Be(createdDeliveries[0].Id);
     }
 
     [Fact]

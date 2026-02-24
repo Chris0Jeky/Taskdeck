@@ -176,16 +176,18 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             }
 
             var deliveryId = Guid.NewGuid();
-            var payload = JsonSerializer.Serialize(new OutboundWebhookEventEnvelope(
-                deliveryId,
-                eventType,
-                mutation.BoardId,
-                mutation.EntityType,
-                mutation.Operation,
-                mutation.EntityId,
-                mutation.OccurredAt),
+            var payload = JsonSerializer.Serialize(
+                new OutboundWebhookEventEnvelope(
+                    deliveryId,
+                    eventType,
+                    mutation.BoardId,
+                    mutation.EntityType,
+                    mutation.Operation,
+                    mutation.EntityId,
+                    mutation.OccurredAt),
                 WebhookEnvelopeJsonOptions);
             var delivery = new OutboundWebhookDelivery(
+                deliveryId,
                 subscription.Id,
                 mutation.BoardId,
                 eventType,
