@@ -35,16 +35,32 @@ $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 
 $apiProcess = $null
+$stdoutReadTask = $null
+$stderrReadTask = $null
 try
 {
     dotnet restore $apiProjectPath
     dotnet build $apiProjectPath -c Release --no-restore
 
-    $apiProcess = Start-Process dotnet `
-        -ArgumentList @("run", "--project", $apiProjectPath, "--configuration", "Release", "--no-build", "--no-launch-profile") `
-        -PassThru `
-        -RedirectStandardOutput $stdoutLogPath `
-        -RedirectStandardError $stderrLogPath
+    $processStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $processStartInfo.FileName = "dotnet"
+    $processStartInfo.WorkingDirectory = $repoRoot
+    $processStartInfo.UseShellExecute = $false
+    $processStartInfo.RedirectStandardOutput = $true
+    $processStartInfo.RedirectStandardError = $true
+    $escapedProjectPath = '"' + ($apiProjectPath -replace '"', '\"') + '"'
+    $processStartInfo.Arguments = "run --project $escapedProjectPath --configuration Release --no-build --no-launch-profile"
+
+    $apiProcess = [System.Diagnostics.Process]::new()
+    $apiProcess.StartInfo = $processStartInfo
+    $apiProcess.EnableRaisingEvents = $true
+    if (-not $apiProcess.Start())
+    {
+        throw "Failed to start Taskdeck.Api process for OpenAPI generation."
+    }
+
+    $stdoutReadTask = $apiProcess.StandardOutput.ReadToEndAsync()
+    $stderrReadTask = $apiProcess.StandardError.ReadToEndAsync()
 
     $isReady = $false
     for ($attempt = 1; $attempt -le $StartupTimeoutSeconds; $attempt += 1)
@@ -78,13 +94,24 @@ try
 }
 finally
 {
+    $stdoutLogContent = ""
+    $stderrLogContent = ""
+
     if ($apiProcess)
     {
         try
         {
             if (-not $apiProcess.HasExited)
             {
-                Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
+                $killWithTree = $apiProcess.GetType().GetMethod("Kill", [Type[]]@([bool]))
+                if ($null -ne $killWithTree)
+                {
+                    $apiProcess.Kill($true)
+                }
+                else
+                {
+                    $apiProcess.Kill()
+                }
             }
         }
         catch
@@ -100,7 +127,43 @@ finally
         {
             # Ignore wait races during cleanup.
         }
+
+        try
+        {
+            if ($stdoutReadTask)
+            {
+                $stdoutLogContent = $stdoutReadTask.GetAwaiter().GetResult()
+            }
+        }
+        catch
+        {
+            $stdoutLogContent = "Failed to capture stdout: $($_.Exception.Message)"
+        }
+
+        try
+        {
+            if ($stderrReadTask)
+            {
+                $stderrLogContent = $stderrReadTask.GetAwaiter().GetResult()
+            }
+        }
+        catch
+        {
+            $stderrLogContent = "Failed to capture stderr: $($_.Exception.Message)"
+        }
+
+        try
+        {
+            $apiProcess.Dispose()
+        }
+        catch
+        {
+            # Ignore dispose races.
+        }
     }
+
+    Set-Content -LiteralPath $stdoutLogPath -Value $stdoutLogContent -Encoding UTF8
+    Set-Content -LiteralPath $stderrLogPath -Value $stderrLogContent -Encoding UTF8
 
     if ($null -eq $previousUrls)
     {
