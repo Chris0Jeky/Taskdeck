@@ -237,6 +237,7 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+        _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -299,6 +300,32 @@ public class CaptureTriageServiceTests
         result.Value.Model.Should().HaveLength(CaptureRequestContract.MaxModelLength);
         result.Value.Provider.Should().Be(longProvider[..CaptureRequestContract.MaxProviderLength]);
         result.Value.Model.Should().Be(longModel[..CaptureRequestContract.MaxModelLength]);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldNotResolveProviderMetadata_WhenProposalCreationFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock
+            .Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "creation failed"));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "- [ ] proposal creation failure path");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeFalse();
+        _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)

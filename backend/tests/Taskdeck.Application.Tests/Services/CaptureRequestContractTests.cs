@@ -250,4 +250,27 @@ public class CaptureRequestContractTests
         act.Should().Throw<DomainException>()
             .Where(ex => ex.ErrorCode == ErrorCodes.ValidationError);
     }
+
+    [Fact]
+    public void SanitizeProvenanceMetadata_ShouldTrimAndClampValues()
+    {
+        var raw = $"  {new string('x', CaptureRequestContract.MaxProviderLength + 5)}  ";
+
+        var sanitized = CaptureRequestContract.SanitizeProvenanceMetadata(
+            raw,
+            CaptureRequestContract.MaxProviderLength);
+
+        sanitized.Should().HaveLength(CaptureRequestContract.MaxProviderLength);
+        sanitized.Should().Be(new string('x', CaptureRequestContract.MaxProviderLength));
+    }
+
+    [Fact]
+    public void SanitizeProvenanceMetadata_ShouldReturnFallback_WhenValueIsMissing()
+    {
+        var sanitized = CaptureRequestContract.SanitizeProvenanceMetadata(
+            " ",
+            CaptureRequestContract.MaxProviderLength);
+
+        sanitized.Should().Be("unknown");
+    }
 }

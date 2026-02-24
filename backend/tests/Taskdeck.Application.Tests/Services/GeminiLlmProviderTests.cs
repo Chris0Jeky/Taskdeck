@@ -14,10 +14,27 @@ public class GeminiLlmProviderTests
     public async Task CompleteAsync_ShouldReturnParsedCompletion_WhenGeminiResponseIsValid()
     {
         var settings = BuildSettings();
-        HttpRequestMessage? capturedRequest = null;
-        var handler = new StubHttpMessageHandler(_ =>
+        var requestUri = string.Empty;
+        string[] headerValues = Array.Empty<string>();
+        var requestRoles = new List<string>();
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
         {
-            capturedRequest = _;
+            requestUri = request.RequestUri?.ToString() ?? string.Empty;
+            if (request.Headers.TryGetValues("x-goog-api-key", out var headers))
+            {
+                headerValues = headers.ToArray();
+            }
+
+            var body = request.Content is null
+                ? "{}"
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            using var json = System.Text.Json.JsonDocument.Parse(body);
+            var contents = json.RootElement.GetProperty("contents");
+            foreach (var content in contents.EnumerateArray())
+            {
+                requestRoles.Add(content.GetProperty("role").GetString() ?? string.Empty);
+            }
+
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
@@ -48,6 +65,8 @@ public class GeminiLlmProviderTests
         var result = await provider.CompleteAsync(new ChatCompletionRequest(
             new List<ChatCompletionMessage>
             {
+                new("System", "Follow board-safe constraints."),
+                new("Assistant", "Ready."),
                 new("User", "create card for provider runtime")
             }));
 
@@ -58,10 +77,8 @@ public class GeminiLlmProviderTests
         result.ActionIntent.Should().Be("card.create");
         result.Provider.Should().Be("Gemini");
         result.Model.Should().Be(settings.Gemini.Model);
-        capturedRequest.Should().NotBeNull();
-        capturedRequest!.RequestUri.Should().NotBeNull();
-        capturedRequest.RequestUri!.Query.Should().NotContain("key=");
-        capturedRequest.Headers.TryGetValues("x-goog-api-key", out var headerValues).Should().BeTrue();
+        requestUri.Should().NotContain("?key=");
+        requestRoles.Should().ContainInOrder("user", "model", "user");
         headerValues.Should().ContainSingle().Which.Should().Be(settings.Gemini.ApiKey);
     }
 
