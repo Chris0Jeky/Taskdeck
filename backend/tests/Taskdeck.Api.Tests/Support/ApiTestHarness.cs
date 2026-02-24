@@ -2,9 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Taskdeck.Application.DTOs;
+using Xunit.Sdk;
 
 namespace Taskdeck.Api.Tests.Support;
 
@@ -124,4 +126,46 @@ public static class ApiTestHarness
         }
     }
 
+    public static async Task<T> PollUntilAsync<T>(
+        Func<Task<T>> probe,
+        Func<T, bool> isComplete,
+        string description,
+        TimeSpan? timeout = null,
+        TimeSpan? interval = null,
+        Func<T, string>? diagnostics = null)
+    {
+        var timeoutValue = timeout ?? TimeSpan.FromSeconds(10);
+        var intervalValue = interval ?? TimeSpan.FromMilliseconds(250);
+        var deadline = DateTimeOffset.UtcNow + timeoutValue;
+        T? lastValue = default;
+
+        while (DateTimeOffset.UtcNow <= deadline)
+        {
+            lastValue = await probe();
+            if (isComplete(lastValue))
+            {
+                return lastValue;
+            }
+
+            if (DateTimeOffset.UtcNow > deadline)
+            {
+                break;
+            }
+
+            await Task.Delay(intervalValue);
+        }
+
+        var diagnosticsText = lastValue == null
+            ? "no value observed"
+            : diagnostics?.Invoke(lastValue) ?? JsonSerializer.Serialize(lastValue, JsonOptionsForDiagnostics);
+
+        throw new XunitException(
+            $"{description} did not complete within {timeoutValue.TotalMilliseconds:0}ms. Last observed value: {diagnosticsText}");
+    }
+
+    private static readonly JsonSerializerOptions JsonOptionsForDiagnostics = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = false,
+    };
 }

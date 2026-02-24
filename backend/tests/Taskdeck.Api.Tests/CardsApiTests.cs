@@ -395,24 +395,22 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
 
     private async Task<CardDto> WaitForSingleCardAsync(HttpClient client, Guid boardId)
     {
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            var cardsResponse = await client.GetAsync($"/api/boards/{boardId}/cards");
-            cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
-            cards.Should().NotBeNull();
-            if (cards!.Count == 1)
-                return cards[0];
+        var cards = await ApiTestHarness.PollUntilAsync(
+            async () =>
+            {
+                var cardsResponse = await client.GetAsync($"/api/boards/{boardId}/cards");
+                cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+                cards.Should().NotBeNull();
+                return cards!;
+            },
+            cards => cards.Count == 1,
+            $"single card to appear on board {boardId}",
+            timeout: TimeSpan.FromSeconds(10),
+            interval: TimeSpan.FromMilliseconds(250),
+            diagnostics: cardList => $"cardCount={cardList.Count}, cardIds=[{string.Join(",", cardList.Select(card => card.Id))}]");
 
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-
-        var timeoutResponse = await client.GetAsync($"/api/boards/{boardId}/cards");
-        timeoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var timeoutCards = await timeoutResponse.Content.ReadFromJsonAsync<List<CardDto>>();
-        timeoutCards.Should().NotBeNull();
-        timeoutCards!.Should().ContainSingle();
-        return timeoutCards![0]!;
+        return cards[0];
     }
 
     private async Task<CaptureItemDto> WaitForCaptureStatusAsync(Guid itemId, CaptureStatus expectedStatus)
@@ -425,30 +423,21 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         Guid itemId,
         CaptureStatus expectedStatus)
     {
-        for (var attempt = 0; attempt < 40; attempt++)
-        {
-            var response = await client.GetAsync($"/api/capture/items/{itemId}");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var item = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
-            item.Should().NotBeNull();
-            if (item!.Status == expectedStatus)
+        return await ApiTestHarness.PollUntilAsync(
+            async () =>
             {
-                return item;
-            }
-
-            if (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed)
-            {
-                return item;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-
-        var timeoutResponse = await client.GetAsync($"/api/capture/items/{itemId}");
-        timeoutResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var timeoutItem = await timeoutResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
-        timeoutItem.Should().NotBeNull();
-        return timeoutItem!;
+                var response = await client.GetAsync($"/api/capture/items/{itemId}");
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                var item = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+                item.Should().NotBeNull();
+                return item!;
+            },
+            item => item.Status == expectedStatus || (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed),
+            $"capture item {itemId} status to become {expectedStatus}",
+            timeout: TimeSpan.FromSeconds(10),
+            interval: TimeSpan.FromMilliseconds(250),
+            diagnostics: item =>
+                $"status={item.Status}, proposalId={item.Provenance?.ProposalId?.ToString() ?? "null"}, triageRunId={item.Provenance?.TriageRunId?.ToString() ?? "null"}");
     }
 
     private static async Task ExecuteProposalAsync(HttpClient client, Guid proposalId)
