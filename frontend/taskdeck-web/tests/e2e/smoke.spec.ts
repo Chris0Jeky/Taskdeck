@@ -65,8 +65,11 @@ async function addCard(page: Page, columnName: string, cardTitle: string) {
 }
 
 async function expectColumnOrder(page: Page, expectedOrder: string[]) {
+  const headings = page.locator('[data-column-dnd-id] h3')
+  await expect(headings).toHaveCount(expectedOrder.length)
+
   for (const [index, expectedHeading] of expectedOrder.entries()) {
-    await expect(page.locator('[data-column-dnd-id] h3').nth(index)).toHaveText(expectedHeading)
+    await expect(headings.nth(index)).toHaveText(expectedHeading)
   }
 }
 
