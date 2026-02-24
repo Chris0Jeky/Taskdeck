@@ -35,8 +35,10 @@ $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 
 $apiProcess = $null
-$stdoutReadTask = $null
-$stderrReadTask = $null
+$stdoutLogStream = $null
+$stderrLogStream = $null
+$stdoutCopyTask = $null
+$stderrCopyTask = $null
 try
 {
     dotnet restore $apiProjectPath
@@ -59,8 +61,19 @@ try
         throw "Failed to start Taskdeck.Api process for OpenAPI generation."
     }
 
-    $stdoutReadTask = $apiProcess.StandardOutput.ReadToEndAsync()
-    $stderrReadTask = $apiProcess.StandardError.ReadToEndAsync()
+    $stdoutLogStream = [System.IO.FileStream]::new(
+        $stdoutLogPath,
+        [System.IO.FileMode]::Create,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::Read)
+    $stderrLogStream = [System.IO.FileStream]::new(
+        $stderrLogPath,
+        [System.IO.FileMode]::Create,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::Read)
+
+    $stdoutCopyTask = $apiProcess.StandardOutput.BaseStream.CopyToAsync($stdoutLogStream)
+    $stderrCopyTask = $apiProcess.StandardError.BaseStream.CopyToAsync($stderrLogStream)
 
     $isReady = $false
     for ($attempt = 1; $attempt -le $StartupTimeoutSeconds; $attempt += 1)
@@ -94,9 +107,6 @@ try
 }
 finally
 {
-    $stdoutLogContent = ""
-    $stderrLogContent = ""
-
     if ($apiProcess)
     {
         try
@@ -127,43 +137,69 @@ finally
         {
             # Ignore wait races during cleanup.
         }
+    }
 
+    try
+    {
+        if ($stdoutCopyTask)
+        {
+            [void]$stdoutCopyTask.GetAwaiter().GetResult()
+        }
+    }
+    catch
+    {
+        Add-Content -LiteralPath $stdoutLogPath -Value "Failed to finalize stdout capture: $($_.Exception.Message)"
+    }
+
+    try
+    {
+        if ($stderrCopyTask)
+        {
+            [void]$stderrCopyTask.GetAwaiter().GetResult()
+        }
+    }
+    catch
+    {
+        Add-Content -LiteralPath $stderrLogPath -Value "Failed to finalize stderr capture: $($_.Exception.Message)"
+    }
+
+    if ($stdoutLogStream)
+    {
         try
         {
-            if ($stdoutReadTask)
-            {
-                $stdoutLogContent = $stdoutReadTask.GetAwaiter().GetResult()
-            }
+            $stdoutLogStream.Flush()
+            $stdoutLogStream.Dispose()
         }
         catch
         {
-            $stdoutLogContent = "Failed to capture stdout: $($_.Exception.Message)"
+            # Ignore stdout stream cleanup races.
         }
+    }
 
+    if ($stderrLogStream)
+    {
         try
         {
-            if ($stderrReadTask)
-            {
-                $stderrLogContent = $stderrReadTask.GetAwaiter().GetResult()
-            }
+            $stderrLogStream.Flush()
+            $stderrLogStream.Dispose()
         }
         catch
         {
-            $stderrLogContent = "Failed to capture stderr: $($_.Exception.Message)"
+            # Ignore stderr stream cleanup races.
         }
+    }
 
+    if ($apiProcess)
+    {
         try
         {
             $apiProcess.Dispose()
         }
         catch
         {
-            # Ignore dispose races.
+            # Ignore process disposal races.
         }
     }
-
-    Set-Content -LiteralPath $stdoutLogPath -Value $stdoutLogContent -Encoding UTF8
-    Set-Content -LiteralPath $stderrLogPath -Value $stderrLogContent -Encoding UTF8
 
     if ($null -eq $previousUrls)
     {
