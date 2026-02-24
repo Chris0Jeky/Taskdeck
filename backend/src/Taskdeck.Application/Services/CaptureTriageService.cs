@@ -128,7 +128,6 @@ public class CaptureTriageService : ICaptureTriageService
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
         var triageRunId = Guid.NewGuid();
         var summary = BuildSummary(outputValidation.Value.Tasks);
-        var (provider, model) = await GetProviderMetadataAsync(cancellationToken);
         var permissionResult = await _policyEngine.ValidatePermissionsAsync(
             userId,
             boardId,
@@ -160,6 +159,8 @@ public class CaptureTriageService : ICaptureTriageService
                 createProposalResult.ErrorMessage);
         }
 
+        var (provider, model) = await GetProviderMetadataAsync(cancellationToken);
+
         return Result.Success(new CaptureTriageProposalResultDto(
             captureItemId,
             triageRunId,
@@ -175,35 +176,19 @@ public class CaptureTriageService : ICaptureTriageService
         try
         {
             var health = await _llmProvider.GetHealthAsync(ct);
-            var provider = SanitizeMetadata(health.ProviderName, CaptureRequestContract.MaxProviderLength);
-            var model = SanitizeMetadata(health.Model, CaptureRequestContract.MaxModelLength);
+            var provider = CaptureRequestContract.SanitizeProvenanceMetadata(
+                health.ProviderName,
+                CaptureRequestContract.MaxProviderLength);
+            var model = CaptureRequestContract.SanitizeProvenanceMetadata(
+                health.Model,
+                CaptureRequestContract.MaxModelLength);
             return (provider, model);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Failed to resolve LLM provider metadata for capture triage provenance. Falling back to unknown values.");
             return ("unknown", "unknown");
         }
-    }
-
-    private static string SanitizeMetadata(string? value, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "unknown";
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.Length <= maxLength)
-        {
-            return trimmed;
-        }
-
-        return trimmed[..maxLength];
     }
 
     private static List<string> ExtractTaskCandidates(string rawText)

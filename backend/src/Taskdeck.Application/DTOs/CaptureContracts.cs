@@ -227,6 +227,22 @@ public static class CaptureRequestContract
         };
     }
 
+    public static string SanitizeProvenanceMetadata(string? value, int maxLength, string fallback = "unknown")
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length <= maxLength)
+        {
+            return trimmed;
+        }
+
+        return trimmed[..maxLength];
+    }
+
     public static string SerializePayload(CapturePayloadV1 payload)
     {
         var validation = ValidatePayload(payload);

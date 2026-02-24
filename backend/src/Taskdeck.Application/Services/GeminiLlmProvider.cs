@@ -126,6 +126,7 @@ public class GeminiLlmProvider : ILlmProvider
         var geminiRole = normalizedRole switch
         {
             "assistant" => "model",
+            "system" => "user",
             _ => "user"
         };
 
