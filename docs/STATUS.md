@@ -327,6 +327,10 @@ Reconciliation record:
 
 - `docs/analysis/2026-02-23_testing-harness-synthesis.md`
 
+Recent follow-through (2026-02-24):
+- `#257` expanded `ApiErrorContractApiTests` with representative `400/401/403/404/409` coverage in one suite
+- representative error-path tests now assert `X-Request-Id` echo behavior alongside stable JSON error-contract shape assertions
+
 ## Outreach CRM Deferred Expansion Track (2026-02-23)
 
 New in-review outreach CRM planning docs were added under:
