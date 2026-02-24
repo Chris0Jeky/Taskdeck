@@ -165,9 +165,19 @@ public static class ApiTestHarness
             await Task.Delay(intervalValue);
         }
 
-        var diagnosticsText = lastValue == null
+        string? diagnosticsText = null;
+        if (diagnostics is not null)
+        {
+            diagnosticsText = diagnostics(lastValue);
+            if (string.IsNullOrWhiteSpace(diagnosticsText))
+            {
+                diagnosticsText = null;
+            }
+        }
+
+        diagnosticsText ??= lastValue == null
             ? "no value observed"
-            : diagnostics?.Invoke(lastValue) ?? JsonSerializer.Serialize(lastValue, JsonOptionsForDiagnostics);
+            : JsonSerializer.Serialize(lastValue, JsonOptionsForDiagnostics);
 
         throw new XunitException(
             $"{description} did not complete after {maxAttempts} attempts (~{stopwatch.ElapsedMilliseconds}ms). Last observed value: {diagnosticsText}");
