@@ -236,10 +236,22 @@ public sealed class ExternalImportService : IExternalImportService
             return Result.Success(preview);
         }
 
-        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        var cardsMovingIntoTarget = plannedUpserts.Count(upsert =>
+            upsert.ExistingCard is null || upsert.ExistingCard.ColumnId != targetColumn.Id);
+        if (WouldExceedTargetColumnWipLimit(targetColumn, cardsMovingIntoTarget))
+        {
+            return Result.Failure<ExternalImportResultDto>(
+                ErrorCodes.WipLimitExceeded,
+                $"Cannot import cards, target column '{targetColumn.Name}' has reached its WIP limit of {targetColumn.WipLimit}.");
+        }
+
+        var transactionStarted = false;
 
         try
         {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            transactionStarted = true;
+
             var nextTargetPosition = targetColumn.Cards.Any()
                 ? targetColumn.Cards.Max(card => card.Position) + 1
                 : 0;
@@ -277,12 +289,20 @@ public sealed class ExternalImportService : IExternalImportService
         }
         catch (DomainException ex)
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            if (transactionStarted)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
             return Result.Failure<ExternalImportResultDto>(ex.ErrorCode, ex.Message);
         }
         catch (Exception ex)
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            if (transactionStarted)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
             return Result.Failure<ExternalImportResultDto>(
                 ErrorCodes.UnexpectedError,
                 $"External import failed: {ex.Message}");
@@ -336,6 +356,17 @@ public sealed class ExternalImportService : IExternalImportService
         }
 
         return provider.Trim();
+    }
+
+    private static bool WouldExceedTargetColumnWipLimit(Column targetColumn, int cardsMovingIntoTarget)
+    {
+        if (!targetColumn.WipLimit.HasValue || cardsMovingIntoTarget <= 0)
+        {
+            return false;
+        }
+
+        var projectedCardCount = targetColumn.Cards.Count + cardsMovingIntoTarget;
+        return projectedCardCount > targetColumn.WipLimit.Value;
     }
 
     private sealed record PlannedUpsert(Card? ExistingCard, ExternalImportCandidate Candidate);

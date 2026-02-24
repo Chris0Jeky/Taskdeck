@@ -57,6 +57,29 @@ public class CsvExternalImportAdapterTests
     }
 
     [Fact]
+    public void Parse_ShouldNormalizeRelativeLinkedInUrlSameAsAbsoluteUrl()
+    {
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,LinkedIn URL
+                     Alice Absolute,Acme,https://linkedin.com/in/alice
+                     Alice Relative,Acme,linkedin.com/in/alice
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Candidates.Should().ContainSingle(candidate =>
+            candidate.DedupeKey == "linkedin:https://linkedin.com/in/alice");
+        result.Value.Conflicts.Should().ContainSingle(conflict =>
+            conflict.Code == "DuplicateInputRecord" &&
+            conflict.IncomingValue == "linkedin:https://linkedin.com/in/alice");
+    }
+
+    [Fact]
     public void Parse_ShouldReturnValidationError_WhenCsvHasUnclosedQuote()
     {
         var request = new ExternalImportRequestDto(

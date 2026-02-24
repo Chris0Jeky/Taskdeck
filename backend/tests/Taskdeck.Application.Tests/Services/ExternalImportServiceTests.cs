@@ -244,6 +244,151 @@ public class ExternalImportServiceTests
     }
 
     [Fact]
+    public async Task ImportToBoardAsync_ShouldReturnWipLimitExceeded_WhenCreateWouldOverflowTargetColumn()
+    {
+        var board = BuildBoardWithColumn("Imported", wipLimit: 1);
+        var boardId = board.Id;
+        var targetColumnId = board.Columns.Single().Id;
+
+        var existingCard = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: boardId,
+            columnId: targetColumnId,
+            title: "Already In Column",
+            description: "existing",
+            dueDate: null,
+            position: 0);
+        AttachCard(board, existingCard, targetColumnId);
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates:
+            [
+                new ExternalImportCandidate(2, "email:new@example.com", "New Incoming", "incoming")
+            ],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "unused",
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var result = await service.ImportToBoardAsync(boardId, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportToBoardAsync_ShouldReturnWipLimitExceeded_WhenMoveWouldOverflowTargetColumn()
+    {
+        var board = new Board("Import Board", ownerId: Guid.NewGuid());
+        var importedColumn = new Column(board.Id, "Imported", 0, wipLimit: 1);
+        var backlogColumn = new Column(board.Id, "Backlog", 1);
+        AddToPrivateCollection(board, "_columns", importedColumn);
+        AddToPrivateCollection(board, "_columns", backlogColumn);
+
+        var targetCard = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: board.Id,
+            columnId: importedColumn.Id,
+            title: "Already In Imported",
+            description: "existing",
+            dueDate: null,
+            position: 0);
+        AttachCard(board, targetCard, importedColumn.Id);
+
+        var moveCandidateKey = "email:alice@example.com";
+        var backlogCard = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: board.Id,
+            columnId: backlogColumn.Id,
+            title: "Alice Backlog",
+            description: $"[taskdeck-import-meta] {{\"provider\":\"csv\",\"profile\":\"outreach.contacts.v1\",\"dedupeKey\":\"{moveCandidateKey}\"}}",
+            dueDate: null,
+            position: 0);
+        AttachCard(board, backlogCard, backlogColumn.Id);
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(board.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates:
+            [
+                new ExternalImportCandidate(2, moveCandidateKey, "Alice Backlog", backlogCard.Description)
+            ],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "unused",
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var result = await service.ImportToBoardAsync(board.Id, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportToBoardAsync_ShouldReturnUnexpectedError_WhenBeginTransactionFails()
+    {
+        var board = BuildBoardWithColumn("Imported");
+        var boardId = board.Id;
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+        _unitOfWorkMock
+            .Setup(unitOfWork => unitOfWork.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("begin transaction failure"));
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates:
+            [
+                new ExternalImportCandidate(2, "email:new@example.com", "New Incoming", "incoming")
+            ],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "unused",
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var result = await service.ImportToBoardAsync(boardId, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().Contain("begin transaction failure");
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ImportToBoardAsync_DryRun_ShouldIncludeConflictValues_ForAmbiguousExistingMatches()
     {
         var board = BuildBoardWithColumn("Imported");
@@ -375,10 +520,10 @@ public class ExternalImportServiceTests
         result.Value.Conflicts.Should().NotContain(conflict => conflict.Code == "AmbiguousExistingMatch");
     }
 
-    private static Board BuildBoardWithColumn(string columnName)
+    private static Board BuildBoardWithColumn(string columnName, int? wipLimit = null)
     {
         var board = new Board("Import Board", ownerId: Guid.NewGuid());
-        var column = new Column(board.Id, columnName, 0);
+        var column = new Column(board.Id, columnName, 0, wipLimit);
         AddToPrivateCollection(board, "_columns", column);
         return board;
     }

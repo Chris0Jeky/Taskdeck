@@ -270,6 +270,39 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Apply_ShouldReturnWipLimitExceeded_WhenTargetColumnIsFull()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var boardId = await CreateBoardAsync(
+            "external-import-wip-limit",
+            cards:
+            [
+                new ImportCardDto(
+                    "Already In Imported",
+                    "existing",
+                    "Imported",
+                    0,
+                    null,
+                    null)
+            ],
+            importedColumnWipLimit: 1);
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company,Email Address
+                     Alice Incoming,Acme,alice@example.com
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: false);
+
+        var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "WipLimitExceeded");
+    }
+
+    [Fact]
     public async Task ImportEndpoint_ShouldReturnForbidden_ForBothForeignAndMissingBoards()
     {
         await EnsureAuthenticatedAsync();
@@ -302,7 +335,11 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
         _isAuthenticated = true;
     }
 
-    private async Task<Guid> CreateBoardAsync(string stem, IEnumerable<ImportCardDto>? cards = null)
+    private async Task<Guid> CreateBoardAsync(
+        string stem,
+        IEnumerable<ImportCardDto>? cards = null,
+        int? importedColumnWipLimit = null,
+        int? backlogColumnWipLimit = null)
     {
         await EnsureAuthenticatedAsync();
 
@@ -313,8 +350,8 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
                 Description: "External import test board",
                 Columns:
                 [
-                    new ImportColumnDto("Imported", 0, null),
-                    new ImportColumnDto("Backlog", 1, null)
+                    new ImportColumnDto("Imported", 0, importedColumnWipLimit),
+                    new ImportColumnDto("Backlog", 1, backlogColumnWipLimit)
                 ],
                 Cards: cards ?? Array.Empty<ImportCardDto>(),
                 Labels: Array.Empty<ImportLabelDto>()));

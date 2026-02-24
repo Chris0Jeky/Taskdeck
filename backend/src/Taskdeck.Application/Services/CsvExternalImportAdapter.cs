@@ -446,17 +446,54 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         }
 
         var trimmed = value.Trim();
-        if (trimmed.EndsWith("/"))
+        if (TryNormalizeLinkedInUri(trimmed, out var normalizedLinkedInUri))
         {
-            trimmed = trimmed.TrimEnd('/');
+            return normalizedLinkedInUri;
         }
 
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        var withInferredScheme = trimmed.Contains("://", StringComparison.Ordinal)
+            ? trimmed
+            : $"https://{trimmed.TrimStart('/')}";
+        if (TryNormalizeLinkedInUri(withInferredScheme, out normalizedLinkedInUri))
         {
-            return uri.ToString().ToLowerInvariant();
+            return normalizedLinkedInUri;
         }
 
         return Normalize(trimmed);
+    }
+
+    private static bool TryNormalizeLinkedInUri(string value, out string normalizedLinkedInUri)
+    {
+        normalizedLinkedInUri = string.Empty;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!IsLinkedInHost(uri.Host))
+        {
+            return false;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Scheme = Uri.UriSchemeHttps,
+            Port = -1
+        };
+        normalizedLinkedInUri = builder.Uri.ToString().TrimEnd('/').ToLowerInvariant();
+        return true;
+    }
+
+    private static bool IsLinkedInHost(string host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        var normalizedHost = host.Trim().ToLowerInvariant();
+        return normalizedHost == "linkedin.com" ||
+               normalizedHost.EndsWith(".linkedin.com", StringComparison.Ordinal);
     }
 
     private static string NormalizeEmail(string value)
