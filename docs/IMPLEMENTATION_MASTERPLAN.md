@@ -7,6 +7,7 @@ Companion Active Docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Purpose
 
@@ -314,6 +315,10 @@ Delivered in the latest cycle:
    - updated canonical docs (`docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/TESTING_GUIDE.md`, `docs/MANUAL_TEST_CHECKLIST.md`) to represent capture MVP as shipped behavior
    - moved capture validation language from planned-only posture to active regression posture in testing and manual guides
    - marked original in-review capture pack READMEs as historical/stale after canonical promotion
+75. TST-17 drag/drop persistence regression coverage delivery (`#256`):
+   - `tests/e2e/smoke.spec.ts` now asserts card drag/move persistence after a full page reload by validating target-column presence and source-column absence post-refresh
+   - `tests/e2e/smoke.spec.ts` now asserts column reorder persistence after a full page reload using explicit ordered heading checks
+   - drag-handle safety coverage in smoke was hardened to use stable add-card control coordinates for non-handle drag attempts, reducing intermittent setup flake while preserving behavior assertions
 
 ## Roadmap by Horizon
 
@@ -447,6 +452,12 @@ Execution tracker and seeded issues:
 Recent progress (2026-02-24):
 - `#260` adds a dedicated non-blocking nightly-quality workflow (`.github/workflows/nightly-quality.yml`) for scheduled/manual coverage and dependency/security signal collection
 - nightly-quality artifacts now provide reporting-first telemetry (coverage outputs + vulnerability/audit command results) without changing required PR gate behavior
+- `#259` adds `docs/GOLDEN_PRINCIPLES.md` and a lightweight mechanical enforcement script (`scripts/check-golden-principles.mjs`) in the reusable docs-governance lane
+- docs-governance now also requires/index-checks `docs/GOLDEN_PRINCIPLES.md` and validates a date-stamp line to keep principle governance deterministic
+- `#258` adds a reusable OpenAPI generation/parse-validation lane with artifact upload wired into `ci-extended` and `ci-nightly`
+- OpenAPI drift snapshot/diff hard-gating is intentionally deferred; current lane enforces generation + parse-contract validity and publishes inspection artifacts
+- `#257` now centralizes representative API error-contract assertions for `400/401/403/404/409` in `ApiErrorContractApiTests`
+- representative error-path coverage now includes `X-Request-Id` response echo assertions where middleware applies
 
 Exit Criteria:
 - deterministic flake vectors identified in the wave are removed from current suites

@@ -13,6 +13,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  openapi-guardrail:
+    name: OpenAPI Guardrail
+    uses: ./.github/workflows/reusable-openapi-guardrail.yml
+    with:
+      dotnet-version: 8.0.x
+
   backend-solution:
     name: Backend Solution Regression
     uses: ./.github/workflows/reusable-backend-solution.yml

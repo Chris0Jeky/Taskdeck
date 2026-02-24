@@ -8,6 +8,7 @@ Companion Active Docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Project Summary
 
@@ -319,7 +320,8 @@ Issue seeding and reconciliation completed:
 Execution posture:
 
 - eliminate deterministic flake vectors first (`#255`)
-- then expand high-signal regression coverage (`#256`, `#257`)
+- expand high-signal regression coverage with drag/drop persistence locked after full reload (`#256`)
+- continue error-contract coverage expansion (`#257`)
 - then add harness-level CI guardrails with non-blocking rollout (`#258`, `#259`, `#260`)
 
 Reconciliation record:
@@ -330,6 +332,13 @@ Recent follow-through (2026-02-24):
 - `#260` adds `.github/workflows/nightly-quality.yml` (scheduled + manual) to collect non-blocking quality telemetry artifacts on `main`
 - workflow now publishes backend (Domain/Application) coverage artifacts, frontend coverage artifacts, and dependency/security signal artifacts (`dotnet list package --vulnerable`, `npm audit`)
 - workflow surfaces signal exits in step summary/warnings while keeping required PR CI path unchanged (reporting-first nightly lane)
+- `#259` adds `docs/GOLDEN_PRINCIPLES.md` as a concise invariant baseline and cross-links it from canonical active docs/index and contributor guidance
+- governance lane now runs `scripts/check-golden-principles.mjs` and docs-governance now requires/validates the golden-principles document alongside canonical active docs
+- `#258` adds a reusable OpenAPI guardrail lane (`reusable-openapi-guardrail.yml`) wired into `ci-extended` (PR/manual) and `ci-nightly`
+- guardrail now generates `artifacts/openapi/taskdeck-api.json`, validates JSON/top-level contract shape, and uploads artifact/log outputs for inspection
+- snapshot/diff gating remains explicitly deferred to follow-up work; current scope is generation + parse-validation + artifact publication
+- `#257` expanded `ApiErrorContractApiTests` with representative `400/401/403/404/409` coverage in one suite
+- representative error-path tests now assert `X-Request-Id` echo behavior alongside stable JSON error-contract shape assertions
 
 ## Outreach CRM Deferred Expansion Track (2026-02-23)
 
