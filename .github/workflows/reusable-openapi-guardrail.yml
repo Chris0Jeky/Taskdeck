@@ -1,0 +1,49 @@
+name: Reusable OpenAPI Guardrail
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version used for OpenAPI generation and validation
+        required: false
+        default: "8.0.x"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  openapi-guardrail:
+    name: OpenAPI Guardrail
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Generate and validate OpenAPI artifact
+        shell: pwsh
+        run: ./scripts/ci/generate-openapi-artifact.ps1 -OutputPath "artifacts/openapi/taskdeck-api.json"
+
+      - name: Upload OpenAPI artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-guardrail-artifact
+          path: |
+            artifacts/openapi/taskdeck-api.json
+            artifacts/openapi/taskdeck-openapi-stdout.log
+            artifacts/openapi/taskdeck-openapi-stderr.log
+          if-no-files-found: error
