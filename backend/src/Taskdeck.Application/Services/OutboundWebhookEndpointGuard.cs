@@ -53,15 +53,15 @@ public static partial class OutboundWebhookEndpointGuard
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return false;
+            return true;
         }
         catch (SocketException)
         {
-            return false;
+            return true;
         }
         catch (TimeoutException)
         {
-            return false;
+            return true;
         }
     }
 
@@ -120,6 +120,11 @@ public static partial class OutboundWebhookEndpointGuard
 
         if (ipAddress.AddressFamily == AddressFamily.InterNetworkV6)
         {
+            if (ipAddress.IsIPv4MappedToIPv6)
+            {
+                return IsBlockedIpAddress(ipAddress.MapToIPv4());
+            }
+
             if (ipAddress.Equals(IPAddress.IPv6None) ||
                 ipAddress.IsIPv6LinkLocal ||
                 ipAddress.IsIPv6SiteLocal ||
