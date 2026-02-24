@@ -65,6 +65,47 @@ public class ExternalImportServiceTests
     }
 
     [Fact]
+    public void Constructor_ShouldThrow_WhenDuplicateProvidersDifferOnlyByWhitespace()
+    {
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 0,
+            RowsParsed: 0,
+            Candidates: [],
+            Conflicts: []);
+
+        Action action = () => new ExternalImportService(
+            _unitOfWorkMock.Object,
+            [
+                new FakeAdapter(parseResult, ExternalImportProviders.Csv),
+                new FakeAdapter(parseResult, " csv ")
+            ]);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*provider(s): csv*");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenAdapterProviderIsEmpty()
+    {
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 0,
+            RowsParsed: 0,
+            Candidates: [],
+            Conflicts: []);
+
+        Action action = () => new ExternalImportService(
+            _unitOfWorkMock.Object,
+            [new FakeAdapter(parseResult, "   ")]);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage("*empty provider key*");
+    }
+
+    [Fact]
     public async Task ImportToBoardAsync_DryRun_ShouldReportCreateUpdateAndSkipCounts()
     {
         var board = BuildBoardWithColumn("Imported");
@@ -275,6 +316,65 @@ public class ExternalImportServiceTests
             conflict.ExistingValue.Contains("Alice Existing Two", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ImportToBoardAsync_DryRun_ShouldIgnoreDuplicateExistingKeys_FromDifferentProviderOrProfile()
+    {
+        var board = BuildBoardWithColumn("Imported");
+        var boardId = board.Id;
+        var targetColumnId = board.Columns.Single().Id;
+        const string duplicateKey = "email:alice@example.com";
+
+        var unrelatedFirst = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: boardId,
+            columnId: targetColumnId,
+            title: "Unrelated One",
+            description: $"[taskdeck-import-meta] {{\"provider\":\"other-provider\",\"profile\":\"other.profile.v1\",\"dedupeKey\":\"{duplicateKey}\"}}",
+            dueDate: null,
+            position: 0);
+        var unrelatedSecond = new Card(
+            cardId: Guid.NewGuid(),
+            boardId: boardId,
+            columnId: targetColumnId,
+            title: "Unrelated Two",
+            description: $"[taskdeck-import-meta] {{\"provider\":\"other-provider\",\"profile\":\"other.profile.v1\",\"dedupeKey\":\"{duplicateKey}\"}}",
+            dueDate: null,
+            position: 1);
+        AttachCard(board, unrelatedFirst, targetColumnId);
+        AttachCard(board, unrelatedSecond, targetColumnId);
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates:
+            [
+                new ExternalImportCandidate(2, duplicateKey, "Alice Incoming", "incoming")
+            ],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "unused",
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = await service.ImportToBoardAsync(boardId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.RowsCreated.Should().Be(1);
+        result.Value.RowsUpdated.Should().Be(0);
+        result.Value.RowsSkipped.Should().Be(0);
+        result.Value.Conflicts.Should().NotContain(conflict => conflict.Code == "ExistingDuplicateDedupeKey");
+        result.Value.Conflicts.Should().NotContain(conflict => conflict.Code == "AmbiguousExistingMatch");
+    }
+
     private static Board BuildBoardWithColumn(string columnName)
     {
         var board = new Board("Import Board", ownerId: Guid.NewGuid());
@@ -301,13 +401,15 @@ public class ExternalImportServiceTests
     private sealed class FakeAdapter : IExternalImportAdapter
     {
         private readonly ExternalImportParseResult _result;
+        private readonly string _provider;
 
-        public FakeAdapter(ExternalImportParseResult result)
+        public FakeAdapter(ExternalImportParseResult result, string provider = ExternalImportProviders.Csv)
         {
             _result = result;
+            _provider = provider;
         }
 
-        public string Provider => ExternalImportProviders.Csv;
+        public string Provider => _provider;
 
         public Result<ExternalImportParseResult> Parse(ExternalImportRequestDto request)
         {
