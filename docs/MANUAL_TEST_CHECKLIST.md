@@ -329,6 +329,7 @@ For each test below, capture:
    - Expected: user can identify allowed templates without trial-and-error.
 4. Navigate to role-assignment/help path from ops surface (or linked settings/docs).
    - Expected: clear guidance exists for obtaining required role/permissions.
+   - Reference: `docs/TASKDECK_HUMAN_OPERATIONS.md` (`A5 Ops CLI role-assignment workflow`).
 
 ## L. Post-Run Documentation Check
 
