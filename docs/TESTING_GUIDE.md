@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-02-24
+Last Updated: 2026-02-25
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,17 +10,21 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-02-24)
+## Current Verified Totals (2026-02-25)
 
-- Backend: 825/825 passing
-  - Domain: 107
-  - Application: 465
-  - API integration: 241
+- Backend: 887/887 passing
+  - Domain: 122
+  - Application: 491
+  - API integration: 262
   - CLI contract: 4
   - Architecture boundaries: 8
 - Frontend unit: 377/377 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1225/1225 passing
+- Combined automated total: 1287/1287 passing
+
+Verification note:
+- backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
+- frontend totals remain from the latest recorded 2026-02-24 verification cycle
 
 ## Backend Commands
 
@@ -300,6 +304,7 @@ Planned quality expectations when implementation starts:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
   - Includes board-scoped external import endpoint coverage (authz, malformed input, duplicate handling, apply/update flow, rollback safety)
+  - Includes outbound webhook API and worker coverage (`OutboundWebhooksApiTests`, `OutboundWebhookDeliveryWorkerTests`) for claim/reload handling, cancellation requeue, and non-success HTTP retry/dead-letter branches
   - Includes `ResultExtensions` mapping tests for standardized API error/status behavior
 - CLI contracts:
   - `backend/tests/Taskdeck.Cli.Tests`
