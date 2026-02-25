@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Diagnostics;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -251,22 +250,10 @@ public class ChatService : IChatService
     {
         return new LlmRequestAttribution(
             userId,
-            ResolveCorrelationId(),
+            LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
             LlmRequestSourceSurface.Chat,
             session.BoardId,
             session.Id);
-    }
-
-    private static string ResolveCorrelationId()
-    {
-        var correlationFromActivity = Activity.Current?.GetTagItem("taskdeck.correlation_id")?.ToString();
-        if (!string.IsNullOrWhiteSpace(correlationFromActivity))
-        {
-            return LlmRequestAttributionMapper.ResolveCorrelationId(correlationFromActivity);
-        }
-
-        var traceId = Activity.Current?.TraceId.ToString();
-        return LlmRequestAttributionMapper.ResolveCorrelationId(traceId);
     }
 
     private static bool LooksLikeChecklistBootstrapRequest(string content)
