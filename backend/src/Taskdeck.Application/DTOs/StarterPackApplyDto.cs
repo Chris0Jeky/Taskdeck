@@ -41,6 +41,12 @@ public record StarterPackApplyResultDto(
 {
     public bool HasConflicts => Conflicts.Count > 0;
     public bool HasBlockingConflicts => Conflicts.Any(conflict =>
-        string.IsNullOrWhiteSpace(conflict.Severity) ||
-        string.Equals(conflict.Severity, StarterPackConflictSeverity.Blocking, StringComparison.OrdinalIgnoreCase));
+    {
+        // Treat missing severities as blocking for backward compatibility with older/external payload shapes.
+        var severity = string.IsNullOrWhiteSpace(conflict.Severity)
+            ? StarterPackConflictSeverity.Blocking
+            : conflict.Severity;
+
+        return string.Equals(severity, StarterPackConflictSeverity.Blocking, StringComparison.OrdinalIgnoreCase);
+    });
 }
