@@ -374,10 +374,29 @@ static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configurat
     return defaultOrigins
         .Concat(configuredDevelopmentOrigins)
         .Where(origin => !string.IsNullOrWhiteSpace(origin))
-        .Select(origin => origin.Trim())
+        .Select(NormalizeCorsOrigin)
         // Origin host matching is case-insensitive, so collapse mixed-case duplicates.
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
+}
+
+static string NormalizeCorsOrigin(string origin)
+{
+    var trimmedOrigin = origin.Trim();
+    if (!Uri.TryCreate(trimmedOrigin, UriKind.Absolute, out var parsedOrigin))
+    {
+        throw new InvalidOperationException(
+            $"Invalid Cors:DevelopmentAllowedOrigins value \"{trimmedOrigin}\". Provide an absolute http(s) origin.");
+    }
+
+    if (!string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            $"Invalid Cors:DevelopmentAllowedOrigins value \"{trimmedOrigin}\". Only http and https schemes are supported.");
+    }
+
+    return parsedOrigin.GetLeftPart(UriPartial.Authority);
 }
 
 public partial class Program { }

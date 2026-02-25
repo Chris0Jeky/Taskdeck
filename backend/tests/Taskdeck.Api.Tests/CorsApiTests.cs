@@ -50,6 +50,26 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Cors_ShouldNormalizeConfiguredDevelopmentOriginWithPath()
+    {
+        const string configuredOrigin = "http://localhost:5189/some/path/";
+        const string requestOrigin = "http://localhost:5189";
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Cors:DevelopmentAllowedOrigins:0", configuredOrigin);
+        });
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.TryAddWithoutValidation("Origin", requestOrigin);
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
+        allowedOrigins.Should().ContainSingle().Which.Should().Be(requestOrigin);
+    }
+
+    [Fact]
     public async Task Cors_ShouldIgnoreDevelopmentConfiguredAlternateOriginOutsideDevelopment()
     {
         const string alternateOrigin = "http://localhost:5189";
