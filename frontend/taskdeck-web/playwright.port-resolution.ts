@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process'
 export const defaultFrontendHost = 'localhost'
 export const defaultFrontendPort = 5173
 export const fallbackFrontendPorts = [defaultFrontendPort, 4173, 5001] as const
+// Keep this module self-contained for Playwright config evaluation; shared host/port probe
+// logic in run-vite-dev remains intentionally duplicated to avoid cross-runtime coupling.
 const taskdeckFrontendIdentityMarkers = ['<title>taskdeck-web</title>', '/src/main.ts'] as const
 export const portProbeTimeoutMs = 300
 const maxProbeResponseBytes = 64 * 1024
@@ -119,6 +121,7 @@ const request = http.request(
       const hasExpectedIdentity = markers.every((marker) => responseText.includes(marker))
       settle(statusCode === 200 && hasExpectedIdentity ? 0 : 1)
     })
+    response.on('error', () => settle(1))
   },
 )
 
