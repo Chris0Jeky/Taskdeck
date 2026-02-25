@@ -35,6 +35,7 @@ export interface SessionState {
   userId: string | null
   username: string | null
   email: string | null
+  defaultRole: number | null
   isAuthenticated: boolean
   expiresAt: string | null
 }
