@@ -174,11 +174,11 @@ Analysis record:
 
 ## Capture Realignment Wave (2026-02-23)
 
-Realignment packs under `docs/InReview` were reviewed and reconciled into active backlog seeding:
+Realignment packs (now archived for traceability) were reviewed and reconciled into active backlog seeding:
 - automation realignment pack:
-  - `docs/InReview/REPO_PACK/docs/analysis/2026-02-21_capture-automation_realignment_pack/`
+  - `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-21_capture-automation_realignment_pack/`
 - security/performance addendum:
-  - `docs/InReview/REPO_PACK/docs/analysis/2026-02-21_capture-security-performance-addendum/`
+  - `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-21_capture-security-performance-addendum/`
 
 Seeded issue wave:
 - umbrella tracker: `#199`
@@ -284,10 +284,10 @@ To capture the security and operational risk of letting users consume model call
 
 ## Frontend Premium UI Wave (2026-02-23)
 
-Commit `0aef077f6d46262a844eb796cb9e95f83132ca09` introduced a new in-review premium UI planning pack under:
+Commit `0aef077f6d46262a844eb796cb9e95f83132ca09` introduced a premium UI planning pack (archived for traceability) under:
 
 - `docs/InReview/HUMAN/07_FRONTEND_PREMIUM_UI_OVERVIEW.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/`
 
 Issue seeding and reconciliation completed:
 
@@ -307,9 +307,9 @@ Reconciliation record:
 
 ## Testing Harness Improvement Wave (2026-02-23)
 
-Commit `909db0d` introduced a testing-harness improvement pack under:
+Commit `909db0d` introduced a testing-harness improvement pack (archived for traceability) under:
 
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/`
 
 Issue seeding and reconciliation completed:
 
@@ -368,7 +368,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-25 (backend refresh; frontend totals carried from 2026-02-24 verification run)
+Verification Date: 2026-02-25 (backend + frontend unit/build refreshed; frontend E2E latest successful run from 2026-02-24)
 
 ### Backend (Executed)
 
@@ -386,26 +386,31 @@ Result:
 ### Frontend Unit + Build (Executed)
 
 Commands:
-- `cd frontend/taskdeck-web && npx vitest --run`
+- `cd frontend/taskdeck-web && npm run lint`
+- `cd frontend/taskdeck-web && npm run test:coverage`
 - `cd frontend/taskdeck-web && npm run typecheck`
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 377/377 passing
+- Frontend unit: 378/378 passing
 - Typecheck: passing
 - Production build: passing
 
-### Frontend E2E (Executed)
+### Frontend E2E (Last Successful Run)
 
 Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
 - E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
+- 2026-02-25 local rerun was blocked before test execution:
+  - Playwright frontend web server startup failed on `localhost:5173` with `listen EACCES`.
+  - Temporary local port override (`localhost:5001`) then failed API preflight due CORS origin mismatch (`http://localhost:5001` not allowed).
+  - Investigation record: `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build): 1264/1264 passing
+- Combined automated total (backend + frontend unit/build): 1265/1265 passing
 
 ## CI Status
 
@@ -488,6 +493,8 @@ Security/compliance hardening backlog added from research cross-check:
 - Unified API error-response shape and HTTP error-code mapping in shared backend helpers.
 - Reduced duplicated frontend API/store logic by extracting shared query and error utilities.
 - Reconciled active docs and test totals after PR #23 merge.
+- Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) and archived `docs/InReview/REPO_PACK` into dated `docs/archive/` bundles with updated canonical cross-links.
+- Documented local frontend E2E gate blockers (port bind `EACCES` on `5173` and alternate-port CORS mismatch) in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 - Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
 - Added CI hardening parity updates: concurrency cancellation, frontend typecheck/build enforcement, TRX/JUnit failure artifacts, and package/browser caches.
 - Delivered OPS-19 CI topology first pass (`#168`): migrated required pipeline entrypoint to `.github/workflows/ci-required.yml` and extracted docs-governance lane into reusable workflow `.github/workflows/reusable-docs-governance.yml`.
@@ -568,3 +575,4 @@ Historical/spec detail material:
 
 Rule:
 - If archive content conflicts with active docs, active docs win.
+
