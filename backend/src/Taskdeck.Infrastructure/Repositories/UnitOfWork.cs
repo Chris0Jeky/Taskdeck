@@ -28,7 +28,9 @@ public class UnitOfWork : IUnitOfWork
         IChatMessageRepository chatMessages,
         ICommandRunRepository commandRuns,
         INotificationRepository notifications,
-        INotificationPreferenceRepository notificationPreferences)
+        INotificationPreferenceRepository notificationPreferences,
+        IOutboundWebhookSubscriptionRepository outboundWebhookSubscriptions,
+        IOutboundWebhookDeliveryRepository outboundWebhookDeliveries)
     {
         _context = context;
         Boards = boards;
@@ -47,6 +49,8 @@ public class UnitOfWork : IUnitOfWork
         CommandRuns = commandRuns;
         Notifications = notifications;
         NotificationPreferences = notificationPreferences;
+        OutboundWebhookSubscriptions = outboundWebhookSubscriptions;
+        OutboundWebhookDeliveries = outboundWebhookDeliveries;
     }
 
     public IBoardRepository Boards { get; }
@@ -65,6 +69,8 @@ public class UnitOfWork : IUnitOfWork
     public ICommandRunRepository CommandRuns { get; }
     public INotificationRepository Notifications { get; }
     public INotificationPreferenceRepository NotificationPreferences { get; }
+    public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
+    public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

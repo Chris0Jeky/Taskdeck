@@ -63,6 +63,7 @@ Direction guardrails (explicit):
   - `ArchiveRecoveryService`
   - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI`/`Gemini` behind explicit gates with config validation fallback)
   - `NotificationService` with per-user preference filtering and deduplication safeguards
+  - outbound webhook integration baseline: board-scoped webhook subscriptions (endpoint + event filters + secret rotation/revocation), mutation-event delivery queueing, and signed delivery worker retries/dead-letter transitions
   - `OpsCliService` + `LogQueryService`
   - `StarterPackManifestValidator` + `StarterPackApplyService` (idempotent apply with dry-run conflict reporting)
   - SignalR realtime baseline: `BoardsHub` with board-scoped subscription authz and application-level board mutation event publishing

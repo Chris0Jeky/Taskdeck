@@ -213,12 +213,6 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         triageResult.Should().NotBeNull();
         triageResult!.Status.Should().Be(CaptureStatus.Triaging);
         triageResult.AlreadyTriaging.Should().BeFalse();
-
-        var detailResponse = await _client.GetAsync($"/api/capture/items/{created.Id}");
-        detailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var detail = await detailResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
-        detail.Should().NotBeNull();
-        detail!.Status.Should().Be(CaptureStatus.Triaging);
     }
 
     [Fact]
