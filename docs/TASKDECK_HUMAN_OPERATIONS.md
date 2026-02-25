@@ -77,6 +77,23 @@ Windows PowerShell:
 If you use `.codex/config.toml`, Codex only loads it for trusted projects.
 Mark your Taskdeck repo as trusted in Codex settings.
 
+## A5) Ops CLI role-assignment workflow (manual)
+This is required for `/workspace/ops/cli` discoverability and permission guidance.
+
+1. User verifies current role in-app:
+   - `Workspace > Settings` profile section (Role + Ops Access summary)
+   - `Workspace > Ops > CLI` role context banner
+
+2. Provision elevated access intentionally:
+   - Preferred for new privileged accounts: register/bootstrap with explicit `defaultRole` (`Admin=1`, `Owner=0`) in controlled operator flows.
+   - Existing-account promotion currently requires operator maintenance action (there is no self-serve role-change endpoint in UI/API user profile flows).
+
+3. Validate after assignment:
+   - log in again
+   - open `/workspace/ops/cli`
+   - confirm role banner and runnable-template list reflect the new role
+   - run one admin template to verify access contract
+
 ---
 
 # B) Decisions you must make (LLM can propose; you decide)
