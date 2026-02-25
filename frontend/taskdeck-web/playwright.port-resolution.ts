@@ -7,6 +7,15 @@ const taskdeckFrontendIdentityMarkers = ['<title>taskdeck-web</title>', '/src/ma
 export const portProbeTimeoutMs = 300
 
 type PortProbe = (host: string, port: number) => boolean
+type ProbeResult = {
+  error?: Error
+  status: number | null
+}
+type ProbeRunner = (candidateHost: string, port: number, probeScript: string) => ProbeResult
+type ProbeOptions = {
+  onProbeError?: (message: string) => void
+  probeRunner?: ProbeRunner
+}
 
 type ResolveDefaultFrontendPortOptions = {
   bindProbe?: PortProbe
@@ -44,9 +53,15 @@ export function resolveDefaultFrontendPort(
   return defaultFrontendPort
 }
 
-export function canConnectToTaskdeckFrontend(host: string, port: number): boolean {
+export function canConnectToTaskdeckFrontend(
+  host: string,
+  port: number,
+  options?: ProbeOptions,
+): boolean {
   const probeHost = parseFrontendHost(host, 'TASKDECK_E2E_FRONTEND_HOST')
   const identityMarkersLiteral = JSON.stringify(taskdeckFrontendIdentityMarkers)
+  const probeRunner = options?.probeRunner ?? runProbeScript
+  const onProbeError = options?.onProbeError ?? console.warn
   const probeScript = `
 const http = require('node:http')
 const host = process.argv[1]
@@ -99,17 +114,10 @@ request.end()
 `.trim()
 
   for (const candidateHost of resolvePortProbeHosts(probeHost)) {
-    const probe = spawnSync(
-      process.execPath,
-      ['-e', probeScript, candidateHost, String(port), String(portProbeTimeoutMs)],
-      {
-        stdio: 'ignore',
-        timeout: portProbeTimeoutMs + 50,
-      },
-    )
+    const probe = probeRunner(candidateHost, port, probeScript)
 
     if (probe.error) {
-      console.warn(
+      onProbeError(
         `[e2e config] frontend identity probe spawn failed for ${candidateHost}:${port}: ${probe.error.message}`,
       )
       continue
@@ -123,8 +131,10 @@ request.end()
   return false
 }
 
-export function canBindPort(host: string, port: number): boolean {
+export function canBindPort(host: string, port: number, options?: ProbeOptions): boolean {
   const probeHost = parseFrontendHost(host, 'TASKDECK_E2E_FRONTEND_HOST')
+  const probeRunner = options?.probeRunner ?? runProbeScript
+  const onProbeError = options?.onProbeError ?? console.warn
   const probeScript = `
 const net = require('node:net')
 const host = process.argv[1]
@@ -157,17 +167,10 @@ server.listen(port, host, () => {
 `.trim()
 
   for (const candidateHost of resolvePortProbeHosts(probeHost)) {
-    const probe = spawnSync(
-      process.execPath,
-      ['-e', probeScript, candidateHost, String(port), String(portProbeTimeoutMs)],
-      {
-        stdio: 'ignore',
-        timeout: portProbeTimeoutMs + 50,
-      },
-    )
+    const probe = probeRunner(candidateHost, port, probeScript)
 
     if (probe.error) {
-      console.warn(
+      onProbeError(
         `[e2e config] frontend bind probe spawn failed for ${candidateHost}:${port}: ${probe.error.message}`,
       )
       continue
@@ -216,4 +219,20 @@ export function buildHttpOrigin(host: string, port: number): string {
       ? `[${normalizedHost}]`
       : normalizedHost
   return `http://${hostAuthority}:${port}`
+}
+
+function runProbeScript(candidateHost: string, port: number, probeScript: string): ProbeResult {
+  const probe = spawnSync(
+    process.execPath,
+    ['-e', probeScript, candidateHost, String(port), String(portProbeTimeoutMs)],
+    {
+      stdio: 'ignore',
+      timeout: portProbeTimeoutMs + 50,
+    },
+  )
+
+  return {
+    error: probe.error ?? undefined,
+    status: probe.status,
+  }
 }
