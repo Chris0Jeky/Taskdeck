@@ -183,6 +183,50 @@ describe('ArchiveView', () => {
     confirmSpy.mockRestore()
   })
 
+  it('restores archived board even when hidden-board persistence fails', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const setItemSpy = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('storage unavailable')
+    })
+
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-archived',
+        name: 'Archived Board',
+        description: null,
+        isArchived: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+    mocks.updateBoard.mockResolvedValue({
+      id: 'board-archived',
+      name: 'Board To Restore',
+      description: null,
+      isArchived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    const restoreBoardButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Restore Board'))
+    expect(restoreBoardButton).toBeDefined()
+    await restoreBoardButton!.trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
+    expect(mocks.successToast).toHaveBeenCalledWith('Restored board "Archived Board"')
+    expect(setItemSpy).toHaveBeenCalled()
+    expect(mocks.errorToast).not.toHaveBeenCalledWith('Failed to restore board')
+
+    confirmSpy.mockRestore()
+    setItemSpy.mockRestore()
+  })
+
   it('hides archived board from default list and reveals it when hidden toggle is enabled', async () => {
     mocks.getBoards.mockResolvedValue([
       {
