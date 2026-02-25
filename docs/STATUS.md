@@ -58,7 +58,7 @@ Direction guardrails (explicit):
   - JWT challenge/forbidden handlers return `ApiErrorResponse` payloads for middleware-level `401/403` responses
   - `AuthenticatedControllerBase` for claim extraction and authenticated-user guardrails
   - request correlation middleware (`X-Request-Id`) with response echo and log scope propagation
-  - development CORS origin policy now keeps localhost defaults (`http://localhost:5173`, `http://localhost:5174`) and supports additive `Cors:DevelopmentAllowedOrigins` config overrides
+  - development CORS origin policy keeps localhost defaults (`http://localhost:5173`, `http://localhost:5174`), adds fallback localhost dev ports (`http://localhost:4173`, `http://localhost:5001`), and supports additive `Cors:DevelopmentAllowedOrigins` config overrides
 - Implemented automation stack:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
@@ -376,7 +376,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-25 (backend + frontend unit/build refreshed; frontend E2E latest successful run from 2026-02-24)
+Verification Date: 2026-02-25 (backend + frontend unit/build + frontend E2E refreshed)
 
 ### Backend (Executed)
 
@@ -411,10 +411,11 @@ Command:
 
 Result:
 - E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
-- 2026-02-25 local rerun was blocked before test execution:
-  - Playwright frontend web server startup failed on `localhost:5173` with `listen EACCES`.
-  - Temporary local port override (`localhost:5001`) then failed API preflight due to CORS origin mismatch (`http://localhost:5001` not allowed).
-  - Investigation record: `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+- 2026-02-25 local rerun now passes after frontend E2E startup hardening:
+  - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) with deterministic runner/worker convergence.
+  - local reuse mode only reuses already-listening ports when the listener is identity-verified as Taskdeck frontend; CI mode prefers bindable ports so stale listeners do not break startup.
+  - first fallback resolution is now persisted in-process so worker config imports stay pinned to the runner-selected frontend port during CI execution.
+  - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 ### Total
 
@@ -501,9 +502,11 @@ Security/compliance hardening backlog added from research cross-check:
 - Unified API error-response shape and HTTP error-code mapping in shared backend helpers.
 - Reduced duplicated frontend API/store logic by extracting shared query and error utilities.
 - Reconciled active docs and test totals after PR #23 merge.
-- Delivered development CORS configurability: default localhost origins remain allowed and development-only configured origins (`Cors:DevelopmentAllowedOrigins`) are now merged into the API allowlist with deterministic integration coverage.
+- Delivered development CORS configurability: default localhost origins remain allowed, development fallback localhost dev ports (`4173`, `5001`) are included for restricted-port workflows, and development-only configured origins (`Cors:DevelopmentAllowedOrigins`) are merged into the API allowlist with deterministic integration coverage.
 - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) and archived `docs/InReview/REPO_PACK` into dated `docs/archive/` bundles with updated canonical cross-links.
-- Documented local frontend E2E gate blockers (port bind `EACCES` on `5173` and alternate-port CORS mismatch) in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+- Resolved local frontend E2E gate blocker by hardening Playwright frontend port resolution to avoid runner/worker `baseURL` drift when fallback ports are used; investigation retained in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+- Hardened local frontend manual startup (`npm run dev`) with deterministic port fallback (`5173` -> `4173` -> `5001`), bind-first occupied-port skipping for new Vite processes, and strict-port startup so restricted `5173` environments no longer fail or drift through implicit Vite port auto-increment.
+- Resolved frontend container-image `npm ci` policy blockers by keeping SignalR-compatible `ws@7.5.10` via vendored local tarball dependency (`file:vendor/ws-7.5.10.tgz`) and moving `p-limit` override to compatible `3.0.2`, removing forbidden registry tarball fetches while avoiding cross-major override drift.
 - Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
 - Added CI hardening parity updates: concurrency cancellation, frontend typecheck/build enforcement, TRX/JUnit failure artifacts, and package/browser caches.
 - Delivered OPS-19 CI topology first pass (`#168`): migrated required pipeline entrypoint to `.github/workflows/ci-required.yml` and extracted docs-governance lane into reusable workflow `.github/workflows/reusable-docs-governance.yml`.

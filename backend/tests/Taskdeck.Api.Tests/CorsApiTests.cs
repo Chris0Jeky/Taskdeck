@@ -49,6 +49,22 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         allowedOrigins.Should().ContainSingle().Which.Should().Be(alternateOrigin);
     }
 
+    [Theory]
+    [InlineData("http://localhost:4173")]
+    [InlineData("http://localhost:5001")]
+    public async Task Cors_ShouldAllowDevelopmentFallbackOrigins(string fallbackOrigin)
+    {
+        using var client = _baseFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.TryAddWithoutValidation("Origin", fallbackOrigin);
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
+        allowedOrigins.Should().ContainSingle().Which.Should().Be(fallbackOrigin);
+    }
+
     [Fact]
     public async Task Cors_ShouldNormalizeConfiguredDevelopmentOriginWithPath()
     {
@@ -94,5 +110,24 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         defaultOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         defaultOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
         allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
+    }
+
+    [Theory]
+    [InlineData("http://localhost:4173")]
+    [InlineData("http://localhost:5001")]
+    public async Task Cors_ShouldRejectDevelopmentFallbackOriginsOutsideDevelopment(string fallbackOrigin)
+    {
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+        });
+        using var client = factory.CreateClient();
+
+        using var fallbackOriginRequest = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        fallbackOriginRequest.Headers.TryAddWithoutValidation("Origin", fallbackOrigin);
+        var fallbackOriginResponse = await client.SendAsync(fallbackOriginRequest);
+
+        fallbackOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        fallbackOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out _).Should().BeFalse();
     }
 }

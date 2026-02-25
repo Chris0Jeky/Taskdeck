@@ -24,9 +24,8 @@ Companion Active Docs:
 
 Verification note:
 - backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
-- frontend unit/build totals were re-verified on 2026-02-25 via `npm run typecheck`, `npm run build`, and `npx vitest --run`
-- frontend E2E totals were re-verified on 2026-02-25 via fallback frontend-port workflow (`TASKDECK_E2E_FRONTEND_PORT=5001`, `TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001`) with `23/23` passing
-- default local E2E startup on `localhost:5173` may still fail on restricted hosts (`listen EACCES`); use documented fallback workflow
+- frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
+- frontend E2E totals were re-verified on 2026-02-25 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`23/23` passing)
 
 ## Backend Commands
 
@@ -71,6 +70,20 @@ Frontend coverage threshold policy:
 - Threshold breach behavior can be validated locally with an override command, for example:
   - `cd frontend/taskdeck-web && npx vitest run --coverage --coverage.thresholds.lines=99 --coverage.thresholds.statements=99 --coverage.thresholds.functions=99 --coverage.thresholds.branches=99`
 
+Frontend local dev server (manual workflows):
+
+```bash
+cd frontend/taskdeck-web
+npm run dev
+```
+
+Notes:
+- `npm run dev` now auto-resolves frontend port with fallback order `5173` -> `4173` -> `5001` when a port is restricted or unavailable.
+- launcher now selects a bindable port first; occupied candidate ports (including existing Taskdeck listeners) are skipped for new Vite processes.
+- launcher now applies strict-port startup semantics by default to avoid Vite auto-increment drift.
+- explicit overrides remain supported (for example `npm run dev -- --host localhost --port 5001` or `TASKDECK_DEV_PORT=5001 npm run dev`).
+- backend Development CORS defaults include localhost fallback ports (`4173`, `5001`) so login/API calls stay aligned when fallback startup is used.
+
 ## Frontend E2E
 
 Install browser once:
@@ -87,7 +100,7 @@ cd frontend/taskdeck-web
 npx playwright test --reporter=line
 ```
 
-Fallback (alternate frontend port, keep default command unchanged):
+Fallback (force an alternate frontend port):
 
 PowerShell:
 
@@ -107,7 +120,7 @@ TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:
 
 Optional E2E env overrides (Playwright config):
 - `TASKDECK_E2E_FRONTEND_HOST` (default `localhost`)
-- `TASKDECK_E2E_FRONTEND_PORT` (default `5173`)
+- `TASKDECK_E2E_FRONTEND_PORT` (when unset, config auto-probes `5173`, then `4173`, then `5001`)
 - `TASKDECK_E2E_FRONTEND_BASE_URL` (default `http://{host}:{port}`; must be `http://` with explicit port and no path/query/hash)
 - `TASKDECK_E2E_API_BASE_URL` (default `http://localhost:5000/api`; must be `http://` with explicit port and API path)
 - `TASKDECK_E2E_API_CORS_ORIGINS` (comma-separated additional origins merged with defaults: frontend origin plus `http://localhost:5174`; each value is passed to backend process as `Cors__DevelopmentAllowedOrigins__{index}`)
@@ -117,8 +130,10 @@ Override behavior notes:
 - backend Playwright process startup binds to the same API origin via `ASPNETCORE_URLS`
 
 Troubleshooting note (Windows local environments):
-- if Playwright startup fails with `listen EACCES` for frontend port `5173`, the local host may block that port for user-space listeners.
-- using a temporary alternate frontend port also requires matching backend CORS origin configuration; otherwise API preflight requests fail before E2E tests execute.
+- if Playwright startup fails with `listen EACCES` for the frontend port, keep `TASKDECK_E2E_FRONTEND_PORT` unset so auto-fallback can select the next bindable port.
+- when auto-fallback is used, Playwright keeps runner/worker aligned by storing the first resolved fallback port in-process (`TASKDECK_E2E_RESOLVED_FRONTEND_PORT`) so worker-side config evaluation does not drift to a different fallback port after the frontend webServer starts.
+- local reuse mode prefers identity-verified listeners; CI mode prefers bindable ports for first resolution.
+- if you explicitly set `TASKDECK_E2E_FRONTEND_PORT`, use `TASKDECK_E2E_API_CORS_ORIGINS` when needed so API preflight requests stay aligned with the chosen frontend origin.
 - investigation details and reproduction commands are documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 Run concurrency harness spec only:

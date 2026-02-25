@@ -1,8 +1,13 @@
 import { defineConfig } from '@playwright/test'
+import {
+  buildHttpOrigin,
+  defaultFrontendHost,
+  defaultFrontendPort,
+  parseFrontendHost,
+  resolveDefaultFrontendPort,
+} from './playwright.port-resolution'
 
 const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
-const defaultFrontendHost = 'localhost'
-const defaultFrontendPort = 5173
 const defaultApiBaseUrl = 'http://localhost:5000/api'
 
 const frontendConfig = resolveFrontendConfig()
@@ -86,9 +91,31 @@ function resolveFrontendConfig(): FrontendConfig {
     return resolveFrontendConfigFromBaseUrl(rawFrontendBaseUrl)
   }
 
-  const host = process.env.TASKDECK_E2E_FRONTEND_HOST ?? defaultFrontendHost
-  const port = parsePort(process.env.TASKDECK_E2E_FRONTEND_PORT, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
-  const origin = `http://${host}:${port}`
+  const host = parseFrontendHost(
+    process.env.TASKDECK_E2E_FRONTEND_HOST ?? defaultFrontendHost,
+    'TASKDECK_E2E_FRONTEND_HOST',
+  )
+  const explicitFrontendPort = process.env.TASKDECK_E2E_FRONTEND_PORT
+  const resolvedFrontendPort = process.env.TASKDECK_E2E_RESOLVED_FRONTEND_PORT
+
+  const port = explicitFrontendPort
+    ? parsePort(explicitFrontendPort, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
+    : resolvedFrontendPort
+      ? parsePort(
+          resolvedFrontendPort,
+          defaultFrontendPort,
+          'TASKDECK_E2E_RESOLVED_FRONTEND_PORT',
+        )
+      : resolveDefaultFrontendPort(host, {
+          allowExistingFrontendReuse: !process.env.CI,
+        })
+
+  if (!explicitFrontendPort && !resolvedFrontendPort) {
+    // Keep runner/worker baseURL aligned by reusing the first resolved port value.
+    process.env.TASKDECK_E2E_RESOLVED_FRONTEND_PORT = String(port)
+  }
+
+  const origin = buildHttpOrigin(host, port)
 
   return {
     baseUrl: origin,
@@ -126,7 +153,7 @@ function resolveFrontendConfigFromBaseUrl(rawFrontendBaseUrl: string): FrontendC
 
   return {
     baseUrl: parsedFrontendBaseUrl.origin,
-    host: parsedFrontendBaseUrl.hostname,
+    host: parseFrontendHost(parsedFrontendBaseUrl.hostname, 'TASKDECK_E2E_FRONTEND_BASE_URL'),
     origin: parsedFrontendBaseUrl.origin,
     port,
   }

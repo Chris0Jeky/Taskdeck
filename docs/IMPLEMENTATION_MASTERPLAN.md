@@ -337,6 +337,7 @@ Delivered in the latest cycle:
    - added backend regression coverage across domain/application/API/worker/repository webhook paths, including non-success dispatch retry/dead-letter branches
 79. API CORS development-origin configurability delivery:
    - API CORS composition now keeps default localhost origins (`http://localhost:5173`, `http://localhost:5174`) as baseline behavior
+   - development fallback localhost origins (`http://localhost:4173`, `http://localhost:5001`) are now included so restricted local frontend-port runs remain preflight-safe
    - development runtime now accepts additive allowed origins from configuration key `Cors:DevelopmentAllowedOrigins`
    - API integration coverage now verifies both default-origin allowance and development-configured alternate-origin allowance via deterministic in-memory config overrides
 80. OPS-16 deployment/container hardening verification matrix delivery (`#142`):
@@ -347,6 +348,23 @@ Delivered in the latest cycle:
    - starter-pack apply conflict contract now includes severity (`blocking`/`warning`) and controller conflict responses now hard-stop only on blocking conflicts
    - starter-pack apply service now marks non-blocking seed-card skip paths as warnings and preserves apply success when only warnings exist
    - starter-pack modal now shows explicit applied/skipped/blocked/warnings outcome summaries with warning-first messaging, and backend/frontend regression coverage now locks warning-vs-blocking behavior
+82. TST-18 Playwright frontend port-resolution hardening delivery:
+   - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports
+   - local runs (server reuse enabled) prefer identity-verified running Taskdeck frontend listeners before bind probes to prevent runner/worker drift (`4173` to `5001`)
+   - CI runs (server reuse disabled) prefer bindable ports first so stale listeners do not trigger `url is already used` startup failures
+   - fallback port selection now persists first resolution in-process (`TASKDECK_E2E_RESOLVED_FRONTEND_PORT`) so worker config imports do not diverge from runner webServer startup port
+   - local Windows E2E gate now re-verifies with `npx playwright test --reporter=line` using fallback path (`5173` -> `4173` -> `5001`)
+83. FE-13 local dev server startup hardening delivery:
+   - `npm run dev` now launches through a small Vite wrapper that auto-resolves restricted/unavailable local ports with fallback order `5173` -> `4173` -> `5001`
+   - wrapper now selects the first bindable candidate port and skips occupied candidates for new Vite processes, preventing strict-port startup failures on stale listeners
+   - wrapper now sets strict-port startup semantics by default, avoiding implicit Vite auto-increment drift when a requested port is occupied
+   - explicit local overrides remain supported (`--host`, `--port`, `TASKDECK_DEV_PORT`) for reproducible manual debugging
+   - manual local flows no longer require one-off fallback command rewrites when `localhost:5173` is blocked with `listen EACCES`
+84. OPS-19 container-image frontend dependency-policy unblock follow-through:
+   - frontend npm dependency graph now keeps `@microsoft/signalr` on its supported `ws@7.5.10` major line via a vendored local tarball dependency (`ws: file:vendor/ws-7.5.10.tgz`) so container `npm ci` no longer fetches blocked registry tarballs for that version
+   - frontend npm dependency graph now uses `p-limit@3.0.2` override (compatible with `p-locate@5`) to remove blocked `yocto-queue-0.1.0` fetches without cross-major override drift
+   - refreshed lockfile keeps container `npm ci` deterministic and unblocks `.github/workflows/reusable-container-images.yml` frontend build stage
+   - local Docker validation confirms `deploy/docker/frontend.Dockerfile` build-stage `npm ci` and `npm run build` both complete successfully with the override
 
 ## Roadmap by Horizon
 
