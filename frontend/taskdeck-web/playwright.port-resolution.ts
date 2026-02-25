@@ -191,29 +191,23 @@ server.listen(port, host, () => {
 })
 `.trim()
 
-  for (const candidateHost of resolvePortProbeHosts(probeHost)) {
-    const probe = probeRunner(candidateHost, port, probeScript)
+  const probe = probeRunner(probeHost, port, probeScript)
 
-    if (probe.error) {
-      onProbeError(
-        `[e2e config] frontend bind probe spawn failed for ${candidateHost}:${port}: ${probe.error.message}`,
-      )
-      continue
-    }
-
-    if (probe.signal) {
-      onProbeError(
-        `[e2e config] frontend bind probe terminated by signal ${probe.signal} for ${candidateHost}:${port}.`,
-      )
-      continue
-    }
-
-    if (probe.status === 0) {
-      return true
-    }
+  if (probe.error) {
+    onProbeError(
+      `[e2e config] frontend bind probe spawn failed for ${probeHost}:${port}: ${probe.error.message}`,
+    )
+    return false
   }
 
-  return false
+  if (probe.signal) {
+    onProbeError(
+      `[e2e config] frontend bind probe terminated by signal ${probe.signal} for ${probeHost}:${port}.`,
+    )
+    return false
+  }
+
+  return probe.status === 0
 }
 
 export function resolvePortProbeHosts(host: string): string[] {
@@ -227,13 +221,25 @@ export function resolvePortProbeHosts(host: string): string[] {
 }
 
 export function parseFrontendHost(rawHost: string, source: string): string {
-  const normalizedHost = rawHost.trim()
+  let normalizedHost = rawHost.trim()
+  if (normalizedHost.startsWith('[') || normalizedHost.endsWith(']')) {
+    if (!(normalizedHost.startsWith('[') && normalizedHost.endsWith(']'))) {
+      throw new Error(
+        `[e2e config] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
+      )
+    }
+
+    normalizedHost = normalizedHost.slice(1, -1)
+  }
+
   if (normalizedHost.length === 0) {
     throw new Error(`[e2e config] ${source} cannot be empty.`)
   }
 
   if (
     normalizedHost.includes('://') ||
+    normalizedHost.includes('[') ||
+    normalizedHost.includes(']') ||
     containsControlCharacters(normalizedHost) ||
     /[\s/?#'"`\\,;]/u.test(normalizedHost)
   ) {
