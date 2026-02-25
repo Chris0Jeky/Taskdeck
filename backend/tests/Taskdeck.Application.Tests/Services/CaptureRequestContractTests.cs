@@ -101,6 +101,51 @@ public class CaptureRequestContractTests
     }
 
     [Fact]
+    public void ParsePayload_ShouldFail_WhenProvenanceAttributionFieldIsSuppliedInUntrustedPayload()
+    {
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "requestedByUserId": "{{Guid.NewGuid()}}"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: false);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("must not include server attribution field");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldAllowProvenanceAttributionField_WhenServerAttributionIsAllowed()
+    {
+        var requestedByUserId = Guid.NewGuid();
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "requestedByUserId": "{{requestedByUserId}}",
+                            "sourceSurface": "capture"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provenance.Should().NotBeNull();
+        result.Value.Provenance!.RequestedByUserId.Should().Be(requestedByUserId);
+        result.Value.Provenance.SourceSurface.Should().Be("capture");
+    }
+
+    [Fact]
     public void ParsePayload_ShouldFail_WhenSourceIsInvalidString()
     {
         var payload = """
