@@ -1,16 +1,20 @@
 import net from 'node:net'
+import http from 'node:http'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 
 const defaultHost = process.env.TASKDECK_DEV_HOST ?? 'localhost'
 const defaultPort = 5173
 const fallbackPorts = [defaultPort, 4173, 5001]
+const probeTimeoutMs = 300
+const maxProbeResponseBytes = 64 * 1024
+const frontendIdentityMarkers = ['<title>taskdeck-web</title>', '/src/main.ts']
 
 const cliArgs = process.argv.slice(2)
 const hostOption = readOptionValue(cliArgs, ['--host'])
 const portOption = readOptionValue(cliArgs, ['--port', '-p'])
 
-const effectiveHost = hostOption ?? defaultHost
+const effectiveHost = parseHost(hostOption ?? defaultHost, hostOption ? 'CLI --host' : 'TASKDECK_DEV_HOST')
 const effectivePort = portOption
   ? parsePort(portOption, defaultPort, 'CLI --port')
   : process.env.TASKDECK_DEV_PORT
@@ -24,6 +28,10 @@ if (!hasOption(cliArgs, ['--host'])) {
 
 if (!hasOption(cliArgs, ['--port', '-p'])) {
   viteArgs.push('--port', String(effectivePort))
+}
+
+if (!hasOption(cliArgs, ['--strictPort'])) {
+  viteArgs.push('--strictPort')
 }
 
 console.log(`[dev] starting Vite on http://${effectiveHost}:${effectivePort}`)
@@ -87,12 +95,12 @@ function parsePort(rawPort, fallbackPort, source) {
     throw new Error(`[dev] ${source} must be between 1 and 65535. Received "${rawPort}".`)
   }
 
-  return Number.isNaN(parsedPort) ? fallbackPort : parsedPort
+  return parsedPort
 }
 
 async function resolveDefaultPort(host) {
   for (const candidatePort of fallbackPorts) {
-    if (await canConnectToPort(host, candidatePort)) {
+    if (await canConnectToTaskdeckFrontend(host, candidatePort)) {
       return candidatePort
     }
   }
@@ -103,12 +111,16 @@ async function resolveDefaultPort(host) {
     }
   }
 
+  console.warn(
+    `[dev] could not find a running Taskdeck frontend or bindable port in ${fallbackPorts.join(', ')} for host "${host}". ` +
+      `Falling back to ${defaultPort}. If startup fails, set TASKDECK_DEV_PORT explicitly.`,
+  )
   return defaultPort
 }
 
-async function canConnectToPort(host, port) {
+async function canConnectToTaskdeckFrontend(host, port) {
   for (const candidateHost of resolveProbeHosts(host)) {
-    if (await canConnectToHostPort(candidateHost, port)) {
+    if (await servesTaskdeckFrontend(candidateHost, port)) {
       return true
     }
   }
@@ -127,35 +139,113 @@ async function canBindPort(host, port) {
 }
 
 function resolveProbeHosts(host) {
-  if (host.toLowerCase() !== 'localhost') {
-    return [host]
+  const normalizedHost = parseHost(host, 'TASKDECK_DEV_HOST')
+  if (normalizedHost.toLowerCase() !== 'localhost') {
+    return [normalizedHost]
   }
 
-  return [host, '127.0.0.1', '::1']
+  return [normalizedHost, '127.0.0.1', '::1']
 }
 
-function canConnectToHostPort(host, port) {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port })
+function parseHost(rawHost, source) {
+  const normalizedHost = rawHost.trim()
+  if (normalizedHost.length === 0) {
+    throw new Error(`[dev] ${source} cannot be empty.`)
+  }
 
-    const finalize = (result) => {
-      socket.removeAllListeners()
-      socket.destroy()
+  if (
+    normalizedHost.includes('://') ||
+    /[\u0000-\u001F\u007F]/.test(normalizedHost) ||
+    /[\s/?#'"`\\,;]/u.test(normalizedHost)
+  ) {
+    throw new Error(
+      `[dev] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
+    )
+  }
+
+  return normalizedHost
+}
+
+function servesTaskdeckFrontend(host, port) {
+  return new Promise((resolve) => {
+    let settled = false
+    let responseText = ''
+    let observedBytes = 0
+
+    const settle = (result) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      clearTimeout(timeoutHandle)
+      request.removeAllListeners()
+      request.destroy()
       resolve(result)
     }
 
-    socket.setTimeout(300)
-    socket.once('connect', () => finalize(true))
-    socket.once('timeout', () => finalize(false))
-    socket.once('error', () => finalize(false))
+    const request = http.request(
+      {
+        host,
+        port,
+        method: 'GET',
+        path: '/',
+        headers: { accept: 'text/html' },
+      },
+      (response) => {
+        response.setEncoding('utf8')
+
+        response.on('data', (chunk) => {
+          if (settled) {
+            return
+          }
+
+          observedBytes += Buffer.byteLength(chunk)
+          if (observedBytes <= maxProbeResponseBytes) {
+            responseText += chunk
+          }
+
+          const statusCode = response.statusCode ?? 0
+          const hasExpectedIdentity = frontendIdentityMarkers.every((marker) => responseText.includes(marker))
+          if (statusCode === 200 && hasExpectedIdentity) {
+            response.destroy()
+            settle(true)
+            return
+          }
+
+          if (observedBytes > maxProbeResponseBytes) {
+            response.destroy()
+            settle(false)
+          }
+        })
+
+        response.on('error', () => settle(false))
+        response.on('end', () => {
+          const statusCode = response.statusCode ?? 0
+          const hasExpectedIdentity = frontendIdentityMarkers.every((marker) => responseText.includes(marker))
+          settle(statusCode === 200 && hasExpectedIdentity)
+        })
+      },
+    )
+
+    const timeoutHandle = setTimeout(() => settle(false), probeTimeoutMs)
+    request.on('error', () => settle(false))
+    request.end()
   })
 }
 
 function canBindHostPort(host, port) {
   return new Promise((resolve) => {
     const server = net.createServer()
+    let settled = false
 
     const finalize = (result) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      clearTimeout(timeoutHandle)
       server.removeAllListeners()
       try {
         server.close()
@@ -165,6 +255,7 @@ function canBindHostPort(host, port) {
       resolve(result)
     }
 
+    const timeoutHandle = setTimeout(() => finalize(false), probeTimeoutMs)
     server.once('error', () => finalize(false))
     server.listen(port, host, () => {
       server.close(() => finalize(true))
