@@ -62,6 +62,38 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
 
     private async Task ProcessDueDeliveriesAsync(CancellationToken cancellationToken)
     {
+        var candidates = await GetDueDeliveryCandidatesAsync(cancellationToken);
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        var maxConcurrency = Math.Clamp(_workerSettings.MaxConcurrency, 1, Math.Max(1, _workerSettings.MaxBatchSize));
+        using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
+        var tasks = new List<Task>(candidates.Count);
+
+        foreach (var candidate in candidates)
+        {
+            await semaphore.WaitAsync(cancellationToken);
+
+            tasks.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    await ProcessSingleDeliveryAsync(candidate, cancellationToken);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }, cancellationToken));
+        }
+
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task<IReadOnlyList<DeliveryClaimCandidate>> GetDueDeliveryCandidatesAsync(CancellationToken cancellationToken)
+    {
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var now = DateTimeOffset.UtcNow;
@@ -71,105 +103,169 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
             now,
             _workerSettings.MaxBatchSize,
             cancellationToken);
-        if (dueDeliveries.Count == 0)
-        {
-            return;
-        }
 
+        return dueDeliveries
+            .Select(delivery => new DeliveryClaimCandidate(delivery.Id, delivery.UpdatedAt))
+            .ToList();
+    }
+
+    private async Task ProcessSingleDeliveryAsync(DeliveryClaimCandidate candidate, CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var client = _httpClientFactory.CreateClient("OutboundWebhookDelivery");
+        var outcome = "unknown";
+        var startedAt = DateTime.UtcNow;
+        var wasClaimed = false;
+        OutboundWebhookDelivery? delivery = null;
 
-        foreach (var delivery in dueDeliveries)
+        try
         {
             if (cancellationToken.IsCancellationRequested)
             {
+                outcome = "cancelled";
                 return;
             }
 
-            var outcome = "unknown";
-            var startedAt = DateTime.UtcNow;
-
-            try
+            var claimedAt = DateTimeOffset.UtcNow;
+            wasClaimed = await unitOfWork.OutboundWebhookDeliveries.TryClaimPendingAsync(
+                candidate.DeliveryId,
+                candidate.ExpectedUpdatedAt,
+                claimedAt,
+                cancellationToken);
+            if (!wasClaimed)
             {
-                var claimedAt = DateTimeOffset.UtcNow;
-                var wasClaimed = await unitOfWork.OutboundWebhookDeliveries.TryClaimPendingAsync(
-                    delivery.Id,
-                    delivery.UpdatedAt,
-                    claimedAt,
-                    cancellationToken);
-                if (!wasClaimed)
-                {
-                    continue;
-                }
-
-                await unitOfWork.OutboundWebhookDeliveries.ReloadWithSubscriptionAsync(delivery, cancellationToken);
-                if (delivery.Status != WebhookDeliveryStatus.Processing || !delivery.Subscription.IsActive)
-                {
-                    continue;
-                }
-
-                var timestamp = DateTimeOffset.UtcNow;
-                var signature = OutboundWebhookSignature.Compute(
-                    delivery.Subscription.SigningSecret,
-                    timestamp,
-                    delivery.Payload);
-                if (!Uri.TryCreate(delivery.Subscription.EndpointUrl, UriKind.Absolute, out var endpointUri))
-                {
-                    outcome = MarkFailure(delivery, "Webhook endpoint URI is invalid.");
-                    await unitOfWork.SaveChangesAsync(cancellationToken);
-                    continue;
-                }
-
-                if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(
-                        endpointUri.Host,
-                        _securitySettings.AllowLocalhostEndpoints,
-                        cancellationToken))
-                {
-                    outcome = MarkFailure(delivery, "Webhook endpoint host is not allowed.");
-                    await unitOfWork.SaveChangesAsync(cancellationToken);
-                    continue;
-                }
-
-                using var request = new HttpRequestMessage(HttpMethod.Post, endpointUri)
-                {
-                    Content = new StringContent(delivery.Payload, Encoding.UTF8, "application/json")
-                };
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                request.Headers.Add("X-Taskdeck-Webhook-Delivery-Id", delivery.Id.ToString("D"));
-                request.Headers.Add("X-Taskdeck-Webhook-Subscription-Id", delivery.SubscriptionId.ToString("D"));
-                request.Headers.Add("X-Taskdeck-Webhook-Event", delivery.EventType);
-                request.Headers.Add("X-Taskdeck-Webhook-Timestamp", timestamp.ToUnixTimeSeconds().ToString());
-                request.Headers.Add("X-Taskdeck-Webhook-Signature", $"sha256={signature}");
-
-                using var response = await client.SendAsync(request, cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    delivery.MarkDelivered((int)response.StatusCode);
-                    outcome = "delivered";
-                }
-                else
-                {
-                    outcome = MarkFailure(delivery, $"Webhook endpoint returned HTTP {(int)response.StatusCode}.", (int)response.StatusCode);
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                if (delivery.Status == WebhookDeliveryStatus.Processing)
-                {
-                    delivery.ReturnToPending(
-                        DateTimeOffset.UtcNow,
-                        "Webhook delivery interrupted during worker shutdown.");
-                    await unitOfWork.SaveChangesAsync(CancellationToken.None);
-                }
-
+                outcome = "already_claimed";
                 return;
             }
-            catch (Exception ex)
+
+            delivery = await unitOfWork.OutboundWebhookDeliveries.GetByIdAsync(candidate.DeliveryId, cancellationToken);
+            if (delivery == null)
             {
-                outcome = MarkFailure(delivery, $"Webhook delivery threw {ex.GetType().Name}: {ex.Message}");
+                outcome = "missing";
+                return;
+            }
+
+            await unitOfWork.OutboundWebhookDeliveries.ReloadWithSubscriptionAsync(delivery, cancellationToken);
+            if (delivery.Status != WebhookDeliveryStatus.Processing)
+            {
+                outcome = "already_claimed";
+                return;
+            }
+
+            if (!delivery.Subscription.IsActive)
+            {
+                delivery.MarkDeadLetter("Webhook subscription is inactive before delivery dispatch.");
+                outcome = "dead_letter";
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
+            if (!Uri.TryCreate(delivery.Subscription.EndpointUrl, UriKind.Absolute, out var endpointUri))
+            {
+                outcome = MarkFailure(delivery, "Webhook endpoint URI is invalid.");
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
+            if (!IsEndpointSchemeAllowed(endpointUri))
+            {
+                outcome = MarkFailure(delivery, "Webhook endpoint URL uses an insecure or unsupported scheme.");
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
+            if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(
+                    endpointUri.Host,
+                    _securitySettings.AllowLocalhostEndpoints,
+                    cancellationToken))
+            {
+                outcome = MarkFailure(delivery, "Webhook endpoint host is not allowed.");
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
+            var timestamp = DateTimeOffset.UtcNow;
+            var signature = OutboundWebhookSignature.Compute(
+                delivery.Subscription.SigningSecret,
+                timestamp,
+                delivery.Payload);
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpointUri)
+            {
+                Content = new StringContent(delivery.Payload, Encoding.UTF8, "application/json")
+            };
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.Add("X-Taskdeck-Webhook-Delivery-Id", delivery.Id.ToString("D"));
+            request.Headers.Add("X-Taskdeck-Webhook-Subscription-Id", delivery.SubscriptionId.ToString("D"));
+            request.Headers.Add("X-Taskdeck-Webhook-Event", delivery.EventType);
+            request.Headers.Add("X-Taskdeck-Webhook-Timestamp", timestamp.ToUnixTimeSeconds().ToString());
+            request.Headers.Add("X-Taskdeck-Webhook-Signature", $"sha256={signature}");
+
+            using var response = await client.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                delivery.MarkDelivered((int)response.StatusCode);
+                outcome = "delivered";
+            }
+            else
+            {
+                outcome = MarkFailure(delivery, $"Webhook endpoint returned HTTP {(int)response.StatusCode}.", (int)response.StatusCode);
             }
 
             await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (wasClaimed && delivery is not null && delivery.Status == WebhookDeliveryStatus.Processing)
+            {
+                delivery.ReturnToPending(
+                    DateTimeOffset.UtcNow,
+                    "Webhook delivery interrupted during worker shutdown.");
+                await unitOfWork.SaveChangesAsync(CancellationToken.None);
+                outcome = "cancelled_requeued";
+            }
 
+            return;
+        }
+        catch (Exception ex)
+        {
+            if (wasClaimed && delivery is not null)
+            {
+                if (delivery.Status != WebhookDeliveryStatus.Processing)
+                {
+                    await unitOfWork.OutboundWebhookDeliveries.ReloadWithSubscriptionAsync(delivery, CancellationToken.None);
+                }
+
+                if (delivery.Status == WebhookDeliveryStatus.Processing)
+                {
+                    outcome = MarkFailure(delivery, $"Webhook delivery threw {ex.GetType().Name}: {ex.Message}");
+                    await unitOfWork.SaveChangesAsync(CancellationToken.None);
+                }
+                else
+                {
+                    outcome = "error_before_processing";
+                    _logger.LogError(
+                        ex,
+                        "Webhook delivery threw {ExceptionType} before reaching Processing state. DeliveryId={DeliveryId}, Status={Status}, Message={Message}",
+                        ex.GetType().Name,
+                        candidate.DeliveryId,
+                        delivery.Status,
+                        ex.Message);
+                }
+            }
+            else
+            {
+                outcome = "error_before_processing";
+                _logger.LogError(
+                    ex,
+                    "Webhook delivery threw {ExceptionType} before claim. DeliveryId={DeliveryId}, Message={Message}",
+                    ex.GetType().Name,
+                    candidate.DeliveryId,
+                    ex.Message);
+            }
+        }
+        finally
+        {
             var durationMs = (DateTime.UtcNow - startedAt).TotalMilliseconds;
             TaskdeckTelemetry.WorkerItemsProcessed.Add(
                 1,
@@ -239,4 +335,26 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
         var index = Math.Clamp(attemptNumber - 1, 0, _workerSettings.RetryBackoffSeconds.Length - 1);
         return Math.Max(0, _workerSettings.RetryBackoffSeconds[index]);
     }
+
+    private bool IsEndpointSchemeAllowed(Uri endpointUri)
+    {
+        var isHttps = string.Equals(endpointUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        if (isHttps)
+        {
+            return true;
+        }
+
+        var isHttp = string.Equals(endpointUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
+        if (!isHttp)
+        {
+            return false;
+        }
+
+        var isLocalhost = endpointUri.IsLoopback ||
+                          string.Equals(endpointUri.Host, "localhost", StringComparison.OrdinalIgnoreCase);
+
+        return _securitySettings.AllowLocalhostEndpoints && isLocalhost;
+    }
+
+    private readonly record struct DeliveryClaimCandidate(Guid DeliveryId, DateTimeOffset ExpectedUpdatedAt);
 }

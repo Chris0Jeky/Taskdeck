@@ -90,6 +90,110 @@ public class OutboundWebhookDeliveryWorkerTests
         handler.RequestCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldDeadLetter_WhenSubscriptionIsInactiveAfterClaim()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "https://example.com/webhook",
+            "secret",
+            ["card.*"]);
+        subscription.Revoke(Guid.NewGuid());
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true);
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler();
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings { MaxBatchSize = 5, QueuePollIntervalSeconds = 1 },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            NullLogger<OutboundWebhookDeliveryWorker>.Instance);
+
+        await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        handler.RequestCount.Should().Be(0);
+        delivery.Status.Should().Be(WebhookDeliveryStatus.DeadLetter);
+        delivery.LastErrorMessage.Should().Contain("inactive");
+    }
+
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldRejectInsecureEndpointScheme_ForClaimedDelivery()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "http://example.com/webhook",
+            "secret",
+            ["card.*"]);
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true);
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler();
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings { MaxBatchSize = 5, QueuePollIntervalSeconds = 1 },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            NullLogger<OutboundWebhookDeliveryWorker>.Instance);
+
+        await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        handler.RequestCount.Should().Be(0);
+        delivery.Status.Should().Be(WebhookDeliveryStatus.Pending);
+        delivery.LastErrorMessage.Should().Contain("insecure");
+    }
+
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldNotThrow_WhenClaimFailsBeforeProcessingState()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "https://example.com/webhook",
+            "secret",
+            ["card.*"]);
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true,
+            tryClaimException: new InvalidOperationException("claim failed"));
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler();
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings { MaxBatchSize = 5, QueuePollIntervalSeconds = 1 },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            NullLogger<OutboundWebhookDeliveryWorker>.Instance);
+
+        var act = async () => await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        handler.RequestCount.Should().Be(0);
+        delivery.Status.Should().Be(WebhookDeliveryStatus.Pending);
+    }
+
     private static ServiceProvider BuildServiceProvider(IUnitOfWork unitOfWork)
     {
         var services = new ServiceCollection();
@@ -165,15 +269,18 @@ public class OutboundWebhookDeliveryWorkerTests
         private readonly IReadOnlyList<OutboundWebhookDelivery> _dueDeliveries;
         private readonly IReadOnlyList<OutboundWebhookDelivery> _stuckDeliveries;
         private readonly bool _tryClaimResult;
+        private readonly Exception? _tryClaimException;
 
         public FakeOutboundWebhookDeliveryRepository(
             IReadOnlyList<OutboundWebhookDelivery> dueDeliveries,
             IReadOnlyList<OutboundWebhookDelivery> stuckDeliveries,
-            bool tryClaimResult)
+            bool tryClaimResult,
+            Exception? tryClaimException = null)
         {
             _dueDeliveries = dueDeliveries;
             _stuckDeliveries = stuckDeliveries;
             _tryClaimResult = tryClaimResult;
+            _tryClaimException = tryClaimException;
         }
 
         public Task<bool> TryClaimPendingAsync(
@@ -182,6 +289,11 @@ public class OutboundWebhookDeliveryWorkerTests
             DateTimeOffset claimedAt,
             CancellationToken cancellationToken = default)
         {
+            if (_tryClaimException is not null)
+            {
+                throw _tryClaimException;
+            }
+
             return Task.FromResult(_tryClaimResult);
         }
 

@@ -27,44 +27,62 @@ public static partial class OutboundWebhookEndpointGuard
         bool allowLocalhostEndpoints,
         CancellationToken cancellationToken = default)
     {
+        var addresses = await ResolveAllowedAddressesAsync(host, allowLocalhostEndpoints, cancellationToken);
+        return addresses.Count == 0;
+    }
+
+    public static async Task<IReadOnlyList<IPAddress>> ResolveAllowedAddressesAsync(
+        string host,
+        bool allowLocalhostEndpoints,
+        CancellationToken cancellationToken = default)
+    {
         if (string.IsNullOrWhiteSpace(host))
         {
-            return true;
+            return [];
         }
 
         var normalizedHost = host.Trim().TrimEnd('.').ToLowerInvariant();
         if (string.Equals(normalizedHost, "localhost", StringComparison.Ordinal))
         {
-            return !allowLocalhostEndpoints;
+            if (!allowLocalhostEndpoints)
+            {
+                return [];
+            }
+
+            return [IPAddress.Loopback, IPAddress.IPv6Loopback];
         }
 
         if (IsBlockedByHostnamePolicy(normalizedHost))
         {
-            return true;
+            return [];
         }
 
         if (IPAddress.TryParse(normalizedHost, out var literalAddress))
         {
-            return IsBlockedIpAddress(literalAddress);
+            return IsBlockedIpAddress(literalAddress) ? [] : [literalAddress];
         }
 
         try
         {
             var addresses = await Dns.GetHostAddressesAsync(normalizedHost)
                 .WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
-            return addresses.Any(IsBlockedIpAddress);
+
+            return addresses
+                .Where(address => !IsBlockedIpAddress(address))
+                .Distinct()
+                .ToList();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return true;
+            return [];
         }
         catch (SocketException)
         {
-            return true;
+            return [];
         }
         catch (TimeoutException)
         {
-            return true;
+            return [];
         }
     }
 

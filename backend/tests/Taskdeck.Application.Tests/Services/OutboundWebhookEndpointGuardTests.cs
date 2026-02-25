@@ -35,4 +35,14 @@ public class OutboundWebhookEndpointGuardTests
 
         blocked.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task IsHostBlockedAsync_ShouldBlockLocalhost_WhenNotConfigured()
+    {
+        var blocked = await OutboundWebhookEndpointGuard.IsHostBlockedAsync(
+            "localhost",
+            allowLocalhostEndpoints: false);
+
+        blocked.Should().BeTrue();
+    }
 }

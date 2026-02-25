@@ -96,9 +96,18 @@ builder.Services.AddHttpClient("OutboundWebhookDelivery", (_, client) =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 })
-.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+.ConfigurePrimaryHttpMessageHandler(serviceProvider =>
 {
-    AllowAutoRedirect = false
+    var settings = serviceProvider.GetRequiredService<OutboundWebhookSecuritySettings>();
+    return new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = (context, cancellationToken) =>
+            OutboundWebhookConnectCallback.ConnectAsync(
+                context,
+                settings.AllowLocalhostEndpoints,
+                cancellationToken)
+    };
 });
 builder.Services.AddScoped<MockLlmProvider>();
 builder.Services.AddScoped<ILlmProvider>(sp =>
