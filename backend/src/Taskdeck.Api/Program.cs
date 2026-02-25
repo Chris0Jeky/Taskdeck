@@ -287,12 +287,14 @@ if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
         });
 }
 
+var corsAllowedOrigins = ResolveCorsAllowedOrigins(builder.Configuration, builder.Environment.IsDevelopment());
+
 // Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:5174")
+        policy.WithOrigins(corsAllowedOrigins.ToArray())
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -344,6 +346,37 @@ static string BuildWwwAuthenticateHeaderValue(string? error, string? errorDescri
 static string EscapeAuthHeaderValue(string value)
 {
     return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+}
+
+static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configuration, bool isDevelopment)
+{
+    var defaultOrigins = new[] { "http://localhost:5173", "http://localhost:5174" };
+    if (!isDevelopment)
+    {
+        return defaultOrigins;
+    }
+
+    var configuredDevelopmentOrigins = configuration
+        .GetSection("Cors:DevelopmentAllowedOrigins")
+        .GetChildren()
+        .Select(child => child.Value)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Cast<string>()
+        .ToArray();
+
+    if (configuredDevelopmentOrigins.Length == 0 &&
+        !string.IsNullOrWhiteSpace(configuration["Cors:DevelopmentAllowedOrigins"]))
+    {
+        configuredDevelopmentOrigins = configuration["Cors:DevelopmentAllowedOrigins"]!
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    return defaultOrigins
+        .Concat(configuredDevelopmentOrigins)
+        .Where(origin => !string.IsNullOrWhiteSpace(origin))
+        .Select(origin => origin.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 }
 
 public partial class Program { }
