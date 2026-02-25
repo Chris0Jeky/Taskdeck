@@ -287,12 +287,14 @@ if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
         });
 }
 
+var corsAllowedOrigins = ResolveCorsAllowedOrigins(builder.Configuration, builder.Environment.IsDevelopment());
+
 // Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:5174")
+        policy.WithOrigins(corsAllowedOrigins.ToArray())
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -344,6 +346,57 @@ static string BuildWwwAuthenticateHeaderValue(string? error, string? errorDescri
 static string EscapeAuthHeaderValue(string value)
 {
     return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+}
+
+static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configuration, bool isDevelopment)
+{
+    var defaultOrigins = new[] { "http://localhost:5173", "http://localhost:5174" };
+    if (!isDevelopment)
+    {
+        return defaultOrigins;
+    }
+
+    var configuredDevelopmentOrigins = configuration
+        .GetSection("Cors:DevelopmentAllowedOrigins")
+        .GetChildren()
+        .Select(child => child.Value)
+        .OfType<string>()
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToArray();
+
+    if (configuredDevelopmentOrigins.Length == 0 &&
+        !string.IsNullOrWhiteSpace(configuration["Cors:DevelopmentAllowedOrigins"]))
+    {
+        configuredDevelopmentOrigins = configuration["Cors:DevelopmentAllowedOrigins"]!
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    return defaultOrigins
+        .Concat(configuredDevelopmentOrigins)
+        .Where(origin => !string.IsNullOrWhiteSpace(origin))
+        .Select(NormalizeCorsOrigin)
+        // Origin host matching is case-insensitive, so collapse mixed-case duplicates.
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+}
+
+static string NormalizeCorsOrigin(string origin)
+{
+    var trimmedOrigin = origin.Trim();
+    if (!Uri.TryCreate(trimmedOrigin, UriKind.Absolute, out var parsedOrigin))
+    {
+        throw new InvalidOperationException(
+            $"Invalid Cors:DevelopmentAllowedOrigins value \"{trimmedOrigin}\". Provide an absolute http(s) origin.");
+    }
+
+    if (!string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            $"Invalid Cors:DevelopmentAllowedOrigins value \"{trimmedOrigin}\". Only http and https schemes are supported.");
+    }
+
+    return parsedOrigin.GetLeftPart(UriPartial.Authority);
 }
 
 public partial class Program { }

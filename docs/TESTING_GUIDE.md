@@ -25,7 +25,8 @@ Companion Active Docs:
 Verification note:
 - backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
 - frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
-- frontend E2E totals remain from the latest successful 2026-02-24 run; local 2026-02-25 rerun was blocked before test execution due to port binding and CORS blockers (documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`)
+- frontend E2E totals were re-verified on 2026-02-25 via fallback frontend-port workflow (`TASKDECK_E2E_FRONTEND_PORT=5001`, `TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001`) with `23/23` passing
+- default local E2E startup on `localhost:5173` may still fail on restricted hosts (`listen EACCES`); use documented fallback workflow
 
 ## Backend Commands
 
@@ -85,6 +86,35 @@ Run E2E suite:
 cd frontend/taskdeck-web
 npx playwright test --reporter=line
 ```
+
+Fallback (alternate frontend port, keep default command unchanged):
+
+PowerShell:
+
+```powershell
+cd frontend/taskdeck-web
+$env:TASKDECK_E2E_FRONTEND_PORT='5001'
+$env:TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:5001'
+npx playwright test --reporter=line
+```
+
+Bash:
+
+```bash
+cd frontend/taskdeck-web
+TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:5001' npx playwright test --reporter=line
+```
+
+Optional E2E env overrides (Playwright config):
+- `TASKDECK_E2E_FRONTEND_HOST` (default `localhost`)
+- `TASKDECK_E2E_FRONTEND_PORT` (default `5173`)
+- `TASKDECK_E2E_FRONTEND_BASE_URL` (default `http://{host}:{port}`; must be `http://` with explicit port and no path/query/hash)
+- `TASKDECK_E2E_API_BASE_URL` (default `http://localhost:5000/api`; must be `http://` with explicit port and API path)
+- `TASKDECK_E2E_API_CORS_ORIGINS` (comma-separated additional origins merged with defaults: frontend origin plus `http://localhost:5174`; each value is passed to backend process as `Cors__DevelopmentAllowedOrigins__{index}`)
+
+Override behavior notes:
+- backend Playwright `webServer` readiness URL is derived from `TASKDECK_E2E_API_BASE_URL` as `{apiBaseUrl}/boards`
+- backend Playwright process startup binds to the same API origin via `ASPNETCORE_URLS`
 
 Troubleshooting note (Windows local environments):
 - if Playwright startup fails with `listen EACCES` for frontend port `5173`, the local host may block that port for user-space listeners.
