@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   fetchBoard: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastWarning: vi.fn(),
 }))
 
 vi.mock('../../api/starterPacksApi', () => ({
@@ -27,6 +28,7 @@ vi.mock('../../store/toastStore', () => ({
   useToastStore: () => ({
     success: mocks.toastSuccess,
     error: mocks.toastError,
+    warning: mocks.toastWarning,
   }),
 }))
 
@@ -63,6 +65,7 @@ function buildResult(overrides?: Record<string, unknown>) {
     actions: [],
     conflicts: [],
     hasConflicts: false,
+    hasBlockingConflicts: false,
     ...overrides,
   }
 }
@@ -170,7 +173,9 @@ describe('StarterPackCatalogModal', () => {
       expect.objectContaining({ dryRun: true })
     )
     expect(wrapper.text()).toContain('Dry-run Result')
-    expect(wrapper.text()).toContain('No conflicts')
+    expect(wrapper.text()).toContain('Preview ready')
+    expect(wrapper.text()).toContain('Planned create: 1')
+    expect(wrapper.text()).not.toContain('Applied: 1')
   })
 
   it('applies selected pack in one click and refreshes board', async () => {
@@ -198,13 +203,68 @@ describe('StarterPackCatalogModal', () => {
       expect.objectContaining({ dryRun: false })
     )
     expect(mocks.fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(mocks.toastSuccess).toHaveBeenCalled()
+    expect(mocks.toastWarning).not.toHaveBeenCalled()
     expect(wrapper.emitted('applied')).toBeTruthy()
+  })
+
+  it('applies with warning-first feedback when result contains only warning conflicts', async () => {
+    mocks.applyStarterPack.mockResolvedValue(
+      buildResult({
+        actions: [
+          { entityType: 'column', operation: 'create', key: 'Backlog', reason: 'Column will be created.' },
+          {
+            entityType: 'seedCard',
+            operation: 'skip',
+            key: 'Unresolvable seed @ Missing',
+            reason: 'Seed card references unresolved metadata.',
+          },
+        ],
+        conflicts: [
+          {
+            code: 'SeedCardColumnConflict',
+            path: '$.seedCards[0].columnName',
+            message: 'Seed card cannot resolve target column.',
+            existingValue: null,
+            incomingValue: 'Missing',
+            severity: 'warning',
+          },
+        ],
+        hasConflicts: true,
+        hasBlockingConflicts: false,
+      })
+    )
+
+    const wrapper = mount(StarterPackCatalogModal, {
+      props: {
+        boardId: 'board-1',
+        isOpen: true,
+      },
+    })
+
+    await waitForUi()
+
+    const applyButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Apply Starter Pack'))
+    expect(applyButton).toBeTruthy()
+
+    await applyButton!.trigger('click')
+    await waitForUi()
+
+    expect(mocks.fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(mocks.toastWarning).toHaveBeenCalled()
+    expect(wrapper.emitted('applied')).toBeTruthy()
+    expect(wrapper.text()).toContain('Applied with warnings')
+    expect(wrapper.text()).toContain('Skipped: 1')
+    expect(wrapper.text()).toContain('Warnings: 1')
   })
 
   it('renders conflict payload returned from apply endpoint', async () => {
     const conflictPayload = buildResult({
       applied: false,
       hasConflicts: true,
+      hasBlockingConflicts: true,
       conflicts: [
         {
           code: 'ColumnPositionConflict',
@@ -212,6 +272,7 @@ describe('StarterPackCatalogModal', () => {
           message: 'Position is already occupied',
           existingValue: 'Existing',
           incomingValue: 'Backlog',
+          severity: 'blocking',
         },
       ],
     })
@@ -240,6 +301,9 @@ describe('StarterPackCatalogModal', () => {
     await applyButton!.trigger('click')
     await waitForUi()
 
+    expect(wrapper.text()).toContain('Blocked by conflicts')
+    expect(wrapper.text()).toContain('Planned create: 0')
+    expect(wrapper.text()).toContain('Blocking')
     expect(wrapper.text()).toContain('ColumnPositionConflict')
     expect(mocks.fetchBoard).not.toHaveBeenCalled()
   })

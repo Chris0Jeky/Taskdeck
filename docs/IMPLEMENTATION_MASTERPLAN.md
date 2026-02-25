@@ -344,17 +344,21 @@ Delivered in the latest cycle:
    - added deployment verification script (`scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1`) covering secret-enforcement validation, reverse-proxy header checks, unauthorized-path checks, and startup/restart/shutdown reliability checks for the compose baseline
    - added explicit pass/fail matrix doc (`docs/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
    - expanded manual checklist coverage for non-automatable deployment controls (backend exposure posture, edge TLS termination posture, host restart rehearsal expectations)
-81. TST-18 Playwright frontend port-resolution hardening delivery:
+81. PACK-07 warning-first starter-pack apply UX delivery (`#176`):
+   - starter-pack apply conflict contract now includes severity (`blocking`/`warning`) and controller conflict responses now hard-stop only on blocking conflicts
+   - starter-pack apply service now marks non-blocking seed-card skip paths as warnings and preserves apply success when only warnings exist
+   - starter-pack modal now shows explicit applied/skipped/blocked/warnings outcome summaries with warning-first messaging, and backend/frontend regression coverage now locks warning-vs-blocking behavior
+82. TST-18 Playwright frontend port-resolution hardening delivery:
    - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports by preferring identity-verified running Taskdeck frontend listeners before bind probes
    - this removes local `baseURL` drift (`4173` to `5001`) observed when fallback port selection ran twice in the same test run
    - local Windows E2E gate now re-verifies with `npx playwright test --reporter=line` using fallback path (`5173` -> `4173` -> `5001`)
-82. FE-13 local dev server startup hardening delivery:
+83. FE-13 local dev server startup hardening delivery:
    - `npm run dev` now launches through a small Vite wrapper that auto-resolves restricted/unavailable local ports with fallback order `5173` -> `4173` -> `5001`
    - wrapper now selects the first bindable candidate port and skips occupied candidates for new Vite processes, preventing strict-port startup failures on stale listeners
    - wrapper now sets strict-port startup semantics by default, avoiding implicit Vite auto-increment drift when a requested port is occupied
    - explicit local overrides remain supported (`--host`, `--port`, `TASKDECK_DEV_PORT`) for reproducible manual debugging
    - manual local flows no longer require one-off fallback command rewrites when `localhost:5173` is blocked with `listen EACCES`
-83. OPS-19 container-image frontend dependency-policy unblock follow-through:
+84. OPS-19 container-image frontend dependency-policy unblock follow-through:
    - frontend npm dependency graph now enforces `ws@8.19.0` and `p-limit@2.3.0` via top-level npm overrides to prevent `ws-7.5.10` and `yocto-queue-0.1.0` fetches blocked by package security policy in container CI
    - refreshed lockfile keeps container `npm ci` deterministic and unblocks `.github/workflows/reusable-container-images.yml` frontend build stage
    - local Docker validation confirms `deploy/docker/frontend.Dockerfile` build-stage `npm ci` and `npm run build` both complete successfully with the override

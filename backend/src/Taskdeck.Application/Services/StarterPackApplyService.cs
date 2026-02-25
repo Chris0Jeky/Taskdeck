@@ -258,7 +258,8 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                     $"$.seedCards[{index}].columnName",
                     $"Seed card '{seedCard.Title}' references column '{seedCard.ColumnName}' that cannot be resolved.",
                     null,
-                    seedCard.ColumnName));
+                    seedCard.ColumnName,
+                    StarterPackConflictSeverity.Warning));
                 hasConflict = true;
             }
 
@@ -280,13 +281,19 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                         $"$.seedCards[{index}].labels[{labelIndex}]",
                         $"Seed card '{seedCard.Title}' references label '{labelName}' that cannot be resolved.",
                         null,
-                        labelName));
+                        labelName,
+                        StarterPackConflictSeverity.Warning));
                     hasConflict = true;
                 }
             }
 
             if (hasConflict)
             {
+                actions.Add(new StarterPackApplyActionDto(
+                    "seedCard",
+                    "skip",
+                    $"{seedCard.Title} @ {seedCard.ColumnName}",
+                    "Seed card references unresolved column or label metadata."));
                 continue;
             }
 
@@ -295,6 +302,13 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                     card.ColumnId == existingColumn.Id &&
                     string.Equals(card.Title, seedCard.Title, StringComparison.OrdinalIgnoreCase)))
             {
+                conflicts.Add(new StarterPackApplyConflictDto(
+                    "SeedCardAlreadyExistsConflict",
+                    $"$.seedCards[{index}]",
+                    $"Seed card '{seedCard.Title}' already exists in column '{seedCard.ColumnName}' and will be skipped.",
+                    $"{seedCard.Title} @ {seedCard.ColumnName}",
+                    null,
+                    StarterPackConflictSeverity.Warning));
                 actions.Add(new StarterPackApplyActionDto(
                     "seedCard",
                     "skip",
@@ -307,6 +321,13 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                 string.Equals(candidate.ColumnName, seedCard.ColumnName, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(candidate.SeedCard.Title, seedCard.Title, StringComparison.OrdinalIgnoreCase)))
             {
+                conflicts.Add(new StarterPackApplyConflictDto(
+                    "SeedCardDuplicateInManifestConflict",
+                    $"$.seedCards[{index}]",
+                    $"Seed card '{seedCard.Title}' is duplicated in column '{seedCard.ColumnName}' and will be skipped.",
+                    $"{seedCard.Title} @ {seedCard.ColumnName}",
+                    $"{seedCard.Title} @ {seedCard.ColumnName}",
+                    StarterPackConflictSeverity.Warning));
                 actions.Add(new StarterPackApplyActionDto(
                     "seedCard",
                     "skip",
@@ -331,7 +352,7 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
             actions,
             conflicts);
 
-        if (dto.DryRun || conflicts.Count > 0)
+        if (dto.DryRun || preview.HasBlockingConflicts)
         {
             return Result.Success(preview);
         }

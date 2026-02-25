@@ -10,6 +10,11 @@ Operational companion:
 
 ## Quick Rules
 
+### 0) MCP-first default
+- If an MCP tool and shell/CLI can both perform the task, use MCP by default.
+- Use shell/CLI only when MCP is unavailable, failing, or does not support the required operation.
+- When falling back, note the reason briefly in the work summary.
+
 ### 1) Prefer the right tool over guessing
 - OpenAI/Codex/OpenAI API questions -> `openaiDeveloperDocs` MCP
 - Third-party libraries/frameworks (.NET, ASP.NET Core, Vue, Vite, Playwright, etc.) -> `context7` MCP

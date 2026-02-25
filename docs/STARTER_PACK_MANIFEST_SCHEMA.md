@@ -1,6 +1,6 @@
 # Starter Pack Manifest Schema (PACK-01)
 
-Last Updated: 2026-02-20
+Last Updated: 2026-02-25
 
 This document defines the `v1` starter-pack manifest contract used by Taskdeck package foundations.
 
@@ -110,6 +110,22 @@ Current first-party coverage target:
 - Exactly three `board-blueprint` packs
 
 All first-party manifests are validated server-side through the same validator used by apply flows.
+
+## Apply Result Conflict Semantics (PACK-07)
+
+Starter-pack apply responses now distinguish blocking vs warning conflicts:
+
+- `hasConflicts`: `true` when any conflict exists (blocking or warning)
+- `hasBlockingConflicts`: `true` only when at least one blocking conflict exists
+- `conflicts[*].severity`: `blocking` or `warning`
+
+Decision rule for clients:
+- treat apply as blocked only when `hasBlockingConflicts` is `true`
+- do not treat `hasConflicts=true` as automatic hard-stop
+
+Operational intent:
+- warning conflicts are non-blocking and can coexist with `applied=true`
+- blocking conflicts keep apply in preview/non-applied posture and use `409` when `dryRun=false`
 
 ## Validation and Migration Constraints (PACK-04)
 
