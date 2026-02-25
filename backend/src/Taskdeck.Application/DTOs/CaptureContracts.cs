@@ -21,7 +21,12 @@ public record CaptureProvenanceV1(
     Guid? ProposalId = null,
     string? PromptVersion = null,
     string? Provider = null,
-    string? Model = null);
+    string? Model = null,
+    Guid? RequestedByUserId = null,
+    string? CorrelationId = null,
+    string? SourceSurface = null,
+    Guid? BoardId = null,
+    Guid? SessionId = null);
 
 public static class CaptureRequestContract
 {
@@ -34,6 +39,8 @@ public static class CaptureRequestContract
     public const int MaxPromptVersionLength = 64;
     public const int MaxProviderLength = 64;
     public const int MaxModelLength = 128;
+    public const int MaxAttributionCorrelationIdLength = 100;
+    public const int MaxSourceSurfaceLength = 32;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -204,6 +211,28 @@ public static class CaptureRequestContract
                 $"Capture model cannot exceed {MaxModelLength} characters");
         }
 
+        if (payload.Provenance?.CorrelationId?.Length > MaxAttributionCorrelationIdLength)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture attribution correlationId cannot exceed {MaxAttributionCorrelationIdLength} characters");
+        }
+
+        if (payload.Provenance?.SourceSurface?.Length > MaxSourceSurfaceLength)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture attribution source surface cannot exceed {MaxSourceSurfaceLength} characters");
+        }
+
+        if (!string.IsNullOrWhiteSpace(payload.Provenance?.SourceSurface) &&
+            !IsSupportedSourceSurface(payload.Provenance.SourceSurface))
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Unsupported capture attribution source surface '{payload.Provenance.SourceSurface}'");
+        }
+
         return Result.Success(payload);
     }
 
@@ -214,16 +243,34 @@ public static class CaptureRequestContract
         Guid? proposalId = null,
         string? promptVersion = null,
         string? provider = null,
-        string? model = null)
+        string? model = null,
+        Guid? requestedByUserId = null,
+        string? correlationId = null,
+        string? sourceSurface = null,
+        Guid? boardId = null,
+        Guid? sessionId = null)
     {
         if (captureItemId == Guid.Empty)
         {
             throw new DomainException(ErrorCodes.ValidationError, "Capture item ID cannot be empty");
         }
 
+        var existingProvenance = payload.Provenance;
+
         return payload with
         {
-            Provenance = new CaptureProvenanceV1(captureItemId, triageRunId, proposalId, promptVersion, provider, model)
+            Provenance = new CaptureProvenanceV1(
+                captureItemId,
+                triageRunId ?? existingProvenance?.TriageRunId,
+                proposalId ?? existingProvenance?.ProposalId,
+                promptVersion ?? existingProvenance?.PromptVersion,
+                provider ?? existingProvenance?.Provider,
+                model ?? existingProvenance?.Model,
+                requestedByUserId ?? existingProvenance?.RequestedByUserId,
+                correlationId ?? existingProvenance?.CorrelationId,
+                sourceSurface ?? existingProvenance?.SourceSurface,
+                boardId ?? existingProvenance?.BoardId,
+                sessionId ?? existingProvenance?.SessionId)
         };
     }
 
@@ -334,6 +381,13 @@ public static class CaptureRequestContract
         }
 
         return Result.Success();
+    }
+
+    private static bool IsSupportedSourceSurface(string sourceSurface)
+    {
+        return sourceSurface.Equals("chat", StringComparison.OrdinalIgnoreCase) ||
+               sourceSurface.Equals("capture", StringComparison.OrdinalIgnoreCase) ||
+               sourceSurface.Equals("worker", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class CapturePayloadWireModel
