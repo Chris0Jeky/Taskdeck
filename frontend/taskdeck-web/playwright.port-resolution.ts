@@ -70,6 +70,7 @@ const host = process.argv[1]
 const port = Number(process.argv[2])
 const markers = ${identityMarkersLiteral}
 const probeTimeoutMs = Number(process.argv[3])
+const maxProbeResponseBytes = ${maxProbeResponseBytes}
 
 let settled = false
 const settle = (statusCode) => {
