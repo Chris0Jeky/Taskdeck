@@ -350,7 +350,7 @@ test('board settings lifecycle should support rename archive unarchive and archi
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
 
   await page.goto('/workspace/archive')
-  await expect(page.getByRole('heading', { name: 'Archive' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
   const archivedBoardRow = page.locator('.td-archive-row').filter({ hasText: renamedBoardName }).first()
   await expect(archivedBoardRow).toBeVisible()
 
