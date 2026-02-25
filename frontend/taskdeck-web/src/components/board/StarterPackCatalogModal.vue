@@ -81,30 +81,24 @@ function normalizeConflictSeverity(conflict: StarterPackApplyConflict): 'blockin
 }
 
 const blockingConflictCount = computed(() => {
+  return resultConflicts.value.filter((conflict) => normalizeConflictSeverity(conflict) === 'blocking').length
+})
+
+const hasBlockingConflicts = computed(() => {
   if (!latestResult.value) {
-    return 0
+    return false
   }
 
   if (typeof latestResult.value.hasBlockingConflicts === 'boolean') {
-    if (!latestResult.value.hasBlockingConflicts) {
-      return 0
-    }
-
-    const blockingConflicts = resultConflicts.value.filter(
-      (conflict) => normalizeConflictSeverity(conflict) === 'blocking'
-    ).length
-
-    return blockingConflicts > 0 ? blockingConflicts : resultConflicts.value.length
+    return latestResult.value.hasBlockingConflicts
   }
 
-  return resultConflicts.value.filter((conflict) => normalizeConflictSeverity(conflict) === 'blocking').length
+  return blockingConflictCount.value > 0
 })
 
 const warningConflictCount = computed(() =>
   Math.max(resultConflicts.value.length - blockingConflictCount.value, 0)
 )
-
-const hasBlockingConflicts = computed(() => blockingConflictCount.value > 0)
 
 const actionSummary = computed(() => {
   const summary = { create: 0, skip: 0, other: 0 }
@@ -125,6 +119,14 @@ const actionSummary = computed(() => {
   }
 
   return summary
+})
+
+const createActionLabel = computed(() => {
+  if (!latestResult.value) {
+    return 'Planned create'
+  }
+
+  return latestResult.value.applied ? 'Applied' : 'Planned create'
 })
 
 const outcomeSummaryLabel = computed(() => {
@@ -364,11 +366,7 @@ async function applyPack() {
     const conflictResult = extractConflictResult(error)
     if (conflictResult) {
       latestResult.value = conflictResult
-      if (hasBlockingConflicts.value) {
-        toast.error('Starter pack apply is blocked by conflicts.')
-      } else {
-        await finalizeSuccessfulApply()
-      }
+      toast.error('Starter pack apply is blocked by conflicts.')
       return
     }
 
@@ -541,7 +539,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
                 <div class="mb-3 flex flex-wrap gap-2 text-xs text-gray-700">
                   <span class="rounded bg-green-100 px-2 py-1 font-medium text-green-700">
-                    Applied: {{ actionSummary.create }}
+                    {{ createActionLabel }}: {{ actionSummary.create }}
                   </span>
                   <span class="rounded bg-gray-100 px-2 py-1 font-medium text-gray-700">
                     Skipped: {{ actionSummary.skip }}
