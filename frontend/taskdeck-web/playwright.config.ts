@@ -97,7 +97,7 @@ function resolveFrontendConfig(): FrontendConfig {
   )
   const port = process.env.TASKDECK_E2E_FRONTEND_PORT
     ? parsePort(process.env.TASKDECK_E2E_FRONTEND_PORT, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
-    : resolveDefaultFrontendPort(host)
+    : resolveDefaultFrontendPort(host, { allowExistingFrontendReuse: !process.env.CI })
   const origin = buildHttpOrigin(host, port)
 
   return {

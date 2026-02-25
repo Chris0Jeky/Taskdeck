@@ -23,6 +23,7 @@ type ProbeOptions = {
 }
 
 type ResolveDefaultFrontendPortOptions = {
+  allowExistingFrontendReuse?: boolean
   bindProbe?: PortProbe
   connectProbe?: PortProbe
   fallbackPorts?: readonly number[]
@@ -37,10 +38,13 @@ export function resolveDefaultFrontendPort(
   const connectProbe = options?.connectProbe ?? canConnectToTaskdeckFrontend
   const bindProbe = options?.bindProbe ?? canBindPort
   const candidatePorts = options?.fallbackPorts ?? fallbackFrontendPorts
+  const allowExistingFrontendReuse = options?.allowExistingFrontendReuse ?? true
 
-  for (const candidatePort of candidatePorts) {
-    if (connectProbe(normalizedHost, candidatePort)) {
-      return candidatePort
+  if (allowExistingFrontendReuse) {
+    for (const candidatePort of candidatePorts) {
+      if (connectProbe(normalizedHost, candidatePort)) {
+        return candidatePort
+      }
     }
   }
 

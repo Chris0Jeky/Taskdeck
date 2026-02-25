@@ -42,6 +42,22 @@ describe('playwright frontend port resolution', () => {
     expect(bindProbe).toHaveBeenCalledTimes(3)
   })
 
+  it('prefers bindable candidates when existing frontend reuse is disabled', () => {
+    const connectProbe = vi.fn(() => true)
+    const bindProbe = vi.fn((_: string, port: number) => port === 5173)
+
+    const resolvedPort = resolveDefaultFrontendPort('localhost', {
+      allowExistingFrontendReuse: false,
+      connectProbe,
+      bindProbe,
+      fallbackPorts: [5173, 4173, 5001],
+    })
+
+    expect(resolvedPort).toBe(5173)
+    expect(connectProbe).not.toHaveBeenCalled()
+    expect(bindProbe).toHaveBeenCalledTimes(1)
+  })
+
   it('returns default port and emits fallback diagnostics when no candidate resolves', () => {
     const warnings: string[] = []
 
