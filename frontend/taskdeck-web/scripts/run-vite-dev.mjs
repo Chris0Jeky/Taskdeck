@@ -115,15 +115,16 @@ function parsePort(rawPort, source) {
 
 async function resolveDefaultPort(host) {
   for (const candidatePort of fallbackPorts) {
-    if (await canBindPort(host, candidatePort)) {
-      return candidatePort
-    }
-
     if (await canConnectToTaskdeckFrontend(host, candidatePort)) {
       console.warn(
         `[dev] detected existing Taskdeck frontend listener on ${buildHttpOrigin(host, candidatePort)}; ` +
           'skipping occupied port for new Vite process.',
       )
+      continue
+    }
+
+    if (await canBindPort(host, candidatePort)) {
+      return candidatePort
     }
   }
 
@@ -181,7 +182,7 @@ function parseHost(rawHost, source) {
     normalizedHost.includes('[') ||
     normalizedHost.includes(']') ||
     /[\u0000-\u001F\u007F]/.test(normalizedHost) ||
-    /[\s/?#'"`\\,;]/u.test(normalizedHost)
+    /[\s/?#'"`\\,;@]/u.test(normalizedHost)
   ) {
     throw new Error(
       `[dev] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
