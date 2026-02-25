@@ -36,6 +36,7 @@ describe('BoardSettingsModal', () => {
 
     mockStore = {
       updateBoard: vi.fn().mockResolvedValue(board),
+      deleteBoard: vi.fn().mockResolvedValue(undefined),
     }
 
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
@@ -188,7 +189,8 @@ describe('BoardSettingsModal', () => {
     await archiveButton?.trigger('click')
 
     expect(confirmSpy).toHaveBeenCalled()
-    expect(mockStore.updateBoard).not.toHaveBeenCalledWith('board-1', { isArchived: true })
+    expect(mockStore.updateBoard).not.toHaveBeenCalled()
+    expect(mockStore.deleteBoard).not.toHaveBeenCalled()
 
     confirmSpy.mockRestore()
   })
@@ -210,7 +212,8 @@ describe('BoardSettingsModal', () => {
 
     await wrapper.vm.$nextTick()
 
-    expect(mockStore.updateBoard).toHaveBeenCalledWith('board-1', { isArchived: true })
+    expect(mockStore.deleteBoard).toHaveBeenCalledWith('board-1')
+    expect(mockStore.updateBoard).not.toHaveBeenCalled()
     expect(wrapper.emitted('close')).toBeTruthy()
     expect(mockRouter.push).toHaveBeenCalledWith('/boards')
 
