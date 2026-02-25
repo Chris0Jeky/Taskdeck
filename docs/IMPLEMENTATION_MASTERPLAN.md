@@ -355,7 +355,7 @@ Delivered in the latest cycle:
    - explicit local overrides remain supported (`--host`, `--port`, `TASKDECK_DEV_PORT`) for reproducible manual debugging
    - manual local flows no longer require one-off fallback command rewrites when `localhost:5173` is blocked with `listen EACCES`
 83. OPS-19 container-image frontend dependency-policy unblock follow-through:
-   - frontend npm dependency graph now enforces `ws@8.19.0` via top-level npm overrides to prevent `ws-7.5.10` fetches blocked by package security policy in container CI
+   - frontend npm dependency graph now enforces `ws@8.19.0` and `p-limit@2.3.0` via top-level npm overrides to prevent `ws-7.5.10` and `yocto-queue-0.1.0` fetches blocked by package security policy in container CI
    - refreshed lockfile keeps container `npm ci` deterministic and unblocks `.github/workflows/reusable-container-images.yml` frontend build stage
    - local Docker validation confirms `deploy/docker/frontend.Dockerfile` build-stage `npm ci` and `npm run build` both complete successfully with the override
 
