@@ -47,7 +47,7 @@ Direction guardrails (explicit):
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core + SQLite
 - Core controllers: boards, columns, cards, labels
-- Extended controllers: auth, users, board-access, audit, export/import, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs
+- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
@@ -457,7 +457,7 @@ Automation and data:
 - capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); remaining capture-linked follow-through is tracked in `#81`, `#212`, and `#213`
 - premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
 - testing-harness wave guardrails are not yet implemented; tracked in `#255` to `#260`
-- outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to `#75`, `#77`, and `#175`
+- outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to delivered `#75` (import adapters) plus `#77` and `#175`
 
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
@@ -523,6 +523,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered FE-12 frontend coverage threshold gate (`#155`): enforced global + critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`), switched required frontend CI lane to thresholded coverage execution, and standardized JUnit+coverage artifact upload for triage.
 - Delivered COL-02 notification framework (`#72`): added notification domain/persistence + preferences model, shipped authenticated inbox/preferences/read-state APIs with preference-aware deduped event publication for mention/assignment/proposal-outcome families, integrated frontend inbox/preferences routes + stores, and expanded backend/frontend regression coverage.
 - Delivered COL-04 card comments/mentions workflow (`#74`): added threaded card comments with reply constraints and moderation-aware edit/delete policy, integrated mention parsing with board-scope user linking and notification publication, shipped board/card comment APIs + frontend modal interactions, and expanded backend/frontend regression coverage.
+- Delivered INT-01 external import adapters foundation (`#75`): added board-scoped external import endpoint with provider-registry orchestration, shipped CSV adapter path with outreach-contact mapping and deterministic dedupe-key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`), added dry-run/apply create-update-skip/conflict reporting and rollback-safe apply semantics, and documented mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
