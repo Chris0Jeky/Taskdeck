@@ -47,7 +47,7 @@ public sealed class OutboundWebhookSubscriptionConfiguration : IEntityTypeConfig
         builder.HasOne(subscription => subscription.CreatedByUser)
             .WithMany()
             .HasForeignKey(subscription => subscription.CreatedByUserId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(subscription => new { subscription.BoardId, subscription.IsActive });
         builder.HasIndex(subscription => subscription.CreatedAt);

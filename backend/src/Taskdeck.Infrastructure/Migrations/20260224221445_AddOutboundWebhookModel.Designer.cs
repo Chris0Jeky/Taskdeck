@@ -1307,7 +1307,7 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasOne("Taskdeck.Domain.Entities.User", "CreatedByUser")
                         .WithMany()
                         .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Board");
