@@ -80,6 +80,7 @@ npm run dev
 Notes:
 - `npm run dev` now auto-resolves frontend port with fallback order `5173` -> `4173` -> `5001` when a port is restricted or unavailable.
 - explicit overrides remain supported (for example `npm run dev -- --host localhost --port 5001` or `TASKDECK_DEV_PORT=5001 npm run dev`).
+- backend Development CORS defaults include localhost fallback ports (`4173`, `5001`) so login/API calls stay aligned when fallback startup is used.
 
 ## Frontend E2E
 
@@ -128,7 +129,7 @@ Override behavior notes:
 
 Troubleshooting note (Windows local environments):
 - if Playwright startup fails with `listen EACCES` for the frontend port, keep `TASKDECK_E2E_FRONTEND_PORT` unset so auto-fallback can select the next bindable port.
-- when auto-fallback is used, Playwright now resolves the same frontend port in both runner and worker processes by preferring already-listening candidate ports before bind probes.
+- when auto-fallback is used, Playwright now resolves the same frontend port in both runner and worker processes by preferring already-running Taskdeck frontend listeners (identity-verified) before bind probes.
 - if you explicitly set `TASKDECK_E2E_FRONTEND_PORT`, use `TASKDECK_E2E_API_CORS_ORIGINS` when needed so API preflight requests stay aligned with the chosen frontend origin.
 - investigation details and reproduction commands are documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 

@@ -58,7 +58,7 @@ Direction guardrails (explicit):
   - JWT challenge/forbidden handlers return `ApiErrorResponse` payloads for middleware-level `401/403` responses
   - `AuthenticatedControllerBase` for claim extraction and authenticated-user guardrails
   - request correlation middleware (`X-Request-Id`) with response echo and log scope propagation
-  - development CORS origin policy now keeps localhost defaults (`http://localhost:5173`, `http://localhost:5174`) and supports additive `Cors:DevelopmentAllowedOrigins` config overrides
+  - development CORS origin policy keeps localhost defaults (`http://localhost:5173`, `http://localhost:5174`), adds fallback localhost dev ports (`http://localhost:4173`, `http://localhost:5001`), and supports additive `Cors:DevelopmentAllowedOrigins` config overrides
 - Implemented automation stack:
   - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
   - `ArchiveRecoveryService`
@@ -412,7 +412,7 @@ Command:
 Result:
 - E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
 - 2026-02-25 local rerun now passes after frontend E2E startup hardening:
-  - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) and prefers already-listening candidate ports to avoid runner/worker baseURL drift.
+  - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) and only reuses already-listening ports when the listener is identity-verified as Taskdeck frontend, preventing runner/worker drift without attaching to unrelated services.
   - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 ### Total
@@ -500,7 +500,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Unified API error-response shape and HTTP error-code mapping in shared backend helpers.
 - Reduced duplicated frontend API/store logic by extracting shared query and error utilities.
 - Reconciled active docs and test totals after PR #23 merge.
-- Delivered development CORS configurability: default localhost origins remain allowed and development-only configured origins (`Cors:DevelopmentAllowedOrigins`) are now merged into the API allowlist with deterministic integration coverage.
+- Delivered development CORS configurability: default localhost origins remain allowed, development fallback localhost dev ports (`4173`, `5001`) are included for restricted-port workflows, and development-only configured origins (`Cors:DevelopmentAllowedOrigins`) are merged into the API allowlist with deterministic integration coverage.
 - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) and archived `docs/InReview/REPO_PACK` into dated `docs/archive/` bundles with updated canonical cross-links.
 - Resolved local frontend E2E gate blocker by hardening Playwright frontend port resolution to avoid runner/worker `baseURL` drift when fallback ports are used; investigation retained in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 - Hardened local frontend manual startup (`npm run dev`) with deterministic port fallback (`5173` -> `4173` -> `5001`) so restricted `5173` environments no longer fail with immediate `listen EACCES`.

@@ -337,6 +337,7 @@ Delivered in the latest cycle:
    - added backend regression coverage across domain/application/API/worker/repository webhook paths, including non-success dispatch retry/dead-letter branches
 79. API CORS development-origin configurability delivery:
    - API CORS composition now keeps default localhost origins (`http://localhost:5173`, `http://localhost:5174`) as baseline behavior
+   - development fallback localhost origins (`http://localhost:4173`, `http://localhost:5001`) are now included so restricted local frontend-port runs remain preflight-safe
    - development runtime now accepts additive allowed origins from configuration key `Cors:DevelopmentAllowedOrigins`
    - API integration coverage now verifies both default-origin allowance and development-configured alternate-origin allowance via deterministic in-memory config overrides
 80. OPS-16 deployment/container hardening verification matrix delivery (`#142`):
@@ -344,7 +345,7 @@ Delivered in the latest cycle:
    - added explicit pass/fail matrix doc (`docs/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
    - expanded manual checklist coverage for non-automatable deployment controls (backend exposure posture, edge TLS termination posture, host restart rehearsal expectations)
 81. TST-18 Playwright frontend port-resolution hardening delivery:
-   - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports by preferring already-listening candidate ports before bind probes
+   - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports by preferring identity-verified running Taskdeck frontend listeners before bind probes
    - this removes local `baseURL` drift (`4173` to `5001`) observed when fallback port selection ran twice in the same test run
    - local Windows E2E gate now re-verifies with `npx playwright test --reporter=line` using fallback path (`5173` -> `4173` -> `5001`)
 82. FE-13 local dev server startup hardening delivery:
