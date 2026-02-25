@@ -7,7 +7,7 @@
     "node": ">=24.13.1 <25"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node ./scripts/run-vite-dev.mjs",
     "lint": "eslint . --ext .ts,.vue --max-warnings=0",
     "typecheck": "vue-tsc -b",
     "build": "npm run typecheck && vite build",
