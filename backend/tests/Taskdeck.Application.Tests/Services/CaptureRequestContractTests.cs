@@ -158,6 +158,7 @@ public class CaptureRequestContractTests
         var captureId = Guid.NewGuid();
         var triageRunId = Guid.NewGuid();
         var proposalId = Guid.NewGuid();
+        var requestedByUserId = Guid.NewGuid();
         var payload = new CapturePayloadV1(
             CaptureRequestContract.CurrentSchemaVersion,
             CaptureSource.Typed,
@@ -170,7 +171,10 @@ public class CaptureRequestContractTests
             proposalId,
             "triage.v1",
             "OpenAI",
-            "gpt-4o-mini");
+            "gpt-4o-mini",
+            requestedByUserId,
+            "req-correlation",
+            "capture");
 
         linked.Provenance.Should().NotBeNull();
         linked.Provenance!.CaptureItemId.Should().Be(captureId);
@@ -179,6 +183,39 @@ public class CaptureRequestContractTests
         linked.Provenance.PromptVersion.Should().Be("triage.v1");
         linked.Provenance.Provider.Should().Be("OpenAI");
         linked.Provenance.Model.Should().Be("gpt-4o-mini");
+        linked.Provenance.RequestedByUserId.Should().Be(requestedByUserId);
+        linked.Provenance.CorrelationId.Should().Be("req-correlation");
+        linked.Provenance.SourceSurface.Should().Be("capture");
+    }
+
+    [Fact]
+    public void WithProvenance_ShouldPreserveExistingAttribution_WhenOnlyTriageMetadataIsUpdated()
+    {
+        var captureId = Guid.NewGuid();
+        var requestedByUserId = Guid.NewGuid();
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "capture text",
+            Provenance: new CaptureProvenanceV1(
+                captureId,
+                RequestedByUserId: requestedByUserId,
+                CorrelationId: "req-preserve",
+                SourceSurface: "capture"));
+
+        var linked = CaptureRequestContract.WithProvenance(
+            payload,
+            captureId,
+            triageRunId: Guid.NewGuid(),
+            proposalId: Guid.NewGuid(),
+            promptVersion: "triage.v1",
+            provider: "Mock",
+            model: "mock-default");
+
+        linked.Provenance.Should().NotBeNull();
+        linked.Provenance!.RequestedByUserId.Should().Be(requestedByUserId);
+        linked.Provenance.CorrelationId.Should().Be("req-preserve");
+        linked.Provenance.SourceSurface.Should().Be("capture");
     }
 
     [Fact]
@@ -221,6 +258,27 @@ public class CaptureRequestContractTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("Capture model cannot exceed");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldFail_WhenAttributionSourceSurfaceIsUnsupported()
+    {
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "sourceSurface": "desktop-widget"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Unsupported capture attribution source surface");
     }
 
     [Fact]
