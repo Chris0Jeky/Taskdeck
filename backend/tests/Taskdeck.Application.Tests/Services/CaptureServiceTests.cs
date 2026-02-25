@@ -57,7 +57,7 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeTrue();
         persisted.Should().NotBeNull();
         persisted!.RequestType.Should().Be(CaptureRequestContract.RequestTypeV1);
-        var parsedPayload = CaptureRequestContract.ParsePayload(persisted.Payload);
+        var parsedPayload = CaptureRequestContract.ParsePayload(persisted.Payload, allowServerAttributionFields: true);
         parsedPayload.IsSuccess.Should().BeTrue();
         parsedPayload.Value.Source.Should().Be(CaptureSource.Paste);
         parsedPayload.Value.Text.Should().Be("quick capture text");
