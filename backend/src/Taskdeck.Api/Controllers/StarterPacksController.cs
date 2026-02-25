@@ -88,7 +88,7 @@ public class StarterPacksController : AuthenticatedControllerBase
             return result.ToErrorActionResult();
         }
 
-        if (!dto.DryRun && result.Value.HasConflicts)
+        if (!dto.DryRun && result.Value.HasBlockingConflicts)
         {
             return Conflict(result.Value);
         }
