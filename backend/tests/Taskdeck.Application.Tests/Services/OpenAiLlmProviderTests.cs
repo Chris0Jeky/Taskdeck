@@ -16,8 +16,52 @@ public class OpenAiLlmProviderTests
     public async Task CompleteAsync_ShouldReturnParsedCompletion_WhenOpenAiResponseIsValid()
     {
         var settings = BuildSettings();
-        var handler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.OK)
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        string? providerUserToken = null;
+        string? correlationHeader = null;
+        string? sourceSurfaceHeader = null;
+        string? userTokenHeader = null;
+        string? boardTokenHeader = null;
+        string? sessionTokenHeader = null;
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.CorrelationHeader, out var correlationValues))
+            {
+                correlationHeader = correlationValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.SourceSurfaceHeader, out var sourceSurfaceValues))
+            {
+                sourceSurfaceHeader = sourceSurfaceValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.UserTokenHeader, out var userTokenValues))
+            {
+                userTokenHeader = userTokenValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.BoardTokenHeader, out var boardTokenValues))
+            {
+                boardTokenHeader = boardTokenValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.SessionTokenHeader, out var sessionTokenValues))
+            {
+                sessionTokenHeader = sessionTokenValues.SingleOrDefault();
+            }
+
+            var body = request.Content is null
+                ? "{}"
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("user", out var userElement))
+            {
+                providerUserToken = userElement.GetString();
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
                     """
@@ -36,7 +80,8 @@ public class OpenAiLlmProviderTests
                     """,
                     Encoding.UTF8,
                     "application/json")
-            });
+            };
+        });
         var httpClient = new HttpClient(handler);
         var provider = new OpenAiLlmProvider(httpClient, settings, NullLogger<OpenAiLlmProvider>.Instance);
 
@@ -44,7 +89,13 @@ public class OpenAiLlmProviderTests
             new List<ChatCompletionMessage>
             {
                 new("User", "create card for llm provider setup")
-            }));
+            },
+            Attribution: new LlmRequestAttribution(
+                userId,
+                "req-openai-attribution",
+                LlmRequestSourceSurface.Chat,
+                boardId,
+                sessionId)));
 
         result.Content.Should().Contain("lane-based decomposition");
         result.TokensUsed.Should().Be(42);
@@ -52,6 +103,14 @@ public class OpenAiLlmProviderTests
         result.ActionIntent.Should().Be("card.create");
         result.Provider.Should().Be("OpenAI");
         result.Model.Should().Be(settings.OpenAi.Model);
+        providerUserToken.Should().NotBeNullOrWhiteSpace();
+        providerUserToken.Should().NotContain(userId.ToString("N"), "provider user attribution should be pseudonymous");
+        providerUserToken.Should().StartWith("usr_");
+        correlationHeader.Should().Be("req-openai-attribution");
+        sourceSurfaceHeader.Should().Be("chat");
+        userTokenHeader.Should().StartWith("usr_");
+        boardTokenHeader.Should().StartWith("brd_");
+        sessionTokenHeader.Should().StartWith("ses_");
     }
 
     [Fact]
