@@ -2,14 +2,17 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import http from '../api/http'
 import { opsApi } from '../api/opsApi'
+import { useSessionStore } from '../store/sessionStore'
 import { useToastStore } from '../store/toastStore'
 import type { CommandTemplate, LogEntry } from '../types/ops'
 import { normalizeCommandRunStatus } from '../utils/ops'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
+import { normalizeBoardRole } from '../utils/roles'
 
 const toast = useToastStore()
+const session = useSessionStore()
 
 const activeTab = ref<'cli' | 'endpoints' | 'logs'>('cli')
 
@@ -37,17 +40,60 @@ let logRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
+const currentRoleLabel = computed(() => (
+  session.defaultRole === null
+    ? 'Unknown'
+    : normalizeBoardRole(session.defaultRole)
+))
+
+const currentRoleValue = computed(() => (
+  session.defaultRole === null ? 3 : session.defaultRole
+))
+
+function getTemplateRoleValue(role: string): number {
+  switch (role.trim().toLowerCase()) {
+    case 'owner':
+      return 0
+    case 'admin':
+      return 1
+    case 'editor':
+      return 2
+    default:
+      return 3
+  }
+}
+
+function isTemplateRunnableForCurrentRole(template: CommandTemplate): boolean {
+  return currentRoleValue.value <= getTemplateRoleValue(template.requiredRole)
+}
+
+const runnableTemplates = computed(() => (
+  templates.value.filter((template) => isTemplateRunnableForCurrentRole(template))
+))
+
+const restrictedTemplates = computed(() => (
+  templates.value.filter((template) => !isTemplateRunnableForCurrentRole(template))
+))
+
 const templateOptions = computed(() => buildInputAssistOptions(
   templates.value.map((template) => ({
     value: template.name,
     label: template.name,
-    helperText: `${template.requiredRole} role`,
+    helperText: `${template.requiredRole} role ${isTemplateRunnableForCurrentRole(template) ? '| runnable' : '| restricted'}`,
     keywords: [template.description, ...template.acceptedParameters],
   }))
 ))
 
 const selectedTemplateMeta = computed(() => {
   return templates.value.find((template) => template.name === selectedTemplate.value) ?? null
+})
+
+const selectedTemplateIsRunnable = computed(() => {
+  if (!selectedTemplateMeta.value) {
+    return false
+  }
+
+  return isTemplateRunnableForCurrentRole(selectedTemplateMeta.value)
 })
 
 function stopLogAutoRefresh() {
@@ -72,7 +118,7 @@ async function loadTemplates() {
   try {
     templates.value = await opsApi.getTemplates()
     if (!selectedTemplate.value && templates.value.length > 0) {
-      selectedTemplate.value = templates.value[0]!.name
+      selectedTemplate.value = (runnableTemplates.value[0] ?? templates.value[0])!.name
     }
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to load command templates').message)
@@ -127,8 +173,25 @@ async function handleCliRun() {
 
     cliOutput.value.push('')
   } catch (e: unknown) {
-    const msg = getErrorDisplay(e, 'Failed to run template').message
+    const display = getErrorDisplay(e, 'Failed to run template')
+    const msg = display.message
     cliOutput.value.push(`Error: ${msg}`)
+    if (display.code === 'Forbidden' && selectedTemplateMeta.value) {
+      cliOutput.value.push(
+        `Role context: you are signed in as ${currentRoleLabel.value}. ` +
+        `${selectedTemplateMeta.value.name} requires ${selectedTemplateMeta.value.requiredRole}.`
+      )
+
+      if (runnableTemplates.value.length > 0) {
+        cliOutput.value.push(
+          `Runnable templates for your role: ${runnableTemplates.value.map((template) => template.name).join(', ')}`
+        )
+      }
+
+      cliOutput.value.push(
+        'Need elevated access? Open Workspace > Settings and follow the operator role-assignment guidance.'
+      )
+    }
     cliOutput.value.push('')
     toast.error(msg)
   } finally {
@@ -225,6 +288,19 @@ onBeforeUnmount(() => {
   <div class="td-ops">
     <h1 class="td-page-title">Ops Console</h1>
 
+    <div class="td-role-context">
+      <div class="td-role-context__title">Current role: {{ currentRoleLabel }}</div>
+      <div class="td-role-context__body">
+        Runnable templates:
+        <span v-if="runnableTemplates.length > 0">{{ runnableTemplates.map(template => template.name).join(', ') }}</span>
+        <span v-else>none</span>
+      </div>
+      <div v-if="restrictedTemplates.length > 0" class="td-role-context__hint">
+        Restricted templates require a higher role. Open <strong>Workspace &gt; Settings</strong> to confirm your role,
+        then ask an owner/admin for elevated access when needed.
+      </div>
+    </div>
+
     <div class="td-tabs">
       <button :class="['td-tab', { 'td-tab--active': activeTab === 'cli' }]" @click="activeTab = 'cli'">CLI Runner</button>
       <button :class="['td-tab', { 'td-tab--active': activeTab === 'endpoints' }]" @click="activeTab = 'endpoints'">Endpoint Explorer</button>
@@ -246,6 +322,7 @@ onBeforeUnmount(() => {
         <div class="td-template-meta__title">{{ selectedTemplateMeta.description }}</div>
         <div class="td-template-meta__details">
           Role: {{ selectedTemplateMeta.requiredRole }} |
+          Access: {{ selectedTemplateIsRunnable ? 'Runnable for your role' : 'Restricted for your role' }} |
           Timeout: {{ selectedTemplateMeta.timeoutSeconds }}s |
           Params: {{ selectedTemplateMeta.acceptedParameters.length > 0 ? selectedTemplateMeta.acceptedParameters.join(', ') : 'None' }}
         </div>
@@ -259,6 +336,9 @@ onBeforeUnmount(() => {
       <button class="td-btn td-btn--primary td-btn--sm" @click="handleCliRun" :disabled="cliRunning">
         {{ cliRunning ? 'Running...' : 'Run Template' }}
       </button>
+      <div v-if="selectedTemplateMeta && !selectedTemplateIsRunnable" class="td-cli-warning">
+        This template is restricted for {{ currentRoleLabel }}. You can still run it to see full permission guidance.
+      </div>
 
       <div class="td-cli-output">
         <div v-if="cliOutput.length === 0" class="td-cli-placeholder">Command output will appear here.</div>
@@ -328,6 +408,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .td-ops { max-width: 980px; }
 .td-page-title { font-size: var(--td-font-2xl); font-weight: 700; margin-bottom: var(--td-space-6); color: var(--td-text-primary); }
+.td-role-context { margin-bottom: var(--td-space-4); padding: var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); background: var(--td-surface-secondary); }
+.td-role-context__title { font-size: var(--td-font-sm); font-weight: 600; color: var(--td-text-primary); }
+.td-role-context__body { margin-top: 2px; font-size: var(--td-font-xs); color: var(--td-text-secondary); }
+.td-role-context__hint { margin-top: var(--td-space-1); font-size: var(--td-font-xs); color: var(--td-text-tertiary); }
 .td-tabs { display: flex; gap: 0; margin-bottom: var(--td-space-4); border-bottom: 2px solid var(--td-border-default); }
 .td-tab { padding: var(--td-space-2) var(--td-space-4); border: none; background: transparent; font-size: var(--td-font-sm); font-weight: 500; cursor: pointer; color: var(--td-text-secondary); border-bottom: 2px solid transparent; margin-bottom: -2px; }
 .td-tab--active { color: var(--td-color-primary); border-bottom-color: var(--td-color-primary); }
@@ -349,6 +433,7 @@ onBeforeUnmount(() => {
 .td-btn--secondary { background: var(--td-surface-tertiary); color: var(--td-text-primary); border: 1px solid var(--td-border-default); }
 .td-btn--secondary:hover:not(:disabled) { background: var(--td-surface-hover); }
 .td-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.td-cli-warning { margin-top: var(--td-space-2); font-size: var(--td-font-xs); color: var(--td-color-warning); }
 .td-cli-output { margin-top: var(--td-space-3); background: #0b1220; color: #dbe6ff; border-radius: var(--td-radius-md); padding: var(--td-space-3); font-family: monospace; min-height: 200px; max-height: 360px; overflow-y: auto; }
 .td-cli-line { white-space: pre-wrap; line-height: 1.5; }
 .td-cli-placeholder { color: #8fa3c8; }
