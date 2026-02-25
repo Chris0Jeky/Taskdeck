@@ -96,4 +96,55 @@ public class OutboundWebhookDeliveryTests
         delivery.NextAttemptAt.Should().Be(nextAttemptAt);
         delivery.LastErrorMessage.Should().Contain("interrupted on shutdown");
     }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenEventTypeExceedsMaxLength()
+    {
+        var eventType = $"{new string('a', 120)}x";
+
+        var act = () => new OutboundWebhookDelivery(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            eventType,
+            "{\"event\":\"card.updated\"}");
+
+        act.Should().Throw<DomainException>()
+            .Where(ex => ex.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public void ScheduleRetry_ShouldTruncateErrorMessageToPersistenceLimit()
+    {
+        var delivery = new OutboundWebhookDelivery(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "card.updated",
+            "{\"event\":\"card.updated\"}");
+        delivery.MarkProcessing();
+        var longError = new string('x', 1200);
+
+        delivery.ScheduleRetry(longError, DateTimeOffset.UtcNow.AddMinutes(1));
+
+        delivery.LastErrorMessage.Should().NotBeNull();
+        delivery.LastErrorMessage!.Length.Should().Be(1000);
+    }
+
+    [Fact]
+    public void MarkDeadLetter_ShouldTruncateErrorMessageToPersistenceLimit()
+    {
+        var delivery = new OutboundWebhookDelivery(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "card.updated",
+            "{\"event\":\"card.updated\"}");
+        delivery.MarkProcessing();
+        var longError = new string('y', 1300);
+
+        delivery.MarkDeadLetter(longError, 500);
+
+        delivery.Status.Should().Be(WebhookDeliveryStatus.DeadLetter);
+        delivery.LastResponseStatusCode.Should().Be(500);
+        delivery.LastErrorMessage.Should().NotBeNull();
+        delivery.LastErrorMessage!.Length.Should().Be(1000);
+    }
 }

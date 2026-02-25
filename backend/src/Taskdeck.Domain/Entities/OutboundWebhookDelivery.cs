@@ -6,6 +6,9 @@ namespace Taskdeck.Domain.Entities;
 
 public class OutboundWebhookDelivery : Entity
 {
+    private const int MaxEventTypeLength = 120;
+    private const int MaxErrorMessageLength = 1000;
+
     public Guid SubscriptionId { get; private set; }
     public Guid BoardId { get; private set; }
     public string EventType { get; private set; } = string.Empty;
@@ -56,9 +59,15 @@ public class OutboundWebhookDelivery : Entity
         if (string.IsNullOrWhiteSpace(payload))
             throw new DomainException(ErrorCodes.ValidationError, "Payload is required.");
 
+        var normalizedEventType = eventType.Trim().ToLowerInvariant();
+        if (normalizedEventType.Length > MaxEventTypeLength)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"Event type must be {MaxEventTypeLength} characters or fewer.");
+
         SubscriptionId = subscriptionId;
         BoardId = boardId;
-        EventType = eventType.Trim().ToLowerInvariant();
+        EventType = normalizedEventType;
         Payload = payload;
         Status = WebhookDeliveryStatus.Pending;
         NextAttemptAt = DateTimeOffset.UtcNow;
@@ -99,7 +108,7 @@ public class OutboundWebhookDelivery : Entity
         Status = WebhookDeliveryStatus.Pending;
         NextAttemptAt = nextAttemptAt;
         LastResponseStatusCode = responseStatusCode;
-        LastErrorMessage = errorMessage.Trim();
+        LastErrorMessage = NormalizeErrorMessage(errorMessage);
         Touch();
     }
 
@@ -114,7 +123,7 @@ public class OutboundWebhookDelivery : Entity
         AttemptCount += 1;
         Status = WebhookDeliveryStatus.DeadLetter;
         LastResponseStatusCode = responseStatusCode;
-        LastErrorMessage = errorMessage.Trim();
+        LastErrorMessage = NormalizeErrorMessage(errorMessage);
         Touch();
     }
 
@@ -128,9 +137,20 @@ public class OutboundWebhookDelivery : Entity
         LastResponseStatusCode = responseStatusCode;
         if (!string.IsNullOrWhiteSpace(errorMessage))
         {
-            LastErrorMessage = errorMessage.Trim();
+            LastErrorMessage = NormalizeErrorMessage(errorMessage);
         }
 
         Touch();
+    }
+
+    private static string NormalizeErrorMessage(string errorMessage)
+    {
+        var trimmed = errorMessage.Trim();
+        if (trimmed.Length <= MaxErrorMessageLength)
+        {
+            return trimmed;
+        }
+
+        return trimmed[..MaxErrorMessageLength];
     }
 }
