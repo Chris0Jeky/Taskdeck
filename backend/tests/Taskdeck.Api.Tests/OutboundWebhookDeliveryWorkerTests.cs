@@ -194,6 +194,97 @@ public class OutboundWebhookDeliveryWorkerTests
         delivery.Status.Should().Be(WebhookDeliveryStatus.Pending);
     }
 
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldScheduleRetry_WhenEndpointReturnsNonSuccessAndRetriesRemain()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "https://example.com/webhook",
+            "secret",
+            ["card.*"]);
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true);
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler
+        {
+            OnSend = (_, _) => new HttpResponseMessage(HttpStatusCode.BadGateway)
+        };
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var beforeDispatch = DateTimeOffset.UtcNow;
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings
+            {
+                MaxBatchSize = 5,
+                QueuePollIntervalSeconds = 1,
+                MaxRetries = 3,
+                RetryBackoffSeconds = [12]
+            },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            NullLogger<OutboundWebhookDeliveryWorker>.Instance);
+
+        await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        handler.RequestCount.Should().Be(1);
+        delivery.Status.Should().Be(WebhookDeliveryStatus.Pending);
+        delivery.AttemptCount.Should().Be(1);
+        delivery.LastResponseStatusCode.Should().Be((int)HttpStatusCode.BadGateway);
+        delivery.LastErrorMessage.Should().Contain("HTTP 502");
+        delivery.NextAttemptAt.Should().BeOnOrAfter(beforeDispatch.AddSeconds(11));
+    }
+
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldDeadLetter_WhenEndpointReturnsNonSuccessAtRetryLimit()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "https://example.com/webhook",
+            "secret",
+            ["card.*"]);
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true);
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler
+        {
+            OnSend = (_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        };
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings
+            {
+                MaxBatchSize = 5,
+                QueuePollIntervalSeconds = 1,
+                MaxRetries = 1
+            },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            NullLogger<OutboundWebhookDeliveryWorker>.Instance);
+
+        await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        handler.RequestCount.Should().Be(1);
+        delivery.Status.Should().Be(WebhookDeliveryStatus.DeadLetter);
+        delivery.AttemptCount.Should().Be(1);
+        delivery.LastResponseStatusCode.Should().Be((int)HttpStatusCode.ServiceUnavailable);
+        delivery.LastErrorMessage.Should().Contain("HTTP 503");
+    }
+
     private static ServiceProvider BuildServiceProvider(IUnitOfWork unitOfWork)
     {
         var services = new ServiceCollection();
