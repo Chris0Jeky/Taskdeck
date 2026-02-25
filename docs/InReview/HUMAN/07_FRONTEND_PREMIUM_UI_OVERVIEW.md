@@ -8,7 +8,7 @@ This is a **design + implementation playbook** for making Taskdeck’s frontend 
 - accessible (keyboard-first, WCAG-aligned target sizes & focus)
 
 You will find repo-ready specs under:
-`docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/`
+`docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/`
 
 ## How to use this pack (recommended)
 1) Read `UI_VISION_AND_PRINCIPLES.md` to lock your UX thesis.
@@ -32,3 +32,4 @@ That buys you tolerance for minor rough edges while you iterate — but only if 
 References:
 - NNGroup on Aesthetic-Usability Effect: https://www.nngroup.com/articles/aesthetic-usability-effect/
 - NNGroup heuristics (status visibility, consistency, error prevention): https://www.nngroup.com/articles/ten-usability-heuristics/
+

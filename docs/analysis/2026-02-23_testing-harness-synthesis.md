@@ -11,13 +11,13 @@ Canonical sources of truth for active project state and execution order:
 
 ## Source Materials Reviewed
 
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/README.md`
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/01_TESTING_REVIEW_AND_PRIORITIES.md`
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/02_TEST_SCENARIOS_BACKLOG.md`
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/03_TESTING_ARCHITECTURE_VNEXT.md`
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/04_GUARDRAILS_AND_GATES_PLAN.md`
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/05_OPENAI_HARNESS_ENGINEERING_ALIGNMENT.md`
-- `docs/InReview/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/06_ISSUE_SEEDS_TESTING_AND_HARNESS_WAVE_1.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/README.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/01_TESTING_REVIEW_AND_PRIORITIES.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/02_TEST_SCENARIOS_BACKLOG.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/03_TESTING_ARCHITECTURE_VNEXT.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/04_GUARDRAILS_AND_GATES_PLAN.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/05_OPENAI_HARNESS_ENGINEERING_ALIGNMENT.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/taskdeck_testing_harness_improvement_pack_2026-02-23/06_ISSUE_SEEDS_TESTING_AND_HARNESS_WAVE_1.md`
 
 ## Reconciliation Summary
 
@@ -66,3 +66,4 @@ When implementation starts/lands, update:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+

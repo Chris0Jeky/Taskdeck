@@ -12,18 +12,18 @@ Canonical sources of truth for active project state and execution order:
 ## Source Materials Reviewed
 
 - `docs/InReview/HUMAN/07_FRONTEND_PREMIUM_UI_OVERVIEW.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/README.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/UI_VISION_AND_PRINCIPLES.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/LIBRARIES_AND_STACK_DECISIONS.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/DESIGN_SYSTEM_TOKENS_THEMES.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/COMPONENT_PRIMITIVES_SPEC.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/UX_FLOWS_AND_MAPS.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/ACCESSIBILITY_KEYBOARD_SPEC.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/MOTION_MICROINTERACTIONS_SPEC.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/PERFORMANCE_RESPONSIVENESS_FRONTEND.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/QUALITY_GATES_AND_VISUAL_TESTING.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/ISSUE_SEEDS_FRONTEND_UX_WAVE.md`
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/PROMOTION_CHECKLIST_FRONTEND_WAVE.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/README.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/UI_VISION_AND_PRINCIPLES.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/LIBRARIES_AND_STACK_DECISIONS.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/DESIGN_SYSTEM_TOKENS_THEMES.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/COMPONENT_PRIMITIVES_SPEC.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/UX_FLOWS_AND_MAPS.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/ACCESSIBILITY_KEYBOARD_SPEC.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/MOTION_MICROINTERACTIONS_SPEC.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/PERFORMANCE_RESPONSIVENESS_FRONTEND.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/QUALITY_GATES_AND_VISUAL_TESTING.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/ISSUE_SEEDS_FRONTEND_UX_WAVE.md`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/PROMOTION_CHECKLIST_FRONTEND_WAVE.md`
 
 ## Extracted Direction
 
@@ -79,3 +79,4 @@ When implementation starts/lands, update:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md` (keyboard/focus scripts)
 - `docs/TESTING_GUIDE.md` (visual/performance/lint commands as applicable)
+

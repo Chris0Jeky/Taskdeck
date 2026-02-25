@@ -51,14 +51,12 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 
 ## Working Notes (Non-authoritative)
 
-- `personalNotes.txt`
-  - Idea capture only. Must be reconciled through `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` before execution.
 - `analysis/`
   - Dated repository analysis snapshots and follow-through mapping notes (non-authoritative unless promoted into active docs).
   - includes `analysis/2026-02-23_testing-harness-synthesis.md` for testing-harness wave reconciliation (`#254` to `#260`).
   - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
 - `InReview/`
-  - Staging area for human briefs and analysis packs under review before promotion into active docs (`STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, testing/checklists).
+  - Staging area for human briefs and currently active in-review materials before promotion into active docs (`STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, testing/checklists).
 
 ## Archive
 
@@ -66,6 +64,10 @@ All superseded planning packs, snapshots, and historical notes live under:
 - `archive/README.md`
 - `archive/2026-02-13_phase4-doc-consolidation/`
 - `archive/2026-02-16_docs-curation/`
+- `archive/2026-02-25_docs-cleanup/`
+  - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) promoted/reconciled into canonical docs and issue wave execution.
+- `archive/2026-02-25_inreview-repo-pack/`
+  - Archived historical `REPO_PACK` planning/seeding bundle after promotion into canonical docs + issue tracker waves.
 
 ## Governance Rules
 

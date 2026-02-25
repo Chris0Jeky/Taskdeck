@@ -18,13 +18,14 @@ Companion Active Docs:
   - API integration: 262
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 377/377 passing
+- Frontend unit: 378/378 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1287/1287 passing
+- Combined automated total: 1288/1288 passing
 
 Verification note:
 - backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
-- frontend totals remain from the latest recorded 2026-02-24 verification cycle
+- frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
+- frontend E2E totals remain from the latest successful 2026-02-24 run; local 2026-02-25 rerun was blocked before test execution due to port binding and CORS blockers (documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`)
 
 ## Backend Commands
 
@@ -84,6 +85,11 @@ Run E2E suite:
 cd frontend/taskdeck-web
 npx playwright test --reporter=line
 ```
+
+Troubleshooting note (Windows local environments):
+- if Playwright startup fails with `listen EACCES` for frontend port `5173`, the local host may block that port for user-space listeners.
+- using a temporary alternate frontend port also requires matching backend CORS origin configuration; otherwise API preflight requests fail before E2E tests execute.
+- investigation details and reproduction commands are documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 Run concurrency harness spec only:
 

@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-02-24
+Last Updated: 2026-02-25
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -221,7 +221,7 @@ Run these checks even if they currently fail; log outcome explicitly.
 
 ## K. Manual Findings Regression Pack (MAN-2026-02-21)
 
-Use this section to retest the exact findings captured in `docs/notesFromManualTesting.txt`.
+Use this section to retest the exact findings captured in `docs/archive/2026-02-25_docs-cleanup/notesFromManualTesting.txt`.
 Issue wave:
 - umbrella: `#173`
 - mapped issues: `#174`, `#175`, `#176`, `#177`, `#178`, `#179`
