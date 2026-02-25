@@ -27,10 +27,8 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
                     $"""
                     SELECT d.*
                     FROM OutboundWebhookDeliveries AS d
-                    INNER JOIN OutboundWebhookSubscriptions AS s ON s.Id = d.SubscriptionId
                     WHERE d.Status = {(int)WebhookDeliveryStatus.Pending}
                       AND d.NextAttemptAt <= {now}
-                      AND s.IsActive = 1
                     ORDER BY d.NextAttemptAt ASC, d.CreatedAt ASC
                     LIMIT {boundedLimit}
                     """)
@@ -42,8 +40,7 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
             .Include(delivery => delivery.Subscription)
             .Where(delivery =>
                 delivery.Status == WebhookDeliveryStatus.Pending &&
-                delivery.NextAttemptAt <= now &&
-                delivery.Subscription.IsActive)
+                delivery.NextAttemptAt <= now)
             .OrderBy(delivery => delivery.NextAttemptAt)
             .ThenBy(delivery => delivery.CreatedAt)
             .Take(boundedLimit)
@@ -90,11 +87,9 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
                     $"""
                     SELECT d.*
                     FROM OutboundWebhookDeliveries AS d
-                    INNER JOIN OutboundWebhookSubscriptions AS s ON s.Id = d.SubscriptionId
                     WHERE d.Status = {(int)WebhookDeliveryStatus.Processing}
                       AND d.LastAttemptAt IS NOT NULL
                       AND d.LastAttemptAt <= {staleBefore}
-                      AND s.IsActive = 1
                     ORDER BY d.LastAttemptAt ASC
                     LIMIT {boundedLimit}
                     """)
@@ -107,8 +102,7 @@ public sealed class OutboundWebhookDeliveryRepository : Repository<OutboundWebho
             .Where(delivery =>
                 delivery.Status == WebhookDeliveryStatus.Processing &&
                 delivery.LastAttemptAt.HasValue &&
-                delivery.LastAttemptAt <= staleBefore &&
-                delivery.Subscription.IsActive)
+                delivery.LastAttemptAt <= staleBefore)
             .OrderBy(delivery => delivery.LastAttemptAt)
             .Take(boundedLimit)
             .ToListAsync(cancellationToken);
