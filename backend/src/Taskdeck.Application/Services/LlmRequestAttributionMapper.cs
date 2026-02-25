@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -11,6 +12,7 @@ public static class LlmRequestAttributionMapper
     public const string BoardTokenHeader = "x-taskdeck-board-token";
     public const string SessionTokenHeader = "x-taskdeck-session-token";
     private const int MaxCorrelationLength = 100;
+    private const string CorrelationIdTagName = "taskdeck.correlation_id";
 
     public static string ResolveCorrelationId(string? correlationId)
     {
@@ -20,9 +22,25 @@ public static class LlmRequestAttributionMapper
         }
 
         var trimmed = correlationId.Trim();
-        return trimmed.Length <= MaxCorrelationLength
+        var limited = trimmed.Length <= MaxCorrelationLength
             ? trimmed
             : trimmed[..MaxCorrelationLength];
+
+        return IsValidCorrelationId(limited)
+            ? limited
+            : Guid.NewGuid().ToString("N");
+    }
+
+    public static string ResolveCorrelationIdFromActivity()
+    {
+        var correlationFromActivity = Activity.Current?.GetTagItem(CorrelationIdTagName)?.ToString();
+        if (!string.IsNullOrWhiteSpace(correlationFromActivity))
+        {
+            return ResolveCorrelationId(correlationFromActivity);
+        }
+
+        var traceId = Activity.Current?.TraceId.ToString();
+        return ResolveCorrelationId(traceId);
     }
 
     public static string ResolveSourceSurface(LlmRequestSourceSurface sourceSurface)
@@ -74,5 +92,21 @@ public static class LlmRequestAttributionMapper
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(value.ToString("N")));
         var tokenBody = Convert.ToHexString(hashBytes[..12]).ToLowerInvariant();
         return $"{prefix}_{tokenBody}";
+    }
+
+    private static bool IsValidCorrelationId(string correlationId)
+    {
+        foreach (var ch in correlationId)
+        {
+            if (char.IsLetterOrDigit(ch))
+                continue;
+
+            if (ch is '-' or '_' or '.' or ':' or '/')
+                continue;
+
+            return false;
+        }
+
+        return true;
     }
 }
