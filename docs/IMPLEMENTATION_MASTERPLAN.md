@@ -350,6 +350,8 @@ Delivered in the latest cycle:
    - local Windows E2E gate now re-verifies with `npx playwright test --reporter=line` using fallback path (`5173` -> `4173` -> `5001`)
 82. FE-13 local dev server startup hardening delivery:
    - `npm run dev` now launches through a small Vite wrapper that auto-resolves restricted/unavailable local ports with fallback order `5173` -> `4173` -> `5001`
+   - wrapper reuses occupied candidate ports only when Taskdeck frontend identity markers are present, preventing unrelated-service contamination
+   - wrapper now sets strict-port startup semantics by default, avoiding implicit Vite auto-increment drift when a requested port is occupied
    - explicit local overrides remain supported (`--host`, `--port`, `TASKDECK_DEV_PORT`) for reproducible manual debugging
    - manual local flows no longer require one-off fallback command rewrites when `localhost:5173` is blocked with `listen EACCES`
 83. OPS-19 container-image frontend dependency-policy unblock follow-through:
