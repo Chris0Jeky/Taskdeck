@@ -6,7 +6,7 @@ Scope: local execution of the frontend full gate (`lint`, `coverage`, `typecheck
 ## Summary
 
 Frontend lint, coverage, typecheck, and production build passed.
-Frontend E2E could not execute due two sequential local-environment blockers:
+Frontend E2E could not execute due to two sequential local-environment blockers:
 
 1. frontend dev server bind failure on `localhost:5173` (`listen EACCES`)
 2. CORS preflight rejection when temporarily moving frontend to `localhost:5001`
