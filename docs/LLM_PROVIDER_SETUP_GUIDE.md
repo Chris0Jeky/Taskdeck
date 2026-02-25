@@ -92,7 +92,8 @@ Optional:
 - provider adapters return deterministic fallback responses when upstream calls fail
 - capture triage provenance persists `promptVersion`, `provider`, and `model`
 - managed-key attribution metadata is server-derived and spoof-resistant:
-  - capture payload identity fields (`userId`/`ownerUserId`/`requestedByUserId`/`actor*`) are rejected
+  - `/api/capture/items` ignores unknown actor fields because create payloads are strongly model-bound
+  - `/api/llm-queue` raw capture payload parsing rejects actor identity fields (`userId`/`ownerUserId`/`requestedByUserId`/`actor*`) and client-supplied provenance attribution fields
   - provider mapping uses pseudonymous user tokens (no raw API secrets or personal identifiers)
 
 ## Test Coverage Expectations (Implemented)
@@ -104,7 +105,8 @@ Optional:
 - API integration coverage:
   - capture triage provenance includes provider/model
   - chat flow validated using a non-mock provider stub with attribution assertions
-  - capture create rejects client-supplied actor identity payload fields
+  - capture create ignores client-supplied actor identity payload fields
+  - queue ingest rejects spoofed provenance attribution fields
 
 ## Security and Trust Constraints
 
