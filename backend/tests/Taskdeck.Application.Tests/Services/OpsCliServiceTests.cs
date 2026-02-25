@@ -48,6 +48,10 @@ public class OpsCliServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("requires role 'admin'");
+        result.ErrorMessage.Should().Contain("current role is 'editor'");
+        result.ErrorMessage.Should().Contain("Runnable templates for your role: health.check");
+        result.ErrorMessage.Should().Contain("Workspace > Settings");
     }
 
     [Fact]
