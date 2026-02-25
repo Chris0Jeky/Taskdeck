@@ -162,7 +162,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .td-section-desc { font-size: var(--td-font-sm); color: var(--td-text-secondary); margin-bottom: var(--td-space-4); }
 .td-info-grid { display: flex; flex-direction: column; gap: var(--td-space-3); }
 .td-info-row { display: flex; justify-content: space-between; align-items: center; padding: var(--td-space-2) 0; border-bottom: 1px solid var(--td-border-default); }
-.td-info-row--stacked { align-items: flex-start; gap: var(--td-space-3); }
+.td-info-row--stacked { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--td-space-3); }
 .td-info-label { font-size: var(--td-font-sm); color: var(--td-text-secondary); font-weight: 500; }
 .td-info-value { font-size: var(--td-font-sm); color: var(--td-text-primary); }
 .td-mono { font-family: monospace; font-size: var(--td-font-xs); }
@@ -185,4 +185,3 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .td-flag-label { font-size: var(--td-font-sm); color: var(--td-text-primary); }
 .td-checkbox { width: 18px; height: 18px; cursor: pointer; }
 </style>
-
