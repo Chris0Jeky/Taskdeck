@@ -95,9 +95,26 @@ function resolveFrontendConfig(): FrontendConfig {
     process.env.TASKDECK_E2E_FRONTEND_HOST ?? defaultFrontendHost,
     'TASKDECK_E2E_FRONTEND_HOST',
   )
-  const port = process.env.TASKDECK_E2E_FRONTEND_PORT
-    ? parsePort(process.env.TASKDECK_E2E_FRONTEND_PORT, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
-    : resolveDefaultFrontendPort(host, { allowExistingFrontendReuse: !process.env.CI })
+  const explicitFrontendPort = process.env.TASKDECK_E2E_FRONTEND_PORT
+  const resolvedFrontendPort = process.env.TASKDECK_E2E_RESOLVED_FRONTEND_PORT
+
+  const port = explicitFrontendPort
+    ? parsePort(explicitFrontendPort, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
+    : resolvedFrontendPort
+      ? parsePort(
+          resolvedFrontendPort,
+          defaultFrontendPort,
+          'TASKDECK_E2E_RESOLVED_FRONTEND_PORT',
+        )
+      : resolveDefaultFrontendPort(host, {
+          allowExistingFrontendReuse: !process.env.CI,
+        })
+
+  if (!explicitFrontendPort && !resolvedFrontendPort) {
+    // Keep runner/worker baseURL aligned by reusing the first resolved port value.
+    process.env.TASKDECK_E2E_RESOLVED_FRONTEND_PORT = String(port)
+  }
+
   const origin = buildHttpOrigin(host, port)
 
   return {

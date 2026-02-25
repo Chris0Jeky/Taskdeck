@@ -116,7 +116,7 @@ const request = http.request(
         return
       }
 
-      if (observedBytes > ${maxProbeResponseBytes}) {
+      if (observedBytes > maxProbeResponseBytes) {
         response.destroy()
         settle(1)
       }
@@ -251,7 +251,7 @@ export function parseFrontendHost(rawHost: string, source: string): string {
     normalizedHost.includes('[') ||
     normalizedHost.includes(']') ||
     containsControlCharacters(normalizedHost) ||
-    /[\s/?#'"`\\,;]/u.test(normalizedHost)
+    /[\s/?#'"`\\,;@]/u.test(normalizedHost)
   ) {
     throw new Error(
       `[e2e config] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,

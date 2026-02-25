@@ -84,6 +84,7 @@ describe('playwright frontend port resolution', () => {
     expect(() => parseFrontendHost('http://localhost', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('localhost/path', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('local host', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
+    expect(() => parseFrontendHost('user@localhost', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('localhost:5173', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('localhost\u0000', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('   ', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
