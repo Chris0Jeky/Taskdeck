@@ -289,6 +289,11 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
 
             if (hasConflict)
             {
+                actions.Add(new StarterPackApplyActionDto(
+                    "seedCard",
+                    "skip",
+                    $"{seedCard.Title} @ {seedCard.ColumnName}",
+                    "Seed card references unresolved column or label metadata."));
                 continue;
             }
 
