@@ -36,7 +36,6 @@ describe('BoardSettingsModal', () => {
 
     mockStore = {
       updateBoard: vi.fn().mockResolvedValue(board),
-      deleteBoard: vi.fn().mockResolvedValue(undefined),
     }
 
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
@@ -76,11 +75,10 @@ describe('BoardSettingsModal', () => {
 
     const nameInput = wrapper.find('#board-name') as any
     const descriptionInput = wrapper.find('#board-description') as any
-    const archivedCheckbox = wrapper.find('#board-archived') as any
-
     expect(nameInput.element.value).toBe('Test Board')
     expect(descriptionInput.element.value).toBe('Test description')
-    expect(archivedCheckbox.element.checked).toBe(false)
+    expect(wrapper.text()).toContain('Lifecycle')
+    expect(wrapper.text()).toContain('Active')
   })
 
   it('should emit close event when close button is clicked', async () => {
@@ -186,16 +184,16 @@ describe('BoardSettingsModal', () => {
 
     const archiveButton = wrapper
       .findAll('button')
-      .find((btn) => btn.text().includes('Archive Board'))
+      .find((btn) => btn.text().includes('Move to Archive'))
     await archiveButton?.trigger('click')
 
     expect(confirmSpy).toHaveBeenCalled()
-    expect(mockStore.deleteBoard).not.toHaveBeenCalled()
+    expect(mockStore.updateBoard).not.toHaveBeenCalledWith('board-1', { isArchived: true })
 
     confirmSpy.mockRestore()
   })
 
-  it('should call deleteBoard and navigate when archiving is confirmed', async () => {
+  it('should archive and navigate when archiving is confirmed', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const wrapper = mount(BoardSettingsModal, {
@@ -207,19 +205,19 @@ describe('BoardSettingsModal', () => {
 
     const archiveButton = wrapper
       .findAll('button')
-      .find((btn) => btn.text().includes('Archive Board'))
+      .find((btn) => btn.text().includes('Move to Archive'))
     await archiveButton?.trigger('click')
 
     await wrapper.vm.$nextTick()
 
-    expect(mockStore.deleteBoard).toHaveBeenCalledWith('board-1')
+    expect(mockStore.updateBoard).toHaveBeenCalledWith('board-1', { isArchived: true })
     expect(wrapper.emitted('close')).toBeTruthy()
     expect(mockRouter.push).toHaveBeenCalledWith('/boards')
 
     confirmSpy.mockRestore()
   })
 
-  it('should disable archive action when board is already archived', async () => {
+  it('should show restore action when board is archived', () => {
     const archivedBoard = { ...board, isArchived: true }
 
     const wrapper = mount(BoardSettingsModal, {
@@ -229,35 +227,36 @@ describe('BoardSettingsModal', () => {
       },
     })
 
-    const archiveButton = wrapper
+    const restoreButton = wrapper
       .findAll('button')
-      .find((btn) => btn.text().includes('Archive Board'))
+      .find((btn) => btn.text().includes('Restore Board'))
 
-    expect((archiveButton?.element as HTMLButtonElement).disabled).toBe(true)
+    expect(restoreButton?.exists()).toBe(true)
   })
 
-  it('should handle archived board toggle', async () => {
+  it('should restore board when lifecycle action is confirmed for archived board', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const archivedBoard = { ...board, isArchived: true }
+
     const wrapper = mount(BoardSettingsModal, {
       props: {
-        board,
+        board: archivedBoard,
         isOpen: true,
       },
     })
 
-    const archivedCheckbox = wrapper.find('#board-archived')
-    await archivedCheckbox.setValue(true)
-
-    const saveButton = wrapper
+    const restoreButton = wrapper
       .findAll('button')
-      .find((btn) => btn.text().includes('Save Changes'))
-    await saveButton?.trigger('click')
+      .find((btn) => btn.text().includes('Restore Board'))
+    await restoreButton?.trigger('click')
 
     expect(mockStore.updateBoard).toHaveBeenCalledWith(
       'board-1',
-      expect.objectContaining({
-        isArchived: true,
-      })
+      { isArchived: false }
     )
+    expect(mockRouter.push).not.toHaveBeenCalled()
+
+    confirmSpy.mockRestore()
   })
 
   it('should only send changed fields to updateBoard', async () => {
