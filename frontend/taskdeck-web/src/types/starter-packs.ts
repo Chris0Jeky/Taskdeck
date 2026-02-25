@@ -62,6 +62,7 @@ export interface StarterPackApplyConflict {
   message: string
   existingValue: string | null
   incomingValue: string | null
+  severity?: 'blocking' | 'warning' | string
 }
 
 export interface StarterPackApplyResult {
@@ -72,6 +73,7 @@ export interface StarterPackApplyResult {
   actions: StarterPackApplyAction[]
   conflicts: StarterPackApplyConflict[]
   hasConflicts?: boolean
+  hasBlockingConflicts?: boolean
 }
 
 export interface StarterPackCatalogEntry {
