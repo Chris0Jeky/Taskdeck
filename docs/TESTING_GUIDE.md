@@ -108,9 +108,13 @@ TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:
 Optional E2E env overrides (Playwright config):
 - `TASKDECK_E2E_FRONTEND_HOST` (default `localhost`)
 - `TASKDECK_E2E_FRONTEND_PORT` (default `5173`)
-- `TASKDECK_E2E_FRONTEND_BASE_URL` (default `http://{host}:{port}`)
-- `TASKDECK_E2E_API_BASE_URL` (default `http://localhost:5000/api`)
+- `TASKDECK_E2E_FRONTEND_BASE_URL` (default `http://{host}:{port}`; must be `http://` with explicit port and no path/query/hash)
+- `TASKDECK_E2E_API_BASE_URL` (default `http://localhost:5000/api`; must be `http://` with explicit port and API path)
 - `TASKDECK_E2E_API_CORS_ORIGINS` (comma-separated additional origins merged with defaults: frontend origin plus `http://localhost:5174`; each value is passed to backend process as `Cors__DevelopmentAllowedOrigins__{index}`)
+
+Override behavior notes:
+- backend Playwright `webServer` readiness URL is derived from `TASKDECK_E2E_API_BASE_URL` as `{apiBaseUrl}/boards`
+- backend Playwright process startup binds to the same API origin via `ASPNETCORE_URLS`
 
 Troubleshooting note (Windows local environments):
 - if Playwright startup fails with `listen EACCES` for frontend port `5173`, the local host may block that port for user-space listeners.
