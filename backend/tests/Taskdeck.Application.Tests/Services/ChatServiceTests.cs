@@ -399,4 +399,77 @@ public class ChatServiceTests
         _llmProviderMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default), Times.Never);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
     }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldPassServerDerivedAttributionToProvider()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Attribution session", boardId);
+        ChatCompletionRequest? capturedRequest = null;
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Callback<ChatCompletionRequest, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new LlmCompletionResult("Assistant response", 12, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("Summarize today's priorities"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Attribution.Should().NotBeNull();
+        capturedRequest.Attribution!.UserId.Should().Be(userId);
+        capturedRequest.Attribution.SourceSurface.Should().Be(LlmRequestSourceSurface.Chat);
+        capturedRequest.Attribution.BoardId.Should().Be(boardId);
+        capturedRequest.Attribution.SessionId.Should().Be(session.Id);
+        capturedRequest.Attribution.CorrelationId.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_ShouldPassServerDerivedAttributionToProvider()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Attribution stream", boardId);
+        ChatCompletionRequest? capturedRequest = null;
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                capturedRequest = request;
+                return StreamEvents();
+            });
+
+        var observed = new List<LlmTokenEvent>();
+        await foreach (var token in _service.StreamResponseAsync(session.Id, userId, default))
+        {
+            observed.Add(token);
+        }
+
+        observed.Should().ContainSingle();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Attribution.Should().NotBeNull();
+        capturedRequest.Attribution!.UserId.Should().Be(userId);
+        capturedRequest.Attribution.SourceSurface.Should().Be(LlmRequestSourceSurface.Chat);
+        capturedRequest.Attribution.BoardId.Should().Be(boardId);
+        capturedRequest.Attribution.SessionId.Should().Be(session.Id);
+        capturedRequest.Attribution.CorrelationId.Should().NotBeNullOrWhiteSpace();
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> StreamEvents()
+    {
+        yield return new LlmTokenEvent("token", true);
+        await Task.CompletedTask;
+    }
 }
