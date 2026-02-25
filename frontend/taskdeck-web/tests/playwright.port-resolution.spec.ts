@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildHttpOrigin,
+  canBindPort,
+  canConnectToTaskdeckFrontend,
   defaultFrontendPort,
   parseFrontendHost,
   resolveDefaultFrontendPort,
@@ -68,5 +70,58 @@ describe('playwright frontend port resolution', () => {
 
   it('formats IPv6 origins with bracketed authority', () => {
     expect(buildHttpOrigin('::1', 5173)).toBe('http://[::1]:5173')
+  })
+
+  it('connect probe reports spawn failures and still resolves when a later host succeeds', () => {
+    const errors: string[] = []
+    const probeCalls: string[] = []
+
+    const result = canConnectToTaskdeckFrontend('localhost', 4173, {
+      onProbeError: (message) => errors.push(message),
+      probeRunner: (candidateHost, _port, probeScript) => {
+        probeCalls.push(candidateHost)
+
+        if (candidateHost === 'localhost') {
+          expect(probeScript).toContain('<title>taskdeck-web</title>')
+          expect(probeScript).toContain('/src/main.ts')
+          return { error: new Error('spawn failed'), status: null }
+        }
+
+        if (candidateHost === '127.0.0.1') {
+          return { status: 1 }
+        }
+
+        return { status: 0 }
+      },
+    })
+
+    expect(result).toBe(true)
+    expect(probeCalls).toEqual(['localhost', '127.0.0.1', '::1'])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('frontend identity probe spawn failed')
+    expect(errors[0]).toContain('localhost:4173')
+  })
+
+  it('bind probe returns false when all hosts fail and reports spawn errors once per failure', () => {
+    const errors: string[] = []
+    const probeCalls: string[] = []
+
+    const result = canBindPort('localhost', 5001, {
+      onProbeError: (message) => errors.push(message),
+      probeRunner: (candidateHost) => {
+        probeCalls.push(candidateHost)
+        if (candidateHost === 'localhost') {
+          return { error: new Error('bind probe spawn failed'), status: null }
+        }
+
+        return { status: 1 }
+      },
+    })
+
+    expect(result).toBe(false)
+    expect(probeCalls).toEqual(['localhost', '127.0.0.1', '::1'])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('frontend bind probe spawn failed')
+    expect(errors[0]).toContain('localhost:5001')
   })
 })
