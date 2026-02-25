@@ -172,7 +172,8 @@ describe('ArchiveView', () => {
     const restoreBoardButton = wrapper
       .findAll('button')
       .find((button) => button.text().includes('Restore Board'))
-    await restoreBoardButton?.trigger('click')
+    expect(restoreBoardButton).toBeDefined()
+    await restoreBoardButton!.trigger('click')
     await waitForAsyncUi()
 
     expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
@@ -200,7 +201,8 @@ describe('ArchiveView', () => {
     const hideButton = wrapper
       .findAll('button')
       .find((button) => button.text().includes('Hide'))
-    await hideButton?.trigger('click')
+    expect(hideButton).toBeDefined()
+    await hideButton!.trigger('click')
     await waitForAsyncUi()
 
     expect(wrapper.text()).not.toContain('Board Hidden Candidate')
@@ -210,7 +212,8 @@ describe('ArchiveView', () => {
     const showHiddenButton = wrapper
       .findAll('button')
       .find((button) => button.text().includes('Show Hidden Boards'))
-    await showHiddenButton?.trigger('click')
+    expect(showHiddenButton).toBeDefined()
+    await showHiddenButton!.trigger('click')
     await waitForAsyncUi()
 
     expect(wrapper.text()).toContain('Board Hidden Candidate')
