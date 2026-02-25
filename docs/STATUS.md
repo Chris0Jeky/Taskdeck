@@ -376,7 +376,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-25 (backend + frontend unit/build refreshed; frontend E2E latest successful run from 2026-02-24)
+Verification Date: 2026-02-25 (backend + frontend unit/build + frontend E2E refreshed)
 
 ### Backend (Executed)
 
@@ -411,10 +411,9 @@ Command:
 
 Result:
 - E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
-- 2026-02-25 local rerun was blocked before test execution:
-  - Playwright frontend web server startup failed on `localhost:5173` with `listen EACCES`.
-  - Temporary local port override (`localhost:5001`) then failed API preflight due to CORS origin mismatch (`http://localhost:5001` not allowed).
-  - Investigation record: `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+- 2026-02-25 local rerun now passes after frontend E2E startup hardening:
+  - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) and prefers already-listening candidate ports to avoid runner/worker baseURL drift.
+  - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 ### Total
 
@@ -503,7 +502,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Reconciled active docs and test totals after PR #23 merge.
 - Delivered development CORS configurability: default localhost origins remain allowed and development-only configured origins (`Cors:DevelopmentAllowedOrigins`) are now merged into the API allowlist with deterministic integration coverage.
 - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) and archived `docs/InReview/REPO_PACK` into dated `docs/archive/` bundles with updated canonical cross-links.
-- Documented local frontend E2E gate blockers (port bind `EACCES` on `5173` and alternate-port CORS mismatch) in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+- Resolved local frontend E2E gate blocker by hardening Playwright frontend port resolution to avoid runner/worker `baseURL` drift when fallback ports are used; investigation retained in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 - Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
 - Added CI hardening parity updates: concurrency cancellation, frontend typecheck/build enforcement, TRX/JUnit failure artifacts, and package/browser caches.
 - Delivered OPS-19 CI topology first pass (`#168`): migrated required pipeline entrypoint to `.github/workflows/ci-required.yml` and extracted docs-governance lane into reusable workflow `.github/workflows/reusable-docs-governance.yml`.
