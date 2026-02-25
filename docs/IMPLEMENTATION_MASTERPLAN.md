@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-24  
+Last Updated: 2026-02-25  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -49,9 +49,9 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 662 passing
-   - Frontend unit: 317 passing
-   - E2E: 21 passing
+   - Backend: 887 passing
+   - Frontend unit: 377 passing
+   - E2E: 23 passing
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
@@ -328,7 +328,12 @@ Delivered in the latest cycle:
    - added provider-registry external import orchestration (`IExternalImportAdapter`, `IExternalImportService`) so new providers can be added without core import-service rewrite
    - shipped CSV adapter baseline with outreach-contact profile mapping and deterministic dedupe key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`)
    - added board-scoped authenticated import endpoint (`POST /api/boards/{boardId}/imports/external`) with dry-run/apply result contracts (`create/update/skip/conflicts`) and rollback-safe apply behavior
-   - added backend regression coverage for malformed CSV, duplicate input handling, deterministic upsert behavior, and rollback safety, plus operator-facing mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`
+   - added backend regression coverage for malformed CSV, duplicate input handling, deterministic upsert behavior, rollback safety, archived-board rejection behavior, and CSV payload/row guardrails, plus operator-facing mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`
+78. INT-02 webhook integration security model delivery (`#76`):
+   - added board-scoped outbound webhook subscription and delivery contracts (`POST/GET/PATCH/DELETE /api/boards/{boardId}/webhooks`) with authz-safe ownership and revocation handling
+   - added mutation-event queueing and signed webhook dispatch (`X-Taskdeck-Webhook-*` headers) with HTTPS/default host safety checks and localhost gating controls
+   - added worker/runtime hardening for atomic claim/reload flow, non-success response retry scheduling, dead-letter terminal handling, and stale-processing recovery
+   - added backend regression coverage across domain/application/API/worker/repository webhook paths, including non-success dispatch retry/dead-letter branches
 
 ## Roadmap by Horizon
 
