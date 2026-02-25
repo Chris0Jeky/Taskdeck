@@ -1,6 +1,6 @@
 # Import Adapters Guide
 
-Last Updated: 2026-02-24
+Last Updated: 2026-02-25
 
 ## Scope
 
@@ -48,6 +48,10 @@ Behavior:
 - `dryRun=true`: preview only, no mutation.
 - `dryRun=false`: apply only when no conflicts exist.
 - If a `csv.*Column` mapping is explicitly provided and that header does not exist in the CSV header row, the request fails with `ValidationError`.
+- CSV payload guardrails are enforced before parse output is accepted:
+  - max payload size: `1048576` bytes (UTF-8)
+  - max non-empty row count: `5001` rows (header + up to `5000` data rows)
+  - exceeding either guardrail fails the request with `ValidationError` and a limit-specific message.
 
 ## Outreach Mapping Preset
 
@@ -94,6 +98,7 @@ Representative conflict codes:
 `path` points to row/field context (for example `$.rows[4].last_touch_at`).
 Where available, `incomingValue` and `existingValue` are populated to make conflict resolution actionable.
 `last_touch_at` parsing is deterministic and restricted to ISO-style formats (`yyyy-MM-dd`, RFC3339/ISO date-time).
+Payload-bound violations (max CSV size/row count) are request-level `ValidationError` outcomes and are not emitted as row conflicts.
 
 ## Adapter Extensibility
 
