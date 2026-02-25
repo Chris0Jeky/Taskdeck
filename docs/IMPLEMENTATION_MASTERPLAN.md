@@ -347,6 +347,10 @@ Delivered in the latest cycle:
    - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports by preferring already-listening candidate ports before bind probes
    - this removes local `baseURL` drift (`4173` to `5001`) observed when fallback port selection ran twice in the same test run
    - local Windows E2E gate now re-verifies with `npx playwright test --reporter=line` using fallback path (`5173` -> `4173` -> `5001`)
+82. FE-13 local dev server startup hardening delivery:
+   - `npm run dev` now launches through a small Vite wrapper that auto-resolves restricted/unavailable local ports with fallback order `5173` -> `4173` -> `5001`
+   - explicit local overrides remain supported (`--host`, `--port`, `TASKDECK_DEV_PORT`) for reproducible manual debugging
+   - manual local flows no longer require one-off fallback command rewrites when `localhost:5173` is blocked with `listen EACCES`
 
 ## Roadmap by Horizon
 
