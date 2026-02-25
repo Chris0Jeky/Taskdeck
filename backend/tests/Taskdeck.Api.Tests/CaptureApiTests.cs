@@ -317,7 +317,7 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
-        var payload = CaptureRequestContract.ParsePayload(persistedItem.Payload);
+        var payload = CaptureRequestContract.ParsePayload(persistedItem.Payload, allowServerAttributionFields: true);
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
         payload.Value.Provenance!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
