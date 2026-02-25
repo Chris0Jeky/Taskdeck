@@ -55,7 +55,7 @@ public class LlmQueueService : ILlmQueueService
             var payload = dto.Payload;
             if (CaptureRequestContract.IsCaptureRequestType(requestType))
             {
-                var payloadResult = CaptureRequestContract.ParsePayload(payload);
+                var payloadResult = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: false);
                 if (!payloadResult.IsSuccess)
                 {
                     return Result.Failure<LlmRequestDto>(payloadResult.ErrorCode, payloadResult.ErrorMessage);
