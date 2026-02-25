@@ -5,13 +5,16 @@ const defaultFrontendHost = 'localhost'
 const defaultFrontendPort = 5173
 const defaultApiBaseUrl = 'http://localhost:5000/api'
 
-const frontendHost = process.env.TASKDECK_E2E_FRONTEND_HOST ?? defaultFrontendHost
-const frontendPort = parsePort(process.env.TASKDECK_E2E_FRONTEND_PORT, defaultFrontendPort)
-const frontendBaseUrl =
-  process.env.TASKDECK_E2E_FRONTEND_BASE_URL ?? `http://${frontendHost}:${frontendPort}`
+const frontendConfig = resolveFrontendConfig()
+const frontendHost = frontendConfig.host
+const frontendPort = frontendConfig.port
+const frontendBaseUrl = frontendConfig.baseUrl
 const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL ?? defaultApiBaseUrl
 
-const backendCorsOrigins = resolveBackendCorsOrigins(frontendBaseUrl, process.env.TASKDECK_E2E_API_CORS_ORIGINS)
+const backendCorsOrigins = resolveBackendCorsOrigins(
+  frontendConfig.origin,
+  process.env.TASKDECK_E2E_API_CORS_ORIGINS,
+)
 const backendServerEnv: Record<string, string> = {
   ASPNETCORE_ENVIRONMENT: 'Development',
   ConnectionStrings__DefaultConnection: `Data Source=${e2eDbPath}`,
@@ -62,26 +65,100 @@ export default defineConfig({
   ],
 })
 
-function parsePort(rawPort: string | undefined, fallbackPort: number): number {
+type FrontendConfig = {
+  baseUrl: string
+  host: string
+  origin: string
+  port: number
+}
+
+function resolveFrontendConfig(): FrontendConfig {
+  const rawFrontendBaseUrl = process.env.TASKDECK_E2E_FRONTEND_BASE_URL
+  if (rawFrontendBaseUrl && rawFrontendBaseUrl.trim().length > 0) {
+    return resolveFrontendConfigFromBaseUrl(rawFrontendBaseUrl)
+  }
+
+  const host = process.env.TASKDECK_E2E_FRONTEND_HOST ?? defaultFrontendHost
+  const port = parsePort(process.env.TASKDECK_E2E_FRONTEND_PORT, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
+  const origin = `http://${host}:${port}`
+
+  return {
+    baseUrl: origin,
+    host,
+    origin,
+    port,
+  }
+}
+
+function resolveFrontendConfigFromBaseUrl(rawFrontendBaseUrl: string): FrontendConfig {
+  const parsedFrontendBaseUrl = parseFrontendBaseUrl(rawFrontendBaseUrl)
+  const port =
+    parsedFrontendBaseUrl.port.length > 0
+      ? parsePort(
+          parsedFrontendBaseUrl.port,
+          defaultPortForProtocol(parsedFrontendBaseUrl.protocol),
+          'TASKDECK_E2E_FRONTEND_BASE_URL',
+        )
+      : defaultPortForProtocol(parsedFrontendBaseUrl.protocol)
+
+  return {
+    baseUrl: parsedFrontendBaseUrl.href,
+    host: parsedFrontendBaseUrl.hostname,
+    origin: parsedFrontendBaseUrl.origin,
+    port,
+  }
+}
+
+function parseFrontendBaseUrl(rawFrontendBaseUrl: string): URL {
+  try {
+    const parsedFrontendBaseUrl = new URL(rawFrontendBaseUrl)
+    if (parsedFrontendBaseUrl.protocol !== 'http:' && parsedFrontendBaseUrl.protocol !== 'https:') {
+      throw new Error('Only http:// and https:// protocols are supported.')
+    }
+
+    return parsedFrontendBaseUrl
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Invalid URL format.'
+    throw new Error(
+      `[e2e config] TASKDECK_E2E_FRONTEND_BASE_URL must be an absolute http(s) URL (example: "http://localhost:5173"). Received "${rawFrontendBaseUrl}". ${reason}`,
+    )
+  }
+}
+
+function defaultPortForProtocol(protocol: string): number {
+  if (protocol === 'http:') {
+    return 80
+  }
+
+  if (protocol === 'https:') {
+    return 443
+  }
+
+  throw new Error(
+    `[e2e config] Unsupported TASKDECK_E2E_FRONTEND_BASE_URL protocol "${protocol}". Use http:// or https://.`,
+  )
+}
+
+function parsePort(rawPort: string | undefined, fallbackPort: number, source: string): number {
   if (!rawPort) {
     return fallbackPort
   }
 
-  const parsedPort = Number.parseInt(rawPort, 10)
-  if (Number.isNaN(parsedPort) || parsedPort <= 0) {
-    return fallbackPort
+  const normalizedPort = rawPort.trim()
+  if (!/^\d+$/.test(normalizedPort)) {
+    throw new Error(`[e2e config] ${source} must be an integer between 1 and 65535. Received "${rawPort}".`)
+  }
+
+  const parsedPort = Number.parseInt(normalizedPort, 10)
+  if (parsedPort < 1 || parsedPort > 65535) {
+    throw new Error(`[e2e config] ${source} must be between 1 and 65535. Received "${rawPort}".`)
   }
 
   return parsedPort
 }
 
-function resolveBackendCorsOrigins(frontendUrl: string, rawOrigins: string | undefined): string[] {
-  const configuredOrigins = parseOriginList(rawOrigins)
-  if (configuredOrigins.length > 0) {
-    return configuredOrigins
-  }
-
-  return dedupeOrigins([new URL(frontendUrl).origin, 'http://localhost:5174'])
+function resolveBackendCorsOrigins(frontendOrigin: string, rawOrigins: string | undefined): string[] {
+  return dedupeOrigins([frontendOrigin, 'http://localhost:5174', ...parseOriginList(rawOrigins)])
 }
 
 function parseOriginList(rawOrigins: string | undefined): string[] {
