@@ -324,6 +324,7 @@ Delivered in the latest cycle:
    - added Gemini provider adapter (`generateContent`) and parity fallback behavior across success/failure/invalid-response/cancellation branches
    - capture triage provenance now persists provider/model metadata (`provider`, `model`) alongside `promptVersion` for linked triage/proposal flows
    - expanded regression coverage across selection policy, provider adapters, capture provenance surfaces, and API chat integration with non-mock provider stubs
+   - follow-on managed-key identity attribution baseline (`#236`) now threads server-derived attribution (`userId`, correlation ID, source surface, board/session scope) through chat/provider boundaries, persists attribution in capture provenance, and adds spoofing/propagation regression coverage
 77. INT-01 external import adapters foundation delivery (`#75`):
    - added provider-registry external import orchestration (`IExternalImportAdapter`, `IExternalImportService`) so new providers can be added without core import-service rewrite
    - shipped CSV adapter baseline with outreach-contact profile mapping and deterministic dedupe key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`)
@@ -360,7 +361,7 @@ Exit Criteria:
 Focus:
 - operationalize real-provider usage with deterministic policy gates and safe defaults across environments
 - maintain shipped provider-agnostic live-provider runtime (`OpenAI` + `Gemini`) and demo-first setup posture (`#232`, delivered)
-- define managed-key control-plane foundations (identity attribution + quota/budget guardrails) for shared provider-token exposure (`#235`, `#236`, `#237`)
+- maintain delivered managed-key identity attribution baseline (`#236`) and complete remaining control-plane foundations for shared provider-token exposure (`#235`, `#237`)
 - expand planner operation extraction in a structured, test-backed way
 - harden executor behavior for partial failure semantics and audit quality
 - improve archive and automation coherence for board-level restore/execution workflows
@@ -519,7 +520,7 @@ Exit Criteria:
 - Capture realignment wave: `#199` to `#211` (delivered); remaining linked hardening/performance follow-through: `#81`, `#212`, `#213`
 - Testing harness guardrails wave tracker and delivery sequence: `#254` to `#260`
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
-- Managed-key LLM control-plane tracker and foundations: `#235`, `#236`, `#237`
+- Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
 - CI/workflow topology expansion and governance track: `#168`
 - API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
@@ -643,7 +644,7 @@ Initial implementation shape:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Sequence testing harness wave from the completed tracker handoff: `#255` -> (`#256`, `#257`) -> (`#258`, `#259`, `#260`), and keep aligned existing seeds `#89`, `#90`, `#106`, `#168`.
-3. Sequence managed-key control-plane foundations in Priority II: `#235` tracker, then `#236` and `#237` before broad managed-key exposure.
+3. Sequence remaining managed-key control-plane foundations in Priority II: `#235` tracker, then `#237` after delivered identity attribution baseline (`#236`).
 4. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
 5. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
 6. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
