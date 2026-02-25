@@ -4,7 +4,6 @@ using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
-using System.Diagnostics;
 
 namespace Taskdeck.Application.Services;
 
@@ -70,7 +69,7 @@ public class CaptureService : ICaptureService
                 payload,
                 request.Id,
                 requestedByUserId: userId,
-                correlationId: ResolveCorrelationId(),
+                correlationId: LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
                 sourceSurface: LlmRequestAttributionMapper.ResolveSourceSurface(LlmRequestSourceSurface.Capture),
                 boardId: dto.BoardId);
             request.UpdatePayload(CaptureRequestContract.SerializePayload(attributedPayload));
@@ -295,7 +294,7 @@ public class CaptureService : ICaptureService
 
     private static CapturePayloadV1 ParsePayload(LlmRequest item)
     {
-        var payloadResult = CaptureRequestContract.ParsePayload(item.Payload);
+        var payloadResult = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
         if (payloadResult.IsSuccess)
             return payloadResult.Value;
 
@@ -323,17 +322,5 @@ public class CaptureService : ICaptureService
             return normalized;
 
         return normalized[..ExcerptLength];
-    }
-
-    private static string ResolveCorrelationId()
-    {
-        var correlationFromActivity = Activity.Current?.GetTagItem("taskdeck.correlation_id")?.ToString();
-        if (!string.IsNullOrWhiteSpace(correlationFromActivity))
-        {
-            return LlmRequestAttributionMapper.ResolveCorrelationId(correlationFromActivity);
-        }
-
-        var traceId = Activity.Current?.TraceId.ToString();
-        return LlmRequestAttributionMapper.ResolveCorrelationId(traceId);
     }
 }
