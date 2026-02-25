@@ -334,6 +334,10 @@ Delivered in the latest cycle:
    - added mutation-event queueing and signed webhook dispatch (`X-Taskdeck-Webhook-*` headers) with HTTPS/default host safety checks and localhost gating controls
    - added worker/runtime hardening for atomic claim/reload flow, non-success response retry scheduling, dead-letter terminal handling, and stale-processing recovery
    - added backend regression coverage across domain/application/API/worker/repository webhook paths, including non-success dispatch retry/dead-letter branches
+79. API CORS development-origin configurability delivery:
+   - API CORS composition now keeps default localhost origins (`http://localhost:5173`, `http://localhost:5174`) as baseline behavior
+   - development runtime now accepts additive allowed origins from configuration key `Cors:DevelopmentAllowedOrigins`
+   - API integration coverage now verifies both default-origin allowance and development-configured alternate-origin allowance via deterministic in-memory config overrides
 
 ## Roadmap by Horizon
 
