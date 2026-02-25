@@ -21,6 +21,10 @@ Time-scoped archive bundles:
   - Consolidation bundle that archived backend/frontend detail packs and superseded root guides.
 - `2026-02-16_docs-curation/`
   - Archived stale root-level snapshots and one-off planning artifacts during docs curation cleanup.
+- `2026-02-25_docs-cleanup/`
+  - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) after canonical reconciliation.
+- `2026-02-25_inreview-repo-pack/`
+  - Archived historical `REPO_PACK` bundle after issue seeding and canonical doc promotion.
 
 ## Usage
 
