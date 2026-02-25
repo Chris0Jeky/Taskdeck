@@ -25,7 +25,7 @@ Companion Active Docs:
 Verification note:
 - backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
 - frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
-- frontend E2E totals were re-verified on 2026-02-25 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) with deterministic runner/worker port convergence and `23/23` passing
+- frontend E2E totals were re-verified on 2026-02-25 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`23/23` passing)
 
 ## Backend Commands
 
@@ -131,7 +131,7 @@ Override behavior notes:
 
 Troubleshooting note (Windows local environments):
 - if Playwright startup fails with `listen EACCES` for the frontend port, keep `TASKDECK_E2E_FRONTEND_PORT` unset so auto-fallback can select the next bindable port.
-- when auto-fallback is used, Playwright now resolves the same frontend port in both runner and worker processes by preferring already-running Taskdeck frontend listeners (identity-verified) before bind probes.
+- when auto-fallback is used, Playwright keeps runner/worker aligned by using shared deterministic port resolution (local reuse mode prefers identity-verified listeners; CI mode prefers bindable ports).
 - if you explicitly set `TASKDECK_E2E_FRONTEND_PORT`, use `TASKDECK_E2E_API_CORS_ORIGINS` when needed so API preflight requests stay aligned with the chosen frontend origin.
 - investigation details and reproduction commands are documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 

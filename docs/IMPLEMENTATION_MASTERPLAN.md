@@ -349,8 +349,9 @@ Delivered in the latest cycle:
    - starter-pack apply service now marks non-blocking seed-card skip paths as warnings and preserves apply success when only warnings exist
    - starter-pack modal now shows explicit applied/skipped/blocked/warnings outcome summaries with warning-first messaging, and backend/frontend regression coverage now locks warning-vs-blocking behavior
 82. TST-18 Playwright frontend port-resolution hardening delivery:
-   - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports by preferring identity-verified running Taskdeck frontend listeners before bind probes
-   - this removes local `baseURL` drift (`4173` to `5001`) observed when fallback port selection ran twice in the same test run
+   - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports
+   - local runs (server reuse enabled) prefer identity-verified running Taskdeck frontend listeners before bind probes to prevent runner/worker drift (`4173` to `5001`)
+   - CI runs (server reuse disabled) prefer bindable ports first so stale listeners do not trigger `url is already used` startup failures
    - local Windows E2E gate now re-verifies with `npx playwright test --reporter=line` using fallback path (`5173` -> `4173` -> `5001`)
 83. FE-13 local dev server startup hardening delivery:
    - `npm run dev` now launches through a small Vite wrapper that auto-resolves restricted/unavailable local ports with fallback order `5173` -> `4173` -> `5001`
@@ -359,7 +360,8 @@ Delivered in the latest cycle:
    - explicit local overrides remain supported (`--host`, `--port`, `TASKDECK_DEV_PORT`) for reproducible manual debugging
    - manual local flows no longer require one-off fallback command rewrites when `localhost:5173` is blocked with `listen EACCES`
 84. OPS-19 container-image frontend dependency-policy unblock follow-through:
-   - frontend npm dependency graph now enforces `ws@8.19.0` and `p-limit@2.3.0` via top-level npm overrides to prevent `ws-7.5.10` and `yocto-queue-0.1.0` fetches blocked by package security policy in container CI
+   - frontend npm dependency graph now keeps `@microsoft/signalr` on its supported `ws@7.5.10` major line via a vendored local tarball dependency (`ws: file:vendor/ws-7.5.10.tgz`) so container `npm ci` no longer fetches blocked registry tarballs for that version
+   - frontend npm dependency graph now uses `p-limit@3.0.2` override (compatible with `p-locate@5`) to remove blocked `yocto-queue-0.1.0` fetches without cross-major override drift
    - refreshed lockfile keeps container `npm ci` deterministic and unblocks `.github/workflows/reusable-container-images.yml` frontend build stage
    - local Docker validation confirms `deploy/docker/frontend.Dockerfile` build-stage `npm ci` and `npm run build` both complete successfully with the override
 

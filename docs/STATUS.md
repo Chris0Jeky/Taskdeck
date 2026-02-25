@@ -412,7 +412,8 @@ Command:
 Result:
 - E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
 - 2026-02-25 local rerun now passes after frontend E2E startup hardening:
-  - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) and only reuses already-listening ports when the listener is identity-verified as Taskdeck frontend, preventing runner/worker drift without attaching to unrelated services.
+  - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) with deterministic runner/worker convergence.
+  - local reuse mode only reuses already-listening ports when the listener is identity-verified as Taskdeck frontend; CI mode prefers bindable ports so stale listeners do not break startup.
   - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 ### Total
@@ -504,7 +505,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) and archived `docs/InReview/REPO_PACK` into dated `docs/archive/` bundles with updated canonical cross-links.
 - Resolved local frontend E2E gate blocker by hardening Playwright frontend port resolution to avoid runner/worker `baseURL` drift when fallback ports are used; investigation retained in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 - Hardened local frontend manual startup (`npm run dev`) with deterministic port fallback (`5173` -> `4173` -> `5001`), bind-first occupied-port skipping for new Vite processes, and strict-port startup so restricted `5173` environments no longer fail or drift through implicit Vite port auto-increment.
-- Resolved frontend container-image `npm ci` policy blockers by pinning `ws` via npm overrides to `8.19.0` and forcing `p-limit` to `2.3.0`, removing forbidden `ws-7.5.10` and `yocto-queue-0.1.0` tarball requests from the lock-resolved dependency graph.
+- Resolved frontend container-image `npm ci` policy blockers by keeping SignalR-compatible `ws@7.5.10` via vendored local tarball dependency (`file:vendor/ws-7.5.10.tgz`) and moving `p-limit` override to compatible `3.0.2`, removing forbidden registry tarball fetches while avoiding cross-major override drift.
 - Archived `REFACTOR_AUDIT_AND_ACTION_PLAN_2026-02-13.md` into `docs/archive/2026-02-13_phase4-doc-consolidation/audits-and-history/`.
 - Added CI hardening parity updates: concurrency cancellation, frontend typecheck/build enforcement, TRX/JUnit failure artifacts, and package/browser caches.
 - Delivered OPS-19 CI topology first pass (`#168`): migrated required pipeline entrypoint to `.github/workflows/ci-required.yml` and extracted docs-governance lane into reusable workflow `.github/workflows/reusable-docs-governance.yml`.
