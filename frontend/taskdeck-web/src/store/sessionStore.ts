@@ -16,6 +16,7 @@ export const useSessionStore = defineStore('session', () => {
   const userId = ref<string | null>(null)
   const username = ref<string | null>(null)
   const email = ref<string | null>(null)
+  const defaultRole = ref<number | null>(null)
   const expiresAt = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -30,6 +31,7 @@ export const useSessionStore = defineStore('session', () => {
     userId: userId.value,
     username: username.value,
     email: email.value,
+    defaultRole: defaultRole.value,
     isAuthenticated: isAuthenticated.value,
     expiresAt: expiresAt.value,
   }))
@@ -39,6 +41,7 @@ export const useSessionStore = defineStore('session', () => {
     userId.value = data.user.id
     username.value = data.user.username
     email.value = data.user.email
+    defaultRole.value = data.user.defaultRole
     expiresAt.value = getTokenExpiryIso(data.token)
 
     localStorage.setItem(TOKEN_KEY, data.token)
@@ -46,6 +49,7 @@ export const useSessionStore = defineStore('session', () => {
       userId: data.user.id,
       username: data.user.username,
       email: data.user.email,
+      defaultRole: data.user.defaultRole,
     }))
   }
 
@@ -54,6 +58,7 @@ export const useSessionStore = defineStore('session', () => {
     userId.value = null
     username.value = null
     email.value = null
+    defaultRole.value = null
     expiresAt.value = null
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(SESSION_KEY)
@@ -69,6 +74,7 @@ export const useSessionStore = defineStore('session', () => {
         userId.value = session.userId
         username.value = session.username
         email.value = session.email
+        defaultRole.value = typeof session.defaultRole === 'number' ? session.defaultRole : null
         expiresAt.value = getTokenExpiryIso(savedToken)
         if (isTokenExpired(savedToken)) {
           clearSession()
@@ -148,6 +154,7 @@ export const useSessionStore = defineStore('session', () => {
     userId,
     username,
     email,
+    defaultRole,
     expiresAt,
     loading,
     error,
