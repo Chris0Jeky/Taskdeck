@@ -4,9 +4,11 @@ import {
   canBindPort,
   canConnectToTaskdeckFrontend,
   defaultFrontendPort,
+  maxProbeResponseBytes,
   parseFrontendHost,
   resolveDefaultFrontendPort,
   resolvePortProbeHosts,
+  taskdeckFrontendIdentityMarkers,
 } from '../playwright.port-resolution'
 
 describe('playwright frontend port resolution', () => {
@@ -66,6 +68,7 @@ describe('playwright frontend port resolution', () => {
     expect(() => parseFrontendHost('http://localhost', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('localhost/path', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('local host', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
+    expect(() => parseFrontendHost('localhost:5173', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('localhost\u0000', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('   ', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
   })
@@ -86,10 +89,14 @@ describe('playwright frontend port resolution', () => {
         probeCalls.push(candidateHost)
 
         if (candidateHost === 'localhost') {
-          expect(probeScript).toContain('<title>taskdeck-web</title>')
-          expect(probeScript).toContain('/src/main.ts')
-          expect(probeScript).toContain('const maxProbeResponseBytes = 65536')
-          expect(probeScript).toContain("response.on('error', () => settle(1))")
+          expect(probeScript).toContain(
+            `const markers = ${JSON.stringify(taskdeckFrontendIdentityMarkers)}`,
+          )
+          expect(probeScript).toContain(
+            `const maxProbeResponseBytes = ${String(maxProbeResponseBytes)}`,
+          )
+          expect(probeScript).toContain('markers.every((marker) => responseText.includes(marker))')
+          expect(probeScript).toContain("response.on('error'")
           return { error: new Error('spawn failed'), status: null }
         }
 
