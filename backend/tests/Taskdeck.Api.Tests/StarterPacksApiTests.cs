@@ -200,6 +200,41 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ApplyStarterPack_DryRun_ShouldIncludeSeedCardSkipAction_WhenSeedCardReferencesUnresolvableColumn()
+    {
+        var board = await CreateBoardAsync();
+        var existingColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Existing", 0, null));
+        existingColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var applyRequest = new ApplyStarterPackDto(BuildUnresolvableSeedCardManifest(), DryRun: true);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            applyRequest);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<StarterPackApplyResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Applied.Should().BeFalse();
+        payload.HasConflicts.Should().BeTrue();
+        payload.HasBlockingConflicts.Should().BeTrue();
+        payload.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "ColumnPositionConflict");
+        payload.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "SeedCardColumnConflict" &&
+            conflict.Severity == StarterPackConflictSeverity.Warning);
+
+        payload.Actions.Count(action =>
+                action.EntityType == "seedCard" &&
+                action.Operation == "skip" &&
+                action.Key == "Investigate intake @ Backlog")
+            .Should()
+            .Be(1);
+    }
+
+    [Fact]
     public async Task ApplyStarterPack_ShouldReturnConflict_WhenApplyHasConflicts()
     {
         var board = await CreateBoardAsync();
@@ -370,6 +405,42 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
             ],
             Templates = [],
             SeedCards = []
+        };
+    }
+
+    private static StarterPackManifestDto BuildUnresolvableSeedCardManifest()
+    {
+        return new StarterPackManifestDto
+        {
+            SchemaVersion = "1.0",
+            PackId = "seed-card-unresolvable-warning-pack",
+            DisplayName = "Seed Card Unresolvable Warning Pack",
+            Compatibility = new StarterPackCompatibilityDto
+            {
+                MinTaskdeckVersion = "1.0.0",
+                RequiredFeatures = ["boards"]
+            },
+            Tags = ["starter"],
+            Labels = [],
+            Columns =
+            [
+                new StarterPackColumnDto
+                {
+                    Name = "Backlog",
+                    Position = 0
+                }
+            ],
+            Templates = [],
+            SeedCards =
+            [
+                new StarterPackSeedCardDto
+                {
+                    Title = "Investigate intake",
+                    Description = "Investigate unresolvable column references",
+                    ColumnName = "Backlog",
+                    Labels = []
+                }
+            ]
         };
     }
 
