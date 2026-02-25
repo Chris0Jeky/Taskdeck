@@ -37,6 +37,7 @@ public class GeminiLlmProvider : ILlmProvider
         {
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
             message.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
+            LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(new
             {
                 contents = request.Messages.Select(MapMessage).ToArray(),
