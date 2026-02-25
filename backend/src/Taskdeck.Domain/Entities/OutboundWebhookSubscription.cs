@@ -6,6 +6,9 @@ namespace Taskdeck.Domain.Entities;
 public class OutboundWebhookSubscription : Entity
 {
     private const string EventFilterDelimiter = "|";
+    private const int MaxEndpointUrlLength = 500;
+    private const int MaxSigningSecretLength = 200;
+    private const int MaxSerializedEventFiltersLength = 400;
 
     public Guid BoardId { get; private set; }
     public Guid CreatedByUserId { get; private set; }
@@ -44,10 +47,22 @@ public class OutboundWebhookSubscription : Entity
         if (string.IsNullOrWhiteSpace(signingSecret))
             throw new DomainException(ErrorCodes.ValidationError, "Signing secret is required.");
 
+        var normalizedEndpointUrl = endpointUrl.Trim();
+        if (normalizedEndpointUrl.Length > MaxEndpointUrlLength)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"Endpoint URL must be {MaxEndpointUrlLength} characters or fewer.");
+
+        var normalizedSigningSecret = signingSecret.Trim();
+        if (normalizedSigningSecret.Length > MaxSigningSecretLength)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"Signing secret must be {MaxSigningSecretLength} characters or fewer.");
+
         BoardId = boardId;
         CreatedByUserId = createdByUserId;
-        EndpointUrl = endpointUrl.Trim();
-        SigningSecret = signingSecret.Trim();
+        EndpointUrl = normalizedEndpointUrl;
+        SigningSecret = normalizedSigningSecret;
         EventFilters = NormalizeEventFilters(eventFilters);
         IsActive = true;
     }
@@ -64,8 +79,14 @@ public class OutboundWebhookSubscription : Entity
         if (string.IsNullOrWhiteSpace(newSecret))
             throw new DomainException(ErrorCodes.ValidationError, "Signing secret is required.");
 
+        var normalizedSecret = newSecret.Trim();
+        if (normalizedSecret.Length > MaxSigningSecretLength)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"Signing secret must be {MaxSigningSecretLength} characters or fewer.");
+
         EnsureActive();
-        SigningSecret = newSecret.Trim();
+        SigningSecret = normalizedSecret;
         Touch();
     }
 
@@ -143,7 +164,13 @@ public class OutboundWebhookSubscription : Entity
             normalizedFilters.Add("*");
         }
 
-        return string.Join(EventFilterDelimiter, normalizedFilters);
+        var serialized = string.Join(EventFilterDelimiter, normalizedFilters);
+        if (serialized.Length > MaxSerializedEventFiltersLength)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"Serialized event filters must be {MaxSerializedEventFiltersLength} characters or fewer.");
+
+        return serialized;
     }
 
     private void EnsureActive()
