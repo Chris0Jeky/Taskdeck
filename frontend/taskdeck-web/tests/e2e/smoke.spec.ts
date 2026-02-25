@@ -172,6 +172,31 @@ test('capture hotkey should save item and route to inbox', async ({ page }) => {
   await expect(page.locator('.td-inbox-row__excerpt').first()).toContainText(captureText)
 })
 
+test('command palette capture action should save item and route to inbox', async ({ page }) => {
+  await gotoBoardsWorkspace(page)
+
+  const captureText = `Palette capture item ${Date.now()}`
+
+  await page.keyboard.press('Control+K')
+  const palette = page.getByRole('dialog', { name: 'Command palette' })
+  await expect(palette).toBeVisible()
+
+  const paletteInput = palette.getByPlaceholder('Type a command or search...')
+  await expect(paletteInput).toBeFocused()
+  await paletteInput.fill('new capture')
+  await paletteInput.press('Enter')
+
+  const captureModal = page.getByRole('dialog', { name: 'Capture item' })
+  await expect(captureModal).toBeVisible()
+  await expect(palette).toHaveCount(0)
+
+  await captureModal.getByPlaceholder('Capture a thought, task, or follow-up...').fill(captureText)
+  await captureModal.getByPlaceholder('Capture a thought, task, or follow-up...').press('Control+Enter')
+
+  await expect(page).toHaveURL(/\/workspace\/inbox$/)
+  await expect(page.locator('.td-inbox-row__excerpt').first()).toContainText(captureText)
+})
+
 test('activity view selectors should support board and entity discovery without raw IDs', async ({ page }) => {
   const boardName = `Activity Board ${Date.now()}`
   const columnName = `Activity Column ${Date.now()}`
