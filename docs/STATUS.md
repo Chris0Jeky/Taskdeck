@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-24  
+Last Updated: 2026-02-25  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -368,7 +368,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-23
+Verification Date: 2026-02-25 (backend refresh; frontend totals carried from 2026-02-24 verification run)
 
 ### Backend (Executed)
 
@@ -376,12 +376,12 @@ Command:
 - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
-- Domain: 107/107 passing
-- Application: 411/411 passing
-- API integration: 222/222 passing
+- Domain: 122/122 passing
+- Application: 491/491 passing
+- API integration: 262/262 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 752/752 passing
+- Backend Total: 887/887 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -405,7 +405,7 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build): 1129/1129 passing
+- Combined automated total (backend + frontend unit/build): 1264/1264 passing
 
 ## CI Status
 
@@ -523,7 +523,8 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered FE-12 frontend coverage threshold gate (`#155`): enforced global + critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`), switched required frontend CI lane to thresholded coverage execution, and standardized JUnit+coverage artifact upload for triage.
 - Delivered COL-02 notification framework (`#72`): added notification domain/persistence + preferences model, shipped authenticated inbox/preferences/read-state APIs with preference-aware deduped event publication for mention/assignment/proposal-outcome families, integrated frontend inbox/preferences routes + stores, and expanded backend/frontend regression coverage.
 - Delivered COL-04 card comments/mentions workflow (`#74`): added threaded card comments with reply constraints and moderation-aware edit/delete policy, integrated mention parsing with board-scope user linking and notification publication, shipped board/card comment APIs + frontend modal interactions, and expanded backend/frontend regression coverage.
-- Delivered INT-01 external import adapters foundation (`#75`): added board-scoped external import endpoint with provider-registry orchestration, shipped CSV adapter path with outreach-contact mapping and deterministic dedupe-key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`), added dry-run/apply create-update-skip/conflict reporting and rollback-safe apply semantics, and documented mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`.
+- Delivered INT-01 external import adapters foundation (`#75`): added board-scoped external import endpoint with provider-registry orchestration, shipped CSV adapter path with outreach-contact mapping and deterministic dedupe-key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`), added dry-run/apply create-update-skip/conflict reporting and rollback-safe apply semantics, enforced CSV payload/row guardrails plus archived-board import rejection behavior, and documented mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`.
+- Delivered INT-02 webhook integration security model (`#76`): added board-scoped outbound webhook subscription/delivery runtime with endpoint + event-filter + secret-rotation/revocation controls, signed delivery dispatch, atomic claim/reload worker processing, and retry/dead-letter handling for non-success dispatch outcomes.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
 - Delivered UX-02 drag/edit interaction safety guardrails: card/column drag now starts from explicit handles only, and non-handle drag gestures are blocked with unit + E2E regression coverage.
