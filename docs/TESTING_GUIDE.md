@@ -25,7 +25,7 @@ Companion Active Docs:
 Verification note:
 - backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
 - frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
-- frontend E2E totals were re-verified on 2026-02-25 via fallback frontend-port workflow (`TASKDECK_E2E_FRONTEND_PORT=5001`, `TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001,http://localhost:5173,http://localhost:5174`) with `23/23` passing
+- frontend E2E totals were re-verified on 2026-02-25 via fallback frontend-port workflow (`TASKDECK_E2E_FRONTEND_PORT=5001`, `TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001`) with `23/23` passing
 - default local E2E startup on `localhost:5173` may still fail on restricted hosts (`listen EACCES`); use documented fallback workflow
 
 ## Backend Commands
@@ -94,7 +94,7 @@ PowerShell:
 ```powershell
 cd frontend/taskdeck-web
 $env:TASKDECK_E2E_FRONTEND_PORT='5001'
-$env:TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:5001,http://localhost:5173,http://localhost:5174'
+$env:TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:5001'
 npx playwright test --reporter=line
 ```
 
@@ -102,7 +102,7 @@ Bash:
 
 ```bash
 cd frontend/taskdeck-web
-TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:5001,http://localhost:5173,http://localhost:5174' npx playwright test --reporter=line
+TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS='http://localhost:5001' npx playwright test --reporter=line
 ```
 
 Optional E2E env overrides (Playwright config):
@@ -110,7 +110,7 @@ Optional E2E env overrides (Playwright config):
 - `TASKDECK_E2E_FRONTEND_PORT` (default `5173`)
 - `TASKDECK_E2E_FRONTEND_BASE_URL` (default `http://{host}:{port}`)
 - `TASKDECK_E2E_API_BASE_URL` (default `http://localhost:5000/api`)
-- `TASKDECK_E2E_API_CORS_ORIGINS` (comma-separated origin list passed to backend process as `Cors__DevelopmentAllowedOrigins__{index}`)
+- `TASKDECK_E2E_API_CORS_ORIGINS` (comma-separated additional origins merged with defaults: frontend origin plus `http://localhost:5174`; each value is passed to backend process as `Cors__DevelopmentAllowedOrigins__{index}`)
 
 Troubleshooting note (Windows local environments):
 - if Playwright startup fails with `listen EACCES` for frontend port `5173`, the local host may block that port for user-space listeners.

@@ -43,6 +43,15 @@ Out of scope (known implementation boundaries on current `main`):
 3. Open `http://localhost:5173`.
 4. Register/login a test user in UI (or use API bootstrap).
 
+Fallback when `localhost:5173` is blocked (`listen EACCES`):
+- Start backend with fallback frontend origin allowed:
+  - `$env:Cors__DevelopmentAllowedOrigins__0='http://localhost:5001'; dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj`
+- Start frontend on an alternate port:
+  - `cd frontend/taskdeck-web`
+  - `npm run dev -- --host localhost --port 5001`
+- Open `http://localhost:5001`.
+- Troubleshooting note: some Windows local environments reserve or restrict `localhost:5173` for user-space listeners, which surfaces as `listen EACCES`.
+
 Optional clean start:
 - Stop API process.
 - Remove `backend/src/Taskdeck.Api/taskdeck.db`.
@@ -317,7 +326,7 @@ If behavior, commands, or known gaps changed, update:
 3. Frontend E2E:
    - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line`
    - fallback when `5173` is unavailable:
-     `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001,http://localhost:5173,http://localhost:5174 npx playwright test --reporter=line`
+     `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001 npx playwright test --reporter=line`
 
 ## N. Capture Realignment Manual Slice (Shipped CAP MVP)
 
