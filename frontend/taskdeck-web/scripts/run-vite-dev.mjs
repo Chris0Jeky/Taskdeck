@@ -16,9 +16,9 @@ const portOption = readOptionValue(cliArgs, ['--port', '-p'])
 
 const effectiveHost = parseHost(hostOption ?? defaultHost, hostOption ? 'CLI --host' : 'TASKDECK_DEV_HOST')
 const effectivePort = portOption
-  ? parsePort(portOption, defaultPort, 'CLI --port')
+  ? parsePort(portOption, 'CLI --port')
   : process.env.TASKDECK_DEV_PORT
-    ? parsePort(process.env.TASKDECK_DEV_PORT, defaultPort, 'TASKDECK_DEV_PORT')
+    ? parsePort(process.env.TASKDECK_DEV_PORT, 'TASKDECK_DEV_PORT')
     : await resolveDefaultPort(effectiveHost)
 
 const viteArgs = [...cliArgs]
@@ -84,7 +84,7 @@ function readOptionValue(args, names) {
   return undefined
 }
 
-function parsePort(rawPort, fallbackPort, source) {
+function parsePort(rawPort, source) {
   const normalizedPort = rawPort.trim()
   if (!/^\d+$/.test(normalizedPort)) {
     throw new Error(`[dev] ${source} must be an integer between 1 and 65535. Received "${rawPort}".`)
