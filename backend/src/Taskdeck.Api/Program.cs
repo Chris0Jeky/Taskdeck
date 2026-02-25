@@ -360,8 +360,8 @@ static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configurat
         .GetSection("Cors:DevelopmentAllowedOrigins")
         .GetChildren()
         .Select(child => child.Value)
+        .OfType<string>()
         .Where(value => !string.IsNullOrWhiteSpace(value))
-        .Cast<string>()
         .ToArray();
 
     if (configuredDevelopmentOrigins.Length == 0 &&
@@ -375,6 +375,7 @@ static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configurat
         .Concat(configuredDevelopmentOrigins)
         .Where(origin => !string.IsNullOrWhiteSpace(origin))
         .Select(origin => origin.Trim())
+        // Origin host matching is case-insensitive, so collapse mixed-case duplicates.
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
 }

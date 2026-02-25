@@ -36,7 +36,6 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         const string alternateOrigin = "http://localhost:5189";
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Development");
             builder.UseSetting("Cors:DevelopmentAllowedOrigins:0", alternateOrigin);
         });
         using var client = factory.CreateClient();
@@ -48,5 +47,32 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
         allowedOrigins.Should().ContainSingle().Which.Should().Be(alternateOrigin);
+    }
+
+    [Fact]
+    public async Task Cors_ShouldIgnoreDevelopmentConfiguredAlternateOriginOutsideDevelopment()
+    {
+        const string alternateOrigin = "http://localhost:5189";
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Cors:DevelopmentAllowedOrigins:0", alternateOrigin);
+        });
+        using var client = factory.CreateClient();
+
+        using var alternateOriginRequest = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        alternateOriginRequest.Headers.TryAddWithoutValidation("Origin", alternateOrigin);
+        var alternateOriginResponse = await client.SendAsync(alternateOriginRequest);
+
+        alternateOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        alternateOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out _).Should().BeFalse();
+
+        using var defaultOriginRequest = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        defaultOriginRequest.Headers.TryAddWithoutValidation("Origin", DefaultFrontendOrigin);
+        var defaultOriginResponse = await client.SendAsync(defaultOriginRequest);
+
+        defaultOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        defaultOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
+        allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
     }
 }
