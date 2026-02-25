@@ -1,8 +1,10 @@
 import { defineConfig } from '@playwright/test'
+import { spawnSync } from 'node:child_process'
 
 const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
 const defaultFrontendHost = 'localhost'
 const defaultFrontendPort = 5173
+const fallbackFrontendPorts = [defaultFrontendPort, 4173, 5001]
 const defaultApiBaseUrl = 'http://localhost:5000/api'
 
 const frontendConfig = resolveFrontendConfig()
@@ -87,7 +89,9 @@ function resolveFrontendConfig(): FrontendConfig {
   }
 
   const host = process.env.TASKDECK_E2E_FRONTEND_HOST ?? defaultFrontendHost
-  const port = parsePort(process.env.TASKDECK_E2E_FRONTEND_PORT, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
+  const port = process.env.TASKDECK_E2E_FRONTEND_PORT
+    ? parsePort(process.env.TASKDECK_E2E_FRONTEND_PORT, defaultFrontendPort, 'TASKDECK_E2E_FRONTEND_PORT')
+    : resolveDefaultFrontendPort(host)
   const origin = `http://${host}:${port}`
 
   return {
@@ -96,6 +100,87 @@ function resolveFrontendConfig(): FrontendConfig {
     origin,
     port,
   }
+}
+
+function resolveDefaultFrontendPort(host: string): number {
+  for (const candidatePort of fallbackFrontendPorts) {
+    if (canConnectToPort(host, candidatePort)) {
+      return candidatePort
+    }
+  }
+
+  for (const candidatePort of fallbackFrontendPorts) {
+    if (canBindPort(host, candidatePort)) {
+      return candidatePort
+    }
+  }
+
+  return defaultFrontendPort
+}
+
+function canConnectToPort(host: string, port: number): boolean {
+  const probeScript = `
+const net = require('node:net')
+const host = process.argv[1]
+const port = Number(process.argv[2])
+const socket = net.createConnection({ host, port })
+const fail = () => {
+  socket.destroy()
+  process.exit(1)
+}
+socket.setTimeout(300)
+socket.once('connect', () => {
+  socket.end()
+  process.exit(0)
+})
+socket.once('timeout', fail)
+socket.once('error', fail)
+`.trim()
+
+  for (const candidateHost of resolvePortProbeHosts(host)) {
+    const probe = spawnSync(process.execPath, ['-e', probeScript, candidateHost, String(port)], {
+      stdio: 'ignore',
+    })
+
+    if (probe.status === 0) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function canBindPort(host: string, port: number): boolean {
+  const probeScript = `
+const net = require('node:net')
+const host = process.argv[1]
+const port = Number(process.argv[2])
+const server = net.createServer()
+server.once('error', () => process.exit(1))
+server.listen(port, host, () => {
+  server.close(() => process.exit(0))
+})
+`.trim()
+
+  for (const candidateHost of resolvePortProbeHosts(host)) {
+    const probe = spawnSync(process.execPath, ['-e', probeScript, candidateHost, String(port)], {
+      stdio: 'ignore',
+    })
+
+    if (probe.status === 0) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function resolvePortProbeHosts(host: string): string[] {
+  if (host.toLowerCase() !== 'localhost') {
+    return [host]
+  }
+
+  return [host, '127.0.0.1', '::1']
 }
 
 function resolveFrontendConfigFromBaseUrl(rawFrontendBaseUrl: string): FrontendConfig {
