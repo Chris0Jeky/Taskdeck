@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
-import { registerAndAttachSession } from './support/authSession'
+import { API_ORIGIN, registerAndAttachSession } from './support/authSession'
 
 async function gotoBoardsWorkspace(page: Page) {
   await page.goto('/workspace/boards')
@@ -111,7 +111,7 @@ test('realtime board updates should propagate across active sessions without ref
 })
 
 test('realtime negotiate should reject unauthenticated subscriptions', async ({ request }) => {
-  const response = await request.post('http://localhost:5000/hubs/boards/negotiate?negotiateVersion=1', {
+  const response = await request.post(`${API_ORIGIN}/hubs/boards/negotiate?negotiateVersion=1`, {
     data: {},
   })
 

@@ -9,7 +9,8 @@ const frontendConfig = resolveFrontendConfig()
 const frontendHost = frontendConfig.host
 const frontendPort = frontendConfig.port
 const frontendBaseUrl = frontendConfig.baseUrl
-const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL ?? defaultApiBaseUrl
+const apiConfig = resolveApiConfig(process.env.TASKDECK_E2E_API_BASE_URL ?? defaultApiBaseUrl)
+const apiBaseUrl = apiConfig.baseUrl
 
 const backendCorsOrigins = resolveBackendCorsOrigins(
   frontendConfig.origin,
@@ -18,6 +19,7 @@ const backendCorsOrigins = resolveBackendCorsOrigins(
 const backendServerEnv: Record<string, string> = {
   ASPNETCORE_ENVIRONMENT: 'Development',
   ConnectionStrings__DefaultConnection: `Data Source=${e2eDbPath}`,
+  ASPNETCORE_URLS: apiConfig.origin,
 }
 
 for (const [index, origin] of backendCorsOrigins.entries()) {
@@ -43,8 +45,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'dotnet run --project ../../backend/src/Taskdeck.Api/Taskdeck.Api.csproj',
-      url: 'http://localhost:5000/api/boards',
+      command: 'dotnet run --no-launch-profile --project ../../backend/src/Taskdeck.Api/Taskdeck.Api.csproj',
+      url: apiConfig.readinessUrl,
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
@@ -72,6 +74,12 @@ type FrontendConfig = {
   port: number
 }
 
+type ApiConfig = {
+  baseUrl: string
+  origin: string
+  readinessUrl: string
+}
+
 function resolveFrontendConfig(): FrontendConfig {
   const rawFrontendBaseUrl = process.env.TASKDECK_E2E_FRONTEND_BASE_URL
   if (rawFrontendBaseUrl && rawFrontendBaseUrl.trim().length > 0) {
@@ -92,17 +100,32 @@ function resolveFrontendConfig(): FrontendConfig {
 
 function resolveFrontendConfigFromBaseUrl(rawFrontendBaseUrl: string): FrontendConfig {
   const parsedFrontendBaseUrl = parseFrontendBaseUrl(rawFrontendBaseUrl)
-  const port =
-    parsedFrontendBaseUrl.port.length > 0
-      ? parsePort(
-          parsedFrontendBaseUrl.port,
-          defaultPortForProtocol(parsedFrontendBaseUrl.protocol),
-          'TASKDECK_E2E_FRONTEND_BASE_URL',
-        )
-      : defaultPortForProtocol(parsedFrontendBaseUrl.protocol)
+  if (parsedFrontendBaseUrl.port.length === 0) {
+    throw new Error(
+      `[e2e config] TASKDECK_E2E_FRONTEND_BASE_URL must include an explicit port (example: "http://localhost:${defaultFrontendPort}"). Received "${rawFrontendBaseUrl}".`,
+    )
+  }
+
+  if (normalizePath(parsedFrontendBaseUrl.pathname).length > 0) {
+    throw new Error(
+      `[e2e config] TASKDECK_E2E_FRONTEND_BASE_URL cannot include a path segment. Use an origin only (example: "http://localhost:${defaultFrontendPort}"). Received "${rawFrontendBaseUrl}".`,
+    )
+  }
+
+  if (parsedFrontendBaseUrl.search.length > 0 || parsedFrontendBaseUrl.hash.length > 0) {
+    throw new Error(
+      `[e2e config] TASKDECK_E2E_FRONTEND_BASE_URL cannot include query or hash fragments. Received "${rawFrontendBaseUrl}".`,
+    )
+  }
+
+  const port = parsePort(
+    parsedFrontendBaseUrl.port,
+    defaultFrontendPort,
+    'TASKDECK_E2E_FRONTEND_BASE_URL',
+  )
 
   return {
-    baseUrl: parsedFrontendBaseUrl.href,
+    baseUrl: parsedFrontendBaseUrl.origin,
     host: parsedFrontendBaseUrl.hostname,
     origin: parsedFrontendBaseUrl.origin,
     port,
@@ -112,31 +135,17 @@ function resolveFrontendConfigFromBaseUrl(rawFrontendBaseUrl: string): FrontendC
 function parseFrontendBaseUrl(rawFrontendBaseUrl: string): URL {
   try {
     const parsedFrontendBaseUrl = new URL(rawFrontendBaseUrl)
-    if (parsedFrontendBaseUrl.protocol !== 'http:' && parsedFrontendBaseUrl.protocol !== 'https:') {
-      throw new Error('Only http:// and https:// protocols are supported.')
+    if (parsedFrontendBaseUrl.protocol !== 'http:') {
+      throw new Error('Only http:// is supported.')
     }
 
     return parsedFrontendBaseUrl
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Invalid URL format.'
     throw new Error(
-      `[e2e config] TASKDECK_E2E_FRONTEND_BASE_URL must be an absolute http(s) URL (example: "http://localhost:5173"). Received "${rawFrontendBaseUrl}". ${reason}`,
+      `[e2e config] TASKDECK_E2E_FRONTEND_BASE_URL must be an absolute http URL (example: "http://localhost:${defaultFrontendPort}"). Received "${rawFrontendBaseUrl}". ${reason}`,
     )
   }
-}
-
-function defaultPortForProtocol(protocol: string): number {
-  if (protocol === 'http:') {
-    return 80
-  }
-
-  if (protocol === 'https:') {
-    return 443
-  }
-
-  throw new Error(
-    `[e2e config] Unsupported TASKDECK_E2E_FRONTEND_BASE_URL protocol "${protocol}". Use http:// or https://.`,
-  )
 }
 
 function parsePort(rawPort: string | undefined, fallbackPort: number, source: string): number {
@@ -155,6 +164,55 @@ function parsePort(rawPort: string | undefined, fallbackPort: number, source: st
   }
 
   return parsedPort
+}
+
+function resolveApiConfig(rawApiBaseUrl: string): ApiConfig {
+  const parsedApiBaseUrl = parseApiBaseUrl(rawApiBaseUrl)
+  const apiPath = normalizePath(parsedApiBaseUrl.pathname)
+  if (apiPath.length === 0) {
+    throw new Error(
+      `[e2e config] TASKDECK_E2E_API_BASE_URL must include an API path (example: "${defaultApiBaseUrl}"). Received "${rawApiBaseUrl}".`,
+    )
+  }
+
+  const normalizedBaseUrl = `${parsedApiBaseUrl.origin}${apiPath}`
+  return {
+    baseUrl: normalizedBaseUrl,
+    origin: parsedApiBaseUrl.origin,
+    readinessUrl: `${normalizedBaseUrl}/boards`,
+  }
+}
+
+function parseApiBaseUrl(rawApiBaseUrl: string): URL {
+  try {
+    const parsedApiBaseUrl = new URL(rawApiBaseUrl)
+    if (parsedApiBaseUrl.protocol !== 'http:') {
+      throw new Error('Only http:// is supported.')
+    }
+
+    if (parsedApiBaseUrl.port.length === 0) {
+      throw new Error('An explicit port is required.')
+    }
+
+    if (parsedApiBaseUrl.search.length > 0 || parsedApiBaseUrl.hash.length > 0) {
+      throw new Error('Query and hash fragments are not supported.')
+    }
+
+    return parsedApiBaseUrl
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Invalid URL format.'
+    throw new Error(
+      `[e2e config] TASKDECK_E2E_API_BASE_URL must be an absolute http URL with explicit port (example: "${defaultApiBaseUrl}"). Received "${rawApiBaseUrl}". ${reason}`,
+    )
+  }
+}
+
+function normalizePath(pathname: string): string {
+  if (!pathname || pathname === '/') {
+    return ''
+  }
+
+  return pathname.replace(/\/+$/, '')
 }
 
 function resolveBackendCorsOrigins(frontendOrigin: string, rawOrigins: string | undefined): string[] {

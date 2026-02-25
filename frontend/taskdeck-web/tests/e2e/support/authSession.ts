@@ -13,6 +13,7 @@ export interface AuthResult {
 }
 
 export const API_BASE_URL = process.env.TASKDECK_E2E_API_BASE_URL ?? 'http://localhost:5000/api'
+export const API_ORIGIN = new URL(API_BASE_URL).origin
 
 function buildSessionInitPayload(auth: AuthResult): { token: string; session: { userId: string; username: string; email: string } } {
   return {
