@@ -114,7 +114,29 @@ public class CaptureRequestContractTests
                         }
                         """;
 
-        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: false);
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("must not include server attribution field");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldFail_WhenDuplicateProvenanceContainsForbiddenAttributionField()
+    {
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": null,
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "requestedByUserId": "{{Guid.NewGuid()}}"
+                          }
+                        }
+                        """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
@@ -319,7 +341,7 @@ public class CaptureRequestContractTests
                         }
                         """;
 
-        var result = CaptureRequestContract.ParsePayload(payload);
+        var result = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
