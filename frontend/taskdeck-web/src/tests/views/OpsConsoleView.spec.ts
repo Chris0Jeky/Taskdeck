@@ -112,7 +112,7 @@ describe('OpsConsoleView', () => {
     expect(wrapper.text()).toContain('Access: Runnable for your role')
   })
 
-  it('adds actionable role guidance when a restricted template run is forbidden', async () => {
+  it('shows backend forbidden guidance without duplicating client-side guidance', async () => {
     mocks.getTemplates.mockResolvedValue([
       buildTemplate('boards.list', 'admin'),
     ])
@@ -140,12 +140,14 @@ describe('OpsConsoleView', () => {
     const runButton = wrapper
       .findAll('button')
       .find((button) => button.text().includes('Run Template'))
-    await runButton?.trigger('click')
+    expect(runButton).toBeDefined()
+    await runButton!.trigger('click')
     await waitForAsyncUi()
 
     expect(wrapper.text()).toContain("Template 'boards.list' requires role 'admin'")
-    expect(wrapper.text()).toContain('Role context: you are signed in as Editor')
-    expect(wrapper.text()).toContain('Need elevated access? Open Workspace > Settings')
+    expect(wrapper.text()).toContain('Next step: open Workspace > Settings')
+    expect(wrapper.text()).not.toContain('Role context: you are signed in as Editor')
+    expect(wrapper.text()).not.toContain('Need elevated access? Open Workspace > Settings and follow the operator role-assignment guidance.')
     expect(mocks.toastError).toHaveBeenCalled()
   })
 })
