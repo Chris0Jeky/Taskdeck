@@ -106,6 +106,40 @@ public class ExternalImportServiceTests
     }
 
     [Fact]
+    public async Task ImportToBoardAsync_ShouldReturnInvalidOperation_WhenBoardIsArchived()
+    {
+        var board = BuildBoardWithColumn("Imported");
+        board.Archive();
+        var boardId = board.Id;
+
+        _boardRepositoryMock
+            .Setup(repository => repository.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+
+        var parseResult = new ExternalImportParseResult(
+            Provider: ExternalImportProviders.Csv,
+            Profile: ExternalImportProfiles.OutreachContactsV1,
+            RowsReceived: 1,
+            RowsParsed: 1,
+            Candidates: [],
+            Conflicts: []);
+
+        var service = new ExternalImportService(_unitOfWorkMock.Object, [new FakeAdapter(parseResult)]);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: "Display Name,Company\nAlice Example,Acme",
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = await service.ImportToBoardAsync(boardId, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain("archived board");
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ImportToBoardAsync_DryRun_ShouldReportCreateUpdateAndSkipCounts()
     {
         var board = BuildBoardWithColumn("Imported");
