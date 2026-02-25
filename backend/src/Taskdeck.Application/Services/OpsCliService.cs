@@ -47,9 +47,22 @@ public class OpsCliService : IOpsCliService
             if (user == null)
                 return Result.Failure<CommandRunDto>(ErrorCodes.NotFound, $"User with ID {userId} was not found");
             if (!HasRequiredRole(user.DefaultRole, template.RequiredRole))
+            {
+                var runnableTemplates = GetRunnableTemplatesForRole(user.DefaultRole)
+                    .Select(commandTemplate => commandTemplate.Name)
+                    .ToList();
+
+                var runnableTemplateList = runnableTemplates.Count == 0
+                    ? "none"
+                    : string.Join(", ", runnableTemplates);
+
                 return Result.Failure<CommandRunDto>(
                     ErrorCodes.Forbidden,
-                    $"Template '{template.Name}' requires role '{template.RequiredRole}'");
+                    $"Template '{template.Name}' requires role '{template.RequiredRole}'. " +
+                    $"Your current role is '{user.DefaultRole.ToString().ToLowerInvariant()}'. " +
+                    $"Runnable templates for your role: {runnableTemplateList}. " +
+                    "Next step: open Workspace > Settings to confirm your account role, then ask an owner/admin to assign elevated access if needed.");
+            }
 
             var effectiveCorrelationId = string.IsNullOrWhiteSpace(correlationId)
                 ? Guid.NewGuid().ToString("N")
@@ -129,6 +142,13 @@ public class OpsCliService : IOpsCliService
     public Result<IEnumerable<CommandTemplateDto>> GetAvailableTemplates()
     {
         return Result.Success<IEnumerable<CommandTemplateDto>>(_templates.Values.ToList());
+    }
+
+    private static IEnumerable<CommandTemplateDto> GetRunnableTemplatesForRole(UserRole userRole)
+    {
+        return _templates.Values
+            .Where(template => HasRequiredRole(userRole, template.RequiredRole))
+            .OrderBy(template => template.Name);
     }
 
     private async Task<string> ExecuteTemplateAsync(string templateName, Dictionary<string, string>? parameters, CancellationToken ct)
