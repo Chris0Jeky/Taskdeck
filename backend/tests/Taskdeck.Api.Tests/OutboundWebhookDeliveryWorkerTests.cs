@@ -14,13 +14,17 @@ namespace Taskdeck.Api.Tests;
 
 public class OutboundWebhookDeliveryWorkerTests
 {
+    // Use a literal public TEST-NET address so host-policy tests do not depend on DNS behavior.
+    private const string AllowedWebhookEndpoint = "https://203.0.113.10/webhook";
+    private const string InsecureAllowedWebhookEndpoint = "http://203.0.113.10/webhook";
+
     [Fact]
     public async Task ProcessDueDeliveriesAsync_ShouldNotSend_WhenClaimFails()
     {
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "https://example.com/webhook",
+            AllowedWebhookEndpoint,
             "secret",
             ["card.*"]);
         var delivery = CreateDeliveryWithSubscription(subscription);
@@ -53,7 +57,7 @@ public class OutboundWebhookDeliveryWorkerTests
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "https://example.com/webhook",
+            AllowedWebhookEndpoint,
             "secret",
             ["card.*"]);
         var delivery = CreateDeliveryWithSubscription(subscription);
@@ -96,7 +100,7 @@ public class OutboundWebhookDeliveryWorkerTests
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "https://example.com/webhook",
+            AllowedWebhookEndpoint,
             "secret",
             ["card.*"]);
         subscription.Revoke(Guid.NewGuid());
@@ -131,7 +135,7 @@ public class OutboundWebhookDeliveryWorkerTests
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "http://example.com/webhook",
+            InsecureAllowedWebhookEndpoint,
             "secret",
             ["card.*"]);
         var delivery = CreateDeliveryWithSubscription(subscription);
@@ -165,7 +169,7 @@ public class OutboundWebhookDeliveryWorkerTests
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "https://example.com/webhook",
+            AllowedWebhookEndpoint,
             "secret",
             ["card.*"]);
         var delivery = CreateDeliveryWithSubscription(subscription);
@@ -200,7 +204,7 @@ public class OutboundWebhookDeliveryWorkerTests
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "https://example.com/webhook",
+            AllowedWebhookEndpoint,
             "secret",
             ["card.*"]);
         var delivery = CreateDeliveryWithSubscription(subscription);
@@ -247,7 +251,7 @@ public class OutboundWebhookDeliveryWorkerTests
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "https://example.com/webhook",
+            AllowedWebhookEndpoint,
             "secret",
             ["card.*"]);
         var delivery = CreateDeliveryWithSubscription(subscription);
