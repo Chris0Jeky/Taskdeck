@@ -405,7 +405,7 @@ Result:
 - E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
 - 2026-02-25 local rerun was blocked before test execution:
   - Playwright frontend web server startup failed on `localhost:5173` with `listen EACCES`.
-  - Temporary local port override (`localhost:5001`) then failed API preflight due CORS origin mismatch (`http://localhost:5001` not allowed).
+  - Temporary local port override (`localhost:5001`) then failed API preflight due to CORS origin mismatch (`http://localhost:5001` not allowed).
   - Investigation record: `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
 ### Total
