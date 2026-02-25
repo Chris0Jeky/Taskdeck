@@ -339,6 +339,10 @@ Delivered in the latest cycle:
    - API CORS composition now keeps default localhost origins (`http://localhost:5173`, `http://localhost:5174`) as baseline behavior
    - development runtime now accepts additive allowed origins from configuration key `Cors:DevelopmentAllowedOrigins`
    - API integration coverage now verifies both default-origin allowance and development-configured alternate-origin allowance via deterministic in-memory config overrides
+80. OPS-16 deployment/container hardening verification matrix delivery (`#142`):
+   - added deployment verification script (`scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1`) covering secret-enforcement validation, reverse-proxy header checks, unauthorized-path checks, and startup/restart/shutdown reliability checks for the compose baseline
+   - added explicit pass/fail matrix doc (`docs/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
+   - expanded manual checklist coverage for non-automatable deployment controls (backend exposure posture, edge TLS termination posture, host restart rehearsal expectations)
 
 ## Roadmap by Horizon
 
@@ -524,7 +528,7 @@ Exit Criteria:
 - CI/workflow topology expansion and governance track: `#168`
 - API/frontend hardening follow-through: `#153` (delivered), `#154` (delivered), `#155` (delivered), `#157` (delivered)
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
-- Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered)
+- Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered), `#142` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76` (delivered)
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
