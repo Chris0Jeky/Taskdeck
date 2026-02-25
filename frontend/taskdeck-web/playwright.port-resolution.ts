@@ -5,10 +5,12 @@ export const defaultFrontendPort = 5173
 export const fallbackFrontendPorts = [defaultFrontendPort, 4173, 5001] as const
 const taskdeckFrontendIdentityMarkers = ['<title>taskdeck-web</title>', '/src/main.ts'] as const
 export const portProbeTimeoutMs = 300
+const maxProbeResponseBytes = 64 * 1024
 
 type PortProbe = (host: string, port: number) => boolean
 type ProbeResult = {
   error?: Error
+  signal?: NodeJS.Signals | null
   status: number | null
 }
 type ProbeRunner = (candidateHost: string, port: number, probeScript: string) => ProbeResult
@@ -90,10 +92,25 @@ const request = http.request(
   },
   (response) => {
     let responseText = ''
+    let observedBytes = 0
     response.setEncoding('utf8')
     response.on('data', (chunk) => {
-      if (responseText.length < 8192) {
+      observedBytes += Buffer.byteLength(chunk)
+      if (observedBytes <= maxProbeResponseBytes) {
         responseText += chunk
+      }
+
+      const statusCode = response.statusCode ?? 0
+      const hasExpectedIdentity = markers.every((marker) => responseText.includes(marker))
+      if (statusCode === 200 && hasExpectedIdentity) {
+        response.destroy()
+        settle(0)
+        return
+      }
+
+      if (observedBytes > ${maxProbeResponseBytes}) {
+        response.destroy()
+        settle(1)
       }
     })
     response.on('end', () => {
@@ -119,6 +136,13 @@ request.end()
     if (probe.error) {
       onProbeError(
         `[e2e config] frontend identity probe spawn failed for ${candidateHost}:${port}: ${probe.error.message}`,
+      )
+      continue
+    }
+
+    if (probe.signal) {
+      onProbeError(
+        `[e2e config] frontend identity probe terminated by signal ${probe.signal} for ${candidateHost}:${port}.`,
       )
       continue
     }
@@ -176,6 +200,13 @@ server.listen(port, host, () => {
       continue
     }
 
+    if (probe.signal) {
+      onProbeError(
+        `[e2e config] frontend bind probe terminated by signal ${probe.signal} for ${candidateHost}:${port}.`,
+      )
+      continue
+    }
+
     if (probe.status === 0) {
       return true
     }
@@ -202,7 +233,8 @@ export function parseFrontendHost(rawHost: string, source: string): string {
 
   if (
     normalizedHost.includes('://') ||
-    /[\s/?#'"`\\,;]/.test(normalizedHost)
+    containsControlCharacters(normalizedHost) ||
+    /[\s/?#'"`\\,;]/u.test(normalizedHost)
   ) {
     throw new Error(
       `[e2e config] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
@@ -233,6 +265,18 @@ function runProbeScript(candidateHost: string, port: number, probeScript: string
 
   return {
     error: probe.error ?? undefined,
+    signal: probe.signal,
     status: probe.status,
   }
+}
+
+function containsControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if ((code >= 0 && code <= 31) || code === 127) {
+      return true
+    }
+  }
+
+  return false
 }

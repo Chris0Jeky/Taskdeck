@@ -65,6 +65,7 @@ describe('playwright frontend port resolution', () => {
     expect(() => parseFrontendHost('http://localhost', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('localhost/path', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('local host', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
+    expect(() => parseFrontendHost('localhost\u0000', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
     expect(() => parseFrontendHost('   ', 'TASKDECK_E2E_FRONTEND_HOST')).toThrow()
   })
 
@@ -123,5 +124,18 @@ describe('playwright frontend port resolution', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0]).toContain('frontend bind probe spawn failed')
     expect(errors[0]).toContain('localhost:5001')
+  })
+
+  it('reports signal-terminated probe executions', () => {
+    const errors: string[] = []
+
+    const result = canConnectToTaskdeckFrontend('127.0.0.1', 5173, {
+      onProbeError: (message) => errors.push(message),
+      probeRunner: () => ({ status: null, signal: 'SIGTERM' }),
+    })
+
+    expect(result).toBe(false)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('terminated by signal SIGTERM')
   })
 })
