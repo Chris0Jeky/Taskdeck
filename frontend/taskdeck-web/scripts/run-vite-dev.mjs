@@ -34,7 +34,7 @@ if (!hasOption(cliArgs, ['--strictPort'])) {
   viteArgs.push('--strictPort')
 }
 
-console.log(`[dev] starting Vite on http://${effectiveHost}:${effectivePort}`)
+console.log(`[dev] starting Vite on ${buildHttpOrigin(effectiveHost, effectivePort)}`)
 
 const viteCliPath = path.resolve(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js')
 const child = spawn(process.execPath, [viteCliPath, ...viteArgs], {
@@ -56,7 +56,13 @@ child.on('error', (error) => {
 
 child.on('exit', (code, signal) => {
   if (signal) {
-    process.kill(process.pid, signal)
+    try {
+      process.kill(process.pid, signal)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[dev] failed to forward Vite exit signal ${signal}: ${message}`)
+      process.exit(1)
+    }
     return
   }
 
@@ -100,19 +106,20 @@ function parsePort(rawPort, source) {
 
 async function resolveDefaultPort(host) {
   for (const candidatePort of fallbackPorts) {
-    if (await canConnectToTaskdeckFrontend(host, candidatePort)) {
-      return candidatePort
-    }
-  }
-
-  for (const candidatePort of fallbackPorts) {
     if (await canBindPort(host, candidatePort)) {
       return candidatePort
+    }
+
+    if (await canConnectToTaskdeckFrontend(host, candidatePort)) {
+      console.warn(
+        `[dev] detected existing Taskdeck frontend listener on ${buildHttpOrigin(host, candidatePort)}; ` +
+          'skipping occupied port for new Vite process.',
+      )
     }
   }
 
   console.warn(
-    `[dev] could not find a running Taskdeck frontend or bindable port in ${fallbackPorts.join(', ')} for host "${host}". ` +
+    `[dev] could not find a bindable frontend port in ${fallbackPorts.join(', ')} for host "${host}". ` +
       `Falling back to ${defaultPort}. If startup fails, set TASKDECK_DEV_PORT explicitly.`,
   )
   return defaultPort
@@ -129,13 +136,8 @@ async function canConnectToTaskdeckFrontend(host, port) {
 }
 
 async function canBindPort(host, port) {
-  for (const candidateHost of resolveProbeHosts(host)) {
-    if (await canBindHostPort(candidateHost, port)) {
-      return true
-    }
-  }
-
-  return false
+  const normalizedHost = parseHost(host, 'TASKDECK_DEV_HOST')
+  return canBindHostPort(normalizedHost, port)
 }
 
 function resolveProbeHosts(host) {
@@ -148,13 +150,25 @@ function resolveProbeHosts(host) {
 }
 
 function parseHost(rawHost, source) {
-  const normalizedHost = rawHost.trim()
+  let normalizedHost = rawHost.trim()
+  if (normalizedHost.startsWith('[') || normalizedHost.endsWith(']')) {
+    if (!(normalizedHost.startsWith('[') && normalizedHost.endsWith(']'))) {
+      throw new Error(
+        `[dev] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
+      )
+    }
+
+    normalizedHost = normalizedHost.slice(1, -1)
+  }
+
   if (normalizedHost.length === 0) {
     throw new Error(`[dev] ${source} cannot be empty.`)
   }
 
   if (
     normalizedHost.includes('://') ||
+    normalizedHost.includes('[') ||
+    normalizedHost.includes(']') ||
     /[\u0000-\u001F\u007F]/.test(normalizedHost) ||
     /[\s/?#'"`\\,;]/u.test(normalizedHost)
   ) {
@@ -164,6 +178,15 @@ function parseHost(rawHost, source) {
   }
 
   return normalizedHost
+}
+
+function buildHttpOrigin(host, port) {
+  const normalizedHost = parseHost(host, 'TASKDECK_DEV_HOST')
+  const hostAuthority =
+    normalizedHost.includes(':') && !normalizedHost.startsWith('[')
+      ? `[${normalizedHost}]`
+      : normalizedHost
+  return `http://${hostAuthority}:${port}`
 }
 
 function servesTaskdeckFrontend(host, port) {
