@@ -45,7 +45,8 @@ Out of scope (known implementation boundaries on current `main`):
 
 Fallback when `localhost:5173` is blocked (`listen EACCES`):
 - `npm run dev` now auto-selects a fallback port (`4173`, then `5001`) and starts without manual overrides.
-- fallback reuse only applies when the listener looks like Taskdeck frontend, and strict-port startup avoids implicit Vite port auto-increment drift.
+- launcher now chooses a bindable fallback port and skips occupied candidates (including existing Taskdeck listeners) for new Vite processes.
+- strict-port startup avoids implicit Vite port auto-increment drift.
 - backend Development CORS defaults include `http://localhost:4173` and `http://localhost:5001`, so frontend auth/API requests remain allowed when fallback ports are used.
 - If you need an explicit port, run:
   - `cd frontend/taskdeck-web`

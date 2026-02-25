@@ -79,7 +79,7 @@ npm run dev
 
 Notes:
 - `npm run dev` now auto-resolves frontend port with fallback order `5173` -> `4173` -> `5001` when a port is restricted or unavailable.
-- fallback reuse now requires Taskdeck frontend identity markers, so unrelated local listeners on candidate ports are ignored.
+- launcher now selects a bindable port first; occupied candidate ports (including existing Taskdeck listeners) are skipped for new Vite processes.
 - launcher now applies strict-port startup semantics by default to avoid Vite auto-increment drift.
 - explicit overrides remain supported (for example `npm run dev -- --host localhost --port 5001` or `TASKDECK_DEV_PORT=5001 npm run dev`).
 - backend Development CORS defaults include localhost fallback ports (`4173`, `5001`) so login/API calls stay aligned when fallback startup is used.
