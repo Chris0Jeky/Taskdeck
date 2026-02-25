@@ -70,7 +70,7 @@ function isOverdue(dateString: string | null): boolean {
       type="button"
       data-action="drag-card-handle"
       draggable="true"
-      class="td-card-drag-handle -mx-1 mb-2 flex w-full items-center justify-end rounded-md px-2 py-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-grab active:cursor-grabbing"
+      class="td-card-drag-handle -mx-2 -mt-1 mb-2 flex min-h-10 w-[calc(100%+1rem)] items-center justify-center gap-2 rounded-md px-3 py-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 cursor-grab active:cursor-grabbing"
       title="Drag Card"
       aria-label="Drag Card"
       @click.stop
@@ -78,6 +78,7 @@ function isOverdue(dateString: string | null): boolean {
       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
       </svg>
+      <span class="text-[11px] font-semibold uppercase tracking-wide">Drag card</span>
     </button>
 
     <!-- Blocked Badge -->

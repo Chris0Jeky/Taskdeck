@@ -295,11 +295,18 @@ test('card drag should use explicit enlarged handle while add-card controls stay
   const sourceCardHandle = cardDragHandleByTitle(page, cardTitle)
   const sourceLane = columnByName(page, sourceColumn)
   const targetLane = columnByName(page, targetColumn)
+  const sourceCard = cardByTitle(page, cardTitle)
   const addCardButton = sourceLane.getByRole('button', { name: 'Add Card' })
   const addCardButtonBox = await addCardButton.boundingBox()
   const targetLaneBox = await targetLane.boundingBox()
+  const handleBox = await sourceCardHandle.boundingBox()
+  const cardBox = await sourceCard.boundingBox()
   expect(addCardButtonBox).not.toBeNull()
   expect(targetLaneBox).not.toBeNull()
+  expect(handleBox).not.toBeNull()
+  expect(cardBox).not.toBeNull()
+  expect(handleBox!.width).toBeGreaterThan(cardBox!.width * 0.75)
+  expect(handleBox!.height).toBeGreaterThan(30)
 
   await page.mouse.move(
     addCardButtonBox!.x + addCardButtonBox!.width / 2,

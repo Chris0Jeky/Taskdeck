@@ -32,9 +32,11 @@ describe('CardItem drag guardrails', () => {
     const handle = wrapper.get('.td-card-drag-handle')
     expect(handle.attributes('data-action')).toBe('drag-card-handle')
     expect(handle.attributes('draggable')).toBe('true')
-    expect(handle.classes()).toContain('w-full')
-    expect(handle.classes()).toContain('px-2')
-    expect(handle.classes()).toContain('py-1.5')
+    expect(handle.classes()).toContain('w-[calc(100%+1rem)]')
+    expect(handle.classes()).toContain('min-h-10')
+    expect(handle.classes()).toContain('px-3')
+    expect(handle.classes()).toContain('py-2')
+    expect(handle.text()).toContain('Drag card')
   })
 
   it('blocks dragstart when not initiated from drag handle', async () => {
