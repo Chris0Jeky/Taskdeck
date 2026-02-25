@@ -350,10 +350,10 @@ static string EscapeAuthHeaderValue(string value)
 
 static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configuration, bool isDevelopment)
 {
-    var productionOrigins = new[] { "http://localhost:5173", "http://localhost:5174" };
+    var defaultAllowedOrigins = new[] { "http://localhost:5173", "http://localhost:5174" };
     if (!isDevelopment)
     {
-        return productionOrigins;
+        return defaultAllowedOrigins;
     }
 
     var configuredDevelopmentOrigins = configuration
@@ -373,7 +373,7 @@ static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configurat
 
     var developmentFallbackOrigins = new[] { "http://localhost:4173", "http://localhost:5001" };
 
-    return productionOrigins
+    return defaultAllowedOrigins
         .Concat(configuredDevelopmentOrigins)
         .Concat(developmentFallbackOrigins)
         .Where(origin => !string.IsNullOrWhiteSpace(origin))
