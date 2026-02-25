@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Diagnostics;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -158,7 +159,9 @@ public class ChatService : IChatService
                     .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
                     .ToList();
 
-                var completionRequest = new ChatCompletionRequest(chatMessages);
+                var completionRequest = new ChatCompletionRequest(
+                    chatMessages,
+                    Attribution: BuildAttribution(session, userId));
                 var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
@@ -228,7 +231,9 @@ public class ChatService : IChatService
             .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
             .ToList();
 
-        var request = new ChatCompletionRequest(chatMessages);
+        var request = new ChatCompletionRequest(
+            chatMessages,
+            Attribution: BuildAttribution(session, userId));
 
         await foreach (var token in _llmProvider.StreamAsync(request, ct))
         {
@@ -240,6 +245,28 @@ public class ChatService : IChatService
     {
         var normalized = content.ToLowerInvariant();
         return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
+    }
+
+    private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)
+    {
+        return new LlmRequestAttribution(
+            userId,
+            ResolveCorrelationId(),
+            LlmRequestSourceSurface.Chat,
+            session.BoardId,
+            session.Id);
+    }
+
+    private static string ResolveCorrelationId()
+    {
+        var correlationFromActivity = Activity.Current?.GetTagItem("taskdeck.correlation_id")?.ToString();
+        if (!string.IsNullOrWhiteSpace(correlationFromActivity))
+        {
+            return LlmRequestAttributionMapper.ResolveCorrelationId(correlationFromActivity);
+        }
+
+        var traceId = Activity.Current?.TraceId.ToString();
+        return LlmRequestAttributionMapper.ResolveCorrelationId(traceId);
     }
 
     private static bool LooksLikeChecklistBootstrapRequest(string content)
