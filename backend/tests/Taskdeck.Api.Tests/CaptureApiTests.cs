@@ -351,6 +351,17 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
         var failedItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.Failed);
         failedItem.Status.Should().Be(CaptureStatus.Failed);
+        failedItem.Provenance.Should().NotBeNull();
+        failedItem.Provenance!.ProposalId.Should().BeNull();
+        failedItem.Provenance.TriageRunId.Should().BeNull();
+        failedItem.Provenance.PromptVersion.Should().BeNull();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+        persistedItem.Status.Should().Be(RequestStatus.Failed);
+        persistedItem.RetryCount.Should().Be(1);
+        persistedItem.ErrorMessage.Should().Contain("BoardId is required");
     }
 
     [Fact]
