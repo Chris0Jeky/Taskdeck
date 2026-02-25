@@ -57,6 +57,7 @@ describe('sessionStore', () => {
     expect(store.userId).toBe('user-1')
     expect(store.username).toBe('testuser')
     expect(store.email).toBe('test@example.com')
+    expect(store.defaultRole).toBe(2)
     expect(store.isAuthenticated).toBe(true)
     expect(store.error).toBeNull()
   })
@@ -115,6 +116,7 @@ describe('sessionStore', () => {
       userId: 'user-1',
       username: 'restored',
       email: 'restored@example.com',
+      defaultRole: 1,
     }))
 
     store.restoreSession()
@@ -123,6 +125,7 @@ describe('sessionStore', () => {
     expect(store.userId).toBe('user-1')
     expect(store.username).toBe('restored')
     expect(store.email).toBe('restored@example.com')
+    expect(store.defaultRole).toBe(1)
     expect(store.isAuthenticated).toBe(true)
   })
 
@@ -133,12 +136,14 @@ describe('sessionStore', () => {
       userId: 'user-1',
       username: 'expired',
       email: 'expired@example.com',
+      defaultRole: 2,
     }))
 
     store.restoreSession()
 
     expect(store.token).toBeNull()
     expect(store.userId).toBeNull()
+    expect(store.defaultRole).toBeNull()
     expect(store.isAuthenticated).toBe(false)
   })
 
@@ -151,6 +156,7 @@ describe('sessionStore', () => {
 
     expect(store.token).toBeNull()
     expect(store.userId).toBeNull()
+    expect(store.defaultRole).toBeNull()
     expect(store.isAuthenticated).toBe(false)
     expect(localStorage.getItem('taskdeck_token')).toBeNull()
     expect(localStorage.getItem('taskdeck_session')).toBeNull()
