@@ -13,12 +13,15 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## MCP tools (agent tooling)
 - See `docs/MCP_TOOLING_GUIDE.md` for tool selection rules and safe usage.
+- MCP-first default: when an MCP tool can perform a task, use MCP before shell/CLI alternatives.
 - Prefer MCP tools over guessing:
     - OpenAI/Codex/API docs -> openaiDeveloperDocs MCP
     - Third-party library docs -> Context7 MCP
     - UI reproduction/regression -> Playwright MCP
     - Repo search -> native `rg` (ripgrep MCP unreliable on Windows; fallback to GitHub search_code)
     - Issues/PRs/workflows -> GitHub MCP (write actions only when required)
+- Fallback rule:
+  - if MCP is unavailable, failing, or lacks required capability, use shell/CLI fallback and state that fallback briefly in handoff notes.
 
 ## Multi-Agent Execution (required)
 - Use spawned agents aggressively for independent workstreams.
