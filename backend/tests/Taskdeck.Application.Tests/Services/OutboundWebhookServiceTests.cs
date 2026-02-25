@@ -166,6 +166,21 @@ public class OutboundWebhookServiceTests
     }
 
     [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectThreeSegmentEventFilter()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://example.com/hook", ["card.comment.created"]));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Invalid event filter");
+    }
+
+    [Fact]
     public async Task CreateSubscriptionAsync_ShouldRejectEventFilterThatExceedsMaxLength()
     {
         var service = new OutboundWebhookService(_unitOfWorkMock.Object);
@@ -197,6 +212,36 @@ public class OutboundWebhookServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("Serialized event filters");
+    }
+
+    [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectEndpointWithEmbeddedCredentials()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://user:pass@example.com/hook"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("embedded credentials");
+    }
+
+    [Fact]
+    public async Task CreateSubscriptionAsync_ShouldRejectEndpointWithFragment()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://example.com/hook#section"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("URL fragment");
     }
 
     [Fact]

@@ -149,6 +149,30 @@ public class OutboundWebhooksApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
     }
 
+    [Fact]
+    public async Task CreateSubscription_ShouldReturnBadRequest_WhenEndpointContainsEmbeddedCredentials()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/webhooks",
+            new CreateOutboundWebhookSubscriptionDto("https://user:pass@example.com/webhook", ["card.*"]));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task CreateSubscription_ShouldReturnBadRequest_WhenEndpointContainsFragment()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/webhooks",
+            new CreateOutboundWebhookSubscriptionDto("https://example.com/webhook#fragment", ["card.*"]));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
     private async Task<BoardDto> CreateBoardAsync()
     {
         await EnsureAuthenticatedAsync();

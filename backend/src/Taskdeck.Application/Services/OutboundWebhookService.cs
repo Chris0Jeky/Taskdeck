@@ -18,7 +18,7 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
     private const string EventFilterDelimiter = "|";
 
     private static readonly Regex EventFilterRegex = new(
-        @"^\*$|^[a-z]+(\.[a-z]+)?\.(\*|[a-z]+)$|^[a-z]+\.(\*|[a-z]+)$",
+        @"^\*$|^[a-z]+\.(\*|[a-z]+)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly JsonSerializerOptions WebhookEnvelopeJsonOptions = new()
     {
@@ -231,6 +231,16 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
         if (!isHttps && !isHttp)
         {
             return (false, null, "Endpoint URL must use http or https.");
+        }
+
+        if (!string.IsNullOrEmpty(parsed.UserInfo))
+        {
+            return (false, null, "Endpoint URL must not contain embedded credentials.");
+        }
+
+        if (!string.IsNullOrEmpty(parsed.Fragment))
+        {
+            return (false, null, "Endpoint URL must not contain a URL fragment.");
         }
 
         if (isHttp && !string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase))
