@@ -4,7 +4,7 @@ Status: Non-authoritative analysis record (promoted outcomes are tracked in acti
 
 ## Sources Reviewed
 
-- `docs/InReview/REPO_PACK/docs/analysis/2026-02-21_capture-automation_realignment_pack/`
+- `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-21_capture-automation_realignment_pack/`
 - `docs/InReview/docs/analysis/2026-02-21_capture-security-performance-addendum/`
 - Live GitHub issue state (open + closed) for overlap/deduplication.
 
@@ -59,3 +59,4 @@ This realignment was promoted in planning form to:
 
 Implementation-time promotion remains tracked under:
 - `#211` (status/masterplan/testing/manual updates after shipped behavior changes).
+
