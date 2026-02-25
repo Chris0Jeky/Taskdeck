@@ -45,7 +45,7 @@ interface FixtureScenario {
   boardName: string
   manifest: StarterPackManifest
   dryRun: boolean
-  expectConflicts: boolean
+  expectBlockingConflicts: boolean
   preseedColumns?: Array<{
     name: string
     position: number
@@ -71,7 +71,7 @@ const FIXTURE_SCENARIOS: Record<FixtureScenarioKey, FixtureScenario> = {
   small: {
     boardName: 'E2E Fixture Small',
     dryRun: false,
-    expectConflicts: false,
+    expectBlockingConflicts: false,
     manifest: {
       schemaVersion: '1.0',
       packId: 'qa-fixture-small',
@@ -113,7 +113,7 @@ const FIXTURE_SCENARIOS: Record<FixtureScenarioKey, FixtureScenario> = {
   medium: {
     boardName: 'E2E Fixture Medium',
     dryRun: false,
-    expectConflicts: false,
+    expectBlockingConflicts: false,
     manifest: {
       schemaVersion: '1.0',
       packId: 'qa-fixture-medium',
@@ -195,7 +195,7 @@ const FIXTURE_SCENARIOS: Record<FixtureScenarioKey, FixtureScenario> = {
   edge: {
     boardName: 'E2E Fixture Edge',
     dryRun: true,
-    expectConflicts: true,
+    expectBlockingConflicts: true,
     preseedColumns: [
       {
         name: 'Occupied Lane',
@@ -230,12 +230,17 @@ function deepCloneManifest(manifest: StarterPackManifest): StarterPackManifest {
   return JSON.parse(JSON.stringify(manifest)) as StarterPackManifest
 }
 
-function hasConflicts(result: StarterPackApplyResult): boolean {
-  if (typeof result.hasConflicts === 'boolean') {
-    return result.hasConflicts
+function hasBlockingConflicts(result: StarterPackApplyResult): boolean {
+  if (typeof result.hasBlockingConflicts === 'boolean') {
+    return result.hasBlockingConflicts
   }
 
-  return result.conflicts.length > 0
+  return result.conflicts.some((conflict) => {
+    const severity = typeof conflict.severity === 'string'
+      ? conflict.severity.trim().toLowerCase()
+      : ''
+    return severity !== 'warning'
+  })
 }
 
 async function createBoard(
@@ -307,9 +312,9 @@ export async function bootstrapStarterPackFixture(
 
   expect(applyResponse.status()).toBe(200)
   const applyResult = await applyResponse.json() as StarterPackApplyResult
-  expect(hasConflicts(applyResult)).toBe(scenario.expectConflicts)
+  expect(hasBlockingConflicts(applyResult)).toBe(scenario.expectBlockingConflicts)
 
-  if (!scenario.dryRun && !scenario.expectConflicts) {
+  if (!scenario.dryRun && !hasBlockingConflicts(applyResult)) {
     expect(applyResult.applied).toBeTruthy()
   } else {
     expect(applyResult.applied).toBeFalsy()
