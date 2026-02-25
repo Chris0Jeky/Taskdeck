@@ -38,14 +38,8 @@ public class OpenAiLlmProvider : ILlmProvider
         {
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildChatCompletionsEndpoint());
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.OpenAi.ApiKey.Trim());
-            message.Content = JsonContent.Create(new
-            {
-                model = _settings.OpenAi.Model.Trim(),
-                messages = request.Messages.Select(MapMessage).ToArray(),
-                max_tokens = request.MaxTokens,
-                temperature = request.Temperature,
-                stream = false
-            });
+            LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
+            message.Content = JsonContent.Create(BuildRequestPayload(request));
 
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
@@ -127,6 +121,25 @@ public class OpenAiLlmProvider : ILlmProvider
             },
             content = message.Content
         };
+    }
+
+    private object BuildRequestPayload(ChatCompletionRequest request)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = _settings.OpenAi.Model.Trim(),
+            ["messages"] = request.Messages.Select(MapMessage).ToArray(),
+            ["max_tokens"] = request.MaxTokens,
+            ["temperature"] = request.Temperature,
+            ["stream"] = false
+        };
+
+        if (request.Attribution is not null)
+        {
+            payload["user"] = LlmRequestAttributionMapper.BuildUserToken(request.Attribution.UserId);
+        }
+
+        return payload;
     }
 
     private static bool TryParseResponse(string responseBody, out string content, out int tokensUsed)
