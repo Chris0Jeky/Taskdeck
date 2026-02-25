@@ -192,7 +192,7 @@ onMounted(() => {
         <button
           class="td-btn td-btn--secondary td-btn--sm"
           @click="showHiddenBoards = !showHiddenBoards"
-          :disabled="hiddenArchivedBoardCount === 0"
+          :disabled="hiddenArchivedBoardCount === 0 && !showHiddenBoards"
         >
           {{ showHiddenBoards ? 'Hide Hidden Boards' : `Show Hidden Boards (${hiddenArchivedBoardCount})` }}
         </button>
