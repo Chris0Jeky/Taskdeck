@@ -4,7 +4,11 @@ import { starterPacksApi } from '../../api/starterPacksApi'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useBoardStore } from '../../store/boardStore'
 import { useToastStore } from '../../store/toastStore'
-import type { StarterPackApplyResult, StarterPackCatalogEntry } from '../../types/starter-packs'
+import type {
+  StarterPackApplyConflict,
+  StarterPackApplyResult,
+  StarterPackCatalogEntry,
+} from '../../types/starter-packs'
 import { getErrorMessage } from '../../utils/errorMessage'
 
 const props = defineProps<{
@@ -66,18 +70,122 @@ const selectedPack = computed<StarterPackCatalogEntry | null>(() => {
 })
 
 const hasPreviewResult = computed(() => latestResult.value !== null)
+const resultConflicts = computed(() => latestResult.value?.conflicts ?? [])
 
-const hasResultConflicts = computed(() => {
+function normalizeConflictSeverity(conflict: StarterPackApplyConflict): 'blocking' | 'warning' {
+  if (typeof conflict.severity !== 'string') {
+    return 'blocking'
+  }
+
+  return conflict.severity.trim().toLowerCase() === 'warning' ? 'warning' : 'blocking'
+}
+
+const blockingConflictCount = computed(() => {
+  if (!latestResult.value) {
+    return 0
+  }
+
+  if (typeof latestResult.value.hasBlockingConflicts === 'boolean') {
+    if (!latestResult.value.hasBlockingConflicts) {
+      return 0
+    }
+
+    const blockingConflicts = resultConflicts.value.filter(
+      (conflict) => normalizeConflictSeverity(conflict) === 'blocking'
+    ).length
+
+    return blockingConflicts > 0 ? blockingConflicts : resultConflicts.value.length
+  }
+
+  return resultConflicts.value.filter((conflict) => normalizeConflictSeverity(conflict) === 'blocking').length
+})
+
+const warningConflictCount = computed(() =>
+  Math.max(resultConflicts.value.length - blockingConflictCount.value, 0)
+)
+
+const hasBlockingConflicts = computed(() => blockingConflictCount.value > 0)
+
+const actionSummary = computed(() => {
+  const summary = { create: 0, skip: 0, other: 0 }
+
+  for (const action of latestResult.value?.actions ?? []) {
+    const operation = action.operation.trim().toLowerCase()
+    if (operation === 'create') {
+      summary.create += 1
+      continue
+    }
+
+    if (operation === 'skip') {
+      summary.skip += 1
+      continue
+    }
+
+    summary.other += 1
+  }
+
+  return summary
+})
+
+const outcomeSummaryLabel = computed(() => {
+  if (!latestResult.value) {
+    return ''
+  }
+
+  if (hasBlockingConflicts.value) {
+    return 'Blocked by conflicts'
+  }
+
+  const hasWarnings = warningConflictCount.value > 0 || actionSummary.value.skip > 0
+  if (latestResult.value.dryRun) {
+    return hasWarnings ? 'Preview with warnings' : 'Preview ready'
+  }
+
+  if (!latestResult.value.applied) {
+    return 'No changes applied'
+  }
+
+  return hasWarnings ? 'Applied with warnings' : 'Applied'
+})
+
+const outcomeSummaryToneClass = computed(() => {
+  if (!latestResult.value) {
+    return 'bg-gray-100 text-gray-700'
+  }
+
+  if (hasBlockingConflicts.value) {
+    return 'bg-red-100 text-red-700'
+  }
+
+  const hasWarnings = warningConflictCount.value > 0 || actionSummary.value.skip > 0
+  if (hasWarnings) {
+    return 'bg-amber-100 text-amber-800'
+  }
+
+  if (latestResult.value.dryRun) {
+    return 'bg-blue-100 text-blue-700'
+  }
+
+  return 'bg-green-100 text-green-700'
+})
+
+const shouldShowWarningCallout = computed(() => {
   if (!latestResult.value) {
     return false
   }
 
-  if (typeof latestResult.value.hasConflicts === 'boolean') {
-    return latestResult.value.hasConflicts
-  }
-
-  return latestResult.value.conflicts.length > 0
+  return hasBlockingConflicts.value || warningConflictCount.value > 0 || actionSummary.value.skip > 0
 })
+
+function conflictSeverityBadgeClass(conflict: StarterPackApplyConflict): string {
+  return normalizeConflictSeverity(conflict) === 'warning'
+    ? 'bg-amber-100 text-amber-800'
+    : 'bg-red-100 text-red-800'
+}
+
+function conflictSeverityLabel(conflict: StarterPackApplyConflict): string {
+  return normalizeConflictSeverity(conflict) === 'warning' ? 'Warning' : 'Blocking'
+}
 
 watch(filteredPacks, (entries) => {
   if (entries.length === 0) {
@@ -182,6 +290,27 @@ function extractConflictResult(error: unknown): StarterPackApplyResult | null {
   return payload as StarterPackApplyResult
 }
 
+async function finalizeSuccessfulApply() {
+  if (!latestResult.value || !selectedPack.value) {
+    return
+  }
+
+  if (!latestResult.value.applied) {
+    toast.warning(`Starter pack "${selectedPack.value.title}" did not apply any changes.`)
+    return
+  }
+
+  await boardStore.fetchBoard(props.boardId)
+  emit('applied', latestResult.value)
+
+  if (warningConflictCount.value > 0 || actionSummary.value.skip > 0) {
+    toast.warning(`Applied starter pack "${selectedPack.value.title}" with warnings.`)
+    return
+  }
+
+  toast.success(`Applied starter pack "${selectedPack.value.title}".`)
+}
+
 async function runPreview() {
   if (!selectedPack.value || loadingCatalog.value || runningPreview.value || applyingPack.value) {
     return
@@ -196,8 +325,10 @@ async function runPreview() {
       dryRun: true,
     })
 
-    if (hasResultConflicts.value) {
-      toast.error('Dry-run found starter pack conflicts.')
+    if (hasBlockingConflicts.value) {
+      toast.error('Dry-run found blocking starter pack conflicts.')
+    } else if (warningConflictCount.value > 0 || actionSummary.value.skip > 0) {
+      toast.warning('Dry-run found warnings. Review skipped or unresolved items.')
     } else {
       toast.success('Dry-run preview generated.')
     }
@@ -223,19 +354,21 @@ async function applyPack() {
       dryRun: false,
     })
 
-    if (hasResultConflicts.value) {
-      toast.error('Starter pack apply returned conflicts.')
+    if (hasBlockingConflicts.value) {
+      toast.error('Starter pack apply is blocked by conflicts.')
       return
     }
 
-    await boardStore.fetchBoard(props.boardId)
-    toast.success(`Applied starter pack "${selectedPack.value.title}".`)
-    emit('applied', latestResult.value)
+    await finalizeSuccessfulApply()
   } catch (error) {
     const conflictResult = extractConflictResult(error)
     if (conflictResult) {
       latestResult.value = conflictResult
-      toast.error('Starter pack apply returned conflicts.')
+      if (hasBlockingConflicts.value) {
+        toast.error('Starter pack apply is blocked by conflicts.')
+      } else {
+        await finalizeSuccessfulApply()
+      }
       return
     }
 
@@ -401,14 +534,42 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   <p class="text-sm font-semibold text-gray-900">
                     {{ latestResult.dryRun ? 'Dry-run Result' : 'Apply Result' }}
                   </p>
-                  <span
-                    :class="[
-                      'rounded px-2 py-1 text-xs font-medium',
-                      hasResultConflicts ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-                    ]"
-                  >
-                    {{ hasResultConflicts ? `${latestResult.conflicts.length} conflict(s)` : 'No conflicts' }}
+                  <span :class="['rounded px-2 py-1 text-xs font-medium', outcomeSummaryToneClass]">
+                    {{ outcomeSummaryLabel }}
                   </span>
+                </div>
+
+                <div class="mb-3 flex flex-wrap gap-2 text-xs text-gray-700">
+                  <span class="rounded bg-green-100 px-2 py-1 font-medium text-green-700">
+                    Applied: {{ actionSummary.create }}
+                  </span>
+                  <span class="rounded bg-gray-100 px-2 py-1 font-medium text-gray-700">
+                    Skipped: {{ actionSummary.skip }}
+                  </span>
+                  <span class="rounded bg-red-100 px-2 py-1 font-medium text-red-700">
+                    Blocked: {{ blockingConflictCount }}
+                  </span>
+                  <span class="rounded bg-amber-100 px-2 py-1 font-medium text-amber-800">
+                    Warnings: {{ warningConflictCount }}
+                  </span>
+                </div>
+
+                <div
+                  v-if="shouldShowWarningCallout"
+                  :class="[
+                    'mb-3 rounded-md border p-3 text-xs',
+                    hasBlockingConflicts
+                      ? 'border-red-200 bg-red-50 text-red-800'
+                      : 'border-amber-200 bg-amber-50 text-amber-900'
+                  ]"
+                >
+                  <p class="font-semibold">
+                    {{
+                      hasBlockingConflicts
+                        ? 'Blocking conflicts must be resolved before apply can complete.'
+                        : 'Warnings detected: starter pack apply can proceed, but some items were skipped.'
+                    }}
+                  </p>
                 </div>
 
                 <div v-if="latestResult.actions.length > 0" class="mb-3">
@@ -417,14 +578,32 @@ useEscapeToClose(() => props.isOpen, handleClose)
                     <li v-for="(action, index) in latestResult.actions" :key="`action-${index}-${action.key}`">
                       <span class="font-semibold">{{ action.operation }}</span>
                       {{ action.entityType }} - {{ action.key }}
+                      <span class="text-gray-500">({{ action.reason }})</span>
                     </li>
                   </ul>
                 </div>
 
                 <div v-if="latestResult.conflicts.length > 0">
-                  <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-red-700">Conflicts</p>
-                  <ul class="max-h-36 space-y-1 overflow-y-auto rounded border border-red-100 bg-red-50 p-2 text-xs text-red-800">
+                  <p
+                    :class="[
+                      'mb-1 text-xs font-semibold uppercase tracking-wide',
+                      hasBlockingConflicts ? 'text-red-700' : 'text-amber-800'
+                    ]"
+                  >
+                    Conflicts
+                  </p>
+                  <ul
+                    :class="[
+                      'max-h-36 space-y-1 overflow-y-auto rounded p-2 text-xs',
+                      hasBlockingConflicts
+                        ? 'border border-red-100 bg-red-50 text-red-800'
+                        : 'border border-amber-100 bg-amber-50 text-amber-900'
+                    ]"
+                  >
                     <li v-for="(conflict, index) in latestResult.conflicts" :key="`conflict-${index}-${conflict.code}`">
+                      <span :class="['mr-2 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase', conflictSeverityBadgeClass(conflict)]">
+                        {{ conflictSeverityLabel(conflict) }}
+                      </span>
                       <span class="font-semibold">{{ conflict.code }}</span>
                       at {{ conflict.path }} - {{ conflict.message }}
                     </li>
