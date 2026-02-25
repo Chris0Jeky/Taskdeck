@@ -85,6 +85,7 @@ describe('playwright frontend port resolution', () => {
         if (candidateHost === 'localhost') {
           expect(probeScript).toContain('<title>taskdeck-web</title>')
           expect(probeScript).toContain('/src/main.ts')
+          expect(probeScript).toContain('const maxProbeResponseBytes = 65536')
           return { error: new Error('spawn failed'), status: null }
         }
 
