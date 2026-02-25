@@ -391,6 +391,31 @@ public class ExternalImportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ImportEndpoint_ShouldReturnConflict_WhenBoardIsArchived()
+    {
+        await EnsureAuthenticatedAsync();
+        var boardId = await CreateBoardAsync("external-import-archived-board");
+
+        var archiveResponse = await _client.DeleteAsync($"/api/boards/{boardId}");
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: """
+                     Display Name,Company
+                     Alice Example,Acme
+                     """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var response = await _client.PostAsJsonAsync($"/api/boards/{boardId}/imports/external", request);
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Conflict, "InvalidOperation");
+        var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        payload.GetProperty("message").GetString().Should().Contain("archived board");
+    }
+
+    [Fact]
     public async Task ImportEndpoint_ShouldReturnForbidden_ForBothForeignAndMissingBoards()
     {
         await EnsureAuthenticatedAsync();
