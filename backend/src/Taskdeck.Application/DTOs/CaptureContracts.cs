@@ -78,7 +78,7 @@ public static class CaptureRequestContract
         return Result.Success();
     }
 
-    public static Result<CapturePayloadV1> ParsePayload(string payload, bool allowServerAttributionFields = true)
+    public static Result<CapturePayloadV1> ParsePayload(string payload, bool allowServerAttributionFields = false)
     {
         if (string.IsNullOrWhiteSpace(payload))
         {
@@ -380,7 +380,7 @@ public static class CaptureRequestContract
             }
         }
 
-        if (!allowServerAttributionFields && TryGetObjectProperty(root, "provenance", out var provenance))
+        if (!allowServerAttributionFields)
         {
             var forbiddenAttributionFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -391,40 +391,28 @@ public static class CaptureRequestContract
                 "sessionId"
             };
 
-            foreach (var property in provenance.EnumerateObject())
+            foreach (var rootProperty in root.EnumerateObject())
             {
-                if (forbiddenAttributionFields.Contains(property.Name) && property.Value.ValueKind != JsonValueKind.Null)
+                if (!rootProperty.Name.Equals("provenance", StringComparison.OrdinalIgnoreCase) ||
+                    rootProperty.Value.ValueKind != JsonValueKind.Object)
                 {
-                    return Result.Failure(
-                        ErrorCodes.ValidationError,
-                        $"Capture payload provenance must not include server attribution field '{property.Name}'");
+                    continue;
+                }
+
+                foreach (var provenanceProperty in rootProperty.Value.EnumerateObject())
+                {
+                    if (forbiddenAttributionFields.Contains(provenanceProperty.Name) &&
+                        provenanceProperty.Value.ValueKind != JsonValueKind.Null)
+                    {
+                        return Result.Failure(
+                            ErrorCodes.ValidationError,
+                            $"Capture payload provenance must not include server attribution field '{provenanceProperty.Name}'");
+                    }
                 }
             }
         }
 
         return Result.Success();
-    }
-
-    private static bool TryGetObjectProperty(JsonElement root, string propertyName, out JsonElement objectElement)
-    {
-        foreach (var property in root.EnumerateObject())
-        {
-            if (!property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (property.Value.ValueKind == JsonValueKind.Object)
-            {
-                objectElement = property.Value;
-                return true;
-            }
-
-            break;
-        }
-
-        objectElement = default;
-        return false;
     }
 
     private static bool IsSupportedSourceSurface(string sourceSurface)
