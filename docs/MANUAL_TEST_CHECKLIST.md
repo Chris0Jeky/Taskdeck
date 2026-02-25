@@ -57,6 +57,28 @@ Optional clean start:
 - Remove `backend/src/Taskdeck.Api/taskdeck.db`.
 - Restart API.
 
+## C0. Container Deployment Hardening Matrix (`#142`)
+
+Goal:
+- validate deployment hardening behavior beyond happy-path startup for the compose baseline.
+
+Automated path:
+1. From repo root, run:
+   - `powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8080`
+2. Expected:
+   - secret-gated compose rendering fails when `TASKDECK_JWT_SECRET` is missing
+   - reverse-proxy security headers are present on `/`
+   - unauthorized proxy paths remain deterministic (`/api/boards` and `/hubs/boards/negotiate` return `401`)
+   - start/restart/stop flow succeeds and leaves no running baseline services
+
+Manual-only checks (non-automatable in generic local script):
+1. Backend direct exposure posture:
+   - verify deployment path does not expose the backend container directly to public ingress while forwarded-header trust is enabled.
+2. Edge TLS termination posture:
+   - for non-local environments, confirm HTTPS terminates at edge/proxy and only private-network HTTP reaches the compose stack.
+3. Host restart operational check (staging/ops rehearsal):
+   - restart container host/daemon per environment runbook, then verify stack recovers with expected service health.
+
 ## A. Authentication and Workspace Shell
 
 1. Register new user from `/register`.

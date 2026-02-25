@@ -165,6 +165,15 @@ powershell -File ./scripts/deploy/Smoke-TestTaskdeckStack.ps1 -Port 8080  # if T
 powershell -File ./scripts/deploy/Stop-TaskdeckStack.ps1
 ```
 
+Deployment hardening matrix automation (PowerShell):
+
+```powershell
+powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8080
+```
+
+Hardening matrix pass/fail criteria:
+- `docs/DEPLOYMENT_HARDENING_MATRIX.md`
+
 ## MCP Operations Validation
 
 ```powershell

@@ -1,12 +1,15 @@
 # Container Deployment Baseline
 
-Last Updated: 2026-02-20
+Last Updated: 2026-02-25
 Issue: `#69` OPS-07 containerized deployment baseline
 
 This runbook defines the minimal production-oriented container baseline for Taskdeck:
 - backend API image
 - frontend static image
 - reverse proxy entrypoint with compression and proxy security headers
+
+Hardening verification follow-through:
+- `#142` OPS-16 deployment/container hardening verification matrix (`docs/DEPLOYMENT_HARDENING_MATRIX.md`)
 
 ## Files
 
@@ -67,6 +70,23 @@ powershell -File ./scripts/deploy/Stop-TaskdeckStack.ps1
 
 `Start-TaskdeckStack.ps1` now waits for proxy readiness (`/health/ready`) by default before returning.
 Use `-SkipReadyWait` only when you intentionally want fire-and-forget startup behavior.
+
+## OPS-16 Hardening Verification
+
+Run the full hardening matrix automation from repo root:
+
+```powershell
+powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8080
+```
+
+This command verifies:
+- required secret enforcement for compose rendering
+- reverse-proxy security header posture
+- unauthorized endpoint behavior through the proxy (`401`)
+- startup/restart/shutdown reliability for the baseline stack
+
+Matrix details and pass/fail criteria:
+- `docs/DEPLOYMENT_HARDENING_MATRIX.md`
 
 ## Staging Bootstrap Path
 
