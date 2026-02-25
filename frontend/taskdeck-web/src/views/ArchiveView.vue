@@ -60,10 +60,15 @@ function loadHiddenArchivedBoardIds() {
 }
 
 function persistHiddenArchivedBoardIds() {
-  localStorage.setItem(
-    HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY,
-    JSON.stringify(Array.from(hiddenArchivedBoardIds.value.values()))
-  )
+  try {
+    localStorage.setItem(
+      HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY,
+      JSON.stringify(Array.from(hiddenArchivedBoardIds.value.values()))
+    )
+  } catch (error) {
+    // Hidden-board preference persistence is best-effort; archive/restore flow should still complete.
+    console.warn('Failed to persist hidden archived board preferences', error)
+  }
 }
 
 function setArchivedBoardHidden(boardId: string, hidden: boolean) {
