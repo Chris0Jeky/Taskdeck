@@ -11,6 +11,8 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
 {
     private const int MaxCardTitleLength = 200;
     private const int MaxCardDescriptionLength = 2000;
+    private const int MaxPayloadBytes = 1024 * 1024;
+    private const int MaxNonEmptyRowsIncludingHeader = 5001;
     private static readonly string[] SupportedLastTouchDateFormats =
     [
         "O",
@@ -55,6 +57,14 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
                 "CSV import payload cannot be empty.");
         }
 
+        var payloadSizeInBytes = Encoding.UTF8.GetByteCount(request.Payload);
+        if (payloadSizeInBytes > MaxPayloadBytes)
+        {
+            return Result.Failure<ExternalImportParseResult>(
+                ErrorCodes.ValidationError,
+                $"CSV payload exceeds max size of {MaxPayloadBytes} bytes (received {payloadSizeInBytes} bytes).");
+        }
+
         var profile = string.IsNullOrWhiteSpace(request.Profile)
             ? ExternalImportProfiles.OutreachContactsV1
             : request.Profile.Trim();
@@ -65,7 +75,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
                 $"Unsupported import profile '{profile}'.");
         }
 
-        var parseRowsResult = ParseRows(request.Payload);
+        var parseRowsResult = ParseRows(request.Payload, MaxNonEmptyRowsIncludingHeader);
         if (!parseRowsResult.IsSuccess)
         {
             return Result.Failure<ExternalImportParseResult>(parseRowsResult.ErrorCode, parseRowsResult.ErrorMessage);
@@ -538,7 +548,7 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
         return sb.ToString();
     }
 
-    private static Result<List<CsvParsedRow>> ParseRows(string payload)
+    private static Result<List<CsvParsedRow>> ParseRows(string payload, int maxNonEmptyRowsIncludingHeader)
     {
         var rows = new List<CsvParsedRow>();
         var currentRow = new List<string>();
@@ -578,6 +588,12 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
                 if (currentRow.Any(cell => !string.IsNullOrWhiteSpace(cell)))
                 {
                     rows.Add(new CsvParsedRow(rowNumber, currentRow.ToList()));
+                    if (rows.Count > maxNonEmptyRowsIncludingHeader)
+                    {
+                        return Result.Failure<List<CsvParsedRow>>(
+                            ErrorCodes.ValidationError,
+                            $"CSV payload exceeds max row count of {maxNonEmptyRowsIncludingHeader} non-empty rows (including header).");
+                    }
                 }
 
                 currentRow.Clear();
@@ -607,6 +623,12 @@ public sealed class CsvExternalImportAdapter : IExternalImportAdapter
             if (currentRow.Any(cell => !string.IsNullOrWhiteSpace(cell)))
             {
                 rows.Add(new CsvParsedRow(rowNumber, currentRow.ToList()));
+                if (rows.Count > maxNonEmptyRowsIncludingHeader)
+                {
+                    return Result.Failure<List<CsvParsedRow>>(
+                        ErrorCodes.ValidationError,
+                        $"CSV payload exceeds max row count of {maxNonEmptyRowsIncludingHeader} non-empty rows (including header).");
+                }
             }
         }
 
