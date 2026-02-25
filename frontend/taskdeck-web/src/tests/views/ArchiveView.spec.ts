@@ -44,6 +44,7 @@ async function waitForAsyncUi() {
 describe('ArchiveView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mocks.getItems.mockResolvedValue([])
     mocks.getBoards.mockResolvedValue([])
   })
@@ -179,5 +180,40 @@ describe('ArchiveView', () => {
     expect(wrapper.findAll('.td-archive-list--section .td-archive-row')).toHaveLength(0)
 
     confirmSpy.mockRestore()
+  })
+
+  it('hides archived board from default list and reveals it when hidden toggle is enabled', async () => {
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-archived-1',
+        name: 'Board Hidden Candidate',
+        description: null,
+        isArchived: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    const hideButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Hide'))
+    await hideButton?.trigger('click')
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).not.toContain('Board Hidden Candidate')
+    expect(wrapper.text()).toContain('Show Hidden Boards (1)')
+    expect(localStorage.getItem('taskdeck_archive_hidden_boards')).toContain('board-archived-1')
+
+    const showHiddenButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Show Hidden Boards'))
+    await showHiddenButton?.trigger('click')
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('Board Hidden Candidate')
+    expect(wrapper.text()).toContain('Unhide')
   })
 })
