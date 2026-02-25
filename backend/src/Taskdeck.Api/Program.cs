@@ -350,10 +350,10 @@ static string EscapeAuthHeaderValue(string value)
 
 static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configuration, bool isDevelopment)
 {
-    var defaultOrigins = new[] { "http://localhost:5173", "http://localhost:5174" };
+    var productionOrigins = new[] { "http://localhost:5173", "http://localhost:5174" };
     if (!isDevelopment)
     {
-        return defaultOrigins;
+        return productionOrigins;
     }
 
     var configuredDevelopmentOrigins = configuration
@@ -371,8 +371,11 @@ static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configurat
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
-    return defaultOrigins
+    var developmentFallbackOrigins = new[] { "http://localhost:4173", "http://localhost:5001" };
+
+    return productionOrigins
         .Concat(configuredDevelopmentOrigins)
+        .Concat(developmentFallbackOrigins)
         .Where(origin => !string.IsNullOrWhiteSpace(origin))
         .Select(NormalizeCorsOrigin)
         // Origin host matching is case-insensitive, so collapse mixed-case duplicates.
