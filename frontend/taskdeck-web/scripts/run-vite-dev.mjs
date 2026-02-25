@@ -13,8 +13,13 @@ const frontendIdentityMarkers = ['<title>taskdeck-web</title>', '/src/main.ts']
 const cliArgs = process.argv.slice(2)
 const hostOption = readOptionValue(cliArgs, ['--host'])
 const portOption = readOptionValue(cliArgs, ['--port', '-p'])
+const hasBareHostOption = cliArgs.includes('--host')
 
-const effectiveHost = parseHost(hostOption ?? defaultHost, hostOption ? 'CLI --host' : 'TASKDECK_DEV_HOST')
+const requestedHost = hasBareHostOption && !hostOption ? '0.0.0.0' : hostOption ?? defaultHost
+const effectiveHost = parseHost(
+  requestedHost,
+  hostOption || hasBareHostOption ? 'CLI --host' : 'TASKDECK_DEV_HOST',
+)
 const effectivePort = portOption
   ? parsePort(portOption, 'CLI --port')
   : process.env.TASKDECK_DEV_PORT
@@ -77,8 +82,12 @@ function readOptionValue(args, names) {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]
     for (const name of names) {
-      if (arg === name && index + 1 < args.length) {
-        return args[index + 1]
+      if (arg === name) {
+        if (index + 1 < args.length && !args[index + 1].startsWith('-')) {
+          return args[index + 1]
+        }
+
+        continue
       }
 
       if (arg.startsWith(`${name}=`)) {
@@ -151,6 +160,7 @@ function resolveProbeHosts(host) {
 
 function parseHost(rawHost, source) {
   let normalizedHost = rawHost.trim()
+  let hadBrackets = false
   if (normalizedHost.startsWith('[') || normalizedHost.endsWith(']')) {
     if (!(normalizedHost.startsWith('[') && normalizedHost.endsWith(']'))) {
       throw new Error(
@@ -158,6 +168,7 @@ function parseHost(rawHost, source) {
       )
     }
 
+    hadBrackets = true
     normalizedHost = normalizedHost.slice(1, -1)
   }
 
@@ -172,6 +183,12 @@ function parseHost(rawHost, source) {
     /[\u0000-\u001F\u007F]/.test(normalizedHost) ||
     /[\s/?#'"`\\,;]/u.test(normalizedHost)
   ) {
+    throw new Error(
+      `[dev] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
+    )
+  }
+
+  if (normalizedHost.includes(':') && !hadBrackets && net.isIP(normalizedHost) !== 6) {
     throw new Error(
       `[dev] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
     )
