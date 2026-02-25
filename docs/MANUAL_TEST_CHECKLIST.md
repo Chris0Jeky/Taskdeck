@@ -316,6 +316,8 @@ If behavior, commands, or known gaps changed, update:
    - `cd frontend/taskdeck-web && npm run typecheck && npm run build`
 3. Frontend E2E:
    - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line`
+   - fallback when `5173` is unavailable:
+     `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001,http://localhost:5173,http://localhost:5174 npx playwright test --reporter=line`
 
 ## N. Capture Realignment Manual Slice (Shipped CAP MVP)
 
