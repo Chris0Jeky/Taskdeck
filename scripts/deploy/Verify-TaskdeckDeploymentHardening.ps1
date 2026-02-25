@@ -181,6 +181,7 @@ Push-Location $repoRoot
 try {
     $baseUrl = "http://localhost:$Port"
     $stackStarted = $false
+    $startAttempted = $false
 
     try {
         if (-not $SkipSecretEnforcementCheck) {
@@ -199,6 +200,7 @@ try {
             $startScriptArgs += '-Build'
         }
 
+        $startAttempted = $true
         & powershell @startScriptArgs
         if ($LASTEXITCODE -ne 0) {
             throw "Stack startup script failed with exit code $LASTEXITCODE."
@@ -225,7 +227,16 @@ try {
         }
     }
     finally {
-        if ($stackStarted) {
+        $shouldTeardown = $stackStarted
+        if (-not $shouldTeardown -and $startAttempted) {
+            $runningServicesProbe = Invoke-ComposeCommand -Arguments @('ps', '--status', 'running', '--services') -AllowFailure
+            if ($runningServicesProbe.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($runningServicesProbe.Output)) {
+                $shouldTeardown = $true
+                Write-Warning 'Detected running services after startup failure; attempting teardown cleanup.'
+            }
+        }
+
+        if ($shouldTeardown) {
             & powershell -File (Join-Path $scriptRoot 'Stop-TaskdeckStack.ps1') -ComposeFile $ComposeFile -Profile $Profile -EnvFile $EnvFile
             if ($LASTEXITCODE -ne 0) {
                 throw "Stack shutdown script failed with exit code $LASTEXITCODE."
