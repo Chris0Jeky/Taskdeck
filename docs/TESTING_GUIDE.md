@@ -25,7 +25,7 @@ Companion Active Docs:
 Verification note:
 - backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
 - frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
-- frontend E2E totals remain from the latest successful 2026-02-24 run; local 2026-02-25 rerun was blocked before test execution (documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`)
+- frontend E2E totals remain from the latest successful 2026-02-24 run; local 2026-02-25 rerun was blocked before test execution due to port binding and CORS blockers (documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`)
 
 ## Backend Commands
 
