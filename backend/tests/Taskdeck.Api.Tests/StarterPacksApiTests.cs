@@ -138,7 +138,8 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
         var payload = await secondApplyResponse.Content.ReadFromJsonAsync<StarterPackApplyResultDto>();
         payload.Should().NotBeNull();
         payload!.Applied.Should().BeTrue();
-        payload.HasConflicts.Should().BeFalse();
+        payload.HasConflicts.Should().BeTrue();
+        payload.HasBlockingConflicts.Should().BeFalse();
         payload.Actions.Should().Contain(action =>
             action.EntityType == "label" &&
             action.Operation == "skip" &&
@@ -151,6 +152,9 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
             action.EntityType == "seedCard" &&
             action.Operation == "skip" &&
             action.Key.Contains("Set up sprint board", StringComparison.Ordinal));
+        payload.Conflicts.Should().Contain(conflict =>
+            conflict.Code == "SeedCardAlreadyExistsConflict" &&
+            conflict.Severity == StarterPackConflictSeverity.Warning);
 
         var labels = await _client.GetFromJsonAsync<List<LabelDto>>($"/api/boards/{board.Id}/labels");
         labels.Should().NotBeNull();
@@ -368,4 +372,5 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
             SeedCards = []
         };
     }
+
 }
