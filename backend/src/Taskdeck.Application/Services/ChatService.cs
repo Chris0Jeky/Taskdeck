@@ -158,7 +158,9 @@ public class ChatService : IChatService
                     .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
                     .ToList();
 
-                var completionRequest = new ChatCompletionRequest(chatMessages);
+                var completionRequest = new ChatCompletionRequest(
+                    chatMessages,
+                    Attribution: BuildAttribution(session, userId));
                 var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
@@ -228,7 +230,9 @@ public class ChatService : IChatService
             .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
             .ToList();
 
-        var request = new ChatCompletionRequest(chatMessages);
+        var request = new ChatCompletionRequest(
+            chatMessages,
+            Attribution: BuildAttribution(session, userId));
 
         await foreach (var token in _llmProvider.StreamAsync(request, ct))
         {
@@ -240,6 +244,16 @@ public class ChatService : IChatService
     {
         var normalized = content.ToLowerInvariant();
         return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
+    }
+
+    private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)
+    {
+        return new LlmRequestAttribution(
+            userId,
+            LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
+            LlmRequestSourceSurface.Chat,
+            session.BoardId,
+            session.Id);
     }
 
     private static bool LooksLikeChecklistBootstrapRequest(string content)

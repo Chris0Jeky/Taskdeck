@@ -94,6 +94,36 @@ public class LlmQueueServiceTests
     }
 
     [Fact]
+    public async Task AddToQueueAsync_ShouldReturnValidationError_WhenCapturePayloadContainsSpoofedProvenanceAttribution()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        var dto = new CreateLlmRequestDto(
+            CaptureRequestContract.RequestTypeV1,
+            $$"""
+              {
+                "version": 1,
+                "text": "Capture this quick note",
+                "provenance": {
+                  "captureItemId": "{{Guid.NewGuid()}}",
+                  "requestedByUserId": "{{Guid.NewGuid()}}"
+                }
+              }
+              """);
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+
+        var result = await _service.AddToQueueAsync(userId, dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("must not include server attribution field");
+        _llmQueueRepoMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task AddToQueueAsync_ShouldReturnValidationError_WhenCaptureRequestTypeIsUnsupported()
     {
         // Arrange

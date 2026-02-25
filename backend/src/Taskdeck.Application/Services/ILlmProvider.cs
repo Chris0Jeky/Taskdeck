@@ -10,10 +10,26 @@ public interface ILlmProvider
 public record ChatCompletionRequest(
     List<ChatCompletionMessage> Messages,
     int MaxTokens = 1024,
-    double Temperature = 0.7
+    double Temperature = 0.7,
+    LlmRequestAttribution? Attribution = null
 );
 
 public record ChatCompletionMessage(string Role, string Content);
+
+public enum LlmRequestSourceSurface
+{
+    Chat,
+    Capture,
+    Worker
+}
+
+public record LlmRequestAttribution(
+    Guid UserId,
+    string CorrelationId,
+    LlmRequestSourceSurface SourceSurface,
+    Guid? BoardId = null,
+    Guid? SessionId = null
+);
 
 public record LlmCompletionResult(
     string Content,

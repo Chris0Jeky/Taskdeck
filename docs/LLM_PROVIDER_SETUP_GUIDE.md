@@ -15,6 +15,11 @@ Backend provider runtime now supports:
 - `Mock` provider (default)
 - `OpenAI` provider (config-gated)
 - `Gemini` provider (config-gated)
+- managed-key attribution baseline for provider-bound chat/capture requests (`#236`):
+  - server-derived actor/scope attribution is attached to `ChatCompletionRequest`
+  - provider adapters receive standardized attribution headers (`x-taskdeck-*`)
+  - OpenAI adapter maps pseudonymous end-user token to provider `user` field
+  - capture queue payload provenance now persists actor/correlation/source attribution metadata for audit follow-through
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
@@ -86,16 +91,22 @@ Optional:
 - invalid/missing live-provider configuration does not crash requests
 - provider adapters return deterministic fallback responses when upstream calls fail
 - capture triage provenance persists `promptVersion`, `provider`, and `model`
+- managed-key attribution metadata is server-derived and spoof-resistant:
+  - `/api/capture/items` ignores unknown actor fields because create payloads are strongly model-bound
+  - `/api/llm-queue` raw capture payload parsing rejects actor identity fields (`userId`/`ownerUserId`/`requestedByUserId`/`actor*`) and client-supplied provenance attribution fields
+  - provider mapping uses pseudonymous user tokens (no raw API secrets or personal identifiers)
 
 ## Test Coverage Expectations (Implemented)
 
 - selection-policy unit coverage for `Mock`/`OpenAI`/`Gemini` and invalid-config fallback
 - provider adapter unit coverage:
   - OpenAI: success/failure + metadata checks
-  - Gemini: success/failure/invalid-response/invalid-config/cancellation + health
+  - Gemini: success/failure/invalid-response/invalid-config/cancellation + health + attribution header mapping
 - API integration coverage:
   - capture triage provenance includes provider/model
-  - chat flow validated using a non-mock provider stub
+  - chat flow validated using a non-mock provider stub with attribution assertions
+  - capture create ignores client-supplied actor identity payload fields
+  - queue ingest rejects spoofed provenance attribution fields
 
 ## Security and Trust Constraints
 
@@ -109,7 +120,8 @@ Optional:
 Provider runtime support does not replace managed-key control-plane requirements.
 Continue tracked work in:
 
-- `#235` to `#240`
+- delivered baseline: `#236` (identity attribution contract)
+- remaining follow-through: `#235`, `#237`, `#238`, `#239`, `#240`
 
 ## References
 

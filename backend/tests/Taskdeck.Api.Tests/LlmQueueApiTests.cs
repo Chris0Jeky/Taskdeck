@@ -119,6 +119,31 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AddToQueue_ShouldReturnBadRequest_WhenCapturePayloadSpoofsProvenanceAttribution()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "provenance": {
+                            "captureItemId": "{{Guid.NewGuid()}}",
+                            "requestedByUserId": "{{Guid.NewGuid()}}"
+                          }
+                        }
+                        """;
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto(CaptureRequestContract.RequestTypeV1, payload));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("ValidationError");
+    }
+
+    [Fact]
     public async Task GetUserQueue_ShouldReturnOk_WhenNoRequests()
     {
         await EnsureAuthenticatedAsync();

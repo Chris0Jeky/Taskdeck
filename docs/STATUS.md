@@ -268,13 +268,20 @@ Reconciliation record:
 - capture triage provenance now persists `provider` + `model` alongside `promptVersion`
 - provider adapter coverage now includes Gemini success/failure/invalid-response/cancellation and chat integration coverage with a non-mock provider stub
 
+`#236` SEC-16 is now delivered:
+
+- chat provider requests now carry server-derived attribution (`userId`, correlation ID, source surface, board/session scope) through `ChatCompletionRequest`
+- provider adapters now receive standardized attribution headers (`x-taskdeck-*`) and OpenAI now gets a pseudonymous `user` token mapping
+- capture queue provenance now persists managed-key attribution metadata (`requestedByUserId`, `correlationId`, `sourceSurface`, scope IDs) for audit and abuse-triage workflows
+- regression coverage now includes attribution propagation, spoofing rejection, and chat API provider-stub attribution assertions
+
 Documentation baseline for this track:
 
 - `docs/LLM_PROVIDER_SETUP_GUIDE.md`
 
 ## Managed-Key Abuse-Control Track (2026-02-23)
 
-To capture the security and operational risk of letting users consume model calls via a platform-managed provider key, a dedicated control wave was seeded:
+To capture the security and operational risk of letting users consume model calls via a platform-managed provider key, a dedicated control wave was seeded. Identity attribution foundation is now delivered via `#236`; remaining controls stay in this wave:
 
 - `#235` tracker: managed-key threat model and control sequencing
 - `#236` identity attribution contract for managed-key requests (`Priority II`)
@@ -456,7 +463,7 @@ Security and identity:
 
 Automation and data:
 - active LLM provider policy supports explicit mock vs live-provider switching (`OpenAI`/`Gemini`) with safe defaults for development/test environments
-- managed-key shared-token controls (identity attribution, quotas, abuse containment, incident response) are not yet shipped; tracked in `#235` to `#240`
+- managed-key shared-token controls are partially shipped: identity attribution baseline is delivered (`#236`); remaining quota/abuse/incident/policy follow-through is tracked in `#235`, `#237`, `#238`, `#239`, and `#240`
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
@@ -543,6 +550,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered UX-05 escape behavior contract: Escape now closes only the top-most transient surface per key press, board routes exit to `/workspace/boards` when clean, and regression coverage spans shell/unit and board keyboard-flow E2E paths.
 - Delivered AUTO-01 provider strategy: deterministic environment-aware `ILlmProvider` selection now gates OpenAI usage behind explicit config while keeping mock default safety, with policy + provider tests for switching behavior.
 - Delivered AUTO-03 provider-agnostic runtime (`#232`): expanded `ILlmProvider` runtime support to `OpenAI` + `Gemini` with deterministic config validation fallback to `Mock`, added Gemini provider adapter + policy/test coverage, and extended capture/chat integration assertions for provider/model provenance and non-mock provider stubs.
+- Delivered SEC-16 managed-key identity attribution baseline (`#236`): added server-derived chat provider attribution contract (`userId`, correlation ID, source surface, board/session scope), standardized provider attribution header mapping with pseudonymous provider user-token usage, persisted capture provenance attribution metadata for audit follow-through, and expanded backend regression coverage for attribution propagation and spoofing rejection.
 - Delivered AUTO-02 planner/executor hardening: expanded deterministic planner instruction coverage (board/column intents), hardened executor parameter validation and partial-failure semantics, and improved audit entity attribution with new regression coverage.
 - Delivered MVP-01 chat-to-project bootstrap: canonical Markdown checklist paste now creates a proposal-first board bootstrap plan in chat, with one-click approve+execute path and regression coverage for happy path + key validation failures.
 - Delivered PACK-01 starter-pack manifest foundation: added v1 manifest schema documentation and deterministic backend validator/test coverage for parsing, compatibility rules, and cross-reference validation.

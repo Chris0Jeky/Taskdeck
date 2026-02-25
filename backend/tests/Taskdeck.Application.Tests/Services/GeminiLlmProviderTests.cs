@@ -15,8 +15,16 @@ public class GeminiLlmProviderTests
     public async Task CompleteAsync_ShouldReturnParsedCompletion_WhenGeminiResponseIsValid()
     {
         var settings = BuildSettings();
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
         var requestUri = string.Empty;
         string[] headerValues = Array.Empty<string>();
+        string? correlationHeader = null;
+        string? sourceSurfaceHeader = null;
+        string? userTokenHeader = null;
+        string? boardTokenHeader = null;
+        string? sessionTokenHeader = null;
         var requestRoles = new List<string>();
         var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
         {
@@ -34,6 +42,31 @@ public class GeminiLlmProviderTests
             foreach (var content in contents.EnumerateArray())
             {
                 requestRoles.Add(content.GetProperty("role").GetString() ?? string.Empty);
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.CorrelationHeader, out var correlationValues))
+            {
+                correlationHeader = correlationValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.SourceSurfaceHeader, out var sourceSurfaceValues))
+            {
+                sourceSurfaceHeader = sourceSurfaceValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.UserTokenHeader, out var userTokenValues))
+            {
+                userTokenHeader = userTokenValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.BoardTokenHeader, out var boardTokenValues))
+            {
+                boardTokenHeader = boardTokenValues.SingleOrDefault();
+            }
+
+            if (request.Headers.TryGetValues(LlmRequestAttributionMapper.SessionTokenHeader, out var sessionTokenValues))
+            {
+                sessionTokenHeader = sessionTokenValues.SingleOrDefault();
             }
 
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -69,7 +102,13 @@ public class GeminiLlmProviderTests
                 new("System", "Follow board-safe constraints."),
                 new("Assistant", "Ready."),
                 new("User", "create card for provider runtime")
-            }));
+            },
+            Attribution: new LlmRequestAttribution(
+                userId,
+                "req-gemini-attribution",
+                LlmRequestSourceSurface.Chat,
+                boardId,
+                sessionId)));
 
         result.Content.Should().Contain("Ship provider parity");
         result.Content.Should().Contain("with tests");
@@ -81,6 +120,12 @@ public class GeminiLlmProviderTests
         requestUri.Should().NotContain("?key=");
         requestRoles.Should().ContainInOrder("user", "model", "user");
         headerValues.Should().ContainSingle().Which.Should().Be(settings.Gemini.ApiKey);
+        correlationHeader.Should().Be("req-gemini-attribution");
+        sourceSurfaceHeader.Should().Be("chat");
+        userTokenHeader.Should().StartWith("usr_");
+        userTokenHeader.Should().NotContain(userId.ToString("N"), "provider attribution should be pseudonymous");
+        boardTokenHeader.Should().StartWith("brd_");
+        sessionTokenHeader.Should().StartWith("ses_");
     }
 
     [Fact]

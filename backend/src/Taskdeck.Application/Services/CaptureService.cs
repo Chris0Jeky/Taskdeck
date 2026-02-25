@@ -60,12 +60,19 @@ public class CaptureService : ICaptureService
                 dto.TitleHint,
                 dto.ExternalRef);
 
-            var serializedPayload = CaptureRequestContract.SerializePayload(payload);
             var request = new LlmRequest(
                 userId,
                 CaptureRequestContract.RequestTypeV1,
-                serializedPayload,
+                CaptureRequestContract.SerializePayload(payload),
                 dto.BoardId);
+            var attributedPayload = CaptureRequestContract.WithProvenance(
+                payload,
+                request.Id,
+                requestedByUserId: userId,
+                correlationId: LlmRequestAttributionMapper.ResolveCorrelationIdFromActivity(),
+                sourceSurface: LlmRequestAttributionMapper.ResolveSourceSurface(LlmRequestSourceSurface.Capture),
+                boardId: dto.BoardId);
+            request.UpdatePayload(CaptureRequestContract.SerializePayload(attributedPayload));
 
             await _unitOfWork.LlmQueue.AddAsync(request, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -287,7 +294,7 @@ public class CaptureService : ICaptureService
 
     private static CapturePayloadV1 ParsePayload(LlmRequest item)
     {
-        var payloadResult = CaptureRequestContract.ParsePayload(item.Payload);
+        var payloadResult = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
         if (payloadResult.IsSuccess)
             return payloadResult.Value;
 

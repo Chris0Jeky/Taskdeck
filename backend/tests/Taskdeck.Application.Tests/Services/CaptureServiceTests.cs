@@ -57,10 +57,16 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeTrue();
         persisted.Should().NotBeNull();
         persisted!.RequestType.Should().Be(CaptureRequestContract.RequestTypeV1);
-        var parsedPayload = CaptureRequestContract.ParsePayload(persisted.Payload);
+        var parsedPayload = CaptureRequestContract.ParsePayload(persisted.Payload, allowServerAttributionFields: true);
         parsedPayload.IsSuccess.Should().BeTrue();
         parsedPayload.Value.Source.Should().Be(CaptureSource.Paste);
         parsedPayload.Value.Text.Should().Be("quick capture text");
+        parsedPayload.Value.Provenance.Should().NotBeNull();
+        parsedPayload.Value.Provenance!.CaptureItemId.Should().Be(persisted.Id);
+        parsedPayload.Value.Provenance.RequestedByUserId.Should().Be(userId);
+        parsedPayload.Value.Provenance.SourceSurface.Should().Be("capture");
+        parsedPayload.Value.Provenance.BoardId.Should().Be(boardId);
+        parsedPayload.Value.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();
         result.Value.RawText.Should().Be("quick capture text");
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
@@ -331,6 +337,24 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Status.Should().Be(CaptureStatus.Triaging);
         result.Value.AlreadyTriaging.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnForbidden_WhenCaptureBelongsToDifferentUser()
+    {
+        var ownerId = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var item = new LlmRequest(ownerId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(callerId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 

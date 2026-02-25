@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -66,6 +67,33 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         dto.Status.Should().Be(CaptureStatus.New);
         dto.RawText.Should().Be("capture this note");
         dto.TextExcerpt.Should().Contain("capture this note");
+    }
+
+    [Fact]
+    public async Task Create_ShouldIgnoreClientSuppliedActorIdentityFields()
+    {
+        var authenticatedUser = await ApiTestHarness.AuthenticateAsync(_client, "capture-create-identity-ignore");
+        var spoofedUserId = Guid.NewGuid();
+
+        var response = await _client.PostAsync(
+            "/api/capture/items",
+            new StringContent(
+                $$"""
+                  {
+                    "boardId": null,
+                    "text": "capture this note",
+                    "ownerUserId": "{{spoofedUserId}}",
+                    "requestedByUserId": "{{spoofedUserId}}"
+                  }
+                  """,
+                Encoding.UTF8,
+                "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var dto = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+        dto.Should().NotBeNull();
+        dto!.UserId.Should().Be(authenticatedUser.UserId);
+        dto.UserId.Should().NotBe(spoofedUserId);
     }
 
     [Fact]
@@ -272,6 +300,10 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         finalItem.Provenance.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
         finalItem.Provenance.Provider.Should().Be("Mock");
         finalItem.Provenance.Model.Should().Be("mock-default");
+        finalItem.Provenance.RequestedByUserId.Should().Be(user.UserId);
+        finalItem.Provenance.SourceSurface.Should().Be("capture");
+        finalItem.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        finalItem.Provenance.BoardId.Should().Be(board.Id);
 
         var proposalsResponse = await _client.GetAsync($"/api/automation/proposals?boardId={board.Id}&status=PendingReview&limit=20");
         proposalsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -285,12 +317,16 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
-        var payload = CaptureRequestContract.ParsePayload(persistedItem.Payload);
+        var payload = CaptureRequestContract.ParsePayload(persistedItem.Payload, allowServerAttributionFields: true);
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
         payload.Value.Provenance!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
         payload.Value.Provenance.Provider.Should().Be("Mock");
         payload.Value.Provenance.Model.Should().Be("mock-default");
+        payload.Value.Provenance.RequestedByUserId.Should().Be(user.UserId);
+        payload.Value.Provenance.SourceSurface.Should().Be("capture");
+        payload.Value.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        payload.Value.Provenance.BoardId.Should().Be(board.Id);
     }
 
     [Fact]

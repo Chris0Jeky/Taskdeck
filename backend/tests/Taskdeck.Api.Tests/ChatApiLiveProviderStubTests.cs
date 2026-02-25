@@ -23,18 +23,19 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
     [Fact]
     public async Task SendMessage_ShouldUseNonMockProviderStub_ForChatFlow()
     {
+        ChatCompletionRequest? capturedRequest = null;
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<ILlmProvider>();
-                services.AddScoped<ILlmProvider, OpenAiProviderStub>();
+                services.AddScoped<ILlmProvider>(_ => new OpenAiProviderStub(request => capturedRequest = request));
             });
         });
         using var client = factory.CreateClient();
 
-        await ApiTestHarness.AuthenticateAsync(client, "chat-live-provider-stub");
+        var user = await ApiTestHarness.AuthenticateAsync(client, "chat-live-provider-stub");
 
         var createSessionResponse = await client.PostAsJsonAsync(
             "/api/llm/chat/sessions",
@@ -53,12 +54,26 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         assistant!.MessageType.Should().Be("status");
         assistant.Content.Should().Contain("OpenAI stub");
         assistant.TokenUsage.Should().Be(123);
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Attribution.Should().NotBeNull();
+        capturedRequest.Attribution!.UserId.Should().Be(user.UserId);
+        capturedRequest.Attribution.SourceSurface.Should().Be(LlmRequestSourceSurface.Chat);
+        capturedRequest.Attribution.SessionId.Should().Be(session.Id);
+        capturedRequest.Attribution.CorrelationId.Should().NotBeNullOrWhiteSpace();
     }
 
     private sealed class OpenAiProviderStub : ILlmProvider
     {
+        private readonly Action<ChatCompletionRequest> _onCompletion;
+
+        public OpenAiProviderStub(Action<ChatCompletionRequest> onCompletion)
+        {
+            _onCompletion = onCompletion;
+        }
+
         public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
         {
+            _onCompletion(request);
             return Task.FromResult(new LlmCompletionResult(
                 Content: "OpenAI stub completion for integration test.",
                 TokensUsed: 123,

@@ -261,7 +261,7 @@ public class LlmQueueToProposalWorker : BackgroundService
 
         try
         {
-            var parsedPayloadResult = CaptureRequestContract.ParsePayload(item.Payload);
+            var parsedPayloadResult = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
             if (!parsedPayloadResult.IsSuccess)
             {
                 var scheduledForRetry = await HandleFailureWithRetryAsync(
