@@ -81,7 +81,12 @@ async function handleLifecycleTransition() {
   }
 
   try {
-    await boardStore.updateBoard(props.board.id, { isArchived: shouldArchive })
+    if (shouldArchive) {
+      await boardStore.deleteBoard(props.board.id)
+    } else {
+      await boardStore.updateBoard(props.board.id, { isArchived: false })
+    }
+
     emit('updated')
     emit('close')
 
