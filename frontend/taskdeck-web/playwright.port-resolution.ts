@@ -1,13 +1,14 @@
 import { spawnSync } from 'node:child_process'
+import { isIP } from 'node:net'
 
 export const defaultFrontendHost = 'localhost'
 export const defaultFrontendPort = 5173
 export const fallbackFrontendPorts = [defaultFrontendPort, 4173, 5001] as const
 // Keep this module self-contained for Playwright config evaluation; shared host/port probe
 // logic in run-vite-dev remains intentionally duplicated to avoid cross-runtime coupling.
-const taskdeckFrontendIdentityMarkers = ['<title>taskdeck-web</title>', '/src/main.ts'] as const
+export const taskdeckFrontendIdentityMarkers = ['<title>taskdeck-web</title>', '/src/main.ts'] as const
 export const portProbeTimeoutMs = 300
-const maxProbeResponseBytes = 64 * 1024
+export const maxProbeResponseBytes = 64 * 1024
 
 type PortProbe = (host: string, port: number) => boolean
 type ProbeResult = {
@@ -225,6 +226,7 @@ export function resolvePortProbeHosts(host: string): string[] {
 
 export function parseFrontendHost(rawHost: string, source: string): string {
   let normalizedHost = rawHost.trim()
+  let hadBrackets = false
   if (normalizedHost.startsWith('[') || normalizedHost.endsWith(']')) {
     if (!(normalizedHost.startsWith('[') && normalizedHost.endsWith(']'))) {
       throw new Error(
@@ -232,6 +234,7 @@ export function parseFrontendHost(rawHost: string, source: string): string {
       )
     }
 
+    hadBrackets = true
     normalizedHost = normalizedHost.slice(1, -1)
   }
 
@@ -246,6 +249,12 @@ export function parseFrontendHost(rawHost: string, source: string): string {
     containsControlCharacters(normalizedHost) ||
     /[\s/?#'"`\\,;]/u.test(normalizedHost)
   ) {
+    throw new Error(
+      `[e2e config] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
+    )
+  }
+
+  if (normalizedHost.includes(':') && !hadBrackets && isIP(normalizedHost) !== 6) {
     throw new Error(
       `[e2e config] ${source} must be a hostname or IP literal without protocol/path/query delimiters. Received "${rawHost}".`,
     )
