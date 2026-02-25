@@ -174,6 +174,8 @@ describe('StarterPackCatalogModal', () => {
     )
     expect(wrapper.text()).toContain('Dry-run Result')
     expect(wrapper.text()).toContain('Preview ready')
+    expect(wrapper.text()).toContain('Planned create: 1')
+    expect(wrapper.text()).not.toContain('Applied: 1')
   })
 
   it('applies selected pack in one click and refreshes board', async () => {
@@ -300,6 +302,7 @@ describe('StarterPackCatalogModal', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Blocked by conflicts')
+    expect(wrapper.text()).toContain('Planned create: 0')
     expect(wrapper.text()).toContain('Blocking')
     expect(wrapper.text()).toContain('ColumnPositionConflict')
     expect(mocks.fetchBoard).not.toHaveBeenCalled()
