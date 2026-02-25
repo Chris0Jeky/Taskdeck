@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useSessionStore } from '../store/sessionStore'
 import { useFeatureFlagStore } from '../store/featureFlagStore'
 import type { FeatureFlags } from '../types/feature-flags'
 import { getErrorDisplay } from '../composables/useErrorMapper'
+import { normalizeBoardRole } from '../utils/roles'
 
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
@@ -14,6 +15,22 @@ const confirmNewPassword = ref('')
 const passwordError = ref<string | null>(null)
 const passwordSuccess = ref(false)
 const submitting = ref(false)
+
+const roleLabel = computed(() => (
+  session.defaultRole === null ? 'Unknown' : normalizeBoardRole(session.defaultRole)
+))
+
+const opsCapabilitySummary = computed(() => {
+  switch (roleLabel.value) {
+    case 'Owner':
+    case 'Admin':
+      return 'Can run all default Ops CLI templates.'
+    case 'Editor':
+      return 'Can run editor-safe Ops templates; admin templates are restricted.'
+    default:
+      return 'Ops CLI template access is limited; request elevated access for admin templates.'
+  }
+})
 
 async function handleChangePassword() {
   passwordError.value = null
@@ -80,6 +97,14 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
           <span class="td-info-label">User ID</span>
           <span class="td-info-value td-mono">{{ session.userId || '—' }}</span>
         </div>
+        <div class="td-info-row">
+          <span class="td-info-label">Role</span>
+          <span class="td-info-value">{{ roleLabel }}</span>
+        </div>
+        <div class="td-info-row td-info-row--stacked">
+          <span class="td-info-label">Ops Access</span>
+          <span class="td-info-value">{{ opsCapabilitySummary }}</span>
+        </div>
       </div>
     </section>
 
@@ -137,6 +162,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .td-section-desc { font-size: var(--td-font-sm); color: var(--td-text-secondary); margin-bottom: var(--td-space-4); }
 .td-info-grid { display: flex; flex-direction: column; gap: var(--td-space-3); }
 .td-info-row { display: flex; justify-content: space-between; align-items: center; padding: var(--td-space-2) 0; border-bottom: 1px solid var(--td-border-default); }
+.td-info-row--stacked { align-items: flex-start; gap: var(--td-space-3); }
 .td-info-label { font-size: var(--td-font-sm); color: var(--td-text-secondary); font-weight: 500; }
 .td-info-value { font-size: var(--td-font-sm); color: var(--td-text-primary); }
 .td-mono { font-family: monospace; font-size: var(--td-font-xs); }
@@ -159,3 +185,4 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .td-flag-label { font-size: var(--td-font-sm); color: var(--td-text-primary); }
 .td-checkbox { width: 18px; height: 18px; cursor: pointer; }
 </style>
+
