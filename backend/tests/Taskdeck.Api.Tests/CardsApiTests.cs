@@ -311,6 +311,23 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetCardProvenance_ShouldReturnNotFound_WhenCardWasNotCreatedFromCapture()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, "cards-provenance-manual");
+        _isAuthenticated = true;
+
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Inbox", wipLimit: null);
+        var manualCard = await CreateCardAsync(board.Id, column.Id, "Manual capture-less card");
+
+        var response = await _client.GetAsync($"/api/boards/{board.Id}/cards/{manualCard.Id}/provenance");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
     public async Task GetCardProvenance_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
     {
         using var ownerClient = _factory.CreateClient();
