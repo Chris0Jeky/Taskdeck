@@ -70,6 +70,17 @@ Frontend coverage threshold policy:
 - Threshold breach behavior can be validated locally with an override command, for example:
   - `cd frontend/taskdeck-web && npx vitest run --coverage --coverage.thresholds.lines=99 --coverage.thresholds.statements=99 --coverage.thresholds.functions=99 --coverage.thresholds.branches=99`
 
+Frontend local dev server (manual workflows):
+
+```bash
+cd frontend/taskdeck-web
+npm run dev
+```
+
+Notes:
+- `npm run dev` now auto-resolves frontend port with fallback order `5173` -> `4173` -> `5001` when a port is restricted or unavailable.
+- explicit overrides remain supported (for example `npm run dev -- --host localhost --port 5001` or `TASKDECK_DEV_PORT=5001 npm run dev`).
+
 ## Frontend E2E
 
 Install browser once:

@@ -40,16 +40,14 @@ Out of scope (known implementation boundaries on current `main`):
 2. Start frontend:
    - `cd frontend/taskdeck-web`
    - `npm run dev`
-3. Open `http://localhost:5173`.
+3. Open the frontend URL printed by Vite (default `http://localhost:5173`; fallback `http://localhost:4173` or `http://localhost:5001` when `5173` is restricted).
 4. Register/login a test user in UI (or use API bootstrap).
 
 Fallback when `localhost:5173` is blocked (`listen EACCES`):
-- Start backend with fallback frontend origin allowed:
-  - `$env:Cors__DevelopmentAllowedOrigins__0='http://localhost:5001'; dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj`
-- Start frontend on an alternate port:
+- `npm run dev` now auto-selects a fallback port (`4173`, then `5001`) and starts without manual overrides.
+- If you need an explicit port, run:
   - `cd frontend/taskdeck-web`
   - `npm run dev -- --host localhost --port 5001`
-- Open `http://localhost:5001`.
 - Troubleshooting note: some Windows local environments reserve or restrict `localhost:5173` for user-space listeners, which surfaces as `listen EACCES`.
 
 Optional clean start:
