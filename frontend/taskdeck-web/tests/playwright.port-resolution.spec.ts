@@ -59,6 +59,7 @@ describe('playwright frontend port resolution', () => {
   it('normalizes localhost probe hosts for both IPv4 and IPv6 loopback paths', () => {
     expect(resolvePortProbeHosts('localhost')).toEqual(['localhost', '127.0.0.1', '::1'])
     expect(resolvePortProbeHosts('127.0.0.1')).toEqual(['127.0.0.1'])
+    expect(resolvePortProbeHosts('[::1]')).toEqual(['::1'])
   })
 
   it('rejects unsafe frontend host values', () => {
@@ -71,6 +72,8 @@ describe('playwright frontend port resolution', () => {
 
   it('formats IPv6 origins with bracketed authority', () => {
     expect(buildHttpOrigin('::1', 5173)).toBe('http://[::1]:5173')
+    expect(buildHttpOrigin('[::1]', 5173)).toBe('http://[::1]:5173')
+    expect(parseFrontendHost('[::1]', 'TASKDECK_E2E_FRONTEND_HOST')).toBe('::1')
   })
 
   it('connect probe reports spawn failures and still resolves when a later host succeeds', () => {
@@ -104,7 +107,7 @@ describe('playwright frontend port resolution', () => {
     expect(errors[0]).toContain('localhost:4173')
   })
 
-  it('bind probe returns false when all hosts fail and reports spawn errors once per failure', () => {
+  it('bind probe checks only requested host and reports spawn errors', () => {
     const errors: string[] = []
     const probeCalls: string[] = []
 
@@ -112,16 +115,12 @@ describe('playwright frontend port resolution', () => {
       onProbeError: (message) => errors.push(message),
       probeRunner: (candidateHost) => {
         probeCalls.push(candidateHost)
-        if (candidateHost === 'localhost') {
-          return { error: new Error('bind probe spawn failed'), status: null }
-        }
-
-        return { status: 1 }
+        return { error: new Error('bind probe spawn failed'), status: null }
       },
     })
 
     expect(result).toBe(false)
-    expect(probeCalls).toEqual(['localhost', '127.0.0.1', '::1'])
+    expect(probeCalls).toEqual(['localhost'])
     expect(errors).toHaveLength(1)
     expect(errors[0]).toContain('frontend bind probe spawn failed')
     expect(errors[0]).toContain('localhost:5001')
