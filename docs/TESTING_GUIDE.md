@@ -131,7 +131,8 @@ Override behavior notes:
 
 Troubleshooting note (Windows local environments):
 - if Playwright startup fails with `listen EACCES` for the frontend port, keep `TASKDECK_E2E_FRONTEND_PORT` unset so auto-fallback can select the next bindable port.
-- when auto-fallback is used, Playwright keeps runner/worker aligned by using shared deterministic port resolution (local reuse mode prefers identity-verified listeners; CI mode prefers bindable ports).
+- when auto-fallback is used, Playwright keeps runner/worker aligned by storing the first resolved fallback port in-process (`TASKDECK_E2E_RESOLVED_FRONTEND_PORT`) so worker-side config evaluation does not drift to a different fallback port after the frontend webServer starts.
+- local reuse mode prefers identity-verified listeners; CI mode prefers bindable ports for first resolution.
 - if you explicitly set `TASKDECK_E2E_FRONTEND_PORT`, use `TASKDECK_E2E_API_CORS_ORIGINS` when needed so API preflight requests stay aligned with the chosen frontend origin.
 - investigation details and reproduction commands are documented in `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 
