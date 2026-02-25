@@ -9,7 +9,8 @@ import { normalizeCommandRunStatus } from '../utils/ops'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
-import { normalizeBoardRole } from '../utils/roles'
+import type { BoardRoleValue } from '../types/access'
+import { normalizeBoardRole, toBoardRoleValue } from '../utils/roles'
 
 const toast = useToastStore()
 const session = useSessionStore()
@@ -50,21 +51,8 @@ const currentRoleValue = computed(() => (
   session.defaultRole === null ? 3 : session.defaultRole
 ))
 
-function getTemplateRoleValue(role: string): number {
-  switch (role.trim().toLowerCase()) {
-    case 'owner':
-      return 0
-    case 'admin':
-      return 1
-    case 'editor':
-      return 2
-    default:
-      return 3
-  }
-}
-
 function isTemplateRunnableForCurrentRole(template: CommandTemplate): boolean {
-  return currentRoleValue.value <= getTemplateRoleValue(template.requiredRole)
+  return currentRoleValue.value <= toBoardRoleValue(template.requiredRole as unknown as BoardRoleValue)
 }
 
 const runnableTemplates = computed(() => (
@@ -173,25 +161,8 @@ async function handleCliRun() {
 
     cliOutput.value.push('')
   } catch (e: unknown) {
-    const display = getErrorDisplay(e, 'Failed to run template')
-    const msg = display.message
+    const msg = getErrorDisplay(e, 'Failed to run template').message
     cliOutput.value.push(`Error: ${msg}`)
-    if (display.code === 'Forbidden' && selectedTemplateMeta.value) {
-      cliOutput.value.push(
-        `Role context: you are signed in as ${currentRoleLabel.value}. ` +
-        `${selectedTemplateMeta.value.name} requires ${selectedTemplateMeta.value.requiredRole}.`
-      )
-
-      if (runnableTemplates.value.length > 0) {
-        cliOutput.value.push(
-          `Runnable templates for your role: ${runnableTemplates.value.map((template) => template.name).join(', ')}`
-        )
-      }
-
-      cliOutput.value.push(
-        'Need elevated access? Open Workspace > Settings and follow the operator role-assignment guidance.'
-      )
-    }
     cliOutput.value.push('')
     toast.error(msg)
   } finally {
