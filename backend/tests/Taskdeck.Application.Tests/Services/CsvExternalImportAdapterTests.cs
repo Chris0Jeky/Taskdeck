@@ -1,3 +1,4 @@
+using System.Text;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
@@ -199,6 +200,51 @@ public class CsvExternalImportAdapterTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("at least one non-empty header row");
+    }
+
+    [Fact]
+    public void Parse_ShouldReturnValidationError_WhenPayloadExceedsMaxSize()
+    {
+        var oversizedDisplayName = new string('A', 1024 * 1024);
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: $"""
+                      Display Name,Company,Email Address
+                      {oversizedDisplayName},Acme,alice@example.com
+                      """,
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("exceeds max size");
+        result.ErrorMessage.Should().Contain("1048576");
+    }
+
+    [Fact]
+    public void Parse_ShouldReturnValidationError_WhenNonEmptyRowCountExceedsMaxLimit()
+    {
+        var payloadBuilder = new StringBuilder();
+        payloadBuilder.AppendLine("Display Name,Company,Email Address");
+        for (var index = 0; index < 5001; index++)
+        {
+            payloadBuilder.AppendLine($"Contact {index},Acme,contact{index}@example.com");
+        }
+
+        var request = new ExternalImportRequestDto(
+            Provider: ExternalImportProviders.Csv,
+            Payload: payloadBuilder.ToString(),
+            TargetColumnName: "Imported",
+            DryRun: true);
+
+        var result = _adapter.Parse(request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("max row count");
+        result.ErrorMessage.Should().Contain("5001");
     }
 
     [Fact]
