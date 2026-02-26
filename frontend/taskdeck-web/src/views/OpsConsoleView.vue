@@ -9,7 +9,6 @@ import { normalizeCommandRunStatus } from '../utils/ops'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
-import type { BoardRoleValue } from '../types/access'
 import { normalizeBoardRole, toBoardRoleValue } from '../utils/roles'
 
 const toast = useToastStore()
@@ -52,7 +51,7 @@ const currentRoleValue = computed(() => (
 ))
 
 function isTemplateRunnableForCurrentRole(template: CommandTemplate): boolean {
-  return currentRoleValue.value <= toBoardRoleValue(template.requiredRole as unknown as BoardRoleValue)
+  return currentRoleValue.value <= toBoardRoleValue(template.requiredRole)
 }
 
 const runnableTemplates = computed(() => (
