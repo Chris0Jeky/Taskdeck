@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -11,12 +12,15 @@ namespace Taskdeck.Api.Tests;
 
 public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _dbPath = Path.Combine(
-        Path.GetTempPath(),
-        $"taskdeck-api-tests-{Guid.NewGuid():N}.db");
+    private readonly ConcurrentBag<string> _dbPaths = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        var dbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-api-tests-{Guid.NewGuid():N}.db");
+        _dbPaths.Add(dbPath);
+
         builder.UseEnvironment("Development");
         builder.ConfigureLogging(logging =>
         {
@@ -27,7 +31,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             var overrideSettings = new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}",
+                ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
                 ["Workers:QueuePollIntervalSeconds"] = "1",
                 ["Workers:MaxBatchSize"] = "10",
                 ["Workers:MaxConcurrency"] = "1",
@@ -42,11 +46,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
             services.RemoveAll<TaskdeckDbContext>();
             services.AddDbContext<TaskdeckDbContext>(options =>
-                options.UseSqlite($"Data Source={_dbPath}"));
+                options.UseSqlite($"Data Source={dbPath}"));
 
             using var scope = services.BuildServiceProvider().CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            dbContext.Database.EnsureDeleted();
             dbContext.Database.Migrate();
         });
     }
@@ -62,9 +65,14 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         try
         {
-            if (File.Exists(_dbPath))
+            foreach (var dbPath in _dbPaths)
             {
-                File.Delete(_dbPath);
+                if (!File.Exists(dbPath))
+                {
+                    continue;
+                }
+
+                File.Delete(dbPath);
             }
         }
         catch (IOException)

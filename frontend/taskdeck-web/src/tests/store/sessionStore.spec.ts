@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { authApi } from '../../api/authApi'
+import { usersApi } from '../../api/usersApi'
 import { useSessionStore } from '../../store/sessionStore'
 import type { AuthResponse } from '../../types/auth'
 
@@ -9,6 +10,12 @@ vi.mock('../../api/authApi', () => ({
     login: vi.fn(),
     register: vi.fn(),
     changePassword: vi.fn(),
+  },
+}))
+
+vi.mock('../../api/usersApi', () => ({
+  usersApi: {
+    getUser: vi.fn(),
   },
 }))
 
@@ -57,6 +64,7 @@ describe('sessionStore', () => {
     expect(store.userId).toBe('user-1')
     expect(store.username).toBe('testuser')
     expect(store.email).toBe('test@example.com')
+    expect(store.defaultRole).toBe(2)
     expect(store.isAuthenticated).toBe(true)
     expect(store.error).toBeNull()
   })
@@ -108,22 +116,36 @@ describe('sessionStore', () => {
     expect(store.userId).toBe('user-1')
   })
 
-  it('restoreSession restores valid base64url jwt', () => {
+  it('restoreSession restores valid base64url jwt', async () => {
     const token = makeAuthResponse().token
     localStorage.setItem('taskdeck_token', token)
     localStorage.setItem('taskdeck_session', JSON.stringify({
       userId: 'user-1',
       username: 'restored',
       email: 'restored@example.com',
+      defaultRole: 1,
     }))
+    vi.mocked(usersApi.getUser).mockResolvedValue({
+      id: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+      defaultRole: 1,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
 
     store.restoreSession()
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(store.token).toBe(token)
     expect(store.userId).toBe('user-1')
     expect(store.username).toBe('restored')
     expect(store.email).toBe('restored@example.com')
+    expect(store.defaultRole).toBe(1)
     expect(store.isAuthenticated).toBe(true)
+    expect(vi.mocked(usersApi.getUser)).toHaveBeenCalledWith('user-1')
   })
 
   it('restoreSession clears expired jwt', () => {
@@ -133,13 +155,151 @@ describe('sessionStore', () => {
       userId: 'user-1',
       username: 'expired',
       email: 'expired@example.com',
+      defaultRole: 2,
     }))
 
     store.restoreSession()
 
     expect(store.token).toBeNull()
     expect(store.userId).toBeNull()
+    expect(store.defaultRole).toBeNull()
     expect(store.isAuthenticated).toBe(false)
+    expect(vi.mocked(usersApi.getUser)).not.toHaveBeenCalled()
+  })
+
+  it('restoreSession refreshes persisted defaultRole from profile for active sessions', async () => {
+    const token = makeAuthResponse().token
+    localStorage.setItem('taskdeck_token', token)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+      defaultRole: 3,
+    }))
+
+    vi.mocked(usersApi.getUser).mockResolvedValue({
+      id: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+      defaultRole: 1,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
+
+    store.restoreSession()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(store.defaultRole).toBe(1)
+    expect(vi.mocked(usersApi.getUser)).toHaveBeenCalledWith('user-1')
+    expect(JSON.parse(localStorage.getItem('taskdeck_session') ?? '{}')).toMatchObject({
+      userId: 'user-1',
+      defaultRole: 1,
+    })
+  })
+
+  it('restoreSession hydrates missing defaultRole from profile for legacy session snapshots', async () => {
+    const token = makeAuthResponse().token
+    localStorage.setItem('taskdeck_token', token)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+    }))
+
+    vi.mocked(usersApi.getUser).mockResolvedValue({
+      id: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+      defaultRole: 1,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
+
+    store.restoreSession()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(vi.mocked(usersApi.getUser)).toHaveBeenCalledWith('user-1')
+    expect(store.defaultRole).toBe(1)
+    expect(JSON.parse(localStorage.getItem('taskdeck_session') ?? '{}')).toMatchObject({
+      userId: 'user-1',
+      defaultRole: 1,
+    })
+  })
+
+  it('restoreSession keeps session active when legacy role hydration fails', async () => {
+    const token = makeAuthResponse().token
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    localStorage.setItem('taskdeck_token', token)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+    }))
+
+    vi.mocked(usersApi.getUser).mockRejectedValue(new Error('profile fetch failed'))
+
+    store.restoreSession()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(store.token).toBe(token)
+    expect(store.defaultRole).toBeNull()
+    expect(vi.mocked(usersApi.getUser)).toHaveBeenCalledWith('user-1')
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('restoreSession clears malformed persisted session snapshots', () => {
+    const token = makeAuthResponse().token
+    localStorage.setItem('taskdeck_token', token)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 123,
+      username: 'restored',
+      email: 'restored@example.com',
+      defaultRole: 2,
+    }))
+
+    store.restoreSession()
+
+    expect(store.token).toBeNull()
+    expect(store.userId).toBeNull()
+    expect(store.defaultRole).toBeNull()
+    expect(localStorage.getItem('taskdeck_token')).toBeNull()
+    expect(localStorage.getItem('taskdeck_session')).toBeNull()
+  })
+
+  it('restoreSession preserves existing role when profile response lacks numeric defaultRole', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const token = makeAuthResponse().token
+    localStorage.setItem('taskdeck_token', token)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+      defaultRole: 2,
+    }))
+
+    vi.mocked(usersApi.getUser).mockResolvedValue({
+      id: 'user-1',
+      username: 'restored',
+      email: 'restored@example.com',
+      defaultRole: undefined as unknown as number,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
+
+    store.restoreSession()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(store.defaultRole).toBe(2)
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 
   it('logout clears state and storage', async () => {
@@ -151,6 +311,7 @@ describe('sessionStore', () => {
 
     expect(store.token).toBeNull()
     expect(store.userId).toBeNull()
+    expect(store.defaultRole).toBeNull()
     expect(store.isAuthenticated).toBe(false)
     expect(localStorage.getItem('taskdeck_token')).toBeNull()
     expect(localStorage.getItem('taskdeck_session')).toBeNull()

@@ -46,6 +46,12 @@ public class OpsCliApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var error = await response.Content.ReadFromJsonAsync<JsonElement>();
         error.GetProperty("errorCode").GetString().Should().Be("Forbidden");
+        var message = error.GetProperty("message").GetString();
+        message.Should().NotBeNullOrWhiteSpace();
+        message.Should().Contain("requires role 'admin'");
+        message.Should().Contain("current role is 'editor'");
+        message.Should().Contain("Runnable templates for your role:");
+        message.Should().Contain("Workspace > Settings");
     }
 
     [Fact]

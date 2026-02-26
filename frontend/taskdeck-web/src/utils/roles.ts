@@ -21,7 +21,9 @@ const valueByRole: Record<BoardRole, number> = {
   Viewer: 3,
 }
 
-export function normalizeBoardRole(role: BoardRoleValue): BoardRole {
+type BoardRoleInput = BoardRoleValue | string
+
+export function normalizeBoardRole(role: BoardRoleInput): BoardRole {
   if (typeof role === 'number') {
     return roleByValue[role] ?? 'Viewer'
   }
@@ -30,7 +32,7 @@ export function normalizeBoardRole(role: BoardRoleValue): BoardRole {
   return roleByName[normalized] ?? 'Viewer'
 }
 
-export function toBoardRoleValue(role: BoardRoleValue): number {
+export function toBoardRoleValue(role: BoardRoleInput): number {
   if (typeof role === 'number') {
     return role
   }
