@@ -55,6 +55,20 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AuthEndpoints_ShouldIgnoreSpoofedForwardedForHeader()
+    {
+        using var factory = CreateFactoryWithRateLimits(
+            authPermitLimit: 1,
+            authWindowSeconds: 60);
+        using var client = factory.CreateClient();
+
+        (await SendInvalidLoginAsync(client, forwardedFor: "198.51.100.10")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var throttled = await SendInvalidLoginAsync(client, forwardedFor: "203.0.113.20");
+        await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);
+    }
+
+    [Fact]
     public async Task CaptureCreate_ShouldThrottlePerUser_WithoutCrossUserFalsePositives()
     {
         using var factory = CreateFactoryWithRateLimits(
@@ -130,11 +144,18 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         });
     }
 
-    private static Task<HttpResponseMessage> SendInvalidLoginAsync(HttpClient client)
+    private static async Task<HttpResponseMessage> SendInvalidLoginAsync(HttpClient client, string? forwardedFor = null)
     {
-        return client.PostAsJsonAsync(
-            "/api/auth/login",
-            new LoginDto($"missing-{Guid.NewGuid():N}", "invalid-password"));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(new LoginDto($"missing-{Guid.NewGuid():N}", "invalid-password"))
+        };
+        if (!string.IsNullOrWhiteSpace(forwardedFor))
+        {
+            request.Headers.TryAddWithoutValidation("X-Forwarded-For", forwardedFor);
+        }
+
+        return await client.SendAsync(request);
     }
 
     private static async Task AssertThrottleContractAsync(HttpResponseMessage response, string expectedPolicyName)
