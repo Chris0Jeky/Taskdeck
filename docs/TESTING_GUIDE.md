@@ -10,20 +10,20 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-02-25)
+## Current Verified Totals (2026-02-26)
 
-- Backend: 908/908 passing
+- Backend: 920/920 passing
   - Domain: 122
   - Application: 505
-  - API integration: 269
+  - API integration: 281
   - CLI contract: 4
   - Architecture boundaries: 8
 - Frontend unit: 379/379 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1310/1310 passing
+- Combined automated total: 1322/1322 passing
 
 Verification note:
-- backend totals were re-verified on 2026-02-25 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
+- backend totals were re-verified on 2026-02-26 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
 - frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
 - frontend E2E totals were re-verified on 2026-02-25 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`23/23` passing)
 
@@ -363,6 +363,7 @@ Planned quality expectations when implementation starts:
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
+  - Includes rate-limit policy coverage (`RateLimitingApiTests`) for burst throttling, retry metadata contract, reset-window recovery, and cross-user boundary behavior
   - Includes board-scoped external import endpoint coverage (authz, malformed input, duplicate handling, apply/update flow, rollback safety)
   - Includes outbound webhook API and worker coverage (`OutboundWebhooksApiTests`, `OutboundWebhookDeliveryWorkerTests`) for claim/reload handling, cancellation requeue, and non-success HTTP retry/dead-letter branches
   - Includes `ResultExtensions` mapping tests for standardized API error/status behavior
