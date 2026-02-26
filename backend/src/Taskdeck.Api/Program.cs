@@ -507,18 +507,8 @@ static string ResolveUserOrClientIdentifier(HttpContext context)
 
 static string ResolveClientAddress(HttpContext context)
 {
-    var forwardedFor = context.Request.Headers["X-Forwarded-For"].ToString();
-    if (!string.IsNullOrWhiteSpace(forwardedFor))
-    {
-        var firstForwardedAddress = forwardedFor
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(firstForwardedAddress))
-        {
-            return firstForwardedAddress;
-        }
-    }
-
+    // Trust only connection metadata here. Raw forwarded headers are caller-controlled unless
+    // forwarded-header middleware is explicitly configured with trusted proxies/networks.
     return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 }
 
