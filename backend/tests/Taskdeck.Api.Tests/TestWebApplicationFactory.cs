@@ -32,6 +32,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             var overrideSettings = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["RateLimiting:Enabled"] = "false",
                 ["Workers:QueuePollIntervalSeconds"] = "1",
                 ["Workers:MaxBatchSize"] = "10",
                 ["Workers:MaxConcurrency"] = "1",
