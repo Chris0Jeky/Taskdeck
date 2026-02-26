@@ -2,7 +2,7 @@ export interface User {
   id: string
   username: string
   email: string
-  defaultRole?: number
+  defaultRole: number
   isActive: boolean
   createdAt: string
   updatedAt: string
