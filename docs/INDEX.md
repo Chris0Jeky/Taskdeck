@@ -39,6 +39,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Provider runtime posture and demo setup guide (`Mock`/`OpenAI` current, `Gemini` expansion tracked in `#232`).
 - `IMPORT_ADAPTERS_GUIDE.md`
   - External import adapter runtime contract and CSV outreach-profile mapping/dedupe guide (`#75`).
+- `RATE_LIMITING_POLICY.md`
+  - API abuse-protection policy, throttle contract, and tuning guidance for rate-limited endpoints (`#81`).
 
 ## Active Tooling Docs
 
