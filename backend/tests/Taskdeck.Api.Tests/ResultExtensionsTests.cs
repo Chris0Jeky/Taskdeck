@@ -17,6 +17,7 @@ public class ResultExtensionsTests
     [InlineData(ErrorCodes.AuthenticationFailed, 401)]
     [InlineData(ErrorCodes.Unauthorized, 401)]
     [InlineData(ErrorCodes.Forbidden, 403)]
+    [InlineData(ErrorCodes.TooManyRequests, 429)]
     [InlineData(ErrorCodes.Conflict, 409)]
     [InlineData(ErrorCodes.InvalidOperation, 409)]
     [InlineData("SomethingUnexpected", 500)]
@@ -36,6 +37,7 @@ public class ResultExtensionsTests
     [InlineData(ErrorCodes.AuthenticationFailed, 401)]
     [InlineData(ErrorCodes.Unauthorized, 401)]
     [InlineData(ErrorCodes.Forbidden, 403)]
+    [InlineData(ErrorCodes.TooManyRequests, 429)]
     [InlineData(ErrorCodes.Conflict, 409)]
     [InlineData(ErrorCodes.InvalidOperation, 409)]
     public void ToErrorActionResult_ShouldMapKnownErrorCodes(string errorCode, int expectedStatusCode)
