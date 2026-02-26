@@ -7,8 +7,7 @@ import type { ArchiveItem } from '../types/archive'
 import type { Board } from '../types/board'
 import { normalizeRestoreStatus } from '../utils/archive'
 import { getErrorDisplay } from '../composables/useErrorMapper'
-
-const HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY = 'taskdeck_archive_hidden_boards'
+import { HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY } from '../utils/storageKeys'
 
 const toast = useToastStore()
 const loadingItems = ref(false)
