@@ -1,5 +1,9 @@
+using System.Globalization;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
@@ -10,6 +14,7 @@ using OpenTelemetry.Trace;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
@@ -30,6 +35,10 @@ var observabilitySettings = builder.Configuration
     .GetSection("Observability")
     .Get<ObservabilitySettings>() ?? new ObservabilitySettings();
 builder.Services.AddSingleton(observabilitySettings);
+var rateLimitingSettings = builder.Configuration
+    .GetSection("RateLimiting")
+    .Get<RateLimitingSettings>() ?? new RateLimitingSettings();
+builder.Services.AddSingleton(rateLimitingSettings);
 
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -299,6 +308,7 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod();
     });
 });
+builder.Services.AddRateLimiter(options => ConfigureRateLimiting(options, rateLimitingSettings));
 
 var app = builder.Build();
 
@@ -320,6 +330,10 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<UnhandledExceptionMiddleware>();
 
 app.UseAuthentication();
+if (rateLimitingSettings.Enabled)
+{
+    app.UseRateLimiter();
+}
 app.UseAuthorization();
 
 app.MapControllers();
@@ -400,6 +414,103 @@ static string NormalizeCorsOrigin(string origin)
     }
 
     return parsedOrigin.GetLeftPart(UriPartial.Authority);
+}
+
+static void ConfigureRateLimiting(RateLimiterOptions options, RateLimitingSettings settings)
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        var retryAfterSeconds = 1;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            retryAfterSeconds = Math.Max((int)Math.Ceiling(retryAfter.TotalSeconds), 1);
+        }
+
+        var policyName = context.HttpContext
+            .GetEndpoint()?
+            .Metadata
+            .GetMetadata<EnableRateLimitingAttribute>()?
+            .PolicyName;
+
+        context.HttpContext.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        if (!string.IsNullOrWhiteSpace(policyName))
+        {
+            context.HttpContext.Response.Headers["X-RateLimit-Policy"] = policyName;
+        }
+
+        if (context.HttpContext.Response.HasStarted)
+        {
+            return;
+        }
+
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new ApiErrorResponse(
+                ErrorCodes.TooManyRequests,
+                $"Rate limit exceeded. Retry after {retryAfterSeconds} seconds."),
+            cancellationToken);
+    };
+
+    options.AddPolicy(RateLimitingPolicyNames.AuthPerIp, httpContext =>
+    {
+        var partitionKey = $"auth-ip:{ResolveClientAddress(httpContext)}";
+        return BuildFixedWindowPartition(partitionKey, settings.AuthPerIp);
+    });
+
+    options.AddPolicy(RateLimitingPolicyNames.HotPathPerUser, httpContext =>
+    {
+        var partitionKey = $"hot-user:{ResolveUserOrClientIdentifier(httpContext)}";
+        return BuildFixedWindowPartition(partitionKey, settings.HotPathPerUser);
+    });
+
+    options.AddPolicy(RateLimitingPolicyNames.CaptureWritePerUser, httpContext =>
+    {
+        var partitionKey = $"capture-user:{ResolveUserOrClientIdentifier(httpContext)}";
+        return BuildFixedWindowPartition(partitionKey, settings.CaptureWritePerUser);
+    });
+}
+
+static RateLimitPartition<string> BuildFixedWindowPartition(string partitionKey, RateLimitPolicySettings policy)
+{
+    var permitLimit = Math.Max(policy.PermitLimit, 1);
+    var windowSeconds = Math.Max(policy.WindowSeconds, 1);
+
+    return RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey,
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitLimit,
+            Window = TimeSpan.FromSeconds(windowSeconds),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+}
+
+static string ResolveUserOrClientIdentifier(HttpContext context)
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    return !string.IsNullOrWhiteSpace(userId)
+        ? userId
+        : ResolveClientAddress(context);
+}
+
+static string ResolveClientAddress(HttpContext context)
+{
+    var forwardedFor = context.Request.Headers["X-Forwarded-For"].ToString();
+    if (!string.IsNullOrWhiteSpace(forwardedFor))
+    {
+        var firstForwardedAddress = forwardedFor
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(firstForwardedAddress))
+        {
+            return firstForwardedAddress;
+        }
+    }
+
+    return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 }
 
 public partial class Program { }
