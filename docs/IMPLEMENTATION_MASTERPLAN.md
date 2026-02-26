@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-25  
+Last Updated: 2026-02-26  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -373,6 +373,11 @@ Delivered in the latest cycle:
    - board settings lifecycle controls now use one explicit archive/restore action with deterministic confirmation messaging, replacing duplicate archive semantics in the same surface
    - archive workspace now supports hiding archived boards from the default list, explicit hidden-board reveal (`Show Hidden Boards`), and reversible unhide actions for clearer long-tail archive management
    - archive/frontend regression coverage now locks hidden-board visibility filtering behavior while API integration coverage locks archive/restore lifecycle transitions via board update contracts
+87. SEC-05 OWASP baseline hardening (`#80`):
+   - added API security-header middleware with explicit baseline headers (`Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`)
+   - added environment-aware HSTS behavior (enabled for HTTPS, disabled by default in development unless explicitly configured)
+   - added API integration coverage for header presence on success and auth-failure paths, plus HTTPS HSTS emission behavior in non-development hosting
+   - published `docs/SECURITY_OWASP_BASELINE.md` with CSRF posture, OWASP checklist, and tracked follow-up security gaps
 
 ## Roadmap by Horizon
 
@@ -564,7 +569,7 @@ Exit Criteria:
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80`, `#81` (capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
+- Security/compliance expansion: `#80` (delivered), `#81` (capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
 - Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 
@@ -617,7 +622,7 @@ Covered by seeded issues:
 - Load/concurrency harness and budgets: `#70` (delivered)
 - Multi-tenancy strategy ADR: `#71` (delivered)
 - API abuse/rate limiting: `#81`
-- OWASP/security headers and CSRF/XSS baseline: `#80`
+- OWASP/security headers and CSRF/XSS baseline: `#80` (delivered)
 - Dependency vulnerability management policy: `#106`
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`
@@ -632,7 +637,7 @@ Outstanding strategy-level gap to monitor:
 1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered).
 2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`).
 3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`).
-4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81`, `#82`, `#83`, `#110`).
+4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80` delivered; `#81`, `#82`, `#83`, `#110` pending).
 
 
 ## Prepackaged Starter States Track (Roadmap Additions)
