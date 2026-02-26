@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '../api/authApi'
+import { usersApi } from '../api/usersApi'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import type { LoginRequest, RegisterRequest, ChangePasswordRequest, SessionState, AuthResponse } from '../types/auth'
@@ -8,6 +9,13 @@ import { getTokenExpiryIso, isTokenExpired } from '../utils/jwt'
 
 const TOKEN_KEY = 'taskdeck_token'
 const SESSION_KEY = 'taskdeck_session'
+
+interface PersistedSession {
+  userId: string
+  username: string
+  email: string
+  defaultRole?: number
+}
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -36,6 +44,10 @@ export const useSessionStore = defineStore('session', () => {
     expiresAt: expiresAt.value,
   }))
 
+  function persistSessionSnapshot(snapshot: { userId: string; username: string; email: string; defaultRole: number | null }) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot))
+  }
+
   function setSession(data: AuthResponse) {
     token.value = data.token
     userId.value = data.user.id
@@ -45,12 +57,12 @@ export const useSessionStore = defineStore('session', () => {
     expiresAt.value = getTokenExpiryIso(data.token)
 
     localStorage.setItem(TOKEN_KEY, data.token)
-    localStorage.setItem(SESSION_KEY, JSON.stringify({
+    persistSessionSnapshot({
       userId: data.user.id,
       username: data.user.username,
       email: data.user.email,
       defaultRole: data.user.defaultRole,
-    }))
+    })
   }
 
   function clearSession() {
@@ -64,12 +76,45 @@ export const useSessionStore = defineStore('session', () => {
     localStorage.removeItem(SESSION_KEY)
   }
 
+  async function hydrateDefaultRoleFromProfile(restoredUserId: string, restoredToken: string) {
+    try {
+      const user = await usersApi.getUser(restoredUserId)
+      if (token.value !== restoredToken || userId.value !== restoredUserId) {
+        return
+      }
+
+      if (typeof user.defaultRole !== 'number') {
+        console.warn('Session restore role hydration skipped: profile response did not include a numeric defaultRole.')
+        return
+      }
+
+      defaultRole.value = user.defaultRole
+      persistSessionSnapshot({
+        userId: restoredUserId,
+        username: username.value ?? user.username,
+        email: email.value ?? user.email,
+        defaultRole: user.defaultRole,
+      })
+    } catch (e) {
+      console.warn('Session restore role hydration failed.', e)
+    }
+  }
+
   function restoreSession() {
     const savedToken = localStorage.getItem(TOKEN_KEY)
     const savedSession = localStorage.getItem(SESSION_KEY)
     if (savedToken && savedSession) {
       try {
-        const session = JSON.parse(savedSession)
+        const session = JSON.parse(savedSession) as PersistedSession
+        if (
+          typeof session.userId !== 'string'
+          || typeof session.username !== 'string'
+          || typeof session.email !== 'string'
+        ) {
+          clearSession()
+          return
+        }
+
         token.value = savedToken
         userId.value = session.userId
         username.value = session.username
@@ -78,6 +123,11 @@ export const useSessionStore = defineStore('session', () => {
         expiresAt.value = getTokenExpiryIso(savedToken)
         if (isTokenExpired(savedToken)) {
           clearSession()
+          return
+        }
+
+        if (defaultRole.value === null) {
+          void hydrateDefaultRoleFromProfile(session.userId, savedToken)
         }
       } catch {
         clearSession()
