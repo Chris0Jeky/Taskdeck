@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-02-25  
+Last Updated: 2026-02-26  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -373,6 +373,11 @@ Delivered in the latest cycle:
    - board settings lifecycle controls now use one explicit archive/restore action with deterministic confirmation messaging, replacing duplicate archive semantics in the same surface
    - archive workspace now supports hiding archived boards from the default list, explicit hidden-board reveal (`Show Hidden Boards`), and reversible unhide actions for clearer long-tail archive management
    - archive/frontend regression coverage now locks hidden-board visibility filtering behavior while API integration coverage locks archive/restore lifecycle transitions via board update contracts
+87. SEC-06 API rate-limiting and abuse-protection hardening (`#81`):
+   - added partitioned fixed-window rate limiter policies for auth (`AuthPerIp`), capture create/triage (`CaptureWritePerUser`), and hot/costly paths (`HotPathPerUser`)
+   - applied endpoint-level rate-limit policies across auth, capture, chat, and llm-queue write/stream surfaces
+   - standardized throttle response contract (`429` + `ApiErrorResponse`) with deterministic retry diagnostics headers (`Retry-After`, `X-RateLimit-Policy`)
+   - published operator tuning guidance and safe defaults in `docs/RATE_LIMITING_POLICY.md` with regression coverage for burst, reset-window recovery, and cross-user boundary behavior
 
 ## Roadmap by Horizon
 
@@ -551,7 +556,7 @@ Exit Criteria:
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
 - Analysis follow-through wave tracker: `#151`
-- Capture realignment wave: `#199` to `#211` (delivered); remaining linked hardening/performance follow-through: `#81`, `#212`, `#213`
+- Capture realignment wave: `#199` to `#211` (delivered); remaining linked hardening/performance follow-through: `#212`, `#213`
 - Testing harness guardrails wave tracker and delivery sequence: `#254` to `#260`
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
@@ -564,7 +569,7 @@ Exit Criteria:
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80`, `#81` (capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
+- Security/compliance expansion: `#80`, `#81` (delivered), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
 - Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 
@@ -616,7 +621,7 @@ Covered by seeded issues:
 - OpenTelemetry metrics/tracing and alerting runbook: `#68`
 - Load/concurrency harness and budgets: `#70` (delivered)
 - Multi-tenancy strategy ADR: `#71` (delivered)
-- API abuse/rate limiting: `#81`
+- API abuse/rate limiting: `#81` (delivered)
 - OWASP/security headers and CSRF/XSS baseline: `#80`
 - Dependency vulnerability management policy: `#106`
 - Secrets/configuration management baseline: `#110`
@@ -632,7 +637,7 @@ Outstanding strategy-level gap to monitor:
 1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered).
 2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`).
 3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`).
-4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81`, `#82`, `#83`, `#110`).
+4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81` delivered; `#82`, `#83`, `#110` pending).
 
 
 ## Prepackaged Starter States Track (Roadmap Additions)
@@ -681,7 +686,7 @@ Initial implementation shape:
 3. Sequence remaining managed-key control-plane foundations in Priority II: `#235` tracker, then `#237` after delivered identity attribution baseline (`#236`).
 4. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
 5. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
-6. Sequence capture-linked hardening by priority stage: `#81` and `#212` in Priority III, `#213` in Priority IV.
+6. Sequence capture-linked hardening by priority stage: `#212` in Priority III, `#213` in Priority IV.
 7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing analytics/starter-pack tracks (`#77`, `#175`) and the delivered import-adapter foundation (`#75`).
 
