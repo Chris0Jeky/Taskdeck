@@ -12,16 +12,20 @@ This document defines Taskdeck API rate-limiting defaults, partition rules, resp
 
 Taskdeck uses ASP.NET Core fixed-window rate limiting with partitioned keys.
 
+Trust boundary note:
+- Taskdeck does not trust raw `X-Forwarded-For` request headers for partitioning.
+- If deployed behind reverse proxies/load balancers, configure forwarded-header middleware with trusted proxy/network allowlists so `RemoteIpAddress` reflects the canonical client IP.
+
 Configured policies:
 
 - `AuthPerIp`
-  - partition key: client IP (`X-Forwarded-For` first hop, then remote IP)
+  - partition key: trusted client IP from `HttpContext.Connection.RemoteIpAddress`
   - target endpoints: `POST /api/auth/login`, `POST /api/auth/register`, `POST /api/auth/change-password`
 - `CaptureWritePerUser`
-  - partition key: authenticated user id (fallback to client IP when unavailable)
+  - partition key: authenticated user id (fallback to trusted connection IP when unavailable)
   - target endpoints: `POST /api/capture/items`, `POST /api/capture/items/{id}/triage`
 - `HotPathPerUser`
-  - partition key: authenticated user id (fallback to client IP when unavailable)
+  - partition key: authenticated user id (fallback to trusted connection IP when unavailable)
   - target endpoints:
     - `POST /api/llm-queue`
     - `POST /api/llm-queue/process-next`
