@@ -40,7 +40,9 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `IMPORT_ADAPTERS_GUIDE.md`
   - External import adapter runtime contract and CSV outreach-profile mapping/dedupe guide (`#75`).
 - `RATE_LIMITING_POLICY.md`
-  - API abuse-protection policy, throttle contract, and tuning guidance for rate-limited endpoints (`#81`).
+  - API abuse-protection policy, throttle contract, and tuning guidance for rate-limited endpoints (`#81`, delivered).
+- `SECURITY_OWASP_BASELINE.md`
+  - OWASP baseline hardening record for API security headers and CSRF posture (`#80`, delivered).
 
 ## Active Tooling Docs
 

@@ -373,7 +373,12 @@ Delivered in the latest cycle:
    - board settings lifecycle controls now use one explicit archive/restore action with deterministic confirmation messaging, replacing duplicate archive semantics in the same surface
    - archive workspace now supports hiding archived boards from the default list, explicit hidden-board reveal (`Show Hidden Boards`), and reversible unhide actions for clearer long-tail archive management
    - archive/frontend regression coverage now locks hidden-board visibility filtering behavior while API integration coverage locks archive/restore lifecycle transitions via board update contracts
-87. SEC-06 API rate-limiting and abuse-protection hardening (`#81`):
+87. SEC-05 OWASP baseline hardening (`#80`, delivered):
+   - added API security-header middleware with explicit baseline headers (`Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`)
+   - added environment-aware HSTS behavior (enabled for HTTPS, disabled by default in development unless explicitly configured)
+   - added API integration coverage for header presence on success and auth-failure paths, plus HTTPS HSTS emission behavior in non-development hosting
+   - published `docs/SECURITY_OWASP_BASELINE.md` with CSRF posture, OWASP checklist, and tracked follow-up security gaps
+88. SEC-06 API rate-limiting and abuse-protection hardening (`#81`, delivered):
    - added partitioned fixed-window rate limiter policies for auth (`AuthPerIp`), capture create/triage (`CaptureWritePerUser`), and hot/costly paths (`HotPathPerUser`)
    - applied endpoint-level rate-limit policies across auth, capture, chat, and llm-queue write/stream surfaces
    - standardized throttle response contract (`429` + `ApiErrorResponse`) with deterministic retry diagnostics headers (`Retry-After`, `X-RateLimit-Policy`)
@@ -569,7 +574,7 @@ Exit Criteria:
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80`, `#81` (delivered), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
+- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
 - Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 
@@ -622,7 +627,7 @@ Covered by seeded issues:
 - Load/concurrency harness and budgets: `#70` (delivered)
 - Multi-tenancy strategy ADR: `#71` (delivered)
 - API abuse/rate limiting: `#81` (delivered)
-- OWASP/security headers and CSRF/XSS baseline: `#80`
+- OWASP/security headers and CSRF/XSS baseline: `#80` (delivered)
 - Dependency vulnerability management policy: `#106`
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`

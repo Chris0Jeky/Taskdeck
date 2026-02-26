@@ -40,6 +40,14 @@ var rateLimitingSettings = builder.Configuration
     .Get<RateLimitingSettings>() ?? new RateLimitingSettings();
 builder.Services.AddSingleton(rateLimitingSettings);
 
+var securityHeadersSection = builder.Configuration.GetSection("SecurityHeaders");
+var securityHeadersSettings = securityHeadersSection.Get<SecurityHeadersSettings>() ?? new SecurityHeadersSettings();
+if (builder.Environment.IsDevelopment() && securityHeadersSection["EnableHsts"] is null)
+{
+    securityHeadersSettings.EnableHsts = false;
+}
+builder.Services.AddSingleton(securityHeadersSettings);
+
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -328,6 +336,7 @@ if (app.Environment.IsDevelopment())
 app.UseCors("AllowFrontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<UnhandledExceptionMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
 
 app.UseAuthentication();
 if (rateLimitingSettings.Enabled)
