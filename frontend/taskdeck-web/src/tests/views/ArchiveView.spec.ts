@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ArchiveView from '../../views/ArchiveView.vue'
+import { HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY } from '../../utils/storageKeys'
 
 const mocks = vi.hoisted(() => ({
   getItems: vi.fn(),
@@ -251,7 +252,7 @@ describe('ArchiveView', () => {
 
     expect(wrapper.text()).not.toContain('Board Hidden Candidate')
     expect(wrapper.text()).toContain('Show Hidden Boards (1)')
-    expect(localStorage.getItem('taskdeck_archive_hidden_boards')).toContain('board-archived-1')
+    expect(localStorage.getItem(HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY)).toContain('board-archived-1')
 
     const showHiddenButton = wrapper
       .findAll('button')
