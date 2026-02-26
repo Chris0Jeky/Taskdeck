@@ -212,6 +212,44 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
         activeBoards.Should().ContainSingle(b => b.Id == createdBoard.Id && !b.IsArchived);
     }
 
+    [Fact]
+    public async Task UpdateBoardArchiveState_ShouldSupportArchiveAndRestoreLifecycleTransitions()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var createdBoard = await ApiTestHarness.CreateBoardAsync(_client, "lifecycle-transition");
+
+        var archiveResponse = await _client.PutAsJsonAsync(
+            $"/api/boards/{createdBoard.Id}",
+            new UpdateBoardDto(null, null, true));
+
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var activeListAfterArchive = await _client.GetAsync("/api/boards");
+        activeListAfterArchive.StatusCode.Should().Be(HttpStatusCode.OK);
+        var activeBoards = await activeListAfterArchive.Content.ReadFromJsonAsync<List<BoardDto>>();
+        activeBoards.Should().NotBeNull();
+        activeBoards.Should().NotContain(board => board.Id == createdBoard.Id);
+
+        var archivedList = await _client.GetAsync("/api/boards?includeArchived=true");
+        archivedList.StatusCode.Should().Be(HttpStatusCode.OK);
+        var allBoardsAfterArchive = await archivedList.Content.ReadFromJsonAsync<List<BoardDto>>();
+        allBoardsAfterArchive.Should().NotBeNull();
+        allBoardsAfterArchive.Should().ContainSingle(board => board.Id == createdBoard.Id && board.IsArchived);
+
+        var restoreResponse = await _client.PutAsJsonAsync(
+            $"/api/boards/{createdBoard.Id}",
+            new UpdateBoardDto(null, null, false));
+
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var activeListAfterRestore = await _client.GetAsync("/api/boards");
+        activeListAfterRestore.StatusCode.Should().Be(HttpStatusCode.OK);
+        var activeBoardsAfterRestore = await activeListAfterRestore.Content.ReadFromJsonAsync<List<BoardDto>>();
+        activeBoardsAfterRestore.Should().NotBeNull();
+        activeBoardsAfterRestore.Should().ContainSingle(board => board.Id == createdBoard.Id && !board.IsArchived);
+    }
+
     private async Task EnsureAuthenticatedAsync()
     {
         if (_isAuthenticated)

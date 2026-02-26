@@ -369,6 +369,10 @@ Delivered in the latest cycle:
    - ops command permission failures now include current-role context, runnable-template fallback lists, and explicit next-step guidance to verify/request elevated access
    - ops console now surfaces current role and runnable-template discoverability context up front, and restricted template selection now shows explicit role-based warnings before run attempts
    - settings profile surface now includes role and ops-capability summaries, and operator/manual docs now codify the role-assignment workflow used for access elevation requests
+86. UX-11 archive lifecycle control refinement (`#177`):
+   - board settings lifecycle controls now use one explicit archive/restore action with deterministic confirmation messaging, replacing duplicate archive semantics in the same surface
+   - archive workspace now supports hiding archived boards from the default list, explicit hidden-board reveal (`Show Hidden Boards`), and reversible unhide actions for clearer long-tail archive management
+   - archive/frontend regression coverage now locks hidden-board visibility filtering behavior while API integration coverage locks archive/restore lifecycle transitions via board update contracts
 
 ## Roadmap by Horizon
 

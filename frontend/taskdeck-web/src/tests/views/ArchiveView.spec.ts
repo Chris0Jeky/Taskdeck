@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ArchiveView from '../../views/ArchiveView.vue'
+import { HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY } from '../../utils/storageKeys'
 
 const mocks = vi.hoisted(() => ({
   getItems: vi.fn(),
@@ -41,9 +42,19 @@ async function waitForAsyncUi() {
   await Promise.resolve()
 }
 
+function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper
+    .findAll('button')
+    .find((candidate) => candidate.text().includes(text))
+
+  expect(button, `Expected a button containing "${text}"`).toBeDefined()
+  return button!
+}
+
 describe('ArchiveView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mocks.getItems.mockResolvedValue([])
     mocks.getBoards.mockResolvedValue([])
   })
@@ -168,10 +179,8 @@ describe('ArchiveView', () => {
     const wrapper = mount(ArchiveView)
     await waitForAsyncUi()
 
-    const restoreBoardButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Restore Board'))
-    await restoreBoardButton?.trigger('click')
+    const restoreBoardButton = findButtonByText(wrapper, 'Restore Board')
+    await restoreBoardButton.trigger('click')
     await waitForAsyncUi()
 
     expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
@@ -179,5 +188,77 @@ describe('ArchiveView', () => {
     expect(wrapper.findAll('.td-archive-list--section .td-archive-row')).toHaveLength(0)
 
     confirmSpy.mockRestore()
+  })
+
+  it('restores archived board even when hidden-board persistence fails', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const setItemSpy = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('storage unavailable')
+    })
+
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-archived',
+        name: 'Archived Board',
+        description: null,
+        isArchived: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+    mocks.updateBoard.mockResolvedValue({
+      id: 'board-archived',
+      name: 'Board To Restore',
+      description: null,
+      isArchived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    const restoreBoardButton = findButtonByText(wrapper, 'Restore Board')
+    await restoreBoardButton.trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
+    expect(mocks.successToast).toHaveBeenCalledWith('Restored board "Archived Board"')
+    expect(setItemSpy).toHaveBeenCalled()
+    expect(mocks.errorToast).not.toHaveBeenCalledWith('Failed to restore board')
+
+    confirmSpy.mockRestore()
+    setItemSpy.mockRestore()
+  })
+
+  it('hides archived board from default list and reveals it when hidden toggle is enabled', async () => {
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-archived-1',
+        name: 'Board Hidden Candidate',
+        description: null,
+        isArchived: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    const hideButton = findButtonByText(wrapper, 'Hide')
+    await hideButton.trigger('click')
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).not.toContain('Board Hidden Candidate')
+    expect(wrapper.text()).toContain('Show Hidden Boards (1)')
+    expect(localStorage.getItem(HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY)).toContain('board-archived-1')
+
+    const showHiddenButton = findButtonByText(wrapper, 'Show Hidden Boards')
+    await showHiddenButton.trigger('click')
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('Board Hidden Candidate')
+    expect(wrapper.text()).toContain('Unhide')
   })
 })

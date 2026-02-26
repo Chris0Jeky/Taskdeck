@@ -1,0 +1,1 @@
+export const HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY = 'taskdeck_archive_hidden_boards'
