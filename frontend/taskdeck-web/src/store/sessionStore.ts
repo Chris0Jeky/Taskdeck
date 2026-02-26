@@ -126,9 +126,7 @@ export const useSessionStore = defineStore('session', () => {
           return
         }
 
-        if (defaultRole.value === null) {
-          void hydrateDefaultRoleFromProfile(session.userId, savedToken)
-        }
+        void hydrateDefaultRoleFromProfile(session.userId, savedToken)
       } catch {
         clearSession()
       }
