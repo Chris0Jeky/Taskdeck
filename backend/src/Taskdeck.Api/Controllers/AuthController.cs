@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 
@@ -19,6 +21,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
         var result = await _authService.LoginAsync(dto);
@@ -26,6 +29,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> Register([FromBody] CreateUserDto dto)
     {
         var result = await _authService.RegisterAsync(dto);
@@ -33,6 +37,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("change-password")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         var result = await _authService.ChangePasswordAsync(request.UserId, request.CurrentPassword, request.NewPassword);
