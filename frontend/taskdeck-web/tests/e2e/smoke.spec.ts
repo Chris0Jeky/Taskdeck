@@ -338,29 +338,30 @@ test('board settings lifecycle should support rename archive unarchive and archi
 
   await page.locator('button[title="Board Settings"]').click()
   await page.locator('#board-name').fill(renamedBoardName)
-  await page.locator('#board-archived').check()
   await page.getByRole('button', { name: 'Save Changes' }).click()
 
   await expect(page.getByRole('heading', { name: renamedBoardName })).toBeVisible()
 
-  await page.goto('/workspace/boards')
-  await expect(page.getByText(renamedBoardName)).toHaveCount(0)
-
-  await page.goto(boardUrl)
-  await page.locator('button[title="Board Settings"]').click()
-  await page.locator('#board-archived').uncheck()
-  await page.getByRole('button', { name: 'Save Changes' }).click()
-
-  await page.goto('/workspace/boards')
-  await expect(page.getByText(renamedBoardName).first()).toBeVisible()
-
-  await page.goto(boardUrl)
   await page.locator('button[title="Board Settings"]').click()
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Archive Board' }).click()
+  await page.getByRole('button', { name: 'Move to Archive' }).click()
 
   await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)
+
+  await page.goto('/workspace/archive')
+  await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
+  const archivedBoardRow = page.locator('.td-archive-row').filter({ hasText: renamedBoardName }).first()
+  await expect(archivedBoardRow).toBeVisible()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click()
+  await expect(page.locator('.td-archive-row').filter({ hasText: renamedBoardName })).toHaveCount(0)
+
+  await page.goto('/workspace/boards')
+  await expect(page.getByText(renamedBoardName).first()).toBeVisible()
+  await page.goto(boardUrl)
+  await expect(page.getByRole('heading', { name: renamedBoardName })).toBeVisible()
 })
 
 test('column drag and drop should reorder columns and persist after refresh', async ({ page }) => {

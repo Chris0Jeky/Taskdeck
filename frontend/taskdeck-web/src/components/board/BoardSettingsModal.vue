@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
@@ -21,16 +21,30 @@ const router = useRouter()
 // Form state
 const name = ref('')
 const description = ref('')
-const isArchived = ref(false)
 
 // Watch for board changes
 watch(() => props.board, (newBoard) => {
   if (newBoard) {
     name.value = newBoard.name
     description.value = newBoard.description || ''
-    isArchived.value = newBoard.isArchived
   }
 }, { immediate: true })
+
+const lifecycleActionLabel = computed(() => (
+  props.board.isArchived ? 'Restore Board' : 'Move to Archive'
+))
+
+const lifecycleActionButtonClass = computed(() => (
+  props.board.isArchived
+    ? 'px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 border border-blue-300 rounded-md transition-colors'
+    : 'px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-300 rounded-md transition-colors'
+))
+
+const lifecycleDescription = computed(() => (
+  props.board.isArchived
+    ? 'Archived boards are hidden from default board lists. Restore this board to move it back to active workspaces.'
+    : 'Move this board to Archive to remove it from default board lists. You can restore it later from Workspace > Archive.'
+))
 
 const isFormValid = () => {
   return name.value.trim().length > 0
@@ -42,8 +56,8 @@ async function handleSave() {
   try {
     await boardStore.updateBoard(props.board.id, {
       name: name.value !== props.board.name ? name.value : null,
-      description: description.value !== props.board.description ? description.value : null,
-      isArchived: isArchived.value !== props.board.isArchived ? isArchived.value : null
+      description: description.value !== (props.board.description ?? '') ? description.value : null,
+      isArchived: null,
     })
 
     emit('updated')
@@ -53,23 +67,34 @@ async function handleSave() {
   }
 }
 
-async function handleArchiveBoard() {
-  if (isArchived.value || props.board.isArchived) {
-    return
-  }
+async function handleLifecycleTransition() {
+  const shouldArchive = !props.board.isArchived
+  const actionLabel = shouldArchive ? 'Archive' : 'Restore'
+  const guidance = shouldArchive
+    ? 'This action is reversible. You can restore the board from Workspace > Archive.'
+    : 'This board will be visible in active board lists again.'
 
   if (!confirm(
-    `Archive "${props.board.name}"?\n\nThis action is reversible. You can restore the board from Workspace > Archive.`
+    `${actionLabel} "${props.board.name}"?\n\n${guidance}`
   )) {
     return
   }
 
   try {
-    await boardStore.deleteBoard(props.board.id)
+    if (shouldArchive) {
+      await boardStore.deleteBoard(props.board.id)
+    } else {
+      await boardStore.updateBoard(props.board.id, { isArchived: false })
+    }
+
+    emit('updated')
     emit('close')
-    router.push('/boards')
+
+    if (shouldArchive) {
+      router.push('/boards')
+    }
   } catch (error) {
-    console.error('Failed to archive board:', error)
+    console.error('Failed to update board lifecycle state:', error)
   }
 }
 
@@ -136,21 +161,16 @@ useEscapeToClose(() => props.isOpen, handleClose)
             ></textarea>
           </div>
 
-          <!-- Archive Status -->
+          <!-- Lifecycle State -->
           <div class="border border-gray-200 rounded-md p-4">
-            <div class="flex items-center">
-              <input
-                id="board-archived"
-                v-model="isArchived"
-                type="checkbox"
-                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <label for="board-archived" class="ml-2 text-sm font-medium text-gray-700">
-                Archive this board
-              </label>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Lifecycle</span>
+              <span class="text-sm text-gray-700">
+                {{ board.isArchived ? 'Archived' : 'Active' }}
+              </span>
             </div>
             <p class="mt-1 text-xs text-gray-500">
-              Archived boards are hidden from the default boards list and can be restored from Workspace &gt; Archive.
+              {{ lifecycleDescription }}
             </p>
           </div>
 
@@ -166,12 +186,11 @@ useEscapeToClose(() => props.isOpen, handleClose)
         <!-- Actions -->
         <div class="mt-6 flex items-center justify-between">
           <button
-            @click="handleArchiveBoard"
+            @click="handleLifecycleTransition"
             type="button"
-            :disabled="isArchived"
-            class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-300 rounded-md transition-colors"
+            :class="lifecycleActionButtonClass"
           >
-            Archive Board
+            {{ lifecycleActionLabel }}
           </button>
           <div class="flex gap-2">
             <button
