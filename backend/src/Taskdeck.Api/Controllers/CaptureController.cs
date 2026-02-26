@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -24,6 +26,7 @@ public class CaptureController : AuthenticatedControllerBase
     }
 
     [HttpPost]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
     public async Task<IActionResult> Create([FromBody] CreateCaptureItemDto dto, CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -95,6 +98,7 @@ public class CaptureController : AuthenticatedControllerBase
     }
 
     [HttpPost("{id:guid}/triage")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
     public async Task<IActionResult> EnqueueTriage(Guid id, CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
