@@ -42,6 +42,15 @@ async function waitForAsyncUi() {
   await Promise.resolve()
 }
 
+function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper
+    .findAll('button')
+    .find((candidate) => candidate.text().includes(text))
+
+  expect(button, `Expected a button containing "${text}"`).toBeDefined()
+  return button!
+}
+
 describe('ArchiveView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -170,11 +179,8 @@ describe('ArchiveView', () => {
     const wrapper = mount(ArchiveView)
     await waitForAsyncUi()
 
-    const restoreBoardButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Restore Board'))
-    expect(restoreBoardButton).toBeDefined()
-    await restoreBoardButton!.trigger('click')
+    const restoreBoardButton = findButtonByText(wrapper, 'Restore Board')
+    await restoreBoardButton.trigger('click')
     await waitForAsyncUi()
 
     expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
@@ -212,11 +218,8 @@ describe('ArchiveView', () => {
     const wrapper = mount(ArchiveView)
     await waitForAsyncUi()
 
-    const restoreBoardButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Restore Board'))
-    expect(restoreBoardButton).toBeDefined()
-    await restoreBoardButton!.trigger('click')
+    const restoreBoardButton = findButtonByText(wrapper, 'Restore Board')
+    await restoreBoardButton.trigger('click')
     await waitForAsyncUi()
 
     expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
@@ -243,22 +246,16 @@ describe('ArchiveView', () => {
     const wrapper = mount(ArchiveView)
     await waitForAsyncUi()
 
-    const hideButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Hide'))
-    expect(hideButton).toBeDefined()
-    await hideButton!.trigger('click')
+    const hideButton = findButtonByText(wrapper, 'Hide')
+    await hideButton.trigger('click')
     await waitForAsyncUi()
 
     expect(wrapper.text()).not.toContain('Board Hidden Candidate')
     expect(wrapper.text()).toContain('Show Hidden Boards (1)')
     expect(localStorage.getItem(HIDDEN_ARCHIVED_BOARDS_STORAGE_KEY)).toContain('board-archived-1')
 
-    const showHiddenButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Show Hidden Boards'))
-    expect(showHiddenButton).toBeDefined()
-    await showHiddenButton!.trigger('click')
+    const showHiddenButton = findButtonByText(wrapper, 'Show Hidden Boards')
+    await showHiddenButton.trigger('click')
     await waitForAsyncUi()
 
     expect(wrapper.text()).toContain('Board Hidden Candidate')
