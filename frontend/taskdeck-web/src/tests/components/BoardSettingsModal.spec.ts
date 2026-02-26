@@ -298,4 +298,27 @@ describe('BoardSettingsModal', () => {
     expect(metadataSection).toContain('Created:')
     expect(metadataSection).toContain('Last updated:')
   })
+
+  it('should treat null description as unchanged when saving without edits', async () => {
+    const boardWithNullDescription = { ...board, description: null }
+
+    const wrapper = mount(BoardSettingsModal, {
+      props: {
+        board: boardWithNullDescription,
+        isOpen: true,
+      },
+    })
+
+    const saveButton = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Save Changes'))
+    expect(saveButton).toBeDefined()
+    await saveButton!.trigger('click')
+
+    expect(mockStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: null,
+      description: null,
+      isArchived: null,
+    })
+  })
 })
