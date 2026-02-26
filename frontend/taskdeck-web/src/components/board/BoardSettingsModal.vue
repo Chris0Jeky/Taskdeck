@@ -56,7 +56,7 @@ async function handleSave() {
   try {
     await boardStore.updateBoard(props.board.id, {
       name: name.value !== props.board.name ? name.value : null,
-      description: description.value !== props.board.description ? description.value : null,
+      description: description.value !== (props.board.description ?? '') ? description.value : null,
       isArchived: null,
     })
 
