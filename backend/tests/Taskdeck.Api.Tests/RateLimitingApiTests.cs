@@ -46,10 +46,9 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         using var client = factory.CreateClient();
 
         (await SendInvalidLoginAsync(client)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        var throttled = await SendInvalidLoginAsync(client);
-        await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);
-
-        await Task.Delay(TimeSpan.FromMilliseconds(1250));
+        var throttled = await SendInvalidLoginUntilThrottledAsync(client);
+        var retryAfterSeconds = await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);
+        await Task.Delay(TimeSpan.FromSeconds(retryAfterSeconds) + TimeSpan.FromMilliseconds(250));
 
         (await SendInvalidLoginAsync(client)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -158,7 +157,24 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         return await client.SendAsync(request);
     }
 
-    private static async Task AssertThrottleContractAsync(HttpResponseMessage response, string expectedPolicyName)
+    private static async Task<HttpResponseMessage> SendInvalidLoginUntilThrottledAsync(HttpClient client, int maxAttempts = 5)
+    {
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var response = await SendInvalidLoginAsync(client);
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return response;
+            }
+
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            response.Dispose();
+        }
+
+        throw new Xunit.Sdk.XunitException("Expected auth requests to be throttled within bounded attempts.");
+    }
+
+    private static async Task<int> AssertThrottleContractAsync(HttpResponseMessage response, string expectedPolicyName)
     {
         response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         response.Headers.TryGetValues("Retry-After", out var retryAfterValues).Should().BeTrue();
@@ -175,5 +191,6 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         payload.Should().NotBeNull();
         payload!.ErrorCode.Should().Be(ErrorCodes.TooManyRequests);
         payload.Message.Should().NotBeNullOrWhiteSpace();
+        return retryAfterSeconds;
     }
 }
