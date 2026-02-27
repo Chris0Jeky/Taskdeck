@@ -499,7 +499,8 @@ static RateLimitPartition<string> BuildFixedWindowPartition(string partitionKey,
 
 static string ResolveUserOrClientIdentifier(HttpContext context)
 {
-    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? context.User.FindFirstValue("sub");
     return !string.IsNullOrWhiteSpace(userId)
         ? userId
         : ResolveClientAddress(context);
