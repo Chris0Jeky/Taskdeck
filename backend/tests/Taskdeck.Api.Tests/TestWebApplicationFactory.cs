@@ -27,21 +27,17 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             logging.ClearProviders();
         });
 
-        builder.ConfigureAppConfiguration((context, configBuilder) =>
+        builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
             var overrideSettings = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["RateLimiting:Enabled"] = "false",
                 ["Workers:QueuePollIntervalSeconds"] = "1",
                 ["Workers:MaxBatchSize"] = "10",
                 ["Workers:MaxConcurrency"] = "1",
                 ["Workers:RetryBackoffSeconds:0"] = "0"
             };
-
-            if (string.IsNullOrWhiteSpace(context.Configuration["RateLimiting:Enabled"]))
-            {
-                overrideSettings["RateLimiting:Enabled"] = "false";
-            }
 
             configBuilder.AddInMemoryCollection(overrideSettings);
         });
