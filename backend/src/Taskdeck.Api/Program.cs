@@ -323,6 +323,16 @@ builder.Services.AddRateLimiter(options => ConfigureRateLimiting(options, rateLi
 
 var app = builder.Build();
 
+if (rateLimitingSettings.Enabled &&
+    !app.Environment.IsDevelopment() &&
+    forwardedHeadersOptions is null)
+{
+    app.Logger.LogWarning(
+        "Rate limiting is enabled without trusted forwarded-header configuration. " +
+        "If Taskdeck runs behind a reverse proxy/load balancer, AuthPerIp may collapse users into shared buckets. " +
+        "Configure ForwardedHeaders:KnownProxies or ForwardedHeaders:KnownNetworks.");
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -532,8 +542,16 @@ static ForwardedHeadersOptions? BuildForwardedHeadersOptions(IConfiguration conf
 
     var options = new ForwardedHeadersOptions
     {
-        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-        ForwardLimit = 1
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    };
+
+    var configuredForwardLimit = configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit");
+    options.ForwardLimit = configuredForwardLimit switch
+    {
+        null => 1,
+        > 0 => configuredForwardLimit,
+        _ => throw new InvalidOperationException(
+            $"Invalid ForwardedHeaders:ForwardLimit value \"{configuredForwardLimit}\". Expected a positive integer.")
     };
 
     options.KnownProxies.Clear();
