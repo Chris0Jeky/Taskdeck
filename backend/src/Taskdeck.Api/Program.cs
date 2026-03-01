@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Net;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -305,6 +307,7 @@ if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
 }
 
 var corsAllowedOrigins = ResolveCorsAllowedOrigins(builder.Configuration, builder.Environment.IsDevelopment());
+var forwardedHeadersOptions = BuildForwardedHeadersOptions(builder.Configuration);
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -331,6 +334,11 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
+
+if (forwardedHeadersOptions is not null)
+{
+    app.UseForwardedHeaders(forwardedHeadersOptions);
 }
 
 app.UseCors("AllowFrontend");
@@ -430,6 +438,11 @@ static void ConfigureRateLimiting(RateLimiterOptions options, RateLimitingSettin
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.OnRejected = async (context, cancellationToken) =>
     {
+        if (context.HttpContext.Response.HasStarted)
+        {
+            return;
+        }
+
         var retryAfterSeconds = 1;
         if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
         {
@@ -446,11 +459,6 @@ static void ConfigureRateLimiting(RateLimiterOptions options, RateLimitingSettin
         if (!string.IsNullOrWhiteSpace(policyName))
         {
             context.HttpContext.Response.Headers["X-RateLimit-Policy"] = policyName;
-        }
-
-        if (context.HttpContext.Response.HasStarted)
-        {
-            return;
         }
 
         context.HttpContext.Response.ContentType = "application/json";
@@ -511,6 +519,90 @@ static string ResolveClientAddress(HttpContext context)
     // Trust only connection metadata here. Raw forwarded headers are caller-controlled unless
     // forwarded-header middleware is explicitly configured with trusted proxies/networks.
     return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+}
+
+static ForwardedHeadersOptions? BuildForwardedHeadersOptions(IConfiguration configuration)
+{
+    var knownProxyValues = ResolveConfigValues(configuration, "ForwardedHeaders:KnownProxies");
+    var knownNetworkValues = ResolveConfigValues(configuration, "ForwardedHeaders:KnownNetworks");
+    if (knownProxyValues.Count == 0 && knownNetworkValues.Count == 0)
+    {
+        return null;
+    }
+
+    var options = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        ForwardLimit = 1
+    };
+
+    options.KnownProxies.Clear();
+    options.KnownNetworks.Clear();
+
+    foreach (var proxyValue in knownProxyValues)
+    {
+        if (!IPAddress.TryParse(proxyValue, out var proxyAddress))
+        {
+            throw new InvalidOperationException(
+                $"Invalid ForwardedHeaders:KnownProxies value \"{proxyValue}\". Provide a valid IP address.");
+        }
+
+        options.KnownProxies.Add(proxyAddress);
+    }
+
+    foreach (var networkValue in knownNetworkValues)
+    {
+        options.KnownNetworks.Add(ParseForwardedHeaderNetwork(networkValue));
+    }
+
+    return options;
+}
+
+static IReadOnlyList<string> ResolveConfigValues(IConfiguration configuration, string key)
+{
+    var sectionValues = configuration
+        .GetSection(key)
+        .GetChildren()
+        .Select(child => child.Value)
+        .OfType<string>()
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToArray();
+    if (sectionValues.Length > 0)
+    {
+        return sectionValues;
+    }
+
+    var singleValue = configuration[key];
+    if (string.IsNullOrWhiteSpace(singleValue))
+    {
+        return Array.Empty<string>();
+    }
+
+    return singleValue
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToArray();
+}
+
+static Microsoft.AspNetCore.HttpOverrides.IPNetwork ParseForwardedHeaderNetwork(string value)
+{
+    var parts = value.Split('/', StringSplitOptions.TrimEntries);
+    if (parts.Length != 2 ||
+        !IPAddress.TryParse(parts[0], out var prefixAddress) ||
+        !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var prefixLength))
+    {
+        throw new InvalidOperationException(
+            $"Invalid ForwardedHeaders:KnownNetworks value \"{value}\". Use CIDR format (for example, 10.0.0.0/24).");
+    }
+
+    var maxPrefixLength = prefixAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128;
+    if (prefixLength < 0 || prefixLength > maxPrefixLength)
+    {
+        throw new InvalidOperationException(
+            $"Invalid ForwardedHeaders:KnownNetworks prefix length in \"{value}\". Expected 0-{maxPrefixLength}.");
+    }
+
+    return new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefixAddress, prefixLength);
 }
 
 public partial class Program { }
