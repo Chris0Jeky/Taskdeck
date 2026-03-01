@@ -68,6 +68,22 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AuthEndpoints_ShouldHonorForwardedClientAddress_WhenTrustedProxyConfigured()
+    {
+        using var factory = CreateFactoryWithRateLimits(
+            authPermitLimit: 1,
+            authWindowSeconds: 60,
+            trustedProxyNetworks: ["127.0.0.0/8", "::1/128"]);
+        using var client = factory.CreateClient();
+
+        (await SendInvalidLoginAsync(client, forwardedFor: "198.51.100.10")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await SendInvalidLoginAsync(client, forwardedFor: "203.0.113.20")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var throttled = await SendInvalidLoginAsync(client, forwardedFor: "198.51.100.10");
+        await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);
+    }
+
+    [Fact]
     public async Task CaptureCreate_ShouldThrottlePerUser_WithoutCrossUserFalsePositives()
     {
         using var factory = CreateFactoryWithRateLimits(
@@ -129,7 +145,8 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         int hotPathPermitLimit = 200,
         int hotPathWindowSeconds = 60,
         int capturePermitLimit = 200,
-        int captureWindowSeconds = 60)
+        int captureWindowSeconds = 60,
+        IReadOnlyList<string>? trustedProxyNetworks = null)
     {
         return _factory.WithWebHostBuilder(builder =>
         {
@@ -140,6 +157,15 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
             builder.UseSetting("RateLimiting:HotPathPerUser:WindowSeconds", hotPathWindowSeconds.ToString(CultureInfo.InvariantCulture));
             builder.UseSetting("RateLimiting:CaptureWritePerUser:PermitLimit", capturePermitLimit.ToString(CultureInfo.InvariantCulture));
             builder.UseSetting("RateLimiting:CaptureWritePerUser:WindowSeconds", captureWindowSeconds.ToString(CultureInfo.InvariantCulture));
+            if (trustedProxyNetworks is null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < trustedProxyNetworks.Count; i++)
+            {
+                builder.UseSetting($"ForwardedHeaders:KnownNetworks:{i}", trustedProxyNetworks[i]);
+            }
         });
     }
 
@@ -176,21 +202,28 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
 
     private static async Task<int> AssertThrottleContractAsync(HttpResponseMessage response, string expectedPolicyName)
     {
-        response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-        response.Headers.TryGetValues("Retry-After", out var retryAfterValues).Should().BeTrue();
-        var retryAfterValue = retryAfterValues!.Single();
-        int.TryParse(retryAfterValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var retryAfterSeconds)
-            .Should()
-            .BeTrue();
-        retryAfterSeconds.Should().BeGreaterThan(0);
+        try
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+            response.Headers.TryGetValues("Retry-After", out var retryAfterValues).Should().BeTrue();
+            var retryAfterValue = retryAfterValues!.Single();
+            int.TryParse(retryAfterValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var retryAfterSeconds)
+                .Should()
+                .BeTrue();
+            retryAfterSeconds.Should().BeGreaterThan(0);
 
-        response.Headers.TryGetValues("X-RateLimit-Policy", out var policyValues).Should().BeTrue();
-        policyValues.Should().ContainSingle().Which.Should().Be(expectedPolicyName);
+            response.Headers.TryGetValues("X-RateLimit-Policy", out var policyValues).Should().BeTrue();
+            policyValues.Should().ContainSingle().Which.Should().Be(expectedPolicyName);
 
-        var payload = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
-        payload.Should().NotBeNull();
-        payload!.ErrorCode.Should().Be(ErrorCodes.TooManyRequests);
-        payload.Message.Should().NotBeNullOrWhiteSpace();
-        return retryAfterSeconds;
+            var payload = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+            payload.Should().NotBeNull();
+            payload!.ErrorCode.Should().Be(ErrorCodes.TooManyRequests);
+            payload.Message.Should().NotBeNullOrWhiteSpace();
+            return retryAfterSeconds;
+        }
+        finally
+        {
+            response.Dispose();
+        }
     }
 }
