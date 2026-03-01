@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-02-23
+Last Updated: 2026-03-02
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -137,8 +137,8 @@ Provider runtime expansion (2026-02-23):
 1. `#77` ANL-01 metrics dashboard
 2. `#78` ANL-02 exportable reports
 3. `#79` ANL-03 forecasting/capacity heuristics
-4. `#80` SEC-05 OWASP baseline hardening
-5. `#81` SEC-06 API rate limiting (includes capture endpoint scope extension)
+4. `#80` SEC-05 OWASP baseline hardening (delivered)
+5. `#81` SEC-06 API rate limiting (includes capture endpoint scope extension, delivered)
 6. `#82` SEC-07 SSO/OIDC + optional MFA
 7. `#83` SEC-08 data portability/deletion flow
 8. `#106` SEC-09 dependency vulnerability policy
