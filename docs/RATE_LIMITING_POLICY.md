@@ -1,6 +1,6 @@
 # API Rate Limiting Policy
 
-Last Updated: 2026-02-26
+Last Updated: 2026-03-02
 Owner: Taskdeck maintainers
 Linked issue: `#81` (SEC-06)
 
@@ -14,7 +14,8 @@ Taskdeck uses ASP.NET Core fixed-window rate limiting with partitioned keys.
 
 Trust boundary note:
 - Taskdeck does not trust raw `X-Forwarded-For` request headers for partitioning.
-- If deployed behind reverse proxies/load balancers, configure forwarded-header middleware with trusted proxy/network allowlists so `RemoteIpAddress` reflects the canonical client IP.
+- If deployed behind reverse proxies/load balancers, configure `ForwardedHeaders:KnownProxies` and/or `ForwardedHeaders:KnownNetworks` so trusted forwarded-header middleware can promote canonical client IPs to `RemoteIpAddress` before rate-limit partitioning.
+- When those allowlists are not configured, Taskdeck keeps the connection IP unchanged and will not trust caller-provided forwarding headers.
 
 Configured policies:
 
@@ -40,6 +41,7 @@ Source: `backend/src/Taskdeck.Api/appsettings.json`
 - `AuthPerIp`: `20` requests / `60` seconds
 - `HotPathPerUser`: `30` requests / `60` seconds
 - `CaptureWritePerUser`: `10` requests / `60` seconds
+- `ForwardedHeaders`: empty trusted proxy/network allowlists by default (safe no-trust posture until explicitly configured)
 
 Development overrides (`appsettings.Development.json`) are intentionally higher to reduce local friction:
 
