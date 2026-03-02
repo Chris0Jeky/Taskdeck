@@ -1,0 +1,27 @@
+﻿Taskdeck Demo Expansion - Curated Summary
+Last updated: 2026-03-02
+
+Purpose
+This file is a concise summary of the external demo expansion history and migration intent.
+
+Canonical migration document
+- docs/DEMO_EXPANSION_MIGRATION_SOT.md
+
+Raw source transcript (verbatim)
+- docs/archive/temp_description_raw_2026-03-02.txt
+
+Source folder mapping
+- Download Taskdeck demo kit zip -> C:\Users\jekyt\source\TaskdeckDemoExpansion\v0
+- Download the updated advanced demo kit -> C:\Users\jekyt\source\TaskdeckDemoExpansion\v1
+- Download Taskdeck demo kit (advanced v2) -> C:\Users\jekyt\source\TaskdeckDemoExpansion\v2
+- Download Taskdeck-demo-kit-advanced-v3.zip -> C:\Users\jekyt\source\TaskdeckDemoExpansion\v3
+
+Historical progression
+- v0: Demo seed + MVP-first UX declutter and initial playbook.
+- v1: Reusable demo SDK, scenario runner scripts, autopilot, HTTP walkthrough, stakeholder Playwright spec, manual docs.
+- v2: JSON/schema-driven scenarios and capture-aware autopilot.
+- v3: Demo director orchestration, NDJSON tracing, snapshot exporter, determinism/reliability fixes.
+
+Migration intent
+Port the expansion into this repository in controlled batches with compatibility checks.
+Use the GitHub issue tracker created for this program and follow dependency order from the source-of-truth document.
