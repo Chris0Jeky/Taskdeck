@@ -11,9 +11,11 @@ export interface FeatureFlags {
 export const defaultFeatureFlags: FeatureFlags = {
   newShell: true,
   newAuth: true,
-  newAccess: true,
-  newActivity: true,
-  newOps: true,
   newAutomation: true,
-  newArchive: true,
+  // Advanced/diagnostic surfaces are useful, but noisy on first run.
+  // Users can still enable them from Settings -> Feature Flags.
+  newAccess: false,
+  newActivity: false,
+  newOps: false,
+  newArchive: false,
 }

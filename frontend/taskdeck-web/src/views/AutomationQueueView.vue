@@ -20,7 +20,8 @@ const router = useRouter()
 
 const activeTab = ref<'queue' | 'proposals'>('queue')
 const statusFilter = ref('Pending')
-const newRequestType = ref('')
+// Most manual queue requests are instruction-based; default accordingly.
+const newRequestType = ref('instruction')
 const newPayload = ref('')
 const showComposer = ref(false)
 const submitting = ref(false)
@@ -150,7 +151,7 @@ async function handleSubmitRequest() {
       requestType: newRequestType.value.trim(),
       payload: newPayload.value.trim(),
     })
-    newRequestType.value = ''
+    newRequestType.value = 'instruction'
     newPayload.value = ''
     showComposer.value = false
   } catch {
@@ -348,12 +349,26 @@ function statusColor(status: QueueStatus | number): string {
 
       <div v-if="showComposer" class="td-composer">
         <div class="td-form-group">
-          <label class="td-label">Request Type</label>
-          <input v-model="newRequestType" type="text" class="td-input" placeholder='e.g. create card "title"' />
+          <label class="td-label">Request Type (advanced)</label>
+          <input v-model="newRequestType" type="text" class="td-input" placeholder="instruction" />
+          <div class="td-helper">
+            Leave this as <strong>instruction</strong> for most manual requests. Capture triage requests are created via
+            <strong>Inbox -> Start Triage</strong>.
+          </div>
         </div>
         <div class="td-form-group">
-          <label class="td-label">Payload</label>
-          <textarea v-model="newPayload" class="td-textarea" rows="4" placeholder='{"instruction":"..."}'></textarea>
+          <label class="td-label">Instruction</label>
+          <textarea
+            v-model="newPayload"
+            class="td-textarea"
+            rows="6"
+            placeholder='create card "Write MVP demo script"'
+          ></textarea>
+          <div class="td-helper">
+            Supported patterns include: <strong>create card "title"</strong>, <strong>rename board to "name"</strong>,
+            <strong>update board description "value"</strong>, <strong>move column "name" to position {n}</strong>,
+            <strong>update card {id} title|description "value"</strong>, <strong>move card {id} to column "name"</strong>.
+          </div>
         </div>
         <button class="td-btn td-btn--primary" @click="handleSubmitRequest" :disabled="submitting">
           {{ submitting ? 'Submitting...' : 'Submit Request' }}
@@ -480,6 +495,7 @@ function statusColor(status: QueueStatus | number): string {
 .td-composer { background: var(--td-surface-secondary); border-radius: var(--td-radius-md); padding: var(--td-space-4); margin-bottom: var(--td-space-4); display: flex; flex-direction: column; gap: var(--td-space-3); }
 .td-form-group { display: flex; flex-direction: column; gap: var(--td-space-1); }
 .td-label { font-size: var(--td-font-sm); font-weight: 500; color: var(--td-text-secondary); }
+.td-helper { font-size: var(--td-font-xs); color: var(--td-text-tertiary); line-height: 1.2rem; }
 .td-input { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); }
 .td-input:focus { outline: none; border-color: var(--td-border-focus); box-shadow: var(--td-focus-ring); }
 .td-textarea { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); font-family: monospace; resize: vertical; }
