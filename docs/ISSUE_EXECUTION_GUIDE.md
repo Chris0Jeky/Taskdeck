@@ -78,6 +78,19 @@ Starter packs and debt blockers:
 20. `#53` DEBT-02 log query scalability
 21. `#54` DEBT-03 export/import implementation vs ADR
 
+Priority I addendum (demo-expansion migration wave, seeded 2026-03-02):
+22. `#297` Demo Expansion Migration Tracker (v0 -> v3 staged port)
+23. `#298` Batch A (`v0`) baseline demo seed + MVP-first UX defaults
+24. `#299` Batch B (`v1`) harness + scripted scenarios + API walkthrough + stakeholder clickthrough
+25. `#300` Batch C (`v2`) JSON scenario system + capture-aware autopilot
+26. `#301` Batch D (`v3`) demo director + tracing/snapshot + reliability fixes
+27. `#302` Batch E integration hardening + CI/docs policy
+
+Execution note (demo-expansion wave):
+- Run `#298` -> `#299` -> `#300` -> `#301` -> `#302` in strict dependency order.
+- Keep one branch per batch issue using the suggested branch name in each issue body.
+- Prefer file-scoped commits inside each batch to simplify review and rollback.
+
 ### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
 
 Execution note (2026-02-22):
@@ -236,7 +249,9 @@ Maintainability hotspot refactor wave (analysis-driven):
 ## Per-Issue Delivery Checklist
 
 1. Branch from latest `main`.
+   - If issue body includes `Suggested Branch Name`, use it directly.
 2. Keep change scope limited to issue acceptance criteria.
+   - Prefer file-scoped commits for incremental reviewability.
 3. Add/update tests for behavior changes.
 4. Run required verification commands.
 5. Update docs (`STATUS`/`IMPLEMENTATION_MASTERPLAN`/test docs) if reality changed.

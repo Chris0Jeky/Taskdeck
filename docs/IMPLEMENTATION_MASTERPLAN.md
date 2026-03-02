@@ -685,6 +685,24 @@ Initial implementation shape:
 6. Add pack telemetry to measure adoption, setup-time reduction, and failure points.
 7. Add pack migration/version compatibility checks for long-lived boards.
 8. Add checklist-ingestion path for chat so pasted plans can map to pack templates and board bootstrap proposals.
+## Planning Updates (2026-03-02)
+
+Demo-expansion migration wave seeding completed:
+- tracker: `#297`
+- dependency-ordered batches: `#298` -> `#299` -> `#300` -> `#301` -> `#302`
+- all migration-wave issues carry `Priority I`
+- each batch issue now includes a suggested branch name and explicit file-scoped commit expectation
+
+Canonical references for this wave:
+- `docs/DEMO_EXPANSION_MIGRATION_SOT.md`
+- `docs/temp_description.txt`
+- `docs/ISSUE_EXECUTION_GUIDE.md`
+
+Batch A baseline delivery (`#298`) status:
+- baseline seeding command introduced (`npm run demo:seed`)
+- v0-first-run UX defaults applied (advanced surfaces default off, Automations default to Proposals, queue composer instruction-first guidance)
+- demo playbook promoted to active docs (`docs/DEMO_PLAYBOOK.md`)
+
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
