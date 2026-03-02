@@ -43,6 +43,10 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - API abuse-protection policy, throttle contract, and tuning guidance for rate-limited endpoints (`#81`, delivered).
 - `SECURITY_OWASP_BASELINE.md`
   - OWASP baseline hardening record for API security headers and CSRF posture (`#80`, delivered).
+- `DEMO_EXPANSION_MIGRATION_SOT.md`
+  - Canonical staged migration map for importing `TaskdeckDemoExpansion` (`v0` through `v3`) into this repository.
+- `temp_description.txt`
+  - Curated summary of demo-expansion provenance and source-folder mapping; points to migration source-of-truth.
 
 ## Active Tooling Docs
 
