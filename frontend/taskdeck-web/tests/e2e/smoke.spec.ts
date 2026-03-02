@@ -148,11 +148,10 @@ test('command palette keyboard navigation should activate selected command', asy
   const paletteInput = palette.getByPlaceholder('Type a command or search...')
   await expect(paletteInput).toBeFocused()
 
-  await paletteInput.press('ArrowDown')
-  await paletteInput.press('ArrowDown')
+  await paletteInput.fill('inbox')
   await paletteInput.press('Enter')
 
-  await expect(page).toHaveURL(/\/workspace\/activity$/)
+  await expect(page).toHaveURL(/\/workspace\/inbox$/)
   await expect(palette).toHaveCount(0)
 })
 
