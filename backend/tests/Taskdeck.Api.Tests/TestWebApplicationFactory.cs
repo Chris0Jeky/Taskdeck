@@ -32,6 +32,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             var overrideSettings = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["RateLimiting:Enabled"] = "false",
                 ["Workers:QueuePollIntervalSeconds"] = "1",
                 ["Workers:MaxBatchSize"] = "10",
                 ["Workers:MaxConcurrency"] = "1",
@@ -48,7 +49,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddDbContext<TaskdeckDbContext>(options =>
                 options.UseSqlite($"Data Source={dbPath}"));
 
-            using var scope = services.BuildServiceProvider().CreateScope();
+            using var provider = services.BuildServiceProvider();
+            using var scope = provider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             dbContext.Database.Migrate();
         });
@@ -63,21 +65,21 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             return;
         }
 
-        try
+        foreach (var dbPath in _dbPaths)
         {
-            foreach (var dbPath in _dbPaths)
+            if (!File.Exists(dbPath))
             {
-                if (!File.Exists(dbPath))
-                {
-                    continue;
-                }
+                continue;
+            }
 
+            try
+            {
                 File.Delete(dbPath);
             }
-        }
-        catch (IOException)
-        {
-            // Cleanup failure should not fail test teardown.
+            catch (IOException)
+            {
+                // Cleanup failure should not fail test teardown.
+            }
         }
     }
 }

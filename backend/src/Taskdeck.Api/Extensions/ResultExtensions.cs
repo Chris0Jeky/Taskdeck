@@ -17,6 +17,7 @@ public static class ResultExtensions
             ErrorCodes.AuthenticationFailed => StatusCodes.Status401Unauthorized,
             ErrorCodes.Unauthorized => StatusCodes.Status401Unauthorized,
             ErrorCodes.Forbidden => StatusCodes.Status403Forbidden,
+            ErrorCodes.TooManyRequests => StatusCodes.Status429TooManyRequests,
             ErrorCodes.Conflict => StatusCodes.Status409Conflict,
             ErrorCodes.InvalidOperation => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status500InternalServerError
@@ -38,6 +39,7 @@ public static class ResultExtensions
             StatusCodes.Status400BadRequest => new BadRequestObjectResult(body),
             StatusCodes.Status401Unauthorized => new UnauthorizedObjectResult(body),
             StatusCodes.Status403Forbidden => new ObjectResult(body) { StatusCode = StatusCodes.Status403Forbidden },
+            StatusCodes.Status429TooManyRequests => new ObjectResult(body) { StatusCode = StatusCodes.Status429TooManyRequests },
             StatusCodes.Status409Conflict => new ConflictObjectResult(body),
             _ => new ObjectResult(new ApiErrorResponse(
                 ErrorCodes.UnexpectedError,

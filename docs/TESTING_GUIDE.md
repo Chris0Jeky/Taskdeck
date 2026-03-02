@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-02-25
+Last Updated: 2026-03-02
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,20 +10,20 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-02-26)
+## Current Verified Totals (2026-03-02)
 
-- Backend: 918/918 passing
+- Backend: 933/933 passing
   - Domain: 122
   - Application: 505
-  - API integration: 279
+  - API integration: 294
   - CLI contract: 4
   - Architecture boundaries: 8
 - Frontend unit: 379/379 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1320/1320 passing
+- Combined automated total: 1335/1335 passing
 
 Verification note:
-- backend totals were re-verified on 2026-02-26 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
+- backend totals were re-verified on 2026-03-02 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
 - frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
 - frontend E2E totals were re-verified on 2026-02-25 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`23/23` passing)
 
@@ -363,6 +363,7 @@ Planned quality expectations when implementation starts:
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
+  - Includes rate-limit policy coverage (`RateLimitingApiTests`) for burst throttling, retry metadata contract, reset-window recovery, and cross-user boundary behavior
   - Includes security-header baseline coverage (`SecurityHeadersApiTests`) for success/auth-failure paths and HTTPS HSTS posture assertions
   - Includes board-scoped external import endpoint coverage (authz, malformed input, duplicate handling, apply/update flow, rollback safety)
   - Includes outbound webhook API and worker coverage (`OutboundWebhooksApiTests`, `OutboundWebhookDeliveryWorkerTests`) for claim/reload handling, cancellation requeue, and non-success HTTP retry/dead-letter branches

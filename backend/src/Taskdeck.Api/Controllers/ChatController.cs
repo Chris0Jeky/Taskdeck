@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -22,6 +24,7 @@ public class ChatController : AuthenticatedControllerBase
     }
 
     [HttpPost("sessions")]
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
     public async Task<IActionResult> CreateSession([FromBody] CreateChatSessionDto dto, CancellationToken ct = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -54,6 +57,7 @@ public class ChatController : AuthenticatedControllerBase
     }
 
     [HttpPost("sessions/{id}/messages")]
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
     public async Task<IActionResult> SendMessage(Guid id, [FromBody] SendChatMessageDto dto, CancellationToken ct = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -64,6 +68,7 @@ public class ChatController : AuthenticatedControllerBase
     }
 
     [HttpGet("sessions/{id}/stream")]
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
     public async Task GetStream(Guid id, CancellationToken ct = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))

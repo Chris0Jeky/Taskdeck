@@ -1,5 +1,11 @@
+using System.Globalization;
+using System.Net;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
@@ -10,6 +16,7 @@ using OpenTelemetry.Trace;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
@@ -30,6 +37,11 @@ var observabilitySettings = builder.Configuration
     .GetSection("Observability")
     .Get<ObservabilitySettings>() ?? new ObservabilitySettings();
 builder.Services.AddSingleton(observabilitySettings);
+var rateLimitingSettings = builder.Configuration
+    .GetSection("RateLimiting")
+    .Get<RateLimitingSettings>() ?? new RateLimitingSettings();
+builder.Services.AddSingleton(rateLimitingSettings);
+
 var securityHeadersSection = builder.Configuration.GetSection("SecurityHeaders");
 var securityHeadersSettings = securityHeadersSection.Get<SecurityHeadersSettings>() ?? new SecurityHeadersSettings();
 if (builder.Environment.IsDevelopment() && securityHeadersSection["EnableHsts"] is null)
@@ -295,6 +307,7 @@ if (!string.IsNullOrWhiteSpace(jwtSettings.SecretKey) &&
 }
 
 var corsAllowedOrigins = ResolveCorsAllowedOrigins(builder.Configuration, builder.Environment.IsDevelopment());
+var forwardedHeadersOptions = BuildForwardedHeadersOptions(builder.Configuration);
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -306,8 +319,19 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod();
     });
 });
+builder.Services.AddRateLimiter(options => ConfigureRateLimiting(options, rateLimitingSettings));
 
 var app = builder.Build();
+
+if (rateLimitingSettings.Enabled &&
+    !app.Environment.IsDevelopment() &&
+    forwardedHeadersOptions is null)
+{
+    app.Logger.LogWarning(
+        "Rate limiting is enabled without trusted forwarded-header configuration. " +
+        "If Taskdeck runs behind a reverse proxy/load balancer, AuthPerIp may collapse users into shared buckets. " +
+        "Configure ForwardedHeaders:KnownProxies or ForwardedHeaders:KnownNetworks.");
+}
 
 using (var scope = app.Services.CreateScope())
 {
@@ -322,12 +346,21 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+if (forwardedHeadersOptions is not null)
+{
+    app.UseForwardedHeaders(forwardedHeadersOptions);
+}
+
 app.UseCors("AllowFrontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<UnhandledExceptionMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 
 app.UseAuthentication();
+if (rateLimitingSettings.Enabled)
+{
+    app.UseRateLimiter();
+}
 app.UseAuthorization();
 
 app.MapControllers();
@@ -408,6 +441,186 @@ static string NormalizeCorsOrigin(string origin)
     }
 
     return parsedOrigin.GetLeftPart(UriPartial.Authority);
+}
+
+static void ConfigureRateLimiting(RateLimiterOptions options, RateLimitingSettings settings)
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.HttpContext.Response.HasStarted)
+        {
+            return;
+        }
+
+        var retryAfterSeconds = 1;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            retryAfterSeconds = Math.Max((int)Math.Ceiling(retryAfter.TotalSeconds), 1);
+        }
+
+        var policyName = context.HttpContext
+            .GetEndpoint()?
+            .Metadata
+            .GetMetadata<EnableRateLimitingAttribute>()?
+            .PolicyName;
+
+        context.HttpContext.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        if (!string.IsNullOrWhiteSpace(policyName))
+        {
+            context.HttpContext.Response.Headers["X-RateLimit-Policy"] = policyName;
+        }
+
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new ApiErrorResponse(
+                ErrorCodes.TooManyRequests,
+                $"Rate limit exceeded. Retry after {retryAfterSeconds} seconds."),
+            cancellationToken);
+    };
+
+    options.AddPolicy(RateLimitingPolicyNames.AuthPerIp, httpContext =>
+    {
+        var partitionKey = $"auth-ip:{ResolveClientAddress(httpContext)}";
+        return BuildFixedWindowPartition(partitionKey, settings.AuthPerIp);
+    });
+
+    options.AddPolicy(RateLimitingPolicyNames.HotPathPerUser, httpContext =>
+    {
+        var partitionKey = $"hot-user:{ResolveUserOrClientIdentifier(httpContext)}";
+        return BuildFixedWindowPartition(partitionKey, settings.HotPathPerUser);
+    });
+
+    options.AddPolicy(RateLimitingPolicyNames.CaptureWritePerUser, httpContext =>
+    {
+        var partitionKey = $"capture-user:{ResolveUserOrClientIdentifier(httpContext)}";
+        return BuildFixedWindowPartition(partitionKey, settings.CaptureWritePerUser);
+    });
+}
+
+static RateLimitPartition<string> BuildFixedWindowPartition(string partitionKey, RateLimitPolicySettings policy)
+{
+    var permitLimit = Math.Max(policy.PermitLimit, 1);
+    var windowSeconds = Math.Max(policy.WindowSeconds, 1);
+
+    return RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey,
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitLimit,
+            Window = TimeSpan.FromSeconds(windowSeconds),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+}
+
+static string ResolveUserOrClientIdentifier(HttpContext context)
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? context.User.FindFirstValue("sub");
+    return !string.IsNullOrWhiteSpace(userId)
+        ? userId
+        : ResolveClientAddress(context);
+}
+
+static string ResolveClientAddress(HttpContext context)
+{
+    // Trust only connection metadata here. Raw forwarded headers are caller-controlled unless
+    // forwarded-header middleware is explicitly configured with trusted proxies/networks.
+    return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+}
+
+static ForwardedHeadersOptions? BuildForwardedHeadersOptions(IConfiguration configuration)
+{
+    var knownProxyValues = ResolveConfigValues(configuration, "ForwardedHeaders:KnownProxies");
+    var knownNetworkValues = ResolveConfigValues(configuration, "ForwardedHeaders:KnownNetworks");
+    if (knownProxyValues.Count == 0 && knownNetworkValues.Count == 0)
+    {
+        return null;
+    }
+
+    var options = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    };
+
+    var configuredForwardLimit = configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit");
+    options.ForwardLimit = configuredForwardLimit switch
+    {
+        null => 1,
+        > 0 => configuredForwardLimit,
+        _ => throw new InvalidOperationException(
+            $"Invalid ForwardedHeaders:ForwardLimit value \"{configuredForwardLimit}\". Expected a positive integer.")
+    };
+
+    options.KnownProxies.Clear();
+    options.KnownNetworks.Clear();
+
+    foreach (var proxyValue in knownProxyValues)
+    {
+        if (!IPAddress.TryParse(proxyValue, out var proxyAddress))
+        {
+            throw new InvalidOperationException(
+                $"Invalid ForwardedHeaders:KnownProxies value \"{proxyValue}\". Provide a valid IP address.");
+        }
+
+        options.KnownProxies.Add(proxyAddress);
+    }
+
+    foreach (var networkValue in knownNetworkValues)
+    {
+        options.KnownNetworks.Add(ParseForwardedHeaderNetwork(networkValue));
+    }
+
+    return options;
+}
+
+static IReadOnlyList<string> ResolveConfigValues(IConfiguration configuration, string key)
+{
+    var sectionValues = configuration
+        .GetSection(key)
+        .GetChildren()
+        .Select(child => child.Value)
+        .OfType<string>()
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToArray();
+    if (sectionValues.Length > 0)
+    {
+        return sectionValues;
+    }
+
+    var singleValue = configuration[key];
+    if (string.IsNullOrWhiteSpace(singleValue))
+    {
+        return Array.Empty<string>();
+    }
+
+    return singleValue
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToArray();
+}
+
+static Microsoft.AspNetCore.HttpOverrides.IPNetwork ParseForwardedHeaderNetwork(string value)
+{
+    var parts = value.Split('/', StringSplitOptions.TrimEntries);
+    if (parts.Length != 2 ||
+        !IPAddress.TryParse(parts[0], out var prefixAddress) ||
+        !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var prefixLength))
+    {
+        throw new InvalidOperationException(
+            $"Invalid ForwardedHeaders:KnownNetworks value \"{value}\". Use CIDR format (for example, 10.0.0.0/24).");
+    }
+
+    var maxPrefixLength = prefixAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128;
+    if (prefixLength < 0 || prefixLength > maxPrefixLength)
+    {
+        throw new InvalidOperationException(
+            $"Invalid ForwardedHeaders:KnownNetworks prefix length in \"{value}\". Expected 0-{maxPrefixLength}.");
+    }
+
+    return new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefixAddress, prefixLength);
 }
 
 public partial class Program { }

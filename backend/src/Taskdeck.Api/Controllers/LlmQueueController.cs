@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -24,6 +26,7 @@ public class LlmQueueController : AuthenticatedControllerBase
     }
 
     [HttpPost]
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
     public async Task<IActionResult> AddToQueue([FromBody] CreateLlmRequestDto dto)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -66,6 +69,7 @@ public class LlmQueueController : AuthenticatedControllerBase
     }
 
     [HttpPost("process-next")]
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
     public async Task<IActionResult> ProcessNext()
     {
         var result = await _llmQueueService.ProcessNextRequestAsync();

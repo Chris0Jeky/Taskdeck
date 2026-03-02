@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-02-26  
+Last Updated: 2026-03-02  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -29,7 +29,7 @@ Current constraints are mostly hardening and consistency:
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
-- capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`), with hardening follow-through tracked in `#81`, `#212`, and `#213`
+- capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`), with hardening follow-through tracked in `#212` and `#213`
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -468,7 +468,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-- capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); remaining capture-linked follow-through is tracked in `#81`, `#212`, and `#213`
+- capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); remaining capture-linked follow-through is tracked in `#212` and `#213`
 - premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
 - testing-harness wave guardrails are not yet implemented; tracked in `#255` to `#260`
 - outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to delivered `#75` (import adapters) plus `#77` and `#175`
@@ -491,7 +491,7 @@ UX and operability (reconciled from product notes):
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)
-- API abuse/rate-limiting policy (`#81`)
+- API abuse/rate-limiting policy (`#81`, delivered)
 - SSO/OIDC + optional MFA (`#82`)
 - data portability/deletion workflow (`#83`)
 - dependency vulnerability management policy (`#106`)
@@ -534,6 +534,8 @@ Security/compliance hardening backlog added from research cross-check:
 - Advanced SEC-11 cross-user convergence (`#152`) with LLM queue board-scope authorization hardening: `POST /api/llm-queue` now enforces board-read permissions when `boardId` is provided (`403` cross-user unauthorized, `404` true missing board), with expanded application/API regression matrix coverage.
 - Advanced SEC-11 cross-user convergence (`#152`) with final API coverage sweep: added explicit cross-user `403` assertions for board update, board-access management endpoints (`list/grant/update/revoke`), and chat session/message endpoints; added explicit chat `404` assertions for true missing session IDs.
 - Delivered API-06 centralized exception/fallback error-contract hardening (`#153`): added global unhandled-exception middleware returning deterministic `ApiErrorResponse` (`UnexpectedError`) without internal exception leakage, standardized unknown-result fallback `500` mapping to the same contract shape, and added fault-injection API integration coverage asserting fallback payload shape plus correlation header expectations.
+- Delivered SEC-06 API rate-limiting hardening (`#81`): added partitioned fixed-window rate limiting policies (auth per-IP, capture write per-user, hot-path per-user), deterministic `429` `ApiErrorResponse` contract with retry metadata headers (`Retry-After`, `X-RateLimit-Policy`), endpoint-level policy application across auth/capture/chat/llm queue paths, and regression coverage for burst throttling, reset-window recovery, and cross-user false-positive boundaries.
+- Delivered SEC-06 forwarded-header trust follow-through (`#81`): rate-limit partitioning now supports trusted forwarded-header processing behind explicit proxy/network allowlists plus configurable forwarded-hop depth (`ForwardedHeaders:ForwardLimit`), keeps safe no-trust defaults when allowlists are unset, hardens `OnRejected` write-order guardrails for started responses, adds regression coverage for trusted multi-hop forwarded-client partition behavior, and documents emergency kill-switch + proxy-topology smoke-check operations.
 - Delivered SEC-05 OWASP baseline hardening (`#80`): added API security-header middleware with environment-aware HSTS behavior, added API integration coverage for security-header presence on success/auth-failure responses and HTTPS HSTS emission posture, and published `docs/SECURITY_OWASP_BASELINE.md` to document CSRF/XSS posture and tracked follow-up gaps.
 - Delivered TST-14 architecture-guard expansion (`#157`): added deterministic architecture invariants for source-layer purity (forbidden namespace imports in Domain/Application), controller boundary rules (`ControllerBase` direct inheritance restricted to auth/health controllers), and protected-controller `[Authorize]` declaration enforcement.
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
