@@ -20,7 +20,8 @@
  *   TASKDECK_DEMO_COLLAB_USER   (legacy)
  *   TASKDECK_DEMO_COLLAB_EMAIL  (legacy)
  *   TASKDECK_DEMO_COLLAB_PASS   (legacy)
- *   TASKDECK_UI_BASE            (default: http://localhost:4173)
+ *   TASKDECK_DEMO_ALLOW_NON_LOCAL_API (default: false; set true to allow non-local API targets)
+ *   TASKDECK_UI_BASE            (default: http://localhost:5173)
  */
 
 import { randomUUID } from 'node:crypto'
@@ -30,6 +31,8 @@ const API_BASE = (
   process.env.TASKDECK_API_BASE ||
   'http://localhost:5000/api'
 ).replace(/\/$/, '')
+
+const ALLOW_NON_LOCAL_API = parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_LOCAL_API)
 
 const DEMO = {
   username: process.env.TASKDECK_DEMO_USERNAME || 'demo',
@@ -71,6 +74,78 @@ const DEMO_BOARD_SPECS = {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+const BOARD_ROLE_NAMES = {
+  0: 'Owner',
+  1: 'Admin',
+  2: 'Editor',
+  3: 'Viewer',
+}
+
+function parseTrueishEnv(value) {
+  if (typeof value !== 'string') return false
+  const normalized = value.trim().toLowerCase()
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
+}
+
+function getApiHostname(apiBaseUrl) {
+  try {
+    return new URL(apiBaseUrl).hostname.toLowerCase()
+  } catch (err) {
+    throw new Error(`Invalid API base URL "${apiBaseUrl}". ${err?.message || err}`)
+  }
+}
+
+function isLocalApiHostname(hostname) {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]'
+}
+
+function ensureSafeApiBaseTarget() {
+  const hostname = getApiHostname(API_BASE)
+  if (isLocalApiHostname(hostname)) return
+
+  if (ALLOW_NON_LOCAL_API) {
+    console.warn(`WARN: non-local API target override enabled for ${API_BASE}`)
+    return
+  }
+
+  throw new Error(
+    `Refusing to seed non-local API target "${API_BASE}". ` +
+      'Set TASKDECK_DEMO_ALLOW_NON_LOCAL_API=true to override intentionally.'
+  )
+}
+
+function toRoleRank(role) {
+  if (typeof role === 'number' && Number.isInteger(role)) return role
+  if (typeof role === 'string') {
+    const numericRole = Number(role)
+    if (Number.isInteger(numericRole)) return numericRole
+    const normalized = role.trim().toLowerCase()
+    if (normalized === 'owner') return 0
+    if (normalized === 'admin') return 1
+    if (normalized === 'editor') return 2
+    if (normalized === 'viewer') return 3
+  }
+  return Number.POSITIVE_INFINITY
+}
+
+function formatBoardRole(role) {
+  const rank = toRoleRank(role)
+  if (Object.prototype.hasOwnProperty.call(BOARD_ROLE_NAMES, rank)) {
+    return BOARD_ROLE_NAMES[rank]
+  }
+  if (role === undefined || role === null || role === '') return 'unknown'
+  return `unknown(${String(role)})`
+}
+
+function hasAtLeastEditorAccess(role) {
+  return toRoleRank(role) <= 2
+}
+
+function idsMatch(left, right) {
+  if (left === undefined || left === null || right === undefined || right === null) return false
+  return String(left).trim().toLowerCase() === String(right).trim().toLowerCase()
+}
 
 async function http(method, path, { token, body, headers: extraHeaders } = {}) {
   const url = `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
@@ -245,7 +320,55 @@ async function applyStarterPack(boardId, token, packId) {
   })
 }
 
+async function ensureCollaboratorEditorAccess(boardId, token, collaboratorUserId) {
+  const editorRole = 2
+  let accesses = await http('GET', `/boards/${boardId}/access`, { token })
+  let existingAccess = (accesses || []).find((entry) => idsMatch(entry?.userId, collaboratorUserId))
+
+  if (!existingAccess) {
+    try {
+      await http('POST', `/boards/${boardId}/access`, {
+        token,
+        body: {
+          userId: collaboratorUserId,
+          role: editorRole,
+        },
+      })
+      console.log('- access: granted collab user Editor on capture board')
+      return
+    } catch (err) {
+      if (getHttpStatus(err) !== 409) {
+        throw err
+      }
+      accesses = await http('GET', `/boards/${boardId}/access`, { token })
+      existingAccess = (accesses || []).find((entry) => idsMatch(entry?.userId, collaboratorUserId))
+      if (!existingAccess) {
+        throw new Error('Board access conflict reported but collaborator access entry was not found.')
+      }
+    }
+  }
+
+  if (hasAtLeastEditorAccess(existingAccess.role)) {
+    console.log(`- access: collab user already has ${formatBoardRole(existingAccess.role)} on capture board`)
+    return
+  }
+
+  if (!existingAccess.id) {
+    throw new Error('Collaborator board access entry is missing an id; cannot upgrade role to Editor.')
+  }
+
+  await http('PUT', `/boards/${boardId}/access/${existingAccess.id}`, {
+    token,
+    body: {
+      role: editorRole,
+    },
+  })
+  console.log(`- access: upgraded collab user role from ${formatBoardRole(existingAccess.role)} to Editor on capture board`)
+}
+
 async function main() {
+  ensureSafeApiBaseTarget()
+
   console.log(`\nTaskdeck demo seeder -> ${API_BASE}`)
   console.log('----------------------------------------')
 
@@ -296,22 +419,7 @@ async function main() {
   console.log('- content board: content calendar blueprint')
 
   // 4) Seed: board access entry (so Access view is not empty)
-  try {
-    await http('POST', `/boards/${captureBoard.id}/access`, {
-      token: demoToken,
-      body: {
-        userId: collabUser.id,
-        role: 2, // Editor
-      },
-    })
-    console.log('- access: granted collab user Editor on capture board')
-  } catch (err) {
-    if (getHttpStatus(err) === 409) {
-      console.log('- access: collab user already has board access (kept existing entry)')
-    } else {
-      throw err
-    }
-  }
+  await ensureCollaboratorEditorAccess(captureBoard.id, demoToken, collabUser.id)
 
   // 5) Seed: Inbox items (ignored + triage)
   console.log('\nCreating Inbox items...')
@@ -473,7 +581,7 @@ async function main() {
       body: { content: `@${demoUser.username} ack - I will take a look after lunch. (seeded)` },
     })
 
-    console.log(`- comment added on card: ${firstCard.title}`)
+    console.log(`- comments added on card: ${firstCard.title}`)
   } else {
     console.log('- no cards found on capture board (unexpected)')
   }
@@ -495,7 +603,7 @@ async function main() {
   }
 
   // Summary
-  const uiBase = process.env.TASKDECK_UI_BASE || 'http://localhost:4173'
+  const uiBase = process.env.TASKDECK_UI_BASE || 'http://localhost:5173'
 
   console.log('\nDemo data ready')
   console.log('----------------------------------------')
