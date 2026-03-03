@@ -37,6 +37,26 @@ describe('queueApi', () => {
     expect(result.status).toBe('Pending')
   })
 
+  it('createRequest forwards optional boardId in payload', async () => {
+    const mockRequest = {
+      id: 'req-2',
+      userId: 'user-2',
+      boardId: 'board-2',
+      requestType: 'instruction',
+      status: 0,
+      errorMessage: null,
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+    }
+    vi.mocked(http.post).mockResolvedValue({ data: mockRequest })
+
+    const dto = { requestType: 'instruction', payload: 'rename board', boardId: 'board-2' }
+    await queueApi.createRequest(dto)
+
+    expect(http.post).toHaveBeenCalledWith('/llm-queue', dto)
+  })
+
   it('getUserRequests normalizes statuses', async () => {
     vi.mocked(http.get).mockResolvedValue({
       data: [
