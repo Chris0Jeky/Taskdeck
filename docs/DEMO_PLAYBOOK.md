@@ -1,4 +1,4 @@
-﻿# Taskdeck Demo Playbook
+# Taskdeck Demo Playbook
 
 This playbook is for first-run demos and quick stakeholder walkthroughs.
 It focuses on the current MVP loop:
@@ -34,6 +34,7 @@ npm run demo:seed
 ```
 
 The seeder creates demo users, demo boards, Inbox items, proposals, queue activity, notifications, and ops logs.
+During pre-seed cleanup, existing active `DEMO:*` boards are archived (soft-delete) before canonical boards are reused.
 
 ## 5-Minute Demo Flow
 
