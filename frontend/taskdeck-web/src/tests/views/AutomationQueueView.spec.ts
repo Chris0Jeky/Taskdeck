@@ -116,6 +116,16 @@ async function mountAt(path: string) {
   return wrapper
 }
 
+async function openComposer(wrapper: ReturnType<typeof mount>) {
+  const toggle = wrapper.findAll('button').find(button => button.text().includes('+ New Request'))
+  if (!toggle) {
+    throw new Error('Expected composer toggle button')
+  }
+
+  await toggle.trigger('click')
+  await wrapper.vm.$nextTick()
+}
+
 let mountedWrapper: ReturnType<typeof mount> | null = null
 let originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView
 
@@ -144,6 +154,58 @@ describe('AutomationQueueView', () => {
       writable: true,
       value: originalScrollIntoView,
     })
+  })
+
+  it('shows guidance that board-scoped instructions need board id and capture uses triage', async () => {
+    const wrapper = await mountAt('/workspace/automations/queue')
+    await openComposer(wrapper)
+
+    expect(wrapper.text()).toContain('Board-scoped instructions require a Board ID')
+    expect(wrapper.text()).toContain('Inbox -> Start Triage')
+  })
+
+  it('submits trimmed board id with queue request when provided', async () => {
+    const wrapper = await mountAt('/workspace/automations/queue')
+    await openComposer(wrapper)
+
+    await wrapper.get('input[placeholder="instruction"]').setValue(' instruction ')
+    await wrapper.get('input[placeholder="board-123 (required for board-scoped instructions)"]').setValue('  board-42  ')
+    await wrapper.get('textarea.td-textarea').setValue('  rename board to "Roadmap"  ')
+
+    const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
+    if (!submitButton) {
+      throw new Error('Expected submit button')
+    }
+
+    await submitButton.trigger('click')
+
+    expect(mocks.submitRequest).toHaveBeenCalledWith({
+      requestType: 'instruction',
+      payload: 'rename board to "Roadmap"',
+      boardId: 'board-42',
+    })
+  })
+
+  it('omits board id from queue request when board input is blank', async () => {
+    const wrapper = await mountAt('/workspace/automations/queue')
+    await openComposer(wrapper)
+
+    await wrapper.get('input[placeholder="board-123 (required for board-scoped instructions)"]').setValue('   ')
+    await wrapper.get('textarea.td-textarea').setValue('create card "Write tests"')
+
+    const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
+    if (!submitButton) {
+      throw new Error('Expected submit button')
+    }
+
+    await submitButton.trigger('click')
+
+    const [submittedDto] = mocks.submitRequest.mock.calls.at(-1) ?? []
+    expect(submittedDto).toEqual({
+      requestType: 'instruction',
+      payload: 'create card "Write tests"',
+    })
+    expect(submittedDto).not.toHaveProperty('boardId')
   })
 
   it('shows capture and triage provenance context for queue proposals', async () => {
