@@ -20,6 +20,7 @@
  *   TASKDECK_DEMO_COLLAB_USER   (legacy)
  *   TASKDECK_DEMO_COLLAB_EMAIL  (legacy)
  *   TASKDECK_DEMO_COLLAB_PASS   (legacy)
+ *   TASKDECK_UI_BASE            (default: http://localhost:4173)
  */
 
 import { randomUUID } from 'node:crypto'
@@ -295,14 +296,22 @@ async function main() {
   console.log('- content board: content calendar blueprint')
 
   // 4) Seed: board access entry (so Access view is not empty)
-  await http('POST', `/boards/${captureBoard.id}/access`, {
-    token: demoToken,
-    body: {
-      userId: collabUser.id,
-      role: 2, // Editor
-    },
-  })
-  console.log('- access: granted collab user Editor on capture board')
+  try {
+    await http('POST', `/boards/${captureBoard.id}/access`, {
+      token: demoToken,
+      body: {
+        userId: collabUser.id,
+        role: 2, // Editor
+      },
+    })
+    console.log('- access: granted collab user Editor on capture board')
+  } catch (err) {
+    if (getHttpStatus(err) === 409) {
+      console.log('- access: collab user already has board access (kept existing entry)')
+    } else {
+      throw err
+    }
+  }
 
   // 5) Seed: Inbox items (ignored + triage)
   console.log('\nCreating Inbox items...')
@@ -501,7 +510,7 @@ async function main() {
   console.log(`  Notifications: ${uiBase}/workspace/notifications`)
   console.log(`  Activity:      ${uiBase}/workspace/activity`)
   console.log(`  Ops:           ${uiBase}/workspace/ops/cli`)
-  console.log(`  Access:        ${uiBase}/workspace/access (use boardId: ${captureBoard.id})`)
+  console.log(`  Access:        ${uiBase}/workspace/settings/access/${captureBoard.id}`)
   console.log(`  Archive:       ${uiBase}/workspace/archive`)
   console.log('\nTips:')
   console.log('- If you do not see Activity/Ops/Access/Archive in the left nav, enable them in Settings -> Feature Flags.')
