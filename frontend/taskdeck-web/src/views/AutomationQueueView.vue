@@ -22,6 +22,7 @@ const activeTab = ref<'queue' | 'proposals'>('queue')
 const statusFilter = ref('Pending')
 // Most manual queue requests are instruction-based; default accordingly.
 const newRequestType = ref('instruction')
+const newBoardId = ref('')
 const newPayload = ref('')
 const showComposer = ref(false)
 const submitting = ref(false)
@@ -145,13 +146,16 @@ async function handleStatusChange(status: string) {
 
 async function handleSubmitRequest() {
   if (!newRequestType.value.trim() || !newPayload.value.trim()) return
+  const trimmedBoardId = newBoardId.value.trim()
   try {
     submitting.value = true
     await queue.submitRequest({
       requestType: newRequestType.value.trim(),
       payload: newPayload.value.trim(),
+      ...(trimmedBoardId ? { boardId: trimmedBoardId } : {}),
     })
     newRequestType.value = 'instruction'
+    newBoardId.value = ''
     newPayload.value = ''
     showComposer.value = false
   } catch {
@@ -357,6 +361,19 @@ function statusColor(status: QueueStatus | number): string {
           </div>
         </div>
         <div class="td-form-group">
+          <label class="td-label">Board ID (optional)</label>
+          <input
+            v-model="newBoardId"
+            type="text"
+            class="td-input"
+            placeholder="board-123 (required for board-scoped instructions)"
+          />
+          <div class="td-helper">
+            Board-scoped instructions require a <strong>Board ID</strong> (for example board rename/description updates
+            and board-local move operations).
+          </div>
+        </div>
+        <div class="td-form-group">
           <label class="td-label">Instruction</label>
           <textarea
             v-model="newPayload"
@@ -368,6 +385,7 @@ function statusColor(status: QueueStatus | number): string {
             Supported patterns include: <strong>create card "title"</strong>, <strong>rename board to "name"</strong>,
             <strong>update board description "value"</strong>, <strong>move column "name" to position {n}</strong>,
             <strong>update card {id} title|description "value"</strong>, <strong>move card {id} to column "name"</strong>.
+            Use <strong>Inbox -> Start Triage</strong> for capture requests.
           </div>
         </div>
         <button class="td-btn td-btn--primary" @click="handleSubmitRequest" :disabled="submitting">
