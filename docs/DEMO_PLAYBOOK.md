@@ -24,7 +24,7 @@ npm run dev
 
 Default URLs:
 - API: `http://localhost:5000/api`
-- UI: `http://localhost:4173`
+- UI: `http://localhost:5173`
 
 3. Seed demo data:
 
