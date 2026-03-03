@@ -34,6 +34,7 @@ const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
 
 const statusTabs = ['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled']
+const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 
 function syncTabFromRoute() {
   activeTab.value = route.name === 'workspace-automations-proposals' ? 'proposals' : 'queue'
@@ -147,6 +148,11 @@ async function handleStatusChange(status: string) {
 async function handleSubmitRequest() {
   if (!newRequestType.value.trim() || !newPayload.value.trim()) return
   const trimmedBoardId = newBoardId.value.trim()
+  if (trimmedBoardId && !guidPattern.test(trimmedBoardId)) {
+    toast.error('Board ID must be a GUID (for example 123e4567-e89b-12d3-a456-426614174000).')
+    return
+  }
+
   try {
     submitting.value = true
     await queue.submitRequest({
@@ -366,11 +372,12 @@ function statusColor(status: QueueStatus | number): string {
             v-model="newBoardId"
             type="text"
             class="td-input"
-            placeholder="board-123 (required for board-scoped instructions)"
+            placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"
           />
           <div class="td-helper">
-            Board-scoped instructions require a <strong>Board ID</strong> (for example board rename/description updates
-            and board-local move operations).
+            Board-scoped instructions require a <strong>Board ID GUID</strong> (for example
+            <strong>123e4567-e89b-12d3-a456-426614174000</strong>) for operations like board rename/description updates
+            and board-local move operations.
           </div>
         </div>
         <div class="td-form-group">
