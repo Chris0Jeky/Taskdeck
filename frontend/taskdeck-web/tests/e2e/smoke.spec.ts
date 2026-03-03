@@ -138,7 +138,7 @@ test('filter panel shortcut should toggle panel', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
 })
 
-test('command palette keyboard navigation should activate selected command', async ({ page }) => {
+test('command palette search and enter should activate selected command', async ({ page }) => {
   await gotoBoardsWorkspace(page)
 
   await page.keyboard.press('Control+K')
