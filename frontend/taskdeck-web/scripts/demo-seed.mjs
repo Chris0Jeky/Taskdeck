@@ -42,6 +42,33 @@ const COLLAB = {
   password: process.env.TASKDECK_COLLAB_PASSWORD || process.env.TASKDECK_DEMO_COLLAB_PASS || 'demo123',
 }
 
+const DEMO_BOARD_SPECS = {
+  capture: {
+    canonicalName: 'DEMO: Capture Loop',
+    reusableNames: ['DEMO: Capture Loop', 'DEMO: Capture Loop (Demo)'],
+    description: 'Seeded demo board (capture -> triage -> proposal -> apply).',
+    isArchived: false,
+  },
+  content: {
+    canonicalName: 'DEMO: Content Calendar',
+    reusableNames: ['DEMO: Content Calendar'],
+    description: 'Seeded via Starter Pack blueprint (content calendar).',
+    isArchived: false,
+  },
+  blank: {
+    canonicalName: 'DEMO: Blank Board',
+    reusableNames: ['DEMO: Blank Board'],
+    description: 'Intentionally empty board to demo Starter Packs UI.',
+    isArchived: false,
+  },
+  archived: {
+    canonicalName: 'DEMO: Archived Board',
+    reusableNames: ['DEMO: Archived Board'],
+    description: 'Used to demo Archive view (archived boards list).',
+    isArchived: true,
+  },
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function http(method, path, { token, body, headers: extraHeaders } = {}) {
@@ -68,7 +95,10 @@ async function http(method, path, { token, body, headers: extraHeaders } = {}) {
   if (!res.ok) {
     const details = maybeJson || text
     const msg = typeof details === 'string' ? details : JSON.stringify(details, null, 2)
-    throw new Error(`${method} ${path} failed (${res.status})\n${msg}`)
+    const error = new Error(`${method} ${path} failed (${res.status})\n${msg}`)
+    error.status = res.status
+    error.details = details
+    throw error
   }
   return maybeJson
 }
@@ -81,29 +111,106 @@ function safeJsonParse(text) {
   }
 }
 
-async function ensureUser({ username, email, password }) {
-  try {
-    const login = await http('POST', '/auth/login', {
-      body: { usernameOrEmail: username, password },
-    })
-    return login
-  } catch {
-    try {
-      await http('POST', '/auth/register', {
-        body: { username, email, password },
-      })
-    } catch (err) {
-      throw new Error(
-        `Failed to login as "${username}" and could not register it. ` +
-          `The user may already exist with a different password.\n` +
-          `Set TASKDECK_DEMO_PASSWORD / TASKDECK_COLLAB_PASSWORD (or legacy TASKDECK_DEMO_COLLAB_PASS), or delete the user from the dev DB.\n\n` +
-          `${err?.message || err}`
-      )
-    }
+function getHttpStatus(error) {
+  if (!error || typeof error !== 'object') return null
+  const status = Number(error.status)
+  return Number.isInteger(status) ? status : null
+}
 
-    return await http('POST', '/auth/login', {
-      body: { usernameOrEmail: username, password },
+function isDemoBoard(board) {
+  return typeof board?.name === 'string' && board.name.startsWith('DEMO:')
+}
+
+function pickReusableBoard(boards, reusableNames) {
+  const names = new Set(reusableNames)
+  const candidates = (boards || []).filter((b) => names.has(b.name))
+  if (!candidates.length) return null
+
+  return candidates.find((b) => !b.isArchived) || candidates[0]
+}
+
+async function ensureDemoBoard(spec, boards, token) {
+  const existing = pickReusableBoard(boards, spec.reusableNames)
+  if (!existing) {
+    const created = await http('POST', '/boards', {
+      token,
+      body: {
+        name: spec.canonicalName,
+        description: spec.description,
+      },
     })
+    if (spec.isArchived) {
+      await http('PUT', `/boards/${created.id}`, {
+        token,
+        body: { isArchived: true },
+      })
+      return { ...created, isArchived: true }
+    }
+    return created
+  }
+
+  const updateBody = {}
+  if (existing.name !== spec.canonicalName) {
+    updateBody.name = spec.canonicalName
+  }
+  if (existing.description !== spec.description) {
+    updateBody.description = spec.description
+  }
+  if (Boolean(existing.isArchived) !== spec.isArchived) {
+    updateBody.isArchived = spec.isArchived
+  }
+
+  if (!Object.keys(updateBody).length) {
+    return existing
+  }
+
+  const updated = await http('PUT', `/boards/${existing.id}`, {
+    token,
+    body: updateBody,
+  })
+  return updated || { ...existing, ...updateBody }
+}
+
+async function ensureUser({ username, email, password }) {
+  const loginBody = { usernameOrEmail: username, password }
+  let loginError = null
+
+  try {
+    return await http('POST', '/auth/login', { body: loginBody })
+  } catch (err) {
+    loginError = err
+  }
+
+  const loginStatus = getHttpStatus(loginError)
+  if (loginStatus !== 401 && loginStatus !== 404) {
+    throw new Error(
+      `Failed to login as "${username}" due to a non-auth error.\n` +
+        `Only 401/404 responses trigger auto-registration.\n\n` +
+        `${loginError?.message || loginError}`
+    )
+  }
+
+  try {
+    await http('POST', '/auth/register', {
+      body: { username, email, password },
+    })
+  } catch (err) {
+    throw new Error(
+      `Failed to login as "${username}" and could not register it. ` +
+        `The user may already exist with a different password.\n` +
+        `Set TASKDECK_DEMO_PASSWORD / TASKDECK_COLLAB_PASSWORD (or legacy TASKDECK_DEMO_COLLAB_PASS), or delete the user from the dev DB.\n\n` +
+        `${err?.message || err}`
+    )
+  }
+
+  try {
+    return await http('POST', '/auth/login', { body: loginBody })
+  } catch (err) {
+    const registerStatus = getHttpStatus(err)
+    throw new Error(
+      `Registered "${username}" but follow-up login failed${registerStatus ? ` (${registerStatus})` : ''}.\n\n` +
+        `${err?.message || err}`
+    )
   }
 }
 
@@ -153,52 +260,32 @@ async function main() {
   console.log(`Demo user:   ${demoUser.username} (${demoUser.email})`)
   console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
-  // 2) Clean up previous demo boards
+  // 2) Reuse/create canonical demo boards and archive extra active DEMO boards.
   const boards = await http('GET', '/boards?includeArchived=true', { token: demoToken })
-  const demoBoards = (boards || []).filter((b) => typeof b.name === 'string' && b.name.startsWith('DEMO:'))
-  if (demoBoards.length) {
-    console.log(`\nCleaning ${demoBoards.length} existing DEMO:* board(s)...`)
-    for (const b of demoBoards) {
+  const demoBoards = (boards || []).filter(isDemoBoard)
+
+  const captureBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.capture, demoBoards, demoToken)
+  const contentBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.content, demoBoards, demoToken)
+  const blankBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.blank, demoBoards, demoToken)
+  const archivedBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.archived, demoBoards, demoToken)
+
+  const canonicalBoardIds = new Set([captureBoard.id, contentBoard.id, blankBoard.id, archivedBoard.id])
+  const extraActiveDemoBoards = demoBoards.filter((b) => !b.isArchived && !canonicalBoardIds.has(b.id))
+  if (extraActiveDemoBoards.length) {
+    console.log(`\nArchiving ${extraActiveDemoBoards.length} extra active DEMO:* board(s)...`)
+    for (const b of extraActiveDemoBoards) {
       await http('DELETE', `/boards/${b.id}`, { token: demoToken })
-      console.log(`- deleted ${b.name}`)
+      console.log(`- archived ${b.name}`)
     }
   }
 
-  // 3) Create boards
-  console.log('\nCreating demo boards...')
-  const captureBoard = await http('POST', '/boards', {
-    token: demoToken,
-    body: {
-      name: 'DEMO: Capture Loop',
-      description: 'Seeded demo board (capture -> triage -> proposal -> apply).',
-    },
-  })
+  console.log('\nUsing canonical demo boards...')
+  console.log(`- capture board: ${captureBoard.name}`)
+  console.log(`- content board: ${contentBoard.name}`)
+  console.log(`- blank board: ${blankBoard.name}`)
+  console.log(`- archived board: ${archivedBoard.name}`)
 
-  const contentBoard = await http('POST', '/boards', {
-    token: demoToken,
-    body: {
-      name: 'DEMO: Content Calendar',
-      description: 'Seeded via Starter Pack blueprint (content calendar).',
-    },
-  })
-
-  const blankBoard = await http('POST', '/boards', {
-    token: demoToken,
-    body: {
-      name: 'DEMO: Blank Board',
-      description: 'Intentionally empty board to demo Starter Packs UI.',
-    },
-  })
-
-  const archivedBoard = await http('POST', '/boards', {
-    token: demoToken,
-    body: {
-      name: 'DEMO: Archived Board',
-      description: 'Used to demo Archive view (archived boards list).',
-    },
-  })
-
-  // 4) Seed: starter packs
+  // 3) Seed: starter packs
   console.log('\nApplying starter packs...')
   await applyStarterPack(captureBoard.id, demoToken, 'common-column-flow-kanban')
   await applyStarterPack(captureBoard.id, demoToken, 'common-labels-core')
@@ -207,14 +294,7 @@ async function main() {
   await applyStarterPack(contentBoard.id, demoToken, 'board-blueprint-content-calendar')
   console.log('- content board: content calendar blueprint')
 
-  // 5) Seed: archive board
-  await http('PUT', `/boards/${archivedBoard.id}`, {
-    token: demoToken,
-    body: { isArchived: true },
-  })
-  console.log('- archived board: archived')
-
-  // 6) Seed: board access entry (so Access view is not empty)
+  // 4) Seed: board access entry (so Access view is not empty)
   await http('POST', `/boards/${captureBoard.id}/access`, {
     token: demoToken,
     body: {
@@ -224,7 +304,7 @@ async function main() {
   })
   console.log('- access: granted collab user Editor on capture board')
 
-  // 7) Seed: Inbox items (ignored + triage)
+  // 5) Seed: Inbox items (ignored + triage)
   console.log('\nCreating Inbox items...')
   const ignored = await http('POST', '/capture/items', {
     token: demoToken,
@@ -295,7 +375,7 @@ async function main() {
   )
   console.log(`- triage (pending) proposal: ${triagePendingWithProposal.provenance.proposalId} (left for review)`)
 
-  // 8) Seed: Queue requests (1 success + 1 failure)
+  // 6) Seed: Queue requests (1 success + 1 failure)
   console.log('\nCreating Automation Queue items...')
   const okInstruction = `create card "From queue: demo item (${new Date().toISOString()})"`
   const okReq = await http('POST', '/llm-queue', {
@@ -344,7 +424,7 @@ async function main() {
     console.log('- queue proposal not found (skipping execute)')
   }
 
-  // 9) Seed: Chat proposal (board rename -> produces board audit log entries)
+  // 7) Seed: Chat proposal (board rename -> produces board audit log entries)
   console.log('\nCreating a Chat session + board rename proposal...')
   const session = await http('POST', '/llm/chat/sessions', {
     token: demoToken,
@@ -368,7 +448,7 @@ async function main() {
     console.log('- chat message did not return a proposalId (unexpected)')
   }
 
-  // 10) Seed: Mention comment (Notification + audit)
+  // 8) Seed: Mention comment (Notification + audit)
   console.log('\nCreating a mention comment (generates notification)...')
   const cards = await http('GET', `/boards/${captureBoard.id}/cards`, { token: demoToken })
   const firstCard = (cards || [])[0]
@@ -389,7 +469,7 @@ async function main() {
     console.log('- no cards found on capture board (unexpected)')
   }
 
-  // 11) Seed: Ops command runs (populate Ops -> Logs)
+  // 9) Seed: Ops command runs (populate Ops -> Logs)
   console.log('\nRunning Ops CLI templates (generates Ops logs)...')
   await http('POST', '/ops/cli/run', {
     token: demoToken,
