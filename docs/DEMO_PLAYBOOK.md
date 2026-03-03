@@ -34,12 +34,12 @@ npm run demo:seed
 ```
 
 The seeder creates demo users, demo boards, Inbox items, proposals, queue activity, notifications, and ops logs.
-During pre-seed cleanup, existing active `DEMO:*` boards are archived (soft-delete) before canonical boards are reused.
+During cleanup, the seeder first ensures/reuses canonical demo boards, then archives extra active `DEMO:*` boards (soft-delete) that are outside the canonical set.
 
 ## 5-Minute Demo Flow
 
 1. `Boards`
-- Open `DEMO: Capture Loop`.
+- Open `DEMO: Capture Loop` (final canonical name after seeding).
 - Explain that board changes come from reviewed proposals.
 
 2. `Inbox`
