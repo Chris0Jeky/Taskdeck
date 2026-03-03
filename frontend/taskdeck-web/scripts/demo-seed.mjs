@@ -398,8 +398,16 @@ async function main() {
   if (extraActiveDemoBoards.length) {
     console.log(`\nArchiving ${extraActiveDemoBoards.length} extra active DEMO:* board(s)...`)
     for (const b of extraActiveDemoBoards) {
-      await http('DELETE', `/boards/${b.id}`, { token: demoToken })
-      console.log(`- archived ${b.name}`)
+      try {
+        await http('DELETE', `/boards/${b.id}`, { token: demoToken })
+        console.log(`- archived ${b.name}`)
+      } catch (err) {
+        if (getHttpStatus(err) === 403) {
+          console.log(`- skipped ${b.name} (readable but not deletable: 403 Forbidden)`)
+          continue
+        }
+        throw err
+      }
     }
   }
 
@@ -541,14 +549,16 @@ async function main() {
     console.log('- queue proposal not found (skipping execute)')
   }
 
-  // 7) Seed: Chat proposal (board rename -> produces board audit log entries)
-  console.log('\nCreating a Chat session + board rename proposal...')
+  // 7) Seed: Chat proposal (temporary board rename -> produces board audit log entries).
+  // Restore canonical naming afterwards so final board references stay consistent.
+  console.log('\nCreating a Chat session + temporary board rename proposal...')
   const session = await http('POST', '/llm/chat/sessions', {
     token: demoToken,
     body: { title: 'Stakeholder Demo', boardId: captureBoard.id },
   })
 
-  const renameInstruction = 'rename board to "DEMO: Capture Loop (Demo)"'
+  const temporaryCaptureName = `${DEMO_BOARD_SPECS.capture.canonicalName} (Chat)`
+  const renameInstruction = `rename board to "${temporaryCaptureName}"`
   const chatMsg = await http('POST', `/llm/chat/sessions/${session.id}/messages`, {
     token: demoToken,
     body: { content: renameInstruction, requestProposal: true },
@@ -560,7 +570,12 @@ async function main() {
       token: demoToken,
       headers: { 'Idempotency-Key': randomUUID() },
     })
+    await http('PUT', `/boards/${captureBoard.id}`, {
+      token: demoToken,
+      body: { name: DEMO_BOARD_SPECS.capture.canonicalName },
+    })
     console.log(`- board rename proposal approved + executed: ${chatMsg.proposalId}`)
+    console.log(`- restored canonical capture board name: ${DEMO_BOARD_SPECS.capture.canonicalName}`)
   } else {
     console.log('- chat message did not return a proposalId (unexpected)')
   }
@@ -598,8 +613,12 @@ async function main() {
       body: { commandName: 'boards.list', parameters: {} },
     })
     console.log('- ran health.check + boards.list')
-  } catch {
-    console.log('- ran health.check (boards.list requires admin role - skipped)')
+  } catch (err) {
+    if (getHttpStatus(err) === 403) {
+      console.log('- ran health.check (boards.list requires admin role - skipped)')
+    } else {
+      throw err
+    }
   }
 
   // Summary
