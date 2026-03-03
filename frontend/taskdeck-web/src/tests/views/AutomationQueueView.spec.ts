@@ -156,20 +156,23 @@ describe('AutomationQueueView', () => {
     })
   })
 
-  it('shows guidance that board-scoped instructions need board id and capture uses triage', async () => {
+  it('shows guidance that board-scoped instructions need a GUID board id and capture uses triage', async () => {
     const wrapper = await mountAt('/workspace/automations/queue')
     await openComposer(wrapper)
 
-    expect(wrapper.text()).toContain('Board-scoped instructions require a Board ID')
+    expect(wrapper.text()).toContain('Board-scoped instructions require a Board ID GUID')
+    expect(wrapper.text()).toContain('123e4567-e89b-12d3-a456-426614174000')
     expect(wrapper.text()).toContain('Inbox -> Start Triage')
   })
 
-  it('submits trimmed board id with queue request when provided', async () => {
+  it('submits trimmed valid GUID board id with queue request when provided', async () => {
     const wrapper = await mountAt('/workspace/automations/queue')
     await openComposer(wrapper)
 
     await wrapper.get('input[placeholder="instruction"]').setValue(' instruction ')
-    await wrapper.get('input[placeholder="board-123 (required for board-scoped instructions)"]').setValue('  board-42  ')
+    await wrapper
+      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
+      .setValue('  123E4567-E89B-12D3-A456-426614174000  ')
     await wrapper.get('textarea.td-textarea').setValue('  rename board to "Roadmap"  ')
 
     const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
@@ -182,15 +185,40 @@ describe('AutomationQueueView', () => {
     expect(mocks.submitRequest).toHaveBeenCalledWith({
       requestType: 'instruction',
       payload: 'rename board to "Roadmap"',
-      boardId: 'board-42',
+      boardId: '123E4567-E89B-12D3-A456-426614174000',
     })
+  })
+
+  it('blocks submit and shows toast error when board id is not a valid GUID', async () => {
+    const wrapper = await mountAt('/workspace/automations/queue')
+    await openComposer(wrapper)
+
+    await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
+    await wrapper
+      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
+      .setValue('board-42')
+    await wrapper.get('textarea.td-textarea').setValue('rename board to "Roadmap"')
+
+    const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
+    if (!submitButton) {
+      throw new Error('Expected submit button')
+    }
+
+    await submitButton.trigger('click')
+
+    expect(mocks.submitRequest).not.toHaveBeenCalled()
+    expect(mocks.errorToast).toHaveBeenCalledWith(
+      'Board ID must be a GUID (for example 123e4567-e89b-12d3-a456-426614174000).',
+    )
   })
 
   it('omits board id from queue request when board input is blank', async () => {
     const wrapper = await mountAt('/workspace/automations/queue')
     await openComposer(wrapper)
 
-    await wrapper.get('input[placeholder="board-123 (required for board-scoped instructions)"]').setValue('   ')
+    await wrapper
+      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
+      .setValue('   ')
     await wrapper.get('textarea.td-textarea').setValue('create card "Write tests"')
 
     const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
