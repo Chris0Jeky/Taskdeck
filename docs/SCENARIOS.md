@@ -3,6 +3,10 @@
 Taskdeck includes a JSON scenario runner for deterministic demo and test setup.
 Use it to seed boards, cards, captures, queue requests, and proposals without manual UI clicking.
 
+Scope note:
+- JSON scenario runner work is tracked as Batch C (`#300`) in the demo-expansion migration wave.
+- PR `#304` includes this Batch C surface because the branch now contains merged follow-on changes from PR `#305`.
+
 Runner files:
 
 - `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`
