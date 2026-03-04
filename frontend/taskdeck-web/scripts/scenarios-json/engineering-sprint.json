@@ -79,11 +79,11 @@
     },
     {
       "type": "queueInstruction",
-      "requiresLlm": true,
       "board": "board",
       "instruction": "create card \"Spike: simulate LLM-driven user\" in column \"Backlog\" with description \"Add an agent runner that creates/moves tasks like a real user.\"",
       "requestAlias": "q1",
-      "proposalAlias": "p1"
+      "proposalAlias": "p1",
+      "requiresLlm": true
     }
   ]
 }

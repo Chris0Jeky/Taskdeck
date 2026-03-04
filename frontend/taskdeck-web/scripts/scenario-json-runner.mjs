@@ -29,10 +29,14 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const SCENARIO_DIR = path.join(__dirname, 'scenarios-json')
-const STEP_TYPES_REQUIRING_LLM = new Set(['queueInstruction'])
+const DEFAULT_LLM_STEP_TYPES = new Set(['queueInstruction'])
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+function stepRequiresLlm(step) {
+  return step?.requiresLlm === true || DEFAULT_LLM_STEP_TYPES.has(step?.type)
 }
 
 function isObject(value) {
@@ -240,9 +244,8 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
   for (const [index, rawStep] of scenario.steps.entries()) {
     const step = resolveTemplates(deepClone(rawStep), ctx)
     const label = step.label || `${index + 1}:${step.type}`
-    const requiresLlm = Boolean(step.requiresLlm) || STEP_TYPES_REQUIRING_LLM.has(step.type)
 
-    if (requiresLlm && opts.skipLlm) {
+    if (stepRequiresLlm(step) && opts.skipLlm) {
       ctx.results.steps.push({
         step: label,
         status: 'skipped',
