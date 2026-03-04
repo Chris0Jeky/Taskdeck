@@ -36,7 +36,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Workers:QueuePollIntervalSeconds"] = "1",
                 ["Workers:MaxBatchSize"] = "10",
                 ["Workers:MaxConcurrency"] = "1",
-                ["Workers:RetryBackoffSeconds:0"] = "0"
+                ["Workers:RetryBackoffSeconds:0"] = "0",
+                // Keep API integration tests deterministic regardless local machine env secrets.
+                ["Llm:EnableLiveProviders"] = "false",
+                ["Llm:AllowLiveProvidersInDevelopment"] = "false",
+                ["Llm:Provider"] = "Mock"
             };
 
             configBuilder.AddInMemoryCollection(overrideSettings);
