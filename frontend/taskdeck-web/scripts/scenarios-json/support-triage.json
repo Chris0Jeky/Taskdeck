@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "id": "support-triage",
+  "title": "Support Triage",
+  "description": "Seeded support workflow + Inbox triage. Includes ignored item, triaged+applied item, and triaged+pending item.",
+  "tags": [
+    "demo",
+    "support",
+    "inbox",
+    "llm"
+  ],
+  "steps": [
+    {
+      "type": "createBoard",
+      "alias": "board",
+      "name": "DEMO: Support Triage",
+      "description": "Seeded support workflow + Inbox triage. Includes ignored item, triaged+applied item, and triaged+pending item."
+    },
+    {
+      "type": "applyStarterPack",
+      "board": "board",
+      "starterPackId": "board-blueprint-support-triage"
+    },
+    {
+      "type": "createCapture",
+      "alias": "ignored",
+      "board": "board",
+      "source": "Typed",
+      "text": "Spam / duplicate ticket (demo): ignore this."
+    },
+    {
+      "type": "ignoreCapture",
+      "capture": "ignored"
+    },
+    {
+      "type": "createCapture",
+      "alias": "applied",
+      "board": "board",
+      "source": "Typed",
+      "text": "Customer: Checkout fails with \"Payment method not supported\" on mobile.\nSeverity: high.\nNeed: reproduce + hotfix + notify support."
+    },
+    {
+      "type": "triageCapture",
+      "capture": "applied",
+      "requiresLlm": true
+    },
+    {
+      "type": "waitForCaptureProposal",
+      "capture": "applied",
+      "proposalAlias": "appliedProposal",
+      "timeoutMs": 90000,
+      "requiresLlm": true
+    },
+    {
+      "type": "executeProposal",
+      "proposal": "appliedProposal",
+      "requiresLlm": true
+    },
+    {
+      "type": "createCapture",
+      "alias": "pending",
+      "board": "board",
+      "source": "Typed",
+      "text": "Customer: Wants invoice PDF resend for last month.\nSeverity: low.\nNeed: verify account + resend invoice."
+    },
+    {
+      "type": "triageCapture",
+      "capture": "pending",
+      "requiresLlm": true
+    },
+    {
+      "type": "waitForCaptureProposal",
+      "capture": "pending",
+      "proposalAlias": "pendingProposal",
+      "timeoutMs": 90000,
+      "requiresLlm": true
+    }
+  ]
+}
