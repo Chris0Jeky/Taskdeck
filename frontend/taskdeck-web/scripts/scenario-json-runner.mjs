@@ -18,10 +18,14 @@ import {
   createCaptureItem,
   enqueueAndApplyInstruction,
   getCaptureItem,
+  getOpsRunLogs,
   ignoreCaptureItem,
   isoDaysFromNow,
+  runOpsCommand,
   summarizeBoardForAgent,
+  traceEvent,
   triageCaptureItem,
+  waitForOpsRun,
   waitForCaptureOutcome,
   waitForCaptureProposalId,
 } from './demo-lib.mjs'
@@ -44,6 +48,7 @@ const SUPPORTED_STEP_TYPES = new Set([
   'waitForCaptureProposal',
   'waitForCaptureOutcome',
   'executeProposal',
+  'runOps',
 ])
 const DEFAULT_LLM_STEP_TYPES = new Set([
   'queueInstruction',
@@ -231,6 +236,15 @@ function validateScenarioStep(index, step) {
     case 'executeProposal':
       assert(isNonEmptyString(step.proposal), `${stepLabel}: proposal is required`)
       break
+    case 'runOps':
+      assert(isNonEmptyString(step.templateName), `${stepLabel}: templateName is required`)
+      if (Object.prototype.hasOwnProperty.call(step, 'parameters')) {
+        assert(
+          step.parameters === null || isObject(step.parameters),
+          `${stepLabel}: parameters must be an object or null`,
+        )
+      }
+      break
     default:
       break
   }
@@ -334,6 +348,7 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
       captures: {},
       proposals: {},
       queueRequests: {},
+      opsRuns: {},
     },
     cache: {
       columnsByBoardId: new Map(),
@@ -348,10 +363,27 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
     const step = resolveTemplates(deepClone(rawStep), ctx)
     const label = step.label || `${index + 1}:${step.type}`
 
+    await traceEvent({
+      type: 'scenario.step.start',
+      scenarioId: scenario.id,
+      scenarioTitle: scenario.title,
+      stepIndex: index,
+      stepLabel: label,
+      stepType: step.type,
+    })
+
     if (stepRequiresLlm(step) && opts.skipLlm) {
       ctx.results.steps.push({
         step: label,
         status: 'skipped',
+        reason: '--skip-llm',
+      })
+      await traceEvent({
+        type: 'scenario.step.skipped',
+        scenarioId: scenario.id,
+        stepIndex: index,
+        stepLabel: label,
+        stepType: step.type,
         reason: '--skip-llm',
       })
       continue
@@ -360,8 +392,24 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
     try {
       const result = await executeStep(api, ctx, step)
       ctx.results.steps.push({ step: label, status: 'ok', result: result || null })
+      await traceEvent({
+        type: 'scenario.step.ok',
+        scenarioId: scenario.id,
+        stepIndex: index,
+        stepLabel: label,
+        stepType: step.type,
+        result: result || null,
+      })
     } catch (err) {
       ctx.results.steps.push({ step: label, status: 'error', error: String(err?.message || err) })
+      await traceEvent({
+        type: 'scenario.step.error',
+        scenarioId: scenario.id,
+        stepIndex: index,
+        stepLabel: label,
+        stepType: step.type,
+        error: String(err?.message || err),
+      })
       if (!opts.continueOnError) throw err
     }
   }
@@ -610,6 +658,34 @@ async function executeStep(api, ctx, step) {
 
       await approveAndExecuteProposal(api, proposalId)
       return { proposalId }
+    }
+
+    case 'runOps': {
+      assert(isNonEmptyString(step.templateName), 'runOps.templateName is required')
+      const run = await runOpsCommand(api, {
+        templateName: step.templateName,
+        parameters: step.parameters || null,
+      })
+      if (step.alias) ctx.refs.opsRuns[step.alias] = run
+
+      if (step.wait === false) {
+        return { runId: run?.id || null, status: run?.status ?? null }
+      }
+
+      const runId = run?.id
+      assert(isNonEmptyString(runId), 'runOps returned an invalid run id')
+      const done = await waitForOpsRun(api, runId, {
+        timeoutMs: parseOptionalPositiveInteger(step.timeoutMs, 'runOps.timeoutMs', 60_000),
+        intervalMs: parseOptionalPositiveInteger(step.intervalMs, 'runOps.intervalMs', 700),
+      })
+
+      const logs = step.includeLogs ? await getOpsRunLogs(api, runId) : null
+      return {
+        runId,
+        status: done?.status ?? null,
+        exitCode: done?.exitCode ?? null,
+        logsCount: logs ? logs.length || 0 : null,
+      }
     }
 
     default:
