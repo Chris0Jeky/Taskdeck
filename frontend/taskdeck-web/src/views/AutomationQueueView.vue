@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { useQueueStore } from '../store/queueStore'
@@ -20,7 +20,9 @@ const router = useRouter()
 
 const activeTab = ref<'queue' | 'proposals'>('queue')
 const statusFilter = ref('Pending')
-const newRequestType = ref('')
+// Most manual queue requests are instruction-based; default accordingly.
+const newRequestType = ref('instruction')
+const newBoardId = ref('')
 const newPayload = ref('')
 const showComposer = ref(false)
 const submitting = ref(false)
@@ -32,6 +34,20 @@ const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
 
 const statusTabs = ['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled']
+const guidPatterns = [
+  /^[0-9a-fA-F]{32}$/,
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+  /^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$/,
+  /^\([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)$/,
+]
+const boardScopedInstructionPattern = /\b(create card|rename board|update board|move column|update card|move card)\b/i
+const canSubmitRequest = computed(() => {
+  return !submitting.value && newRequestType.value.trim().length > 0 && newPayload.value.trim().length > 0
+})
+
+function isSupportedGuidFormat(value: string): boolean {
+  return guidPatterns.some(pattern => pattern.test(value))
+}
 
 function syncTabFromRoute() {
   activeTab.value = route.name === 'workspace-automations-proposals' ? 'proposals' : 'queue'
@@ -143,14 +159,31 @@ async function handleStatusChange(status: string) {
 }
 
 async function handleSubmitRequest() {
-  if (!newRequestType.value.trim() || !newPayload.value.trim()) return
+  const trimmedRequestType = newRequestType.value.trim()
+  const trimmedPayload = newPayload.value.trim()
+  if (!trimmedRequestType || !trimmedPayload) {
+    toast.error('Request type and instruction are required.')
+    return
+  }
+  const trimmedBoardId = newBoardId.value.trim()
+  if (!trimmedBoardId && boardScopedInstructionPattern.test(trimmedPayload)) {
+    toast.error('Board ID is required for board-scoped instructions.')
+    return
+  }
+  if (trimmedBoardId && !isSupportedGuidFormat(trimmedBoardId)) {
+    toast.error('Board ID must be a GUID (for example 123e4567-e89b-12d3-a456-426614174000).')
+    return
+  }
+
   try {
     submitting.value = true
     await queue.submitRequest({
-      requestType: newRequestType.value.trim(),
-      payload: newPayload.value.trim(),
+      requestType: trimmedRequestType,
+      payload: trimmedPayload,
+      ...(trimmedBoardId ? { boardId: trimmedBoardId } : {}),
     })
-    newRequestType.value = ''
+    newRequestType.value = 'instruction'
+    newBoardId.value = ''
     newPayload.value = ''
     showComposer.value = false
   } catch {
@@ -348,14 +381,44 @@ function statusColor(status: QueueStatus | number): string {
 
       <div v-if="showComposer" class="td-composer">
         <div class="td-form-group">
-          <label class="td-label">Request Type</label>
-          <input v-model="newRequestType" type="text" class="td-input" placeholder='e.g. create card "title"' />
+          <label class="td-label">Request Type (advanced)</label>
+          <input v-model="newRequestType" type="text" class="td-input" placeholder="instruction" />
+          <div class="td-helper">
+            Leave this as <strong>instruction</strong> for most manual requests. For board-scoped instruction patterns,
+            provide a valid <strong>Board ID</strong>. Capture triage requests are created via
+            <strong>Inbox -> Start Triage</strong>.
+          </div>
         </div>
         <div class="td-form-group">
-          <label class="td-label">Payload</label>
-          <textarea v-model="newPayload" class="td-textarea" rows="4" placeholder='{"instruction":"..."}'></textarea>
+          <label class="td-label">Board ID (optional)</label>
+          <input
+            v-model="newBoardId"
+            type="text"
+            class="td-input"
+            placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"
+          />
+          <div class="td-helper">
+            Board-scoped instructions require a <strong>Board ID GUID</strong> (for example
+            <strong>123e4567-e89b-12d3-a456-426614174000</strong>) for operations like board rename/description updates
+            and board-local move operations.
+          </div>
         </div>
-        <button class="td-btn td-btn--primary" @click="handleSubmitRequest" :disabled="submitting">
+        <div class="td-form-group">
+          <label class="td-label">Instruction</label>
+          <textarea
+            v-model="newPayload"
+            class="td-textarea"
+            rows="6"
+            placeholder='create card "Write MVP demo script"'
+          ></textarea>
+          <div class="td-helper">
+            Supported patterns include: <strong>create card "title"</strong>, <strong>rename board to "name"</strong>,
+            <strong>update board description "value"</strong>, <strong>move column "name" to position {n}</strong>,
+            <strong>update card {id} title|description "value"</strong>, <strong>move card {id} to column "name"</strong>.
+            Use <strong>Inbox -> Start Triage</strong> for capture requests.
+          </div>
+        </div>
+        <button class="td-btn td-btn--primary" @click="handleSubmitRequest" :disabled="!canSubmitRequest">
           {{ submitting ? 'Submitting...' : 'Submit Request' }}
         </button>
       </div>
@@ -480,6 +543,7 @@ function statusColor(status: QueueStatus | number): string {
 .td-composer { background: var(--td-surface-secondary); border-radius: var(--td-radius-md); padding: var(--td-space-4); margin-bottom: var(--td-space-4); display: flex; flex-direction: column; gap: var(--td-space-3); }
 .td-form-group { display: flex; flex-direction: column; gap: var(--td-space-1); }
 .td-label { font-size: var(--td-font-sm); font-weight: 500; color: var(--td-text-secondary); }
+.td-helper { font-size: var(--td-font-xs); color: var(--td-text-tertiary); line-height: 1.2rem; }
 .td-input { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); }
 .td-input:focus { outline: none; border-color: var(--td-border-focus); box-shadow: var(--td-focus-ring); }
 .td-textarea { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); font-family: monospace; resize: vertical; }

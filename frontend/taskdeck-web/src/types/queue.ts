@@ -19,6 +19,7 @@ export interface QueueRequest {
 export interface CreateQueueRequestDto {
   requestType: string
   payload: string
+  boardId?: string
 }
 
 export interface QueueStats {

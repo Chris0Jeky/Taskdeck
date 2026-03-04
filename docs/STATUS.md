@@ -93,6 +93,12 @@ Direction guardrails (explicit):
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
+- Demo baseline (migration batch A):
+  - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation
+  - `docs/DEMO_PLAYBOOK.md` for seeded stakeholder walkthrough and MVP dogfooding loop
+  - advanced/diagnostic nav surfaces now default off via feature flags (`Activity`, `Ops`, `Access`, `Archive`)
+  - `Automations` nav now defaults to proposals review path instead of queue path
+  - queue composer now defaults to instruction-first request type with guided helper text
 - Shared maintainability utilities:
   - `buildQueryString` for API query construction across filter-driven endpoints
   - `getErrorMessage` for consistent API/store error extraction
@@ -172,6 +178,20 @@ Priority distribution for this wave:
 Analysis record:
 - `docs/analysis/2026-02-21_repo-scan-analysis.md`
 - `docs/analysis/2026-02-21_ci-github-actions-expansion-plan.md`
+
+## Demo Expansion Migration Wave (2026-03-02)
+
+A dedicated staged migration wave was seeded to port external demo-expansion assets into the current repository with compatibility guardrails.
+
+Seeded issues:
+- tracker: `#297`
+- batches: `#298` to `#302` (`v0` baseline -> `v3` director -> integration hardening)
+
+Execution constraints:
+- all wave issues are labeled `Priority I`
+- strict dependency order (`#298` -> `#299` -> `#300` -> `#301` -> `#302`)
+- one branch per batch issue using suggested branch names embedded in issue bodies
+- file-scoped commit preference for review/rollback safety
 
 ## Capture Realignment Wave (2026-02-23)
 

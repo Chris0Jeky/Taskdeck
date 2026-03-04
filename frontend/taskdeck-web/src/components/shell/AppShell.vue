@@ -40,7 +40,8 @@ type CommandItem = {
 const navItems = computed(() => {
   const items: NavItem[] = [
     { label: 'Boards', icon: 'B', path: '/workspace/boards', flag: null as string | null },
-    { label: 'Automations', icon: 'A', path: '/workspace/automations/queue', flag: 'newAutomation' as string | null },
+    // Default to review/apply flow instead of the low-level queue view.
+    { label: 'Automations', icon: 'A', path: '/workspace/automations/proposals', flag: 'newAutomation' as string | null },
     { label: 'Activity', icon: 'T', path: '/workspace/activity', flag: 'newActivity' as string | null },
     { label: 'Inbox', icon: 'I', path: '/workspace/inbox', flag: null as string | null },
     { label: 'Notifications', icon: 'N', path: '/workspace/notifications', flag: null as string | null },
@@ -115,7 +116,7 @@ const activeCommandId = computed(() => {
 })
 
 function isActiveRoute(path: string): boolean {
-  if (path === '/workspace/automations/queue') {
+  if (path.startsWith('/workspace/automations')) {
     return route.path.startsWith('/workspace/automations')
   }
   if (path === '/workspace/ops/cli') {

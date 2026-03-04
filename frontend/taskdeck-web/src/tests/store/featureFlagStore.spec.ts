@@ -13,9 +13,9 @@ describe('featureFlagStore', () => {
   })
 
   describe('default flags', () => {
-    it('should have all flags set to true by default', () => {
+    it('should match configured defaults', () => {
       for (const key of Object.keys(defaultFeatureFlags) as (keyof typeof defaultFeatureFlags)[]) {
-        expect(store.isEnabled(key)).toBe(true)
+        expect(store.isEnabled(key)).toBe(defaultFeatureFlags[key])
       }
     })
   })
@@ -63,17 +63,28 @@ describe('featureFlagStore', () => {
 
       // Should fall back to defaults
       for (const key of Object.keys(defaultFeatureFlags) as (keyof typeof defaultFeatureFlags)[]) {
-        expect(store.isEnabled(key)).toBe(true)
+        expect(store.isEnabled(key)).toBe(defaultFeatureFlags[key])
       }
     })
   })
 
   describe('allEnabled', () => {
-    it('should be true when all flags are enabled', () => {
+    it('should be false when defaults include disabled flags', () => {
+      expect(store.allEnabled).toBe(false)
+    })
+
+    it('should be true when all flags are explicitly enabled', () => {
+      for (const key of Object.keys(defaultFeatureFlags) as (keyof typeof defaultFeatureFlags)[]) {
+        store.setFlag(key, true)
+      }
+
       expect(store.allEnabled).toBe(true)
     })
 
-    it('should be false when any flag is disabled', () => {
+    it('should be false when any flag is disabled after full enablement', () => {
+      for (const key of Object.keys(defaultFeatureFlags) as (keyof typeof defaultFeatureFlags)[]) {
+        store.setFlag(key, true)
+      }
       store.setFlag('newAuth', false)
 
       expect(store.allEnabled).toBe(false)

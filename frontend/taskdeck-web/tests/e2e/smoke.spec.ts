@@ -138,7 +138,7 @@ test('filter panel shortcut should toggle panel', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
 })
 
-test('command palette keyboard navigation should activate selected command', async ({ page }) => {
+test('command palette search and enter should activate selected command', async ({ page }) => {
   await gotoBoardsWorkspace(page)
 
   await page.keyboard.press('Control+K')
@@ -148,11 +148,10 @@ test('command palette keyboard navigation should activate selected command', asy
   const paletteInput = palette.getByPlaceholder('Type a command or search...')
   await expect(paletteInput).toBeFocused()
 
-  await paletteInput.press('ArrowDown')
-  await paletteInput.press('ArrowDown')
+  await paletteInput.fill('inbox')
   await paletteInput.press('Enter')
 
-  await expect(page).toHaveURL(/\/workspace\/activity$/)
+  await expect(page).toHaveURL(/\/workspace\/inbox$/)
   await expect(palette).toHaveCount(0)
 })
 
