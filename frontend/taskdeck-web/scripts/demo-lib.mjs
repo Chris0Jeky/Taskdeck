@@ -51,12 +51,16 @@ function asUiBaseUrl(value) {
 
 export async function traceEvent(event) {
   if (!TRACE_PATH) return
-  await ensureTraceReady()
-  const payload = {
-    ts: new Date().toISOString(),
-    ...event,
+  try {
+    await ensureTraceReady()
+    const payload = {
+      ts: new Date().toISOString(),
+      ...event,
+    }
+    await fs.appendFile(TRACE_PATH, `${JSON.stringify(payload)}\n`, 'utf8')
+  } catch (err) {
+    console.warn(`Warning: failed to write demo trace event: ${String(err?.message || err)}`)
   }
-  await fs.appendFile(TRACE_PATH, `${JSON.stringify(payload)}\n`, 'utf8')
 }
 
 export function getDemoConfig(overrides = {}) {
