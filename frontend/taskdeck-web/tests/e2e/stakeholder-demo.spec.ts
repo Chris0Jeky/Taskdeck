@@ -32,7 +32,10 @@ test.describe('Stakeholder demo recorder', () => {
     const appRoot = path.resolve(__dirname, '..', '..')
 
     const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL || 'http://localhost:5000/api'
-    const uiBaseUrl = process.env.TASKDECK_E2E_FRONTEND_BASE_URL || 'http://localhost:5173'
+    const uiBaseUrl =
+      process.env.TASKDECK_E2E_FRONTEND_BASE_URL ||
+      process.env.TASKDECK_UI_BASE_URL ||
+      'http://localhost:5173'
 
     execFileSync('node', ['scripts/demo-seed.mjs'], {
       cwd: appRoot,
@@ -114,8 +117,12 @@ test.describe('Stakeholder demo recorder', () => {
     await page.screenshot({ path: testInfo.outputPath('06-automations-queue.png'), fullPage: true })
 
     await page.getByRole('button', { name: /New Request/ }).click()
-    await page.locator('textarea.td-textarea').fill('list pending proposals')
-    await page.getByRole('button', { name: 'Submit Request' }).click()
+    const queueInstructionInput = page.locator('textarea.td-textarea')
+    await expect(queueInstructionInput).toBeVisible()
+    await queueInstructionInput.fill('list pending proposals')
+    const submitRequestButton = page.getByRole('button', { name: 'Submit Request' })
+    await expect(submitRequestButton).toBeVisible()
+    await submitRequestButton.click()
     await page.waitForTimeout(800)
     await page.screenshot({ path: testInfo.outputPath('07-queue-submitted.png'), fullPage: true })
 
