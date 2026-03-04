@@ -84,6 +84,13 @@
       "requiresLlm": true,
       "requestAlias": "q1",
       "proposalAlias": "p1"
+    },
+    {
+      "type": "runOps",
+      "label": "Ops: health.check",
+      "templateName": "health.check",
+      "includeLogs": true,
+      "alias": "opsHealth"
     }
   ]
 }

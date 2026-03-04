@@ -74,6 +74,13 @@
       "proposalAlias": "pendingProposal",
       "timeoutMs": 90000,
       "requiresLlm": true
+    },
+    {
+      "type": "runOps",
+      "label": "Ops: health.check",
+      "templateName": "health.check",
+      "includeLogs": true,
+      "alias": "opsHealth"
     }
   ]
 }

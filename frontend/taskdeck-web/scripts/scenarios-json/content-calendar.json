@@ -85,6 +85,13 @@
       "requiresLlm": true,
       "requestAlias": "qMove",
       "proposalAlias": "pMove"
+    },
+    {
+      "type": "runOps",
+      "label": "Ops: health.check",
+      "templateName": "health.check",
+      "includeLogs": true,
+      "alias": "opsHealth"
     }
   ]
 }
