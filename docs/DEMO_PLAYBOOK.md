@@ -60,6 +60,12 @@ Autopilot simulation:
 npm run demo:autopilot -- --turns 5 --brain heuristic
 ```
 
+Deterministic autopilot simulation (seeded):
+
+```bash
+npm run demo:autopilot -- --turns 5 --brain heuristic --seed 42
+```
+
 Optional chat-driven autopilot (requires live provider setup):
 
 ```bash
