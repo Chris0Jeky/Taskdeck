@@ -49,10 +49,9 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
                 "Request body is required.");
         }
 
-        var endpointValidation = await ValidateEndpointUrlAsync(
+        var endpointValidation = ValidateEndpointUrl(
             dto.EndpointUrl,
-            _securitySettings.AllowLocalhostEndpoints,
-            cancellationToken);
+            _securitySettings.AllowLocalhostEndpoints);
         if (!endpointValidation.IsValid)
         {
             return Result.Failure<OutboundWebhookSubscriptionSecretDto>(
@@ -207,10 +206,9 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
         return Result.Success();
     }
 
-    private static async Task<(bool IsValid, string? NormalizedEndpoint, string? ValidationError)> ValidateEndpointUrlAsync(
+    private static (bool IsValid, string? NormalizedEndpoint, string? ValidationError) ValidateEndpointUrl(
         string? endpointUrl,
-        bool allowLocalhostEndpoints,
-        CancellationToken cancellationToken)
+        bool allowLocalhostEndpoints)
     {
         string? normalizedEndpoint = null;
         string? validationError = null;
@@ -248,10 +246,9 @@ public sealed class OutboundWebhookService : IOutboundWebhookService
             return (false, null, "Non-localhost webhook endpoints must use https.");
         }
 
-        if (await OutboundWebhookEndpointGuard.IsHostBlockedAsync(
+        if (OutboundWebhookEndpointGuard.IsHostBlockedByStaticPolicy(
                 parsed.Host,
-                allowLocalhostEndpoints,
-                cancellationToken))
+                allowLocalhostEndpoints))
         {
             return (false, null, "Endpoint host is not allowed.");
         }

@@ -44,7 +44,13 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `SECURITY_OWASP_BASELINE.md`
   - OWASP baseline hardening record for API security headers and CSRF posture (`#80`, delivered).
 - `DEMO_PLAYBOOK.md`
-  - Demo-runbook for seeded first-run walkthrough and MVP capture-triage-proposal talk track.
+  - Demo-runbook for seeded first-run walkthrough, scenario harness (`demo:run`), autopilot, and opt-in stakeholder recorder.
+- `SCENARIOS.md`
+  - JSON scenario runner reference for deterministic demo/test setup, step contracts, and interpolation rules.
+- `DOGFOODING_GUIDE.md`
+  - Daily operating cadence for capture-triage-proposal execution and friction logging.
+- `USER_MANUAL.md`
+  - End-user usage reference across Boards, Inbox, Automations, Ops, Activity, Notifications, and demo tooling.
 - `DEMO_EXPANSION_MIGRATION_SOT.md`
   - Canonical staged migration map for importing `TaskdeckDemoExpansion` (`v0` through `v3`) into this repository.
 - `temp_description.txt`
@@ -94,3 +100,4 @@ All superseded planning packs, snapshots, and historical notes live under:
   - Active operational/tooling
   - Working notes (non-authoritative)
   - Archived
+

@@ -1,0 +1,119 @@
+# Taskdeck Demo API Walkthrough (VS Code REST Client)
+#
+# Requires the "REST Client" extension (humao.rest-client).
+# Use this to exercise core demo flows without the UI.
+
+@baseUrl = http://localhost:5000/api
+@username = demo
+@password = demo123
+
+### Register (optional; may fail if user already exists)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "email": "demo@taskdeck.local",
+  "password": "{{password}}"
+}
+
+### Login (captures token)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "{{username}}",
+  "password": "{{password}}"
+}
+
+> {%
+  client.global.set("token", response.body.token);
+  client.global.set("userId", response.body.user.id);
+%}
+
+### List boards
+GET {{baseUrl}}/boards
+Authorization: Bearer {{token}}
+
+### Create board
+POST {{baseUrl}}/boards
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "DEMO: HTTP Walkthrough",
+  "description": "Seeded manually from taskdeck-demo.http"
+}
+
+> {% client.global.set("boardId", response.body.id); %}
+
+### Starter pack catalog for board
+GET {{baseUrl}}/boards/{{boardId}}/starter-packs/catalog
+Authorization: Bearer {{token}}
+
+> {%
+  const pack = (response.body || []).find((p) => p.id === 'board-blueprint-engineering-sprint');
+  if (!pack) {
+    throw new Error('board-blueprint-engineering-sprint not found in starter-pack catalog');
+  }
+  client.global.set("starterPackManifest", JSON.stringify(pack.manifest));
+%}
+
+### Apply starter pack from catalog manifest
+POST {{baseUrl}}/boards/{{boardId}}/starter-packs/apply
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "manifest": {{starterPackManifest}},
+  "dryRun": false
+}
+
+### Create capture item (Inbox)
+POST {{baseUrl}}/capture/items
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "boardId": "{{boardId}}",
+  "text": "- [ ] Demo: triage this into a proposal\n- [ ] Then approve and execute",
+  "source": "Typed"
+}
+
+> {% client.global.set("captureId", response.body.id); %}
+
+### Start triage
+POST {{baseUrl}}/capture/items/{{captureId}}/triage
+Authorization: Bearer {{token}}
+
+### List proposals
+GET {{baseUrl}}/automation/proposals?boardId={{boardId}}&limit=50
+Authorization: Bearer {{token}}
+
+### Enqueue queue instruction
+POST {{baseUrl}}/llm-queue
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "requestType": "instruction",
+  "payload": "create card \"From .http queue\"",
+  "boardId": "{{boardId}}"
+}
+
+> {% client.global.set("queueId", response.body.id); %}
+
+### Queue status
+GET {{baseUrl}}/llm-queue/user?limit=50
+Authorization: Bearer {{token}}
+
+### Run Ops template
+POST {{baseUrl}}/ops/cli/run
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "templateName": "health.check",
+  "parameters": {}
+}
+

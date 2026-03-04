@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "id": "content-calendar",
+  "title": "Content Calendar",
+  "description": "Seeded content pipeline: ideas -> drafting -> review -> scheduled -> published. Includes a queue-driven move.",
+  "tags": [
+    "demo",
+    "content",
+    "pipeline"
+  ],
+  "steps": [
+    {
+      "type": "createBoard",
+      "alias": "board",
+      "name": "DEMO: Content Calendar Scenario",
+      "description": "Seeded content pipeline: ideas -> drafting -> review -> scheduled -> published."
+    },
+    {
+      "type": "applyStarterPack",
+      "board": "board",
+      "starterPackId": "board-blueprint-content-calendar"
+    },
+    {
+      "type": "createCard",
+      "alias": "ideaBlog",
+      "board": "board",
+      "column": "Ideas",
+      "title": "Blog: Why proposal-first automations are safer",
+      "description": "Explain review/approve/execute flow. Compare to \"autopilot\" approaches.",
+      "labels": [
+        "writing"
+      ]
+    },
+    {
+      "type": "createCard",
+      "alias": "draftRelease",
+      "board": "board",
+      "column": "Drafting",
+      "title": "Release notes draft: Capture Loop MVP",
+      "description": "Summarize inbox capture -> triage -> proposal -> apply. Include screenshots.",
+      "dueInDays": 3,
+      "labels": [
+        "writing",
+        "social"
+      ]
+    },
+    {
+      "type": "createCard",
+      "alias": "designEmptyState",
+      "board": "board",
+      "column": "Review",
+      "title": "Design: Automations empty-state panel",
+      "description": "3 example prompts + explanation of Queue vs Proposals vs Chat.",
+      "labels": [
+        "design"
+      ]
+    },
+    {
+      "type": "createCard",
+      "alias": "scheduledTweet",
+      "board": "board",
+      "column": "Scheduled",
+      "title": "Tweet thread: Taskdeck demo walkthrough",
+      "description": "Short series showing boards -> inbox -> triage -> proposals -> execute.",
+      "dueInDays": 1,
+      "labels": [
+        "social"
+      ]
+    },
+    {
+      "type": "createCard",
+      "alias": "publishedStarterPacks",
+      "board": "board",
+      "column": "Published",
+      "title": "Shipped: Starter Packs for common workflows",
+      "description": "Engineering sprint + content calendar + support triage packs.",
+      "labels": [
+        "writing"
+      ]
+    },
+    {
+      "type": "queueInstruction",
+      "board": "board",
+      "instruction": "move card ${cards.designEmptyState.id} to column \"Scheduled\"",
+      "requiresLlm": true,
+      "requestAlias": "qMove",
+      "proposalAlias": "pMove"
+    }
+  ]
+}
