@@ -15,6 +15,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const PLAYWRIGHT_SPAWN_MAX_BUFFER_BYTES = 50 * 1024 * 1024
+
 function nowStamp() {
   const date = new Date()
   const pad = (value) => String(value).padStart(2, '0')
@@ -282,6 +284,7 @@ async function main() {
     cwd: webRoot,
     env,
     encoding: 'utf8',
+    maxBuffer: PLAYWRIGHT_SPAWN_MAX_BUFFER_BYTES,
   })
 
   if (playwrightResult.error) {
