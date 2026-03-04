@@ -71,6 +71,10 @@ function parseArgs(argv) {
     throw new Error(`Invalid --loop: ${args.loop} (expected queue|capture|mixed)`)
   }
 
+  if (!['heuristic', 'taskdeck-chat'].includes(args.brain)) {
+    throw new Error(`Invalid --brain: ${args.brain} (expected heuristic|taskdeck-chat)`)
+  }
+
   if (!Number.isFinite(args.captureProb) || args.captureProb < 0 || args.captureProb > 1) {
     throw new Error(`Invalid --capture-prob: ${args.captureProb} (expected 0..1)`)
   }
@@ -406,8 +410,12 @@ async function main() {
 
     let decision = null
     if (decideChat) {
-      const response = await decideChat({ snapshotText })
-      decision = normalizeBrainLine(response)
+      try {
+        const response = await decideChat({ snapshotText })
+        decision = normalizeBrainLine(response)
+      } catch (err) {
+        console.log(`[chat-fail] ${String(err?.message || err)}`)
+      }
     }
 
     if (!decision) {
