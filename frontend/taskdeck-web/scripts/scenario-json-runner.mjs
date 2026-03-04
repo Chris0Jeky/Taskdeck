@@ -55,6 +55,15 @@ const DEFAULT_LLM_STEP_TYPES = new Set([
   'triageCapture',
   'waitForCaptureProposal',
 ])
+const OPS_RUN_STATUS_BY_CODE = {
+  0: 'Queued',
+  1: 'Running',
+  2: 'Completed',
+  3: 'Failed',
+  4: 'TimedOut',
+  5: 'Cancelled',
+}
+const OPS_RUN_FAILURE_STATUSES = new Set(['failed', 'timedout', 'cancelled'])
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -91,6 +100,30 @@ function parseOptionalFiniteNumber(rawValue, fieldName) {
   const value = Number(valueToParse)
   assert(Number.isFinite(value), `${fieldName} must be a finite number`)
   return value
+}
+
+function normalizeOpsRunStatus(status) {
+  if (typeof status === 'number') {
+    return OPS_RUN_STATUS_BY_CODE[status] || String(status)
+  }
+
+  if (typeof status === 'string') {
+    const trimmed = status.trim()
+    if (!trimmed) return 'Unknown'
+
+    const numericStatus = Number(trimmed)
+    if (Number.isInteger(numericStatus) && OPS_RUN_STATUS_BY_CODE[numericStatus]) {
+      return OPS_RUN_STATUS_BY_CODE[numericStatus]
+    }
+
+    return trimmed
+  }
+
+  return 'Unknown'
+}
+
+function isOpsRunFailureStatus(status) {
+  return OPS_RUN_FAILURE_STATUSES.has(normalizeOpsRunStatus(status).toLowerCase())
 }
 
 function deepClone(value) {
@@ -666,7 +699,9 @@ async function executeStep(api, ctx, step) {
         templateName: step.templateName,
         parameters: step.parameters || null,
       })
-      if (step.alias) ctx.refs.opsRuns[step.alias] = run
+
+      const alias = isNonEmptyString(step.alias) ? step.alias.trim() : null
+      if (alias) ctx.refs.opsRuns[alias] = run
 
       if (step.wait === false) {
         return { runId: run?.id || null, status: run?.status ?? null }
@@ -678,11 +713,18 @@ async function executeStep(api, ctx, step) {
         timeoutMs: parseOptionalPositiveInteger(step.timeoutMs, 'runOps.timeoutMs', 60_000),
         intervalMs: parseOptionalPositiveInteger(step.intervalMs, 'runOps.intervalMs', 700),
       })
+      if (alias) ctx.refs.opsRuns[alias] = done
+
+      const finalStatus = normalizeOpsRunStatus(done?.status)
+      if (isOpsRunFailureStatus(finalStatus)) {
+        const detail = isNonEmptyString(done?.errorMessage) ? `: ${done.errorMessage}` : ''
+        throw new Error(`Ops run ${runId} finished with non-success status ${finalStatus}${detail}`)
+      }
 
       const logs = step.includeLogs ? await getOpsRunLogs(api, runId) : null
       return {
         runId,
-        status: done?.status ?? null,
+        status: finalStatus,
         exitCode: done?.exitCode ?? null,
         logsCount: logs ? logs.length || 0 : null,
       }
