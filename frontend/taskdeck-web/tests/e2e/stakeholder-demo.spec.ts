@@ -8,6 +8,7 @@ import type { AuthResult } from './support/authSession'
 import { attachSessionToPage } from './support/authSession'
 
 const DEFAULT_SETUP_TIMEOUT_MS = 120_000
+const SETUP_SCRIPT_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 
 function isAppRoot(candidateDir: string): boolean {
   const hasPackageJson = existsSync(path.join(candidateDir, 'package.json'))
@@ -81,6 +82,7 @@ function runSetupScript({
     cwd: appRoot,
     env,
     encoding: 'utf8',
+    maxBuffer: SETUP_SCRIPT_MAX_BUFFER_BYTES,
     timeout: timeoutMs,
     killSignal: 'SIGTERM',
   })
