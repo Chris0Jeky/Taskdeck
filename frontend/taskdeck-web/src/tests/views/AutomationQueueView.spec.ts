@@ -161,6 +161,7 @@ describe('AutomationQueueView', () => {
     await openComposer(wrapper)
 
     expect(wrapper.text()).toContain('Board-scoped instructions require a Board ID GUID')
+    expect(wrapper.text()).toContain('For board-scoped instruction patterns, provide a valid Board ID')
     expect(wrapper.text()).toContain('123e4567-e89b-12d3-a456-426614174000')
     expect(wrapper.text()).toContain('Inbox -> Start Triage')
   })
@@ -186,6 +187,30 @@ describe('AutomationQueueView', () => {
       requestType: 'instruction',
       payload: 'rename board to "Roadmap"',
       boardId: '123E4567-E89B-12D3-A456-426614174000',
+    })
+  })
+
+  it('accepts no-hyphen GUID format for board id', async () => {
+    const wrapper = await mountAt('/workspace/automations/queue')
+    await openComposer(wrapper)
+
+    await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
+    await wrapper
+      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
+      .setValue('123e4567e89b12d3a456426614174000')
+    await wrapper.get('textarea.td-textarea').setValue('rename board to "Roadmap"')
+
+    const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
+    if (!submitButton) {
+      throw new Error('Expected submit button')
+    }
+
+    await submitButton.trigger('click')
+
+    expect(mocks.submitRequest).toHaveBeenCalledWith({
+      requestType: 'instruction',
+      payload: 'rename board to "Roadmap"',
+      boardId: '123e4567e89b12d3a456426614174000',
     })
   })
 
@@ -219,7 +244,7 @@ describe('AutomationQueueView', () => {
     await wrapper
       .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
       .setValue('   ')
-    await wrapper.get('textarea.td-textarea').setValue('create card "Write tests"')
+    await wrapper.get('textarea.td-textarea').setValue('list pending proposals')
 
     const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
     if (!submitButton) {
@@ -231,9 +256,50 @@ describe('AutomationQueueView', () => {
     const [submittedDto] = mocks.submitRequest.mock.calls.at(-1) ?? []
     expect(submittedDto).toEqual({
       requestType: 'instruction',
-      payload: 'create card "Write tests"',
+      payload: 'list pending proposals',
     })
     expect(submittedDto).not.toHaveProperty('boardId')
+  })
+
+  it('blocks board-scoped instruction submit when board id is empty', async () => {
+    const wrapper = await mountAt('/workspace/automations/queue')
+    await openComposer(wrapper)
+
+    await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
+    await wrapper
+      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
+      .setValue('   ')
+    await wrapper.get('textarea.td-textarea').setValue('rename board to "Roadmap"')
+
+    const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
+    if (!submitButton) {
+      throw new Error('Expected submit button')
+    }
+
+    await submitButton.trigger('click')
+
+    expect(mocks.submitRequest).not.toHaveBeenCalled()
+    expect(mocks.errorToast).toHaveBeenCalledWith('Board ID is required for board-scoped instructions.')
+  })
+
+  it('disables submit button until request type and payload are both non-empty', async () => {
+    const wrapper = await mountAt('/workspace/automations/queue')
+    await openComposer(wrapper)
+
+    const submitButton = wrapper.findAll('button').find(button => button.text() === 'Submit Request')
+    if (!submitButton) {
+      throw new Error('Expected submit button')
+    }
+
+    expect((submitButton.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
+    await wrapper.vm.$nextTick()
+    expect((submitButton.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.get('textarea.td-textarea').setValue('list pending proposals')
+    await wrapper.vm.$nextTick()
+    expect((submitButton.element as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('shows capture and triage provenance context for queue proposals', async () => {

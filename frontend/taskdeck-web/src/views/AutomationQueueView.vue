@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { useQueueStore } from '../store/queueStore'
@@ -34,7 +34,20 @@ const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
 
 const statusTabs = ['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled']
-const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+const guidPatterns = [
+  /^[0-9a-fA-F]{32}$/,
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+  /^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$/,
+  /^\([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\)$/,
+]
+const boardScopedInstructionPattern = /\b(create card|rename board|update board|move column|update card|move card)\b/i
+const canSubmitRequest = computed(() => {
+  return !submitting.value && newRequestType.value.trim().length > 0 && newPayload.value.trim().length > 0
+})
+
+function isSupportedGuidFormat(value: string): boolean {
+  return guidPatterns.some(pattern => pattern.test(value))
+}
 
 function syncTabFromRoute() {
   activeTab.value = route.name === 'workspace-automations-proposals' ? 'proposals' : 'queue'
@@ -147,8 +160,13 @@ async function handleStatusChange(status: string) {
 
 async function handleSubmitRequest() {
   if (!newRequestType.value.trim() || !newPayload.value.trim()) return
+  const trimmedPayload = newPayload.value.trim()
   const trimmedBoardId = newBoardId.value.trim()
-  if (trimmedBoardId && !guidPattern.test(trimmedBoardId)) {
+  if (!trimmedBoardId && boardScopedInstructionPattern.test(trimmedPayload)) {
+    toast.error('Board ID is required for board-scoped instructions.')
+    return
+  }
+  if (trimmedBoardId && !isSupportedGuidFormat(trimmedBoardId)) {
     toast.error('Board ID must be a GUID (for example 123e4567-e89b-12d3-a456-426614174000).')
     return
   }
@@ -157,7 +175,7 @@ async function handleSubmitRequest() {
     submitting.value = true
     await queue.submitRequest({
       requestType: newRequestType.value.trim(),
-      payload: newPayload.value.trim(),
+      payload: trimmedPayload,
       ...(trimmedBoardId ? { boardId: trimmedBoardId } : {}),
     })
     newRequestType.value = 'instruction'
@@ -362,7 +380,8 @@ function statusColor(status: QueueStatus | number): string {
           <label class="td-label">Request Type (advanced)</label>
           <input v-model="newRequestType" type="text" class="td-input" placeholder="instruction" />
           <div class="td-helper">
-            Leave this as <strong>instruction</strong> for most manual requests. Capture triage requests are created via
+            Leave this as <strong>instruction</strong> for most manual requests. For board-scoped instruction patterns,
+            provide a valid <strong>Board ID</strong>. Capture triage requests are created via
             <strong>Inbox -> Start Triage</strong>.
           </div>
         </div>
@@ -395,7 +414,7 @@ function statusColor(status: QueueStatus | number): string {
             Use <strong>Inbox -> Start Triage</strong> for capture requests.
           </div>
         </div>
-        <button class="td-btn td-btn--primary" @click="handleSubmitRequest" :disabled="submitting">
+        <button class="td-btn td-btn--primary" @click="handleSubmitRequest" :disabled="!canSubmitRequest">
           {{ submitting ? 'Submitting...' : 'Submit Request' }}
         </button>
       </div>
