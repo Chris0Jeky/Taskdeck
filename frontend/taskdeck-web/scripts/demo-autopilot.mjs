@@ -84,20 +84,24 @@ function pickOne(items, random) {
   return items[Math.floor(random() * items.length)]
 }
 
+const INSTRUCTION_PATTERNS = [
+  /^create card\s+"[^"]+"(?:\s+in column\s+"[^"]+")?(?:\s+with description\s+"[^"]+")?\s*$/i,
+  /^rename board to\s+"[^"]+"\s*$/i,
+  /^update board description\s+"[^"]+"\s*$/i,
+  /^move column\s+"[^"]+"\s+to position\s+\d+\s*$/i,
+  /^update card\s+\S+\s+title\s+"[^"]+"\s*$/i,
+  /^update card\s+\S+\s+description\s+"[^"]+"\s*$/i,
+  /^move card\s+\S+\s+to column\s+"[^"]+"\s*$/i,
+  /^archive card\s+\S+\s*$/i,
+  /^archive cards matching\s+"[^"]+"\s*$/i,
+  /^unarchive board\s*$/i,
+  /^archive board\s*$/i,
+]
+
 function isValidInstruction(input) {
-  const value = (input || '').trim().toLowerCase()
-  return (
-    value.startsWith('create card ') ||
-    value.startsWith('rename board ') ||
-    value.startsWith('update board description ') ||
-    value.startsWith('move column ') ||
-    value.startsWith('update card ') ||
-    value.startsWith('move card ') ||
-    value.startsWith('archive card ') ||
-    value.startsWith('archive cards matching ') ||
-    value.startsWith('unarchive board') ||
-    value.startsWith('archive board')
-  )
+  const value = (input ?? '').trim()
+  if (!value) return false
+  return INSTRUCTION_PATTERNS.some((pattern) => pattern.test(value))
 }
 
 async function decideHeuristic({ board, columns, cards, turn, random, deterministic }) {
