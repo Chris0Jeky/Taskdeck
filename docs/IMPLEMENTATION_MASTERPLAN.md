@@ -710,12 +710,8 @@ Batch B harness/docs delivery (`#299`) status:
 - stakeholder walkthrough recorder added as opt-in Playwright coverage (`tests/e2e/stakeholder-demo.spec.ts`, gated by `TASKDECK_RUN_DEMO=1`)
 - demo operations docs expanded and indexed (`docs/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `docs/DEMO_PLAYBOOK.md`, `docs/INDEX.md`)
 
-Batch C JSON/capture harness delivery (`#300`) status:
-- JSON scenario runner added with schema + sample scenarios (`scripts/scenario-json-runner.mjs`, `scripts/scenarios-json/*`)
-- `demo:run` now prefers JSON scenarios and supports `--list`, `--skip-llm`, and `--continue-on-error`
-- `demo:autopilot` now supports `--loop queue|capture|mixed` and capture controls (`--capture-prob`, `--leave-capture-untriaged-prob`, `--triage-timeout-ms`, `--capture-source`, `--capture-title-hint`)
-- capture helper functions added in `scripts/demo-lib.mjs` and consumed by JSON runner/autopilot (`create/get/ignore/cancel/triage/wait-for-outcome`)
-- scenario authoring/usage documentation added and indexed (`docs/SCENARIOS.md`, `docs/INDEX.md`, `docs/DEMO_PLAYBOOK.md`)
+Batch C JSON/capture harness (`#300`) status:
+- follow-on scope tracked separately (not part of Batch B / PR #304 scope)
 
 ## Next Best Steps (Immediate)
 
@@ -727,7 +723,7 @@ Batch C JSON/capture harness delivery (`#300`) status:
 6. Sequence capture-linked hardening by priority stage: `#212` in Priority III, `#213` in Priority IV.
 7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing analytics/starter-pack tracks (`#77`, `#175`) and the delivered import-adapter foundation (`#75`).
-9. Continue demo-expansion dependency chain after delivered batches `#298`, `#299`, and `#300`: execute `#301` next, then integration hardening `#302`.
+9. Continue demo-expansion dependency chain after delivered batches `#298` and `#299`: execute `#300` next, then `#301`, then integration hardening `#302`.
 
 ## Documentation Operating Model
 Active docs:
