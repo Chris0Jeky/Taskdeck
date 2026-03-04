@@ -45,6 +45,7 @@ export function getDemoConfig(overrides = {}) {
     uiBaseUrl: overrideUiBaseUrl,
     ...remainingOverrides
   } = overrides || {}
+
   const envApiBaseUrl =
     process.env.TASKDECK_API_BASE_URL || process.env.TASKDECK_API_BASE || process.env.TASKDECK_E2E_API_BASE_URL
   const envUiBaseUrl =

@@ -29,14 +29,63 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const SCENARIO_DIR = path.join(__dirname, 'scenarios-json')
-const STEP_TYPES_REQUIRING_LLM = new Set(['queueInstruction'])
+const SUPPORTED_STEP_TYPES = new Set([
+  'createBoard',
+  'applyStarterPack',
+  'createCard',
+  'updateCard',
+  'moveCard',
+  'addComment',
+  'queueInstruction',
+  'createCapture',
+  'ignoreCapture',
+  'cancelCapture',
+  'triageCapture',
+  'waitForCaptureProposal',
+  'waitForCaptureOutcome',
+  'executeProposal',
+])
+const DEFAULT_LLM_STEP_TYPES = new Set([
+  'queueInstruction',
+  'triageCapture',
+  'waitForCaptureProposal',
+])
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseOptionalPositiveInteger(rawValue, fieldName, fallbackValue) {
+  const value = rawValue === undefined || rawValue === null || rawValue === '' ? fallbackValue : Number(rawValue)
+  assert(Number.isFinite(value) && Number.isInteger(value) && value > 0, `${fieldName} must be a positive integer`)
+  return value
+}
+
+function parseOptionalFiniteNumber(rawValue, fieldName) {
+  if (rawValue === undefined || rawValue === null) return null
+
+  let valueToParse = rawValue
+  if (typeof rawValue === 'string') {
+    const trimmed = rawValue.trim()
+    if (trimmed === '') return null
+    valueToParse = trimmed
+  }
+
+  const value = Number(valueToParse)
+  assert(Number.isFinite(value), `${fieldName} must be a finite number`)
+  return value
+}
+
+function stepRequiresLlm(step) {
+  return step?.requiresLlm === true || DEFAULT_LLM_STEP_TYPES.has(step?.type)
 }
 
 function deepClone(value) {
@@ -124,9 +173,67 @@ export function validateScenarioJson(scenario) {
   for (const [index, step] of scenario.steps.entries()) {
     assert(isObject(step), `Step[${index}] must be an object`)
     assert(typeof step.type === 'string' && step.type.length > 0, `Step[${index}].type must be a string`)
+    assert(SUPPORTED_STEP_TYPES.has(step.type), `Step[${index}].type "${step.type}" is not supported`)
+    validateScenarioStep(index, step)
   }
 
   return true
+}
+
+function validateScenarioStep(index, step) {
+  const stepLabel = `Step[${index}] (${step.type})`
+
+  switch (step.type) {
+    case 'createBoard':
+      assert(isNonEmptyString(step.name), `${stepLabel}: name is required`)
+      break
+    case 'applyStarterPack':
+      assert(isNonEmptyString(step.board), `${stepLabel}: board is required`)
+      assert(isNonEmptyString(step.starterPackId), `${stepLabel}: starterPackId is required`)
+      break
+    case 'createCard':
+      assert(isNonEmptyString(step.board), `${stepLabel}: board is required`)
+      assert(isNonEmptyString(step.column), `${stepLabel}: column is required`)
+      assert(isNonEmptyString(step.title), `${stepLabel}: title is required`)
+      break
+    case 'updateCard':
+      assert(isNonEmptyString(step.board), `${stepLabel}: board is required`)
+      assert(isNonEmptyString(step.card), `${stepLabel}: card is required`)
+      assert(isObject(step.patch), `${stepLabel}: patch must be an object`)
+      break
+    case 'moveCard':
+      assert(isNonEmptyString(step.board), `${stepLabel}: board is required`)
+      assert(isNonEmptyString(step.card), `${stepLabel}: card is required`)
+      assert(isNonEmptyString(step.toColumn), `${stepLabel}: toColumn is required`)
+      break
+    case 'addComment':
+      assert(isNonEmptyString(step.board), `${stepLabel}: board is required`)
+      assert(isNonEmptyString(step.card), `${stepLabel}: card is required`)
+      assert(isNonEmptyString(step.content), `${stepLabel}: content is required`)
+      break
+    case 'queueInstruction':
+      assert(isNonEmptyString(step.board), `${stepLabel}: board is required`)
+      assert(isNonEmptyString(step.instruction), `${stepLabel}: instruction is required`)
+      break
+    case 'createCapture':
+      if (Object.prototype.hasOwnProperty.call(step, 'board')) {
+        assert(isNonEmptyString(step.board), `${stepLabel}: board is present but empty`)
+      }
+      assert(isNonEmptyString(step.text), `${stepLabel}: text is required`)
+      break
+    case 'ignoreCapture':
+    case 'cancelCapture':
+    case 'triageCapture':
+    case 'waitForCaptureProposal':
+    case 'waitForCaptureOutcome':
+      assert(isNonEmptyString(step.capture), `${stepLabel}: capture is required`)
+      break
+    case 'executeProposal':
+      assert(isNonEmptyString(step.proposal), `${stepLabel}: proposal is required`)
+      break
+    default:
+      break
+  }
 }
 
 async function getBoardColumns(api, ctx, boardId, { force = false } = {}) {
@@ -242,7 +349,7 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
     const label = step.label || `${index + 1}:${step.type}`
     const requiresLlm = Boolean(step.requiresLlm) || STEP_TYPES_REQUIRING_LLM.has(step.type)
 
-    if (requiresLlm && opts.skipLlm) {
+    if (stepRequiresLlm(step) && opts.skipLlm) {
       ctx.results.steps.push({
         step: label,
         status: 'skipped',
@@ -273,11 +380,16 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
 
   let snapshot = null
   if (boardsCreated.length >= 1) {
-    const boardId = boardsCreated[0].id
-    const board = await api.get(`/boards/${boardId}`)
-    const columns = await api.get(`/boards/${boardId}/columns`)
-    const cards = await api.get(`/boards/${boardId}/cards`)
-    snapshot = summarizeBoardForAgent({ board, columns, cards })
+    try {
+      const boardId = boardsCreated[0].id
+      const board = await api.get(`/boards/${boardId}`)
+      const columns = await api.get(`/boards/${boardId}/columns`)
+      const cards = await api.get(`/boards/${boardId}/cards`)
+      snapshot = summarizeBoardForAgent({ board, columns, cards })
+    } catch (err) {
+      if (!opts.continueOnError) throw err
+      ctx.warnings.push(`Snapshot generation failed: ${String(err?.message || err)}`)
+    }
   }
 
   return {
@@ -331,7 +443,8 @@ async function executeStep(api, ctx, step) {
       const boardId = await resolveBoardId(api, ctx, boardRef)
       const columnId = await resolveColumnIdByName(api, ctx, boardId, columnName)
       const labelIds = await resolveLabelIdsByNames(api, ctx, boardId, step.labels || [])
-      const dueDate = step.dueDate ? step.dueDate : step.dueInDays != null ? isoDaysFromNow(step.dueInDays) : null
+      const dueInDays = parseOptionalFiniteNumber(step.dueInDays, 'createCard.dueInDays')
+      const dueDate = step.dueDate ? step.dueDate : dueInDays != null ? isoDaysFromNow(dueInDays) : null
       const title = step.title.trim()
 
       const card = await api.post(`/boards/${boardId}/cards`, {
@@ -396,7 +509,7 @@ async function executeStep(api, ctx, step) {
       const { request, proposal } = await enqueueAndApplyInstruction(api, {
         boardId,
         instruction: step.instruction,
-        timeoutMs: step.timeoutMs ? Number(step.timeoutMs) : 90_000,
+        timeoutMs: parseOptionalPositiveInteger(step.timeoutMs, 'queueInstruction.timeoutMs', 90_000),
       })
 
       if (step.requestAlias) ctx.refs.queueRequests[step.requestAlias] = request
@@ -462,8 +575,8 @@ async function executeStep(api, ctx, step) {
     case 'waitForCaptureProposal': {
       const captureAlias = String(step.capture || '').trim()
       const captureItemId = await resolveCaptureId(api, ctx, captureAlias)
-      const timeoutMs = step.timeoutMs ? Number(step.timeoutMs) : 90_000
-      const intervalMs = step.intervalMs ? Number(step.intervalMs) : 1200
+      const timeoutMs = parseOptionalPositiveInteger(step.timeoutMs, 'waitForCaptureProposal.timeoutMs', 90_000)
+      const intervalMs = parseOptionalPositiveInteger(step.intervalMs, 'waitForCaptureProposal.intervalMs', 1200)
 
       const proposalId = await waitForCaptureProposalId(api, captureItemId, { timeoutMs, intervalMs })
       const item = await getCaptureItem(api, captureItemId)
@@ -478,8 +591,8 @@ async function executeStep(api, ctx, step) {
       const captureItemId = await resolveCaptureId(api, ctx, captureAlias)
 
       const outcome = await waitForCaptureOutcome(api, captureItemId, {
-        timeoutMs: step.timeoutMs ? Number(step.timeoutMs) : 90_000,
-        intervalMs: step.intervalMs ? Number(step.intervalMs) : 1200,
+        timeoutMs: parseOptionalPositiveInteger(step.timeoutMs, 'waitForCaptureOutcome.timeoutMs', 90_000),
+        intervalMs: parseOptionalPositiveInteger(step.intervalMs, 'waitForCaptureOutcome.intervalMs', 1200),
       })
 
       if (captureAlias) ctx.refs.captures[captureAlias] = outcome.item

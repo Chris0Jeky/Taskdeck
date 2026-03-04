@@ -139,11 +139,13 @@ test.describe('Stakeholder demo recorder', () => {
 
   test('captures guided stakeholder clickthrough', async ({ page, request }, testInfo) => {
     const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL || 'http://localhost:5000/api'
+    const demoUsername = process.env.TASKDECK_DEMO_USERNAME || 'demo'
+    const demoPassword = process.env.TASKDECK_DEMO_PASSWORD || 'demo123'
 
     const loginResponse = await request.post(`${apiBaseUrl}/auth/login`, {
       data: {
-        usernameOrEmail: 'demo',
-        password: 'demo123',
+        usernameOrEmail: demoUsername,
+        password: demoPassword,
       },
     })
 

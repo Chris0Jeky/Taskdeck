@@ -68,6 +68,26 @@ public class OutboundWebhookServiceTests
     }
 
     [Fact]
+    public async Task CreateSubscriptionAsync_ShouldAllowHttpsEndpointEvenWhenHostIsNotResolvableAtRegistrationTime()
+    {
+        var service = new OutboundWebhookService(_unitOfWorkMock.Object);
+        OutboundWebhookSubscription? persistedSubscription = null;
+        _subscriptionRepositoryMock
+            .Setup(repository => repository.AddAsync(It.IsAny<OutboundWebhookSubscription>(), It.IsAny<CancellationToken>()))
+            .Callback<OutboundWebhookSubscription, CancellationToken>((subscription, _) => persistedSubscription = subscription)
+            .ReturnsAsync((OutboundWebhookSubscription subscription, CancellationToken _) => subscription);
+
+        var result = await service.CreateSubscriptionAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new CreateOutboundWebhookSubscriptionDto("https://nonexistent-webhook-host.invalid/hook", ["card.*"]));
+
+        result.IsSuccess.Should().BeTrue();
+        persistedSubscription.Should().NotBeNull();
+        persistedSubscription!.EndpointUrl.Should().Be("https://nonexistent-webhook-host.invalid/hook");
+    }
+
+    [Fact]
     public async Task CreateSubscriptionAsync_ShouldAllowLocalhostHttpEndpoint()
     {
         var service = new OutboundWebhookService(

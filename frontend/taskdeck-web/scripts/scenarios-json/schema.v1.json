@@ -45,7 +45,23 @@
       ],
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "createBoard",
+            "applyStarterPack",
+            "createCard",
+            "updateCard",
+            "moveCard",
+            "addComment",
+            "queueInstruction",
+            "createCapture",
+            "ignoreCapture",
+            "cancelCapture",
+            "triageCapture",
+            "waitForCaptureProposal",
+            "waitForCaptureOutcome",
+            "executeProposal"
+          ]
         },
         "label": {
           "type": "string"
