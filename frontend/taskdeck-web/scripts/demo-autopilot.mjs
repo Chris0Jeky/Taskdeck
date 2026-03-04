@@ -71,6 +71,7 @@ function isValidInstruction(input) {
 
 async function decideHeuristic({ board, columns, cards }) {
   const columnNames = (columns || []).map((column) => column.name)
+  const columnNameById = new Map((columns || []).map((column) => [column.id, column.name]))
   const allCards = (cards || []).filter((card) => !!card?.id)
 
   const actions = []
@@ -82,13 +83,13 @@ async function decideHeuristic({ board, columns, cards }) {
 
   if (allCards.length > 0) {
     const card = pickOne(allCards)
-    const destination = pickOne(columnNames)
-    actions.push(() => `move card ${card.id} to column "${destination}"`)
+    const currentColumnName = columnNameById.get(card.columnId)
+    const moveDestinations = columnNames.filter((columnName) => columnName !== currentColumnName)
+    if (moveDestinations.length > 0) {
+      const destination = pickOne(moveDestinations)
+      actions.push(() => `move card ${card.id} to column "${destination}"`)
+    }
     actions.push(() => `update card ${card.id} title "${card.title} (touched ${new Date().toISOString()})"`)
-  }
-
-  if (Math.random() < 0.15) {
-    actions.push(() => `rename board to "${board.name} (auto)"`)
   }
 
   return pickOne(actions)()
