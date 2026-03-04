@@ -82,6 +82,7 @@
       "type": "queueInstruction",
       "board": "board",
       "instruction": "move card ${cards.designEmptyState.id} to column \"Scheduled\"",
+      "requiresLlm": true,
       "requestAlias": "qMove",
       "proposalAlias": "pMove"
     }
