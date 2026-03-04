@@ -40,12 +40,19 @@ function asUiBaseUrl(value) {
 }
 
 export function getDemoConfig(overrides = {}) {
-  const apiBaseUrl = asApiBaseUrl(
-    process.env.TASKDECK_API_BASE_URL || process.env.TASKDECK_API_BASE || process.env.TASKDECK_E2E_API_BASE_URL,
-  )
-  const uiBaseUrl = asUiBaseUrl(
-    process.env.TASKDECK_UI_BASE || process.env.TASKDECK_UI_BASE_URL || process.env.TASKDECK_E2E_FRONTEND_BASE_URL,
-  )
+  const {
+    apiBaseUrl: overrideApiBaseUrl,
+    uiBaseUrl: overrideUiBaseUrl,
+    ...remainingOverrides
+  } = overrides || {}
+
+  const envApiBaseUrl =
+    process.env.TASKDECK_API_BASE_URL || process.env.TASKDECK_API_BASE || process.env.TASKDECK_E2E_API_BASE_URL
+  const envUiBaseUrl =
+    process.env.TASKDECK_UI_BASE || process.env.TASKDECK_UI_BASE_URL || process.env.TASKDECK_E2E_FRONTEND_BASE_URL
+
+  const apiBaseUrl = asApiBaseUrl(overrideApiBaseUrl ?? envApiBaseUrl)
+  const uiBaseUrl = asUiBaseUrl(overrideUiBaseUrl ?? envUiBaseUrl)
 
   ensureSafeApiTarget(apiBaseUrl)
 
@@ -62,7 +69,7 @@ export function getDemoConfig(overrides = {}) {
       email: process.env.TASKDECK_COLLAB_EMAIL || process.env.TASKDECK_DEMO_COLLAB_EMAIL || 'collab@taskdeck.local',
       password: process.env.TASKDECK_COLLAB_PASSWORD || process.env.TASKDECK_DEMO_COLLAB_PASS || 'demo123',
     },
-    ...overrides,
+    ...remainingOverrides,
   }
 }
 
