@@ -104,7 +104,20 @@ function runSetupScript({
       )
     }
 
-    throw result.error
+    const command = `node ${scriptArgs.join(' ')}`
+    const statusInfo = `status=${String(result.status ?? 'null')}, signal=${String(result.signal ?? 'null')}`
+    const messageLines = [
+      `Demo bootstrap failed at ${label} due to a spawn error.`,
+      `Command: ${command}`,
+      `CWD: ${appRoot}`,
+      `Result: ${statusInfo}`,
+      `Underlying error: ${error.message}${error.code ? ` (code=${error.code})` : ''}`,
+    ]
+    if (combined.trim()) {
+      messageLines.push('')
+      messageLines.push(combined)
+    }
+    throw new Error(messageLines.join('\n'))
   }
 
   if ((result.status ?? 1) !== 0) {
