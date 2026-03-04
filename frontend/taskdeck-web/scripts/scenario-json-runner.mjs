@@ -322,15 +322,18 @@ async function executeStep(api, ctx, step) {
     }
 
     case 'createCard': {
+      assert(typeof step.column === 'string' && step.column.trim().length > 0, 'createCard.column is required')
+      assert(typeof step.title === 'string' && step.title.trim().length > 0, 'createCard.title is required')
       const boardId = await resolveBoardId(api, ctx, step.board)
       const columnId = await resolveColumnIdByName(api, ctx, boardId, step.column)
       const labelIds = await resolveLabelIdsByNames(api, ctx, boardId, step.labels || [])
       const dueDate = step.dueDate ? step.dueDate : step.dueInDays != null ? isoDaysFromNow(step.dueInDays) : null
+      const title = step.title.trim()
 
       const card = await api.post(`/boards/${boardId}/cards`, {
         body: {
           columnId,
-          title: step.title,
+          title,
           description: step.description || null,
           dueDate,
           labelIds,
@@ -398,7 +401,19 @@ async function executeStep(api, ctx, step) {
     }
 
     case 'createCapture': {
-      const boardId = step.board ? await resolveBoardId(api, ctx, step.board) : null
+      let boardId = null
+      if (Object.prototype.hasOwnProperty.call(step, 'board')) {
+        assert(
+          step.board !== null && step.board !== undefined && String(step.board).trim().length > 0,
+          'createCapture.board is present but resolved to empty; check your refs',
+        )
+        boardId = await resolveBoardId(api, ctx, step.board)
+        assert(
+          boardId !== null && boardId !== undefined && String(boardId).trim().length > 0,
+          'createCapture.board resolved to an invalid boardId; check your refs',
+        )
+      }
+
       assert(typeof step.text === 'string' && step.text.length > 0, 'createCapture.text is required')
 
       const captureItem = await createCaptureItem(api, {
