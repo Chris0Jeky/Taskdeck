@@ -372,8 +372,11 @@ export async function waitForCaptureOutcome(
       if (proposalId) return { outcome: 'proposal', item }
 
       const status = item?.status
-      const ignored = status === 'Ignored' || status === 5
-      const failed = status === 'Failed' || status === 6
+      const statusText = typeof status === 'string' ? status.toLowerCase() : null
+      const triaged = status === 2 || statusText === 'triaged'
+      const ignored = status === 5 || statusText === 'ignored'
+      const failed = status === 6 || statusText === 'failed'
+      if (triaged) return { outcome: 'triaged', item }
       if (ignored) return { outcome: 'ignored', item }
       if (failed) return { outcome: 'failed', item }
 
