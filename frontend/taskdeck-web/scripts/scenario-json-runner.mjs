@@ -64,6 +64,7 @@ const OPS_RUN_STATUS_BY_CODE = {
   5: 'Cancelled',
 }
 const OPS_RUN_FAILURE_STATUSES = new Set(['failed', 'timedout', 'cancelled'])
+const OPS_LOG_PREVIEW_LIMIT = 20
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -722,11 +723,19 @@ async function executeStep(api, ctx, step) {
       }
 
       const logs = step.includeLogs ? await getOpsRunLogs(api, runId) : null
+      const logsCount = Array.isArray(logs) ? logs.length : null
+      const logsPreview = Array.isArray(logs) ? logs.slice(0, OPS_LOG_PREVIEW_LIMIT) : null
+      if (alias && ctx.refs.opsRuns[alias]) {
+        ctx.refs.opsRuns[alias].logsCount = logsCount
+        ctx.refs.opsRuns[alias].logsPreview = logsPreview
+      }
+
       return {
         runId,
         status: finalStatus,
         exitCode: done?.exitCode ?? null,
-        logsCount: logs ? logs.length || 0 : null,
+        logsCount,
+        logsPreview,
       }
     }
 
