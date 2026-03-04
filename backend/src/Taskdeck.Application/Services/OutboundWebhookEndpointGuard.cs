@@ -31,6 +31,32 @@ public static partial class OutboundWebhookEndpointGuard
         return addresses.Count == 0;
     }
 
+    public static bool IsHostBlockedByStaticPolicy(string host, bool allowLocalhostEndpoints)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return true;
+        }
+
+        var normalizedHost = host.Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.Equals(normalizedHost, "localhost", StringComparison.Ordinal))
+        {
+            return !allowLocalhostEndpoints;
+        }
+
+        if (IsBlockedByHostnamePolicy(normalizedHost))
+        {
+            return true;
+        }
+
+        if (IPAddress.TryParse(normalizedHost, out var literalAddress))
+        {
+            return IsBlockedIpAddress(literalAddress);
+        }
+
+        return false;
+    }
+
     public static async Task<IReadOnlyList<IPAddress>> ResolveAllowedAddressesAsync(
         string host,
         bool allowLocalhostEndpoints,
@@ -42,24 +68,19 @@ public static partial class OutboundWebhookEndpointGuard
         }
 
         var normalizedHost = host.Trim().TrimEnd('.').ToLowerInvariant();
-        if (string.Equals(normalizedHost, "localhost", StringComparison.Ordinal))
-        {
-            if (!allowLocalhostEndpoints)
-            {
-                return [];
-            }
-
-            return [IPAddress.Loopback, IPAddress.IPv6Loopback];
-        }
-
-        if (IsBlockedByHostnamePolicy(normalizedHost))
+        if (IsHostBlockedByStaticPolicy(normalizedHost, allowLocalhostEndpoints))
         {
             return [];
         }
 
+        if (string.Equals(normalizedHost, "localhost", StringComparison.Ordinal))
+        {
+            return [IPAddress.Loopback, IPAddress.IPv6Loopback];
+        }
+
         if (IPAddress.TryParse(normalizedHost, out var literalAddress))
         {
-            return IsBlockedIpAddress(literalAddress) ? [] : [literalAddress];
+            return [literalAddress];
         }
 
         try
