@@ -9,6 +9,9 @@
 
 import { randomUUID } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { assertSafeLocalApiTarget, isoDaysFromNow, normalizeBaseUrl, parseTrueishEnv } from './demo-shared.mjs'
+
+export { isoDaysFromNow }
 
 const DEFAULT_API_BASE = 'http://localhost:5000/api'
 const DEFAULT_UI_BASE = 'http://localhost:5173'
@@ -20,45 +23,20 @@ const CANONICAL_DEMO_BOARD_NAMES = new Set([
   'DEMO: Content Calendar',
 ])
 
-function parseTrueishEnv(value) {
-  if (typeof value !== 'string') return false
-  const normalized = value.trim().toLowerCase()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-}
-
-function getHostname(url) {
-  try {
-    return new URL(url).hostname.toLowerCase()
-  } catch (err) {
-    throw new Error(`Invalid API base URL "${url}". ${err?.message || err}`)
-  }
-}
-
-function isLocalHostname(hostname) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]'
-}
-
 function ensureSafeApiTarget(apiBaseUrl) {
   const allowNonLocal = parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_LOCAL_API)
-  const hostname = getHostname(apiBaseUrl)
-  if (isLocalHostname(hostname) || allowNonLocal) {
-    return
-  }
-
-  throw new Error(
-    `Refusing to run demo harness against non-local API target "${apiBaseUrl}". ` +
-      'Set TASKDECK_DEMO_ALLOW_NON_LOCAL_API=true to override intentionally.',
-  )
+  assertSafeLocalApiTarget(apiBaseUrl, {
+    allowNonLocal,
+    contextLabel: 'run demo harness',
+  })
 }
 
 function asApiBaseUrl(value) {
-  const normalized = value ?? DEFAULT_API_BASE
-  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized
+  return normalizeBaseUrl(value, DEFAULT_API_BASE)
 }
 
 function asUiBaseUrl(value) {
-  const normalized = value ?? DEFAULT_UI_BASE
-  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized
+  return normalizeBaseUrl(value, DEFAULT_UI_BASE)
 }
 
 export function getDemoConfig(overrides = {}) {
@@ -113,20 +91,22 @@ export class TaskdeckApiClient {
     })
 
     const rawBody = await res.text()
-    const parsedBody = safeJsonParse(rawBody)
+    const { ok: hasParsedBody, value: parsedBody } = safeJsonParse(rawBody)
     if (!res.ok) {
-      const messageBody = parsedBody ? JSON.stringify(parsedBody, null, 2) : rawBody
+      const bodyForMessage = hasParsedBody ? parsedBody : rawBody
+      const messageBody =
+        typeof bodyForMessage === 'string' ? bodyForMessage : JSON.stringify(bodyForMessage, null, 2)
       const suffix = messageBody ? `\n${messageBody}` : ''
       const error = new Error(`[${method}] ${url} -> ${res.status} ${res.statusText}${suffix}`)
       error.status = res.status
-      error.details = parsedBody || rawBody
+      error.details = hasParsedBody ? parsedBody : rawBody
       throw error
     }
 
     if (res.status === 204) return null
     if (!rawBody) return null
 
-    return parsedBody || rawBody
+    return hasParsedBody ? parsedBody : rawBody
   }
 
   get(path, opts) {
@@ -151,11 +131,11 @@ export class TaskdeckApiClient {
 }
 
 function safeJsonParse(text) {
-  if (!text) return null
+  if (!text) return { ok: false, value: undefined }
   try {
-    return JSON.parse(text)
+    return { ok: true, value: JSON.parse(text) }
   } catch {
-    return null
+    return { ok: false, value: undefined }
   }
 }
 
@@ -286,7 +266,15 @@ export async function waitForQueueRequest(apiAuthed, requestId, { label = 'queue
       if (!req) return null
 
       const status = req.status
-      const done = status === 2 || status === 3 || status === 4 || req.errorMessage
+      const statusText = typeof status === 'string' ? status.toLowerCase() : null
+      const done =
+        status === 2 ||
+        status === 3 ||
+        status === 4 ||
+        statusText === 'completed' ||
+        statusText === 'failed' ||
+        statusText === 'cancelled' ||
+        req.errorMessage
       return done ? req : null
     },
     { label, timeoutMs, intervalMs: 700 },

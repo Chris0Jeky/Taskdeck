@@ -127,7 +127,8 @@ test.describe('Stakeholder demo recorder', () => {
     const firstCard = page.locator('[data-card-id]').first()
     if (await firstCard.count()) {
       await firstCard.click()
-      await page.waitForTimeout(300)
+      const cardDialog = page.getByRole('dialog')
+      await expect(cardDialog).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath('03-card-modal.png'), fullPage: true })
       await page.keyboard.press('Escape')
     }
@@ -145,13 +146,13 @@ test.describe('Stakeholder demo recorder', () => {
     await page.screenshot({ path: testInfo.outputPath('06-automations-queue.png'), fullPage: true })
 
     await page.getByRole('button', { name: /New Request/ }).click()
-    const queueInstructionInput = page.locator('textarea.td-textarea')
-    await expect(queueInstructionInput).toBeVisible()
-    await queueInstructionInput.fill('list pending proposals')
+    const requestComposer = page.locator('textarea.td-textarea')
+    await expect(requestComposer).toBeVisible()
+    await requestComposer.fill('list pending proposals')
     const submitRequestButton = page.getByRole('button', { name: 'Submit Request' })
     await expect(submitRequestButton).toBeVisible()
     await submitRequestButton.click()
-    await page.waitForTimeout(800)
+    await expect(requestComposer).toBeHidden()
     await page.screenshot({ path: testInfo.outputPath('07-queue-submitted.png'), fullPage: true })
 
     await page.getByRole('link', { name: 'Ops' }).click()

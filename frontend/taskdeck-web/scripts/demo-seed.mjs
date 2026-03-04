@@ -25,12 +25,20 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import {
+  assertSafeLocalApiTarget,
+  getHostname,
+  isLocalHostname,
+  normalizeBaseUrl,
+  parseTrueishEnv,
+} from './demo-shared.mjs'
 
 const API_BASE = (
   process.env.TASKDECK_API_BASE_URL ||
   process.env.TASKDECK_API_BASE ||
   'http://localhost:5000/api'
-).replace(/\/$/, '')
+)
+const NORMALIZED_API_BASE = normalizeBaseUrl(API_BASE, 'http://localhost:5000/api')
 
 const ALLOW_NON_LOCAL_API = parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_LOCAL_API)
 
@@ -82,37 +90,16 @@ const BOARD_ROLE_NAMES = {
   3: 'Viewer',
 }
 
-function parseTrueishEnv(value) {
-  if (typeof value !== 'string') return false
-  const normalized = value.trim().toLowerCase()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-}
-
-function getApiHostname(apiBaseUrl) {
-  try {
-    return new URL(apiBaseUrl).hostname.toLowerCase()
-  } catch (err) {
-    throw new Error(`Invalid API base URL "${apiBaseUrl}". ${err?.message || err}`)
-  }
-}
-
-function isLocalApiHostname(hostname) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]'
-}
-
 function ensureSafeApiBaseTarget() {
-  const hostname = getApiHostname(API_BASE)
-  if (isLocalApiHostname(hostname)) return
+  assertSafeLocalApiTarget(NORMALIZED_API_BASE, {
+    allowNonLocal: ALLOW_NON_LOCAL_API,
+    contextLabel: 'seed demo data',
+  })
 
-  if (ALLOW_NON_LOCAL_API) {
-    console.warn(`WARN: non-local API target override enabled for ${API_BASE}`)
+  if (ALLOW_NON_LOCAL_API && !isLocalHostname(getHostname(NORMALIZED_API_BASE))) {
+    console.warn(`WARN: non-local API target override enabled for ${NORMALIZED_API_BASE}`)
     return
   }
-
-  throw new Error(
-    `Refusing to seed non-local API target "${API_BASE}". ` +
-      'Set TASKDECK_DEMO_ALLOW_NON_LOCAL_API=true to override intentionally.'
-  )
 }
 
 function toRoleRank(role) {
@@ -148,7 +135,7 @@ function idsMatch(left, right) {
 }
 
 async function http(method, path, { token, body, headers: extraHeaders } = {}) {
-  const url = `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
+  const url = `${NORMALIZED_API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
 
   const headers = {
     'Content-Type': 'application/json',
@@ -369,7 +356,7 @@ async function ensureCollaboratorEditorAccess(boardId, token, collaboratorUserId
 async function main() {
   ensureSafeApiBaseTarget()
 
-  console.log(`\nTaskdeck demo seeder -> ${API_BASE}`)
+  console.log(`\nTaskdeck demo seeder -> ${NORMALIZED_API_BASE}`)
   console.log('----------------------------------------')
 
   // 1) Ensure demo users exist

@@ -2,14 +2,9 @@ import {
   applyStarterPack,
   enqueueAndApplyInstruction,
   getDemoConfig,
+  isoDaysFromNow,
   summarizeBoardForAgent,
 } from '../demo-lib.mjs'
-
-function isoDaysFromNow(days) {
-  const value = new Date()
-  value.setDate(value.getDate() + days)
-  return value.toISOString()
-}
 
 export async function run({ api, config: cfg }) {
   const config = cfg || getDemoConfig()
