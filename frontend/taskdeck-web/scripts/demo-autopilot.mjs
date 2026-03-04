@@ -394,10 +394,19 @@ async function main() {
   const authed = api.withToken(login.token)
 
   const board = await resolveBoard({ api: authed, args })
-  const decideChat = args.brain === 'taskdeck-chat' ? await createChatBrain({ api: authed, boardId: board.id, loop: args.loop }) : null
+  let decideChat = null
+  if (args.brain === 'taskdeck-chat') {
+    try {
+      decideChat = await createChatBrain({ api: authed, boardId: board.id, loop: args.loop })
+    } catch (err) {
+      console.log(`[chat-init-fail] ${String(err?.message || err)}; falling back to heuristic decisions`)
+    }
+  }
+  const activeBrainLabel =
+    args.brain === 'taskdeck-chat' && !decideChat ? 'heuristic (taskdeck-chat init failed)' : args.brain
 
   console.log(`Autopilot running on board: ${board.name} (${board.id})`)
-  console.log(`Loop: ${args.loop} | Brain: ${args.brain}${deterministic ? ` | Seed: ${String(args.seed)}` : ''}`)
+  console.log(`Loop: ${args.loop} | Brain: ${activeBrainLabel}${deterministic ? ` | Seed: ${String(args.seed)}` : ''}`)
   console.log(`UI: ${config.uiBaseUrl}/workspace/boards/${board.id}`)
   console.log(`Inbox: ${config.uiBaseUrl}/workspace/inbox`)
   console.log(`Proposals: ${config.uiBaseUrl}/workspace/automations/proposals`)

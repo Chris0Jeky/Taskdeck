@@ -69,8 +69,16 @@ function parseOptionalPositiveInteger(rawValue, fieldName, fallbackValue) {
 }
 
 function parseOptionalFiniteNumber(rawValue, fieldName) {
-  if (rawValue === undefined || rawValue === null || rawValue === '') return null
-  const value = Number(rawValue)
+  if (rawValue === undefined || rawValue === null) return null
+
+  let valueToParse = rawValue
+  if (typeof rawValue === 'string') {
+    const trimmed = rawValue.trim()
+    if (trimmed === '') return null
+    valueToParse = trimmed
+  }
+
+  const value = Number(valueToParse)
   assert(Number.isFinite(value), `${fieldName} must be a finite number`)
   return value
 }
