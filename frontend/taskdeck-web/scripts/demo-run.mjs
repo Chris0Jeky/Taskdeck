@@ -23,7 +23,6 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv)
-const config = getDemoConfig()
 
 const scenarios = {
   'engineering-sprint': () => import('./scenarios/engineering-sprint.mjs'),
@@ -42,6 +41,8 @@ async function main() {
     console.log('  npm run demo:run -- --list')
     process.exit(0)
   }
+
+  const config = getDemoConfig()
 
   const scenarioName = args.scenario || 'engineering-sprint'
   const loader = scenarios[scenarioName]
