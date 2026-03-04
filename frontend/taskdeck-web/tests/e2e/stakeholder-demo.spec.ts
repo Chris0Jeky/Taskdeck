@@ -10,7 +10,7 @@ import { attachSessionToPage } from './support/authSession'
 function resolveAppRoot(startDir: string): string {
   let current = startDir
 
-  while (true) {
+  while (current !== path.dirname(current)) {
     const hasPackageJson = existsSync(path.join(current, 'package.json'))
     const hasDemoSeed = existsSync(path.join(current, 'scripts', 'demo-seed.mjs'))
     const hasDemoRun = existsSync(path.join(current, 'scripts', 'demo-run.mjs'))
@@ -19,13 +19,17 @@ function resolveAppRoot(startDir: string): string {
       return current
     }
 
-    const parent = path.dirname(current)
-    if (parent === current) {
-      throw new Error('Unable to resolve frontend/taskdeck-web app root for stakeholder demo setup.')
-    }
-
-    current = parent
+    current = path.dirname(current)
   }
+
+  const hasPackageJson = existsSync(path.join(current, 'package.json'))
+  const hasDemoSeed = existsSync(path.join(current, 'scripts', 'demo-seed.mjs'))
+  const hasDemoRun = existsSync(path.join(current, 'scripts', 'demo-run.mjs'))
+  if (hasPackageJson && hasDemoSeed && hasDemoRun) {
+    return current
+  }
+
+  throw new Error('Unable to resolve frontend/taskdeck-web app root for stakeholder demo setup.')
 }
 
 /**
