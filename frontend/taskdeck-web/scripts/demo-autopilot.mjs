@@ -52,19 +52,19 @@ function parseArgs(argv) {
 
     if (value === '--no-create-board') args.createBoard = false
     else if (value === '--create-board') args.createBoard = true
-    else if (value === '--brain') args.brain = argv[++i] || args.brain
-    else if (value === '--loop') args.loop = argv[++i] || args.loop
-    else if (value === '--capture-prob') args.captureProb = Number(argv[++i] || args.captureProb)
+    else if (value === '--brain') args.brain = argv[++i] ?? args.brain
+    else if (value === '--loop') args.loop = argv[++i] ?? args.loop
+    else if (value === '--capture-prob') args.captureProb = Number(argv[++i] ?? args.captureProb)
     else if (value === '--leave-capture-untriaged-prob') {
-      args.leaveCaptureUntriagedProb = Number(argv[++i] || args.leaveCaptureUntriagedProb)
-    } else if (value === '--triage-timeout-ms') args.triageTimeoutMs = Number(argv[++i] || args.triageTimeoutMs)
-    else if (value === '--capture-source') args.captureSource = argv[++i] || args.captureSource
-    else if (value === '--capture-title-hint') args.captureTitleHint = argv[++i] || args.captureTitleHint
-    else if (value === '--board-id') args.boardId = argv[++i] || null
-    else if (value === '--board') args.boardName = argv[++i] || args.boardName
-    else if (value === '--turns') args.turns = Number(argv[++i] || args.turns)
-    else if (value === '--interval-ms') args.intervalMs = Number(argv[++i] || args.intervalMs)
-    else if (value === '--seed') args.seed = argv[++i] || '0'
+      args.leaveCaptureUntriagedProb = Number(argv[++i] ?? args.leaveCaptureUntriagedProb)
+    } else if (value === '--triage-timeout-ms') args.triageTimeoutMs = Number(argv[++i] ?? args.triageTimeoutMs)
+    else if (value === '--capture-source') args.captureSource = argv[++i] ?? args.captureSource
+    else if (value === '--capture-title-hint') args.captureTitleHint = argv[++i] ?? args.captureTitleHint
+    else if (value === '--board-id') args.boardId = argv[++i] ?? null
+    else if (value === '--board') args.boardName = argv[++i] ?? args.boardName
+    else if (value === '--turns') args.turns = Number(argv[++i] ?? args.turns)
+    else if (value === '--interval-ms') args.intervalMs = Number(argv[++i] ?? args.intervalMs)
+    else if (value === '--seed') args.seed = argv[++i] ?? '0'
   }
 
   if (!['queue', 'capture', 'mixed'].includes(args.loop)) {
@@ -83,6 +83,18 @@ function parseArgs(argv) {
     throw new Error(
       `Invalid --leave-capture-untriaged-prob: ${args.leaveCaptureUntriagedProb} (expected 0..1)`,
     )
+  }
+
+  if (!Number.isFinite(args.turns) || !Number.isInteger(args.turns) || args.turns <= 0) {
+    throw new Error(`Invalid --turns: ${String(args.turns)} (expected positive integer)`)
+  }
+
+  if (!Number.isFinite(args.intervalMs) || !Number.isInteger(args.intervalMs) || args.intervalMs < 0) {
+    throw new Error(`Invalid --interval-ms: ${String(args.intervalMs)} (expected non-negative integer)`)
+  }
+
+  if (!Number.isFinite(args.triageTimeoutMs) || !Number.isInteger(args.triageTimeoutMs) || args.triageTimeoutMs <= 0) {
+    throw new Error(`Invalid --triage-timeout-ms: ${String(args.triageTimeoutMs)} (expected positive integer)`)
   }
 
   return args
@@ -113,34 +125,43 @@ function pickOne(items, random) {
   return items[Math.floor(random() * items.length)]
 }
 
+const INSTRUCTION_PATTERNS = [
+  /^create card\s+"[^"]+"(?:\s+in column\s+"[^"]+")?(?:\s+with description\s+"[^"]+")?\s*$/i,
+  /^rename board to\s+"[^"]+"\s*$/i,
+  /^update board description\s+"[^"]+"\s*$/i,
+  /^move column\s+"[^"]+"\s+to position\s+\d+\s*$/i,
+  /^update card\s+\S+\s+title\s+"[^"]+"\s*$/i,
+  /^update card\s+\S+\s+description\s+"[^"]+"\s*$/i,
+  /^move card\s+\S+\s+to column\s+"[^"]+"\s*$/i,
+  /^archive card\s+\S+\s*$/i,
+  /^archive cards matching\s+"[^"]+"\s*$/i,
+  /^unarchive board\s*$/i,
+  /^archive board\s*$/i,
+]
+
 function isValidInstruction(input) {
-  const value = (input || '').trim().toLowerCase()
-  return (
-    value.startsWith('create card ') ||
-    value.startsWith('rename board ') ||
-    value.startsWith('update board description ') ||
-    value.startsWith('move column ') ||
-    value.startsWith('update card ') ||
-    value.startsWith('move card ') ||
-    value.startsWith('archive card ') ||
-    value.startsWith('archive cards matching ') ||
-    value.startsWith('unarchive board') ||
-    value.startsWith('archive board')
-  )
+  const value = (input ?? '').trim()
+  if (!value) return false
+  return INSTRUCTION_PATTERNS.some((pattern) => pattern.test(value))
 }
 
 function normalizeBrainLine(line) {
   const raw = (line || '').trim()
   if (!raw) return null
 
-  if (isValidInstruction(raw)) {
-    return { kind: 'instruction', instruction: raw }
-  }
+  const lines = raw
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+  if (lines.length === 0) return null
 
-  const lines = raw.split(/\r?\n/)
   const firstLine = lines[0]?.trim() || ''
   const separatorIndex = firstLine.indexOf(':')
   const prefix = (separatorIndex === -1 ? firstLine : firstLine.slice(0, separatorIndex)).trim().toUpperCase()
+
+  if (isValidInstruction(firstLine)) {
+    return { kind: 'instruction', instruction: firstLine }
+  }
 
   if (prefix === 'INSTRUCTION') {
     const instruction = separatorIndex === -1 ? '' : firstLine.slice(separatorIndex + 1).trim()
@@ -150,9 +171,11 @@ function normalizeBrainLine(line) {
 
   if (prefix === 'CAPTURE') {
     const inlineText = separatorIndex === -1 ? '' : firstLine.slice(separatorIndex + 1).trim()
-    const trailingLines = lines.slice(1).join('\n').trim()
-    const text = [inlineText, trailingLines].filter(Boolean).join('\n').trim()
-    if (!text) return null
+    const captureLines = []
+    if (inlineText) captureLines.push(inlineText)
+    captureLines.push(...lines.slice(1))
+    if (captureLines.length === 0 || captureLines.length > 6) return null
+    const text = captureLines.join('\n').trim()
     return { kind: 'capture', text }
   }
 
@@ -255,7 +278,9 @@ async function createChatBrain({ api, boardId, loop }) {
 
     const prompt =
       'You are a simulated Taskdeck user. Pick ONE next action to advance work.\n' +
-      'Return EXACTLY one action using ONE of these formats:\n' +
+      'Return exactly one decision block using ONE of these formats:\n' +
+      '- INSTRUCTION must be a single line.\n' +
+      '- CAPTURE must start with "CAPTURE:" and may use up to 6 total lines.\n' +
       formats.map((format) => `- ${format}`).join('\n') +
       '\n\nDo not include explanations, markdown, bullet points, or extra text.\n\n' +
       'Board snapshot:\n' +
