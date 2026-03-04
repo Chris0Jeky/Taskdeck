@@ -322,10 +322,13 @@ async function executeStep(api, ctx, step) {
     }
 
     case 'createCard': {
+      assert(typeof step.board === 'string' && step.board.trim().length > 0, 'createCard.board is required')
       assert(typeof step.column === 'string' && step.column.trim().length > 0, 'createCard.column is required')
       assert(typeof step.title === 'string' && step.title.trim().length > 0, 'createCard.title is required')
-      const boardId = await resolveBoardId(api, ctx, step.board)
-      const columnId = await resolveColumnIdByName(api, ctx, boardId, step.column)
+      const boardRef = step.board.trim()
+      const columnName = step.column.trim()
+      const boardId = await resolveBoardId(api, ctx, boardRef)
+      const columnId = await resolveColumnIdByName(api, ctx, boardId, columnName)
       const labelIds = await resolveLabelIdsByNames(api, ctx, boardId, step.labels || [])
       const dueDate = step.dueDate ? step.dueDate : step.dueInDays != null ? isoDaysFromNow(step.dueInDays) : null
       const title = step.title.trim()
