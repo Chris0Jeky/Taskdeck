@@ -53,9 +53,7 @@ export function getDemoConfig(overrides = {}) {
   const apiBaseUrl = asApiBaseUrl(overrideApiBaseUrl ?? envApiBaseUrl)
   const uiBaseUrl = asUiBaseUrl(overrideUiBaseUrl ?? envUiBaseUrl)
 
-  ensureSafeApiTarget(apiBaseUrl)
-
-  return {
+  const config = {
     apiBaseUrl,
     uiBaseUrl,
     demoUser: {
@@ -70,6 +68,12 @@ export function getDemoConfig(overrides = {}) {
     },
     ...remainingOverrides,
   }
+
+  config.apiBaseUrl = asApiBaseUrl(config.apiBaseUrl)
+  config.uiBaseUrl = asUiBaseUrl(config.uiBaseUrl)
+  ensureSafeApiTarget(config.apiBaseUrl)
+
+  return config
 }
 
 export class TaskdeckApiClient {

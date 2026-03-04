@@ -19,6 +19,7 @@ import {
   enqueueAndApplyInstruction,
   getCaptureItem,
   ignoreCaptureItem,
+  isoDaysFromNow,
   summarizeBoardForAgent,
   triageCaptureItem,
   waitForCaptureOutcome,
@@ -28,6 +29,7 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const SCENARIO_DIR = path.join(__dirname, 'scenarios-json')
+const STEP_TYPES_REQUIRING_LLM = new Set(['queueInstruction'])
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -98,11 +100,15 @@ export async function loadJsonScenario(scenarioIdOrPath) {
   const value = String(scenarioIdOrPath || '').trim()
   assert(value, 'Scenario id/path is required')
 
-  const fullPath = value.endsWith('.json')
-    ? path.isAbsolute(value)
-      ? value
-      : path.join(SCENARIO_DIR, value)
-    : path.join(SCENARIO_DIR, `${value}.json`)
+  const requestedPath = value.endsWith('.json') ? value : `${value}.json`
+  const normalizedRequestedPath = path.normalize(requestedPath)
+  assert(!path.isAbsolute(normalizedRequestedPath), 'Absolute scenario paths are not allowed')
+
+  const fullPath = path.resolve(SCENARIO_DIR, normalizedRequestedPath)
+  const relativeToScenarioDir = path.relative(SCENARIO_DIR, fullPath)
+  const escapesScenarioDir =
+    !relativeToScenarioDir || relativeToScenarioDir.startsWith('..') || path.isAbsolute(relativeToScenarioDir)
+  assert(!escapesScenarioDir, `Scenario path resolves outside scenarios-json: "${value}"`)
 
   const raw = await fs.readFile(fullPath, 'utf8')
   return JSON.parse(raw)
@@ -201,12 +207,6 @@ async function resolveLabelIdsByNames(api, ctx, boardId, labelNames = []) {
   return ids
 }
 
-function isoDaysFromNow(days) {
-  const value = new Date()
-  value.setDate(value.getDate() + Number(days || 0))
-  return value.toISOString()
-}
-
 export async function runJsonScenario({ api, config, scenario, options = {} }) {
   validateScenarioJson(scenario)
 
@@ -240,12 +240,13 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
   for (const [index, rawStep] of scenario.steps.entries()) {
     const step = resolveTemplates(deepClone(rawStep), ctx)
     const label = step.label || `${index + 1}:${step.type}`
+    const requiresLlm = Boolean(step.requiresLlm) || STEP_TYPES_REQUIRING_LLM.has(step.type)
 
-    if (step.requiresLlm && opts.skipLlm) {
+    if (requiresLlm && opts.skipLlm) {
       ctx.results.steps.push({
         step: label,
         status: 'skipped',
-        reason: 'requiresLlm + --skip-llm',
+        reason: '--skip-llm',
       })
       continue
     }
