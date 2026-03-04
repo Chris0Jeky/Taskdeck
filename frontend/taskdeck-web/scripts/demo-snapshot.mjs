@@ -49,6 +49,71 @@ function ensureArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+function isErrorResult(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && typeof value.__error === 'string'
+}
+
+async function readOpsRunIdsFromTrace(tracePath, limit) {
+  if (!tracePath) return []
+
+  try {
+    const raw = await fs.readFile(tracePath, 'utf8')
+    const runIds = []
+    const seen = new Set()
+
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+
+      let event = null
+      try {
+        event = JSON.parse(trimmed)
+      } catch {
+        continue
+      }
+
+      const runId = typeof event?.runId === 'string' ? event.runId.trim() : ''
+      if (!runId || seen.has(runId)) continue
+
+      seen.add(runId)
+      runIds.push(runId)
+      if (runIds.length >= limit) break
+    }
+
+    return runIds
+  } catch {
+    return []
+  }
+}
+
+async function collectOpsRuns(authed, runIds) {
+  const runs = []
+
+  for (const runId of runIds) {
+    const run = await safeGet(authed, `/ops/cli/runs/${encodeURIComponent(runId)}`)
+    if (isErrorResult(run)) {
+      runs.push({ id: runId, run })
+      continue
+    }
+
+    const logs = await safeGet(authed, `/ops/cli/runs/${encodeURIComponent(runId)}/logs`)
+    const logsSummary = Array.isArray(logs)
+      ? {
+          count: logs.length,
+          sample: logs.slice(0, 20),
+        }
+      : logs
+
+    runs.push({
+      id: runId,
+      run,
+      logs: logsSummary,
+    })
+  }
+
+  return runs
+}
+
 async function main() {
   const args = parseArgs(process.argv)
   const config = getDemoConfig()
@@ -57,8 +122,10 @@ async function main() {
   const auth = await ensureUser(api, config.demoUser)
   const authed = api.withToken(auth.token)
 
-  const boardsAll = await safeGet(authed, '/boards?includeArchived=true')
-  const boards = ensureArray(boardsAll).filter((board) => {
+  const boardsAllResult = await safeGet(authed, '/boards?includeArchived=true')
+  const boardsAll = ensureArray(boardsAllResult)
+  const boardsError = isErrorResult(boardsAllResult) ? boardsAllResult.__error : null
+  const boards = boardsAll.filter((board) => {
     if (args.includeAllBoards) return true
     return String(board?.name || '').startsWith(args.demoPrefix)
   })
@@ -74,6 +141,11 @@ async function main() {
     const columnList = ensureArray(columns)
     const cardList = ensureArray(cards)
     const labelList = ensureArray(labels)
+    const errors = {
+      columns: isErrorResult(columns) ? columns.__error : null,
+      cards: isErrorResult(cards) ? cards.__error : null,
+      labels: isErrorResult(labels) ? labels.__error : null,
+    }
 
     boardSnapshots.push({
       id: board.id,
@@ -87,6 +159,7 @@ async function main() {
         cards: cardList.length,
         labels: labelList.length,
       },
+      errors,
       columns: columnList.map((column) => ({
         id: column.id,
         name: column.name,
@@ -112,8 +185,10 @@ async function main() {
   const captureItems = await safeGet(authed, `/capture/items${queryLimited(Math.min(args.limit, 200))}`)
   const notifications = await safeGet(authed, `/notifications${queryLimited(Math.min(args.limit, 200))}`)
   const audit = await safeGet(authed, `/audit/users/me${queryLimited(Math.min(args.limit, 100))}`)
-  const opsRuns = await safeGet(authed, `/ops/cli/runs${queryLimited(Math.min(args.limit, 50))}`)
   const opsTemplates = await safeGet(authed, '/ops/cli/templates')
+  const tracePath = (process.env.TASKDECK_DEMO_TRACE_PATH || '').trim()
+  const opsRunIds = await readOpsRunIdsFromTrace(tracePath, Math.min(args.limit, 50))
+  const opsRuns = await collectOpsRuns(authed, opsRunIds)
 
   const snapshot = {
     generatedAt: new Date().toISOString(),
@@ -126,6 +201,10 @@ async function main() {
       demoPrefix: args.demoPrefix,
       includeAllBoards: args.includeAllBoards,
       limit: args.limit,
+    },
+    boardDiscovery: {
+      totalBoardsVisible: boardsAll.length,
+      error: boardsError,
     },
     boards: boardSnapshots,
     automation: {
@@ -141,7 +220,12 @@ async function main() {
     notifications,
     audit,
     ops: {
-      runs: opsRuns,
+      runs: {
+        source: tracePath ? 'trace-linked' : 'trace-unavailable',
+        tracePath: tracePath || null,
+        ids: opsRunIds,
+        items: opsRuns,
+      },
       templates: Array.isArray(opsTemplates)
         ? {
             count: opsTemplates.length,
