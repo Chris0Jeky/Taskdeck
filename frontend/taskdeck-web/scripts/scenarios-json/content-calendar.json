@@ -80,6 +80,7 @@
     },
     {
       "type": "queueInstruction",
+      "requiresLlm": true,
       "board": "board",
       "instruction": "move card ${cards.designEmptyState.id} to column \"Scheduled\"",
       "requiresLlm": true,

@@ -7,29 +7,80 @@ import { expect, test } from '@playwright/test'
 import type { AuthResult } from './support/authSession'
 import { attachSessionToPage } from './support/authSession'
 
+const DEFAULT_SETUP_TIMEOUT_MS = 120_000
+
+function isAppRoot(candidateDir: string): boolean {
+  const hasPackageJson = existsSync(path.join(candidateDir, 'package.json'))
+  const hasDemoSeed = existsSync(path.join(candidateDir, 'scripts', 'demo-seed.mjs'))
+  const hasDemoRun = existsSync(path.join(candidateDir, 'scripts', 'demo-run.mjs'))
+  return hasPackageJson && hasDemoSeed && hasDemoRun
+}
+
+function parseSetupTimeoutMs(value: string | undefined): number {
+  const parsed = Number(value)
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.floor(parsed)
+  }
+  return DEFAULT_SETUP_TIMEOUT_MS
+}
+
 function resolveAppRoot(startDir: string): string {
+  const cwd = process.cwd()
+  if (isAppRoot(cwd)) {
+    return cwd
+  }
+
+  const fromSpecDir = path.resolve(startDir, '..', '..')
+  if (isAppRoot(fromSpecDir)) {
+    return fromSpecDir
+  }
+
   let current = startDir
 
   while (current !== path.dirname(current)) {
-    const hasPackageJson = existsSync(path.join(current, 'package.json'))
-    const hasDemoSeed = existsSync(path.join(current, 'scripts', 'demo-seed.mjs'))
-    const hasDemoRun = existsSync(path.join(current, 'scripts', 'demo-run.mjs'))
-
-    if (hasPackageJson && hasDemoSeed && hasDemoRun) {
+    if (isAppRoot(current)) {
       return current
     }
 
     current = path.dirname(current)
   }
 
-  const hasPackageJson = existsSync(path.join(current, 'package.json'))
-  const hasDemoSeed = existsSync(path.join(current, 'scripts', 'demo-seed.mjs'))
-  const hasDemoRun = existsSync(path.join(current, 'scripts', 'demo-run.mjs'))
-  if (hasPackageJson && hasDemoSeed && hasDemoRun) {
+  if (isAppRoot(current)) {
     return current
   }
 
   throw new Error('Unable to resolve frontend/taskdeck-web app root for stakeholder demo setup.')
+}
+
+function runSetupScript({
+  appRoot,
+  scriptArgs,
+  env,
+  timeoutMs,
+}: {
+  appRoot: string
+  scriptArgs: string[]
+  env: NodeJS.ProcessEnv
+  timeoutMs: number
+}): void {
+  try {
+    execFileSync(process.execPath, scriptArgs, {
+      cwd: appRoot,
+      stdio: 'inherit',
+      env,
+      timeout: timeoutMs,
+      killSignal: 'SIGTERM',
+    })
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException
+    if (error.code === 'ETIMEDOUT') {
+      throw new Error(
+        `Timed out after ${timeoutMs}ms running setup command: node ${scriptArgs.join(' ')} (cwd=${appRoot})`,
+      )
+    }
+
+    throw err
+  }
 }
 
 /**
@@ -56,35 +107,33 @@ test.describe('Stakeholder demo recorder', () => {
     const __filename = fileURLToPath(import.meta.url)
     const __dirname = path.dirname(__filename)
     const appRoot = resolveAppRoot(__dirname)
+    const setupTimeoutMs = parseSetupTimeoutMs(process.env.TASKDECK_DEMO_SETUP_TIMEOUT_MS)
 
     const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL || 'http://localhost:5000/api'
     const uiBaseUrl =
       process.env.TASKDECK_E2E_FRONTEND_BASE_URL ||
       process.env.TASKDECK_UI_BASE_URL ||
       'http://localhost:5173'
+    const setupEnv = {
+      ...process.env,
+      TASKDECK_API_BASE_URL: apiBaseUrl,
+      TASKDECK_API_BASE: apiBaseUrl,
+      TASKDECK_UI_BASE: uiBaseUrl,
+      TASKDECK_UI_BASE_URL: uiBaseUrl,
+    }
 
-    execFileSync('node', ['scripts/demo-seed.mjs'], {
-      cwd: appRoot,
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        TASKDECK_API_BASE_URL: apiBaseUrl,
-        TASKDECK_API_BASE: apiBaseUrl,
-        TASKDECK_UI_BASE: uiBaseUrl,
-        TASKDECK_UI_BASE_URL: uiBaseUrl,
-      },
+    runSetupScript({
+      appRoot,
+      scriptArgs: ['scripts/demo-seed.mjs'],
+      env: setupEnv,
+      timeoutMs: setupTimeoutMs,
     })
 
-    execFileSync('node', ['scripts/demo-run.mjs', 'engineering-sprint'], {
-      cwd: appRoot,
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        TASKDECK_API_BASE_URL: apiBaseUrl,
-        TASKDECK_API_BASE: apiBaseUrl,
-        TASKDECK_UI_BASE: uiBaseUrl,
-        TASKDECK_UI_BASE_URL: uiBaseUrl,
-      },
+    runSetupScript({
+      appRoot,
+      scriptArgs: ['scripts/demo-run.mjs', 'engineering-sprint'],
+      env: setupEnv,
+      timeoutMs: setupTimeoutMs,
     })
   })
 
@@ -117,7 +166,7 @@ test.describe('Stakeholder demo recorder', () => {
     })
 
     await page.goto('/workspace/boards')
-    await expect(page.getByRole('heading', { name: 'Boards' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^(My Boards|Boards)$/ })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('01-boards.png'), fullPage: true })
 
     const captureLoopBoardCard = page.locator('div.cursor-pointer').filter({ hasText: 'DEMO: Capture Loop' }).first()
