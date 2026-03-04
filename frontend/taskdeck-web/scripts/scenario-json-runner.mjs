@@ -29,7 +29,6 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const SCENARIO_DIR = path.join(__dirname, 'scenarios-json')
-const DEFAULT_LLM_STEP_TYPES = new Set(['queueInstruction'])
 const SUPPORTED_STEP_TYPES = new Set([
   'createBoard',
   'applyStarterPack',
@@ -87,10 +86,6 @@ function parseOptionalFiniteNumber(rawValue, fieldName) {
   const value = Number(valueToParse)
   assert(Number.isFinite(value), `${fieldName} must be a finite number`)
   return value
-}
-
-function stepRequiresLlm(step) {
-  return step?.requiresLlm === true || DEFAULT_LLM_STEP_TYPES.has(step?.type)
 }
 
 function deepClone(value) {
@@ -352,9 +347,8 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
   for (const [index, rawStep] of scenario.steps.entries()) {
     const step = resolveTemplates(deepClone(rawStep), ctx)
     const label = step.label || `${index + 1}:${step.type}`
-    const requiresLlm = Boolean(step.requiresLlm) || STEP_TYPES_REQUIRING_LLM.has(step.type)
 
-    if (requiresLlm && opts.skipLlm) {
+    if (stepRequiresLlm(step) && opts.skipLlm) {
       ctx.results.steps.push({
         step: label,
         status: 'skipped',

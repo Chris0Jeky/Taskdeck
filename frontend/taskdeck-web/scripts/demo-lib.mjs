@@ -50,10 +50,12 @@ export function getDemoConfig(overrides = {}) {
     process.env.TASKDECK_API_BASE_URL || process.env.TASKDECK_API_BASE || process.env.TASKDECK_E2E_API_BASE_URL
   const envUiBaseUrl =
     process.env.TASKDECK_UI_BASE || process.env.TASKDECK_UI_BASE_URL || process.env.TASKDECK_E2E_FRONTEND_BASE_URL
+  const apiBaseUrl = asApiBaseUrl(overrideApiBaseUrl ?? envApiBaseUrl)
+  const uiBaseUrl = asUiBaseUrl(overrideUiBaseUrl ?? envUiBaseUrl)
 
   const config = {
-    apiBaseUrl: overrideApiBaseUrl ?? envApiBaseUrl,
-    uiBaseUrl: overrideUiBaseUrl ?? envUiBaseUrl,
+    apiBaseUrl,
+    uiBaseUrl,
     demoUser: {
       username: process.env.TASKDECK_DEMO_USERNAME || 'demo',
       email: process.env.TASKDECK_DEMO_EMAIL || 'demo@taskdeck.local',
