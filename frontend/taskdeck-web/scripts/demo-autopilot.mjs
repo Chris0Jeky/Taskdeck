@@ -130,14 +130,17 @@ function pickOne(items, random) {
 }
 
 const INSTRUCTION_PATTERNS = [
+  // Keep card-id shape aligned with backend planner expectations (GUID-like token).
+  // This prevents chat-mode from accepting obviously invalid ids and skipping heuristic fallback.
+  // Pattern is case-insensitive.
   /^create card\s+"[^"]+"(?:\s+in column\s+"[^"]+")?(?:\s+with description\s+"[^"]+")?\s*$/i,
   /^rename board to\s+"[^"]+"\s*$/i,
   /^update board description\s+"[^"]+"\s*$/i,
   /^move column\s+"[^"]+"\s+to position\s+\d+\s*$/i,
-  /^update card\s+\S+\s+title\s+"[^"]+"\s*$/i,
-  /^update card\s+\S+\s+description\s+"[^"]+"\s*$/i,
-  /^move card\s+\S+\s+to column\s+"[^"]+"\s*$/i,
-  /^archive card\s+\S+\s*$/i,
+  /^update card\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s+title\s+"[^"]+"\s*$/i,
+  /^update card\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s+description\s+"[^"]+"\s*$/i,
+  /^move card\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s+to column\s+"[^"]+"\s*$/i,
+  /^archive card\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$/i,
   /^archive cards matching\s+"[^"]+"\s*$/i,
   /^unarchive board\s*$/i,
   /^archive board\s*$/i,
