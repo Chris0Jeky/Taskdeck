@@ -1,20 +1,21 @@
 # Taskdeck Demo Playbook
 
-This playbook is for first-run demos and quick stakeholder walkthroughs.
-It focuses on the current MVP loop:
+This playbook provides a practical demo flow for Taskdeck's capture-first, review-first model.
+
+Core story:
 
 Capture -> Triage -> Proposal -> Apply -> Board
 
 ## Quick Start
 
-1. Start backend:
+1. Start backend
 
 ```bash
 cd backend/src/Taskdeck.Api
 dotnet run
 ```
 
-2. Start frontend:
+2. Start frontend
 
 ```bash
 cd frontend/taskdeck-web
@@ -26,61 +27,124 @@ Default URLs:
 - API: `http://localhost:5000/api`
 - UI: `http://localhost:5173`
 
-3. Seed demo data:
+3. Seed baseline demo data
 
 ```bash
 cd frontend/taskdeck-web
 npm run demo:seed
 ```
 
-The seeder creates demo users, demo boards, Inbox items, proposals, queue activity, notifications, and ops logs.
-During cleanup, the seeder first ensures/reuses canonical demo boards, then archives extra active `DEMO:*` boards (soft-delete) that are outside the canonical set.
+The seeder creates demo users, demo boards, Inbox items, proposals, queue activity, notifications, and Ops logs.
+During cleanup, the seeder first ensures/reuses canonical demo boards, then archives extra active `DEMO:*` boards outside the canonical set.
 
-## 5-Minute Demo Flow
+## Scenario Harness (Batch B)
 
-1. `Boards`
-- Open `DEMO: Capture Loop` (final canonical name after seeding).
-- Explain that board changes come from reviewed proposals.
+List scenarios:
 
-2. `Inbox`
+```bash
+cd frontend/taskdeck-web
+npm run demo:run -- --list
+```
+
+Run a scenario:
+
+```bash
+npm run demo:run -- engineering-sprint
+npm run demo:run -- support-triage
+npm run demo:run -- content-calendar
+```
+
+Autopilot simulation:
+
+```bash
+npm run demo:autopilot -- --turns 5 --brain heuristic
+```
+
+Optional chat-driven autopilot (requires live provider setup):
+
+```bash
+npm run demo:autopilot -- --turns 5 --brain taskdeck-chat
+```
+
+## 5-Minute Stakeholder Flow
+
+1. Boards
+- Open `DEMO: Capture Loop`.
+- Explain reviewed proposals are the mutation gate.
+
+2. Inbox
 - Show ignored and triaged items.
-- Open a triaged item and follow its provenance to a proposal.
+- Follow provenance from capture item to proposal.
 
-3. `Automations -> Proposals`
+3. Automations -> Proposals
 - Show pending/applied proposals.
-- Explain review-first execution.
+- Explain review-first safety and explicit operations.
 
-4. `Notifications`
+4. Notifications
 - Show mention and proposal outcome notifications.
 
-5. `Activity` and `Ops` (optional)
-- Show audit trail and seeded ops runs/logs.
+5. Activity and Ops (optional)
+- Show audit/activity events.
+- Show seeded Ops runs/log entries.
+
+## MVP Dogfooding Loop
+
+1. Capture in Inbox.
+2. Start triage.
+3. Review in Proposals.
+4. Approve and execute.
+5. Continue board execution.
 
 ## Why Some Pages Start Empty
 
-Several pages are event-driven and only populate after actions occur:
+These surfaces are event-driven:
 - `Activity` needs audit events.
 - `Notifications` needs mentions/proposal outcomes.
-- `Ops -> Logs` needs ops runs.
-- `Access` needs a board id and access entries.
+- `Ops -> Logs` needs Ops runs.
+- `Access` needs board-specific entries.
 
-Use `npm run demo:seed` before manual evaluation so these surfaces are populated.
+Use `npm run demo:seed` and/or `npm run demo:run` before manual walkthrough.
 
-## Current MVP Dogfooding Loop
+## Feature Flags for Demos
 
-1. Create or open a board.
-2. Capture raw work in `Inbox`.
-3. Run triage on capture items.
-4. Review proposals in `Automations -> Proposals`.
-5. Approve and apply changes.
-6. Continue execution on the board.
+`Activity`, `Ops`, `Access`, and `Archive` are default-off on first run.
+Enable them in `Settings -> Feature Flags` when needed for walkthrough coverage.
+
+## API Walkthrough (No UI)
+
+Use:
+- `demo/http/taskdeck-demo.http`
+
+It is designed for VS Code REST Client and exercises register/login, board creation, capture triage, queue, proposals, and Ops templates.
+
+## Stakeholder Recorder (Opt-In Playwright)
+
+Spec:
+- `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts`
+
+Skipped by default. Run only when explicitly requested:
+
+PowerShell:
+
+```powershell
+$env:TASKDECK_RUN_DEMO='1'
+cd frontend/taskdeck-web
+npx playwright test tests/e2e/stakeholder-demo.spec.ts --headed
+```
+
+Bash:
+
+```bash
+TASKDECK_RUN_DEMO=1 npx playwright test tests/e2e/stakeholder-demo.spec.ts --headed
+```
 
 ## Constraints
 
-Treat these as advanced surfaces for now:
+Treat these as advanced/diagnostic surfaces in MVP demos:
 - Ops
 - Activity
 - Access
 - Archive
 
-They are useful, but the core product narrative is the capture-to-proposal loop.
+Primary narrative remains capture-to-proposal with explicit review.
+
