@@ -113,20 +113,22 @@ export class TaskdeckApiClient {
     })
 
     const rawBody = await res.text()
-    const parsedBody = safeJsonParse(rawBody)
+    const { ok: hasParsedBody, value: parsedBody } = safeJsonParse(rawBody)
     if (!res.ok) {
-      const messageBody = parsedBody ? JSON.stringify(parsedBody, null, 2) : rawBody
+      const bodyForMessage = hasParsedBody ? parsedBody : rawBody
+      const messageBody =
+        typeof bodyForMessage === 'string' ? bodyForMessage : JSON.stringify(bodyForMessage, null, 2)
       const suffix = messageBody ? `\n${messageBody}` : ''
       const error = new Error(`[${method}] ${url} -> ${res.status} ${res.statusText}${suffix}`)
       error.status = res.status
-      error.details = parsedBody || rawBody
+      error.details = hasParsedBody ? parsedBody : rawBody
       throw error
     }
 
     if (res.status === 204) return null
     if (!rawBody) return null
 
-    return parsedBody || rawBody
+    return hasParsedBody ? parsedBody : rawBody
   }
 
   get(path, opts) {
@@ -151,11 +153,11 @@ export class TaskdeckApiClient {
 }
 
 function safeJsonParse(text) {
-  if (!text) return null
+  if (!text) return { ok: false, value: undefined }
   try {
-    return JSON.parse(text)
+    return { ok: true, value: JSON.parse(text) }
   } catch {
-    return null
+    return { ok: false, value: undefined }
   }
 }
 
@@ -286,7 +288,15 @@ export async function waitForQueueRequest(apiAuthed, requestId, { label = 'queue
       if (!req) return null
 
       const status = req.status
-      const done = status === 2 || status === 3 || status === 4 || req.errorMessage
+      const statusText = typeof status === 'string' ? status.toLowerCase() : null
+      const done =
+        status === 2 ||
+        status === 3 ||
+        status === 4 ||
+        statusText === 'completed' ||
+        statusText === 'failed' ||
+        statusText === 'cancelled' ||
+        req.errorMessage
       return done ? req : null
     },
     { label, timeoutMs, intervalMs: 700 },
