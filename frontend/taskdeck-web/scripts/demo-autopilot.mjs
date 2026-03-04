@@ -3,12 +3,14 @@
 /**
  * Demo autopilot: a simulated user that repeatedly performs valid Taskdeck actions.
  *
- * Modes:
+ * Brains:
  * - heuristic (default): deterministic-ish random actions with no external services.
- * - taskdeck-chat: asks Taskdeck Chat (configured provider) to pick the next instruction.
+ * - taskdeck-chat: asks Taskdeck Chat to decide the next action.
  *
- * Actions are executed via Queue -> Proposal -> Approve -> Execute to exercise
- * the review-first automation pipeline.
+ * Loops:
+ * - queue: Queue -> Proposal -> Approve -> Execute.
+ * - capture: Capture -> Triage -> Proposal -> Approve -> Execute.
+ * - mixed: probabilistically chooses queue or capture for each turn.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -17,10 +19,14 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import {
   TaskdeckApiClient,
   applyStarterPack,
+  approveAndExecuteProposal,
+  createCaptureItem,
   enqueueAndApplyInstruction,
   ensureUser,
   getDemoConfig,
   summarizeBoardForAgent,
+  triageCaptureItem,
+  waitForCaptureOutcome,
 } from './demo-lib.mjs'
 
 function parseArgs(argv) {
@@ -31,21 +37,52 @@ function parseArgs(argv) {
     turns: 15,
     intervalMs: 1500,
     brain: 'heuristic',
+    loop: 'mixed',
+    captureProb: 0.35,
+    leaveCaptureUntriagedProb: 0.1,
+    triageTimeoutMs: 90_000,
+    captureSource: 'Typed',
+    captureTitleHint: null,
     seed: null,
   }
 
   for (let i = 2; i < argv.length; i++) {
-    const arg = argv[i]
-    if (!arg) continue
+    const value = argv[i]
+    if (!value) continue
 
-    if (arg === '--no-create-board') args.createBoard = false
-    else if (arg === '--create-board') args.createBoard = true
-    else if (arg === '--brain') args.brain = argv[++i] || args.brain
-    else if (arg === '--board-id') args.boardId = argv[++i] || null
-    else if (arg === '--board') args.boardName = argv[++i] || args.boardName
-    else if (arg === '--turns') args.turns = Number(argv[++i] || args.turns)
-    else if (arg === '--interval-ms') args.intervalMs = Number(argv[++i] || args.intervalMs)
-    else if (arg === '--seed') args.seed = argv[++i] || '0'
+    if (value === '--no-create-board') args.createBoard = false
+    else if (value === '--create-board') args.createBoard = true
+    else if (value === '--brain') args.brain = argv[++i] ?? args.brain
+    else if (value === '--loop') args.loop = argv[++i] ?? args.loop
+    else if (value === '--capture-prob') args.captureProb = Number(argv[++i] ?? args.captureProb)
+    else if (value === '--leave-capture-untriaged-prob') {
+      args.leaveCaptureUntriagedProb = Number(argv[++i] ?? args.leaveCaptureUntriagedProb)
+    } else if (value === '--triage-timeout-ms') args.triageTimeoutMs = Number(argv[++i] ?? args.triageTimeoutMs)
+    else if (value === '--capture-source') args.captureSource = argv[++i] ?? args.captureSource
+    else if (value === '--capture-title-hint') args.captureTitleHint = argv[++i] ?? args.captureTitleHint
+    else if (value === '--board-id') args.boardId = argv[++i] ?? null
+    else if (value === '--board') args.boardName = argv[++i] ?? args.boardName
+    else if (value === '--turns') args.turns = Number(argv[++i] ?? args.turns)
+    else if (value === '--interval-ms') args.intervalMs = Number(argv[++i] ?? args.intervalMs)
+    else if (value === '--seed') args.seed = argv[++i] ?? '0'
+  }
+
+  if (!['queue', 'capture', 'mixed'].includes(args.loop)) {
+    throw new Error(`Invalid --loop: ${args.loop} (expected queue|capture|mixed)`)
+  }
+
+  if (!Number.isFinite(args.captureProb) || args.captureProb < 0 || args.captureProb > 1) {
+    throw new Error(`Invalid --capture-prob: ${args.captureProb} (expected 0..1)`)
+  }
+
+  if (
+    !Number.isFinite(args.leaveCaptureUntriagedProb) ||
+    args.leaveCaptureUntriagedProb < 0 ||
+    args.leaveCaptureUntriagedProb > 1
+  ) {
+    throw new Error(
+      `Invalid --leave-capture-untriaged-prob: ${args.leaveCaptureUntriagedProb} (expected 0..1)`,
+    )
   }
 
   if (!Number.isFinite(args.turns) || !Number.isInteger(args.turns) || args.turns <= 0) {
@@ -54,6 +91,10 @@ function parseArgs(argv) {
 
   if (!Number.isFinite(args.intervalMs) || !Number.isInteger(args.intervalMs) || args.intervalMs < 0) {
     throw new Error(`Invalid --interval-ms: ${String(args.intervalMs)} (expected non-negative integer)`)
+  }
+
+  if (!Number.isFinite(args.triageTimeoutMs) || !Number.isInteger(args.triageTimeoutMs) || args.triageTimeoutMs <= 0) {
+    throw new Error(`Invalid --triage-timeout-ms: ${String(args.triageTimeoutMs)} (expected positive integer)`)
   }
 
   return args
@@ -73,7 +114,7 @@ function createRandom(seed) {
 
   let value = state >>> 0
   return () => {
-    value += 0x6D2B79F5
+    value += 0x6d2b79f5
     let t = Math.imul(value ^ (value >>> 15), 1 | value)
     t ^= t + Math.imul(t ^ (t >>> 7), 61 | t)
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
@@ -104,13 +145,51 @@ function isValidInstruction(input) {
   return INSTRUCTION_PATTERNS.some((pattern) => pattern.test(value))
 }
 
-async function decideHeuristic({ board, columns, cards, turn, random, deterministic }) {
-  const columnNames = (columns || []).map((column) => column.name)
+function normalizeBrainLine(line) {
+  const raw = (line || '').trim()
+  if (!raw) return null
+
+  const lines = raw
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+  if (lines.length === 0) return null
+
+  const firstLine = lines[0]?.trim() || ''
+  const separatorIndex = firstLine.indexOf(':')
+  const prefix = (separatorIndex === -1 ? firstLine : firstLine.slice(0, separatorIndex)).trim().toUpperCase()
+
+  if (isValidInstruction(firstLine)) {
+    return { kind: 'instruction', instruction: firstLine }
+  }
+
+  if (prefix === 'INSTRUCTION') {
+    const instruction = separatorIndex === -1 ? '' : firstLine.slice(separatorIndex + 1).trim()
+    if (!isValidInstruction(instruction)) return null
+    return { kind: 'instruction', instruction }
+  }
+
+  if (prefix === 'CAPTURE') {
+    const inlineText = separatorIndex === -1 ? '' : firstLine.slice(separatorIndex + 1).trim()
+    const captureLines = []
+    if (inlineText) captureLines.push(inlineText)
+    captureLines.push(...lines.slice(1))
+    if (captureLines.length === 0 || captureLines.length > 6) return null
+    const text = captureLines.join('\n').trim()
+    return { kind: 'capture', text }
+  }
+
+  return null
+}
+
+async function decideHeuristicInstruction({ columns, cards, turn, random, deterministic }) {
+  const columnNames = (columns || []).map((column) => column.name).filter(Boolean)
   const columnNameById = new Map((columns || []).map((column) => [column.id, column.name]))
   const allCards = (cards || []).filter((card) => !!card?.id)
 
-  const actions = []
   const marker = deterministic ? `turn-${turn + 1}` : new Date().toISOString()
+  const actions = []
+
   if (columnNames.length > 0) {
     actions.push(
       () =>
@@ -121,46 +200,101 @@ async function decideHeuristic({ board, columns, cards, turn, random, determinis
     actions.push(() => `create card "Agent task: ${marker}" with description "generated by demo-autopilot"`)
   }
 
-  if (allCards.length > 0) {
+  if (allCards.length > 0 && columnNames.length > 0) {
     const card = pickOne(allCards, random)
     const currentColumnName = columnNameById.get(card.columnId)
     const moveDestinations = columnNames.filter((columnName) => columnName !== currentColumnName)
+
     if (moveDestinations.length > 0) {
       const destination = pickOne(moveDestinations, random)
       actions.push(() => `move card ${card.id} to column "${destination}"`)
     }
+
     actions.push(() => `update card ${card.id} title "Autopilot touched ${marker}"`)
   }
 
   return pickOne(actions, random)()
 }
 
-async function createChatBrain({ api, boardId }) {
+async function decideHeuristicCapture({ board, columns, cards, random }) {
+  const columnNames = (columns || []).map((column) => column.name).filter(Boolean)
+  const allCards = (cards || []).filter((card) => !!card?.id)
+  const themes = [
+    'Ship a usable MVP demo flow (Inbox -> Triage -> Proposal -> Execute).',
+    'Improve empty states so first-time users understand what to do.',
+    'Add a basic CLI workflow for power users.',
+    'Improve collaboration: access management + mentions + notifications.',
+    'Stabilize automation queue and proposal audit trail.',
+  ]
+
+  const lines = []
+  lines.push(`Working note for board "${board.name}": ${pickOne(themes, random)}`)
+
+  if (allCards.length > 0) {
+    const card = pickOne(allCards, random)
+    lines.push(`- Follow up on: "${card.title}"`)
+  }
+
+  if (columnNames.length > 0) {
+    lines.push(`- Add two small tasks to "${pickOne(columnNames, random)}" to move this forward`)
+  }
+
+  lines.push('- Make one task clearly demoable with an obvious next click')
+
+  return lines.join('\n').slice(0, 900)
+}
+
+async function createChatBrain({ api, boardId, loop }) {
   const session = await api.post('/llm/chat/sessions', {
-    body: { title: `Autopilot ${randomUUID().slice(0, 8)}`, boardId },
+    body: {
+      title: `Autopilot ${randomUUID().slice(0, 8)}`,
+      boardId,
+    },
   })
 
   return async ({ snapshotText }) => {
+    const allowInstruction = loop !== 'capture'
+    const allowCapture = loop !== 'queue'
+
+    const formats = []
+    if (allowInstruction) {
+      formats.push(
+        'INSTRUCTION: <one valid instruction using one of these patterns>\n' +
+          '- create card "title" in column "name" with description "value"\n' +
+          '- move card {id} to column "name"\n' +
+          '- update card {id} title "value"\n' +
+          '- update card {id} description "value"\n' +
+          '- rename board to "name"\n' +
+          '- update board description "value"',
+      )
+    }
+
+    if (allowCapture) {
+      formats.push(
+        'CAPTURE: <a short natural-language note for Inbox triage>' +
+          '\n  Optional continuation lines are allowed (up to 6 total lines).',
+      )
+    }
+
     const prompt =
-      'You are a simulated Taskdeck user. Pick ONE next action to advance the work.\n' +
-      'Return EXACTLY one line that is ONLY a valid instruction matching one of these patterns:\n' +
-      '- create card "title" in column "name" with description "value"\n' +
-      '- move card {id} to column "name"\n' +
-      '- update card {id} title "value"\n' +
-      '- update card {id} description "value"\n' +
-      '- rename board to "name"\n' +
-      '- update board description "value"\n' +
-      'Do not include explanations, markdown, bullet points, or extra text.\n\n' +
+      'You are a simulated Taskdeck user. Pick ONE next action to advance work.\n' +
+      'Return exactly one decision block using ONE of these formats:\n' +
+      '- INSTRUCTION must be a single line.\n' +
+      '- CAPTURE must start with "CAPTURE:" and may use up to 6 total lines.\n' +
+      formats.map((format) => `- ${format}`).join('\n') +
+      '\n\nDo not include explanations, markdown, bullet points, or extra text.\n\n' +
       'Board snapshot:\n' +
       snapshotText
 
     const message = await api.post(`/llm/chat/sessions/${session.id}/messages`, {
-      body: { content: prompt, requestProposal: false },
+      body: {
+        content: prompt,
+        requestProposal: false,
+      },
     })
 
     const raw = (message?.assistant?.content || '').trim()
-    const firstLine = raw.split(/\r?\n/)[0]?.trim() || ''
-    return firstLine
+    return raw
   }
 }
 
@@ -189,7 +323,60 @@ async function resolveBoard({ api, args }) {
     starterPackId: 'board-blueprint-engineering-sprint',
     dryRun: false,
   })
+
   return created
+}
+
+async function performQueueTurn({ api, boardId, instruction }) {
+  await enqueueAndApplyInstruction(api, {
+    boardId,
+    instruction,
+    timeoutMs: 90_000,
+  })
+}
+
+async function performCaptureTurn({
+  api,
+  boardId,
+  text,
+  config,
+  captureSource,
+  captureTitleHint,
+  triageTimeoutMs,
+  leaveUntriaged,
+}) {
+  const capture = await createCaptureItem(api, {
+    boardId,
+    text,
+    source: captureSource,
+    titleHint: captureTitleHint,
+    externalRef: `autopilot:${Date.now()}`,
+  })
+
+  console.log(`Capture created: ${capture.id}`)
+  console.log(`Inbox link: ${config.uiBaseUrl}/workspace/inbox#capture-${encodeURIComponent(capture.id)}`)
+
+  if (leaveUntriaged) {
+    console.log('leaving capture item un-triaged')
+    return
+  }
+
+  await triageCaptureItem(api, capture.id)
+
+  const outcome = await waitForCaptureOutcome(api, capture.id, {
+    timeoutMs: triageTimeoutMs,
+    intervalMs: 1200,
+  })
+
+  if (outcome.outcome !== 'proposal') {
+    const status = outcome?.item?.status
+    console.log(`triage outcome: ${outcome.outcome} (status=${String(status)})`)
+    return
+  }
+
+  const proposalId = outcome.item.provenance.proposalId
+  await approveAndExecuteProposal(api, proposalId)
+  console.log(`triaged and applied proposal ${proposalId}`)
 }
 
 async function main() {
@@ -203,11 +390,13 @@ async function main() {
   const authed = api.withToken(login.token)
 
   const board = await resolveBoard({ api: authed, args })
-  const decideChat = args.brain === 'taskdeck-chat' ? await createChatBrain({ api: authed, boardId: board.id }) : null
+  const decideChat = args.brain === 'taskdeck-chat' ? await createChatBrain({ api: authed, boardId: board.id, loop: args.loop }) : null
 
   console.log(`Autopilot running on board: ${board.name} (${board.id})`)
-  console.log(`Brain: ${args.brain}${deterministic ? ` | Seed: ${String(args.seed)}` : ''}`)
+  console.log(`Loop: ${args.loop} | Brain: ${args.brain}${deterministic ? ` | Seed: ${String(args.seed)}` : ''}`)
   console.log(`UI: ${config.uiBaseUrl}/workspace/boards/${board.id}`)
+  console.log(`Inbox: ${config.uiBaseUrl}/workspace/inbox`)
+  console.log(`Proposals: ${config.uiBaseUrl}/workspace/automations/proposals`)
 
   for (let turn = 0; turn < args.turns; turn++) {
     const liveBoard = await authed.get(`/boards/${board.id}`)
@@ -215,28 +404,74 @@ async function main() {
     const cards = await authed.get(`/boards/${board.id}/cards`)
     const snapshotText = summarizeBoardForAgent({ board: liveBoard, columns, cards })
 
-    let instruction
+    let decision = null
     if (decideChat) {
-      instruction = await decideChat({ snapshotText })
-      if (!isValidInstruction(instruction)) {
-        instruction = await decideHeuristic({ board: liveBoard, columns, cards, turn, random, deterministic })
-      }
-    } else {
-      instruction = await decideHeuristic({ board: liveBoard, columns, cards, turn, random, deterministic })
+      const response = await decideChat({ snapshotText })
+      decision = normalizeBrainLine(response)
     }
 
-    console.log(`\n[Turn ${turn + 1}/${args.turns}] Instruction:`)
-    console.log(instruction)
+    if (!decision) {
+      const shouldCapture = args.loop === 'capture' ? true : args.loop === 'queue' ? false : random() < args.captureProb
+
+      if (shouldCapture) {
+        decision = {
+          kind: 'capture',
+          text: await decideHeuristicCapture({ board: liveBoard, columns, cards, random }),
+        }
+      } else {
+        decision = {
+          kind: 'instruction',
+          instruction: await decideHeuristicInstruction({ columns, cards, turn, random, deterministic }),
+        }
+      }
+    }
+
+    if (args.loop === 'queue' && decision.kind !== 'instruction') {
+      decision = {
+        kind: 'instruction',
+        instruction: await decideHeuristicInstruction({ columns, cards, turn, random, deterministic }),
+      }
+    }
+
+    if (args.loop === 'capture' && decision.kind !== 'capture') {
+      decision = {
+        kind: 'capture',
+        text: await decideHeuristicCapture({ board: liveBoard, columns, cards, random }),
+      }
+    }
+
+    console.log(`\n[Turn ${turn + 1}/${args.turns}]`)
+    if (decision.kind === 'instruction') {
+      console.log(`Instruction: ${decision.instruction}`)
+    } else {
+      console.log(`Capture:\n${decision.text}`)
+    }
 
     try {
-      await enqueueAndApplyInstruction(authed, {
-        boardId: board.id,
-        instruction,
-        timeoutMs: 90_000,
-      })
-      console.log('[ok] applied')
+      if (decision.kind === 'instruction') {
+        await performQueueTurn({
+          api: authed,
+          boardId: board.id,
+          instruction: decision.instruction,
+        })
+        console.log('queue instruction applied')
+      } else {
+        const leaveUntriaged =
+          args.leaveCaptureUntriagedProb > 0 && random() < args.leaveCaptureUntriagedProb
+
+        await performCaptureTurn({
+          api: authed,
+          boardId: board.id,
+          text: decision.text,
+          config,
+          captureSource: args.captureSource,
+          captureTitleHint: args.captureTitleHint,
+          triageTimeoutMs: args.triageTimeoutMs,
+          leaveUntriaged,
+        })
+      }
     } catch (err) {
-      console.log(`[fail] ${String(err?.message || err)}`)
+      console.log(`turn failed: ${String(err?.message || err)}`)
     }
 
     await sleep(args.intervalMs)

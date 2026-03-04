@@ -315,6 +315,79 @@ export async function enqueueAndApplyInstruction(apiAuthed, { boardId, instructi
   return { request, proposal }
 }
 
+export async function createCaptureItem(
+  apiAuthed,
+  { boardId = null, text, source = 'Typed', titleHint = null, externalRef = null } = {},
+) {
+  if (!text || typeof text !== 'string') {
+    throw new Error('createCaptureItem requires { text: string }')
+  }
+
+  return await apiAuthed.post('/capture/items', {
+    body: { boardId, text, source, titleHint, externalRef },
+  })
+}
+
+export async function getCaptureItem(apiAuthed, captureItemId) {
+  return await apiAuthed.get(`/capture/items/${encodeURIComponent(captureItemId)}`)
+}
+
+export async function ignoreCaptureItem(apiAuthed, captureItemId) {
+  await apiAuthed.post(`/capture/items/${encodeURIComponent(captureItemId)}/ignore`)
+}
+
+export async function cancelCaptureItem(apiAuthed, captureItemId) {
+  await apiAuthed.post(`/capture/items/${encodeURIComponent(captureItemId)}/cancel`)
+}
+
+export async function triageCaptureItem(apiAuthed, captureItemId) {
+  return await apiAuthed.post(`/capture/items/${encodeURIComponent(captureItemId)}/triage`)
+}
+
+export async function waitForCaptureOutcome(
+  apiAuthed,
+  captureItemId,
+  { timeoutMs = 90_000, intervalMs = 900 } = {},
+) {
+  const encodedId = encodeURIComponent(captureItemId)
+
+  return await waitFor(
+    async () => {
+      const item = await apiAuthed.get(`/capture/items/${encodedId}`)
+      if (!item) return null
+
+      const proposalId = item?.provenance?.proposalId
+      if (proposalId) return { outcome: 'proposal', item }
+
+      const status = item?.status
+      const statusText = typeof status === 'string' ? status.toLowerCase() : null
+      const triaged = status === 2 || statusText === 'triaged'
+      const ignored = status === 5 || statusText === 'ignored'
+      const failed = status === 6 || statusText === 'failed'
+      if (triaged) return { outcome: 'triaged', item }
+      if (ignored) return { outcome: 'ignored', item }
+      if (failed) return { outcome: 'failed', item }
+
+      return null
+    },
+    { label: `capture(${captureItemId}) outcome`, timeoutMs, intervalMs },
+  )
+}
+
+export async function waitForCaptureProposalId(
+  apiAuthed,
+  captureItemId,
+  { timeoutMs = 90_000, intervalMs = 900 } = {},
+) {
+  const result = await waitForCaptureOutcome(apiAuthed, captureItemId, { timeoutMs, intervalMs })
+  if (result.outcome !== 'proposal') {
+    const status = result?.item?.status
+    throw new Error(`Capture did not produce a proposal (outcome=${result.outcome}, status=${String(status)})`)
+  }
+
+  return result.item.provenance.proposalId
+}
+
 export function summarizeBoardForAgent({ board, columns, cards, maxCards = 40 } = {}) {
   const name = board?.name || '(unknown board)'
   const colNameById = new Map((columns || []).map((column) => [column.id, column.name]))

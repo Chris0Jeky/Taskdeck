@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { TaskdeckApiClient, cleanupDemoBoards, ensureUser, getDemoConfig } from './demo-lib.mjs'
+import { listJsonScenarioIds, loadJsonScenario, runJsonScenario } from './scenario-json-runner.mjs'
 
 function parseArgs(argv) {
   const args = {
@@ -8,15 +9,20 @@ function parseArgs(argv) {
     clean: false,
     dryRun: false,
     list: false,
+    skipLlm: false,
+    continueOnError: false,
   }
 
   for (let i = 2; i < argv.length; i++) {
-    const a = argv[i]
-    if (!a) continue
-    if (a === '--clean') args.clean = true
-    else if (a === '--dry-run') args.dryRun = true
-    else if (a === '--list') args.list = true
-    else if (!a.startsWith('--') && !args.scenario) args.scenario = a
+    const value = argv[i]
+    if (!value) continue
+
+    if (value === '--clean') args.clean = true
+    else if (value === '--dry-run') args.dryRun = true
+    else if (value === '--list') args.list = true
+    else if (value === '--skip-llm') args.skipLlm = true
+    else if (value === '--continue-on-error') args.continueOnError = true
+    else if (!value.startsWith('--') && !args.scenario) args.scenario = value
   }
 
   return args
@@ -24,20 +30,30 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv)
 
-const scenarios = {
+const jsScenarios = {
   'engineering-sprint': () => import('./scenarios/engineering-sprint.mjs'),
   'support-triage': () => import('./scenarios/support-triage.mjs'),
   'content-calendar': () => import('./scenarios/content-calendar.mjs'),
 }
 
 async function main() {
+  const jsonScenarioIds = await listJsonScenarioIds()
+
   if (args.list) {
-    console.log('Available scenarios:')
-    Object.keys(scenarios)
+    console.log('Available JSON scenarios:')
+    jsonScenarioIds.forEach((scenarioId) => console.log(`- ${scenarioId}`))
+
+    const jsOnlyScenarios = Object.keys(jsScenarios)
+      .filter((scenarioId) => !jsonScenarioIds.includes(scenarioId))
       .sort()
-      .forEach((s) => console.log(`- ${s}`))
+
+    if (jsOnlyScenarios.length > 0) {
+      console.log('\nLegacy JS scenarios:')
+      jsOnlyScenarios.forEach((scenarioId) => console.log(`- ${scenarioId}`))
+    }
+
     console.log('\nUsage:')
-    console.log('  npm run demo:run -- <scenario> [--clean] [--dry-run]')
+    console.log('  npm run demo:run -- <scenario> [--clean] [--dry-run] [--skip-llm] [--continue-on-error]')
     console.log('  npm run demo:run -- --list')
     process.exit(0)
   }
@@ -45,12 +61,6 @@ async function main() {
   const config = getDemoConfig()
 
   const scenarioName = args.scenario || 'engineering-sprint'
-  const loader = scenarios[scenarioName]
-  if (!loader) {
-    console.error(`Unknown scenario: ${scenarioName}`)
-    console.error('Run with --list to see available scenarios.')
-    process.exit(1)
-  }
 
   const api = new TaskdeckApiClient({ apiBaseUrl: config.apiBaseUrl })
   const demoLogin = await ensureUser(api, config.demoUser)
@@ -63,12 +73,37 @@ async function main() {
     if (args.dryRun) return
   }
 
-  const mod = await loader()
-  if (typeof mod.run !== 'function') {
+  const shouldRunJson = jsonScenarioIds.includes(scenarioName) || scenarioName.endsWith('.json')
+  if (shouldRunJson) {
+    const scenario = await loadJsonScenario(scenarioName)
+    const summary = await runJsonScenario({
+      api: authed,
+      config,
+      scenario,
+      options: {
+        skipLlm: args.skipLlm,
+        continueOnError: args.continueOnError,
+      },
+    })
+
+    console.log('\nScenario complete.')
+    if (summary) console.log(JSON.stringify(summary, null, 2))
+    return
+  }
+
+  const jsLoader = jsScenarios[scenarioName]
+  if (!jsLoader) {
+    console.error(`Unknown scenario: ${scenarioName}`)
+    console.error('Run with --list to see available scenarios.')
+    process.exit(1)
+  }
+
+  const jsScenario = await jsLoader()
+  if (typeof jsScenario.run !== 'function') {
     throw new Error(`Scenario module "${scenarioName}" must export async function run(ctx)`)
   }
 
-  const summary = await mod.run({ api: authed, config })
+  const summary = await jsScenario.run({ api: authed, config })
   console.log('\nScenario complete.')
   if (summary) console.log(JSON.stringify(summary, null, 2))
 }

@@ -147,8 +147,11 @@ test.describe('Stakeholder demo recorder', () => {
 
     await page.getByRole('button', { name: /New Request/ }).click()
     const requestComposer = page.locator('textarea.td-textarea')
+    await expect(requestComposer).toBeVisible()
     await requestComposer.fill('list pending proposals')
-    await page.getByRole('button', { name: 'Submit Request' }).click()
+    const submitRequestButton = page.getByRole('button', { name: 'Submit Request' })
+    await expect(submitRequestButton).toBeVisible()
+    await submitRequestButton.click()
     await expect(requestComposer).toBeHidden()
     await page.screenshot({ path: testInfo.outputPath('07-queue-submitted.png'), fullPage: true })
 
