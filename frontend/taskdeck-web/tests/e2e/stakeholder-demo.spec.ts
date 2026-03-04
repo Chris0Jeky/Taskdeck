@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
@@ -22,6 +22,14 @@ function parseSetupTimeoutMs(value: string | undefined): number {
     return Math.floor(parsed)
   }
   return DEFAULT_SETUP_TIMEOUT_MS
+}
+
+function parseOptionalPositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+    return fallback
+  }
+  return parsed
 }
 
 function resolveAppRoot(startDir: string): string {
@@ -57,30 +65,57 @@ function runSetupScript({
   scriptArgs,
   env,
   timeoutMs,
+  label,
+  logPath,
+  echoOutput,
 }: {
   appRoot: string
   scriptArgs: string[]
   env: NodeJS.ProcessEnv
   timeoutMs: number
+  label: string
+  logPath: string | null
+  echoOutput: boolean
 }): void {
-  try {
-    execFileSync(process.execPath, scriptArgs, {
-      cwd: appRoot,
-      stdio: 'inherit',
-      env,
-      timeout: timeoutMs,
-      killSignal: 'SIGTERM',
-    })
-  } catch (err) {
-    const error = err as NodeJS.ErrnoException
+  const result = spawnSync(process.execPath, scriptArgs, {
+    cwd: appRoot,
+    env,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    killSignal: 'SIGTERM',
+  })
+
+  const combined = `${result.stdout || ''}${result.stderr || ''}`
+  if (logPath) {
+    writeFileSync(logPath, combined, 'utf8')
+  }
+
+  if (echoOutput && combined.trim()) {
+    process.stdout.write(combined)
+  }
+
+  if (result.error) {
+    const error = result.error as NodeJS.ErrnoException
     if (error.code === 'ETIMEDOUT') {
       throw new Error(
         `Timed out after ${timeoutMs}ms running setup command: node ${scriptArgs.join(' ')} (cwd=${appRoot})`,
       )
     }
 
-    throw err
+    throw result.error
   }
+
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(`Demo bootstrap failed at ${label} (exit=${result.status}).\n\n${combined}`)
+  }
+}
+
+function defaultBoardNameForScenario(scenarioId: string): string {
+  const id = String(scenarioId || '').trim().toLowerCase()
+  if (id === 'engineering-sprint') return 'DEMO: Engineering Sprint'
+  if (id === 'content-calendar') return 'DEMO: Content Calendar'
+  if (id === 'support-triage') return 'DEMO: Support Triage'
+  return 'DEMO: Engineering Sprint'
 }
 
 /**
@@ -114,27 +149,88 @@ test.describe('Stakeholder demo recorder', () => {
       process.env.TASKDECK_E2E_FRONTEND_BASE_URL ||
       process.env.TASKDECK_UI_BASE_URL ||
       'http://localhost:5173'
+
+    const isDirector = process.env.TASKDECK_DEMO_DIRECTOR === '1'
+    const artifactDir = (process.env.TASKDECK_DEMO_ARTIFACT_DIR || '').trim() || null
+    const logsDir = artifactDir ? path.join(artifactDir, 'logs') : null
+
+    const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
+    const skipSeed = process.env.TASKDECK_DEMO_SKIP_SEED === '1'
+    const skipLlm = process.env.TASKDECK_DEMO_SKIP_LLM === '1'
+
+    const autopilotTurns = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_TURNS, 0)
+    const autopilotBoardName =
+      (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim() || defaultBoardNameForScenario(scenarioId)
+    const autopilotLoop = (process.env.TASKDECK_DEMO_AUTOPILOT_LOOP || 'mixed').trim() || 'mixed'
+    const autopilotBrain = (process.env.TASKDECK_DEMO_AUTOPILOT_BRAIN || 'heuristic').trim() || 'heuristic'
+    const autopilotIntervalMs = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS, 700)
+    const autopilotSeed = (process.env.TASKDECK_DEMO_AUTOPILOT_RNG_SEED || '').trim() || null
+
+    const snapshotPath = (process.env.TASKDECK_DEMO_SNAPSHOT_PATH || '').trim() || null
+
+    if (logsDir) {
+      mkdirSync(logsDir, { recursive: true })
+    }
+
     const setupEnv = {
       ...process.env,
       TASKDECK_API_BASE_URL: apiBaseUrl,
       TASKDECK_API_BASE: apiBaseUrl,
       TASKDECK_UI_BASE: uiBaseUrl,
       TASKDECK_UI_BASE_URL: uiBaseUrl,
+      TASKDECK_E2E_API_BASE_URL: apiBaseUrl,
+      TASKDECK_E2E_FRONTEND_BASE_URL: uiBaseUrl,
     }
 
-    runSetupScript({
-      appRoot,
-      scriptArgs: ['scripts/demo-seed.mjs'],
-      env: setupEnv,
-      timeoutMs: setupTimeoutMs,
-    })
+    const runScript = (label: string, scriptArgs: string[], logFileName: string | null) => {
+      const logPath = logFileName && logsDir ? path.join(logsDir, logFileName) : null
+      runSetupScript({
+        appRoot,
+        scriptArgs,
+        env: setupEnv,
+        timeoutMs: setupTimeoutMs,
+        label,
+        logPath,
+        echoOutput: !isDirector,
+      })
+    }
 
-    runSetupScript({
-      appRoot,
-      scriptArgs: ['scripts/demo-run.mjs', 'engineering-sprint'],
-      env: setupEnv,
-      timeoutMs: setupTimeoutMs,
-    })
+    if (!skipSeed) {
+      runScript('demo-seed', ['scripts/demo-seed.mjs'], isDirector ? 'seed.log' : null)
+    }
+
+    if (scenarioId) {
+      const runArgs = ['scripts/demo-run.mjs', scenarioId]
+      if (skipLlm) {
+        runArgs.push('--skip-llm')
+      }
+      runScript('demo-run', runArgs, isDirector ? 'scenario.log' : null)
+    }
+
+    if (autopilotTurns > 0) {
+      const autopilotArgs = [
+        'scripts/demo-autopilot.mjs',
+        '--board',
+        autopilotBoardName,
+        '--turns',
+        String(autopilotTurns),
+        '--interval-ms',
+        String(autopilotIntervalMs),
+        '--loop',
+        autopilotLoop,
+        '--brain',
+        autopilotBrain,
+      ]
+      if (autopilotSeed) {
+        autopilotArgs.push('--rng-seed', autopilotSeed)
+      }
+
+      runScript('demo-autopilot', autopilotArgs, isDirector ? 'autopilot.log' : null)
+    }
+
+    if (snapshotPath) {
+      runScript('demo-snapshot', ['scripts/demo-snapshot.mjs', '--out', snapshotPath], isDirector ? 'snapshot.log' : null)
+    }
   })
 
   test('captures guided stakeholder clickthrough', async ({ page, request }, testInfo) => {
@@ -154,15 +250,18 @@ test.describe('Stakeholder demo recorder', () => {
     await attachSessionToPage(page, auth)
 
     await page.addInitScript(() => {
-      localStorage.setItem('taskdeck_feature_flags', JSON.stringify({
-        newShell: true,
-        newAuth: true,
-        newAutomation: true,
-        newAccess: true,
-        newActivity: true,
-        newOps: true,
-        newArchive: true,
-      }))
+      localStorage.setItem(
+        'taskdeck_feature_flags',
+        JSON.stringify({
+          newShell: true,
+          newAuth: true,
+          newAutomation: true,
+          newAccess: true,
+          newActivity: true,
+          newOps: true,
+          newArchive: true,
+        }),
+      )
     })
 
     await page.goto('/workspace/boards')
@@ -219,4 +318,3 @@ test.describe('Stakeholder demo recorder', () => {
     await page.screenshot({ path: testInfo.outputPath('10-notifications.png'), fullPage: true })
   })
 })
-
