@@ -114,15 +114,21 @@ function normalizeBrainLine(line) {
     return { kind: 'instruction', instruction: raw }
   }
 
-  const prefix = raw.split(':', 1)[0]?.trim().toUpperCase()
+  const lines = raw.split(/\r?\n/)
+  const firstLine = lines[0]?.trim() || ''
+  const separatorIndex = firstLine.indexOf(':')
+  const prefix = (separatorIndex === -1 ? firstLine : firstLine.slice(0, separatorIndex)).trim().toUpperCase()
+
   if (prefix === 'INSTRUCTION') {
-    const instruction = raw.slice(raw.indexOf(':') + 1).trim()
+    const instruction = separatorIndex === -1 ? '' : firstLine.slice(separatorIndex + 1).trim()
     if (!isValidInstruction(instruction)) return null
     return { kind: 'instruction', instruction }
   }
 
   if (prefix === 'CAPTURE') {
-    const text = raw.slice(raw.indexOf(':') + 1).trim()
+    const inlineText = separatorIndex === -1 ? '' : firstLine.slice(separatorIndex + 1).trim()
+    const trailingLines = lines.slice(1).join('\n').trim()
+    const text = [inlineText, trailingLines].filter(Boolean).join('\n').trim()
     if (!text) return null
     return { kind: 'capture', text }
   }
@@ -216,12 +222,15 @@ async function createChatBrain({ api, boardId, loop }) {
     }
 
     if (allowCapture) {
-      formats.push('CAPTURE: <a short natural-language note for Inbox triage (1-6 lines)>')
+      formats.push(
+        'CAPTURE: <a short natural-language note for Inbox triage>' +
+          '\n  Optional continuation lines are allowed (up to 6 total lines).',
+      )
     }
 
     const prompt =
       'You are a simulated Taskdeck user. Pick ONE next action to advance work.\n' +
-      'Return EXACTLY one line using ONE of these formats:\n' +
+      'Return EXACTLY one action using ONE of these formats:\n' +
       formats.map((format) => `- ${format}`).join('\n') +
       '\n\nDo not include explanations, markdown, bullet points, or extra text.\n\n' +
       'Board snapshot:\n' +
@@ -235,7 +244,7 @@ async function createChatBrain({ api, boardId, loop }) {
     })
 
     const raw = (message?.assistant?.content || '').trim()
-    return raw.split(/\r?\n/)[0]?.trim() || ''
+    return raw
   }
 }
 
