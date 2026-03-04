@@ -45,6 +45,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - OWASP baseline hardening record for API security headers and CSRF posture (`#80`, delivered).
 - `DEMO_PLAYBOOK.md`
   - Demo-runbook for seeded first-run walkthrough, scenario harness (`demo:run`), autopilot, and opt-in stakeholder recorder.
+- `SCENARIOS.md`
+  - JSON scenario runner reference for deterministic demo/test setup, step contracts, and interpolation rules.
 - `DOGFOODING_GUIDE.md`
   - Daily operating cadence for capture-triage-proposal execution and friction logging.
 - `USER_MANUAL.md`
