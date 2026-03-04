@@ -717,6 +717,14 @@ Batch C JSON/capture harness (`#300`) status:
 - capture helper functions added in `scripts/demo-lib.mjs` and consumed by JSON runner/autopilot (`create/get/ignore/cancel/triage/wait-for-outcome`)
 - scenario authoring/usage documentation added and indexed (`docs/SCENARIOS.md`, `docs/INDEX.md`, `docs/DEMO_PLAYBOOK.md`)
 
+Batch D director/artifact orchestration (`#301`) status:
+- demo orchestration commands added (`npm run demo:director`, `npm run demo:snapshot`) with new scripts (`scripts/demo-director.mjs`, `scripts/demo-snapshot.mjs`)
+- runtime trace stream support added across scenario/autopilot/proposal/capture/ops flows via `TASKDECK_DEMO_TRACE_PATH` (`trace.ndjson` artifact)
+- JSON scenario runner expanded with `runOps` step support and `opsRuns` alias namespace
+- scenario samples now include Ops template evidence steps (`health.check`) for richer demo artifacts
+- stakeholder recorder spec now supports director-mode bootstrap (seed/scenario/autopilot/snapshot orchestration + per-step logs under artifacts)
+- playbook and scenario docs updated for director usage and `runOps` authoring guidance
+
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
@@ -727,7 +735,7 @@ Batch C JSON/capture harness (`#300`) status:
 6. Sequence capture-linked hardening by priority stage: `#212` in Priority III, `#213` in Priority IV.
 7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing analytics/starter-pack tracks (`#77`, `#175`) and the delivered import-adapter foundation (`#75`).
-9. Continue demo-expansion dependency chain after delivered batches `#298`, `#299`, and `#300`: execute `#301` next, then integration hardening `#302`.
+9. Continue demo-expansion dependency chain after delivered batches `#298`, `#299`, `#300`, and `#301`: execute integration hardening `#302`.
 
 ## Documentation Operating Model
 Active docs:

@@ -86,7 +86,7 @@ npm run demo:autopilot -- --turns 5 --brain heuristic
 Deterministic autopilot simulation (seeded):
 
 ```bash
-npm run demo:autopilot -- --turns 5 --brain heuristic --seed 42
+npm run demo:autopilot -- --turns 5 --brain heuristic --rng-seed 42
 ```
 
 Optional chat-driven autopilot (requires live provider setup):
@@ -177,6 +177,38 @@ Bash:
 ```bash
 TASKDECK_RUN_DEMO=1 npx playwright test tests/e2e/stakeholder-demo.spec.ts --headed
 ```
+
+## Demo Director (Scenario -> Autopilot -> Recorder -> Artifacts)
+
+For a one-command, repeatable stakeholder run (including artifacts), use:
+
+```bash
+cd frontend/taskdeck-web
+
+# Full run with deterministic autopilot seed
+npm run demo:director -- --scenario engineering-sprint --turns 18 --brain heuristic --loop mixed --rng-seed demo-1
+
+# CI-style deterministic run without LLM-required steps
+npm run demo:director -- --scenario engineering-sprint --turns 12 --skip-llm --rng-seed ci-1
+
+# Headed run if you want to watch the clickthrough
+npm run demo:director -- --scenario engineering-sprint --turns 10 --headed
+```
+
+Artifacts are written to:
+
+```text
+frontend/taskdeck-web/demo-artifacts/run-<timestamp>/
+  README.md
+  run-summary.json
+  snapshot.json
+  trace.ndjson
+  logs/
+  screenshots/
+  playwright/
+```
+
+`trace.ndjson` contains structured scenario/autopilot events and is useful for debugging failed demo runs.
 
 ## Constraints
 
