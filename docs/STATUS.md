@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-02  
+Last Updated: 2026-03-04  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -93,12 +93,15 @@ Direction guardrails (explicit):
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
-- Demo baseline (migration batch A):
+- Demo baseline (migration batches A + B):
   - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation
-  - `docs/DEMO_PLAYBOOK.md` for seeded stakeholder walkthrough and MVP dogfooding loop
+  - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `demo-run.mjs`, `demo-autopilot.mjs`, and `scripts/scenarios/*` for reusable scripted scenario/autopilot harness flows
+  - `docs/DEMO_PLAYBOOK.md`, `docs/DOGFOODING_GUIDE.md`, and `docs/USER_MANUAL.md` for seeded stakeholder walkthrough, daily dogfooding cadence, and user-facing operations guidance
+  - `demo/http/taskdeck-demo.http` for local API walkthrough against the dev backend
+  - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`)
   - advanced/diagnostic nav surfaces now default off via feature flags (`Activity`, `Ops`, `Access`, `Archive`)
   - `Automations` nav now defaults to proposals review path instead of queue path
-  - queue composer now defaults to instruction-first request type with guided helper text
+  - queue composer now defaults to instruction-first request type with guided helper text and board-context guardrails for board-scoped instructions
 - Shared maintainability utilities:
   - `buildQueryString` for API query construction across filter-driven endpoints
   - `getErrorMessage` for consistent API/store error extraction
@@ -192,6 +195,10 @@ Execution constraints:
 - strict dependency order (`#298` -> `#299` -> `#300` -> `#301` -> `#302`)
 - one branch per batch issue using suggested branch names embedded in issue bodies
 - file-scoped commit preference for review/rollback safety
+
+Implementation delivery (shipped):
+- `#298` Batch A (`v0`): baseline demo seeding command + first-run UX defaults + seeded playbook promotion
+- `#299` Batch B (`v1`): reusable demo harness scripts (`demo:run`, `demo:autopilot`), scenario modules, API walkthrough asset, stakeholder opt-in recorder spec, and expanded demo/dogfooding/user docs
 
 ## Capture Realignment Wave (2026-02-23)
 
