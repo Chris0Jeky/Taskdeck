@@ -56,11 +56,18 @@ function asApiBaseUrl(value) {
   return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized
 }
 
+function asUiBaseUrl(value) {
+  const normalized = value ?? DEFAULT_UI_BASE
+  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized
+}
+
 export function getDemoConfig(overrides = {}) {
   const apiBaseUrl = asApiBaseUrl(
     process.env.TASKDECK_API_BASE_URL || process.env.TASKDECK_API_BASE || process.env.TASKDECK_E2E_API_BASE_URL,
   )
-  const uiBaseUrl = process.env.TASKDECK_UI_BASE || process.env.TASKDECK_UI_BASE_URL || DEFAULT_UI_BASE
+  const uiBaseUrl = asUiBaseUrl(
+    process.env.TASKDECK_UI_BASE || process.env.TASKDECK_UI_BASE_URL || process.env.TASKDECK_E2E_FRONTEND_BASE_URL,
+  )
 
   ensureSafeApiTarget(apiBaseUrl)
 
@@ -298,7 +305,18 @@ export async function enqueueInstruction(apiAuthed, { boardId, instruction }) {
 
 export async function enqueueAndApplyInstruction(apiAuthed, { boardId, instruction, timeoutMs = 60_000 }) {
   const request = await enqueueInstruction(apiAuthed, { boardId, instruction })
-  await waitForQueueRequest(apiAuthed, request.id, { label: `queue request ${request.id}`, timeoutMs })
+  const queueRequest = await waitForQueueRequest(apiAuthed, request.id, { label: `queue request ${request.id}`, timeoutMs })
+
+  const queueStatusRaw = queueRequest?.status
+  const queueStatus = typeof queueStatusRaw === 'string' ? queueStatusRaw.toLowerCase() : queueStatusRaw
+  const failed = queueStatus === 3 || queueStatus === 'failed'
+  const cancelled = queueStatus === 4 || queueStatus === 'cancelled'
+
+  if (failed || cancelled || queueRequest?.errorMessage) {
+    const reason =
+      queueRequest?.errorMessage || `queue request ended as ${String(queueRequest?.status ?? 'unknown')}`
+    throw new Error(`Queue request ${request.id} did not produce a proposal: ${reason}`)
+  }
 
   const proposal = await waitFor(
     async () => await findProposalBySourceRef(apiAuthed, { sourceReferenceId: request.id }),

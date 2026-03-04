@@ -1,10 +1,36 @@
 import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 
 import type { AuthResult } from './support/authSession'
 import { attachSessionToPage } from './support/authSession'
+
+function resolveAppRoot(startDir: string): string {
+  let current = startDir
+
+  while (current !== path.dirname(current)) {
+    const hasPackageJson = existsSync(path.join(current, 'package.json'))
+    const hasDemoSeed = existsSync(path.join(current, 'scripts', 'demo-seed.mjs'))
+    const hasDemoRun = existsSync(path.join(current, 'scripts', 'demo-run.mjs'))
+
+    if (hasPackageJson && hasDemoSeed && hasDemoRun) {
+      return current
+    }
+
+    current = path.dirname(current)
+  }
+
+  const hasPackageJson = existsSync(path.join(current, 'package.json'))
+  const hasDemoSeed = existsSync(path.join(current, 'scripts', 'demo-seed.mjs'))
+  const hasDemoRun = existsSync(path.join(current, 'scripts', 'demo-run.mjs'))
+  if (hasPackageJson && hasDemoSeed && hasDemoRun) {
+    return current
+  }
+
+  throw new Error('Unable to resolve frontend/taskdeck-web app root for stakeholder demo setup.')
+}
 
 /**
  * Stakeholder demo recorder.
@@ -29,7 +55,7 @@ test.describe('Stakeholder demo recorder', () => {
   test.beforeAll(() => {
     const __filename = fileURLToPath(import.meta.url)
     const __dirname = path.dirname(__filename)
-    const appRoot = path.resolve(__dirname, '..', '..')
+    const appRoot = resolveAppRoot(__dirname)
 
     const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL || 'http://localhost:5000/api'
     const uiBaseUrl =
@@ -92,7 +118,9 @@ test.describe('Stakeholder demo recorder', () => {
     await expect(page.getByRole('heading', { name: 'Boards' })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('01-boards.png'), fullPage: true })
 
-    await page.getByRole('link', { name: 'DEMO: Capture Loop' }).click()
+    const captureLoopBoardCard = page.locator('div.cursor-pointer').filter({ hasText: 'DEMO: Capture Loop' }).first()
+    await expect(captureLoopBoardCard).toBeVisible()
+    await captureLoopBoardCard.click()
     await expect(page.getByRole('heading', { name: 'DEMO: Capture Loop' })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('02-capture-board.png'), fullPage: true })
 
