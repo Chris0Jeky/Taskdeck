@@ -159,8 +159,12 @@ async function handleStatusChange(status: string) {
 }
 
 async function handleSubmitRequest() {
-  if (!newRequestType.value.trim() || !newPayload.value.trim()) return
+  const trimmedRequestType = newRequestType.value.trim()
   const trimmedPayload = newPayload.value.trim()
+  if (!trimmedRequestType || !trimmedPayload) {
+    toast.error('Request type and instruction are required.')
+    return
+  }
   const trimmedBoardId = newBoardId.value.trim()
   if (!trimmedBoardId && boardScopedInstructionPattern.test(trimmedPayload)) {
     toast.error('Board ID is required for board-scoped instructions.')
@@ -174,7 +178,7 @@ async function handleSubmitRequest() {
   try {
     submitting.value = true
     await queue.submitRequest({
-      requestType: newRequestType.value.trim(),
+      requestType: trimmedRequestType,
       payload: trimmedPayload,
       ...(trimmedBoardId ? { boardId: trimmedBoardId } : {}),
     })
