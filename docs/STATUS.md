@@ -95,7 +95,7 @@ Direction guardrails (explicit):
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
 - Demo baseline (migration batches A + B + C):
   - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation
-  - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `demo-run.mjs`, `demo-autopilot.mjs`, `scenario-json-runner.mjs`, `scripts/scenarios-json/*`, and `scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
+  - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `frontend/taskdeck-web/scripts/demo-run.mjs`, `frontend/taskdeck-web/scripts/demo-autopilot.mjs`, `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`, `frontend/taskdeck-web/scripts/scenarios-json/*`, and `frontend/taskdeck-web/scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
   - `docs/DEMO_PLAYBOOK.md`, `docs/SCENARIOS.md`, `docs/DOGFOODING_GUIDE.md`, and `docs/USER_MANUAL.md` for seeded stakeholder walkthrough, JSON scenario authoring/runner usage, daily dogfooding cadence, and user-facing operations guidance
   - `demo/http/taskdeck-demo.http` for local API walkthrough against the dev backend
   - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`)
