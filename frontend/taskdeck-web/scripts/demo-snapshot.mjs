@@ -6,7 +6,9 @@
  */
 
 import fs from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import path from 'node:path'
+import { createInterface } from 'node:readline'
 
 import { TaskdeckApiClient, ensureUser, getDemoConfig, traceEvent } from './demo-lib.mjs'
 
@@ -57,27 +59,37 @@ async function readOpsRunIdsFromTrace(tracePath, limit) {
   if (!tracePath) return []
 
   try {
-    const raw = await fs.readFile(tracePath, 'utf8')
     const runIds = []
     const seen = new Set()
 
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
+    const stream = createReadStream(tracePath, { encoding: 'utf8' })
+    const lineReader = createInterface({
+      input: stream,
+      crlfDelay: Infinity,
+    })
 
-      let event = null
-      try {
-        event = JSON.parse(trimmed)
-      } catch {
-        continue
+    try {
+      for await (const line of lineReader) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+
+        let event = null
+        try {
+          event = JSON.parse(trimmed)
+        } catch {
+          continue
+        }
+
+        const runId = typeof event?.runId === 'string' ? event.runId.trim() : ''
+        if (!runId || seen.has(runId)) continue
+
+        seen.add(runId)
+        runIds.push(runId)
+        if (runIds.length >= limit) break
       }
-
-      const runId = typeof event?.runId === 'string' ? event.runId.trim() : ''
-      if (!runId || seen.has(runId)) continue
-
-      seen.add(runId)
-      runIds.push(runId)
-      if (runIds.length >= limit) break
+    } finally {
+      lineReader.close()
+      stream.destroy()
     }
 
     return runIds
