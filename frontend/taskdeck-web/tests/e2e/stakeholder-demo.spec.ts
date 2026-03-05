@@ -33,6 +33,14 @@ function parseOptionalPositiveInteger(value: string | undefined, fallback: numbe
   return parsed
 }
 
+function parseOptionalNonNegativeInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+    return fallback
+  }
+  return parsed
+}
+
 function resolveAppRoot(startDir: string): string {
   const cwd = process.cwd()
   if (isAppRoot(cwd)) {
@@ -78,21 +86,30 @@ function runSetupScript({
   logPath: string | null
   echoOutput: boolean
 }): void {
-  const result = spawnSync(process.execPath, scriptArgs, {
-    cwd: appRoot,
-    env,
-    encoding: 'utf8',
-    maxBuffer: SETUP_SCRIPT_MAX_BUFFER_BYTES,
-    timeout: timeoutMs,
-    killSignal: 'SIGTERM',
-  })
+  const useStreamingConsoleOutput = echoOutput && !logPath
+  const result = useStreamingConsoleOutput
+    ? spawnSync(process.execPath, scriptArgs, {
+        cwd: appRoot,
+        env,
+        stdio: 'inherit',
+        timeout: timeoutMs,
+        killSignal: 'SIGTERM',
+      })
+    : spawnSync(process.execPath, scriptArgs, {
+        cwd: appRoot,
+        env,
+        encoding: 'utf8',
+        maxBuffer: SETUP_SCRIPT_MAX_BUFFER_BYTES,
+        timeout: timeoutMs,
+        killSignal: 'SIGTERM',
+      })
 
-  const combined = `${result.stdout || ''}${result.stderr || ''}`
+  const combined = useStreamingConsoleOutput ? '' : `${result.stdout || ''}${result.stderr || ''}`
   if (logPath) {
     writeFileSync(logPath, combined, 'utf8')
   }
 
-  if (echoOutput && combined.trim()) {
+  if (!useStreamingConsoleOutput && echoOutput && combined.trim()) {
     process.stdout.write(combined)
   }
 
@@ -178,7 +195,7 @@ test.describe('Stakeholder demo recorder', () => {
       (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim() || defaultBoardNameForScenario(scenarioId)
     const autopilotLoop = (process.env.TASKDECK_DEMO_AUTOPILOT_LOOP || 'mixed').trim() || 'mixed'
     const autopilotBrain = (process.env.TASKDECK_DEMO_AUTOPILOT_BRAIN || 'heuristic').trim() || 'heuristic'
-    const autopilotIntervalMs = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS, 700)
+    const autopilotIntervalMs = parseOptionalNonNegativeInteger(process.env.TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS, 700)
     const autopilotSeed = (process.env.TASKDECK_DEMO_AUTOPILOT_RNG_SEED || '').trim() || null
 
     const snapshotPath = (process.env.TASKDECK_DEMO_SNAPSHOT_PATH || '').trim() || null
