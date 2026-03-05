@@ -147,15 +147,37 @@ function summarizeEvents(events) {
     byType[type] = (byType[type] || 0) + 1
   }
 
-  const proposals = events
-    .filter((event) => event?.type === 'proposal.execute' || event?.type === 'queue.applied')
-    .map((event) => ({
-      ts: event.ts,
-      type: event.type,
-      proposalId: event.proposalId || null,
-      requestId: event.requestId || null,
-      boardId: event.boardId || null,
-    }))
+  const proposalEvents = events.filter((event) => event?.type === 'proposal.execute' || event?.type === 'queue.applied')
+  const proposalsByKey = new Map()
+  let fallbackKeyCounter = 0
+  for (const event of proposalEvents) {
+    const proposalId = typeof event?.proposalId === 'string' && event.proposalId.trim() ? event.proposalId.trim() : null
+    const requestId = typeof event?.requestId === 'string' && event.requestId.trim() ? event.requestId.trim() : null
+    const boardId = typeof event?.boardId === 'string' && event.boardId.trim() ? event.boardId.trim() : null
+    const key = proposalId ? `proposal:${proposalId}` : requestId ? `request:${requestId}` : `event:${fallbackKeyCounter++}`
+
+    const existing = proposalsByKey.get(key)
+    if (!existing) {
+      proposalsByKey.set(key, {
+        ts: event.ts,
+        type: event.type,
+        proposalId,
+        requestId,
+        boardId,
+      })
+      continue
+    }
+
+    // Prefer proposal.execute metadata when both queue.applied and proposal.execute exist for one proposal.
+    proposalsByKey.set(key, {
+      ts: existing.ts || event.ts,
+      type: existing.type === 'proposal.execute' ? existing.type : event.type,
+      proposalId: existing.proposalId || proposalId,
+      requestId: existing.requestId || requestId,
+      boardId: existing.boardId || boardId,
+    })
+  }
+  const proposals = Array.from(proposalsByKey.values())
 
   const captures = events
     .filter((event) => event?.type === 'capture.create' || event?.type === 'capture.triage.outcome')
