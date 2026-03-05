@@ -277,6 +277,10 @@ function validateScenarioStep(index, step) {
           step.parameters === null || isObject(step.parameters),
           `${stepLabel}: parameters must be an object or null`,
         )
+        if (step.parameters !== null) {
+          const hasOnlyStringValues = Object.values(step.parameters).every((value) => typeof value === 'string')
+          assert(hasOnlyStringValues, `${stepLabel}: parameters values must all be strings`)
+        }
       }
       break
     default:
