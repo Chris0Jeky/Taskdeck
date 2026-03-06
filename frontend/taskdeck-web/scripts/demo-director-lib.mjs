@@ -19,13 +19,32 @@ export async function resetDemoDirectorArtifacts(artifactDir) {
 }
 
 export function resolveDemoDirectorRuntime({ webRoot, e2eDb, resetE2EDb = false, freshServers = false }) {
+  const resolvedWebRoot = path.resolve(webRoot)
   const normalizedE2EDb = typeof e2eDb === 'string' ? e2eDb.trim() : ''
   if (resetE2EDb && normalizedE2EDb.length === 0) {
     throw new Error('--reset-e2e-db requires --e2e-db')
   }
 
+  let e2eDbPath = null
+  if (normalizedE2EDb.length > 0) {
+    if (resetE2EDb && path.isAbsolute(normalizedE2EDb)) {
+      throw new Error('--e2e-db must be a path within the web root when --reset-e2e-db is used')
+    }
+
+    const candidateE2EDbPath = path.resolve(resolvedWebRoot, normalizedE2EDb)
+    if (resetE2EDb) {
+      const relativeToRoot = path.relative(resolvedWebRoot, candidateE2EDbPath)
+      if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+        throw new Error('--e2e-db must not point outside the web root when --reset-e2e-db is used')
+      }
+    }
+
+    e2eDbPath = candidateE2EDbPath
+  }
+
   return {
-    e2eDbPath: normalizedE2EDb.length > 0 ? path.resolve(webRoot, normalizedE2EDb) : null,
+    e2eDbPath,
+    shouldResetE2EDb: resetE2EDb,
     forceFreshServers: freshServers || resetE2EDb,
   }
 }
@@ -44,6 +63,7 @@ export async function resolveDemoDirectorApiBaseUrl({
   forceFreshServers = false,
   canBind = canBindTcpPort,
   reservePort = reserveTcpPort,
+  maxPortProbeAttempts = 10,
 } = {}) {
   const normalizedRequestedApiBaseUrl = normalizeUrlString(requestedApiBaseUrl)
   if (normalizedRequestedApiBaseUrl) {
@@ -57,13 +77,37 @@ export async function resolveDemoDirectorApiBaseUrl({
 
   const parsedDefaultApiBaseUrl = new URL(normalizedDefaultApiBaseUrl)
   const defaultPort = getUrlPort(parsedDefaultApiBaseUrl)
-  if (await canBind(parsedDefaultApiBaseUrl.hostname, defaultPort)) {
+  const hostsToProbe = resolveLoopbackHosts(parsedDefaultApiBaseUrl.hostname)
+  if (await canBindAllTcpHosts(hostsToProbe, defaultPort, canBind)) {
     return normalizedDefaultApiBaseUrl
   }
 
-  const fallbackPort = await reservePort(parsedDefaultApiBaseUrl.hostname)
+  const fallbackPort = await reserveBindableTcpPort({
+    hosts: hostsToProbe,
+    reservePort,
+    canBind,
+    maxAttempts: maxPortProbeAttempts,
+  })
   parsedDefaultApiBaseUrl.port = String(fallbackPort)
   return normalizeUrlString(parsedDefaultApiBaseUrl.toString())
+}
+
+export function resolveDemoDirectorRequestedApiBaseUrl({
+  e2eApiBaseUrl,
+  apiBaseUrl,
+  apiBase,
+  forceFreshServers = false,
+}) {
+  const normalizedE2EApiBaseUrl = normalizeUrlString(e2eApiBaseUrl)
+  if (normalizedE2EApiBaseUrl) {
+    return normalizedE2EApiBaseUrl
+  }
+
+  if (forceFreshServers) {
+    return null
+  }
+
+  return normalizeUrlString(apiBaseUrl) ?? normalizeUrlString(apiBase)
 }
 
 export function buildDemoDirectorPortConflictHint(playwrightLog) {
@@ -114,12 +158,17 @@ async function canBindTcpPort(host, port) {
   return await new Promise((resolve) => {
     const server = net.createServer()
 
-    server.once('error', () => {
-      resolve(false)
+    server.once('error', (error) => {
+      if (error?.code === 'EAFNOSUPPORT' || error?.code === 'EADDRNOTAVAIL') {
+        resolve({ available: false, unsupported: true })
+        return
+      }
+
+      resolve({ available: false, unsupported: false })
     })
 
     server.listen(port, host, () => {
-      server.close(() => resolve(true))
+      server.close(() => resolve({ available: true, unsupported: false }))
     })
   })
 }
@@ -150,4 +199,65 @@ async function reserveTcpPort(host) {
       })
     })
   })
+}
+
+async function canBindAllTcpHosts(hosts, port, canBind) {
+  for (const host of hosts) {
+    const result = normalizeBindProbeResult(await canBind(host, port))
+    if (result.unsupported) {
+      continue
+    }
+
+    if (!result.available) {
+      return false
+    }
+  }
+
+  return true
+}
+
+async function reserveBindableTcpPort({ hosts, reservePort, canBind, maxAttempts }) {
+  const primaryHost = hosts[0]
+  let lastReservedPort = null
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const reservedPort = await reservePort(primaryHost)
+    lastReservedPort = reservedPort
+    if (await canBindAllTcpHosts(hosts, reservedPort, canBind)) {
+      return reservedPort
+    }
+  }
+
+  throw new Error(
+    `Unable to reserve a fallback port that is free on all loopback hosts after ${maxAttempts} attempts. ` +
+      `Last probed port: ${lastReservedPort ?? 'unknown'}.`,
+  )
+}
+
+function resolveLoopbackHosts(hostname) {
+  const normalizedHost = String(hostname || '').trim().toLowerCase()
+  if (normalizedHost === 'localhost') {
+    return ['localhost', '127.0.0.1', '::1']
+  }
+
+  if (normalizedHost === '127.0.0.1' || normalizedHost === '::1') {
+    return [normalizedHost]
+  }
+
+  return [hostname]
+}
+
+function normalizeBindProbeResult(result) {
+  if (typeof result === 'boolean') {
+    return { available: result, unsupported: false }
+  }
+
+  if (result && typeof result === 'object') {
+    return {
+      available: Boolean(result.available),
+      unsupported: Boolean(result.unsupported),
+    }
+  }
+
+  return { available: false, unsupported: false }
 }

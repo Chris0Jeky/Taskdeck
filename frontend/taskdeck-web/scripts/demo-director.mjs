@@ -18,6 +18,7 @@ import {
   buildDemoDirectorPortConflictHint,
   resetDemoDirectorArtifacts,
   resolveDemoDirectorApiBaseUrl,
+  resolveDemoDirectorRequestedApiBaseUrl,
   resetDemoDirectorE2EDb,
   resolveDemoDirectorRuntime,
 } from './demo-director-lib.mjs'
@@ -270,8 +271,12 @@ async function main() {
     freshServers: args.freshServers,
   })
   const selectedApiBaseUrl = await resolveDemoDirectorApiBaseUrl({
-    requestedApiBaseUrl:
-      process.env.TASKDECK_E2E_API_BASE_URL || process.env.TASKDECK_API_BASE_URL || process.env.TASKDECK_API_BASE,
+    requestedApiBaseUrl: resolveDemoDirectorRequestedApiBaseUrl({
+      e2eApiBaseUrl: process.env.TASKDECK_E2E_API_BASE_URL,
+      apiBaseUrl: process.env.TASKDECK_API_BASE_URL,
+      apiBase: process.env.TASKDECK_API_BASE,
+      forceFreshServers: runtime.forceFreshServers,
+    }),
     forceFreshServers: runtime.forceFreshServers,
   })
 
@@ -282,7 +287,9 @@ async function main() {
   const playwrightOutDir = path.join(artifactDir, 'playwright')
 
   await resetDemoDirectorArtifacts(artifactDir)
-  await resetDemoDirectorE2EDb(runtime.e2eDbPath)
+  if (runtime.shouldResetE2EDb) {
+    await resetDemoDirectorE2EDb(runtime.e2eDbPath)
+  }
   await fs.mkdir(logsDir, { recursive: true })
   await fs.mkdir(screenshotsDir, { recursive: true })
   await fs.mkdir(playwrightOutDir, { recursive: true })
