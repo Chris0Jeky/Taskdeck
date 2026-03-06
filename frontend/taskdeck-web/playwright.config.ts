@@ -6,6 +6,7 @@ import {
   parseFrontendHost,
   resolveDefaultFrontendPort,
 } from './playwright.port-resolution'
+import { resolveDemoBackendLlmEnv } from './playwright.demo-llm'
 
 const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
 const defaultApiBaseUrl = 'http://localhost:5000/api'
@@ -26,6 +27,7 @@ const backendServerEnv: Record<string, string> = {
   ASPNETCORE_ENVIRONMENT: 'Development',
   ConnectionStrings__DefaultConnection: `Data Source=${e2eDbPath}`,
   ASPNETCORE_URLS: apiConfig.origin,
+  ...resolveDemoBackendLlmEnv(process.env),
 }
 
 for (const [index, origin] of backendCorsOrigins.entries()) {
