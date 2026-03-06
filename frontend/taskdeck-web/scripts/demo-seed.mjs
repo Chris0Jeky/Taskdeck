@@ -209,6 +209,26 @@ function hasOpsLogMessage(logEntries, messageFragment) {
   return (logEntries || []).some((entry) => String(entry?.message || '').includes(messageFragment))
 }
 
+export function hasSeededChatEvidence(chatMessages, renameInstruction) {
+  return (
+    Boolean(
+      (chatMessages || []).find((message) => String(message?.content || '').trim() === String(renameInstruction || '').trim()),
+    ) || Boolean((chatMessages || []).find((message) => message?.proposalId))
+  )
+}
+
+export function shouldRecreateCaptureSeed(detail, { ignore = false } = {}) {
+  if (ignore || detail?.provenance?.proposalId) {
+    return false
+  }
+
+  return (
+    hasStatus(detail?.status, 'Ignored', 5) ||
+    hasStatus(detail?.status, 'Converted', 4) ||
+    hasStatus(detail?.status, 'Failed', 6)
+  )
+}
+
 export function planDemoSeedRerunState({
   boardId,
   captureSummaries,
@@ -241,12 +261,10 @@ export function planDemoSeedRerunState({
     },
     chat: {
       seededSession: seededChatSession,
-      hasSeededMessage:
-        Boolean(
-          (seededChatSession?.recentMessages || []).find(
-            (message) => String(message?.content || '').trim() === `rename board to "${DEMO_BOARD_SPECS.capture.canonicalName} (Chat)"`,
-          ),
-        ) || Boolean((seededChatSession?.recentMessages || []).find((message) => message?.proposalId)),
+      hasSeededMessage: hasSeededChatEvidence(
+        seededChatSession?.recentMessages,
+        `rename board to "${DEMO_BOARD_SPECS.capture.canonicalName} (Chat)"`,
+      ),
     },
     comments: {
       hasDemoMention: hasCommentWithContent(existingComments, demoMentionContent),
@@ -497,6 +515,14 @@ async function getProposalById(proposalId, token) {
   return proposals.find((proposal) => idsMatch(proposal?.id, proposalId)) || null
 }
 
+async function getChatSessionDetail(sessionId, token) {
+  if (!sessionId) {
+    return null
+  }
+
+  return await http('GET', `/llm/chat/sessions/${sessionId}`, { token })
+}
+
 async function ensureProposalApplied(proposalId, token) {
   const proposal = await getProposalById(proposalId, token)
   if (!proposal) {
@@ -542,6 +568,17 @@ async function ensureCaptureSeed(boardId, token, text, { ignore = false, applyPr
   }
 
   let detail = await getCaptureDetail(summary, token)
+  if (shouldRecreateCaptureSeed(detail, { ignore })) {
+    summary = await http('POST', '/capture/items', {
+      token,
+      body: {
+        boardId,
+        text,
+        source: 'Typed',
+      },
+    })
+    detail = await getCaptureDetail(summary, token)
+  }
 
   if (ignore) {
     if (!hasStatus(detail?.status, 'Ignored', 5)) {
@@ -552,15 +589,19 @@ async function ensureCaptureSeed(boardId, token, text, { ignore = false, applyPr
   }
 
   if (!detail?.provenance?.proposalId) {
-    const isTerminal =
-      hasStatus(detail?.status, 'Ignored', 5) || hasStatus(detail?.status, 'Cancelled', 4) || hasStatus(detail?.status, 'Failed', 6)
+    const isTerminal = shouldRecreateCaptureSeed(detail)
     if (!isTerminal) {
       await http('POST', `/capture/items/${summary.id}/triage`, { token })
+    } else {
+      throw new Error(`Seeded capture ${summary.id} is terminal without a proposal and must be recreated.`)
     }
 
     detail = await waitFor(
       async () => {
         const refreshed = await getCaptureDetail(summary, token)
+        if (shouldRecreateCaptureSeed(refreshed)) {
+          throw new Error(`Seeded capture ${summary.id} reached a terminal state before producing a proposal.`)
+        }
         return refreshed?.provenance?.proposalId ? refreshed : null
       },
       { label: `capture seed ${summary.id} to produce a proposalId` },
@@ -642,18 +683,19 @@ async function ensureChatSeed(boardId, token) {
   const renameInstruction = `rename board to "${temporaryCaptureName}"`
   const sessions = (await http('GET', '/llm/chat/sessions', { token })) || []
   let session = findChatSessionByTitle(sessions, boardId, SEEDED_CHAT.sessionTitle)
-  const hasSeededMessage =
-    Boolean(
-      (session?.recentMessages || []).find((message) => String(message?.content || '').trim() === renameInstruction),
-    ) || Boolean((session?.recentMessages || []).find((message) => message?.proposalId))
+  let sessionDetail = session?.id ? await getChatSessionDetail(session.id, token) : null
+  let hasSeededMessage = hasSeededChatEvidence(sessionDetail?.recentMessages, renameInstruction)
 
   if (!session) {
     session = await http('POST', '/llm/chat/sessions', {
       token,
       body: { title: SEEDED_CHAT.sessionTitle, boardId },
     })
+    sessionDetail = session
+    hasSeededMessage = false
   }
 
+  let appliedRenameProposal = false
   if (!hasSeededMessage) {
     const chatMessage = await http('POST', `/llm/chat/sessions/${session.id}/messages`, {
       token,
@@ -662,13 +704,16 @@ async function ensureChatSeed(boardId, token) {
 
     if (chatMessage?.proposalId) {
       await ensureProposalApplied(chatMessage.proposalId, token)
+      appliedRenameProposal = true
     }
   }
 
-  await http('PUT', `/boards/${boardId}`, {
-    token,
-    body: { name: DEMO_BOARD_SPECS.capture.canonicalName },
-  })
+  if (appliedRenameProposal) {
+    await http('PUT', `/boards/${boardId}`, {
+      token,
+      body: { name: DEMO_BOARD_SPECS.capture.canonicalName },
+    })
+  }
 }
 
 async function ensureSeededComments(boardId, token, collabToken, demoUser, collabUser) {
@@ -790,6 +835,14 @@ export async function main() {
   const captureBoardCards = (await http('GET', `/boards/${captureBoard.id}/cards`, { token: demoToken })) || []
   const queueRequests = (await http('GET', '/llm-queue/user?limit=200', { token: demoToken })) || []
   const chatSessions = (await http('GET', '/llm/chat/sessions', { token: demoToken })) || []
+  const seededChatSession = findChatSessionByTitle(chatSessions, captureBoard.id, SEEDED_CHAT.sessionTitle)
+  const plannedChatSessions = seededChatSession?.id
+    ? await Promise.all(
+        chatSessions.map(async (session) =>
+          idsMatch(session?.id, seededChatSession.id) ? (await getChatSessionDetail(seededChatSession.id, demoToken)) || session : session,
+        ),
+      )
+    : chatSessions
   const firstExistingCard = captureBoardCards[0]
   const existingComments = firstExistingCard
     ? ((await http('GET', `/boards/${captureBoard.id}/cards/${firstExistingCard.id}/comments`, { token: demoToken })) || [])
@@ -800,7 +853,7 @@ export async function main() {
     captureSummaries,
     boardCards: captureBoardCards,
     queueRequests,
-    chatSessions,
+    chatSessions: plannedChatSessions,
     existingComments,
     logEntries,
     demoUsername: demoUser.username,

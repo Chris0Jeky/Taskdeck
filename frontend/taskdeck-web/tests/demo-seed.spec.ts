@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { planDemoSeedRerunState } from '../scripts/demo-seed.mjs'
+import { hasSeededChatEvidence, planDemoSeedRerunState, shouldRecreateCaptureSeed } from '../scripts/demo-seed.mjs'
 
 describe('demo seed rerun planning', () => {
   it('marks all seeded artifacts for creation when the demo account is empty', () => {
@@ -90,5 +90,44 @@ describe('demo seed rerun planning', () => {
     expect(plan.comments.hasCollabReply).toBe(true)
     expect(plan.ops.hasHealthCheckLog).toBe(true)
     expect(plan.ops.hasBoardsListLog).toBe(true)
+  })
+
+  it('treats proposal-bearing chat history as seeded evidence even without the exact rename instruction', () => {
+    expect(
+      hasSeededChatEvidence(
+        [
+          {
+            id: 'msg-1',
+            content: 'Here is the follow-up proposal.',
+            proposalId: 'proposal-1',
+          },
+        ],
+        'rename board to "DEMO: Capture Loop (Chat)"',
+      ),
+    ).toBe(true)
+  })
+
+  it('recreates terminal capture items that have no proposal to reuse on rerun', () => {
+    expect(
+      shouldRecreateCaptureSeed({
+        id: 'capture-1',
+        status: 'Converted',
+        provenance: { proposalId: null },
+      }),
+    ).toBe(true)
+    expect(
+      shouldRecreateCaptureSeed({
+        id: 'capture-2',
+        status: 'Ignored',
+        provenance: { proposalId: null },
+      }),
+    ).toBe(true)
+    expect(
+      shouldRecreateCaptureSeed({
+        id: 'capture-3',
+        status: 'ProposalCreated',
+        provenance: { proposalId: 'proposal-1' },
+      }),
+    ).toBe(false)
   })
 })
