@@ -9,6 +9,10 @@ Linked issue: `#80` (SEC-05)
 This document records the baseline OWASP-oriented hardening controls now enforced in the API runtime.
 It is intentionally narrow and focuses on headers, CSRF posture, and explicit follow-up gaps.
 
+Related active security docs:
+
+- `docs/SECURITY_LOGGING_REDACTION.md` for capture/auth-sensitive logging and telemetry redaction policy (`#212`).
+
 ## Enforced Security Headers
 
 API middleware now emits these headers for API responses:
