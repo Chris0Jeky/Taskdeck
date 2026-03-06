@@ -219,6 +219,58 @@ describe('scenario json runner determinism', () => {
     ).toThrow('duplicates Step[0] (createCard) in cards')
   })
 
+  it('rejects duplicate card aliases introduced by updateCard steps', () => {
+    expect(() =>
+      validateScenarioJson({
+        version: 1,
+        id: 'duplicate-update-alias',
+        title: 'Duplicate Update Alias',
+        steps: [
+          {
+            type: 'createCard',
+            alias: 'shared-card',
+            board: 'board-1',
+            column: 'Backlog',
+            title: 'One',
+          },
+          {
+            type: 'updateCard',
+            alias: 'shared-card',
+            board: 'board-1',
+            card: 'card-1',
+            patch: { title: 'Updated' },
+          },
+        ],
+      }),
+    ).toThrow('duplicates Step[0] (createCard) in cards')
+  })
+
+  it('rejects duplicate card aliases introduced by moveCard steps', () => {
+    expect(() =>
+      validateScenarioJson({
+        version: 1,
+        id: 'duplicate-move-alias',
+        title: 'Duplicate Move Alias',
+        steps: [
+          {
+            type: 'createCard',
+            alias: 'shared-card',
+            board: 'board-1',
+            column: 'Backlog',
+            title: 'One',
+          },
+          {
+            type: 'moveCard',
+            alias: 'shared-card',
+            board: 'board-1',
+            card: 'card-1',
+            toColumn: 'Done',
+          },
+        ],
+      }),
+    ).toThrow('duplicates Step[0] (createCard) in cards')
+  })
+
   it('treats waitForCaptureOutcome as llm-dependent by default so --skip-llm remains deterministic', async () => {
     const summary = await runJsonScenario({
       api: createFakeApi(),
