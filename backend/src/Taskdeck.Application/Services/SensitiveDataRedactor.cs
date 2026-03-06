@@ -31,13 +31,13 @@ public static class SensitiveDataRedactor
         ),
         (
             new Regex(
-                @"(?i)((""(?:authorization|apiKey|api_key|token|password|secret|x-goog-api-key)""\s*:\s*""))([^""]*)("")",
+                @"(?i)((""(?:authorization|apiKey|api_key|token|password|secret|x-goog-api-key)""\s*:\s*""))((?:\\.|[^""\\])*)("")",
                 RegexOptions.Compiled),
             $"$1{RedactedValue}$4"
         ),
         (
             new Regex(
-                @"(?i)((""(?:text|payload|rawText|content|titleHint|externalRef)""\s*:\s*""))([^""]*)("")",
+                @"(?i)((""(?:text|payload|rawText|content|titleHint|externalRef)""\s*:\s*""))((?:\\.|[^""\\])*)("")",
                 RegexOptions.Compiled),
             $"$1{RedactedValue}$4"
         ),

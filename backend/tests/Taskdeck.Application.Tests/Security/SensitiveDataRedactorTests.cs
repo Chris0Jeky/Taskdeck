@@ -44,4 +44,20 @@ public class SensitiveDataRedactorTests
         summary.Should().NotContain("inner capture secret");
         summary.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
     }
+
+    [Fact]
+    public void Redact_ShouldMaskEntireJsonStringValues_WhenSensitiveFieldsContainEscapedQuotes()
+    {
+        var raw =
+            "{\"text\":\"secret \\\"quoted\\\" content\",\"payload\":\"apiKey \\\"nested\\\" value\",\"token\":\"secret-token\"}";
+
+        var redacted = SensitiveDataRedactor.Redact(raw);
+
+        redacted.Should().Contain($"\"text\":\"{SensitiveDataRedactor.RedactedValue}\"");
+        redacted.Should().Contain($"\"payload\":\"{SensitiveDataRedactor.RedactedValue}\"");
+        redacted.Should().Contain($"\"token\":\"{SensitiveDataRedactor.RedactedValue}\"");
+        redacted.Should().NotContain("secret \\\"quoted\\\" content");
+        redacted.Should().NotContain("apiKey \\\"nested\\\" value");
+        redacted.Should().NotContain("secret-token");
+    }
 }
