@@ -18,10 +18,14 @@ import {
   createCaptureItem,
   enqueueAndApplyInstruction,
   getCaptureItem,
+  getOpsRunLogs,
   ignoreCaptureItem,
   isoDaysFromNow,
+  runOpsCommand,
   summarizeBoardForAgent,
+  traceEvent,
   triageCaptureItem,
+  waitForOpsRun,
   waitForCaptureOutcome,
   waitForCaptureProposalId,
 } from './demo-lib.mjs'
@@ -44,12 +48,23 @@ const SUPPORTED_STEP_TYPES = new Set([
   'waitForCaptureProposal',
   'waitForCaptureOutcome',
   'executeProposal',
+  'runOps',
 ])
 const DEFAULT_LLM_STEP_TYPES = new Set([
   'queueInstruction',
   'triageCapture',
   'waitForCaptureProposal',
 ])
+const OPS_RUN_STATUS_BY_CODE = {
+  0: 'Queued',
+  1: 'Running',
+  2: 'Completed',
+  3: 'Failed',
+  4: 'TimedOut',
+  5: 'Cancelled',
+}
+const OPS_RUN_FAILURE_STATUSES = new Set(['failed', 'timedout', 'cancelled'])
+const OPS_LOG_PREVIEW_LIMIT = 20
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -86,6 +101,30 @@ function parseOptionalFiniteNumber(rawValue, fieldName) {
   const value = Number(valueToParse)
   assert(Number.isFinite(value), `${fieldName} must be a finite number`)
   return value
+}
+
+function normalizeOpsRunStatus(status) {
+  if (typeof status === 'number') {
+    return OPS_RUN_STATUS_BY_CODE[status] || String(status)
+  }
+
+  if (typeof status === 'string') {
+    const trimmed = status.trim()
+    if (!trimmed) return 'Unknown'
+
+    const numericStatus = Number(trimmed)
+    if (Number.isInteger(numericStatus) && OPS_RUN_STATUS_BY_CODE[numericStatus]) {
+      return OPS_RUN_STATUS_BY_CODE[numericStatus]
+    }
+
+    return trimmed
+  }
+
+  return 'Unknown'
+}
+
+function isOpsRunFailureStatus(status) {
+  return OPS_RUN_FAILURE_STATUSES.has(normalizeOpsRunStatus(status).toLowerCase())
 }
 
 function deepClone(value) {
@@ -231,6 +270,19 @@ function validateScenarioStep(index, step) {
     case 'executeProposal':
       assert(isNonEmptyString(step.proposal), `${stepLabel}: proposal is required`)
       break
+    case 'runOps':
+      assert(isNonEmptyString(step.templateName), `${stepLabel}: templateName is required`)
+      if (Object.prototype.hasOwnProperty.call(step, 'parameters')) {
+        assert(
+          step.parameters === null || isObject(step.parameters),
+          `${stepLabel}: parameters must be an object or null`,
+        )
+        if (step.parameters !== null) {
+          const hasOnlyStringValues = Object.values(step.parameters).every((value) => typeof value === 'string')
+          assert(hasOnlyStringValues, `${stepLabel}: parameters values must all be strings`)
+        }
+      }
+      break
     default:
       break
   }
@@ -334,6 +386,7 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
       captures: {},
       proposals: {},
       queueRequests: {},
+      opsRuns: {},
     },
     cache: {
       columnsByBoardId: new Map(),
@@ -348,10 +401,27 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
     const step = resolveTemplates(deepClone(rawStep), ctx)
     const label = step.label || `${index + 1}:${step.type}`
 
+    await traceEvent({
+      type: 'scenario.step.start',
+      scenarioId: scenario.id,
+      scenarioTitle: scenario.title,
+      stepIndex: index,
+      stepLabel: label,
+      stepType: step.type,
+    })
+
     if (stepRequiresLlm(step) && opts.skipLlm) {
       ctx.results.steps.push({
         step: label,
         status: 'skipped',
+        reason: '--skip-llm',
+      })
+      await traceEvent({
+        type: 'scenario.step.skipped',
+        scenarioId: scenario.id,
+        stepIndex: index,
+        stepLabel: label,
+        stepType: step.type,
         reason: '--skip-llm',
       })
       continue
@@ -360,8 +430,24 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
     try {
       const result = await executeStep(api, ctx, step)
       ctx.results.steps.push({ step: label, status: 'ok', result: result || null })
+      await traceEvent({
+        type: 'scenario.step.ok',
+        scenarioId: scenario.id,
+        stepIndex: index,
+        stepLabel: label,
+        stepType: step.type,
+        result: result || null,
+      })
     } catch (err) {
       ctx.results.steps.push({ step: label, status: 'error', error: String(err?.message || err) })
+      await traceEvent({
+        type: 'scenario.step.error',
+        scenarioId: scenario.id,
+        stepIndex: index,
+        stepLabel: label,
+        stepType: step.type,
+        error: String(err?.message || err),
+      })
       if (!opts.continueOnError) throw err
     }
   }
@@ -610,6 +696,51 @@ async function executeStep(api, ctx, step) {
 
       await approveAndExecuteProposal(api, proposalId)
       return { proposalId }
+    }
+
+    case 'runOps': {
+      assert(isNonEmptyString(step.templateName), 'runOps.templateName is required')
+      const run = await runOpsCommand(api, {
+        templateName: step.templateName,
+        parameters: step.parameters || null,
+      })
+
+      const alias = isNonEmptyString(step.alias) ? step.alias.trim() : null
+      if (alias) ctx.refs.opsRuns[alias] = run
+
+      if (step.wait === false) {
+        return { runId: run?.id || null, status: run?.status ?? null }
+      }
+
+      const runId = run?.id
+      assert(isNonEmptyString(runId), 'runOps returned an invalid run id')
+      const done = await waitForOpsRun(api, runId, {
+        timeoutMs: parseOptionalPositiveInteger(step.timeoutMs, 'runOps.timeoutMs', 60_000),
+        intervalMs: parseOptionalPositiveInteger(step.intervalMs, 'runOps.intervalMs', 700),
+      })
+      if (alias) ctx.refs.opsRuns[alias] = done
+
+      const finalStatus = normalizeOpsRunStatus(done?.status)
+      if (isOpsRunFailureStatus(finalStatus)) {
+        const detail = isNonEmptyString(done?.errorMessage) ? `: ${done.errorMessage}` : ''
+        throw new Error(`Ops run ${runId} finished with non-success status ${finalStatus}${detail}`)
+      }
+
+      const logs = step.includeLogs ? await getOpsRunLogs(api, runId) : null
+      const logsCount = Array.isArray(logs) ? logs.length : null
+      const logsPreview = Array.isArray(logs) ? logs.slice(0, OPS_LOG_PREVIEW_LIMIT) : null
+      if (alias && ctx.refs.opsRuns[alias]) {
+        ctx.refs.opsRuns[alias].logsCount = logsCount
+        ctx.refs.opsRuns[alias].logsPreview = logsPreview
+      }
+
+      return {
+        runId,
+        status: finalStatus,
+        exitCode: done?.exitCode ?? null,
+        logsCount,
+        logsPreview,
+      }
     }
 
     default:

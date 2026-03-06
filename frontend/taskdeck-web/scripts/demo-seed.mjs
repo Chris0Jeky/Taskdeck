@@ -592,12 +592,12 @@ async function main() {
   console.log('\nRunning Ops CLI templates (generates Ops logs)...')
   await http('POST', '/ops/cli/run', {
     token: demoToken,
-    body: { commandName: 'health.check', parameters: {} },
+    body: { templateName: 'health.check', parameters: {} },
   })
   try {
     await http('POST', '/ops/cli/run', {
       token: demoToken,
-      body: { commandName: 'boards.list', parameters: {} },
+      body: { templateName: 'boards.list', parameters: {} },
     })
     console.log('- ran health.check + boards.list')
   } catch (err) {

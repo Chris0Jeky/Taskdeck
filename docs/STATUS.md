@@ -93,13 +93,16 @@ Direction guardrails (explicit):
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
-- Demo baseline (migration batches A + B + C delivered):
+- Demo baseline (migration batches A + B + C + D delivered):
   - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation
   - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `frontend/taskdeck-web/scripts/demo-run.mjs`, `frontend/taskdeck-web/scripts/demo-autopilot.mjs`, `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`, `frontend/taskdeck-web/scripts/scenarios-json/*`, and `frontend/taskdeck-web/scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
+  - `frontend/taskdeck-web/scripts/demo-director.mjs` + `frontend/taskdeck-web/scripts/demo-snapshot.mjs` with `npm run demo:director` and `npm run demo:snapshot` for one-command orchestration and artifact capture (`run-summary.json`, `trace.ndjson`, `snapshot.json`, screenshots, logs)
   - `docs/DEMO_PLAYBOOK.md`, `docs/SCENARIOS.md`, `docs/DOGFOODING_GUIDE.md`, and `docs/USER_MANUAL.md` for seeded stakeholder walkthrough, JSON scenario authoring/runner usage, daily dogfooding cadence, and user-facing operations guidance
   - `demo/http/taskdeck-demo.http` for local API walkthrough against the dev backend
-  - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`)
+  - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`) with director-mode bootstrap via `TASKDECK_DEMO_DIRECTOR=1`
   - autopilot loop controls now cover queue/capture/mixed paths with capture-triage flags for inbox-flow demonstration
+  - autopilot deterministic replay supports `--rng-seed` (with `--seed` backward compatibility) and emits trace events for artifact summarization
+  - JSON scenarios now support `runOps` steps for seeded Ops evidence inside scenario runs
   - advanced/diagnostic nav surfaces now default off via feature flags (`Activity`, `Ops`, `Access`, `Archive`)
   - `Automations` nav now defaults to proposals review path instead of queue path
   - queue composer now defaults to instruction-first request type with guided helper text and board-context guardrails for board-scoped instructions
@@ -201,6 +204,7 @@ Implementation delivery (shipped in this context):
 - `#298` Batch A (`v0`): baseline demo seeding command + first-run UX defaults + seeded playbook promotion
 - `#299` Batch B (`v1`): reusable demo harness scripts (`demo:run`, `demo:autopilot`), scenario modules, API walkthrough asset, stakeholder opt-in recorder spec, and expanded demo/dogfooding/user docs
 - `#300` Batch C (`v2`): JSON scenario runner + schema/sample scenarios, `demo:run` JSON-first flags (`--list`, `--skip-llm`, `--continue-on-error`), capture-aware autopilot loop modes (`queue|capture|mixed`), capture helper library additions, and scenario authoring docs (`docs/SCENARIOS.md`)
+- `#301` Batch D (`v3`): demo director + snapshot scripts (`demo:director`, `demo:snapshot`), trace-aware scenario/autopilot/runtime events, `runOps` scenario step support, and director-mode stakeholder recorder bootstrap with artifact logs/snapshots
 
 ## Capture Realignment Wave (2026-02-23)
 

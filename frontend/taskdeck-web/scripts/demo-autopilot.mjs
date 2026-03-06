@@ -25,6 +25,7 @@ import {
   ensureUser,
   getDemoConfig,
   summarizeBoardForAgent,
+  traceEvent,
   triageCaptureItem,
   waitForCaptureOutcome,
 } from './demo-lib.mjs'
@@ -44,6 +45,7 @@ function parseArgs(argv) {
     captureSource: 'Typed',
     captureTitleHint: null,
     seed: null,
+    rngSeed: null,
   }
 
   for (let i = 2; i < argv.length; i++) {
@@ -65,6 +67,11 @@ function parseArgs(argv) {
     else if (value === '--turns') args.turns = Number(argv[++i] ?? args.turns)
     else if (value === '--interval-ms') args.intervalMs = Number(argv[++i] ?? args.intervalMs)
     else if (value === '--seed') args.seed = argv[++i] ?? '0'
+    else if (value === '--rng-seed') args.rngSeed = argv[++i] ?? args.rngSeed
+  }
+
+  if (args.rngSeed !== null && args.rngSeed !== undefined) {
+    args.seed = args.rngSeed
   }
 
   if (!['queue', 'capture', 'mixed'].includes(args.loop)) {
@@ -414,6 +421,24 @@ async function main() {
   console.log(`Inbox: ${config.uiBaseUrl}/workspace/inbox`)
   console.log(`Proposals: ${config.uiBaseUrl}/workspace/automations/proposals`)
 
+  await traceEvent({
+    type: 'autopilot.start',
+    boardId: board.id,
+    boardName: board.name,
+    args: {
+      turns: args.turns,
+      intervalMs: args.intervalMs,
+      loop: args.loop,
+      brain: args.brain,
+      captureProb: args.captureProb,
+      leaveCaptureUntriagedProb: args.leaveCaptureUntriagedProb,
+      triageTimeoutMs: args.triageTimeoutMs,
+      captureSource: args.captureSource,
+      captureTitleHint: args.captureTitleHint,
+      rngSeed: args.seed ?? null,
+    },
+  })
+
   for (let turn = 0; turn < args.turns; turn++) {
     const liveBoard = await authed.get(`/boards/${board.id}`)
     const columns = await authed.get(`/boards/${board.id}/columns`)
@@ -460,6 +485,13 @@ async function main() {
       }
     }
 
+    await traceEvent({
+      type: 'autopilot.turn.start',
+      boardId: board.id,
+      turn: turn + 1,
+      decision,
+    })
+
     console.log(`\n[Turn ${turn + 1}/${args.turns}]`)
     if (decision.kind === 'instruction') {
       console.log(`Instruction: ${decision.instruction}`)
@@ -475,6 +507,12 @@ async function main() {
           instruction: decision.instruction,
         })
         console.log('queue instruction applied')
+        await traceEvent({
+          type: 'autopilot.turn.ok',
+          boardId: board.id,
+          turn: turn + 1,
+          kind: 'instruction',
+        })
       } else {
         const leaveUntriaged =
           args.leaveCaptureUntriagedProb > 0 && random() < args.leaveCaptureUntriagedProb
@@ -489,15 +527,33 @@ async function main() {
           triageTimeoutMs: args.triageTimeoutMs,
           leaveUntriaged,
         })
+        await traceEvent({
+          type: 'autopilot.turn.ok',
+          boardId: board.id,
+          turn: turn + 1,
+          kind: 'capture',
+          leaveUntriaged: !!leaveUntriaged,
+        })
       }
     } catch (err) {
       console.log(`turn failed: ${String(err?.message || err)}`)
+      await traceEvent({
+        type: 'autopilot.turn.error',
+        boardId: board.id,
+        turn: turn + 1,
+        error: String(err?.message || err),
+      })
     }
 
     await sleep(args.intervalMs)
   }
 
   console.log('\nAutopilot finished.')
+  await traceEvent({
+    type: 'autopilot.end',
+    boardId: board.id,
+    boardName: board.name,
+  })
 }
 
 main().catch((err) => {

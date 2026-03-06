@@ -11,6 +11,8 @@
     "demo:seed": "node ./scripts/demo-seed.mjs",
     "demo:run": "node ./scripts/demo-run.mjs",
     "demo:autopilot": "node ./scripts/demo-autopilot.mjs",
+    "demo:snapshot": "node ./scripts/demo-snapshot.mjs --out ./demo-artifacts/snapshot.json",
+    "demo:director": "node ./scripts/demo-director.mjs",
     "lint": "eslint . --ext .ts,.vue --max-warnings=0",
     "typecheck": "vue-tsc -b",
     "build": "npm run typecheck && vite build",

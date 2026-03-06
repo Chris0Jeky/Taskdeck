@@ -8,6 +8,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { assertSafeLocalApiTarget, isoDaysFromNow, normalizeBaseUrl, parseTrueishEnv } from './demo-shared.mjs'
 
@@ -22,6 +24,14 @@ const CANONICAL_DEMO_BOARD_NAMES = new Set([
   'DEMO: Archived Board',
   'DEMO: Content Calendar',
 ])
+const TRACE_PATH = (process.env.TASKDECK_DEMO_TRACE_PATH || '').trim() || null
+let traceReady = false
+
+async function ensureTraceReady() {
+  if (!TRACE_PATH || traceReady) return
+  await fs.mkdir(path.dirname(TRACE_PATH), { recursive: true })
+  traceReady = true
+}
 
 function ensureSafeApiTarget(apiBaseUrl) {
   const allowNonLocal = parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_LOCAL_API)
@@ -37,6 +47,20 @@ function asApiBaseUrl(value) {
 
 function asUiBaseUrl(value) {
   return normalizeBaseUrl(value, DEFAULT_UI_BASE)
+}
+
+export async function traceEvent(event) {
+  if (!TRACE_PATH) return
+  try {
+    await ensureTraceReady()
+    const payload = {
+      ts: new Date().toISOString(),
+      ...event,
+    }
+    await fs.appendFile(TRACE_PATH, `${JSON.stringify(payload)}\n`, 'utf8')
+  } catch (err) {
+    console.warn(`Warning: failed to write demo trace event: ${String(err?.message || err)}`)
+  }
 }
 
 export function getDemoConfig(overrides = {}) {
@@ -261,6 +285,10 @@ export async function approveAndExecuteProposal(apiAuthed, proposalId) {
   await apiAuthed.post(`/automation/proposals/${proposalId}/execute`, {
     headers: { 'Idempotency-Key': randomUUID() },
   })
+  await traceEvent({
+    type: 'proposal.execute',
+    proposalId,
+  })
 }
 
 export async function findProposalBySourceRef(apiAuthed, { sourceReferenceId, limit = 200 }) {
@@ -322,6 +350,12 @@ export async function enqueueAndApplyInstruction(apiAuthed, { boardId, instructi
   )
 
   await approveAndExecuteProposal(apiAuthed, proposal.id)
+  await traceEvent({
+    type: 'queue.applied',
+    requestId: request.id,
+    proposalId: proposal.id,
+    boardId,
+  })
   return { request, proposal }
 }
 
@@ -333,9 +367,16 @@ export async function createCaptureItem(
     throw new Error('createCaptureItem requires { text: string }')
   }
 
-  return await apiAuthed.post('/capture/items', {
+  const item = await apiAuthed.post('/capture/items', {
     body: { boardId, text, source, titleHint, externalRef },
   })
+  await traceEvent({
+    type: 'capture.create',
+    captureItemId: item?.id || null,
+    boardId: boardId || null,
+    source,
+  })
+  return item
 }
 
 export async function getCaptureItem(apiAuthed, captureItemId) {
@@ -361,7 +402,7 @@ export async function waitForCaptureOutcome(
 ) {
   const encodedId = encodeURIComponent(captureItemId)
 
-  return await waitFor(
+  const outcome = await waitFor(
     async () => {
       const item = await apiAuthed.get(`/capture/items/${encodedId}`)
       if (!item) return null
@@ -382,6 +423,16 @@ export async function waitForCaptureOutcome(
     },
     { label: `capture(${captureItemId}) outcome`, timeoutMs, intervalMs },
   )
+
+  await traceEvent({
+    type: 'capture.triage.outcome',
+    captureItemId,
+    outcome: outcome?.outcome || null,
+    proposalId: outcome?.item?.provenance?.proposalId || null,
+    status: outcome?.item?.status ?? null,
+  })
+
+  return outcome
 }
 
 export async function waitForCaptureProposalId(
@@ -396,6 +447,73 @@ export async function waitForCaptureProposalId(
   }
 
   return result.item.provenance.proposalId
+}
+
+export async function runOpsCommand(apiAuthed, { templateName, parameters = null } = {}) {
+  if (!templateName) throw new Error('runOpsCommand requires templateName')
+
+  const run = await apiAuthed.post('/ops/cli/run', {
+    body: {
+      templateName,
+      parameters: parameters || null,
+    },
+  })
+
+  await traceEvent({
+    type: 'ops.run',
+    templateName,
+    runId: run?.id || null,
+    status: run?.status ?? null,
+  })
+
+  return run
+}
+
+export async function waitForOpsRun(apiAuthed, runId, { timeoutMs = 60_000, intervalMs = 700 } = {}) {
+  const statusName = (status) => {
+    const map = {
+      0: 'Queued',
+      1: 'Running',
+      2: 'Completed',
+      3: 'Failed',
+      4: 'TimedOut',
+      5: 'Cancelled',
+    }
+
+    if (typeof status === 'number') return map[status] || String(status)
+    return String(status)
+  }
+
+  const completedRun = await waitFor(
+    async () => {
+      const run = await apiAuthed.get(`/ops/cli/runs/${encodeURIComponent(runId)}`)
+      if (!run) return null
+      const normalizedStatus = statusName(run.status)
+      if (
+        normalizedStatus === 'Completed' ||
+        normalizedStatus === 'Failed' ||
+        normalizedStatus === 'TimedOut' ||
+        normalizedStatus === 'Cancelled'
+      ) {
+        return run
+      }
+      return null
+    },
+    { label: `ops.run(${runId}) completion`, timeoutMs, intervalMs },
+  )
+
+  await traceEvent({
+    type: 'ops.run.complete',
+    runId,
+    status: completedRun?.status ?? null,
+    exitCode: completedRun?.exitCode ?? null,
+  })
+
+  return completedRun
+}
+
+export async function getOpsRunLogs(apiAuthed, runId) {
+  return await apiAuthed.get(`/ops/cli/runs/${encodeURIComponent(runId)}/logs`)
 }
 
 export function summarizeBoardForAgent({ board, columns, cards, maxCards = 40 } = {}) {
