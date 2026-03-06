@@ -120,6 +120,39 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ApplyStarterPack_ShouldAllowLabelOnlyPack_WhenBoardHasDuplicateColumnNames()
+    {
+        var board = await CreateBoardAsync();
+
+        var firstColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "duplicate-column", 0, null));
+        firstColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var secondColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Duplicate-Column", 1, null));
+        secondColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildLabelOnlyManifest(), DryRun: false));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<StarterPackApplyResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Applied.Should().BeTrue();
+        payload.HasBlockingConflicts.Should().BeFalse();
+        payload.Conflicts.Should().NotContain(conflict =>
+            conflict.Code == "ExistingColumnNameConflict" ||
+            conflict.Code == "ExistingColumnPositionConflict");
+
+        var labels = await _client.GetFromJsonAsync<List<LabelDto>>($"/api/boards/{board.Id}/labels");
+        labels.Should().NotBeNull();
+        labels!.Should().ContainSingle(label => label.Name == "priority-high");
+    }
+
+    [Fact]
     public async Task ApplyStarterPack_ShouldBeIdempotent_WhenReapplied()
     {
         var board = await CreateBoardAsync();
@@ -262,6 +295,30 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ApplyStarterPack_ShouldReturnValidationError_WhenManifestIsEmpty()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildEmptyManifest(), DryRun: false));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task ApplyStarterPack_ShouldReturnValidationError_WhenManifestContainsOnlyTemplates()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildTemplateOnlyManifest(), DryRun: false));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
     public async Task ApplyStarterPack_ShouldReturnConflict_WhenBoardContainsDuplicateNames()
     {
         var board = await CreateBoardAsync();
@@ -381,6 +438,35 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
         };
     }
 
+    private static StarterPackManifestDto BuildLabelOnlyManifest()
+    {
+        return new StarterPackManifestDto
+        {
+            SchemaVersion = "1.0",
+            PackId = "common-labels-core",
+            DisplayName = "Common Labels Core",
+            Description = "Reusable label taxonomy for existing boards",
+            Compatibility = new StarterPackCompatibilityDto
+            {
+                MinTaskdeckVersion = "1.0.0",
+                RequiredFeatures = ["boards", "labels"]
+            },
+            Tags = ["starter", "labels"],
+            Labels =
+            [
+                new StarterPackLabelDto
+                {
+                    Name = "priority-high",
+                    Color = "#E85D5D",
+                    Description = "High urgency"
+                }
+            ],
+            Columns = [],
+            Templates = [],
+            SeedCards = []
+        };
+    }
+
     private static StarterPackManifestDto BuildPositionConflictManifest()
     {
         return new StarterPackManifestDto
@@ -404,6 +490,55 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
                 }
             ],
             Templates = [],
+            SeedCards = []
+        };
+    }
+
+    private static StarterPackManifestDto BuildEmptyManifest()
+    {
+        return new StarterPackManifestDto
+        {
+            SchemaVersion = "1.0",
+            PackId = "empty-pack",
+            DisplayName = "Empty Pack",
+            Compatibility = new StarterPackCompatibilityDto
+            {
+                MinTaskdeckVersion = "1.0.0",
+                RequiredFeatures = ["boards"]
+            },
+            Tags = ["starter"],
+            Labels = [],
+            Columns = [],
+            Templates = [],
+            SeedCards = []
+        };
+    }
+
+    private static StarterPackManifestDto BuildTemplateOnlyManifest()
+    {
+        return new StarterPackManifestDto
+        {
+            SchemaVersion = "1.0",
+            PackId = "template-only-pack",
+            DisplayName = "Template Only Pack",
+            Compatibility = new StarterPackCompatibilityDto
+            {
+                MinTaskdeckVersion = "1.0.0",
+                RequiredFeatures = ["boards"]
+            },
+            Tags = ["starter", "templates"],
+            Labels = [],
+            Columns = [],
+            Templates =
+            [
+                new StarterPackCardTemplateDto
+                {
+                    TemplateId = "bug-report",
+                    Title = "Bug Report",
+                    Description = "Template for bug triage",
+                    Checklist = ["Reproduction steps"]
+                }
+            ],
             SeedCards = []
         };
     }
