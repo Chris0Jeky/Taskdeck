@@ -71,6 +71,14 @@ jobs:
       dotnet-version: 8.0.x
       node-version: 24.13.1
 
+  demo-director-smoke:
+    name: Demo Director Smoke
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'automation'))
+    uses: ./.github/workflows/reusable-demo-director-smoke.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+
   load-concurrency-harness:
     name: Load and Concurrency Harness
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
