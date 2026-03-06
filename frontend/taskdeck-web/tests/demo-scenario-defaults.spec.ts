@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveScenarioDefaultBoardName } from '../scripts/demo-scenario-defaults.mjs'
+import { resolveScenarioDefaultBoardName, resolveScenarioSelectedBoardName } from '../scripts/demo-scenario-defaults.mjs'
 
 describe('demo scenario default board names', () => {
   it('uses the scenario definition board name for content-calendar', async () => {
@@ -17,5 +17,14 @@ describe('demo scenario default board names', () => {
 
   it('still falls back to engineering sprint when no scenario is provided', async () => {
     await expect(resolveScenarioDefaultBoardName('')).resolves.toBe('DEMO: Engineering Sprint')
+  })
+
+  it('prefers an explicit board override over the scenario default', async () => {
+    await expect(
+      resolveScenarioSelectedBoardName({
+        scenarioIdOrPath: 'content-calendar',
+        explicitBoardName: 'DEMO: Manual Override',
+      }),
+    ).resolves.toBe('DEMO: Manual Override')
   })
 })
