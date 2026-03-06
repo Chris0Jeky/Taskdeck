@@ -18,9 +18,9 @@ Companion Active Docs:
   - API integration: 309
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 466/466 passing
+- Frontend unit: 473/473 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 24/24 passing
-- Combined automated total: 1452/1452 passing
+- Combined automated total: 1459/1459 passing
 
 Verification note:
 - backend totals were re-verified on 2026-03-06 via `dotnet test backend/Taskdeck.sln -c Release -m:1` with live providers forced off and `Llm__Provider=Mock`
@@ -168,6 +168,8 @@ Policy notes:
 - `demo:director:smoke` runs `engineering-sprint` with `--skip-llm`, zero autopilot turns, a fixed RNG seed, a stable artifact directory (`demo-artifacts/ci-smoke`), an isolated smoke DB (`taskdeck.demo.ci.db`), and fresh backend/frontend startup.
 - when fresh-server mode cannot bind `http://localhost:5000/api`, the director automatically selects a free local API port; if explicit overrides still conflict, it prints a remediation hint for `TASKDECK_E2E_API_BASE_URL` / `TASKDECK_E2E_FRONTEND_PORT`.
 - `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation` when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`.
+- `npm run demo:seed` is expected to be rerun-safe on the canonical demo account: seeded captures, queue examples, chat evidence, comments, and Ops logs should be reused when present instead of multiplying on every local/manual regression run.
+- `demo:director` validates its own options before Playwright passthrough; keep director flags before `--` and pass raw Playwright arguments only after `--`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 
 ## Load Harness (k6 + Playwright Concurrency)
