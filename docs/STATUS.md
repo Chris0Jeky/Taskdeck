@@ -535,6 +535,7 @@ Automation and data:
 Observability and scalability:
 - frontend/CI baseline is now Node 24.13.1 (LTS) to align with Vite 7 engine requirements and longer support runway
 - containerized deployment baseline is now shipped (`#69`): backend/frontend Dockerfiles, compose profile, reverse proxy compression/security headers posture, and CI image artifacts
+- Terraform IaC baseline is now shipped (`#102`): reusable AWS single-node environment templates (`dev`/`staging`/`prod`), host bootstrap for the existing Docker workload layer, explicit secrets handoff via untracked tfvars/`TF_VAR_*`, and an operator drift-check workflow
 - multi-tenancy strategy ADR is now documented (`#71`) with shared-schema + `TenantId` as the default rollout target; tenant isolation implementation slices remain pending
 - local developer MCP posture now includes a Docker Marketplace server bundle with a stable default gateway set (`docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`) and optional integrations staged behind credentials/config (`postman`, `dockerhub`, `kubernetes`, `semgrep`)
 - MCP operations runbook and helper scripts are now available for credential wiring and repeatable baseline/optional MCP dry-run verification
@@ -542,7 +543,7 @@ Observability and scalability:
 - out-of-code/platform execution is now tracked, but not yet fully shipped:
   - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
   - backup/restore disaster-recovery playbook (`#86`)
-  - staged rollout policy (`#101`), IaC baseline (`#102`), SBOM/provenance (`#103`), cost guardrails (`#104`)
+  - staged rollout policy (`#101`), SBOM/provenance (`#103`), cost guardrails (`#104`)
   - cloud target topology and autoscaling ADR (`#111`)
 
 UX and operability (reconciled from product notes):
