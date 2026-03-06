@@ -11,6 +11,9 @@ This runbook defines the minimal production-oriented container baseline for Task
 Hardening verification follow-through:
 - `#142` OPS-16 deployment/container hardening verification matrix (`docs/DEPLOYMENT_HARDENING_MATRIX.md`)
 
+Terraform follow-through:
+- `#102` OPS-10 Terraform/IaC baseline (`docs/DEPLOYMENT_TERRAFORM_BASELINE.md`)
+
 ## Files
 
 - `deploy/docker/backend.Dockerfile`
@@ -19,6 +22,8 @@ Hardening verification follow-through:
 - `deploy/nginx/reverse-proxy.conf`
 - `deploy/nginx/frontend.conf`
 - `deploy/.env.example`
+
+When Terraform is used, these compose assets remain the workload layer. The Terraform baseline provisions the host/network/storage shell around them; it does not replace the compose deployment model.
 
 ## Prerequisites
 
