@@ -43,6 +43,10 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - API abuse-protection policy, throttle contract, and tuning guidance for rate-limited endpoints (`#81`, delivered).
 - `SECURITY_OWASP_BASELINE.md`
   - OWASP baseline hardening record for API security headers and CSRF posture (`#80`, delivered).
+- `SECURITY_LOGGING_REDACTION.md`
+  - Logging/telemetry redaction policy for capture payloads and auth-sensitive failure paths (`#212`).
+- `OBSERVABILITY_BASELINE.md`
+  - Observability/exporter baseline and operator verification guidance for API and worker traces/metrics.
 - `DEMO_PLAYBOOK.md`
   - Demo-runbook for seeded first-run walkthrough, scenario harness (`demo:run`), autopilot, demo director smoke, and opt-in stakeholder recorder.
   - Script entry points: `demo:seed`, `demo:run`, `demo:autopilot`, `demo:director`, `demo:snapshot`, `demo:director:smoke`.
