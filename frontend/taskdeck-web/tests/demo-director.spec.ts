@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  applyDemoDirectorApiBaseUrl,
   buildDemoDirectorPortConflictHint,
   resetDemoDirectorArtifacts,
   resolveDemoDirectorApiBaseUrl,
@@ -73,11 +74,17 @@ describe('demo director artifacts', () => {
     expect(runtime.e2eDbPath).toBe(path.join(webRoot, 'taskdeck.demo.ci.db'))
 
     await fs.writeFile(runtime.e2eDbPath!, 'sqlite bytes', 'utf8')
+    await fs.writeFile(`${runtime.e2eDbPath!}-wal`, 'wal bytes', 'utf8')
+    await fs.writeFile(`${runtime.e2eDbPath!}-shm`, 'shm bytes', 'utf8')
+    await fs.writeFile(`${runtime.e2eDbPath!}-journal`, 'journal bytes', 'utf8')
     await fs.writeFile(path.join(webRoot, 'keep.txt'), 'preserve me', 'utf8')
 
     await resetDemoDirectorE2EDb(runtime.e2eDbPath)
 
     expect(await pathExists(runtime.e2eDbPath!)).toBe(false)
+    expect(await pathExists(`${runtime.e2eDbPath!}-wal`)).toBe(false)
+    expect(await pathExists(`${runtime.e2eDbPath!}-shm`)).toBe(false)
+    expect(await pathExists(`${runtime.e2eDbPath!}-journal`)).toBe(false)
     await expect(fs.readFile(path.join(webRoot, 'keep.txt'), 'utf8')).resolves.toBe('preserve me')
   })
 
@@ -204,6 +211,21 @@ describe('demo director artifacts', () => {
     })
 
     expect(requestedApiBaseUrl).toBe('http://localhost:5001/api')
+  })
+
+  it('keeps demo helper api env variables aligned to the selected api base url', () => {
+    const env = applyDemoDirectorApiBaseUrl(
+      {
+        TASKDECK_API_BASE_URL: 'http://localhost:5000/api',
+        TASKDECK_API_BASE: 'http://localhost:5000/api',
+        TASKDECK_E2E_API_BASE_URL: 'http://localhost:5000/api',
+      },
+      'http://localhost:51234/api',
+    )
+
+    expect(env.TASKDECK_API_BASE_URL).toBe('http://localhost:51234/api')
+    expect(env.TASKDECK_API_BASE).toBe('http://localhost:51234/api')
+    expect(env.TASKDECK_E2E_API_BASE_URL).toBe('http://localhost:51234/api')
   })
 
   it('reports an actionable hint for fresh-server port conflicts', () => {

@@ -15,6 +15,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  applyDemoDirectorApiBaseUrl,
   buildDemoDirectorPortConflictHint,
   resetDemoDirectorArtifacts,
   resolveDemoDirectorApiBaseUrl,
@@ -298,7 +299,7 @@ async function main() {
   const snapshotPath = path.join(artifactDir, 'snapshot.json')
   const autopilotBoard = args.autopilotBoard || defaultBoardNameForScenario(args.scenario)
 
-  const env = {
+  const env = applyDemoDirectorApiBaseUrl({
     ...process.env,
     TASKDECK_RUN_DEMO: '1',
     TASKDECK_DEMO_DIRECTOR: '1',
@@ -314,10 +315,9 @@ async function main() {
     TASKDECK_DEMO_AUTOPILOT_BRAIN: args.brain,
     TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS: String(args.intervalMs),
     TASKDECK_DEMO_AUTOPILOT_RNG_SEED: args.rngSeed || '',
-    TASKDECK_E2E_API_BASE_URL: selectedApiBaseUrl,
     ...(runtime.e2eDbPath ? { TASKDECK_E2E_DB: runtime.e2eDbPath } : {}),
     ...(runtime.forceFreshServers ? { TASKDECK_E2E_REUSE_EXISTING_SERVER: '0' } : {}),
-  }
+  }, selectedApiBaseUrl)
 
   const pwArgs = [
     'playwright',

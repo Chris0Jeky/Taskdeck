@@ -54,7 +54,7 @@ export async function resetDemoDirectorE2EDb(e2eDbPath) {
     return
   }
 
-  await fs.rm(e2eDbPath, { force: true })
+  await Promise.all(getDemoDirectorE2EDbTargets(e2eDbPath).map((targetPath) => fs.rm(targetPath, { force: true })))
 }
 
 export async function resolveDemoDirectorApiBaseUrl({
@@ -121,6 +121,15 @@ export function buildDemoDirectorPortConflictHint(playwrightLog) {
     'Rerun with free local overrides such as TASKDECK_E2E_API_BASE_URL=http://localhost:<port>/api ' +
     'and TASKDECK_E2E_FRONTEND_PORT=<port>, or stop the existing Taskdeck listeners first.'
   )
+}
+
+export function applyDemoDirectorApiBaseUrl(env, apiBaseUrl) {
+  return {
+    ...env,
+    TASKDECK_API_BASE_URL: apiBaseUrl,
+    TASKDECK_API_BASE: apiBaseUrl,
+    TASKDECK_E2E_API_BASE_URL: apiBaseUrl,
+  }
 }
 
 export { DIRECTOR_ARTIFACT_ENTRIES }
@@ -260,4 +269,13 @@ function normalizeBindProbeResult(result) {
   }
 
   return { available: false, unsupported: false }
+}
+
+function getDemoDirectorE2EDbTargets(e2eDbPath) {
+  return [
+    e2eDbPath,
+    `${e2eDbPath}-wal`,
+    `${e2eDbPath}-shm`,
+    `${e2eDbPath}-journal`,
+  ]
 }
