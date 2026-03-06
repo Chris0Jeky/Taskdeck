@@ -20,7 +20,7 @@ output "database_path" {
 
 output "data_volume_id" {
   description = "Persistent EBS volume id used for the Taskdeck SQLite/database data path."
-  value       = aws_ebs_volume.taskdeck_data.id
+  value       = local.taskdeck_data_volume_id
 }
 
 output "ssh_command" {

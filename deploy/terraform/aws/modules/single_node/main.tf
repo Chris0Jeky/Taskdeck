@@ -15,6 +15,7 @@ locals {
   jwt_secret_ssm_parameter_path = startswith(var.jwt_secret_ssm_parameter_name, "/") ? var.jwt_secret_ssm_parameter_name : "/${var.jwt_secret_ssm_parameter_name}"
   jwt_secret_ssm_parameter_arn  = "arn:${data.aws_partition.current.partition}:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.jwt_secret_ssm_parameter_path}"
   ssh_ingress_cidrs             = var.allowed_ssh_cidrs == null ? var.allowed_ingress_cidrs : var.allowed_ssh_cidrs
+  taskdeck_data_volume_id       = var.protect_data_volume ? aws_ebs_volume.taskdeck_data_protected[0].id : aws_ebs_volume.taskdeck_data[0].id
 }
 
 resource "aws_vpc" "this" {
@@ -67,7 +68,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "taskdeck_host" {
   name        = "${local.base_name}-sg"
-  description = "Ingress for the Taskdeck single-node host"
+  description = "Security group for the Taskdeck single-node host"
   vpc_id      = aws_vpc.this.id
 
   ingress {
@@ -222,10 +223,28 @@ resource "aws_iam_instance_profile" "taskdeck_host" {
 }
 
 resource "aws_ebs_volume" "taskdeck_data" {
+  count             = var.protect_data_volume ? 0 : 1
   availability_zone = var.availability_zone
   size              = var.data_volume_size_gb
   type              = "gp3"
   encrypted         = true
+
+  tags = merge(local.common_tags, {
+    Name = "${local.base_name}-data"
+    Role = "taskdeck-data"
+  })
+}
+
+resource "aws_ebs_volume" "taskdeck_data_protected" {
+  count             = var.protect_data_volume ? 1 : 0
+  availability_zone = var.availability_zone
+  size              = var.data_volume_size_gb
+  type              = "gp3"
+  encrypted         = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   tags = merge(local.common_tags, {
     Name = "${local.base_name}-data"
@@ -243,6 +262,10 @@ resource "aws_instance" "taskdeck_host" {
   iam_instance_profile        = aws_iam_instance_profile.taskdeck_host.name
   key_name                    = var.ssh_key_name
   user_data_replace_on_change = true
+  depends_on = [
+    aws_iam_role_policy.taskdeck_backups,
+    aws_iam_role_policy.taskdeck_jwt_secret,
+  ]
 
   metadata_options {
     http_endpoint = "enabled"
@@ -266,7 +289,7 @@ resource "aws_instance" "taskdeck_host" {
     proxy_port                    = var.proxy_port
     backup_bucket_name            = aws_s3_bucket.backups.bucket
     aws_region                    = var.aws_region
-    data_volume_id                = aws_ebs_volume.taskdeck_data.id
+    data_volume_id                = local.taskdeck_data_volume_id
   })
 
   tags = merge(local.common_tags, {
@@ -277,6 +300,6 @@ resource "aws_instance" "taskdeck_host" {
 
 resource "aws_volume_attachment" "taskdeck_data" {
   device_name = "/dev/sdf"
-  volume_id   = aws_ebs_volume.taskdeck_data.id
+  volume_id   = local.taskdeck_data_volume_id
   instance_id = aws_instance.taskdeck_host.id
 }

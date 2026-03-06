@@ -37,7 +37,7 @@ install -d -m 0755 /opt/taskdeck
 
 data_volume_target="$(printf '%s' '${data_volume_id}' | tr -d '-' | tr '[:upper:]' '[:lower:]')"
 data_volume_device=""
-for attempt in $(seq 1 30); do
+for attempt in $(seq 1 60); do
   data_volume_device="$(
     lsblk -ndo NAME,SERIAL,TYPE | awk -v target="$data_volume_target" '
       $3 == "disk" {
@@ -53,7 +53,7 @@ for attempt in $(seq 1 30); do
   if [ -n "$data_volume_device" ]; then
     break
   fi
-  sleep 2
+  sleep 5
 done
 
 if [ -z "$data_volume_device" ]; then

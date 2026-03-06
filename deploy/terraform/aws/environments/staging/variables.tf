@@ -88,6 +88,11 @@ variable "data_volume_size_gb" {
   default = 60
 }
 
+variable "protect_data_volume" {
+  type    = bool
+  default = true
+}
+
 variable "backup_bucket_force_destroy" {
   type    = bool
   default = false

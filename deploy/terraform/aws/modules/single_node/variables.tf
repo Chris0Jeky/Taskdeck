@@ -106,6 +106,11 @@ variable "data_volume_size_gb" {
   type        = number
 }
 
+variable "protect_data_volume" {
+  description = "Whether Terraform should protect the persistent Taskdeck data volume from destroy operations."
+  type        = bool
+}
+
 variable "backup_bucket_force_destroy" {
   description = "Whether the environment backup bucket may be force-destroyed by Terraform."
   type        = bool

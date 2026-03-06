@@ -13,14 +13,6 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
-
-  default_tags {
-    tags = merge(var.extra_tags, {
-      Application = "Taskdeck"
-      Environment = "staging"
-      ManagedBy   = "Terraform"
-    })
-  }
 }
 
 module "taskdeck" {
@@ -47,6 +39,7 @@ module "taskdeck" {
   jwt_expiration_minutes        = var.jwt_expiration_minutes
   root_volume_size_gb           = var.root_volume_size_gb
   data_volume_size_gb           = var.data_volume_size_gb
+  protect_data_volume           = var.protect_data_volume
   backup_bucket_force_destroy   = var.backup_bucket_force_destroy
   extra_tags                    = var.extra_tags
 }
