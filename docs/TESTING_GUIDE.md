@@ -12,15 +12,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-03-06)
 
-- Backend: 935/935 passing
+- Backend: 952/952 passing
   - Domain: 122
-  - Application: 507
-  - API integration: 294
+  - Application: 513
+  - API integration: 305
   - CLI contract: 4
   - Architecture boundaries: 8
 - Frontend unit: 414/414 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1372/1372 passing
+- Combined automated total: 1389/1389 passing
 
 Verification note:
 - backend totals were re-verified on 2026-03-06 via `dotnet test backend/Taskdeck.sln -c Release -m:1` with live providers forced off and `Llm__Provider=Mock`
@@ -50,6 +50,13 @@ Note:
 - If `Debug` runs fail with file-lock errors, stop running `Taskdeck.Api` processes or use `-c Release`.
 - If backend tests unexpectedly bind to a live LLM provider in local Development, force deterministic mock mode before running the suite:
   - PowerShell: `$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/Taskdeck.sln -c Release -m:1`
+
+Focused security logging redaction checks (`#212`):
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~SensitiveDataRedactorTests|FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~CaptureRequestContractTests|FullyQualifiedName~CaptureServiceTests"
+$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests"
+```
 
 ## Frontend Unit + Build
 
@@ -392,6 +399,7 @@ Planned quality expectations when implementation starts:
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
+  - Includes security logging redaction guardrail coverage for capture validation, unhandled middleware, webhook delivery failures, housekeeping worker summaries, and observability exception-recording posture
   - Includes rate-limit policy coverage (`RateLimitingApiTests`) for burst throttling, retry metadata contract, reset-window recovery, and cross-user boundary behavior
   - Includes security-header baseline coverage (`SecurityHeadersApiTests`) for success/auth-failure paths and HTTPS HSTS posture assertions
   - Includes board-scoped external import endpoint coverage (authz, malformed input, duplicate handling, apply/update flow, rollback safety)
