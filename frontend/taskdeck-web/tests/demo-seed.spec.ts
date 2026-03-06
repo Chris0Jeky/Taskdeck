@@ -130,4 +130,37 @@ describe('demo seed rerun planning', () => {
       }),
     ).toBe(false)
   })
+
+  it('recreates ignored demo samples that can no longer be cancelled back to ignored', () => {
+    expect(
+      shouldRecreateCaptureSeed(
+        {
+          id: 'capture-4',
+          status: 'ProposalCreated',
+          provenance: { proposalId: 'proposal-1' },
+        },
+        { ignore: true },
+      ),
+    ).toBe(true)
+    expect(
+      shouldRecreateCaptureSeed(
+        {
+          id: 'capture-5',
+          status: 'Failed',
+          provenance: { proposalId: null },
+        },
+        { ignore: true },
+      ),
+    ).toBe(false)
+    expect(
+      shouldRecreateCaptureSeed(
+        {
+          id: 'capture-6',
+          status: 'Ignored',
+          provenance: { proposalId: null },
+        },
+        { ignore: true },
+      ),
+    ).toBe(false)
+  })
 })

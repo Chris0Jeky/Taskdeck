@@ -218,7 +218,16 @@ export function hasSeededChatEvidence(chatMessages, renameInstruction) {
 }
 
 export function shouldRecreateCaptureSeed(detail, { ignore = false } = {}) {
-  if (ignore || detail?.provenance?.proposalId) {
+  if (ignore) {
+    return (
+      hasStatus(detail?.status, 'Triaging', 1) ||
+      hasStatus(detail?.status, 'Triaged', 2) ||
+      hasStatus(detail?.status, 'ProposalCreated', 3) ||
+      hasStatus(detail?.status, 'Converted', 4)
+    )
+  }
+
+  if (detail?.provenance?.proposalId) {
     return false
   }
 
@@ -520,7 +529,14 @@ async function getChatSessionDetail(sessionId, token) {
     return null
   }
 
-  return await http('GET', `/llm/chat/sessions/${sessionId}`, { token })
+  try {
+    return await http('GET', `/llm/chat/sessions/${sessionId}`, { token })
+  } catch (err) {
+    if (getHttpStatus(err) === 404) {
+      return null
+    }
+    throw err
+  }
 }
 
 async function ensureProposalApplied(proposalId, token) {
@@ -685,6 +701,11 @@ async function ensureChatSeed(boardId, token) {
   let session = findChatSessionByTitle(sessions, boardId, SEEDED_CHAT.sessionTitle)
   let sessionDetail = session?.id ? await getChatSessionDetail(session.id, token) : null
   let hasSeededMessage = hasSeededChatEvidence(sessionDetail?.recentMessages, renameInstruction)
+
+  if (session && !sessionDetail) {
+    session = null
+    hasSeededMessage = false
+  }
 
   if (!session) {
     session = await http('POST', '/llm/chat/sessions', {
