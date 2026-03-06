@@ -50,7 +50,9 @@ The seeder creates demo users, boards, Inbox items, proposals, queue activity, n
 - Non-local API targets are rejected unless you explicitly set `TASKDECK_DEMO_ALLOW_NON_LOCAL_API=1`.
 - UI links and Playwright bootstrap default to `http://localhost:5173`; local fallback ports `4173` and `5001` are also supported.
 - Demo harness credentials default to `demo` / `demo123` and `collab` / `demo123` unless you override the `TASKDECK_DEMO_*` / `TASKDECK_COLLAB_*` environment variables.
-- `taskdeck-chat` autopilot and scenario steps marked `requiresLlm: true` need live provider configuration. Use `--skip-llm` for deterministic local or CI runs.
+- Full Playwright-backed demos (`demo:director` or the opt-in stakeholder recorder) now auto-enable a live provider when LLM steps are enabled and a usable key is present.
+- Gemini is preferred for full demos when `GEMINI_API_KEY`, `TASKDECK_DEMO_GEMINI_API_KEY`, or `Llm__Gemini__ApiKey` is set. Use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead.
+- `taskdeck-chat` autopilot and scenario steps marked `requiresLlm: true` still need a usable live-provider key. Use `--skip-llm` for deterministic local or CI runs.
 - `demo:director` and the stakeholder recorder require Playwright Chromium (`npx playwright install chromium`) and write access to `frontend/taskdeck-web/demo-artifacts/`.
 - `demo:director:smoke` also owns a dedicated Playwright/demo database (`frontend/taskdeck-web/taskdeck.demo.ci.db`) and forces fresh backend/frontend startup so repeated runs do not inherit local `taskdeck.e2e.db` state.
 - In fresh-server mode, the director keeps `http://localhost:5000/api` when it is free and otherwise auto-selects a free local API port before starting the backend.
@@ -228,6 +230,8 @@ frontend/taskdeck-web/demo-artifacts/run-<timestamp>/
 `demo:director:smoke` writes to `frontend/taskdeck-web/demo-artifacts/ci-smoke/`, resets `frontend/taskdeck-web/taskdeck.demo.ci.db`, auto-selects a free local API port when `5000` is occupied, and disables Playwright server reuse so artifact upload paths and seeded board state stay stable across reruns.
 
 If startup still fails because you forced conflicting overrides, the director now prints a remediation hint that points to `TASKDECK_E2E_API_BASE_URL` and `TASKDECK_E2E_FRONTEND_PORT`.
+
+When LLM steps are enabled, the full director flow will automatically pass live-provider settings to the backend web server when a usable demo key is present. Smoke runs still stay deterministic because `--skip-llm` suppresses that auto-enable path.
 
 ## Demo CI Policy
 

@@ -85,6 +85,19 @@ Optional:
 - `Llm__Gemini__BaseUrl=https://generativelanguage.googleapis.com/v1beta`
 - `Llm__Gemini__TimeoutSeconds=30`
 
+## Playwright Demo Auto-Enable
+
+For full Playwright-backed demos (`npm run demo:director` or `TASKDECK_RUN_DEMO=1 npx playwright test tests/e2e/stakeholder-demo.spec.ts --headed`):
+
+- if LLM steps are enabled and a usable live-provider key is present, the demo web server now auto-enables live providers for that run
+- Gemini is preferred when any of these are present:
+  - `GEMINI_API_KEY`
+  - `TASKDECK_DEMO_GEMINI_API_KEY`
+  - `Llm__Gemini__ApiKey`
+- use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead of Gemini for a specific demo run
+- use `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force demo runs back to mock even when keys are present
+- deterministic smoke runs still remain mock-backed because `demo:director:smoke` sets `--skip-llm`
+
 ## Behavior Guarantees
 
 - application services remain provider-agnostic (`ChatService`, capture triage paths depend on `ILlmProvider` only)

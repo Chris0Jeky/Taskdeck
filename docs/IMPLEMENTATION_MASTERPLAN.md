@@ -730,6 +730,7 @@ Batch E integration hardening (`#302`) status:
 - default Playwright CI lanes now explicitly pin `TASKDECK_RUN_DEMO=0` so recorder-style demo flows stay opt-in
 - `ci-extended.yml` now exposes reusable `demo-director-smoke` workflow wiring for explicit smoke validation (`workflow_dispatch` or PR label `automation`)
 - docs/index consolidation completed for demo script entry points, runtime preconditions, and CI policy boundaries
+- follow-through hardening now auto-enables live-provider demos for Playwright-backed full walkthroughs when usable demo keys are present, preferring Gemini for long/manual runs while keeping smoke paths deterministic via `--skip-llm`
 
 ## Next Best Steps (Immediate)
 
