@@ -78,4 +78,20 @@ public class SensitiveDataRedactorTests
         summary.Length.Should().BeLessThanOrEqualTo(1_039); // cap + suffix length
         summary.Should().NotContain(new string('x', 100));
     }
+
+    [Fact]
+    public void SummarizeException_ShouldNotReportTruncation_WhenChainFitsDepthLimit()
+    {
+        var fourth = new InvalidOperationException("fourth");
+        var third = new InvalidOperationException("third", fourth);
+        var second = new InvalidOperationException("second", third);
+        var first = new InvalidOperationException("first", second);
+        var root = new InvalidOperationException("root", first);
+
+        var summary = SensitiveDataRedactor.SummarizeException(root);
+
+        summary.Should().Contain("InvalidOperationException: root");
+        summary.Should().Contain("InvalidOperationException: fourth");
+        summary.Should().NotContain("additional inner exceptions truncated after");
+    }
 }

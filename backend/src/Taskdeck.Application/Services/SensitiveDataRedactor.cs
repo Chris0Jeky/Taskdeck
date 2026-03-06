@@ -92,16 +92,18 @@ public static class SensitiveDataRedactor
 
         var summaries = new List<string>();
         var depth = 0;
-        for (var current = exception; current is not null && depth < MaxExceptionSummaryDepth; current = current.InnerException)
+        Exception? current = exception;
+        while (current is not null && depth < MaxExceptionSummaryDepth)
         {
             var message = string.IsNullOrWhiteSpace(current.Message)
                 ? "(no message)"
                 : Redact(current.Message);
             summaries.Add($"{current.GetType().Name}: {message}");
+            current = current.InnerException;
             depth += 1;
         }
 
-        if (depth == MaxExceptionSummaryDepth)
+        if (current is not null)
         {
             summaries.Add($"... additional inner exceptions truncated after {MaxExceptionSummaryDepth} levels");
         }
