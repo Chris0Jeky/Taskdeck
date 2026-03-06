@@ -207,6 +207,8 @@ function collectScenarioAliases(scenario) {
         })
         break
       case 'createCard':
+      case 'updateCard':
+      case 'moveCard':
         registerScenarioAlias(aliasRegistry, {
           namespace: 'cards',
           alias: step.alias,
