@@ -1,6 +1,6 @@
 # Terraform Deployment Baseline
 
-Last Updated: 2026-03-06  
+Last Updated: 2026-03-06
 Issue: `#102` OPS-10 Infrastructure-as-Code baseline for Taskdeck environments
 
 This runbook defines the first Terraform baseline for Taskdeck.
