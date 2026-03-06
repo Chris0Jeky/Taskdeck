@@ -218,6 +218,33 @@ powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8
 Hardening matrix pass/fail criteria:
 - `docs/DEPLOYMENT_HARDENING_MATRIX.md`
 
+## Terraform IaC Baseline Validation
+
+Static validation (no cloud apply required):
+
+```powershell
+terraform fmt -check -recursive deploy/terraform/aws
+powershell -File ./scripts/deploy/Test-TaskdeckTerraformBaseline.ps1
+```
+
+Real-environment drift check (requires environment-specific `terraform.tfvars`, backend config, and AWS credentials):
+
+```powershell
+powershell -File ./scripts/deploy/Invoke-TaskdeckTerraformDriftCheck.ps1 `
+  -Environment staging `
+  -VarFile deploy/terraform/aws/environments/staging/terraform.tfvars `
+  -BackendConfigFile deploy/terraform/aws/environments/staging/backend.hcl `
+  -RefreshOnly
+```
+
+Notes:
+- `Test-TaskdeckTerraformBaseline.ps1` runs `terraform init -backend=false` and `terraform validate` for `dev`, `staging`, and `prod`.
+- `Invoke-TaskdeckTerraformDriftCheck.ps1` relies on `terraform plan -detailed-exitcode`; `0` means no changes, `2` means drift for `-RefreshOnly` or planned changes for a non-refresh-only run, and any other exit is a failure.
+- The Terraform baseline intentionally provisions the current single-node Docker deployment model; the JWT signing secret comes from a pre-created SecureString SSM parameter, and the SQLite path lives on a dedicated persistent EBS data volume so routine host replacement does not discard `/var/lib/taskdeck/taskdeck.db`.
+- `staging` and `prod` default `protect_data_volume` to `true`; intentional destroys or migrations that must remove the data volume require a reviewed switch to the unprotected path plus a reviewed module-source change to relax/remove `prevent_destroy` before the destructive apply.
+- Changing an existing environment from `protect_data_volume = false` to `true` also replaces the underlying EBS volume with a new protected one; treat that as a destructive migration and capture a backup or snapshot first.
+- Staged rollout policy, managed DB, and full secret-rotation posture remain tracked in `#101`, `#84`, and `#110`.
+
 ## MCP Operations Validation
 
 ```powershell

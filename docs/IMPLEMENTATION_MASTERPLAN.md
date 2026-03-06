@@ -617,11 +617,12 @@ Strategic reconciliation applied:
 
 Covered by seeded issues:
 - Docker + reverse proxy + compression baseline: `#69` (delivered)
+- IaC baseline for single-node AWS environments hosting the Docker workload layer: `#102` (delivered)
+  - follow-up hardening now includes SSM-backed JWT secret bootstrap, replace-on-change semantics for host bootstrap drift, a dedicated persistent EBS data volume so SQLite survives routine host replacement, stop-before-detach safety for planned data-volume changes, default destroy-protection for staging/prod data volumes, and backup-bucket noncurrent-version expiry with explicit versioning dependency
 - Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
 - MCP operator wiring + verification workflow: `#140` (delivered via `#144`)
 - MCP integration smoke/regression harness: `#141` (delivered)
 - Staged rollout policy (blue/green/canary): `#101`
-- IaC baseline: `#102`
 - SBOM/release provenance: `#103`
 - Cost guardrails: `#104`
 - Backup/restore disaster recovery: `#86`

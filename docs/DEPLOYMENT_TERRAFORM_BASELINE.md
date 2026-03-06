@@ -1,0 +1,261 @@
+# Terraform Deployment Baseline
+
+Last Updated: 2026-03-06
+Issue: `#102` OPS-10 Infrastructure-as-Code baseline for Taskdeck environments
+
+This runbook defines the first Terraform baseline for Taskdeck.
+It intentionally matches the current shipped deployment posture instead of inventing a second runtime:
+
+- one public VPC + subnet per environment
+- one single-node EC2 host running the existing Docker-based Taskdeck stack
+- one encrypted S3 bucket for backup/export artifacts
+- one persistent EBS data volume mounted at `/var/lib/taskdeck` for the SQLite path (`/var/lib/taskdeck/taskdeck.db`)
+
+This baseline is deliberately single-node because the current product/runtime assumptions are still single-node biased:
+- SQLite is the production data path today
+- in-process workers run inside the API host
+- SignalR/rate-limiting posture is not yet scale-out hardened
+
+Related follow-through remains separate:
+- `#101` staged rollout / canary / blue-green policy
+- `#103` SBOM and provenance posture
+- `#110` secrets/config management baseline
+- `#111` cloud topology + autoscaling ADR
+- `#84` managed production DB migration strategy
+
+## Files
+
+- `deploy/terraform/aws/modules/single_node/*`
+- `deploy/terraform/aws/environments/dev/*`
+- `deploy/terraform/aws/environments/staging/*`
+- `deploy/terraform/aws/environments/prod/*`
+- `scripts/deploy/Test-TaskdeckTerraformBaseline.ps1`
+- `scripts/deploy/Invoke-TaskdeckTerraformDriftCheck.ps1`
+
+## What Gets Provisioned
+
+Each environment root provisions:
+
+- networking
+  - one VPC
+  - one public subnet
+  - one internet gateway
+  - one public route table
+  - one security group
+- app hosting
+  - one EC2 instance
+  - one IAM role + instance profile
+  - cloud-init bootstrap that installs Docker, writes the Taskdeck compose/env files, and starts the stack
+- storage
+  - one encrypted S3 bucket for exported artifacts/backups
+  - noncurrent backup object versions expire after 90 days to cap long-term versioning cost growth
+- database resource
+  - one encrypted EBS data volume attached to the host and mounted at `/var/lib/taskdeck`
+  - the Taskdeck SQLite file hosted on that persistent data volume at `/var/lib/taskdeck/taskdeck.db`
+
+## Secret and Config Handoff
+
+Secrets are intentionally kept out of source control.
+
+Use one of these handoff paths:
+
+- untracked `terraform.tfvars`
+- CI-injected `TF_VAR_*` environment variables
+- a local `backend.hcl` file that is not committed
+
+JWT signing secrets are no longer passed directly through `user_data`.
+Instead, the environment root points the host bootstrap at an existing SecureString SSM parameter via `jwt_secret_ssm_parameter_name`.
+The EC2 instance role receives `ssm:GetParameter` for that exact parameter, plus optional `kms:Decrypt` when `jwt_secret_kms_key_arn` is supplied for a customer-managed key.
+
+Committed example files:
+
+- `terraform.tfvars.example`
+- `backend.hcl.example`
+
+Do not commit:
+
+- real JWT secret values
+- real `jwt_secret_ssm_parameter_name` targets that would disclose production secret naming conventions
+- cloud credentials
+- remote-state backend credentials
+
+The repo `.gitignore` now excludes generated environment copies such as `deploy/terraform/aws/environments/*/terraform.tfvars`, `*.auto.tfvars`, and `backend.hcl`.
+
+This baseline stops at secret handoff mechanics. Rotation policy, provider credentials, and long-term secret storage posture stay in `#110`.
+
+## Environment Differences
+
+Environment differences are reviewable through the per-environment example files:
+
+- `dev`
+  - smaller instance, `8080` public port, force-destroy backup bucket enabled for disposable use
+- `staging`
+  - medium instance, `80` public port, backup bucket retention preserved, data-volume destroy protection enabled by default
+- `prod`
+  - larger instance, `80` public port, tighter ingress, no force-destroy bucket, and data-volume destroy protection enabled by default
+
+## Local Static Validation
+
+Run the repo-level Terraform validation helper:
+
+```powershell
+powershell -File ./scripts/deploy/Test-TaskdeckTerraformBaseline.ps1
+```
+
+Equivalent raw commands per environment:
+
+```powershell
+terraform -chdir=deploy/terraform/aws/environments/dev init -backend=false -input=false
+terraform -chdir=deploy/terraform/aws/environments/dev validate
+```
+
+Formatting check from repo root:
+
+```powershell
+terraform fmt -check -recursive deploy/terraform/aws
+```
+
+## Bootstrap Workflow
+
+1. Copy the environment example files:
+
+```powershell
+Copy-Item deploy/terraform/aws/environments/staging/terraform.tfvars.example deploy/terraform/aws/environments/staging/terraform.tfvars
+Copy-Item deploy/terraform/aws/environments/staging/backend.hcl.example deploy/terraform/aws/environments/staging/backend.hcl
+```
+
+2. Replace placeholders in the untracked files:
+- `ami_id`
+- `api_image`
+- `web_image`
+- `jwt_secret_ssm_parameter_name`
+- optional `jwt_secret_kms_key_arn` when the SecureString uses a customer-managed CMK
+- optional `data_volume_size_gb` if the default persistent data volume size is not appropriate
+- optional `protect_data_volume` override to select the unprotected volume path for disposable environments; protected staging/prod teardown still requires a reviewed source change as noted below
+- `allowed_ingress_cidrs` for the reverse-proxy listener
+- optional `allowed_ssh_cidrs` when SSH should stay narrower than application ingress
+- backend bucket/key values if using remote state
+
+3. Ensure the SecureString parameter already exists before bootstrap:
+
+```powershell
+aws ssm put-parameter `
+  --name /taskdeck/staging/jwt-secret `
+  --type SecureString `
+  --value "<strong-random-jwt-secret>" `
+  --overwrite `
+  --region eu-west-2
+```
+
+4. Initialize Terraform:
+
+```powershell
+terraform -chdir=deploy/terraform/aws/environments/staging init -input=false -backend-config=backend.hcl
+```
+
+Each environment root now declares a partial `backend "s3" {}` block so the untracked `backend.hcl` values above are actually consumed during `init`.
+
+5. Review the plan:
+
+```powershell
+terraform -chdir=deploy/terraform/aws/environments/staging plan -var-file=terraform.tfvars
+```
+
+6. Apply:
+
+```powershell
+terraform -chdir=deploy/terraform/aws/environments/staging apply -var-file=terraform.tfvars
+```
+
+The EC2 instance is intentionally configured with `user_data_replace_on_change = true`.
+Changing bootstrap inputs such as container images, proxy port, or SSM parameter wiring replaces the host instead of silently leaving the old runtime in place.
+Taskdeck state survives that replacement because the SQLite path now lives on a separate persistent EBS data volume that Terraform reattaches to the replacement instance.
+For `staging` and `prod`, the data volume is also protected with Terraform `prevent_destroy` by default. Intentional teardown or migration that must remove it is a two-step reviewed workflow: first switch the environment to the unprotected volume path (`protect_data_volume = false`), then remove or relax the protected-volume `prevent_destroy` guard in module source before applying the destroying change.
+Changing an existing environment from `protect_data_volume = false` to `true` is also destructive: Terraform replaces the current EBS volume with a new protected one, and the bootstrap will format that replacement volume before mounting it, so take a backup or EBS snapshot first.
+The attachment resource now uses `stop_instance_before_detaching = true`, so planned volume detach/replacement workflows prefer a brief outage over a forced live detach that could corrupt `/var/lib/taskdeck`.
+
+## Post-Apply Checks
+
+Use the Terraform outputs to verify the host is actually serving Taskdeck:
+
+```powershell
+terraform -chdir=deploy/terraform/aws/environments/staging output application_url
+terraform -chdir=deploy/terraform/aws/environments/staging output public_ip
+terraform -chdir=deploy/terraform/aws/environments/staging output ssh_command
+terraform -chdir=deploy/terraform/aws/environments/staging output data_volume_id
+```
+
+Then validate from a trusted network path:
+
+- `GET {application_url}/health/ready` returns `200`
+- `GET {application_url}/api/boards` returns `401`
+- SSH to the host and confirm `docker compose ps` under `/opt/taskdeck`
+- verify `database_path` still points to `/var/lib/taskdeck/taskdeck.db`
+
+Example:
+
+```powershell
+$applicationUrl = terraform -chdir=deploy/terraform/aws/environments/staging output -raw application_url
+$publicIp = terraform -chdir=deploy/terraform/aws/environments/staging output -raw public_ip
+$databasePath = terraform -chdir=deploy/terraform/aws/environments/staging output -raw database_path
+$dataVolumeId = terraform -chdir=deploy/terraform/aws/environments/staging output -raw data_volume_id
+curl "$applicationUrl/health/ready"
+curl -i "$applicationUrl/api/boards"
+Write-Host "Database path: $databasePath"
+Write-Host "Data volume id: $dataVolumeId"
+ssh ubuntu@$publicIp
+```
+
+## TLS Boundary
+
+This module intentionally leaves Nginx on plain HTTP inside the instance so it can sit behind a separate HTTPS edge.
+That means:
+
+- direct internet exposure of the host listener is not an acceptable production posture for credentialed traffic
+- `allowed_ingress_cidrs` should be limited to trusted admin ranges or the private/source ranges of an upstream TLS terminator
+- `allowed_ssh_cidrs` should usually be narrower still and restricted to operator/admin addresses only
+- if the environment must be internet-facing, put an ALB, CDN, reverse tunnel, or equivalent HTTPS endpoint in front and lock the security group down to that edge
+
+## Drift Detection
+
+Use the dedicated drift-check helper with a real backend and real var file:
+
+```powershell
+powershell -File ./scripts/deploy/Invoke-TaskdeckTerraformDriftCheck.ps1 `
+  -Environment staging `
+  -VarFile deploy/terraform/aws/environments/staging/terraform.tfvars `
+  -BackendConfigFile deploy/terraform/aws/environments/staging/backend.hcl `
+  -RefreshOnly
+```
+
+Exit contract:
+
+- `0`: no drift detected
+- `2`: drift detected for `-RefreshOnly`, or planned changes detected for a full non-refresh-only plan
+- other: Terraform or configuration failure
+
+The expected operator loop is:
+
+1. run drift check
+2. review the plan output
+3. reconcile intentional vs unintentional drift
+4. apply only after review
+
+## Teardown
+
+Destroy the environment explicitly when appropriate:
+
+```powershell
+terraform -chdir=deploy/terraform/aws/environments/dev destroy -var-file=terraform.tfvars
+```
+
+For `staging` and `prod`, review bucket retention and data backup posture before destroy.
+
+## Constraints
+
+- This baseline is not a blue/green or canary workflow.
+- This baseline does not introduce a managed database.
+- This baseline does not solve secrets rotation or provider-credential governance.
+- This baseline assumes container images are already available to the host by the references supplied in `terraform.tfvars`.
+
+Use this as the reproducible infrastructure floor under the existing container deployment, not as the final production-topology answer.

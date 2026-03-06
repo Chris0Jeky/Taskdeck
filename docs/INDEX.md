@@ -33,6 +33,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - PACK-01 manifest schema and validation contract for starter-pack foundations.
 - `DEPLOYMENT_CONTAINERS.md`
   - Container deployment runbook for Docker images, compose baseline, reverse-proxy posture, and staging bootstrap.
+- `DEPLOYMENT_TERRAFORM_BASELINE.md`
+  - Terraform/IaC baseline for dev/staging/prod single-node AWS environments that host the existing Docker deployment layer.
 - `DEPLOYMENT_HARDENING_MATRIX.md`
   - Deployment/container hardening verification matrix with pass/fail criteria and automation command (`#142`).
 - `LLM_PROVIDER_SETUP_GUIDE.md`

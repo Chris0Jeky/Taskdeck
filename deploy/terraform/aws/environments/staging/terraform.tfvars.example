@@ -1,0 +1,26 @@
+aws_region         = "eu-west-2"
+availability_zone  = "eu-west-2a"
+vpc_cidr           = "10.50.0.0/16"
+public_subnet_cidr = "10.50.1.0/24"
+ami_id             = "ami-xxxxxxxxxxxxxxxxx" # Ubuntu 24.04 LTS for your region
+instance_type      = "t3.medium"
+ssh_key_name       = "taskdeck-staging"
+
+allowed_ingress_cidrs = [
+  "198.51.100.0/24",
+]
+# allowed_ssh_cidrs = [
+#   "203.0.113.10/32",
+# ]
+
+api_image  = "ghcr.io/example/taskdeck-api:staging-latest"
+web_image  = "ghcr.io/example/taskdeck-web:staging-latest"
+jwt_secret_ssm_parameter_name = "/taskdeck/staging/jwt-secret"
+# jwt_secret_kms_key_arn      = "arn:aws:kms:eu-west-2:123456789012:key/replace-with-your-key"
+# data_volume_size_gb         = 60
+# protect_data_volume         = true
+
+extra_tags = {
+  Owner   = "platform"
+  Purpose = "taskdeck-staging"
+}
