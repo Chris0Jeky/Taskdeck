@@ -36,6 +36,11 @@ variable "allowed_ingress_cidrs" {
   type = list(string)
 }
 
+variable "allowed_ssh_cidrs" {
+  type    = list(string)
+  default = null
+}
+
 variable "proxy_port" {
   type    = number
   default = 80

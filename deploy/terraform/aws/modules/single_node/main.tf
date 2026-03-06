@@ -14,6 +14,7 @@ locals {
   backup_bucket_name            = lower(replace("${local.base_name}-${data.aws_caller_identity.current.account_id}-${var.aws_region}-backups", "_", "-"))
   jwt_secret_ssm_parameter_path = startswith(var.jwt_secret_ssm_parameter_name, "/") ? var.jwt_secret_ssm_parameter_name : "/${var.jwt_secret_ssm_parameter_name}"
   jwt_secret_ssm_parameter_arn  = "arn:${data.aws_partition.current.partition}:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.jwt_secret_ssm_parameter_path}"
+  ssh_ingress_cidrs             = var.allowed_ssh_cidrs == null ? var.allowed_ingress_cidrs : var.allowed_ssh_cidrs
 }
 
 resource "aws_vpc" "this" {
@@ -82,7 +83,7 @@ resource "aws_security_group" "taskdeck_host" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = var.allowed_ingress_cidrs
+    cidr_blocks = local.ssh_ingress_cidrs
   }
 
   egress {

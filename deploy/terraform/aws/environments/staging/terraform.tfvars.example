@@ -9,6 +9,9 @@ ssh_key_name       = "taskdeck-staging"
 allowed_ingress_cidrs = [
   "198.51.100.0/24",
 ]
+# allowed_ssh_cidrs = [
+#   "203.0.113.10/32",
+# ]
 
 api_image  = "ghcr.io/example/taskdeck-api:staging-latest"
 web_image  = "ghcr.io/example/taskdeck-web:staging-latest"

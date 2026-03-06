@@ -1,6 +1,8 @@
 terraform {
   required_version = ">= 1.14.0, < 2.0.0"
 
+  backend "s3" {}
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -34,6 +36,7 @@ module "taskdeck" {
   instance_type                 = var.instance_type
   ssh_key_name                  = var.ssh_key_name
   allowed_ingress_cidrs         = var.allowed_ingress_cidrs
+  allowed_ssh_cidrs             = var.allowed_ssh_cidrs
   proxy_port                    = var.proxy_port
   api_image                     = var.api_image
   web_image                     = var.web_image

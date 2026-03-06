@@ -9,6 +9,9 @@ ssh_key_name       = "taskdeck-prod"
 allowed_ingress_cidrs = [
   "203.0.113.0/24",
 ]
+# allowed_ssh_cidrs = [
+#   "203.0.113.10/32",
+# ]
 
 api_image  = "ghcr.io/example/taskdeck-api:prod-latest"
 web_image  = "ghcr.io/example/taskdeck-web:prod-latest"

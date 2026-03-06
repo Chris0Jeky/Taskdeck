@@ -126,7 +126,8 @@ Copy-Item deploy/terraform/aws/environments/staging/backend.hcl.example deploy/t
 - `web_image`
 - `jwt_secret_ssm_parameter_name`
 - optional `jwt_secret_kms_key_arn` when the SecureString uses a customer-managed CMK
-- ingress CIDRs
+- `allowed_ingress_cidrs` for the reverse-proxy listener
+- optional `allowed_ssh_cidrs` when SSH should stay narrower than application ingress
 - backend bucket/key values if using remote state
 
 3. Ensure the SecureString parameter already exists before bootstrap:
@@ -145,6 +146,8 @@ aws ssm put-parameter `
 ```powershell
 terraform -chdir=deploy/terraform/aws/environments/staging init -input=false -backend-config=backend.hcl
 ```
+
+Each environment root now declares a partial `backend "s3" {}` block so the untracked `backend.hcl` values above are actually consumed during `init`.
 
 5. Review the plan:
 
@@ -182,10 +185,12 @@ Example:
 
 ```powershell
 $applicationUrl = terraform -chdir=deploy/terraform/aws/environments/staging output -raw application_url
-$sshCommand = terraform -chdir=deploy/terraform/aws/environments/staging output -raw ssh_command
+$publicIp = terraform -chdir=deploy/terraform/aws/environments/staging output -raw public_ip
+$databasePath = terraform -chdir=deploy/terraform/aws/environments/staging output -raw database_path
 curl "$applicationUrl/health/ready"
 curl -i "$applicationUrl/api/boards"
-Invoke-Expression $sshCommand
+Write-Host "Database path: $databasePath"
+ssh ubuntu@$publicIp
 ```
 
 ## TLS Boundary
@@ -195,6 +200,7 @@ That means:
 
 - direct internet exposure of the host listener is not an acceptable production posture for credentialed traffic
 - `allowed_ingress_cidrs` should be limited to trusted admin ranges or the private/source ranges of an upstream TLS terminator
+- `allowed_ssh_cidrs` should usually be narrower still and restricted to operator/admin addresses only
 - if the environment must be internet-facing, put an ALB, CDN, reverse tunnel, or equivalent HTTPS endpoint in front and lock the security group down to that edge
 
 ## Drift Detection

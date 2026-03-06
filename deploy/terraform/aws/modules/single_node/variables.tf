@@ -45,8 +45,14 @@ variable "ssh_key_name" {
 }
 
 variable "allowed_ingress_cidrs" {
-  description = "CIDR blocks allowed to reach SSH and the reverse-proxy listener. Keep this limited to trusted admin ranges or an upstream TLS terminator."
+  description = "CIDR blocks allowed to reach the reverse-proxy listener. Keep this limited to trusted admin ranges or an upstream TLS terminator."
   type        = list(string)
+}
+
+variable "allowed_ssh_cidrs" {
+  description = "Optional CIDR blocks allowed to reach SSH. Defaults to allowed_ingress_cidrs when unset so operators can narrow admin access separately."
+  type        = list(string)
+  default     = null
 }
 
 variable "proxy_port" {
