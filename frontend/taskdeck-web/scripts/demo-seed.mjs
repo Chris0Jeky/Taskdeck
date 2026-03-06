@@ -25,6 +25,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   assertSafeLocalApiTarget,
   getHostname,
@@ -81,6 +83,38 @@ const DEMO_BOARD_SPECS = {
   },
 }
 
+const SEEDED_CAPTURE_TEXT = {
+  ignored: 'This item is ignored (demo).',
+  triageApplied:
+    '- [ ] Draft a 5-minute stakeholder demo script\n' +
+    '- [ ] Add onboarding empty-states for scaffolding pages\n' +
+    '- [ ] Create demo seeding harness that populates Inbox/Proposals/Notifications\n',
+  triagePending:
+    '- [ ] Follow up: connect Activity view to real audit queries\n' +
+    '- [ ] Follow up: simplify Automation Queue composer\n',
+}
+
+const SEEDED_QUEUE = {
+  successCardTitle: 'From queue: demo seeded item',
+  successInstruction: 'create card "From queue: demo seeded item"',
+  failureInstruction: 'create board named joji',
+}
+
+const SEEDED_CHAT = {
+  sessionTitle: 'Stakeholder Demo',
+}
+
+const SEEDED_COMMENT = {
+  demoMention: (collabUsername) =>
+    `Heads up @${collabUsername} - this is a seeded mention for the Notifications view.`,
+  collabReply: (demoUsername) => `@${demoUsername} ack - I will take a look after lunch. (seeded)`,
+}
+
+const SEEDED_OPS_LOG_MESSAGES = {
+  healthCheck: "Starting template 'health.check'",
+  boardsList: "Starting template 'boards.list'",
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const BOARD_ROLE_NAMES = {
@@ -132,6 +166,99 @@ function hasAtLeastEditorAccess(role) {
 function idsMatch(left, right) {
   if (left === undefined || left === null || right === undefined || right === null) return false
   return String(left).trim().toLowerCase() === String(right).trim().toLowerCase()
+}
+
+function hasStatus(status, expectedStatusName, expectedNumericStatus) {
+  if (typeof status === 'number') {
+    return status === expectedNumericStatus
+  }
+
+  return typeof status === 'string' && status.trim().toLowerCase() === expectedStatusName.toLowerCase()
+}
+
+function getTextFragment(value) {
+  return String(value || '')
+    .trim()
+    .split('\n')[0]
+}
+
+function findCaptureSummaryByTextFragment(captureSummaries, boardId, text) {
+  const fragment = getTextFragment(text)
+  return (captureSummaries || []).find(
+    (item) => idsMatch(item?.boardId, boardId) && String(item?.textExcerpt || '').includes(fragment),
+  )
+}
+
+function findBoardCardByTitle(cards, title) {
+  return (cards || []).find((card) => String(card?.title || '').trim() === title) || null
+}
+
+function findChatSessionByTitle(chatSessions, boardId, title) {
+  return (
+    (chatSessions || []).find(
+      (session) => idsMatch(session?.boardId, boardId) && String(session?.title || '').trim() === title,
+    ) || null
+  )
+}
+
+function hasCommentWithContent(comments, content) {
+  return (comments || []).some((comment) => String(comment?.content || '').trim() === content)
+}
+
+function hasOpsLogMessage(logEntries, messageFragment) {
+  return (logEntries || []).some((entry) => String(entry?.message || '').includes(messageFragment))
+}
+
+export function planDemoSeedRerunState({
+  boardId,
+  captureSummaries,
+  boardCards,
+  queueRequests,
+  chatSessions,
+  existingComments,
+  logEntries,
+  demoUsername,
+  collabUsername,
+}) {
+  const failedQueueRequest = (queueRequests || []).find(
+    (request) =>
+      idsMatch(request?.boardId, boardId) &&
+      (hasStatus(request?.status, 'Failed', 3) || Boolean(request?.errorMessage)),
+  )
+  const seededChatSession = findChatSessionByTitle(chatSessions, boardId, SEEDED_CHAT.sessionTitle)
+  const demoMentionContent = SEEDED_COMMENT.demoMention(collabUsername)
+  const collabReplyContent = SEEDED_COMMENT.collabReply(demoUsername)
+
+  return {
+    captures: {
+      ignored: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.ignored),
+      triageApplied: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.triageApplied),
+      triagePending: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.triagePending),
+    },
+    queue: {
+      seededCard: findBoardCardByTitle(boardCards, SEEDED_QUEUE.successCardTitle),
+      hasFailedRequest: Boolean(failedQueueRequest),
+    },
+    chat: {
+      seededSession: seededChatSession,
+      hasSeededMessage:
+        Boolean(
+          (seededChatSession?.recentMessages || []).find(
+            (message) => String(message?.content || '').trim() === `rename board to "${DEMO_BOARD_SPECS.capture.canonicalName} (Chat)"`,
+          ),
+        ) || Boolean((seededChatSession?.recentMessages || []).find((message) => message?.proposalId)),
+    },
+    comments: {
+      hasDemoMention: hasCommentWithContent(existingComments, demoMentionContent),
+      hasCollabReply: hasCommentWithContent(existingComments, collabReplyContent),
+      demoMentionContent,
+      collabReplyContent,
+    },
+    ops: {
+      hasHealthCheckLog: hasOpsLogMessage(logEntries, SEEDED_OPS_LOG_MESSAGES.healthCheck),
+      hasBoardsListLog: hasOpsLogMessage(logEntries, SEEDED_OPS_LOG_MESSAGES.boardsList),
+    },
+  }
 }
 
 async function http(method, path, { token, body, headers: extraHeaders } = {}) {
@@ -353,7 +480,250 @@ async function ensureCollaboratorEditorAccess(boardId, token, collaboratorUserId
   console.log(`- access: upgraded collab user role from ${formatBoardRole(existingAccess.role)} to Editor on capture board`)
 }
 
-async function main() {
+async function listCaptureSummaries(boardId, token) {
+  return (await http('GET', `/capture/items?boardId=${encodeURIComponent(boardId)}&limit=200`, { token })) || []
+}
+
+async function getCaptureDetail(summary, token) {
+  if (!summary?.id) {
+    return null
+  }
+
+  return await http('GET', `/capture/items/${summary.id}`, { token })
+}
+
+async function getProposalById(proposalId, token) {
+  const proposals = (await http('GET', '/automation/proposals?includeOperations=true&limit=200', { token })) || []
+  return proposals.find((proposal) => idsMatch(proposal?.id, proposalId)) || null
+}
+
+async function ensureProposalApplied(proposalId, token) {
+  const proposal = await getProposalById(proposalId, token)
+  if (!proposal) {
+    throw new Error(`Expected proposal ${proposalId} to exist for seeded demo state.`)
+  }
+
+  if (hasStatus(proposal.status, 'Applied', 3)) {
+    return proposal
+  }
+
+  if (hasStatus(proposal.status, 'PendingReview', 0)) {
+    await http('POST', `/automation/proposals/${proposalId}/approve`, { token })
+    await http('POST', `/automation/proposals/${proposalId}/execute`, {
+      token,
+      headers: { 'Idempotency-Key': randomUUID() },
+    })
+    return await getProposalById(proposalId, token)
+  }
+
+  if (hasStatus(proposal.status, 'Approved', 1)) {
+    await http('POST', `/automation/proposals/${proposalId}/execute`, {
+      token,
+      headers: { 'Idempotency-Key': randomUUID() },
+    })
+    return await getProposalById(proposalId, token)
+  }
+
+  throw new Error(`Seeded demo proposal ${proposalId} is in unexpected status ${String(proposal.status)}.`)
+}
+
+async function ensureCaptureSeed(boardId, token, text, { ignore = false, applyProposal = false } = {}) {
+  const captureSummaries = await listCaptureSummaries(boardId, token)
+  let summary = findCaptureSummaryByTextFragment(captureSummaries, boardId, text)
+  if (!summary) {
+    summary = await http('POST', '/capture/items', {
+      token,
+      body: {
+        boardId,
+        text,
+        source: 'Typed',
+      },
+    })
+  }
+
+  let detail = await getCaptureDetail(summary, token)
+
+  if (ignore) {
+    if (!hasStatus(detail?.status, 'Ignored', 5)) {
+      await http('POST', `/capture/items/${summary.id}/ignore`, { token })
+      detail = await getCaptureDetail(summary, token)
+    }
+    return detail
+  }
+
+  if (!detail?.provenance?.proposalId) {
+    const isTerminal =
+      hasStatus(detail?.status, 'Ignored', 5) || hasStatus(detail?.status, 'Cancelled', 4) || hasStatus(detail?.status, 'Failed', 6)
+    if (!isTerminal) {
+      await http('POST', `/capture/items/${summary.id}/triage`, { token })
+    }
+
+    detail = await waitFor(
+      async () => {
+        const refreshed = await getCaptureDetail(summary, token)
+        return refreshed?.provenance?.proposalId ? refreshed : null
+      },
+      { label: `capture seed ${summary.id} to produce a proposalId` },
+    )
+  }
+
+  if (applyProposal) {
+    await ensureProposalApplied(detail.provenance.proposalId, token)
+  }
+
+  return detail
+}
+
+async function ensureQueueSeed(boardId, token, existingBoardCards) {
+  let createdGoodRequest = null
+  const seededCard = findBoardCardByTitle(existingBoardCards, SEEDED_QUEUE.successCardTitle)
+  if (!seededCard) {
+    createdGoodRequest = await http('POST', '/llm-queue', {
+      token,
+      body: {
+        requestType: 'instruction',
+        payload: SEEDED_QUEUE.successInstruction,
+        boardId,
+      },
+    })
+
+    await waitFor(
+      async () => {
+        const items = (await http('GET', '/llm-queue/user?limit=200', { token })) || []
+        const request = items.find((item) => idsMatch(item?.id, createdGoodRequest?.id))
+        const done =
+          hasStatus(request?.status, 'Completed', 2) ||
+          hasStatus(request?.status, 'Failed', 3) ||
+          hasStatus(request?.status, 'Cancelled', 4) ||
+          Boolean(request?.errorMessage)
+        return done ? request : null
+      },
+      { label: 'seeded queue success request to finish processing' },
+    )
+
+    const proposals = (await http('GET', '/automation/proposals?includeOperations=true&limit=200', { token })) || []
+    const queueProposal = proposals.find((proposal) => idsMatch(proposal?.sourceReferenceId, createdGoodRequest?.id))
+    if (queueProposal) {
+      await ensureProposalApplied(queueProposal.id, token)
+    }
+  }
+
+  const queueRequests = (await http('GET', '/llm-queue/user?limit=200', { token })) || []
+  const failedRequestExists = queueRequests.some(
+    (request) =>
+      idsMatch(request?.boardId, boardId) &&
+      (hasStatus(request?.status, 'Failed', 3) || Boolean(request?.errorMessage)),
+  )
+
+  if (!failedRequestExists) {
+    const badRequest = await http('POST', '/llm-queue', {
+      token,
+      body: {
+        requestType: 'instruction',
+        payload: SEEDED_QUEUE.failureInstruction,
+        boardId,
+      },
+    })
+
+    await waitFor(
+      async () => {
+        const items = (await http('GET', '/llm-queue/user?limit=200', { token })) || []
+        const request = items.find((item) => idsMatch(item?.id, badRequest?.id))
+        const done = hasStatus(request?.status, 'Failed', 3) || Boolean(request?.errorMessage)
+        return done ? request : null
+      },
+      { label: 'seeded queue failure request to finish processing' },
+    )
+  }
+}
+
+async function ensureChatSeed(boardId, token) {
+  const temporaryCaptureName = `${DEMO_BOARD_SPECS.capture.canonicalName} (Chat)`
+  const renameInstruction = `rename board to "${temporaryCaptureName}"`
+  const sessions = (await http('GET', '/llm/chat/sessions', { token })) || []
+  let session = findChatSessionByTitle(sessions, boardId, SEEDED_CHAT.sessionTitle)
+  const hasSeededMessage =
+    Boolean(
+      (session?.recentMessages || []).find((message) => String(message?.content || '').trim() === renameInstruction),
+    ) || Boolean((session?.recentMessages || []).find((message) => message?.proposalId))
+
+  if (!session) {
+    session = await http('POST', '/llm/chat/sessions', {
+      token,
+      body: { title: SEEDED_CHAT.sessionTitle, boardId },
+    })
+  }
+
+  if (!hasSeededMessage) {
+    const chatMessage = await http('POST', `/llm/chat/sessions/${session.id}/messages`, {
+      token,
+      body: { content: renameInstruction, requestProposal: true },
+    })
+
+    if (chatMessage?.proposalId) {
+      await ensureProposalApplied(chatMessage.proposalId, token)
+    }
+  }
+
+  await http('PUT', `/boards/${boardId}`, {
+    token,
+    body: { name: DEMO_BOARD_SPECS.capture.canonicalName },
+  })
+}
+
+async function ensureSeededComments(boardId, token, collabToken, demoUser, collabUser) {
+  const cards = (await http('GET', `/boards/${boardId}/cards`, { token })) || []
+  const firstCard = cards[0]
+  if (!firstCard) {
+    return null
+  }
+
+  const comments = (await http('GET', `/boards/${boardId}/cards/${firstCard.id}/comments`, { token })) || []
+  const demoMentionContent = SEEDED_COMMENT.demoMention(collabUser.username)
+  const collabReplyContent = SEEDED_COMMENT.collabReply(demoUser.username)
+
+  if (!hasCommentWithContent(comments, demoMentionContent)) {
+    await http('POST', `/boards/${boardId}/cards/${firstCard.id}/comments`, {
+      token,
+      body: { content: demoMentionContent },
+    })
+  }
+
+  if (!hasCommentWithContent(comments, collabReplyContent)) {
+    await http('POST', `/boards/${boardId}/cards/${firstCard.id}/comments`, {
+      token: collabToken,
+      body: { content: collabReplyContent },
+    })
+  }
+
+  return firstCard
+}
+
+async function ensureOpsSeed(token) {
+  const logEntries = (await http('GET', '/logs?source=OpsCliService&limit=200', { token })) || []
+
+  if (!hasOpsLogMessage(logEntries, SEEDED_OPS_LOG_MESSAGES.healthCheck)) {
+    await http('POST', '/ops/cli/run', {
+      token,
+      body: { templateName: 'health.check', parameters: {} },
+    })
+  }
+
+  if (!hasOpsLogMessage(logEntries, SEEDED_OPS_LOG_MESSAGES.boardsList)) {
+    try {
+      await http('POST', '/ops/cli/run', {
+        token,
+        body: { templateName: 'boards.list', parameters: {} },
+      })
+    } catch (err) {
+      if (getHttpStatus(err) !== 403) {
+        throw err
+      }
+    }
+  }
+}
+
+export async function main() {
   ensureSafeApiBaseTarget()
 
   console.log(`\nTaskdeck demo seeder -> ${NORMALIZED_API_BASE}`)
@@ -416,197 +786,76 @@ async function main() {
   // 4) Seed: board access entry (so Access view is not empty)
   await ensureCollaboratorEditorAccess(captureBoard.id, demoToken, collabUser.id)
 
+  const captureSummaries = await listCaptureSummaries(captureBoard.id, demoToken)
+  const captureBoardCards = (await http('GET', `/boards/${captureBoard.id}/cards`, { token: demoToken })) || []
+  const queueRequests = (await http('GET', '/llm-queue/user?limit=200', { token: demoToken })) || []
+  const chatSessions = (await http('GET', '/llm/chat/sessions', { token: demoToken })) || []
+  const firstExistingCard = captureBoardCards[0]
+  const existingComments = firstExistingCard
+    ? ((await http('GET', `/boards/${captureBoard.id}/cards/${firstExistingCard.id}/comments`, { token: demoToken })) || [])
+    : []
+  const logEntries = (await http('GET', '/logs?source=OpsCliService&limit=200', { token: demoToken })) || []
+  const seedPlan = planDemoSeedRerunState({
+    boardId: captureBoard.id,
+    captureSummaries,
+    boardCards: captureBoardCards,
+    queueRequests,
+    chatSessions,
+    existingComments,
+    logEntries,
+    demoUsername: demoUser.username,
+    collabUsername: collabUser.username,
+  })
+
   // 5) Seed: Inbox items (ignored + triage)
   console.log('\nCreating Inbox items...')
-  const ignored = await http('POST', '/capture/items', {
-    token: demoToken,
-    body: {
-      boardId: captureBoard.id,
-      text: 'This item is ignored (demo).',
-      source: 'Typed',
-    },
+  await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.ignored, { ignore: true })
+  const triageAppliedWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triageApplied, {
+    applyProposal: true,
   })
-  await http('POST', `/capture/items/${ignored.id}/ignore`, { token: demoToken })
+  const triagePendingWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triagePending)
 
-  const triageApplied = await http('POST', '/capture/items', {
-    token: demoToken,
-    body: {
-      boardId: captureBoard.id,
-      text:
-        '- [ ] Draft a 5-minute stakeholder demo script\n' +
-        '- [ ] Add onboarding empty-states for scaffolding pages\n' +
-        '- [ ] Create demo seeding harness that populates Inbox/Proposals/Notifications\n',
-      source: 'Typed',
-    },
-  })
-  await http('POST', `/capture/items/${triageApplied.id}/triage`, { token: demoToken })
-
-  const triagePending = await http('POST', '/capture/items', {
-    token: demoToken,
-    body: {
-      boardId: captureBoard.id,
-      text:
-        '- [ ] Follow up: connect Activity view to real audit queries\n' +
-        '- [ ] Follow up: simplify Automation Queue composer\n',
-      source: 'Typed',
-    },
-  })
-  await http('POST', `/capture/items/${triagePending.id}/triage`, { token: demoToken })
-
-  console.log('- created 2 triage items (one will be applied, one left pending) + 1 ignored')
-
-  // Wait for triage 1 proposal
-  const triageAppliedWithProposal = await waitFor(
-    async () => {
-      const item = await http('GET', `/capture/items/${triageApplied.id}`, { token: demoToken })
-      const proposalId = item?.provenance?.proposalId
-      return proposalId ? item : null
-    },
-    { label: 'capture triage (applied) to produce a proposalId' }
+  console.log(
+    `- capture items: ignored=${seedPlan.captures.ignored ? 'reused' : 'created'}, ` +
+      `triage-applied=${seedPlan.captures.triageApplied ? 'reused' : 'created'}, ` +
+      `triage-pending=${seedPlan.captures.triagePending ? 'reused' : 'created'}`,
   )
-
-  const triageProposalId = triageAppliedWithProposal.provenance.proposalId
-  console.log(`- triage (applied) proposal: ${triageProposalId}`)
-
-  // Approve + execute triage proposal so the board has cards
-  await http('POST', `/automation/proposals/${triageProposalId}/approve`, { token: demoToken })
-  await http('POST', `/automation/proposals/${triageProposalId}/execute`, {
-    token: demoToken,
-    headers: { 'Idempotency-Key': randomUUID() },
-  })
-  console.log('- triage (applied) proposal approved + executed (creates cards)')
-
-  // Wait for triage 2 proposal (leave it pending)
-  const triagePendingWithProposal = await waitFor(
-    async () => {
-      const item = await http('GET', `/capture/items/${triagePending.id}`, { token: demoToken })
-      const proposalId = item?.provenance?.proposalId
-      return proposalId ? item : null
-    },
-    { label: 'capture triage (pending) to produce a proposalId' }
-  )
+  console.log(`- triage (applied) proposal: ${triageAppliedWithProposal.provenance.proposalId}`)
   console.log(`- triage (pending) proposal: ${triagePendingWithProposal.provenance.proposalId} (left for review)`)
 
   // 6) Seed: Queue requests (1 success + 1 failure)
   console.log('\nCreating Automation Queue items...')
-  const okInstruction = `create card "From queue: demo item (${new Date().toISOString()})"`
-  const okReq = await http('POST', '/llm-queue', {
-    token: demoToken,
-    body: {
-      requestType: 'instruction',
-      payload: okInstruction,
-      boardId: captureBoard.id,
-    },
-  })
-
-  const badReq = await http('POST', '/llm-queue', {
-    token: demoToken,
-    body: {
-      requestType: 'instruction',
-      payload: 'create board named joji',
-      boardId: captureBoard.id,
-    },
-  })
-
-  // Wait until both requests are no longer pending
-  await waitFor(
-    async () => {
-      const items = await http('GET', `/llm-queue/user?limit=200`, { token: demoToken })
-      const ok = (items || []).find((r) => r.id === okReq.id)
-      const bad = (items || []).find((r) => r.id === badReq.id)
-      const okDone = ok?.status === 2 || ok?.status === 'Completed' || ok?.errorMessage
-      const badDone = bad?.status === 3 || bad?.status === 'Failed' || bad?.errorMessage
-      return okDone && badDone
-    },
-    { label: 'queue items to finish processing' }
+  await ensureQueueSeed(captureBoard.id, demoToken, captureBoardCards)
+  console.log(
+    `- queue examples: success=${seedPlan.queue.seededCard ? 'reused' : 'created'}, ` +
+      `failure=${seedPlan.queue.hasFailedRequest ? 'reused' : 'created'}`,
   )
-  console.log('- submitted 1 valid + 1 invalid queue instruction')
-
-  // Find and apply the proposal created from the OK request (sourceReferenceId == request id)
-  const proposals = await http('GET', '/automation/proposals?includeOperations=true&limit=200', { token: demoToken })
-  const queueProposal = (proposals || []).find((p) => p.sourceReferenceId === okReq.id)
-  if (queueProposal) {
-    await http('POST', `/automation/proposals/${queueProposal.id}/approve`, { token: demoToken })
-    await http('POST', `/automation/proposals/${queueProposal.id}/execute`, {
-      token: demoToken,
-      headers: { 'Idempotency-Key': randomUUID() },
-    })
-    console.log(`- queue proposal approved + executed: ${queueProposal.id}`)
-  } else {
-    console.log('- queue proposal not found (skipping execute)')
-  }
 
   // 7) Seed: Chat proposal (temporary board rename -> produces board audit log entries).
   // Restore canonical naming afterwards so final board references stay consistent.
   console.log('\nCreating a Chat session + temporary board rename proposal...')
-  const session = await http('POST', '/llm/chat/sessions', {
-    token: demoToken,
-    body: { title: 'Stakeholder Demo', boardId: captureBoard.id },
-  })
-
-  const temporaryCaptureName = `${DEMO_BOARD_SPECS.capture.canonicalName} (Chat)`
-  const renameInstruction = `rename board to "${temporaryCaptureName}"`
-  const chatMsg = await http('POST', `/llm/chat/sessions/${session.id}/messages`, {
-    token: demoToken,
-    body: { content: renameInstruction, requestProposal: true },
-  })
-
-  if (chatMsg?.proposalId) {
-    await http('POST', `/automation/proposals/${chatMsg.proposalId}/approve`, { token: demoToken })
-    await http('POST', `/automation/proposals/${chatMsg.proposalId}/execute`, {
-      token: demoToken,
-      headers: { 'Idempotency-Key': randomUUID() },
-    })
-    await http('PUT', `/boards/${captureBoard.id}`, {
-      token: demoToken,
-      body: { name: DEMO_BOARD_SPECS.capture.canonicalName },
-    })
-    console.log(`- board rename proposal approved + executed: ${chatMsg.proposalId}`)
-    console.log(`- restored canonical capture board name: ${DEMO_BOARD_SPECS.capture.canonicalName}`)
-  } else {
-    console.log('- chat message did not return a proposalId (unexpected)')
-  }
+  await ensureChatSeed(captureBoard.id, demoToken)
+  console.log(`- chat seed: ${seedPlan.chat.seededSession ? 'reused existing session' : 'created seeded session'}`)
 
   // 8) Seed: Mention comment (Notification + audit)
   console.log('\nCreating a mention comment (generates notification)...')
-  const cards = await http('GET', `/boards/${captureBoard.id}/cards`, { token: demoToken })
-  const firstCard = (cards || [])[0]
-  if (firstCard) {
-    await http('POST', `/boards/${captureBoard.id}/cards/${firstCard.id}/comments`, {
-      token: demoToken,
-      body: { content: `Heads up @${collabUser.username} - this is a seeded mention for the Notifications view.` },
-    })
-
-    // Reply from collaborator mentioning the demo user, so the demo account also sees a notification.
-    await http('POST', `/boards/${captureBoard.id}/cards/${firstCard.id}/comments`, {
-      token: collabToken,
-      body: { content: `@${demoUser.username} ack - I will take a look after lunch. (seeded)` },
-    })
-
-    console.log(`- comments added on card: ${firstCard.title}`)
+  const seededCommentCard = await ensureSeededComments(captureBoard.id, demoToken, collabToken, demoUser, collabUser)
+  if (seededCommentCard) {
+    console.log(
+      `- comments on card "${seededCommentCard.title}": demo=${seedPlan.comments.hasDemoMention ? 'reused' : 'created'}, ` +
+        `collab=${seedPlan.comments.hasCollabReply ? 'reused' : 'created'}`,
+    )
   } else {
     console.log('- no cards found on capture board (unexpected)')
   }
 
   // 9) Seed: Ops command runs (populate Ops -> Logs)
   console.log('\nRunning Ops CLI templates (generates Ops logs)...')
-  await http('POST', '/ops/cli/run', {
-    token: demoToken,
-    body: { templateName: 'health.check', parameters: {} },
-  })
-  try {
-    await http('POST', '/ops/cli/run', {
-      token: demoToken,
-      body: { templateName: 'boards.list', parameters: {} },
-    })
-    console.log('- ran health.check + boards.list')
-  } catch (err) {
-    if (getHttpStatus(err) === 403) {
-      console.log('- ran health.check (boards.list requires admin role - skipped)')
-    } else {
-      throw err
-    }
-  }
+  await ensureOpsSeed(demoToken)
+  console.log(
+    `- ops evidence: health.check=${seedPlan.ops.hasHealthCheckLog ? 'reused' : 'created'}, ` +
+      `boards.list=${seedPlan.ops.hasBoardsListLog ? 'reused' : 'attempted'}`,
+  )
 
   // Summary
   const uiBase = process.env.TASKDECK_UI_BASE || 'http://localhost:5173'
@@ -631,9 +880,13 @@ async function main() {
   console.log('- If queue/proposals look empty, confirm backend setting EnableAutoQueueProcessing=true (Development).')
 }
 
-main().catch((err) => {
-  console.error('\nDemo seed failed')
-  console.error(err?.stack || err)
-  process.exitCode = 1
-})
+const isDirectEntry = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false
+
+if (isDirectEntry) {
+  main().catch((err) => {
+    console.error('\nDemo seed failed')
+    console.error(err?.stack || err)
+    process.exitCode = 1
+  })
+}
 
