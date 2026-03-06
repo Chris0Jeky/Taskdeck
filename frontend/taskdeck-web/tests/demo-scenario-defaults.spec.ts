@@ -9,7 +9,7 @@ describe('demo scenario default board names', () => {
     )
   })
 
-  it('falls back to the engineering sprint default for unknown scenarios', async () => {
+  it('rejects unknown scenarios instead of falling back', async () => {
     await expect(resolveScenarioDefaultBoardName('missing-scenario')).rejects.toThrow(
       'Unknown scenario "missing-scenario"',
     )
