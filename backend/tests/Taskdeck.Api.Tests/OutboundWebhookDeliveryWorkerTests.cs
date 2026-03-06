@@ -2,7 +2,9 @@ using System.Net;
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Taskdeck.Api.Tests.Support;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -177,25 +179,82 @@ public class OutboundWebhookDeliveryWorkerTests
             dueDeliveries: [delivery],
             stuckDeliveries: [],
             tryClaimResult: true,
-            tryClaimException: new InvalidOperationException("claim failed"));
+            tryClaimException: new InvalidOperationException(
+                "Authorization: Bearer webhook-secret {\"payload\":\"delivery secret\"} token=webhook-token"));
         var unitOfWork = new FakeUnitOfWork(deliveryRepository);
 
         using var serviceProvider = BuildServiceProvider(unitOfWork);
         var handler = new CountingHandler();
         var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var logger = new InMemoryLogger<OutboundWebhookDeliveryWorker>();
         var worker = new OutboundWebhookDeliveryWorker(
             serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             httpClientFactory,
             new WorkerSettings { MaxBatchSize = 5, QueuePollIntervalSeconds = 1 },
             new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
             new WorkerHeartbeatRegistry(),
-            NullLogger<OutboundWebhookDeliveryWorker>.Instance);
+            logger);
 
         var act = async () => await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
         await act.Should().NotThrowAsync();
         handler.RequestCount.Should().Be(0);
         delivery.Status.Should().Be(WebhookDeliveryStatus.Pending);
+        logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error);
+        var entry = logger.Entries.Single(entry => entry.Level == LogLevel.Error);
+        entry.Exception.Should().BeNull();
+        entry.Message.Should().Contain("Webhook delivery threw InvalidOperationException before claim");
+        entry.Message.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
+        entry.Message.Should().NotContain("webhook-secret");
+        entry.Message.Should().NotContain("delivery secret");
+        entry.Message.Should().NotContain("webhook-token");
+    }
+
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldRedactSensitiveFailureMessage_WhenDispatchThrowsDuringProcessing()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            AllowedWebhookEndpoint,
+            "secret",
+            ["card.*"]);
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true);
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler
+        {
+            OnSend = (_, _) => throw new InvalidOperationException(
+                "Authorization: Bearer webhook-secret {\"payload\":\"delivery secret\"} token=webhook-token")
+        };
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings
+            {
+                MaxBatchSize = 5,
+                QueuePollIntervalSeconds = 1,
+                MaxRetries = 1
+            },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            NullLogger<OutboundWebhookDeliveryWorker>.Instance);
+
+        await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        handler.RequestCount.Should().Be(1);
+        delivery.Status.Should().Be(WebhookDeliveryStatus.DeadLetter);
+        delivery.LastErrorMessage.Should().Contain("Webhook delivery threw InvalidOperationException");
+        delivery.LastErrorMessage.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
+        delivery.LastErrorMessage.Should().NotContain("webhook-secret");
+        delivery.LastErrorMessage.Should().NotContain("delivery secret");
+        delivery.LastErrorMessage.Should().NotContain("webhook-token");
     }
 
     [Fact]
