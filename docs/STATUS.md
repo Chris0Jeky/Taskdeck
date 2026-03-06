@@ -29,7 +29,7 @@ Current constraints are mostly hardening and consistency:
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
-- capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`), with hardening follow-through tracked in `#212` and `#213`
+- capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -69,6 +69,7 @@ Direction guardrails (explicit):
   - `StarterPackManifestValidator` + `StarterPackApplyService` (idempotent apply with dry-run conflict reporting)
   - SignalR realtime baseline: `BoardsHub` with board-scoped subscription authz and application-level board mutation event publishing
   - OpenTelemetry baseline for API + worker metrics/traces with configurable OTLP/console exporters
+  - security logging redaction baseline for capture/auth-sensitive flows: sanitized exception summaries in middleware/workers/providers, generic invalid-source errors, redacted persisted queue/webhook failure messages, and disabled automatic ASP.NET Core trace exception recording
 - Auth posture today:
   - JWT middleware is wired
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, notifications, automation-proposals, archive, ops-cli, and logs controllers
@@ -221,7 +222,7 @@ Realignment packs (now archived for traceability) were reviewed and reconciled i
 Seeded issue wave:
 - umbrella tracker: `#199`
 - capture delivery sequence: `#200` to `#211`
-- linked hardening/performance follow-through: `#212`, `#213`
+- linked hardening/performance follow-through: `#212` (delivered), `#213`
 - existing rate-limit issue updated with capture scope (no duplicate issue): `#81`
 - deferred capture follow-ons seeded: `#218`, `#219`, `#220`
 - adjacent go-to-market and research execution seeds: `#216`, `#217`
@@ -256,6 +257,11 @@ Implementation delivery (shipped):
   - triage pipeline now enforces schema version + prompt version invariants before proposal generation
   - triage provenance now persists prompt version `triage.v1` per triage run for capture item linkage/audit visibility
   - added golden and negative fixture coverage for schema validation failures (missing tasks, wrong prompt version, unknown properties)
+- `#212` SEC-14 logging redaction guardrails delivered and regression-tested:
+  - published `docs/SECURITY_LOGGING_REDACTION.md` and linked it from active security docs
+  - invalid capture-source validation now returns generic messages without echoing caller-controlled values
+  - unexpected middleware/provider/worker failures now log sanitized exception summaries instead of raw exception objects on sensitive paths
+  - queue and webhook failure persistence now redacts or generalizes sensitive exception text before storage, and ASP.NET Core trace auto-exception recording is disabled to keep raw exception events out of default telemetry
 - `#206` CAP-07 inbox frontend route/list/detail delivered and regression-tested:
   - added workspace inbox route (`/workspace/inbox`) with shell navigation integration
   - inbox list now renders excerpt-first capture summaries and loads full text only on explicit detail open
@@ -506,7 +512,7 @@ Automation and data:
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
-- capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); remaining capture-linked follow-through is tracked in `#212` and `#213`
+- capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); logging redaction follow-through is delivered in `#212`, and remaining capture-linked scalability follow-through is tracked in `#213`
 - premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
 - testing-harness wave guardrails are not yet implemented; tracked in `#255` to `#260`
 - outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to delivered `#75` (import adapters) plus `#77` and `#175`
