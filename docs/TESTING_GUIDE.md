@@ -238,7 +238,7 @@ powershell -File ./scripts/deploy/Invoke-TaskdeckTerraformDriftCheck.ps1 `
 Notes:
 - `Test-TaskdeckTerraformBaseline.ps1` runs `terraform init -backend=false` and `terraform validate` for `dev`, `staging`, and `prod`.
 - `Invoke-TaskdeckTerraformDriftCheck.ps1` relies on `terraform plan -detailed-exitcode`; `0` means no drift, `2` means drift detected, any other exit is a failure.
-- The Terraform baseline intentionally provisions the current single-node Docker deployment model; staged rollout policy, managed DB, and secret-rotation posture remain tracked in `#101`, `#84`, and `#110`.
+- The Terraform baseline intentionally provisions the current single-node Docker deployment model; the JWT signing secret now comes from a pre-created SecureString SSM parameter, while staged rollout policy, managed DB, and full secret-rotation posture remain tracked in `#101`, `#84`, and `#110`.
 
 ## MCP Operations Validation
 

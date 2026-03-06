@@ -61,6 +61,10 @@ Use one of these handoff paths:
 - CI-injected `TF_VAR_*` environment variables
 - a local `backend.hcl` file that is not committed
 
+JWT signing secrets are no longer passed directly through `user_data`.
+Instead, the environment root points the host bootstrap at an existing SecureString SSM parameter via `jwt_secret_ssm_parameter_name`.
+The EC2 instance role receives `ssm:GetParameter` for that exact parameter, plus optional `kms:Decrypt` when `jwt_secret_kms_key_arn` is supplied for a customer-managed key.
+
 Committed example files:
 
 - `terraform.tfvars.example`
@@ -68,7 +72,8 @@ Committed example files:
 
 Do not commit:
 
-- real `jwt_secret` values
+- real JWT secret values
+- real `jwt_secret_ssm_parameter_name` targets that would disclose production secret naming conventions
 - cloud credentials
 - remote-state backend credentials
 
@@ -119,27 +124,42 @@ Copy-Item deploy/terraform/aws/environments/staging/backend.hcl.example deploy/t
 - `ami_id`
 - `api_image`
 - `web_image`
-- `jwt_secret`
+- `jwt_secret_ssm_parameter_name`
+- optional `jwt_secret_kms_key_arn` when the SecureString uses a customer-managed CMK
 - ingress CIDRs
 - backend bucket/key values if using remote state
 
-3. Initialize Terraform:
+3. Ensure the SecureString parameter already exists before bootstrap:
+
+```powershell
+aws ssm put-parameter `
+  --name /taskdeck/staging/jwt-secret `
+  --type SecureString `
+  --value "<strong-random-jwt-secret>" `
+  --overwrite `
+  --region eu-west-2
+```
+
+4. Initialize Terraform:
 
 ```powershell
 terraform -chdir=deploy/terraform/aws/environments/staging init -input=false -backend-config=backend.hcl
 ```
 
-4. Review the plan:
+5. Review the plan:
 
 ```powershell
 terraform -chdir=deploy/terraform/aws/environments/staging plan -var-file=terraform.tfvars
 ```
 
-5. Apply:
+6. Apply:
 
 ```powershell
 terraform -chdir=deploy/terraform/aws/environments/staging apply -var-file=terraform.tfvars
 ```
+
+The EC2 instance is intentionally configured with `user_data_replace_on_change = true`.
+Changing bootstrap inputs such as container images, proxy port, or SSM parameter wiring replaces the host instead of silently leaving the old runtime in place.
 
 ## Post-Apply Checks
 
@@ -149,7 +169,7 @@ Use the Terraform outputs to verify the host is actually serving Taskdeck:
 terraform -chdir=deploy/terraform/aws/environments/staging output application_url
 ```
 
-Then validate:
+Then validate from a trusted network path:
 
 - `GET {application_url}/health/ready` returns `200`
 - `GET {application_url}/api/boards` returns `401`
@@ -161,6 +181,15 @@ Example:
 curl http://<public-ip>/health/ready
 curl -i http://<public-ip>/api/boards
 ```
+
+## TLS Boundary
+
+This module intentionally leaves Nginx on plain HTTP inside the instance so it can sit behind a separate HTTPS edge.
+That means:
+
+- direct internet exposure of the host listener is not an acceptable production posture for credentialed traffic
+- `allowed_ingress_cidrs` should be limited to trusted admin ranges or the private/source ranges of an upstream TLS terminator
+- if the environment must be internet-facing, put an ALB, CDN, reverse tunnel, or equivalent HTTPS endpoint in front and lock the security group down to that edge
 
 ## Drift Detection
 
