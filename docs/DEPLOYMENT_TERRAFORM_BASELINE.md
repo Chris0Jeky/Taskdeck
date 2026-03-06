@@ -9,7 +9,7 @@ It intentionally matches the current shipped deployment posture instead of inven
 - one public VPC + subnet per environment
 - one single-node EC2 host running the existing Docker-based Taskdeck stack
 - one encrypted S3 bucket for backup/export artifacts
-- one persistent SQLite path on the host (`/var/lib/taskdeck/taskdeck.db`)
+- one persistent EBS data volume mounted at `/var/lib/taskdeck` for the SQLite path (`/var/lib/taskdeck/taskdeck.db`)
 
 This baseline is deliberately single-node because the current product/runtime assumptions are still single-node biased:
 - SQLite is the production data path today
@@ -49,7 +49,8 @@ Each environment root provisions:
 - storage
   - one encrypted S3 bucket for exported artifacts/backups
 - database resource
-  - the Taskdeck SQLite file hosted on the EC2 root volume at `/var/lib/taskdeck/taskdeck.db`
+  - one encrypted EBS data volume attached to the host and mounted at `/var/lib/taskdeck`
+  - the Taskdeck SQLite file hosted on that persistent data volume at `/var/lib/taskdeck/taskdeck.db`
 
 ## Secret and Config Handoff
 
@@ -76,6 +77,8 @@ Do not commit:
 - real `jwt_secret_ssm_parameter_name` targets that would disclose production secret naming conventions
 - cloud credentials
 - remote-state backend credentials
+
+The repo `.gitignore` now excludes generated environment copies such as `deploy/terraform/aws/environments/*/terraform.tfvars`, `*.auto.tfvars`, and `backend.hcl`.
 
 This baseline stops at secret handoff mechanics. Rotation policy, provider credentials, and long-term secret storage posture stay in `#110`.
 
@@ -126,6 +129,7 @@ Copy-Item deploy/terraform/aws/environments/staging/backend.hcl.example deploy/t
 - `web_image`
 - `jwt_secret_ssm_parameter_name`
 - optional `jwt_secret_kms_key_arn` when the SecureString uses a customer-managed CMK
+- optional `data_volume_size_gb` if the default persistent data volume size is not appropriate
 - `allowed_ingress_cidrs` for the reverse-proxy listener
 - optional `allowed_ssh_cidrs` when SSH should stay narrower than application ingress
 - backend bucket/key values if using remote state
@@ -163,6 +167,7 @@ terraform -chdir=deploy/terraform/aws/environments/staging apply -var-file=terra
 
 The EC2 instance is intentionally configured with `user_data_replace_on_change = true`.
 Changing bootstrap inputs such as container images, proxy port, or SSM parameter wiring replaces the host instead of silently leaving the old runtime in place.
+Taskdeck state survives that replacement because the SQLite path now lives on a separate persistent EBS data volume that Terraform reattaches to the replacement instance.
 
 ## Post-Apply Checks
 
@@ -172,6 +177,7 @@ Use the Terraform outputs to verify the host is actually serving Taskdeck:
 terraform -chdir=deploy/terraform/aws/environments/staging output application_url
 terraform -chdir=deploy/terraform/aws/environments/staging output public_ip
 terraform -chdir=deploy/terraform/aws/environments/staging output ssh_command
+terraform -chdir=deploy/terraform/aws/environments/staging output data_volume_id
 ```
 
 Then validate from a trusted network path:
@@ -187,9 +193,11 @@ Example:
 $applicationUrl = terraform -chdir=deploy/terraform/aws/environments/staging output -raw application_url
 $publicIp = terraform -chdir=deploy/terraform/aws/environments/staging output -raw public_ip
 $databasePath = terraform -chdir=deploy/terraform/aws/environments/staging output -raw database_path
+$dataVolumeId = terraform -chdir=deploy/terraform/aws/environments/staging output -raw data_volume_id
 curl "$applicationUrl/health/ready"
 curl -i "$applicationUrl/api/boards"
 Write-Host "Database path: $databasePath"
+Write-Host "Data volume id: $dataVolumeId"
 ssh ubuntu@$publicIp
 ```
 
@@ -218,7 +226,7 @@ powershell -File ./scripts/deploy/Invoke-TaskdeckTerraformDriftCheck.ps1 `
 Exit contract:
 
 - `0`: no drift detected
-- `2`: drift detected
+- `2`: drift detected for `-RefreshOnly`, or planned changes detected for a full non-refresh-only plan
 - other: Terraform or configuration failure
 
 The expected operator loop is:

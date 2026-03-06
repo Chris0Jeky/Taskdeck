@@ -52,7 +52,12 @@ switch ($LASTEXITCODE) {
         exit 0
     }
     2 {
-        Write-Warning "Drift detected for $Environment."
+        if ($RefreshOnly) {
+            Write-Warning "Drift detected for $Environment."
+        }
+        else {
+            Write-Warning "Terraform plan indicates changes for $Environment (non-refresh-only run; these may be intentional configuration changes, not only drift)."
+        }
         exit 2
     }
     default {

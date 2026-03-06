@@ -100,6 +100,9 @@ artifacts/
 *.tfstate
 *.tfstate.*
 *.tfplan
+deploy/terraform/aws/environments/*/terraform.tfvars
+deploy/terraform/aws/environments/*/*.auto.tfvars
+deploy/terraform/aws/environments/*/backend.hcl
 /.dotnet/
 SESSION_SUMMARY.md
 scripts/git/redistribute-commit-dates.ps1
