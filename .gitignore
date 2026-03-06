@@ -96,6 +96,10 @@ NuGet/
 *.log
 logs/
 artifacts/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
 /.dotnet/
 SESSION_SUMMARY.md
 scripts/git/redistribute-commit-dates.ps1
