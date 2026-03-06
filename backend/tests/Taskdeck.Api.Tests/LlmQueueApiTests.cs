@@ -144,6 +144,31 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task AddToQueue_ShouldNotEchoSensitiveSourceValue_WhenCapturePayloadSourceIsInvalid()
+    {
+        await EnsureAuthenticatedAsync();
+        const string sensitiveSource = "Authorization: Bearer queue-secret";
+
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "source": "{{sensitiveSource}}",
+                          "text": "capture text"
+                        }
+                        """;
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto(CaptureRequestContract.RequestTypeV1, payload));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+        var errorPayload = await response.Content.ReadAsStringAsync();
+        errorPayload.Should().Contain("Invalid capture source value");
+        errorPayload.Should().NotContain(sensitiveSource);
+        errorPayload.Should().NotContain("queue-secret");
+    }
+
+    [Fact]
     public async Task GetUserQueue_ShouldReturnOk_WhenNoRequests()
     {
         await EnsureAuthenticatedAsync();
