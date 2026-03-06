@@ -89,9 +89,9 @@ Environment differences are reviewable through the per-environment example files
 - `dev`
   - smaller instance, `8080` public port, force-destroy backup bucket enabled for disposable use
 - `staging`
-  - medium instance, `80` public port, backup bucket retention preserved
+  - medium instance, `80` public port, backup bucket retention preserved, data-volume destroy protection enabled by default
 - `prod`
-  - larger instance, `80` public port, tighter ingress and no force-destroy bucket
+  - larger instance, `80` public port, tighter ingress, no force-destroy bucket, and data-volume destroy protection enabled by default
 
 ## Local Static Validation
 
@@ -130,6 +130,7 @@ Copy-Item deploy/terraform/aws/environments/staging/backend.hcl.example deploy/t
 - `jwt_secret_ssm_parameter_name`
 - optional `jwt_secret_kms_key_arn` when the SecureString uses a customer-managed CMK
 - optional `data_volume_size_gb` if the default persistent data volume size is not appropriate
+- optional `protect_data_volume` override if a protected staging/prod data volume must be deliberately unlocked for a controlled destroy/migration workflow
 - `allowed_ingress_cidrs` for the reverse-proxy listener
 - optional `allowed_ssh_cidrs` when SSH should stay narrower than application ingress
 - backend bucket/key values if using remote state
@@ -168,6 +169,7 @@ terraform -chdir=deploy/terraform/aws/environments/staging apply -var-file=terra
 The EC2 instance is intentionally configured with `user_data_replace_on_change = true`.
 Changing bootstrap inputs such as container images, proxy port, or SSM parameter wiring replaces the host instead of silently leaving the old runtime in place.
 Taskdeck state survives that replacement because the SQLite path now lives on a separate persistent EBS data volume that Terraform reattaches to the replacement instance.
+For `staging` and `prod`, the data volume is also protected with Terraform `prevent_destroy` by default; if an intentional teardown or migration must remove it, flip `protect_data_volume` to `false` in a reviewed change first.
 
 ## Post-Apply Checks
 
