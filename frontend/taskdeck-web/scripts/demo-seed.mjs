@@ -182,11 +182,23 @@ function getTextFragment(value) {
     .split('\n')[0]
 }
 
+function toSortableTimestamp(value) {
+  const parsed = Date.parse(String(value || ''))
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
+}
+
 function findCaptureSummaryByTextFragment(captureSummaries, boardId, text) {
   const fragment = getTextFragment(text)
-  return (captureSummaries || []).find(
+  const candidates = (captureSummaries || []).filter(
     (item) => idsMatch(item?.boardId, boardId) && String(item?.textExcerpt || '').includes(fragment),
   )
+  if (!candidates.length) {
+    return undefined
+  }
+
+  return candidates
+    .slice()
+    .sort((left, right) => toSortableTimestamp(right?.createdAt) - toSortableTimestamp(left?.createdAt))[0]
 }
 
 function findBoardCardByTitle(cards, title) {
@@ -231,25 +243,27 @@ export function mergeSeedPlanChatSessions(chatSessions, sessionId, sessionDetail
   })
 }
 
-export function shouldRecreateCaptureSeed(detail, { ignore = false } = {}) {
+export function shouldRecreateCaptureSeed(detail, { ignore = false, applyProposal = false } = {}) {
+  const isTriaging = hasStatus(detail?.status, 'Triaging', 1)
+  const isTriaged = hasStatus(detail?.status, 'Triaged', 2)
+  const isProposalCreated = hasStatus(detail?.status, 'ProposalCreated', 3)
+  const isConverted = hasStatus(detail?.status, 'Converted', 4)
+  const isIgnored = hasStatus(detail?.status, 'Ignored', 5)
+  const isFailed = hasStatus(detail?.status, 'Failed', 6)
+
   if (ignore) {
-    return (
-      hasStatus(detail?.status, 'Triaging', 1) ||
-      hasStatus(detail?.status, 'Triaged', 2) ||
-      hasStatus(detail?.status, 'ProposalCreated', 3) ||
-      hasStatus(detail?.status, 'Converted', 4)
-    )
+    return isTriaging || isTriaged || isProposalCreated || isConverted
+  }
+
+  if (isConverted) {
+    return !applyProposal
   }
 
   if (detail?.provenance?.proposalId) {
     return false
   }
 
-  return (
-    hasStatus(detail?.status, 'Ignored', 5) ||
-    hasStatus(detail?.status, 'Converted', 4) ||
-    hasStatus(detail?.status, 'Failed', 6)
-  )
+  return isTriaged || isIgnored || isFailed
 }
 
 export function planDemoSeedRerunState({
@@ -598,7 +612,7 @@ async function ensureCaptureSeed(boardId, token, text, { ignore = false, applyPr
   }
 
   let detail = await getCaptureDetail(summary, token)
-  if (shouldRecreateCaptureSeed(detail, { ignore })) {
+  if (shouldRecreateCaptureSeed(detail, { ignore, applyProposal })) {
     summary = await http('POST', '/capture/items', {
       token,
       body: {
@@ -619,7 +633,7 @@ async function ensureCaptureSeed(boardId, token, text, { ignore = false, applyPr
   }
 
   if (!detail?.provenance?.proposalId) {
-    const isTerminal = shouldRecreateCaptureSeed(detail)
+    const isTerminal = shouldRecreateCaptureSeed(detail, { applyProposal })
     if (!isTerminal) {
       await http('POST', `/capture/items/${summary.id}/triage`, { token })
     } else {
@@ -629,7 +643,7 @@ async function ensureCaptureSeed(boardId, token, text, { ignore = false, applyPr
     detail = await waitFor(
       async () => {
         const refreshed = await getCaptureDetail(summary, token)
-        if (shouldRecreateCaptureSeed(refreshed)) {
+        if (shouldRecreateCaptureSeed(refreshed, { applyProposal })) {
           throw new Error(`Seeded capture ${summary.id} reached a terminal state before producing a proposal.`)
         }
         return refreshed?.provenance?.proposalId ? refreshed : null

@@ -97,6 +97,35 @@ describe('demo seed rerun planning', () => {
     expect(plan.ops.hasBoardsListLog).toBe(true)
   })
 
+  it('prefers the newest matching capture summary when duplicate seeded texts exist', () => {
+    const plan = planDemoSeedRerunState({
+      boardId: 'board-1',
+      captureSummaries: [
+        {
+          id: 'capture-old',
+          boardId: 'board-1',
+          textExcerpt: '- [ ] Follow up: connect Activity view to real audit queries',
+          createdAt: '2026-03-06T18:00:00.000Z',
+        },
+        {
+          id: 'capture-new',
+          boardId: 'board-1',
+          textExcerpt: '- [ ] Follow up: connect Activity view to real audit queries',
+          createdAt: '2026-03-06T19:00:00.000Z',
+        },
+      ],
+      boardCards: [],
+      queueRequests: [],
+      chatSessions: [],
+      existingComments: [],
+      logEntries: [],
+      demoUsername: 'demo',
+      collabUsername: 'collab',
+    })
+
+    expect(plan.captures.triagePending?.id).toBe('capture-new')
+  })
+
   it('treats proposal-bearing chat history as seeded evidence even without the exact rename instruction', () => {
     expect(
       hasSeededChatEvidence(
@@ -134,13 +163,33 @@ describe('demo seed rerun planning', () => {
         provenance: { proposalId: 'proposal-1' },
       }),
     ).toBe(false)
+    expect(
+      shouldRecreateCaptureSeed(
+        {
+          id: 'capture-4',
+          status: 'Converted',
+          provenance: { proposalId: 'proposal-2' },
+        },
+        { applyProposal: false },
+      ),
+    ).toBe(true)
+    expect(
+      shouldRecreateCaptureSeed(
+        {
+          id: 'capture-5',
+          status: 'Converted',
+          provenance: { proposalId: 'proposal-3' },
+        },
+        { applyProposal: true },
+      ),
+    ).toBe(false)
   })
 
   it('recreates ignored demo samples that can no longer be cancelled back to ignored', () => {
     expect(
       shouldRecreateCaptureSeed(
         {
-          id: 'capture-4',
+          id: 'capture-6',
           status: 'ProposalCreated',
           provenance: { proposalId: 'proposal-1' },
         },
@@ -150,7 +199,7 @@ describe('demo seed rerun planning', () => {
     expect(
       shouldRecreateCaptureSeed(
         {
-          id: 'capture-5',
+          id: 'capture-7',
           status: 'Failed',
           provenance: { proposalId: null },
         },
@@ -160,7 +209,7 @@ describe('demo seed rerun planning', () => {
     expect(
       shouldRecreateCaptureSeed(
         {
-          id: 'capture-6',
+          id: 'capture-8',
           status: 'Ignored',
           provenance: { proposalId: null },
         },
