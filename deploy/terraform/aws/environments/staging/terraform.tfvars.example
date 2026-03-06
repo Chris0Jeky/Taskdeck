@@ -12,7 +12,8 @@ allowed_ingress_cidrs = [
 
 api_image  = "ghcr.io/example/taskdeck-api:staging-latest"
 web_image  = "ghcr.io/example/taskdeck-web:staging-latest"
-jwt_secret = "replace-with-untracked-staging-secret"
+jwt_secret_ssm_parameter_name = "/taskdeck/staging/jwt-secret"
+# jwt_secret_kms_key_arn      = "arn:aws:kms:eu-west-2:123456789012:key/replace-with-your-key"
 
 extra_tags = {
   Owner   = "platform"

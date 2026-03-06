@@ -49,9 +49,13 @@ variable "web_image" {
   type = string
 }
 
-variable "jwt_secret" {
-  type      = string
-  sensitive = true
+variable "jwt_secret_ssm_parameter_name" {
+  type = string
+}
+
+variable "jwt_secret_kms_key_arn" {
+  type    = string
+  default = null
 }
 
 variable "jwt_issuer" {

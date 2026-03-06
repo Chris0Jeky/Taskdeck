@@ -12,7 +12,8 @@ allowed_ingress_cidrs = [
 
 api_image  = "ghcr.io/example/taskdeck-api:prod-latest"
 web_image  = "ghcr.io/example/taskdeck-web:prod-latest"
-jwt_secret = "replace-with-untracked-prod-secret"
+jwt_secret_ssm_parameter_name = "/taskdeck/prod/jwt-secret"
+# jwt_secret_kms_key_arn      = "arn:aws:kms:eu-west-2:123456789012:key/replace-with-your-key"
 
 extra_tags = {
   Owner   = "platform"
