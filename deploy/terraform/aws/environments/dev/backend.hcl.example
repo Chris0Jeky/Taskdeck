@@ -1,0 +1,5 @@
+bucket         = "replace-with-existing-terraform-state-bucket"
+key            = "taskdeck/dev/terraform.tfstate"
+region         = "eu-west-2"
+encrypt        = true
+use_lockfile   = true

@@ -1,0 +1,20 @@
+aws_region         = "eu-west-2"
+availability_zone  = "eu-west-2a"
+vpc_cidr           = "10.40.0.0/16"
+public_subnet_cidr = "10.40.1.0/24"
+ami_id             = "ami-xxxxxxxxxxxxxxxxx" # Ubuntu 24.04 LTS for your region
+instance_type      = "t3.small"
+ssh_key_name       = "taskdeck-dev"
+
+allowed_ingress_cidrs = [
+  "203.0.113.10/32",
+]
+
+api_image  = "ghcr.io/example/taskdeck-api:dev-latest"
+web_image  = "ghcr.io/example/taskdeck-web:dev-latest"
+jwt_secret = "replace-with-untracked-dev-secret"
+
+extra_tags = {
+  Owner   = "platform"
+  Purpose = "taskdeck-dev"
+}
