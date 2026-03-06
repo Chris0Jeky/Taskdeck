@@ -89,8 +89,9 @@ variable "data_volume_size_gb" {
 }
 
 variable "protect_data_volume" {
-  type    = bool
-  default = true
+  description = "Whether Terraform should protect the persistent Taskdeck data volume from destroy operations. Changing an existing environment from false to true replaces the volume with a new protected EBS volume, so treat that flip as destructive unless the data has already been migrated or snapshotted."
+  type        = bool
+  default     = true
 }
 
 variable "backup_bucket_force_destroy" {
