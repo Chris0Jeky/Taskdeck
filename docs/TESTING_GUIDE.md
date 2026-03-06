@@ -216,6 +216,30 @@ powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8
 Hardening matrix pass/fail criteria:
 - `docs/DEPLOYMENT_HARDENING_MATRIX.md`
 
+## Terraform IaC Baseline Validation
+
+Static validation (no cloud apply required):
+
+```powershell
+terraform fmt -check -recursive deploy/terraform/aws
+powershell -File ./scripts/deploy/Test-TaskdeckTerraformBaseline.ps1
+```
+
+Real-environment drift check (requires environment-specific `terraform.tfvars`, backend config, and AWS credentials):
+
+```powershell
+powershell -File ./scripts/deploy/Invoke-TaskdeckTerraformDriftCheck.ps1 `
+  -Environment staging `
+  -VarFile deploy/terraform/aws/environments/staging/terraform.tfvars `
+  -BackendConfigFile deploy/terraform/aws/environments/staging/backend.hcl `
+  -RefreshOnly
+```
+
+Notes:
+- `Test-TaskdeckTerraformBaseline.ps1` runs `terraform init -backend=false` and `terraform validate` for `dev`, `staging`, and `prod`.
+- `Invoke-TaskdeckTerraformDriftCheck.ps1` relies on `terraform plan -detailed-exitcode`; `0` means no drift, `2` means drift detected, any other exit is a failure.
+- The Terraform baseline intentionally provisions the current single-node Docker deployment model; staged rollout policy, managed DB, and secret-rotation posture remain tracked in `#101`, `#84`, and `#110`.
+
 ## MCP Operations Validation
 
 ```powershell
