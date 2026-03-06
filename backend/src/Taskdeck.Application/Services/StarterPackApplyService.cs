@@ -88,10 +88,14 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
         var existingLabelsByName = existingLabelGroupsByName
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
+        var requiresColumnNameResolution = manifest.Columns.Count > 0 || manifest.SeedCards.Count > 0;
+        var requiresColumnPositionResolution = manifest.Columns.Count > 0;
+
         var existingColumnGroupsByName = board.Columns
             .GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        foreach (var duplicateColumnNameGroup in existingColumnGroupsByName.Where(group => group.Count() > 1))
+        foreach (var duplicateColumnNameGroup in existingColumnGroupsByName.Where(group =>
+                     requiresColumnNameResolution && group.Count() > 1))
         {
             var existingDefinitions = string.Join("; ",
                 duplicateColumnNameGroup
@@ -112,7 +116,8 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
         var existingColumnGroupsByPosition = board.Columns
             .GroupBy(column => column.Position)
             .ToList();
-        foreach (var duplicateColumnPositionGroup in existingColumnGroupsByPosition.Where(group => group.Count() > 1))
+        foreach (var duplicateColumnPositionGroup in existingColumnGroupsByPosition.Where(group =>
+                     requiresColumnPositionResolution && group.Count() > 1))
         {
             var existingNames = string.Join(", ",
                 duplicateColumnPositionGroup

@@ -33,7 +33,7 @@ Default URLs:
 
 - API: `http://localhost:5000/api`
 - UI: `http://localhost:5173`
-- Legacy local fallback for UI: `http://localhost:4173`
+- Local fallback ports for UI: `http://localhost:4173`, `http://localhost:5001`
 
 3. Seed baseline demo data
 
@@ -43,6 +43,19 @@ npm run demo:seed
 ```
 
 The seeder creates demo users, boards, Inbox items, proposals, queue activity, notifications, and Ops logs.
+
+## Runtime Preconditions
+
+- Demo scripts are local-safe by default. They target `http://localhost:5000/api` unless you override `TASKDECK_API_BASE_URL` or `TASKDECK_E2E_API_BASE_URL`.
+- Non-local API targets are rejected unless you explicitly set `TASKDECK_DEMO_ALLOW_NON_LOCAL_API=1`.
+- UI links and Playwright bootstrap default to `http://localhost:5173`; local fallback ports `4173` and `5001` are also supported.
+- Demo harness credentials default to `demo` / `demo123` and `collab` / `demo123` unless you override the `TASKDECK_DEMO_*` / `TASKDECK_COLLAB_*` environment variables.
+- Full Playwright-backed demos (`demo:director` or the opt-in stakeholder recorder) now auto-enable a live provider when LLM steps are enabled and a usable key is present.
+- Gemini is preferred for full demos when `GEMINI_API_KEY`, `TASKDECK_DEMO_GEMINI_API_KEY`, or `Llm__Gemini__ApiKey` is set. Use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead.
+- `taskdeck-chat` autopilot and scenario steps marked `requiresLlm: true` still need a usable live-provider key. Use `--skip-llm` for deterministic local or CI runs.
+- `demo:director` and the stakeholder recorder require Playwright Chromium (`npx playwright install chromium`) and write access to `frontend/taskdeck-web/demo-artifacts/`.
+- `demo:director:smoke` also owns a dedicated Playwright/demo database (`frontend/taskdeck-web/taskdeck.demo.ci.db`) and forces fresh backend/frontend startup so repeated runs do not inherit local `taskdeck.e2e.db` state.
+- In fresh-server mode, the director keeps `http://localhost:5000/api` when it is free and otherwise auto-selects a free local API port before starting the backend.
 
 ## Scenario Harness
 
@@ -73,10 +86,6 @@ npm run demo:run -- support-triage --skip-llm
 npm run demo:run -- engineering-sprint --continue-on-error
 ```
 
-Compatibility note:
-
-- If your branch does not expose JSON-runner flags yet, run the scenario command without those flags.
-
 Autopilot simulation:
 
 ```bash
@@ -95,7 +104,7 @@ Optional chat-driven autopilot (requires live provider setup):
 npm run demo:autopilot -- --turns 5 --brain taskdeck-chat
 ```
 
-If your branch supports loop modes, you can also run:
+Loop-specific autopilot runs:
 
 ```bash
 npm run demo:autopilot -- --loop queue
@@ -178,6 +187,11 @@ Bash:
 TASKDECK_RUN_DEMO=1 npx playwright test tests/e2e/stakeholder-demo.spec.ts --headed
 ```
 
+CI policy:
+
+- `stakeholder-demo.spec.ts` remains opt-in only. Default Playwright CI lanes set `TASKDECK_RUN_DEMO=0` and do not execute the recorder.
+- Use the deterministic smoke command below for explicit regression proof instead of adding the full recorder to required CI.
+
 ## Demo Director (Scenario -> Autopilot -> Recorder -> Artifacts)
 
 For a one-command, repeatable stakeholder run (including artifacts), use:
@@ -193,6 +207,9 @@ npm run demo:director -- --scenario engineering-sprint --turns 12 --skip-llm --r
 
 # Headed run if you want to watch the clickthrough
 npm run demo:director -- --scenario engineering-sprint --turns 10 --headed
+
+# Deterministic smoke path used for explicit CI/manual regression proof
+npm run demo:director:smoke
 ```
 
 Artifacts are written to:
@@ -209,6 +226,18 @@ frontend/taskdeck-web/demo-artifacts/run-<timestamp>/
 ```
 
 `trace.ndjson` contains structured scenario/autopilot events and is useful for debugging failed demo runs.
+
+`demo:director:smoke` writes to `frontend/taskdeck-web/demo-artifacts/ci-smoke/`, resets `frontend/taskdeck-web/taskdeck.demo.ci.db`, auto-selects a free local API port when `5000` is occupied, and disables Playwright server reuse so artifact upload paths and seeded board state stay stable across reruns.
+
+If startup still fails because you forced conflicting overrides, the director now prints a remediation hint that points to `TASKDECK_E2E_API_BASE_URL` and `TASKDECK_E2E_FRONTEND_PORT`.
+
+When LLM steps are enabled, the full director flow will automatically pass live-provider settings to the backend web server when a usable demo key is present. Smoke runs still stay deterministic because `--skip-llm` suppresses that auto-enable path.
+
+## Demo CI Policy
+
+- Required CI and nightly Playwright lanes stay focused on baseline product regressions and explicitly keep the stakeholder recorder off.
+- `ci-extended.yml` exposes `demo-director-smoke` as an opt-in lane via `workflow_dispatch` or a PR labeled `automation`.
+- Full demo walkthrough recording stays manual/headed by default; use `TASKDECK_RUN_DEMO=1` only when you intentionally want the recorder.
 
 ## Constraints
 

@@ -1,15 +1,15 @@
-name: Reusable E2E Smoke
+name: Reusable Demo Director Smoke
 
 on:
   workflow_call:
     inputs:
       dotnet-version:
-        description: .NET SDK version used for E2E backend setup
+        description: .NET SDK version used for demo smoke backend setup
         required: false
         default: "8.0.x"
         type: string
       node-version:
-        description: Node.js version used for E2E frontend setup
+        description: Node.js version used for demo smoke frontend setup
         required: false
         default: "24.13.1"
         type: string
@@ -21,8 +21,8 @@ env:
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
 jobs:
-  e2e-smoke:
-    name: E2E Smoke
+  demo-director-smoke:
+    name: Demo Director Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -62,24 +62,26 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npx playwright install --with-deps chromium
 
-      - name: Remove stale E2E database
-        working-directory: frontend/taskdeck-web
-        run: node -e "require('fs').rmSync('taskdeck.e2e.ci.db',{force:true});"
-
-      - name: Run Playwright smoke tests
+      - name: Run demo director smoke
         timeout-minutes: 12
         working-directory: frontend/taskdeck-web
         env:
           CI: "true"
-          TASKDECK_E2E_DB: taskdeck.e2e.ci.db
-          TASKDECK_RUN_DEMO: "0"
-        run: npx playwright test --reporter=line
+        run: npm run demo:director:smoke
+
+      - name: Upload demo smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-director-smoke-artifacts
+          path: frontend/taskdeck-web/demo-artifacts/ci-smoke
+          if-no-files-found: ignore
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: demo-director-playwright-report
           path: frontend/taskdeck-web/playwright-report
           if-no-files-found: ignore
 
@@ -87,6 +89,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results
+          name: demo-director-playwright-results
           path: frontend/taskdeck-web/test-results
           if-no-files-found: ignore

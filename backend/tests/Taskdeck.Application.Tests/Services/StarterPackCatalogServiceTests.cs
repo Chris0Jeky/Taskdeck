@@ -40,4 +40,17 @@ public class StarterPackCatalogServiceTests
             validation.Errors.Should().BeEmpty();
         }
     }
+
+    [Fact]
+    public void GetCatalog_ShouldKeepCommonLabelsPackBoardCompatible()
+    {
+        var service = new StarterPackCatalogService(_validator);
+
+        var catalog = service.GetCatalog();
+
+        var labelsPack = catalog.Single(entry => entry.Id == "common-labels-core");
+        labelsPack.Category.Should().Be(StarterPackCatalogCategories.LabelPack);
+        labelsPack.Manifest.Columns.Should().BeEmpty();
+        labelsPack.Manifest.SeedCards.Should().BeEmpty();
+    }
 }

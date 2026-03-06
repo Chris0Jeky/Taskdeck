@@ -13,6 +13,7 @@
     "demo:autopilot": "node ./scripts/demo-autopilot.mjs",
     "demo:snapshot": "node ./scripts/demo-snapshot.mjs --out ./demo-artifacts/snapshot.json",
     "demo:director": "node ./scripts/demo-director.mjs",
+    "demo:director:smoke": "node ./scripts/demo-director.mjs --output-dir ./demo-artifacts/ci-smoke --e2e-db ./taskdeck.demo.ci.db --reset-e2e-db --scenario engineering-sprint --skip-llm --turns 0 --rng-seed ci-smoke",
     "lint": "eslint . --ext .ts,.vue --max-warnings=0",
     "typecheck": "vue-tsc -b",
     "build": "npm run typecheck && vite build",

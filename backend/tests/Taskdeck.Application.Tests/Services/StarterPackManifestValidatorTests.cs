@@ -498,15 +498,44 @@ public class StarterPackManifestValidatorTests
     }
 
     [Fact]
-    public void Validate_ShouldReturnError_WhenColumnsAreEmpty()
+    public void Validate_ShouldAllowPureLabelPack_WhenColumnsAndSeedCardsAreEmpty()
     {
         var manifest = BuildValidManifest();
+        manifest.Columns = [];
+        manifest.Templates = [];
+        manifest.SeedCards = [];
+
+        var result = _validator.Validate(manifest);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_ShouldReturnError_WhenManifestHasNoMaterializedBoardArtifacts()
+    {
+        var manifest = BuildValidManifest();
+        manifest.Labels = [];
+        manifest.Columns = [];
+        manifest.Templates = [];
+        manifest.SeedCards = [];
+
+        var result = _validator.Validate(manifest);
+
+        ShouldContainError(result, "$", "at least one label, column, or seed card");
+    }
+
+    [Fact]
+    public void Validate_ShouldReturnError_WhenManifestContainsOnlyTemplates()
+    {
+        var manifest = BuildValidManifest();
+        manifest.Labels = [];
         manifest.Columns = [];
         manifest.SeedCards = [];
 
         var result = _validator.Validate(manifest);
 
-        ShouldContainError(result, "$.columns", "at least one column is required");
+        ShouldContainError(result, "$", "at least one label, column, or seed card");
     }
 
     [Fact]

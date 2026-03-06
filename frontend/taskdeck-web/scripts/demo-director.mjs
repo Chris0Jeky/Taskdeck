@@ -14,7 +14,15 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resetDemoDirectorArtifacts } from './demo-director-lib.mjs'
+import {
+  applyDemoDirectorApiBaseUrl,
+  buildDemoDirectorPortConflictHint,
+  resetDemoDirectorArtifacts,
+  resolveDemoDirectorApiBaseUrl,
+  resolveDemoDirectorRequestedApiBaseUrl,
+  resetDemoDirectorE2EDb,
+  resolveDemoDirectorRuntime,
+} from './demo-director-lib.mjs'
 
 const PLAYWRIGHT_SPAWN_MAX_BUFFER_BYTES = 50 * 1024 * 1024
 
@@ -33,6 +41,9 @@ function parseArgs(argv) {
   const args = {
     runId: null,
     outputDir: null,
+    e2eDb: null,
+    resetE2EDb: false,
+    freshServers: false,
     scenario: 'engineering-sprint',
     skipSeed: false,
     skipLlm: false,
@@ -54,6 +65,9 @@ function parseArgs(argv) {
 
     if (value === '--run-id') args.runId = argv[++i]
     else if (value === '--output-dir') args.outputDir = argv[++i]
+    else if (value === '--e2e-db') args.e2eDb = argv[++i]
+    else if (value === '--reset-e2e-db') args.resetE2EDb = true
+    else if (value === '--fresh-servers') args.freshServers = true
     else if (value === '--scenario') args.scenario = argv[++i] || args.scenario
     else if (value === '--skip-seed') args.skipSeed = true
     else if (value === '--skip-llm') args.skipLlm = true
@@ -251,6 +265,21 @@ async function main() {
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
   const webRoot = path.resolve(__dirname, '..')
+  const runtime = resolveDemoDirectorRuntime({
+    webRoot,
+    e2eDb: args.e2eDb,
+    resetE2EDb: args.resetE2EDb,
+    freshServers: args.freshServers,
+  })
+  const selectedApiBaseUrl = await resolveDemoDirectorApiBaseUrl({
+    requestedApiBaseUrl: resolveDemoDirectorRequestedApiBaseUrl({
+      e2eApiBaseUrl: process.env.TASKDECK_E2E_API_BASE_URL,
+      apiBaseUrl: process.env.TASKDECK_API_BASE_URL,
+      apiBase: process.env.TASKDECK_API_BASE,
+      forceFreshServers: runtime.forceFreshServers,
+    }),
+    forceFreshServers: runtime.forceFreshServers,
+  })
 
   const runId = args.runId || nowStamp()
   const artifactDir = path.resolve(args.outputDir || path.join(webRoot, 'demo-artifacts', `run-${runId}`))
@@ -259,6 +288,9 @@ async function main() {
   const playwrightOutDir = path.join(artifactDir, 'playwright')
 
   await resetDemoDirectorArtifacts(artifactDir)
+  if (runtime.shouldResetE2EDb) {
+    await resetDemoDirectorE2EDb(runtime.e2eDbPath)
+  }
   await fs.mkdir(logsDir, { recursive: true })
   await fs.mkdir(screenshotsDir, { recursive: true })
   await fs.mkdir(playwrightOutDir, { recursive: true })
@@ -267,7 +299,7 @@ async function main() {
   const snapshotPath = path.join(artifactDir, 'snapshot.json')
   const autopilotBoard = args.autopilotBoard || defaultBoardNameForScenario(args.scenario)
 
-  const env = {
+  const env = applyDemoDirectorApiBaseUrl({
     ...process.env,
     TASKDECK_RUN_DEMO: '1',
     TASKDECK_DEMO_DIRECTOR: '1',
@@ -283,7 +315,9 @@ async function main() {
     TASKDECK_DEMO_AUTOPILOT_BRAIN: args.brain,
     TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS: String(args.intervalMs),
     TASKDECK_DEMO_AUTOPILOT_RNG_SEED: args.rngSeed || '',
-  }
+    ...(runtime.e2eDbPath ? { TASKDECK_E2E_DB: runtime.e2eDbPath } : {}),
+    ...(runtime.forceFreshServers ? { TASKDECK_E2E_REUSE_EXISTING_SERVER: '0' } : {}),
+  }, selectedApiBaseUrl)
 
   const pwArgs = [
     'playwright',
@@ -319,6 +353,10 @@ async function main() {
 
   const playwrightLog = `${playwrightResult.stdout || ''}${playwrightResult.stderr || ''}`
   await fs.writeFile(path.join(logsDir, 'playwright.log'), playwrightLog, 'utf8')
+  const portConflictHint = buildDemoDirectorPortConflictHint(playwrightLog)
+  if (portConflictHint) {
+    console.error(portConflictHint)
+  }
 
   const screenshots = []
   try {
@@ -380,6 +418,9 @@ async function main() {
       autopilot: summary.autopilot,
       proposals: summary.proposals.length,
       captures: summary.captures.length,
+    },
+    diagnostics: {
+      hints: portConflictHint ? [portConflictHint] : [],
     },
   }
 
@@ -473,6 +514,9 @@ async function main() {
   lines.push('- Use `snapshot.json` to verify that key surfaces have data.')
   lines.push('- Use `trace.ndjson` to inspect scenario/autopilot behavior.')
   lines.push('- For CI, use `--rng-seed <fixed>` and `--skip-llm` for deterministic runs.')
+  if (portConflictHint) {
+    lines.push(`- Port-conflict hint: ${portConflictHint}`)
+  }
   lines.push('')
 
   await fs.writeFile(path.join(artifactDir, 'README.md'), lines.join('\n'), 'utf8')

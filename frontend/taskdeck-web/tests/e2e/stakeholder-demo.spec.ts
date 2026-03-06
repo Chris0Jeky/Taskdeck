@@ -337,8 +337,8 @@ test.describe('Stakeholder demo recorder', () => {
     const firstCard = page.locator('[data-card-id]').first()
     if (await firstCard.count()) {
       await firstCard.click()
-      const cardDialog = page.getByRole('dialog')
-      await expect(cardDialog).toBeVisible()
+      const cardEditorHeading = page.getByRole('heading', { name: 'Edit Card' })
+      await expect(cardEditorHeading).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath('03-card-modal.png'), fullPage: true })
       await page.keyboard.press('Escape')
     }

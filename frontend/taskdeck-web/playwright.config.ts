@@ -6,9 +6,11 @@ import {
   parseFrontendHost,
   resolveDefaultFrontendPort,
 } from './playwright.port-resolution'
+import { resolveDemoBackendLlmEnv } from './playwright.demo-llm'
 
 const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
 const defaultApiBaseUrl = 'http://localhost:5000/api'
+const reuseExistingServer = resolveReuseExistingServer()
 
 const frontendConfig = resolveFrontendConfig()
 const frontendHost = frontendConfig.host
@@ -25,6 +27,7 @@ const backendServerEnv: Record<string, string> = {
   ASPNETCORE_ENVIRONMENT: 'Development',
   ConnectionStrings__DefaultConnection: `Data Source=${e2eDbPath}`,
   ASPNETCORE_URLS: apiConfig.origin,
+  ...resolveDemoBackendLlmEnv(process.env),
 }
 
 for (const [index, origin] of backendCorsOrigins.entries()) {
@@ -53,7 +56,7 @@ export default defineConfig({
       command: 'dotnet run --no-launch-profile --project ../../backend/src/Taskdeck.Api/Taskdeck.Api.csproj',
       url: apiConfig.readinessUrl,
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       stdout: 'pipe',
       stderr: 'pipe',
       env: backendServerEnv,
@@ -62,7 +65,7 @@ export default defineConfig({
       command: `npm run dev -- --host ${frontendHost} --port ${frontendPort}`,
       url: frontendBaseUrl,
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       stdout: 'pipe',
       stderr: 'pipe',
       env: {
@@ -107,7 +110,7 @@ function resolveFrontendConfig(): FrontendConfig {
           'TASKDECK_E2E_RESOLVED_FRONTEND_PORT',
         )
       : resolveDefaultFrontendPort(host, {
-          allowExistingFrontendReuse: !process.env.CI,
+          allowExistingFrontendReuse: reuseExistingServer,
         })
 
   if (!explicitFrontendPort && !resolvedFrontendPort) {
@@ -261,4 +264,17 @@ function parseOriginList(rawOrigins: string | undefined): string[] {
 
 function dedupeOrigins(origins: string[]): string[] {
   return [...new Set(origins)]
+}
+
+function resolveReuseExistingServer(): boolean {
+  const override = process.env.TASKDECK_E2E_REUSE_EXISTING_SERVER?.trim().toLowerCase()
+  if (override === '1' || override === 'true') {
+    return true
+  }
+
+  if (override === '0' || override === 'false') {
+    return false
+  }
+
+  return !process.env.CI
 }

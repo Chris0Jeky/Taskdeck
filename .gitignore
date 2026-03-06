@@ -33,6 +33,7 @@ frontend/*/dist-ssr/
 frontend/*/.env.local
 frontend/*/.env.*.local
 frontend/*/coverage/
+frontend/*/demo-artifacts/
 frontend/*/.vitest/
 frontend/*/.playwright/
 frontend/*/.cache/

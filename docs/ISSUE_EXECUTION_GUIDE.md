@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-03-02
+Last Updated: 2026-03-06
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -90,6 +90,7 @@ Execution note (demo-expansion wave):
 - Run `#298` -> `#299` -> `#300` -> `#301` -> `#302` in strict dependency order.
 - Keep one branch per batch issue using the suggested branch name in each issue body.
 - Prefer file-scoped commits inside each batch to simplify review and rollback.
+- Current state (2026-03-06): `#298` through `#302` are delivered; retain this order as the historical dependency record for any future demo-tooling follow-ups.
 
 ### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
 

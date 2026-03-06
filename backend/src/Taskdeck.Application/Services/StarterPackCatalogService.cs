@@ -117,12 +117,7 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
                     new StarterPackLabelDto { Name = "blocked", Color = "#6B7280", Description = "Blocked by dependency" },
                     new StarterPackLabelDto { Name = "needs-review", Color = "#2563EB", Description = "Awaiting review" }
                 ],
-                Columns =
-                [
-                    new StarterPackColumnDto { Name = "Backlog", Position = 0 },
-                    new StarterPackColumnDto { Name = "In Progress", Position = 1 },
-                    new StarterPackColumnDto { Name = "Done", Position = 2 }
-                ],
+                Columns = [],
                 Templates = [],
                 SeedCards = []
             });

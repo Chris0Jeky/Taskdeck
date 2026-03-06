@@ -69,6 +69,7 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
 
         ValidateHeader(manifest, tags, errors);
         ValidateCompatibility(compatibility, requiredFeatures, errors);
+        ValidateBodyContent(labels, columns, seedCards, errors);
         var knownLabelNames = ValidateLabels(labels, errors);
         var knownColumnNames = ValidateColumns(columns, errors);
         var knownTemplateIds = ValidateTemplates(templates, errors);
@@ -187,6 +188,22 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         }
     }
 
+    private static void ValidateBodyContent(
+        List<StarterPackLabelDto> labels,
+        List<StarterPackColumnDto> columns,
+        List<StarterPackSeedCardDto> seedCards,
+        List<StarterPackManifestValidationError> errors)
+    {
+        if (labels.Count > 0 || columns.Count > 0 || seedCards.Count > 0)
+        {
+            return;
+        }
+
+        errors.Add(new StarterPackManifestValidationError(
+            "$",
+            "Manifest must define at least one label, column, or seed card."));
+    }
+
     private static HashSet<string> ValidateLabels(List<StarterPackLabelDto> labels, List<StarterPackManifestValidationError> errors)
     {
         var knownLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -227,12 +244,6 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
     {
         var knownColumnNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var positions = new HashSet<int>();
-
-        if (columns.Count == 0)
-        {
-            errors.Add(new StarterPackManifestValidationError("$.columns", "At least one column is required."));
-            return knownColumnNames;
-        }
 
         for (var i = 0; i < columns.Count; i++)
         {
