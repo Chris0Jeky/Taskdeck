@@ -23,6 +23,7 @@ if (-not (Test-Path $tfDir)) {
 if (-not (Test-Path $VarFile)) {
     throw "Var file not found: $VarFile"
 }
+$resolvedVarFile = (Resolve-Path $VarFile).ProviderPath
 
 $initArgs = @("-chdir=$tfDir", 'init', '-input=false')
 if ($BackendConfigFile) {
@@ -30,7 +31,8 @@ if ($BackendConfigFile) {
         throw "Backend config file not found: $BackendConfigFile"
     }
 
-    $initArgs += "-backend-config=$BackendConfigFile"
+    $resolvedBackendConfigFile = (Resolve-Path $BackendConfigFile).ProviderPath
+    $initArgs += "-backend-config=$resolvedBackendConfigFile"
 }
 
 terraform @initArgs | Out-Host
@@ -38,7 +40,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "terraform init failed for $Environment"
 }
 
-$planArgs = @("-chdir=$tfDir", 'plan', '-detailed-exitcode', "-var-file=$VarFile")
+$planArgs = @("-chdir=$tfDir", 'plan', '-detailed-exitcode', "-var-file=$resolvedVarFile")
 if ($RefreshOnly) {
     $planArgs += '-refresh-only'
 }
