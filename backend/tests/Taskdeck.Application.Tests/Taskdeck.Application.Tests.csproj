@@ -27,4 +27,8 @@
     <ProjectReference Include="..\..\src\Taskdeck.Application\Taskdeck.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\TestUtilities\InMemoryLogger.cs" Link="TestUtilities\InMemoryLogger.cs" />
+  </ItemGroup>
+
 </Project>

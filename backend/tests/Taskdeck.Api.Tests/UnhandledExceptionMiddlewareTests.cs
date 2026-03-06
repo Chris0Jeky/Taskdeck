@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Api.Middleware;
-using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.Services;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;

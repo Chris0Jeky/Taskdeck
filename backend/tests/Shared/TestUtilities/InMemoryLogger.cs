@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace Taskdeck.Application.Tests.TestUtilities;
+namespace Taskdeck.Tests.Support;
 
 public sealed class InMemoryLogger<T> : ILogger<T>
 {
