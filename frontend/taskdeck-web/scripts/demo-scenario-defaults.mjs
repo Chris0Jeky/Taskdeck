@@ -71,3 +71,12 @@ export async function resolveScenarioDefaultBoardName(scenarioIdOrPath) {
   assert(legacyBoardName, `Unknown scenario "${scenarioIdOrPath}"`)
   return legacyBoardName
 }
+
+export async function resolveScenarioSelectedBoardName({ scenarioIdOrPath, explicitBoardName } = {}) {
+  const normalizedExplicitBoardName = String(explicitBoardName || '').trim()
+  if (normalizedExplicitBoardName) {
+    return normalizedExplicitBoardName
+  }
+
+  return await resolveScenarioDefaultBoardName(scenarioIdOrPath)
+}
