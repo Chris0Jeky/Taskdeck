@@ -120,6 +120,9 @@ resource "aws_s3_bucket_versioning" "backups" {
 
 resource "aws_s3_bucket_lifecycle_configuration" "backups" {
   bucket = aws_s3_bucket.backups.id
+  depends_on = [
+    aws_s3_bucket_versioning.backups,
+  ]
 
   rule {
     id     = "expire-noncurrent-versions"
@@ -314,7 +317,8 @@ resource "aws_instance" "taskdeck_host" {
 }
 
 resource "aws_volume_attachment" "taskdeck_data" {
-  device_name = "/dev/sdf"
-  volume_id   = local.taskdeck_data_volume_id
-  instance_id = aws_instance.taskdeck_host.id
+  device_name                    = "/dev/sdf"
+  volume_id                      = local.taskdeck_data_volume_id
+  instance_id                    = aws_instance.taskdeck_host.id
+  stop_instance_before_detaching = true
 }
