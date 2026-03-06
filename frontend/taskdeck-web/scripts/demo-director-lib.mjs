@@ -132,6 +132,62 @@ export function applyDemoDirectorApiBaseUrl(env, apiBaseUrl) {
   }
 }
 
+export function createDemoDirectorRunSummary({
+  runId,
+  startedAt,
+  endedAt,
+  playwrightExitCode,
+  playwrightSignal,
+  args,
+  selectedBoardName,
+  screenshots,
+  summary,
+  events,
+  portConflictHint,
+}) {
+  const runStatus =
+    playwrightExitCode === 0 ? 'ok' : playwrightSignal ? `error (signal ${playwrightSignal})` : 'error'
+
+  return {
+    runId,
+    startedAt,
+    endedAt,
+    status: runStatus,
+    playwrightExitCode,
+    playwrightSignal,
+    scenario: args.scenario,
+    skipSeed: args.skipSeed,
+    skipLlm: args.skipLlm,
+    autopilot: {
+      enabled: args.turns > 0,
+      turns: args.turns,
+      board: selectedBoardName,
+      loop: args.loop,
+      brain: args.brain,
+      intervalMs: args.intervalMs,
+      rngSeed: args.rngSeed || null,
+    },
+    artifacts: {
+      trace: 'trace.ndjson',
+      snapshot: 'snapshot.json',
+      logsDir: 'logs/',
+      screenshotsDir: 'screenshots/',
+      playwrightDir: 'playwright/',
+    },
+    screenshots,
+    stats: {
+      events: events.length,
+      byType: summary.byType,
+      autopilot: summary.autopilot,
+      proposals: summary.proposals.length,
+      captures: summary.captures.length,
+    },
+    diagnostics: {
+      hints: portConflictHint ? [portConflictHint] : [],
+    },
+  }
+}
+
 export { DIRECTOR_ARTIFACT_ENTRIES }
 
 function normalizeUrlString(value) {

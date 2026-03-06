@@ -43,6 +43,7 @@ npm run demo:seed
 ```
 
 The seeder creates demo users, boards, Inbox items, proposals, queue activity, notifications, and Ops logs.
+On reruns against the canonical demo account, it now reuses the seeded artifacts it can identify instead of appending a fresh copy of every capture, queue sample, comment, chat session, and Ops evidence item.
 
 ## Runtime Preconditions
 
@@ -59,6 +60,7 @@ The seeder creates demo users, boards, Inbox items, proposals, queue activity, n
 - `demo:director:smoke` also owns a dedicated Playwright/demo database (`frontend/taskdeck-web/taskdeck.demo.ci.db`) and forces fresh backend/frontend startup so repeated runs do not inherit local `taskdeck.e2e.db` state.
 - In fresh-server mode, the director keeps `http://localhost:5000/api` when it is free and otherwise auto-selects a free local API port before starting the backend.
 - Unknown scenario IDs now fail fast during director/recorder setup so autopilot and walkthrough selection do not silently target the engineering board by fallback.
+- Director-specific flags must appear before `--`; anything after `--` is forwarded to Playwright unchanged. Unknown director flags now fail fast instead of being silently forwarded.
 
 ## Scenario Harness
 
@@ -213,6 +215,9 @@ npm run demo:director -- --scenario engineering-sprint --turns 12 --skip-llm --r
 # Headed run if you want to watch the clickthrough
 npm run demo:director -- --scenario engineering-sprint --turns 10 --headed
 
+# Forward Playwright flags after `--`
+npm run demo:director -- --scenario engineering-sprint --turns 10 -- --project=chromium
+
 # Deterministic smoke path used for explicit CI/manual regression proof
 npm run demo:director:smoke
 ```
@@ -237,6 +242,8 @@ frontend/taskdeck-web/demo-artifacts/run-<timestamp>/
 If startup still fails because you forced conflicting overrides, the director now prints a remediation hint that points to `TASKDECK_E2E_API_BASE_URL` and `TASKDECK_E2E_FRONTEND_PORT`.
 
 When LLM steps are enabled, the full director flow will automatically pass live-provider settings to the backend web server when a usable demo key is present. Smoke runs still stay deterministic because `--skip-llm` suppresses that auto-enable path.
+
+If you override the board name (`--autopilot-board` or equivalent env), the recorder walkthrough now follows that same selected board instead of falling back to the scenario default board during the UI clickthrough.
 
 ## Demo CI Policy
 

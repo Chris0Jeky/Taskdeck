@@ -49,8 +49,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 946 passing
-   - Frontend unit: 464 passing
+   - Backend: 962 passing
+   - Frontend unit: 478 passing
    - Default Playwright regression lane: 24 passing (`stakeholder-demo.spec.ts` remains opt-in/skipped by default)
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -733,7 +733,8 @@ Batch E integration hardening (`#302`) status:
 - docs/index consolidation completed for demo script entry points, runtime preconditions, and CI policy boundaries
 - follow-through hardening now auto-enables live-provider demos for Playwright-backed full walkthroughs when usable demo keys are present, preferring Gemini for long/manual runs while keeping smoke paths deterministic via `--skip-llm`
 - non-demo Playwright backend startup now stays pinned to deterministic `Mock` mode by default even when local shell env exports live-provider keys; explicit demo runs still override that baseline when LLM steps are enabled
-- post-epic audit hardening under `#311` now also fails fast on unknown scenario IDs, missing starter-pack labels in legacy JS scenarios, and ambiguous duplicate column/label names in JSON scenario resolution
+- post-epic audit hardening under `#310` now also fails fast on unknown scenario IDs, missing starter-pack labels in legacy JS scenarios, and ambiguous duplicate column/label names in JSON scenario resolution
+- post-epic audit hardening under `#310` now keeps `demo:seed` rerun-bounded for canonical evidence generation, validates director CLI flags before Playwright passthrough, and keeps recorder board targeting aligned with explicit autopilot-board overrides
 - post-epic audit hardening now continues under `#311` so demo runtime/test follow-through stays scoped outside the original migration batches
 
 ## Next Best Steps (Immediate)

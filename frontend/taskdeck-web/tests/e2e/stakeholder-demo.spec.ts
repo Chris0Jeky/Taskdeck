@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { parseTrueishEnv } from '../../scripts/demo-shared.mjs'
-import { resolveScenarioDefaultBoardName } from '../../scripts/demo-scenario-defaults.mjs'
+import { resolveScenarioSelectedBoardName } from '../../scripts/demo-scenario-defaults.mjs'
 import type { AuthResult } from './support/authSession'
 import { attachSessionToPage } from './support/authSession'
 
@@ -228,8 +228,12 @@ test.describe('Stakeholder demo recorder', () => {
     const skipLlm = parseTrueishEnv(process.env.TASKDECK_DEMO_SKIP_LLM)
 
     const autopilotTurns = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_TURNS, 0)
-    const autopilotBoardName =
-      (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim() || (await resolveScenarioDefaultBoardName(scenarioId))
+    const walkthroughBoardName = (process.env.TASKDECK_DEMO_WALKTHROUGH_BOARD || '').trim()
+    const autopilotBoardOverride = (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim()
+    const autopilotBoardName = await resolveScenarioSelectedBoardName({
+      scenarioIdOrPath: scenarioId,
+      explicitBoardName: walkthroughBoardName || autopilotBoardOverride,
+    })
     const autopilotLoop = (process.env.TASKDECK_DEMO_AUTOPILOT_LOOP || 'mixed').trim() || 'mixed'
     const autopilotBrain = (process.env.TASKDECK_DEMO_AUTOPILOT_BRAIN || 'heuristic').trim() || 'heuristic'
     const autopilotIntervalMs = parseOptionalNonNegativeInteger(process.env.TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS, 700)
@@ -307,7 +311,12 @@ test.describe('Stakeholder demo recorder', () => {
     const demoUsername = process.env.TASKDECK_DEMO_USERNAME || 'demo'
     const demoPassword = process.env.TASKDECK_DEMO_PASSWORD || 'demo123'
     const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
-    const scenarioBoardName = await resolveScenarioDefaultBoardName(scenarioId)
+    const scenarioBoardName = await resolveScenarioSelectedBoardName({
+      scenarioIdOrPath: scenarioId,
+      explicitBoardName:
+        (process.env.TASKDECK_DEMO_WALKTHROUGH_BOARD || '').trim() ||
+        (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim(),
+    })
 
     const loginResponse = await request.post(`${apiBaseUrl}/auth/login`, {
       data: {
