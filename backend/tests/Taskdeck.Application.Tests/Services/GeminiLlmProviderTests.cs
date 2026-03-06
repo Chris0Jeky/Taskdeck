@@ -299,6 +299,33 @@ public class GeminiLlmProviderTests
         capturedRoles.Should().ContainSingle().Which.Should().Be("user");
     }
 
+    [Fact]
+    public async Task CompleteAsync_ShouldRedactSensitiveDetails_WhenUnexpectedExceptionIsLogged()
+    {
+        var settings = BuildSettings();
+        var logger = new InMemoryLogger<GeminiLlmProvider>();
+        var handler = new StubHttpMessageHandler(_ =>
+            throw new InvalidOperationException(
+                "x-goog-api-key: gemini-secret {\"text\":\"capture secret\"} token=provider-token"));
+
+        var provider = new GeminiLlmProvider(new HttpClient(handler), settings, logger);
+
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            new List<ChatCompletionMessage>
+            {
+                new("User", "create card from this instruction")
+            }));
+
+        result.Content.Should().Contain("request errored");
+        logger.Entries.Should().ContainSingle(entry => entry.Level == Microsoft.Extensions.Logging.LogLevel.Error);
+        var message = logger.Entries.Single(entry => entry.Level == Microsoft.Extensions.Logging.LogLevel.Error).Message;
+        message.Should().Contain("Gemini completion request failed with unexpected error.");
+        message.Should().NotContain("gemini-secret");
+        message.Should().NotContain("capture secret");
+        message.Should().NotContain("provider-token");
+        message.Should().Contain($"x-goog-api-key: {SensitiveDataRedactor.RedactedValue}");
+    }
+
     private static LlmProviderSettings BuildSettings()
     {
         return new LlmProviderSettings
