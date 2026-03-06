@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resetDemoDirectorArtifacts } from './demo-director-lib.mjs'
 
 const PLAYWRIGHT_SPAWN_MAX_BUFFER_BYTES = 50 * 1024 * 1024
 
@@ -255,6 +256,7 @@ async function main() {
   const screenshotsDir = path.join(artifactDir, 'screenshots')
   const playwrightOutDir = path.join(artifactDir, 'playwright')
 
+  await resetDemoDirectorArtifacts(artifactDir)
   await fs.mkdir(logsDir, { recursive: true })
   await fs.mkdir(screenshotsDir, { recursive: true })
   await fs.mkdir(playwrightOutDir, { recursive: true })
