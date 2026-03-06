@@ -1,34 +1,11 @@
 #!/usr/bin/env node
 
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { TaskdeckApiClient, cleanupDemoBoards, ensureUser, getDemoConfig } from './demo-lib.mjs'
+import { parseDemoRunArgs } from './demo-run-lib.mjs'
 import { listJsonScenarioIds, loadJsonScenario, runJsonScenario } from './scenario-json-runner.mjs'
-
-function parseArgs(argv) {
-  const args = {
-    scenario: null,
-    clean: false,
-    dryRun: false,
-    list: false,
-    skipLlm: false,
-    continueOnError: false,
-  }
-
-  for (let i = 2; i < argv.length; i++) {
-    const value = argv[i]
-    if (!value) continue
-
-    if (value === '--clean') args.clean = true
-    else if (value === '--dry-run') args.dryRun = true
-    else if (value === '--list') args.list = true
-    else if (value === '--skip-llm') args.skipLlm = true
-    else if (value === '--continue-on-error') args.continueOnError = true
-    else if (!value.startsWith('--') && !args.scenario) args.scenario = value
-  }
-
-  return args
-}
-
-const args = parseArgs(process.argv)
 
 const jsScenarios = {
   'engineering-sprint': () => import('./scenarios/engineering-sprint.mjs'),
@@ -36,7 +13,8 @@ const jsScenarios = {
   'content-calendar': () => import('./scenarios/content-calendar.mjs'),
 }
 
-async function main() {
+export async function main(argv = process.argv) {
+  const args = parseDemoRunArgs(argv)
   const jsonScenarioIds = await listJsonScenarioIds()
 
   if (args.list) {
@@ -53,7 +31,7 @@ async function main() {
     }
 
     console.log('\nUsage:')
-    console.log('  npm run demo:run -- <scenario> [--clean] [--dry-run] [--skip-llm] [--continue-on-error]')
+    console.log('  npm run demo:run -- [--clean [--dry-run]] <scenario> [--skip-llm] [--continue-on-error]')
     console.log('  npm run demo:run -- --list')
     process.exit(0)
   }
@@ -108,7 +86,12 @@ async function main() {
   if (summary) console.log(JSON.stringify(summary, null, 2))
 }
 
-main().catch((err) => {
-  console.error(String(err?.stack || err))
-  process.exit(1)
-})
+const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null
+const currentPath = fileURLToPath(import.meta.url)
+
+if (entryPath && currentPath === entryPath) {
+  main().catch((err) => {
+    console.error(String(err?.stack || err))
+    process.exit(1)
+  })
+}

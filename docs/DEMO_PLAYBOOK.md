@@ -52,10 +52,13 @@ The seeder creates demo users, boards, Inbox items, proposals, queue activity, n
 - Demo harness credentials default to `demo` / `demo123` and `collab` / `demo123` unless you override the `TASKDECK_DEMO_*` / `TASKDECK_COLLAB_*` environment variables.
 - Full Playwright-backed demos (`demo:director` or the opt-in stakeholder recorder) now auto-enable a live provider when LLM steps are enabled and a usable key is present.
 - Gemini is preferred for full demos when `GEMINI_API_KEY`, `TASKDECK_DEMO_GEMINI_API_KEY`, or `Llm__Gemini__ApiKey` is set. Use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead.
+- Demo-specific live keys now take effect even when the base development environment is pinned to `Llm__Provider=Mock`; use `TASKDECK_DEMO_LLM_PROVIDER=Mock` or `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force mock instead.
+- When a full demo injects live-provider overrides, Playwright also disables existing-server reuse by default so the intended backend process is launched instead of silently inheriting a stale mock server.
 - `taskdeck-chat` autopilot and scenario steps marked `requiresLlm: true` still need a usable live-provider key. Use `--skip-llm` for deterministic local or CI runs.
 - `demo:director` and the stakeholder recorder require Playwright Chromium (`npx playwright install chromium`) and write access to `frontend/taskdeck-web/demo-artifacts/`.
 - `demo:director:smoke` also owns a dedicated Playwright/demo database (`frontend/taskdeck-web/taskdeck.demo.ci.db`) and forces fresh backend/frontend startup so repeated runs do not inherit local `taskdeck.e2e.db` state.
 - In fresh-server mode, the director keeps `http://localhost:5000/api` when it is free and otherwise auto-selects a free local API port before starting the backend.
+- Unknown scenario IDs now fail fast during director/recorder setup so autopilot and walkthrough selection do not silently target the engineering board by fallback.
 
 ## Scenario Harness
 
@@ -74,12 +77,14 @@ Run scenarios:
 npm run demo:run -- engineering-sprint
 npm run demo:run -- support-triage
 npm run demo:run -- content-calendar
+npm run demo:run -- --clean engineering-sprint
+npm run demo:run -- --clean --dry-run engineering-sprint
 ```
 
 JSON-runner flags:
 
 ```bash
-# skip steps marked requiresLlm: true
+# skip default LLM-dependent steps and any step marked requiresLlm: true
 npm run demo:run -- support-triage --skip-llm
 
 # keep running after a failed step
@@ -236,7 +241,7 @@ When LLM steps are enabled, the full director flow will automatically pass live-
 ## Demo CI Policy
 
 - Required CI and nightly Playwright lanes stay focused on baseline product regressions and explicitly keep the stakeholder recorder off.
-- `ci-extended.yml` exposes `demo-director-smoke` as an opt-in lane via `workflow_dispatch` or a PR labeled `automation`.
+- `ci-extended.yml` exposes `demo-director-smoke` as an opt-in lane via `workflow_dispatch` or a PR labeled `automation` when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`.
 - Full demo walkthrough recording stays manual/headed by default; use `TASKDECK_RUN_DEMO=1` only when you intentionally want the recorder.
 
 ## Constraints

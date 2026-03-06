@@ -25,7 +25,7 @@ Current constraints are mostly hardening and consistency:
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
 - LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture
 - managed-key shared-token abuse-control strategy is now explicitly seeded in `#235` to `#240` before broad external exposure
-- testing-harness guardrail expansion (flake cleanup, OpenAPI drift checks, golden principles, nightly quality artifacts) is seeded in `#254` to `#260` and not shipped yet
+- testing-harness guardrail expansion from `#254` to `#260` is shipped; remaining work is normal follow-up hardening rather than the original wave
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
@@ -99,11 +99,14 @@ Direction guardrails (explicit):
   - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `frontend/taskdeck-web/scripts/demo-run.mjs`, `frontend/taskdeck-web/scripts/demo-autopilot.mjs`, `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`, `frontend/taskdeck-web/scripts/scenarios-json/*`, and `frontend/taskdeck-web/scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
   - `frontend/taskdeck-web/scripts/demo-director.mjs` + `frontend/taskdeck-web/scripts/demo-snapshot.mjs` with `npm run demo:director` and `npm run demo:snapshot` for one-command orchestration and artifact capture (`run-summary.json`, `trace.ndjson`, `snapshot.json`, screenshots, logs)
   - full Playwright-backed demos now auto-enable a live LLM provider when LLM steps are enabled and usable demo keys are present, preferring Gemini by default for long/manual runs while preserving explicit mock opt-out
+  - non-demo Playwright backend startup now stays pinned to deterministic `Mock` mode by default even when local shell env exports live-provider keys; demo-only overrides still take precedence when explicitly enabled
+  - when demo-specific live-provider overrides need to be injected, Playwright now disables existing-server reuse by default so full demos do not silently stick to an older mock backend unless the operator explicitly forces reuse
   - `frontend/taskdeck-web/package.json` now includes `npm run demo:director:smoke` for deterministic, LLM-free regression proof with stable artifact output (`demo-artifacts/ci-smoke`), isolated smoke DB reset (`taskdeck.demo.ci.db`), forced fresh Playwright servers, automatic local API port fallback when `5000` is occupied, and actionable conflict hints when explicit runtime port overrides cannot bind
   - `docs/DEMO_PLAYBOOK.md`, `docs/SCENARIOS.md`, `docs/DOGFOODING_GUIDE.md`, and `docs/USER_MANUAL.md` for seeded stakeholder walkthrough, JSON scenario authoring/runner usage, daily dogfooding cadence, and user-facing operations guidance
   - `demo/http/taskdeck-demo.http` for local API walkthrough against the dev backend
-  - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`) with director-mode bootstrap via `TASKDECK_DEMO_DIRECTOR=1`
-  - required Playwright CI lanes explicitly pin `TASKDECK_RUN_DEMO=0`; opt-in demo smoke is exposed in `ci-extended.yml` via the reusable `demo-director-smoke` workflow
+  - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`) with director-mode bootstrap via `TASKDECK_DEMO_DIRECTOR=1`, scenario-aware board selection, UI-driven feature-flag enabling for advanced surfaces, and mandatory seeded-card presence checks
+  - scenario runner and legacy JS compatibility checks now fail loudly on unresolved template references, missing starter-pack labels, ambiguous duplicate column/label names, and unknown scenario IDs so demo/test setup does not degrade into half-valid state
+  - required Playwright CI lanes explicitly pin `TASKDECK_RUN_DEMO=0`; opt-in demo smoke is exposed in `ci-extended.yml` via the reusable `demo-director-smoke` workflow for PRs that touch `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`, or through manual dispatch
   - autopilot loop controls now cover queue/capture/mixed paths with capture-triage flags for inbox-flow demonstration
   - autopilot deterministic replay supports `--rng-seed` (with `--seed` backward compatibility) and emits trace events for artifact summarization
   - JSON scenarios now support `runOps` steps for seeded Ops evidence inside scenario runs
@@ -210,6 +213,7 @@ Implementation delivery (shipped in this context):
 - `#300` Batch C (`v2`): JSON scenario runner + schema/sample scenarios, `demo:run` JSON-first flags (`--list`, `--skip-llm`, `--continue-on-error`), capture-aware autopilot loop modes (`queue|capture|mixed`), capture helper library additions, and scenario authoring docs (`docs/SCENARIOS.md`)
 - `#301` Batch D (`v3`): demo director + snapshot scripts (`demo:director`, `demo:snapshot`), trace-aware scenario/autopilot/runtime events, `runOps` scenario step support, and director-mode stakeholder recorder bootstrap with artifact logs/snapshots
 - `#302` Batch E: integration hardening delivered with explicit demo CI policy (`TASKDECK_RUN_DEMO=0` in default Playwright lanes), opt-in `demo-director-smoke` workflow wiring in `ci-extended.yml`, deterministic smoke command (`npm run demo:director:smoke`) with isolated smoke DB reset + forced fresh servers, automatic free-port fallback for local API startup, actionable explicit-port remediation hints, and docs/index/runtime-precondition consolidation for the migrated demo tooling
+- post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
 
 ## Capture Realignment Wave (2026-02-23)
 
@@ -372,12 +376,12 @@ Issue seeding and reconciliation completed:
   - sandbox gate behavior already present (`ExportApiTests`)
   - starter-pack idempotency/conflict safety already present (`StarterPacksApiTests`)
 
-Execution posture:
+Delivery posture:
 
-- eliminate deterministic flake vectors first (`#255`)
-- expand high-signal regression coverage with drag/drop persistence locked after full reload (`#256`)
-- continue error-contract coverage expansion (`#257`)
-- then add harness-level CI guardrails with non-blocking rollout (`#258`, `#259`, `#260`)
+- `#255` removed residual wall-clock flake patterns and centralized E2E polling helpers
+- `#256` added high-signal drag/drop persistence coverage after full reload
+- `#257` expanded representative API error-contract coverage
+- `#258`, `#259`, and `#260` added non-blocking CI guardrails (OpenAPI generation/validation, golden principles enforcement, nightly quality artifacts)
 
 Reconciliation record:
 
@@ -419,7 +423,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-02-25 (backend + frontend unit/build + frontend E2E refreshed)
+Verification Date: 2026-03-06 (backend + frontend unit/build + frontend E2E + demo smoke refreshed)
 
 ### Backend (Executed)
 
@@ -428,11 +432,11 @@ Command:
 
 Result:
 - Domain: 122/122 passing
-- Application: 491/491 passing
-- API integration: 262/262 passing
+- Application: 511/511 passing
+- API integration: 301/301 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 887/887 passing
+- Backend Total: 946/946 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -443,7 +447,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 378/378 passing
+- Frontend unit: 464/464 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -453,16 +457,27 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 23/23 passing
-- 2026-02-25 local rerun now passes after frontend E2E startup hardening:
+- default E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 24/24 passing
+- Playwright discovery currently contains 25 tests total; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default unless `TASKDECK_RUN_DEMO=1`
+- 2026-03-06 local rerun still passes after frontend E2E startup hardening:
   - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) with deterministic runner/worker convergence.
   - local reuse mode only reuses already-listening ports when the listener is identity-verified as Taskdeck frontend; CI mode prefers bindable ports so stale listeners do not break startup.
   - first fallback resolution is now persisted in-process so worker config imports stay pinned to the runner-selected frontend port during CI execution.
+  - backend Playwright startup stays on deterministic `Mock` provider mode unless the run is an explicit demo flow that injects live-provider overrides.
   - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+
+### Demo Director Smoke
+
+Command:
+- `cd frontend/taskdeck-web && npm run demo:director:smoke`
+
+Result:
+- deterministic demo smoke: passing
+- isolated smoke DB reset (`taskdeck.demo.ci.db`) and fresh backend/frontend startup both verified
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build): 1265/1265 passing
+- Combined automated total (backend + frontend unit/build + default frontend E2E): 1434/1434 passing
 
 ## CI Status
 
@@ -481,8 +496,8 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 
 - `workflow-lint` (Actionlint for workflow YAML drift)
 - `dependency-review` (PR dependency risk check)
-- label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`)
-- label/manual-triggered demo director smoke lane (`automation` label or `workflow_dispatch`) via `.github/workflows/reusable-demo-director-smoke.yml`
+- label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`) for PRs that touch `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`
+- label/manual-triggered demo director smoke lane (`automation` label or `workflow_dispatch`) via `.github/workflows/reusable-demo-director-smoke.yml`; docs-only PRs still need manual dispatch because `ci-extended.yml` path filters do not watch `docs/**`
 - label/manual-triggered load/concurrency harness lane via `.github/workflows/reusable-load-concurrency-harness.yml`
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
@@ -514,7 +529,7 @@ Automation and data:
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
 - capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); logging redaction follow-through is delivered in `#212`, and remaining capture-linked scalability follow-through is tracked in `#213`
 - premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
-- testing-harness wave guardrails are not yet implemented; tracked in `#255` to `#260`
+- testing-harness wave guardrails are shipped through `#255` to `#260`; follow-up improvements now belong to normal hardening work rather than the original wave
 - outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to delivered `#75` (import adapters) plus `#77` and `#175`
 
 Observability and scalability:

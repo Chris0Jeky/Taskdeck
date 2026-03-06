@@ -23,6 +23,8 @@ import {
   resetDemoDirectorE2EDb,
   resolveDemoDirectorRuntime,
 } from './demo-director-lib.mjs'
+import { resolveScenarioDefaultBoardName } from './demo-scenario-defaults.mjs'
+import { assertSafeLocalApiTarget, parseTrueishEnv } from './demo-shared.mjs'
 
 const PLAYWRIGHT_SPAWN_MAX_BUFFER_BYTES = 50 * 1024 * 1024
 
@@ -128,14 +130,6 @@ async function copyIfExists(sourcePath, destinationPath) {
   } catch {
     return false
   }
-}
-
-function defaultBoardNameForScenario(scenarioId) {
-  const normalized = String(scenarioId || '').trim().toLowerCase()
-  if (normalized === 'engineering-sprint') return 'DEMO: Engineering Sprint'
-  if (normalized === 'content-calendar') return 'DEMO: Content Calendar'
-  if (normalized === 'support-triage') return 'DEMO: Support Triage'
-  return 'DEMO: Engineering Sprint'
 }
 
 async function readNdjson(filePath) {
@@ -280,6 +274,10 @@ async function main() {
     }),
     forceFreshServers: runtime.forceFreshServers,
   })
+  assertSafeLocalApiTarget(selectedApiBaseUrl, {
+    allowNonLocal: parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_LOCAL_API),
+    contextLabel: 'run demo director',
+  })
 
   const runId = args.runId || nowStamp()
   const artifactDir = path.resolve(args.outputDir || path.join(webRoot, 'demo-artifacts', `run-${runId}`))
@@ -297,7 +295,7 @@ async function main() {
 
   const tracePath = path.join(artifactDir, 'trace.ndjson')
   const snapshotPath = path.join(artifactDir, 'snapshot.json')
-  const autopilotBoard = args.autopilotBoard || defaultBoardNameForScenario(args.scenario)
+  const autopilotBoard = args.autopilotBoard || (await resolveScenarioDefaultBoardName(args.scenario))
 
   const env = applyDemoDirectorApiBaseUrl({
     ...process.env,

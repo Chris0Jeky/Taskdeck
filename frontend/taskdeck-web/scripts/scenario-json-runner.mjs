@@ -54,6 +54,7 @@ const DEFAULT_LLM_STEP_TYPES = new Set([
   'queueInstruction',
   'triageCapture',
   'waitForCaptureProposal',
+  'waitForCaptureOutcome',
 ])
 const OPS_RUN_STATUS_BY_CODE = {
   0: 'Queued',
@@ -146,27 +147,125 @@ function getByPath(obj, pathExpr) {
   return cur
 }
 
-function resolveTemplates(value, ctx) {
+function resolveTemplates(value, ctx, location = 'value') {
   if (typeof value === 'string') {
     return value.replace(/\$\{([^}]+)\}/g, (_match, expr) => {
       const resolved = getByPath(ctx.refs, expr.trim())
-      return resolved === undefined ? '' : String(resolved)
+      assert(resolved !== undefined, `Unresolved scenario template expression "${expr.trim()}" at ${location}`)
+      return String(resolved)
     })
   }
 
   if (Array.isArray(value)) {
-    return value.map((entry) => resolveTemplates(entry, ctx))
+    return value.map((entry, index) => resolveTemplates(entry, ctx, `${location}[${index}]`))
   }
 
   if (isObject(value)) {
     const out = {}
     for (const [key, entry] of Object.entries(value)) {
-      out[key] = resolveTemplates(entry, ctx)
+      out[key] = resolveTemplates(entry, ctx, `${location}.${key}`)
     }
     return out
   }
 
   return value
+}
+
+function registerScenarioAlias(aliasRegistry, { namespace, alias, stepIndex, stepType, propertyName }) {
+  if (!isNonEmptyString(alias)) {
+    return
+  }
+
+  const normalizedAlias = alias.trim()
+  const namespaceRegistry = aliasRegistry.get(namespace) || new Map()
+  const existing = namespaceRegistry.get(normalizedAlias)
+  if (existing) {
+    throw new Error(
+      `Step[${stepIndex}] (${stepType}): ${propertyName} "${normalizedAlias}" duplicates Step[${existing.stepIndex}] (${existing.stepType}) in ${namespace}`,
+    )
+  }
+  namespaceRegistry.set(normalizedAlias, {
+    stepIndex,
+    stepType,
+    propertyName,
+  })
+  aliasRegistry.set(namespace, namespaceRegistry)
+}
+
+function collectScenarioAliases(scenario) {
+  const aliasRegistry = new Map()
+
+  for (const [index, step] of scenario.steps.entries()) {
+    switch (step.type) {
+      case 'createBoard':
+        registerScenarioAlias(aliasRegistry, {
+          namespace: 'boards',
+          alias: step.alias,
+          stepIndex: index,
+          stepType: step.type,
+          propertyName: 'alias',
+        })
+        break
+      case 'createCard':
+      case 'updateCard':
+      case 'moveCard':
+        registerScenarioAlias(aliasRegistry, {
+          namespace: 'cards',
+          alias: step.alias,
+          stepIndex: index,
+          stepType: step.type,
+          propertyName: 'alias',
+        })
+        break
+      case 'createCapture':
+      case 'triageCapture':
+      case 'waitForCaptureOutcome':
+        registerScenarioAlias(aliasRegistry, {
+          namespace: 'captures',
+          alias: step.alias,
+          stepIndex: index,
+          stepType: step.type,
+          propertyName: 'alias',
+        })
+        break
+      case 'queueInstruction':
+        registerScenarioAlias(aliasRegistry, {
+          namespace: 'queueRequests',
+          alias: step.requestAlias,
+          stepIndex: index,
+          stepType: step.type,
+          propertyName: 'requestAlias',
+        })
+        registerScenarioAlias(aliasRegistry, {
+          namespace: 'proposals',
+          alias: step.proposalAlias,
+          stepIndex: index,
+          stepType: step.type,
+          propertyName: 'proposalAlias',
+        })
+        break
+      case 'waitForCaptureProposal':
+        registerScenarioAlias(aliasRegistry, {
+          namespace: 'proposals',
+          alias: step.proposalAlias,
+          stepIndex: index,
+          stepType: step.type,
+          propertyName: 'proposalAlias',
+        })
+        break
+      case 'runOps':
+        registerScenarioAlias(aliasRegistry, {
+          namespace: 'opsRuns',
+          alias: step.alias,
+          stepIndex: index,
+          stepType: step.type,
+          propertyName: 'alias',
+        })
+        break
+      default:
+        break
+    }
+  }
 }
 
 export async function listJsonScenarioIds() {
@@ -215,6 +314,8 @@ export function validateScenarioJson(scenario) {
     assert(SUPPORTED_STEP_TYPES.has(step.type), `Step[${index}].type "${step.type}" is not supported`)
     validateScenarioStep(index, step)
   }
+
+  collectScenarioAliases(scenario)
 
   return true
 }
@@ -339,10 +440,17 @@ async function resolveCaptureId(_api, ctx, captureRef) {
 
 async function resolveColumnIdByName(api, ctx, boardId, columnName) {
   const columns = await getBoardColumns(api, ctx, boardId)
-  const resolved = (columns || []).find(
+  const matches = (columns || []).filter(
     (column) => String(column?.name || '').toLowerCase() === String(columnName || '').toLowerCase(),
   )
 
+  assert(matches.length > 0, `Column not found on board ${boardId}: "${columnName}"`)
+  assert(
+    matches.length === 1,
+    `Column name "${columnName}" is ambiguous on board ${boardId}: found ${matches.length} matches`,
+  )
+
+  const resolved = matches[0]
   assert(resolved?.id, `Column not found on board ${boardId}: "${columnName}"`)
   return resolved.id
 }
@@ -351,17 +459,32 @@ async function resolveLabelIdsByNames(api, ctx, boardId, labelNames = []) {
   if (!labelNames || labelNames.length === 0) return []
 
   const labels = await getBoardLabels(api, ctx, boardId)
-  const byName = new Map((labels || []).map((label) => [String(label?.name || '').toLowerCase(), label]))
   const ids = []
+  const missingLabelNames = []
+  const duplicateLabelNames = []
 
   for (const labelName of labelNames) {
-    const resolved = byName.get(String(labelName || '').toLowerCase())
-    if (resolved?.id) {
-      ids.push(resolved.id)
+    const matches = (labels || []).filter(
+      (label) => String(label?.name || '').toLowerCase() === String(labelName || '').toLowerCase(),
+    )
+
+    if (matches.length === 1 && matches[0]?.id) {
+      ids.push(matches[0].id)
+    } else if (matches.length > 1) {
+      duplicateLabelNames.push(String(labelName || ''))
     } else {
-      ctx.warnings.push(`Label not found on board ${boardId}: "${labelName}"`)
+      missingLabelNames.push(String(labelName || ''))
     }
   }
+
+  assert(
+    missingLabelNames.length === 0,
+    `Labels not found on board ${boardId}: ${missingLabelNames.map((labelName) => `"${labelName}"`).join(', ')}`,
+  )
+  assert(
+    duplicateLabelNames.length === 0,
+    `Label names are ambiguous on board ${boardId}: ${duplicateLabelNames.map((labelName) => `"${labelName}"`).join(', ')}`,
+  )
 
   return ids
 }
@@ -398,7 +521,7 @@ export async function runJsonScenario({ api, config, scenario, options = {} }) {
   }
 
   for (const [index, rawStep] of scenario.steps.entries()) {
-    const step = resolveTemplates(deepClone(rawStep), ctx)
+    const step = resolveTemplates(deepClone(rawStep), ctx, `Step[${index}]`)
     const label = step.label || `${index + 1}:${step.type}`
 
     await traceEvent({

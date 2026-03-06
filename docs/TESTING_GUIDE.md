@@ -12,21 +12,21 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-03-06)
 
-- Backend: 952/952 passing
+- Backend: 959/959 passing
   - Domain: 122
-  - Application: 513
-  - API integration: 305
+  - Application: 516
+  - API integration: 309
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 414/414 passing
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1389/1389 passing
+- Frontend unit: 466/466 passing
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 24/24 passing
+- Combined automated total: 1449/1449 passing
 
 Verification note:
 - backend totals were re-verified on 2026-03-06 via `dotnet test backend/Taskdeck.sln -c Release -m:1` with live providers forced off and `Llm__Provider=Mock`
 - frontend unit/build totals were re-verified on 2026-03-06 via `npm run lint`, `npx vitest --run`, `npm run typecheck`, and `npm run build`
-- frontend E2E totals were re-verified on 2026-02-25 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`23/23` passing)
-- demo director smoke was re-verified on 2026-03-06 via two consecutive `npm run demo:director:smoke` runs against the isolated `taskdeck.demo.ci.db` path
+- frontend E2E totals were re-verified on 2026-03-06 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`24/24` passing; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default)
+- demo director smoke was re-verified on 2026-03-06 via `npm run demo:director:smoke` against the isolated `taskdeck.demo.ci.db` path
 
 ## Backend Commands
 
@@ -50,13 +50,6 @@ Note:
 - If `Debug` runs fail with file-lock errors, stop running `Taskdeck.Api` processes or use `-c Release`.
 - If backend tests unexpectedly bind to a live LLM provider in local Development, force deterministic mock mode before running the suite:
   - PowerShell: `$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/Taskdeck.sln -c Release -m:1`
-
-Focused security logging redaction checks (`#212`):
-
-```powershell
-dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~SensitiveDataRedactorTests|FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~CaptureRequestContractTests|FullyQualifiedName~CaptureServiceTests"
-$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests"
-```
 
 ## Frontend Unit + Build
 
@@ -134,11 +127,12 @@ Optional E2E env overrides (Playwright config):
 - `TASKDECK_E2E_FRONTEND_BASE_URL` (default `http://{host}:{port}`; must be `http://` with explicit port and no path/query/hash)
 - `TASKDECK_E2E_API_BASE_URL` (default `http://localhost:5000/api`; must be `http://` with explicit port and API path)
 - `TASKDECK_E2E_API_CORS_ORIGINS` (comma-separated additional origins merged with defaults: frontend origin plus `http://localhost:5174`; each value is passed to backend process as `Cors__DevelopmentAllowedOrigins__{index}`)
-- `TASKDECK_E2E_REUSE_EXISTING_SERVER` (defaults to `true` locally and `false` in CI; set `0` to force fresh backend/frontend startup)
+- `TASKDECK_E2E_REUSE_EXISTING_SERVER` (defaults to `true` locally and `false` in CI; full demo runs that inject live-provider backend overrides also switch reuse off by default so the intended backend process is actually launched; set `0` to force fresh backend/frontend startup or `1` to force reuse intentionally)
 
 Override behavior notes:
 - backend Playwright `webServer` readiness URL is derived from `TASKDECK_E2E_API_BASE_URL` as `{apiBaseUrl}/boards`
 - backend Playwright process startup binds to the same API origin via `ASPNETCORE_URLS`
+- backend Playwright startup now forces deterministic mock-provider mode by default; live-provider env is only injected for explicit demo runs (`TASKDECK_RUN_DEMO=1` / director path) when LLM steps are enabled
 
 Troubleshooting note (Windows local environments):
 - if Playwright startup fails with `listen EACCES` for the frontend port, keep `TASKDECK_E2E_FRONTEND_PORT` unset so auto-fallback can select the next bindable port.
@@ -173,7 +167,7 @@ Policy notes:
 
 - `demo:director:smoke` runs `engineering-sprint` with `--skip-llm`, zero autopilot turns, a fixed RNG seed, a stable artifact directory (`demo-artifacts/ci-smoke`), an isolated smoke DB (`taskdeck.demo.ci.db`), and fresh backend/frontend startup.
 - when fresh-server mode cannot bind `http://localhost:5000/api`, the director automatically selects a free local API port; if explicit overrides still conflict, it prints a remediation hint for `TASKDECK_E2E_API_BASE_URL` / `TASKDECK_E2E_FRONTEND_PORT`.
-- `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation`.
+- `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation` when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 
 ## Load Harness (k6 + Playwright Concurrency)
@@ -286,7 +280,7 @@ Extended workflow: `.github/workflows/ci-extended.yml`
   - opt-in on PRs labeled `testing` or manual `workflow_dispatch` (runs Playwright smoke suite via `reusable-e2e-smoke.yml`)
   - load harness lane runs k6 board-heavy profile plus Playwright multi-session concurrency spec via `reusable-load-concurrency-harness.yml`
 - `demo-director-smoke`
-  - opt-in on PRs labeled `automation` or manual `workflow_dispatch`
+  - opt-in on PRs labeled `automation` or manual `workflow_dispatch`; PR-triggered runs still require watched-path changes because `ci-extended.yml` does not include `docs/**`
   - runs the deterministic `demo:director:smoke` path via `reusable-demo-director-smoke.yml`
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
@@ -319,11 +313,11 @@ Release/security workflow: `.github/workflows/release-security.yml`
 - backend/frontend vulnerability signal capture
 - reusable container artifact/checksum lane for release-ready outputs
 
-## Testing Harness Improvement Wave (2026-02-23)
+## Testing Harness Improvement Wave (Delivered 2026-02-24)
 
 Tracking issues:
 - wave tracker: `#254`
-- net-new execution: `#255` to `#260`
+- delivered execution: `#255` to `#260`
 
 Already-covered pack scenarios (no duplicate implementation issue required):
 - WIP limit enforcement already covered across application/API/E2E.
@@ -336,10 +330,13 @@ Knowledge transfer applied to existing seeds:
 - `#106`: dependency/security signal command baseline (`dotnet list package --vulnerable`, `npm audit`)
 - `#168`: CI topology routing for OpenAPI/nightly-quality lanes
 
-Wave-1 execution intent:
-- remove deterministic test flake vectors first (`#255`)
-- add persistence and contract regression lock-in next (`#256`, `#257`)
-- then add harness-level guardrails (`#258`, `#259`, `#260`) with non-blocking rollout where appropriate
+Delivered outcomes:
+- `#255` removed residual wall-clock flake vectors and centralized reusable E2E polling helpers
+- `#256` locked drag/drop persistence after full reload into Playwright smoke coverage
+- `#257` centralized representative `400/401/403/404/409` API error-contract assertions
+- `#258` added OpenAPI generation + parse-validation artifacts in CI
+- `#259` codified `docs/GOLDEN_PRINCIPLES.md` with lightweight mechanical enforcement
+- `#260` added the non-blocking nightly-quality workflow for coverage and dependency/security signal artifacts
 
 Useful local checks for this wave:
 
@@ -399,7 +396,6 @@ Planned quality expectations when implementation starts:
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
-  - Includes security logging redaction guardrail coverage for capture validation, unhandled middleware, webhook delivery failures, housekeeping worker summaries, and observability exception-recording posture
   - Includes rate-limit policy coverage (`RateLimitingApiTests`) for burst throttling, retry metadata contract, reset-window recovery, and cross-user boundary behavior
   - Includes security-header baseline coverage (`SecurityHeadersApiTests`) for success/auth-failure paths and HTTPS HSTS posture assertions
   - Includes board-scoped external import endpoint coverage (authz, malformed input, duplicate handling, apply/update flow, rollback safety)

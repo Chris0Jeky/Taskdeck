@@ -22,7 +22,7 @@ npm run demo:run -- engineering-sprint
 npm run demo:run -- support-triage
 npm run demo:run -- content-calendar
 
-# skip LLM-required steps
+# skip default LLM-dependent steps and any step marked requiresLlm: true
 npm run demo:run -- support-triage --skip-llm
 
 # continue after a failed step
@@ -35,7 +35,7 @@ npm run demo:run -- engineering-sprint --clean
 CI note:
 
 - `--skip-llm` and `--continue-on-error` are for the JSON-runner flow.
-- Mark model-dependent steps with `requiresLlm: true` so they can be skipped deterministically.
+- Default LLM-dependent step handling covers `queueInstruction`, `triageCapture`, `waitForCaptureProposal`, and `waitForCaptureOutcome`; mark any other model-dependent step with `requiresLlm: true` so it can also be skipped deterministically.
 - `npm run demo:director:smoke` uses the same policy: deterministic seed, no autopilot turns, LLM-required steps skipped, isolated `taskdeck.demo.ci.db`, and forced fresh Playwright servers.
 
 Environment overrides:
@@ -68,7 +68,8 @@ Supported namespaces:
 - `queueRequests.<alias>.*`
 - `opsRuns.<alias>.*`
 
-If interpolation fails to resolve, the value becomes an empty string.
+If interpolation fails to resolve, the runner throws immediately with the unresolved expression and step location.
+Unknown scenario IDs/paths also fail fast instead of silently falling back to another scenario.
 
 ## Step types
 
@@ -159,7 +160,7 @@ Capture-loop steps. Triage/proposal execution usually require a live LLM provide
 { "type": "executeProposal", "proposal": "cap1Proposal", "requiresLlm": true }
 ```
 
-Use `--skip-llm` to skip steps marked with `requiresLlm: true`.
+Use `--skip-llm` to skip the default LLM-dependent steps (`queueInstruction`, `triageCapture`, `waitForCaptureProposal`, `waitForCaptureOutcome`) plus any step explicitly marked with `requiresLlm: true`.
 
 ### runOps
 
@@ -188,3 +189,5 @@ Optional fields:
 
 Keep step semantics deterministic if you want to reuse scenarios in tests.
 For LLM-driven steps, set `requiresLlm: true` so they can be skipped in CI.
+Starter-pack-backed scenarios should only reference columns and labels that the applied starter pack actually creates; the frontend unit suite now asserts that shipped JSON scenarios stay aligned with those contracts.
+When scenario steps resolve columns or labels by name, duplicate board names are treated as an error so setup does not silently bind to the wrong column/label.

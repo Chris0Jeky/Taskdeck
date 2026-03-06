@@ -1,6 +1,6 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-02-24  
+Last Updated: 2026-03-06
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
@@ -95,8 +95,13 @@ For full Playwright-backed demos (`npm run demo:director` or `TASKDECK_RUN_DEMO=
   - `TASKDECK_DEMO_GEMINI_API_KEY`
   - `Llm__Gemini__ApiKey`
 - use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead of Gemini for a specific demo run
+- use `TASKDECK_DEMO_LLM_PROVIDER=Gemini` to force Gemini even when the base environment is pinned to `Llm__Provider=Mock`
+- use `TASKDECK_DEMO_LLM_PROVIDER=Mock` to keep the demo on mock explicitly even when live keys are present
 - use `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force demo runs back to mock even when keys are present
+- use `TASKDECK_DEMO_SKIP_LLM=1` when the scenario/recorder should skip LLM-required steps and keep the backend on mock
+- if the configured base provider has no usable key, demo auto-enable falls back to another available live-provider key instead of silently staying on mock
 - deterministic smoke runs still remain mock-backed because `demo:director:smoke` sets `--skip-llm`
+- when the demo runtime injects live-provider overrides, Playwright also disables existing-server reuse by default so a stale mock backend is not silently reused; set `TASKDECK_E2E_REUSE_EXISTING_SERVER=1` only if you intentionally want reuse anyway
 
 ## Behavior Guarantees
 

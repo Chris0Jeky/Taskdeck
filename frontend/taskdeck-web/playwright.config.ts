@@ -6,11 +6,16 @@ import {
   parseFrontendHost,
   resolveDefaultFrontendPort,
 } from './playwright.port-resolution'
-import { resolveDemoBackendLlmEnv } from './playwright.demo-llm'
+import { resolveDemoBackendLlmEnv, resolvePlaywrightBackendLlmEnv } from './playwright.demo-llm'
+import { resolveReuseExistingServer } from './playwright.server-reuse'
 
 const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
 const defaultApiBaseUrl = 'http://localhost:5000/api'
-const reuseExistingServer = resolveReuseExistingServer()
+const demoBackendLlmEnv = resolveDemoBackendLlmEnv(process.env)
+const backendLlmEnv = resolvePlaywrightBackendLlmEnv(process.env)
+const reuseExistingServer = resolveReuseExistingServer(process.env, {
+  requiresFreshServer: Object.keys(demoBackendLlmEnv).length > 0,
+})
 
 const frontendConfig = resolveFrontendConfig()
 const frontendHost = frontendConfig.host
@@ -27,7 +32,7 @@ const backendServerEnv: Record<string, string> = {
   ASPNETCORE_ENVIRONMENT: 'Development',
   ConnectionStrings__DefaultConnection: `Data Source=${e2eDbPath}`,
   ASPNETCORE_URLS: apiConfig.origin,
-  ...resolveDemoBackendLlmEnv(process.env),
+  ...backendLlmEnv,
 }
 
 for (const [index, origin] of backendCorsOrigins.entries()) {
@@ -264,17 +269,4 @@ function parseOriginList(rawOrigins: string | undefined): string[] {
 
 function dedupeOrigins(origins: string[]): string[] {
   return [...new Set(origins)]
-}
-
-function resolveReuseExistingServer(): boolean {
-  const override = process.env.TASKDECK_E2E_REUSE_EXISTING_SERVER?.trim().toLowerCase()
-  if (override === '1' || override === 'true') {
-    return true
-  }
-
-  if (override === '0' || override === 'false') {
-    return false
-  }
-
-  return !process.env.CI
 }

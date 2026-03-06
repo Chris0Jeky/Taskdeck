@@ -2,7 +2,7 @@
   "version": 1,
   "id": "content-calendar",
   "title": "Content Calendar",
-  "description": "Seeded content pipeline: ideas -> drafting -> review -> scheduled -> published. Includes a queue-driven move.",
+  "description": "Seeded content pipeline: ideas -> drafting -> review -> scheduled. Includes a queue-driven move.",
   "tags": [
     "demo",
     "content",
@@ -13,7 +13,7 @@
       "type": "createBoard",
       "alias": "board",
       "name": "DEMO: Content Calendar Scenario",
-      "description": "Seeded content pipeline: ideas -> drafting -> review -> scheduled -> published."
+      "description": "Seeded content pipeline: ideas -> drafting -> review -> scheduled."
     },
     {
       "type": "applyStarterPack",
@@ -28,7 +28,7 @@
       "title": "Blog: Why proposal-first automations are safer",
       "description": "Explain review/approve/execute flow. Compare to \"autopilot\" approaches.",
       "labels": [
-        "writing"
+        "needs-draft"
       ]
     },
     {
@@ -40,8 +40,8 @@
       "description": "Summarize inbox capture -> triage -> proposal -> apply. Include screenshots.",
       "dueInDays": 3,
       "labels": [
-        "writing",
-        "social"
+        "needs-draft",
+        "publish-week"
       ]
     },
     {
@@ -52,7 +52,7 @@
       "title": "Design: Automations empty-state panel",
       "description": "3 example prompts + explanation of Queue vs Proposals vs Chat.",
       "labels": [
-        "design"
+        "needs-review"
       ]
     },
     {
@@ -64,18 +64,18 @@
       "description": "Short series showing boards -> inbox -> triage -> proposals -> execute.",
       "dueInDays": 1,
       "labels": [
-        "social"
+        "publish-week"
       ]
     },
     {
       "type": "createCard",
-      "alias": "publishedStarterPacks",
+      "alias": "scheduledStarterPacks",
       "board": "board",
-      "column": "Published",
-      "title": "Shipped: Starter Packs for common workflows",
-      "description": "Engineering sprint + content calendar + support triage packs.",
+      "column": "Scheduled",
+      "title": "Schedule: Starter packs for common workflows",
+      "description": "Feature engineering sprint + support triage + content calendar in the next release wave.",
       "labels": [
-        "writing"
+        "publish-week"
       ]
     },
     {

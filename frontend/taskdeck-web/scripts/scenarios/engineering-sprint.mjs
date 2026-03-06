@@ -38,6 +38,9 @@ export async function run({ api, config: cfg }) {
   const bug = byLabel.get('bug')
   const techDebt = byLabel.get('tech-debt')
   const priorityHigh = byLabel.get('priority-high')
+  if (!bug || !techDebt || !priorityHigh) {
+    throw new Error('Starter pack did not create expected labels (bug/tech-debt/priority-high).')
+  }
 
   const card1 = await api.post(`/boards/${board.id}/cards`, {
     body: {
@@ -45,7 +48,7 @@ export async function run({ api, config: cfg }) {
       title: 'Fix: login error state resets unexpectedly',
       description: 'Repro: failed login -> error toast -> retry with correct password -> form clears too early.',
       dueDate: isoDaysFromNow(2),
-      labelIds: [bug?.id, priorityHigh?.id].filter(Boolean),
+      labelIds: [bug.id, priorityHigh.id],
     },
   })
 
@@ -55,7 +58,7 @@ export async function run({ api, config: cfg }) {
       title: 'Refactor: consolidate API error mapping',
       description: 'Unify API error payload parsing across views; standardize toast messaging.',
       dueDate: isoDaysFromNow(4),
-      labelIds: [techDebt?.id].filter(Boolean),
+      labelIds: [techDebt.id],
     },
   })
 
@@ -64,7 +67,7 @@ export async function run({ api, config: cfg }) {
       columnId: review.id,
       title: 'Add: empty-state guidance for Automations',
       description: 'Help users understand Queue vs Proposals vs Chat. Show 3 copy-paste examples.',
-      labelIds: [priorityHigh?.id].filter(Boolean),
+      labelIds: [priorityHigh.id],
     },
   })
 
