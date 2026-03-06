@@ -4,7 +4,18 @@ set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y awscli ca-certificates curl gnupg
+apt-get install -y ca-certificates curl gnupg unzip
+
+arch="$(uname -m)"
+if [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then
+  awscli_arch="aarch64"
+else
+  awscli_arch="x86_64"
+fi
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$${awscli_arch}.zip" -o "/tmp/awscliv2.zip"
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install --update
+rm -rf /tmp/aws /tmp/awscliv2.zip
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -23,7 +34,48 @@ systemctl start docker
 usermod -aG docker ubuntu || true
 
 install -d -m 0755 /opt/taskdeck
+
+data_volume_target="$(printf '%s' '${data_volume_id}' | tr -d '-' | tr '[:upper:]' '[:lower:]')"
+data_volume_device=""
+for attempt in $(seq 1 30); do
+  data_volume_device="$(
+    lsblk -ndo NAME,SERIAL,TYPE | awk -v target="$data_volume_target" '
+      $3 == "disk" {
+        serial = tolower($2)
+        gsub("-", "", serial)
+        if (serial == target) {
+          print "/dev/" $1
+          exit
+        }
+      }
+    '
+  )"
+  if [ -n "$data_volume_device" ]; then
+    break
+  fi
+  sleep 2
+done
+
+if [ -z "$data_volume_device" ]; then
+  echo "Unable to locate attached Taskdeck data volume ${data_volume_id}" >&2
+  exit 1
+fi
+
+if ! blkid "$data_volume_device" >/dev/null 2>&1; then
+  mkfs.ext4 -F -L taskdeck-data "$data_volume_device"
+fi
+
 install -d -m 0755 /var/lib/taskdeck
+data_volume_uuid="$(blkid -s UUID -o value "$data_volume_device")"
+if [ -z "$data_volume_uuid" ]; then
+  echo "Unable to determine filesystem UUID for Taskdeck data volume ${data_volume_id}" >&2
+  exit 1
+fi
+
+if ! grep -q " /var/lib/taskdeck " /etc/fstab; then
+  echo "UUID=$data_volume_uuid /var/lib/taskdeck ext4 defaults,nofail 0 2" >> /etc/fstab
+fi
+mountpoint -q /var/lib/taskdeck || mount /var/lib/taskdeck
 
 set +x
 if ! JWT_SECRET="$(aws ssm get-parameter --name '${jwt_secret_ssm_parameter_name}' --with-decryption --region '${aws_region}' --query 'Parameter.Value' --output text)"; then

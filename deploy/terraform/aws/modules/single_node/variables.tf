@@ -101,6 +101,11 @@ variable "root_volume_size_gb" {
   type        = number
 }
 
+variable "data_volume_size_gb" {
+  description = "Persistent EBS data volume size for the Taskdeck SQLite database and related state."
+  type        = number
+}
+
 variable "backup_bucket_force_destroy" {
   description = "Whether the environment backup bucket may be force-destroyed by Terraform."
   type        = bool

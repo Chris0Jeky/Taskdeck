@@ -46,6 +46,7 @@ module "taskdeck" {
   jwt_audience                  = var.jwt_audience
   jwt_expiration_minutes        = var.jwt_expiration_minutes
   root_volume_size_gb           = var.root_volume_size_gb
+  data_volume_size_gb           = var.data_volume_size_gb
   backup_bucket_force_destroy   = var.backup_bucket_force_destroy
   extra_tags                    = var.extra_tags
 }
@@ -68,4 +69,8 @@ output "ssh_command" {
 
 output "database_path" {
   value = module.taskdeck.database_path
+}
+
+output "data_volume_id" {
+  value = module.taskdeck.data_volume_id
 }

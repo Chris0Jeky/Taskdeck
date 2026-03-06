@@ -18,6 +18,11 @@ output "database_path" {
   value       = "/var/lib/taskdeck/taskdeck.db"
 }
 
+output "data_volume_id" {
+  description = "Persistent EBS volume id used for the Taskdeck SQLite/database data path."
+  value       = aws_ebs_volume.taskdeck_data.id
+}
+
 output "ssh_command" {
   description = "SSH command template for the host when ssh_key_name is configured."
   value       = var.ssh_key_name == null ? null : "ssh ubuntu@${aws_instance.taskdeck_host.public_ip}"

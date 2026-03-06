@@ -221,6 +221,18 @@ resource "aws_iam_instance_profile" "taskdeck_host" {
   role = aws_iam_role.taskdeck_host.name
 }
 
+resource "aws_ebs_volume" "taskdeck_data" {
+  availability_zone = var.availability_zone
+  size              = var.data_volume_size_gb
+  type              = "gp3"
+  encrypted         = true
+
+  tags = merge(local.common_tags, {
+    Name = "${local.base_name}-data"
+    Role = "taskdeck-data"
+  })
+}
+
 resource "aws_instance" "taskdeck_host" {
   ami                         = var.ami_id
   instance_type               = var.instance_type
@@ -254,10 +266,17 @@ resource "aws_instance" "taskdeck_host" {
     proxy_port                    = var.proxy_port
     backup_bucket_name            = aws_s3_bucket.backups.bucket
     aws_region                    = var.aws_region
+    data_volume_id                = aws_ebs_volume.taskdeck_data.id
   })
 
   tags = merge(local.common_tags, {
     Name = "${local.base_name}-host"
     Role = "taskdeck-single-node"
   })
+}
+
+resource "aws_volume_attachment" "taskdeck_data" {
+  device_name = "/dev/sdf"
+  volume_id   = aws_ebs_volume.taskdeck_data.id
+  instance_id = aws_instance.taskdeck_host.id
 }
