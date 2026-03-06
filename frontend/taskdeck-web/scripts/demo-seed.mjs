@@ -217,6 +217,20 @@ export function hasSeededChatEvidence(chatMessages, renameInstruction) {
   )
 }
 
+export function mergeSeedPlanChatSessions(chatSessions, sessionId, sessionDetail) {
+  if (!sessionId) {
+    return chatSessions || []
+  }
+
+  return (chatSessions || []).flatMap((session) => {
+    if (!idsMatch(session?.id, sessionId)) {
+      return [session]
+    }
+
+    return sessionDetail ? [sessionDetail] : []
+  })
+}
+
 export function shouldRecreateCaptureSeed(detail, { ignore = false } = {}) {
   if (ignore) {
     return (
@@ -857,13 +871,8 @@ export async function main() {
   const queueRequests = (await http('GET', '/llm-queue/user?limit=200', { token: demoToken })) || []
   const chatSessions = (await http('GET', '/llm/chat/sessions', { token: demoToken })) || []
   const seededChatSession = findChatSessionByTitle(chatSessions, captureBoard.id, SEEDED_CHAT.sessionTitle)
-  const plannedChatSessions = seededChatSession?.id
-    ? await Promise.all(
-        chatSessions.map(async (session) =>
-          idsMatch(session?.id, seededChatSession.id) ? (await getChatSessionDetail(seededChatSession.id, demoToken)) || session : session,
-        ),
-      )
-    : chatSessions
+  const seededChatSessionDetail = seededChatSession?.id ? await getChatSessionDetail(seededChatSession.id, demoToken) : null
+  const plannedChatSessions = mergeSeedPlanChatSessions(chatSessions, seededChatSession?.id, seededChatSessionDetail)
   const firstExistingCard = captureBoardCards[0]
   const existingComments = firstExistingCard
     ? ((await http('GET', `/boards/${captureBoard.id}/cards/${firstExistingCard.id}/comments`, { token: demoToken })) || [])

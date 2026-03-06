@@ -448,7 +448,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 473/473 passing
+- Frontend unit: 477/477 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -478,7 +478,7 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): 1459/1459 passing
+- Combined automated total (backend + frontend unit/build + default frontend E2E): 1463/1463 passing
 
 ## CI Status
 

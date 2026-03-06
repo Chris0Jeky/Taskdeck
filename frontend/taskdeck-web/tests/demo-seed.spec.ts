@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { hasSeededChatEvidence, planDemoSeedRerunState, shouldRecreateCaptureSeed } from '../scripts/demo-seed.mjs'
+import {
+  hasSeededChatEvidence,
+  mergeSeedPlanChatSessions,
+  planDemoSeedRerunState,
+  shouldRecreateCaptureSeed,
+} from '../scripts/demo-seed.mjs'
 
 describe('demo seed rerun planning', () => {
   it('marks all seeded artifacts for creation when the demo account is empty', () => {
@@ -162,5 +167,18 @@ describe('demo seed rerun planning', () => {
         { ignore: true },
       ),
     ).toBe(false)
+  })
+
+  it('drops stale seeded chat sessions from rerun planning when detail hydration fails', () => {
+    expect(
+      mergeSeedPlanChatSessions(
+        [
+          { id: 'session-1', title: 'Stakeholder Demo' },
+          { id: 'session-2', title: 'Other Session' },
+        ],
+        'session-1',
+        null,
+      ),
+    ).toEqual([{ id: 'session-2', title: 'Other Session' }])
   })
 })

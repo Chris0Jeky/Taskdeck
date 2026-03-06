@@ -50,7 +50,7 @@ Delivered in the latest cycle:
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
    - Backend: 962 passing
-   - Frontend unit: 473 passing
+   - Frontend unit: 477 passing
    - Default Playwright regression lane: 24 passing (`stakeholder-demo.spec.ts` remains opt-in/skipped by default)
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root

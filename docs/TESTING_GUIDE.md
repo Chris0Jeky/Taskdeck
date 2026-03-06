@@ -18,9 +18,9 @@ Companion Active Docs:
   - API integration: 309
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 473/473 passing
+- Frontend unit: 477/477 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 24/24 passing
-- Combined automated total: 1459/1459 passing
+- Combined automated total: 1463/1463 passing
 
 Verification note:
 - backend totals were re-verified on 2026-03-06 via `dotnet test backend/Taskdeck.sln -c Release -m:1` with live providers forced off and `Llm__Provider=Mock`
