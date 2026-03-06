@@ -48,6 +48,7 @@ Each environment root provisions:
   - cloud-init bootstrap that installs Docker, writes the Taskdeck compose/env files, and starts the stack
 - storage
   - one encrypted S3 bucket for exported artifacts/backups
+  - noncurrent backup object versions expire after 90 days to cap long-term versioning cost growth
 - database resource
   - one encrypted EBS data volume attached to the host and mounted at `/var/lib/taskdeck`
   - the Taskdeck SQLite file hosted on that persistent data volume at `/var/lib/taskdeck/taskdeck.db`
@@ -130,7 +131,7 @@ Copy-Item deploy/terraform/aws/environments/staging/backend.hcl.example deploy/t
 - `jwt_secret_ssm_parameter_name`
 - optional `jwt_secret_kms_key_arn` when the SecureString uses a customer-managed CMK
 - optional `data_volume_size_gb` if the default persistent data volume size is not appropriate
-- optional `protect_data_volume` override if a protected staging/prod data volume must be deliberately unlocked for a controlled destroy/migration workflow
+- optional `protect_data_volume` override to select the unprotected volume path for disposable environments; protected staging/prod teardown still requires a reviewed source change as noted below
 - `allowed_ingress_cidrs` for the reverse-proxy listener
 - optional `allowed_ssh_cidrs` when SSH should stay narrower than application ingress
 - backend bucket/key values if using remote state
@@ -169,7 +170,7 @@ terraform -chdir=deploy/terraform/aws/environments/staging apply -var-file=terra
 The EC2 instance is intentionally configured with `user_data_replace_on_change = true`.
 Changing bootstrap inputs such as container images, proxy port, or SSM parameter wiring replaces the host instead of silently leaving the old runtime in place.
 Taskdeck state survives that replacement because the SQLite path now lives on a separate persistent EBS data volume that Terraform reattaches to the replacement instance.
-For `staging` and `prod`, the data volume is also protected with Terraform `prevent_destroy` by default; if an intentional teardown or migration must remove it, flip `protect_data_volume` to `false` in a reviewed change first.
+For `staging` and `prod`, the data volume is also protected with Terraform `prevent_destroy` by default. Intentional teardown or migration that must remove it is a two-step reviewed workflow: first switch the environment to the unprotected volume path (`protect_data_volume = false`), then remove or relax the protected-volume `prevent_destroy` guard in module source before applying the destroying change.
 
 ## Post-Apply Checks
 
