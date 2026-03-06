@@ -187,6 +187,15 @@ function toSortableTimestamp(value) {
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
 }
 
+export function buildProposalLookupPath(proposalId) {
+  const normalizedProposalId = String(proposalId || '').trim()
+  if (!normalizedProposalId) {
+    throw new Error('Proposal id is required to build a seeded proposal lookup path.')
+  }
+
+  return `/automation/proposals/${encodeURIComponent(normalizedProposalId)}`
+}
+
 function findCaptureSummaryByTextFragment(captureSummaries, boardId, text) {
   const fragment = getTextFragment(text)
   const candidates = (captureSummaries || []).filter(
@@ -548,8 +557,18 @@ async function getCaptureDetail(summary, token) {
 }
 
 async function getProposalById(proposalId, token) {
-  const proposals = (await http('GET', '/automation/proposals?includeOperations=true&limit=200', { token })) || []
-  return proposals.find((proposal) => idsMatch(proposal?.id, proposalId)) || null
+  if (!proposalId) {
+    return null
+  }
+
+  try {
+    return await http('GET', buildProposalLookupPath(proposalId), { token })
+  } catch (err) {
+    if (getHttpStatus(err) === 404) {
+      return null
+    }
+    throw err
+  }
 }
 
 async function getChatSessionDetail(sessionId, token) {

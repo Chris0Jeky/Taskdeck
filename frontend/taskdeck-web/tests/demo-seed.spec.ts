@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildProposalLookupPath,
   hasSeededChatEvidence,
   mergeSeedPlanChatSessions,
   planDemoSeedRerunState,
@@ -229,5 +230,10 @@ describe('demo seed rerun planning', () => {
         null,
       ),
     ).toEqual([{ id: 'session-2', title: 'Other Session' }])
+  })
+
+  it('builds a direct proposal lookup path for rerun reuse checks', () => {
+    expect(buildProposalLookupPath('proposal/with spaces')).toBe('/automation/proposals/proposal%2Fwith%20spaces')
+    expect(() => buildProposalLookupPath('')).toThrow('Proposal id is required')
   })
 })
