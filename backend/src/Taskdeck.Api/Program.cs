@@ -190,7 +190,9 @@ if (observabilitySettings.EnableOpenTelemetry)
         tracing
             .AddAspNetCoreInstrumentation(options =>
             {
-                options.RecordException = true;
+                // Raw exception events can capture sensitive request/body data before our
+                // sanitized logging path runs, so keep automatic exception recording off.
+                options.RecordException = false;
             })
             .AddHttpClientInstrumentation()
             .AddSource(TaskdeckTelemetry.ActivitySourceName);
