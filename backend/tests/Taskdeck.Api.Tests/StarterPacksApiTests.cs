@@ -153,6 +153,105 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ApplyStarterPack_ShouldAllowColumnOnlyPack_WhenBoardHasDuplicateLabelNames()
+    {
+        var board = await CreateBoardAsync();
+
+        var firstLabelResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "duplicate-label", "#111111"));
+        firstLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var secondLabelResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "Duplicate-Label", "#222222"));
+        secondLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildColumnOnlyManifest(), DryRun: false));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<StarterPackApplyResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Applied.Should().BeTrue();
+        payload.HasBlockingConflicts.Should().BeFalse();
+        payload.Conflicts.Should().NotContain(conflict => conflict.Code == "ExistingLabelNameConflict");
+
+        var columns = await _client.GetFromJsonAsync<List<ColumnDto>>($"/api/boards/{board.Id}/columns");
+        columns.Should().NotBeNull();
+        columns!.Should().ContainSingle(column => column.Name == "Backlog" && column.Position == 0);
+        columns.Should().ContainSingle(column => column.Name == "Done" && column.Position == 1);
+    }
+
+    [Fact]
+    public async Task ApplyStarterPack_ShouldAllowCanonicalPack_WhenBoardHasUnrelatedDuplicateLabelNames()
+    {
+        var board = await CreateBoardAsync();
+
+        var firstLabelResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "legacy-label", "#111111"));
+        firstLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var secondLabelResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "Legacy-Label", "#222222"));
+        secondLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildCanonicalManifest(), DryRun: false));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<StarterPackApplyResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Applied.Should().BeTrue();
+        payload.HasBlockingConflicts.Should().BeFalse();
+        payload.Conflicts.Should().NotContain(conflict =>
+            conflict.Code == "ExistingLabelNameConflict" &&
+            string.Equals(conflict.IncomingValue, "legacy-label", StringComparison.OrdinalIgnoreCase));
+
+        var labels = await _client.GetFromJsonAsync<List<LabelDto>>($"/api/boards/{board.Id}/labels");
+        labels.Should().NotBeNull();
+        labels!.Should().ContainSingle(label => label.Name == "priority-high");
+    }
+
+    [Fact]
+    public async Task ApplyStarterPack_ShouldAllowCanonicalPack_WhenBoardHasUnrelatedDuplicateColumnNames()
+    {
+        var board = await CreateBoardAsync();
+
+        var firstColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "legacy-column", 10, null));
+        firstColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var secondColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Legacy-Column", 11, null));
+        secondColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/apply",
+            new ApplyStarterPackDto(BuildCanonicalManifest(), DryRun: false));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<StarterPackApplyResultDto>();
+        payload.Should().NotBeNull();
+        payload!.Applied.Should().BeTrue();
+        payload.HasBlockingConflicts.Should().BeFalse();
+        payload.Conflicts.Should().NotContain(conflict =>
+            conflict.Code == "ExistingColumnNameConflict" &&
+            string.Equals(conflict.IncomingValue, "legacy-column", StringComparison.OrdinalIgnoreCase));
+
+        var columns = await _client.GetFromJsonAsync<List<ColumnDto>>($"/api/boards/{board.Id}/columns");
+        columns.Should().NotBeNull();
+        columns!.Should().ContainSingle(column => column.Name == "Backlog" && column.Position == 0);
+        columns.Should().ContainSingle(column => column.Name == "Done" && column.Position == 1);
+    }
+
+    [Fact]
     public async Task ApplyStarterPack_ShouldBeIdempotent_WhenReapplied()
     {
         var board = await CreateBoardAsync();
@@ -319,28 +418,28 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task ApplyStarterPack_ShouldReturnConflict_WhenBoardContainsDuplicateNames()
+    public async Task ApplyStarterPack_ShouldReturnConflict_WhenBoardContainsDuplicateNamesUsedByManifest()
     {
         var board = await CreateBoardAsync();
 
         var firstLabelResponse = await _client.PostAsJsonAsync(
             $"/api/boards/{board.Id}/labels",
-            new CreateLabelDto(board.Id, "duplicate-label", "#111111"));
+            new CreateLabelDto(board.Id, "priority-high", "#111111"));
         firstLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var secondLabelResponse = await _client.PostAsJsonAsync(
             $"/api/boards/{board.Id}/labels",
-            new CreateLabelDto(board.Id, "Duplicate-Label", "#222222"));
+            new CreateLabelDto(board.Id, "Priority-High", "#222222"));
         secondLabelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var firstColumnResponse = await _client.PostAsJsonAsync(
             $"/api/boards/{board.Id}/columns",
-            new CreateColumnDto(board.Id, "duplicate-column", 0, null));
+            new CreateColumnDto(board.Id, "Backlog", 10, null));
         firstColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var secondColumnResponse = await _client.PostAsJsonAsync(
             $"/api/boards/{board.Id}/columns",
-            new CreateColumnDto(board.Id, "Duplicate-Column", 1, null));
+            new CreateColumnDto(board.Id, "backlog", 11, null));
         secondColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var applyResponse = await _client.PostAsJsonAsync(
@@ -509,6 +608,38 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
             Tags = ["starter"],
             Labels = [],
             Columns = [],
+            Templates = [],
+            SeedCards = []
+        };
+    }
+
+    private static StarterPackManifestDto BuildColumnOnlyManifest()
+    {
+        return new StarterPackManifestDto
+        {
+            SchemaVersion = "1.0",
+            PackId = "column-only-pack",
+            DisplayName = "Column Only Pack",
+            Compatibility = new StarterPackCompatibilityDto
+            {
+                MinTaskdeckVersion = "1.0.0",
+                RequiredFeatures = ["boards"]
+            },
+            Tags = ["starter", "columns"],
+            Labels = [],
+            Columns =
+            [
+                new StarterPackColumnDto
+                {
+                    Name = "Backlog",
+                    Position = 0
+                },
+                new StarterPackColumnDto
+                {
+                    Name = "Done",
+                    Position = 1
+                }
+            ],
             Templates = [],
             SeedCards = []
         };

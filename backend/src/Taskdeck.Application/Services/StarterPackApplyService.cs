@@ -66,10 +66,16 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
         var actions = new List<StarterPackApplyActionDto>();
         var conflicts = new List<StarterPackApplyConflictDto>();
 
+        var referencedLabelNames = manifest.Labels
+            .Select(label => label.Name)
+            .Concat(manifest.SeedCards.SelectMany(seedCard => seedCard.Labels))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var existingLabelGroupsByName = board.Labels
             .GroupBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        foreach (var duplicateLabelGroup in existingLabelGroupsByName.Where(group => group.Count() > 1))
+        foreach (var duplicateLabelGroup in existingLabelGroupsByName.Where(group =>
+                     group.Count() > 1 && referencedLabelNames.Contains(group.Key)))
         {
             var existingColors = string.Join(", ",
                 duplicateLabelGroup
@@ -88,14 +94,19 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
         var existingLabelsByName = existingLabelGroupsByName
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
-        var requiresColumnNameResolution = manifest.Columns.Count > 0 || manifest.SeedCards.Count > 0;
-        var requiresColumnPositionResolution = manifest.Columns.Count > 0;
+        var referencedColumnNames = manifest.Columns
+            .Select(column => column.Name)
+            .Concat(manifest.SeedCards.Select(seedCard => seedCard.ColumnName))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var referencedColumnPositions = manifest.Columns
+            .Select(column => column.Position)
+            .ToHashSet();
 
         var existingColumnGroupsByName = board.Columns
             .GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         foreach (var duplicateColumnNameGroup in existingColumnGroupsByName.Where(group =>
-                     requiresColumnNameResolution && group.Count() > 1))
+                     group.Count() > 1 && referencedColumnNames.Contains(group.Key)))
         {
             var existingDefinitions = string.Join("; ",
                 duplicateColumnNameGroup
@@ -117,7 +128,7 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
             .GroupBy(column => column.Position)
             .ToList();
         foreach (var duplicateColumnPositionGroup in existingColumnGroupsByPosition.Where(group =>
-                     requiresColumnPositionResolution && group.Count() > 1))
+                     group.Count() > 1 && referencedColumnPositions.Contains(group.Key)))
         {
             var existingNames = string.Join(", ",
                 duplicateColumnPositionGroup

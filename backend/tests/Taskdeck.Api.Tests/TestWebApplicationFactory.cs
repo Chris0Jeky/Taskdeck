@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Api.Tests;
@@ -50,8 +51,15 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
             services.RemoveAll<TaskdeckDbContext>();
+            services.RemoveAll<LlmProviderSettings>();
             services.AddDbContext<TaskdeckDbContext>(options =>
                 options.UseSqlite($"Data Source={dbPath}"));
+            services.AddSingleton(new LlmProviderSettings
+            {
+                EnableLiveProviders = false,
+                AllowLiveProvidersInDevelopment = false,
+                Provider = "Mock"
+            });
 
             using var provider = services.BuildServiceProvider();
             using var scope = provider.CreateScope();
@@ -71,19 +79,33 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         foreach (var dbPath in _dbPaths)
         {
-            if (!File.Exists(dbPath))
+            foreach (var cleanupPath in GetDatabaseCleanupTargets(dbPath))
             {
-                continue;
-            }
+                if (!File.Exists(cleanupPath))
+                {
+                    continue;
+                }
 
-            try
-            {
-                File.Delete(dbPath);
-            }
-            catch (IOException)
-            {
-                // Cleanup failure should not fail test teardown.
+                try
+                {
+                    File.Delete(cleanupPath);
+                }
+                catch (IOException)
+                {
+                    // Cleanup failure should not fail test teardown.
+                }
             }
         }
+    }
+
+    internal static IReadOnlyList<string> GetDatabaseCleanupTargets(string dbPath)
+    {
+        return
+        [
+            dbPath,
+            $"{dbPath}-wal",
+            $"{dbPath}-shm",
+            $"{dbPath}-journal"
+        ];
     }
 }
