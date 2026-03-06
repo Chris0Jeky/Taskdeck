@@ -231,16 +231,27 @@ function hasOpsLogMessage(logEntries, messageFragment) {
 }
 
 export function hasSeededChatEvidence(chatMessages, renameInstruction) {
-  return (
-    Boolean(
-      (chatMessages || []).find((message) => String(message?.content || '').trim() === String(renameInstruction || '').trim()),
-    ) || Boolean((chatMessages || []).find((message) => message?.proposalId))
+  const expectedInstruction = String(renameInstruction || '').trim()
+  if (!expectedInstruction) {
+    return false
+  }
+
+  return Boolean(
+    (chatMessages || []).find((message) => String(message?.content || '').trim() === expectedInstruction),
   )
 }
 
-export function collectSeededChatProposalIds(chatMessages) {
+export function collectSeededChatProposalIds(chatMessages, renameInstruction) {
+  const expectedInstruction = String(renameInstruction || '').trim()
+  if (!expectedInstruction) {
+    return []
+  }
+
   const proposalIds = []
   for (const message of chatMessages || []) {
+    if (String(message?.content || '').trim() !== expectedInstruction) {
+      continue
+    }
     const proposalId = String(message?.proposalId || '').trim()
     if (!proposalId || proposalIds.includes(proposalId)) {
       continue
@@ -761,7 +772,7 @@ async function ensureChatSeed(boardId, token) {
   let session = findChatSessionByTitle(sessions, boardId, SEEDED_CHAT.sessionTitle)
   let sessionDetail = session?.id ? await getChatSessionDetail(session.id, token) : null
   let hasSeededMessage = hasSeededChatEvidence(sessionDetail?.recentMessages, renameInstruction)
-  let seededProposalIds = collectSeededChatProposalIds(sessionDetail?.recentMessages)
+  let seededProposalIds = collectSeededChatProposalIds(sessionDetail?.recentMessages, renameInstruction)
 
   if (session && !sessionDetail) {
     session = null

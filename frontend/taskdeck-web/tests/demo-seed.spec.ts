@@ -128,7 +128,7 @@ describe('demo seed rerun planning', () => {
     expect(plan.captures.triagePending?.id).toBe('capture-new')
   })
 
-  it('treats proposal-bearing chat history as seeded evidence even without the exact rename instruction', () => {
+  it('only treats the seeded rename instruction as reusable chat evidence', () => {
     expect(
       hasSeededChatEvidence(
         [
@@ -140,18 +140,19 @@ describe('demo seed rerun planning', () => {
         ],
         'rename board to "DEMO: Capture Loop (Chat)"',
       ),
-    ).toBe(true)
+    ).toBe(false)
   })
 
-  it('deduplicates seeded chat proposal ids so reruns can apply partial chat proposals once', () => {
+  it('collects only seeded rename proposal ids so reruns do not apply unrelated chat proposals', () => {
     expect(
       collectSeededChatProposalIds([
-        { id: 'msg-1', proposalId: 'proposal-1' },
-        { id: 'msg-2', proposalId: 'proposal-1' },
-        { id: 'msg-3', proposalId: 'proposal-2' },
+        { id: 'msg-1', content: 'rename board to "DEMO: Capture Loop (Chat)"', proposalId: 'proposal-1' },
+        { id: 'msg-2', content: 'rename board to "DEMO: Capture Loop (Chat)"', proposalId: 'proposal-1' },
+        { id: 'msg-3', content: 'create another card', proposalId: 'proposal-2' },
         { id: 'msg-4', proposalId: '' },
-      ]),
-    ).toEqual(['proposal-1', 'proposal-2'])
+      ],
+      'rename board to "DEMO: Capture Loop (Chat)"'),
+    ).toEqual(['proposal-1'])
   })
 
   it('recreates terminal capture items that have no proposal to reuse on rerun', () => {
