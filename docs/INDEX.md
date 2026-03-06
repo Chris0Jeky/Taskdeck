@@ -36,7 +36,7 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `DEPLOYMENT_HARDENING_MATRIX.md`
   - Deployment/container hardening verification matrix with pass/fail criteria and automation command (`#142`).
 - `LLM_PROVIDER_SETUP_GUIDE.md`
-  - Provider runtime posture and demo setup guide (`Mock`/`OpenAI` current, `Gemini` expansion tracked in `#232`).
+  - Provider runtime posture and demo setup guide (`Mock`/`OpenAI`/`Gemini`), including Playwright full-demo auto-enable, suppression rules, and fresh-server behavior when live-provider overrides are injected.
 - `IMPORT_ADAPTERS_GUIDE.md`
   - External import adapter runtime contract and CSV outreach-profile mapping/dedupe guide (`#75`).
 - `RATE_LIMITING_POLICY.md`

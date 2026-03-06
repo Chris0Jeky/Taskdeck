@@ -49,9 +49,9 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 887 passing
-   - Frontend unit: 378 passing
-   - E2E: 23 passing
+   - Backend: 946 passing
+   - Frontend unit: 464 passing
+   - Default Playwright regression lane: 24 passing (`stakeholder-demo.spec.ts` remains opt-in/skipped by default)
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
@@ -563,7 +563,7 @@ Exit Criteria:
 
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave: `#199` to `#211` (delivered); remaining linked hardening/performance follow-through: `#212`, `#213`
-- Testing harness guardrails wave tracker and delivery sequence: `#254` to `#260`
+- Testing harness guardrails wave (`#254` to `#260`) is delivered; follow-up improvements now route through normal hardening issues
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
 - CI/workflow topology expansion and governance track: `#168`
@@ -728,21 +728,24 @@ Batch D director/artifact orchestration (`#301`) status:
 Batch E integration hardening (`#302`) status:
 - demo smoke command added (`npm run demo:director:smoke`) for deterministic, LLM-free regression proof with stable artifact output, isolated smoke DB reset, forced fresh Playwright servers, automatic local API port fallback when `5000` is occupied, and actionable remediation hints when explicit runtime port overrides conflict
 - default Playwright CI lanes now explicitly pin `TASKDECK_RUN_DEMO=0` so recorder-style demo flows stay opt-in
-- `ci-extended.yml` now exposes reusable `demo-director-smoke` workflow wiring for explicit smoke validation (`workflow_dispatch` or PR label `automation`)
+- `ci-extended.yml` now exposes reusable `demo-director-smoke` workflow wiring for explicit smoke validation (`workflow_dispatch` or PR label `automation`) when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`
 - docs/index consolidation completed for demo script entry points, runtime preconditions, and CI policy boundaries
 - follow-through hardening now auto-enables live-provider demos for Playwright-backed full walkthroughs when usable demo keys are present, preferring Gemini for long/manual runs while keeping smoke paths deterministic via `--skip-llm`
+- non-demo Playwright backend startup now stays pinned to deterministic `Mock` mode by default even when local shell env exports live-provider keys; explicit demo runs still override that baseline when LLM steps are enabled
+- post-epic audit hardening under `#311` now also fails fast on unknown scenario IDs, missing starter-pack labels in legacy JS scenarios, and ambiguous duplicate column/label names in JSON scenario resolution
+- post-epic audit hardening now continues under `#311` so demo runtime/test follow-through stays scoped outside the original migration batches
 
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Sequence testing harness wave from the completed tracker handoff: `#255` -> (`#256`, `#257`) -> (`#258`, `#259`, `#260`), and keep aligned existing seeds `#89`, `#90`, `#106`, `#168`.
+2. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
 3. Sequence remaining managed-key control-plane foundations in Priority II: `#235` tracker, then `#237` after delivered identity attribution baseline (`#236`).
 4. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
 5. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
 6. Sequence capture-linked hardening by priority stage: `#212` in Priority III, `#213` in Priority IV.
 7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing analytics/starter-pack tracks (`#77`, `#175`) and the delivered import-adapter foundation (`#75`).
-9. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues instead of reopening the migration batches.
+9. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311` instead of reopening the migration batches.
 
 ## Documentation Operating Model
 Active docs:
