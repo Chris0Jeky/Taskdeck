@@ -1,5 +1,18 @@
 type DemoProvider = 'OpenAI' | 'Gemini'
 
+const deterministicMockLlmEnv: Record<string, string> = {
+  Llm__EnableLiveProviders: 'false',
+  Llm__AllowLiveProvidersInDevelopment: 'false',
+  Llm__Provider: 'Mock',
+}
+
+export function resolvePlaywrightBackendLlmEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  return {
+    ...deterministicMockLlmEnv,
+    ...resolveDemoBackendLlmEnv(env),
+  }
+}
+
 export function resolveDemoBackendLlmEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   if (!shouldEnableLiveDemoLlm(env)) {
     return {}
@@ -61,7 +74,8 @@ function shouldEnableLiveDemoLlm(env: NodeJS.ProcessEnv): boolean {
     return false
   }
 
-  if (normalizeProvider(env.Llm__Provider) === 'Mock') {
+  const explicitDemoProvider = normalizeProvider(env.TASKDECK_DEMO_LLM_PROVIDER)
+  if (explicitDemoProvider === 'Mock') {
     return false
   }
 
@@ -69,26 +83,41 @@ function shouldEnableLiveDemoLlm(env: NodeJS.ProcessEnv): boolean {
 }
 
 function resolveDemoProvider(env: NodeJS.ProcessEnv): DemoProvider | null {
-  const explicitProvider =
-    normalizeProvider(env.TASKDECK_DEMO_LLM_PROVIDER) ??
-    normalizeProvider(env.Llm__Provider)
-  if (explicitProvider === 'Mock') {
+  const explicitDemoProvider = normalizeProvider(env.TASKDECK_DEMO_LLM_PROVIDER)
+  if (explicitDemoProvider === 'Mock') {
     return null
   }
 
-  if (explicitProvider) {
-    return explicitProvider
+  if (explicitDemoProvider) {
+    return explicitDemoProvider
   }
 
-  if (firstNonEmpty(env.Llm__Gemini__ApiKey, env.TASKDECK_DEMO_GEMINI_API_KEY, env.GEMINI_API_KEY)) {
+  const baseProvider = normalizeProvider(env.Llm__Provider)
+  if (baseProvider === 'Gemini' && hasGeminiApiKey(env)) {
     return 'Gemini'
   }
 
-  if (firstNonEmpty(env.Llm__OpenAi__ApiKey, env.TASKDECK_DEMO_OPENAI_API_KEY, env.OPENAI_API_KEY)) {
+  if (baseProvider === 'OpenAI' && hasOpenAiApiKey(env)) {
+    return 'OpenAI'
+  }
+
+  if (hasGeminiApiKey(env)) {
+    return 'Gemini'
+  }
+
+  if (hasOpenAiApiKey(env)) {
     return 'OpenAI'
   }
 
   return null
+}
+
+function hasGeminiApiKey(env: NodeJS.ProcessEnv): boolean {
+  return firstNonEmpty(env.Llm__Gemini__ApiKey, env.TASKDECK_DEMO_GEMINI_API_KEY, env.GEMINI_API_KEY) !== null
+}
+
+function hasOpenAiApiKey(env: NodeJS.ProcessEnv): boolean {
+  return firstNonEmpty(env.Llm__OpenAi__ApiKey, env.TASKDECK_DEMO_OPENAI_API_KEY, env.OPENAI_API_KEY) !== null
 }
 
 function normalizeProvider(value: string | undefined): DemoProvider | 'Mock' | null {

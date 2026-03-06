@@ -12,7 +12,7 @@ export async function run({ api, config: cfg }) {
   const board = await api.post('/boards', {
     body: {
       name: 'DEMO: Content Calendar Scenario',
-      description: 'Seeded content pipeline: ideas -> drafting -> review -> scheduled -> published.',
+      description: 'Seeded content pipeline: ideas -> drafting -> review -> scheduled.',
     },
   })
 
@@ -31,21 +31,23 @@ export async function run({ api, config: cfg }) {
   const drafting = byColumn.get('Drafting')
   const review = byColumn.get('Review')
   const scheduled = byColumn.get('Scheduled')
-  const published = byColumn.get('Published')
-  if (!ideas || !drafting || !review || !scheduled || !published) {
+  if (!ideas || !drafting || !review || !scheduled) {
     throw new Error('Starter pack did not create expected content columns.')
   }
 
-  const writing = byLabel.get('writing')
-  const design = byLabel.get('design')
-  const social = byLabel.get('social')
+  const needsDraft = byLabel.get('needs-draft')
+  const needsReview = byLabel.get('needs-review')
+  const publishWeek = byLabel.get('publish-week')
+  if (!needsDraft || !needsReview || !publishWeek) {
+    throw new Error('Starter pack did not create expected content labels.')
+  }
 
   await api.post(`/boards/${board.id}/cards`, {
     body: {
       columnId: ideas.id,
       title: 'Blog: Why proposal-first automations are safer',
       description: 'Explain review/approve/execute flow. Compare to autopilot approaches.',
-      labelIds: [writing?.id].filter(Boolean),
+      labelIds: [needsDraft.id],
     },
   })
 
@@ -55,7 +57,7 @@ export async function run({ api, config: cfg }) {
       title: 'Release notes draft: Capture Loop MVP',
       description: 'Summarize Inbox capture -> triage -> proposal -> apply. Include screenshots.',
       dueDate: isoDaysFromNow(3),
-      labelIds: [writing?.id, social?.id].filter(Boolean),
+      labelIds: [needsDraft.id, publishWeek.id],
     },
   })
 
@@ -64,7 +66,7 @@ export async function run({ api, config: cfg }) {
       columnId: review.id,
       title: 'Design: Automations empty-state panel',
       description: '3 example prompts + explanation of Queue vs Proposals vs Chat.',
-      labelIds: [design?.id].filter(Boolean),
+      labelIds: [needsReview.id],
     },
   })
 
@@ -74,16 +76,16 @@ export async function run({ api, config: cfg }) {
       title: 'Tweet thread: Taskdeck demo walkthrough',
       description: 'Short series showing boards -> inbox -> triage -> proposals -> execute.',
       dueDate: isoDaysFromNow(1),
-      labelIds: [social?.id].filter(Boolean),
+      labelIds: [publishWeek.id],
     },
   })
 
   await api.post(`/boards/${board.id}/cards`, {
     body: {
-      columnId: published.id,
-      title: 'Shipped: Starter Packs for common workflows',
-      description: 'Engineering sprint + content calendar + support triage packs.',
-      labelIds: [writing?.id].filter(Boolean),
+      columnId: scheduled.id,
+      title: 'Schedule: Starter packs for common workflows',
+      description: 'Feature engineering sprint + support triage + content calendar in the next release wave.',
+      labelIds: [publishWeek.id],
     },
   })
 
