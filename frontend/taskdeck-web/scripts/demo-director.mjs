@@ -17,13 +17,15 @@ import { fileURLToPath } from 'node:url'
 import {
   applyDemoDirectorApiBaseUrl,
   buildDemoDirectorPortConflictHint,
+  createDemoDirectorRunSummary,
   resetDemoDirectorArtifacts,
   resolveDemoDirectorApiBaseUrl,
   resolveDemoDirectorRequestedApiBaseUrl,
   resetDemoDirectorE2EDb,
   resolveDemoDirectorRuntime,
 } from './demo-director-lib.mjs'
-import { resolveScenarioDefaultBoardName } from './demo-scenario-defaults.mjs'
+import { parseDemoDirectorArgs } from './demo-director-args.mjs'
+import { resolveScenarioSelectedBoardName } from './demo-scenario-defaults.mjs'
 import { assertSafeLocalApiTarget, parseTrueishEnv } from './demo-shared.mjs'
 
 const PLAYWRIGHT_SPAWN_MAX_BUFFER_BYTES = 50 * 1024 * 1024
@@ -37,75 +39,6 @@ function nowStamp() {
     `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-` +
     `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}${padMs(date.getMilliseconds())}-${entropy}`
   )
-}
-
-function parseArgs(argv) {
-  const args = {
-    runId: null,
-    outputDir: null,
-    e2eDb: null,
-    resetE2EDb: false,
-    freshServers: false,
-    scenario: 'engineering-sprint',
-    skipSeed: false,
-    skipLlm: false,
-
-    turns: 12,
-    loop: 'mixed',
-    brain: 'heuristic',
-    intervalMs: 700,
-    autopilotBoard: null,
-    rngSeed: null,
-
-    project: null,
-    headed: false,
-    playwrightArgs: [],
-  }
-
-  for (let i = 2; i < argv.length; i++) {
-    const value = argv[i]
-
-    if (value === '--run-id') args.runId = argv[++i]
-    else if (value === '--output-dir') args.outputDir = argv[++i]
-    else if (value === '--e2e-db') args.e2eDb = argv[++i]
-    else if (value === '--reset-e2e-db') args.resetE2EDb = true
-    else if (value === '--fresh-servers') args.freshServers = true
-    else if (value === '--scenario') args.scenario = argv[++i] || args.scenario
-    else if (value === '--skip-seed') args.skipSeed = true
-    else if (value === '--skip-llm') args.skipLlm = true
-    else if (value === '--turns') args.turns = Number(argv[++i] || args.turns)
-    else if (value === '--loop') args.loop = argv[++i] || args.loop
-    else if (value === '--brain') args.brain = argv[++i] || args.brain
-    else if (value === '--interval-ms') args.intervalMs = Number(argv[++i] || args.intervalMs)
-    else if (value === '--autopilot-board') args.autopilotBoard = argv[++i]
-    else if (value === '--rng-seed') args.rngSeed = argv[++i]
-    else if (value === '--project') args.project = argv[++i] || null
-    else if (value === '--headed') args.headed = true
-    else if (value === '--') {
-      args.playwrightArgs = argv.slice(i + 1)
-      break
-    } else {
-      args.playwrightArgs.push(value)
-    }
-  }
-
-  if (!['queue', 'capture', 'mixed'].includes(args.loop)) {
-    throw new Error(`Invalid --loop value: ${args.loop}`)
-  }
-
-  if (!['heuristic', 'taskdeck-chat'].includes(args.brain)) {
-    throw new Error(`Invalid --brain value: ${args.brain}`)
-  }
-
-  if (!Number.isFinite(args.turns) || !Number.isInteger(args.turns) || args.turns < 0) {
-    throw new Error(`Invalid --turns value: ${String(args.turns)}`)
-  }
-
-  if (!Number.isFinite(args.intervalMs) || !Number.isInteger(args.intervalMs) || args.intervalMs < 0) {
-    throw new Error(`Invalid --interval-ms value: ${String(args.intervalMs)}`)
-  }
-
-  return args
 }
 
 async function walk(dirPath) {
@@ -255,7 +188,7 @@ async function writeJson(filePath, value) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv)
+  const args = parseDemoDirectorArgs(process.argv)
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
   const webRoot = path.resolve(__dirname, '..')
@@ -295,7 +228,10 @@ async function main() {
 
   const tracePath = path.join(artifactDir, 'trace.ndjson')
   const snapshotPath = path.join(artifactDir, 'snapshot.json')
-  const autopilotBoard = args.autopilotBoard || (await resolveScenarioDefaultBoardName(args.scenario))
+  const selectedBoardName = await resolveScenarioSelectedBoardName({
+    scenarioIdOrPath: args.scenario,
+    explicitBoardName: args.autopilotBoard,
+  })
 
   const env = applyDemoDirectorApiBaseUrl({
     ...process.env,
@@ -305,10 +241,11 @@ async function main() {
     TASKDECK_DEMO_TRACE_PATH: tracePath,
     TASKDECK_DEMO_SNAPSHOT_PATH: snapshotPath,
     TASKDECK_DEMO_SCENARIO: args.scenario,
+    TASKDECK_DEMO_WALKTHROUGH_BOARD: selectedBoardName,
     TASKDECK_DEMO_SKIP_SEED: args.skipSeed ? '1' : '0',
     TASKDECK_DEMO_SKIP_LLM: args.skipLlm ? '1' : '0',
     TASKDECK_DEMO_AUTOPILOT_TURNS: String(args.turns || 0),
-    TASKDECK_DEMO_AUTOPILOT_BOARD: autopilotBoard,
+    TASKDECK_DEMO_AUTOPILOT_BOARD: selectedBoardName,
     TASKDECK_DEMO_AUTOPILOT_LOOP: args.loop,
     TASKDECK_DEMO_AUTOPILOT_BRAIN: args.brain,
     TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS: String(args.intervalMs),
@@ -380,47 +317,19 @@ async function main() {
   const autopilotTurns = listAutopilotTurns(events)
   const playwrightExitCode = playwrightResult.status
   const playwrightSignal = playwrightResult.signal || null
-  const runStatus =
-    playwrightExitCode === 0 ? 'ok' : playwrightSignal ? `error (signal ${playwrightSignal})` : 'error'
-
-  const runSummary = {
+  const runSummary = createDemoDirectorRunSummary({
     runId,
     startedAt,
     endedAt,
-    status: runStatus,
     playwrightExitCode,
     playwrightSignal,
-    scenario: args.scenario,
-    skipSeed: args.skipSeed,
-    skipLlm: args.skipLlm,
-    autopilot: {
-      enabled: args.turns > 0,
-      turns: args.turns,
-      board: autopilotBoard,
-      loop: args.loop,
-      brain: args.brain,
-      intervalMs: args.intervalMs,
-      rngSeed: args.rngSeed || null,
-    },
-    artifacts: {
-      trace: 'trace.ndjson',
-      snapshot: 'snapshot.json',
-      logsDir: 'logs/',
-      screenshotsDir: 'screenshots/',
-      playwrightDir: 'playwright/',
-    },
+    args,
+    selectedBoardName,
     screenshots,
-    stats: {
-      events: events.length,
-      byType: summary.byType,
-      autopilot: summary.autopilot,
-      proposals: summary.proposals.length,
-      captures: summary.captures.length,
-    },
-    diagnostics: {
-      hints: portConflictHint ? [portConflictHint] : [],
-    },
-  }
+    summary,
+    events,
+    portConflictHint,
+  })
 
   await writeJson(path.join(artifactDir, 'run-summary.json'), runSummary)
 
@@ -524,7 +433,11 @@ async function main() {
   console.log(`Status: ${runSummary.status} (exit=${playwrightExitCode}${playwrightSignal ? `, signal=${playwrightSignal}` : ''})`)
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+const isDirectEntry = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false
+
+if (isDirectEntry) {
+  main().catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+}
