@@ -180,6 +180,7 @@ Runs an Ops template and optionally waits for completion (default) and fetches l
 Optional fields:
 - `wait` (default `true`): set `false` to return immediately after enqueueing.
 - `timeoutMs`, `intervalMs`: poll controls when waiting.
+- `parameters`: optional object; all values must be strings to match the Ops API contract.
 
 ## Extending the runner
 

@@ -8,7 +8,9 @@ import type { AuthResult } from './support/authSession'
 import { attachSessionToPage } from './support/authSession'
 
 const DEFAULT_SETUP_TIMEOUT_MS = 120_000
-const SETUP_SCRIPT_MAX_BUFFER_BYTES = 16 * 1024 * 1024
+const DEFAULT_SETUP_SCRIPT_MAX_BUFFER_BYTES = 64 * 1024 * 1024
+const MIN_SETUP_SCRIPT_MAX_BUFFER_BYTES = 1024 * 1024
+const DEFAULT_PLAYWRIGHT_TEST_TIMEOUT_MS = 180_000
 
 function isAppRoot(candidateDir: string): boolean {
   const hasPackageJson = existsSync(path.join(candidateDir, 'package.json'))
@@ -25,6 +27,14 @@ function parseSetupTimeoutMs(value: string | undefined): number {
   return DEFAULT_SETUP_TIMEOUT_MS
 }
 
+function parseSetupScriptMaxBufferBytes(value: string | undefined): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < MIN_SETUP_SCRIPT_MAX_BUFFER_BYTES) {
+    return DEFAULT_SETUP_SCRIPT_MAX_BUFFER_BYTES
+  }
+  return parsed
+}
+
 function parseOptionalPositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
@@ -39,6 +49,24 @@ function parseOptionalNonNegativeInteger(value: string | undefined, fallback: nu
     return fallback
   }
   return parsed
+}
+
+function computeStakeholderDemoTimeoutMs(): number {
+  const setupTimeoutMs = parseSetupTimeoutMs(process.env.TASKDECK_DEMO_SETUP_TIMEOUT_MS)
+  const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
+  const skipSeed = process.env.TASKDECK_DEMO_SKIP_SEED === '1'
+  const autopilotTurns = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_TURNS, 0)
+  const snapshotPath = (process.env.TASKDECK_DEMO_SNAPSHOT_PATH || '').trim()
+
+  let setupSteps = 0
+  if (!skipSeed) setupSteps += 1
+  if (scenarioId) setupSteps += 1
+  if (autopilotTurns > 0) setupSteps += 1
+  if (snapshotPath) setupSteps += 1
+
+  const walkthroughBudgetMs = 120_000
+  const setupBudgetMs = setupSteps * setupTimeoutMs
+  return Math.max(DEFAULT_PLAYWRIGHT_TEST_TIMEOUT_MS, setupBudgetMs + walkthroughBudgetMs)
 }
 
 function resolveAppRoot(startDir: string): string {
@@ -99,7 +127,7 @@ function runSetupScript({
         cwd: appRoot,
         env,
         encoding: 'utf8',
-        maxBuffer: SETUP_SCRIPT_MAX_BUFFER_BYTES,
+        maxBuffer: parseSetupScriptMaxBufferBytes(env.TASKDECK_DEMO_SETUP_MAX_BUFFER_BYTES),
         timeout: timeoutMs,
         killSignal: 'SIGTERM',
       })
@@ -167,7 +195,7 @@ test.use({
 })
 
 test.describe('Stakeholder demo recorder', () => {
-  test.setTimeout(180_000)
+  test.setTimeout(computeStakeholderDemoTimeoutMs())
   test.skip(process.env.TASKDECK_RUN_DEMO !== '1', 'Set TASKDECK_RUN_DEMO=1 to run this opt-in spec.')
 
   test.beforeAll(() => {

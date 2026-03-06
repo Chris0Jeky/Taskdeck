@@ -21,9 +21,11 @@ const PLAYWRIGHT_SPAWN_MAX_BUFFER_BYTES = 50 * 1024 * 1024
 function nowStamp() {
   const date = new Date()
   const pad = (value) => String(value).padStart(2, '0')
+  const padMs = (value) => String(value).padStart(3, '0')
+  const entropy = Math.random().toString(36).slice(2, 6)
   return (
     `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-` +
-    `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+    `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}${padMs(date.getMilliseconds())}-${entropy}`
   )
 }
 
@@ -340,13 +342,18 @@ async function main() {
   const summary = summarizeEvents(events)
   const scenarioSteps = listScenarioSteps(events)
   const autopilotTurns = listAutopilotTurns(events)
+  const playwrightExitCode = playwrightResult.status
+  const playwrightSignal = playwrightResult.signal || null
+  const runStatus =
+    playwrightExitCode === 0 ? 'ok' : playwrightSignal ? `error (signal ${playwrightSignal})` : 'error'
 
   const runSummary = {
     runId,
     startedAt,
     endedAt,
-    status: playwrightResult.status === 0 ? 'ok' : 'error',
-    playwrightExitCode: playwrightResult.status,
+    status: runStatus,
+    playwrightExitCode,
+    playwrightSignal,
     scenario: args.scenario,
     skipSeed: args.skipSeed,
     skipLlm: args.skipLlm,
@@ -391,7 +398,7 @@ async function main() {
     }`,
   )
   lines.push(`- Playwright: project=${args.project || '(default)'}${args.headed ? ', headed' : ''}`)
-  lines.push(`- Status: **${runSummary.status}** (exit=${playwrightResult.status})`)
+  lines.push(`- Status: **${runSummary.status}** (exit=${playwrightExitCode}${playwrightSignal ? `, signal=${playwrightSignal}` : ''})`)
   lines.push('')
   lines.push('## Artifacts')
   lines.push('')
@@ -470,9 +477,9 @@ async function main() {
 
   await fs.writeFile(path.join(artifactDir, 'README.md'), lines.join('\n'), 'utf8')
 
-  process.exitCode = playwrightResult.status ?? 1
+  process.exitCode = typeof playwrightExitCode === 'number' ? playwrightExitCode : 1
   console.log(`\nDemo artifacts written to: ${artifactDir}`)
-  console.log(`Status: ${runSummary.status} (exit=${playwrightResult.status})`)
+  console.log(`Status: ${runSummary.status} (exit=${playwrightExitCode}${playwrightSignal ? `, signal=${playwrightSignal}` : ''})`)
 }
 
 main().catch((err) => {
