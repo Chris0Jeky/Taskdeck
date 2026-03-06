@@ -12,15 +12,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-03-06)
 
-- Backend: 946/946 passing
+- Backend: 962/962 passing
   - Domain: 122
-  - Application: 511
-  - API integration: 301
+  - Application: 519
+  - API integration: 309
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 464/464 passing
+- Frontend unit: 466/466 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 24/24 passing
-- Combined automated total: 1434/1434 passing
+- Combined automated total: 1452/1452 passing
 
 Verification note:
 - backend totals were re-verified on 2026-03-06 via `dotnet test backend/Taskdeck.sln -c Release -m:1` with live providers forced off and `Llm__Provider=Mock`

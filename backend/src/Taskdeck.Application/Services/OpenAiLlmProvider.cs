@@ -67,7 +67,9 @@ public class OpenAiLlmProvider : ILlmProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OpenAI completion request failed with unexpected error.");
+            _logger.LogError(
+                "OpenAI completion request failed with unexpected error. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
             return BuildFallbackResult(lastUserMessage, "Live provider request errored.", GetConfiguredModelOrDefault());
         }
     }

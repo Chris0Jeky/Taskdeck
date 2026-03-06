@@ -1,4 +1,5 @@
 using Taskdeck.Api.Contracts;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Middleware;
@@ -26,21 +27,23 @@ public sealed class UnhandledExceptionMiddleware
         }
         catch (OperationCanceledException ex) when (context.RequestAborted.IsCancellationRequested)
         {
+            var exceptionSummary = SensitiveDataRedactor.SummarizeException(ex);
             _logger.LogInformation(
-                ex,
-                "Request was canceled while processing {Method} {Path} (CorrelationId: {CorrelationId})",
+                "Request was canceled while processing {Method} {Path} (CorrelationId: {CorrelationId}). {ExceptionSummary}",
                 context.Request.Method,
                 context.Request.Path,
-                context.TraceIdentifier);
+                context.TraceIdentifier,
+                exceptionSummary);
         }
         catch (Exception ex)
         {
+            var exceptionSummary = SensitiveDataRedactor.SummarizeException(ex);
             _logger.LogError(
-                ex,
-                "Unhandled exception while processing {Method} {Path} (CorrelationId: {CorrelationId})",
+                "Unhandled exception while processing {Method} {Path} (CorrelationId: {CorrelationId}). {ExceptionSummary}",
                 context.Request.Method,
                 context.Request.Path,
-                context.TraceIdentifier);
+                context.TraceIdentifier,
+                exceptionSummary);
 
             if (context.Response.HasStarted)
             {

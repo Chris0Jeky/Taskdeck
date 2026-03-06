@@ -50,7 +50,9 @@ public class LlmQueueToProposalWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error in LlmQueueToProposalWorker iteration");
+                    _logger.LogError(
+                        "Error in LlmQueueToProposalWorker iteration. {ExceptionSummary}",
+                        SensitiveDataRedactor.SummarizeException(ex));
                 }
             }
 
@@ -161,7 +163,10 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
         catch (DomainException ex)
         {
-            _logger.LogDebug(ex, "Queue item {ItemId} was already claimed by another worker", itemId);
+            _logger.LogDebug(
+                "Queue item {ItemId} was already claimed by another worker. {ExceptionSummary}",
+                itemId,
+                SensitiveDataRedactor.SummarizeException(ex));
             outcome = "already_claimed";
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
@@ -203,7 +208,10 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception processing queue item {ItemId}", item.Id);
+            _logger.LogError(
+                "Unhandled exception processing queue item {ItemId}. {ExceptionSummary}",
+                item.Id,
+                SensitiveDataRedactor.SummarizeException(ex));
             var scheduledForRetry = await HandleFailureWithRetryAsync(
                 unitOfWork,
                 item,
@@ -345,7 +353,10 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception triaging capture queue item {ItemId}", item.Id);
+            _logger.LogError(
+                "Unhandled exception triaging capture queue item {ItemId}. {ExceptionSummary}",
+                item.Id,
+                SensitiveDataRedactor.SummarizeException(ex));
             var scheduledForRetry = await HandleFailureWithRetryAsync(
                 unitOfWork,
                 item,
@@ -426,10 +437,11 @@ public class LlmQueueToProposalWorker : BackgroundService
         CancellationToken ct,
         bool retryAsProcessing = false)
     {
+        var safeErrorMessage = SensitiveDataRedactor.SanitizeLlmFailureMessage(errorCode, errorMessage);
         var currentRetryCount = item.RetryCount;
         var shouldRetry = IsTransientFailure(errorCode) && currentRetryCount + 1 < _settings.MaxRetries;
 
-        item.MarkAsFailed(errorMessage);
+        item.MarkAsFailed(safeErrorMessage);
         await unitOfWork.SaveChangesAsync(ct);
 
         if (!shouldRetry)
@@ -439,7 +451,7 @@ public class LlmQueueToProposalWorker : BackgroundService
                 item.Id,
                 item.RetryCount,
                 errorCode,
-                errorMessage);
+                safeErrorMessage);
             return false;
         }
 

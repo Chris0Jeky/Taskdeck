@@ -72,7 +72,7 @@ public static class CaptureRequestContract
         {
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                $"Unsupported capture request type '{requestType}'. Supported type: {RequestTypeV1}");
+                $"Unsupported capture request type. Supported type: {RequestTypeV1}");
         }
 
         return Result.Success();
@@ -355,7 +355,7 @@ public static class CaptureRequestContract
         }
 
         parsedSource = default;
-        error = $"Invalid capture source '{source}'";
+        error = "Invalid capture source value";
         return false;
     }
 

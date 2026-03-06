@@ -51,7 +51,9 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled exception in OutboundWebhookDeliveryWorker loop");
+                _logger.LogError(
+                    "Unhandled exception in OutboundWebhookDeliveryWorker loop. {ExceptionSummary}",
+                    SensitiveDataRedactor.SummarizeException(ex));
             }
 
             await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, _workerSettings.QueuePollIntervalSeconds)), stoppingToken);
@@ -238,30 +240,31 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
 
                 if (delivery.Status == WebhookDeliveryStatus.Processing)
                 {
-                    outcome = MarkFailure(delivery, $"Webhook delivery threw {ex.GetType().Name}: {ex.Message}");
+                    outcome = MarkFailure(
+                        delivery,
+                        SensitiveDataRedactor.Redact(
+                            $"Webhook delivery threw {ex.GetType().Name}: {ex.Message}"));
                     await unitOfWork.SaveChangesAsync(CancellationToken.None);
                 }
                 else
                 {
                     outcome = "error_before_processing";
                     _logger.LogError(
-                        ex,
-                        "Webhook delivery threw {ExceptionType} before reaching Processing state. DeliveryId={DeliveryId}, Status={Status}, Message={Message}",
+                        "Webhook delivery threw {ExceptionType} before reaching Processing state. DeliveryId={DeliveryId}, Status={Status}. {ExceptionSummary}",
                         ex.GetType().Name,
                         candidate.DeliveryId,
                         delivery.Status,
-                        ex.Message);
+                        SensitiveDataRedactor.SummarizeException(ex));
                 }
             }
             else
             {
                 outcome = "error_before_processing";
                 _logger.LogError(
-                    ex,
-                    "Webhook delivery threw {ExceptionType} before claim. DeliveryId={DeliveryId}, Message={Message}",
+                    "Webhook delivery threw {ExceptionType} before claim. DeliveryId={DeliveryId}. {ExceptionSummary}",
                     ex.GetType().Name,
                     candidate.DeliveryId,
-                    ex.Message);
+                    SensitiveDataRedactor.SummarizeException(ex));
             }
         }
         finally

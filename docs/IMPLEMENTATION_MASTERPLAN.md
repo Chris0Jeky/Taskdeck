@@ -254,6 +254,7 @@ Delivered in the latest cycle:
 61. Capture realignment backlog seeding delivery (`#199` to `#213`):
    - reconciled in-review capture/security/performance planning packs into dependency-mapped GitHub issues
    - seeded a dedicated capture wave tracker (`#199`) with execution issues (`#200` to `#211`) plus linked security/performance follow-through (`#212`, `#213`)
+   - linked follow-through status is now split: `#212` delivered the logging/telemetry redaction policy and runtime guardrails, while `#213` remains the pending performance/responsiveness slice
    - updated existing SEC-06 rate-limiting issue (`#81`) and wave index (`#107`) to integrate capture-specific scope without duplicate issue creation
 62. InReview extraction coverage expansion (`#216` to `#220`):
    - seeded go-to-market and user-research execution issues from HUMAN playbooks (`#216`, `#217`)
@@ -562,7 +563,7 @@ Exit Criteria:
 ### Priority II (Immediate Post-Phase-4 Foundation)
 
 - Analysis follow-through wave tracker: `#151`
-- Capture realignment wave: `#199` to `#211` (delivered); remaining linked hardening/performance follow-through: `#212`, `#213`
+- Capture realignment wave: `#199` to `#211` (delivered); logging redaction follow-through `#212` is delivered, and remaining linked performance follow-through is `#213`
 - Testing harness guardrails wave (`#254` to `#260`) is delivered; follow-up improvements now route through normal hardening issues
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
@@ -575,7 +576,7 @@ Exit Criteria:
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212`, `#238`, `#239`, `#240`
+- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212` (delivered), `#238`, `#239`, `#240`
 - Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 
@@ -742,7 +743,7 @@ Batch E integration hardening (`#302`) status:
 3. Sequence remaining managed-key control-plane foundations in Priority II: `#235` tracker, then `#237` after delivered identity attribution baseline (`#236`).
 4. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
 5. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
-6. Sequence capture-linked hardening by priority stage: `#212` in Priority III, `#213` in Priority IV.
+6. Sequence remaining capture-linked hardening by priority stage: `#213` in Priority IV.
 7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing analytics/starter-pack tracks (`#77`, `#175`) and the delivered import-adapter foundation (`#75`).
 9. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311` instead of reopening the migration batches.

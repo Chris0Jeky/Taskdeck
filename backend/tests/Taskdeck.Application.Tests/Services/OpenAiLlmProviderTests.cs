@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -237,6 +238,32 @@ public class OpenAiLlmProviderTests
             }));
 
         capturedRoles.Should().ContainSingle().Which.Should().Be("user");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldRedactSensitiveDetails_WhenUnexpectedExceptionIsLogged()
+    {
+        var settings = BuildSettings();
+        var logger = new InMemoryLogger<OpenAiLlmProvider>();
+        var handler = new StubHttpMessageHandler(_ =>
+            throw new InvalidOperationException(
+                "Authorization: Bearer openai-secret {\"text\":\"capture secret\"} apiKey=test-key"));
+        var provider = new OpenAiLlmProvider(new HttpClient(handler), settings, logger);
+
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            new List<ChatCompletionMessage>
+            {
+                new("User", "create card from this instruction")
+            }));
+
+        result.Content.Should().Contain("request errored");
+        logger.Entries.Should().ContainSingle(entry => entry.Level == Microsoft.Extensions.Logging.LogLevel.Error);
+        var message = logger.Entries.Single(entry => entry.Level == Microsoft.Extensions.Logging.LogLevel.Error).Message;
+        message.Should().Contain("OpenAI completion request failed with unexpected error.");
+        message.Should().NotContain("openai-secret");
+        message.Should().NotContain("capture secret");
+        message.Should().NotContain("test-key");
+        message.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
     }
 
     private static LlmProviderSettings BuildSettings()

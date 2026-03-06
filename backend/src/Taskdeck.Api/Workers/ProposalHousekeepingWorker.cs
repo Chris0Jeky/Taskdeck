@@ -42,7 +42,9 @@ public class ProposalHousekeepingWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in ProposalHousekeepingWorker iteration");
+                _logger.LogError(
+                    "Error in ProposalHousekeepingWorker iteration. {ExceptionSummary}",
+                    SensitiveDataRedactor.SummarizeException(ex));
             }
 
             await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
@@ -82,7 +84,10 @@ public class ProposalHousekeepingWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to expire proposal {ProposalId}", proposal.Id);
+                    _logger.LogWarning(
+                        "Failed to expire proposal {ProposalId}. {ExceptionSummary}",
+                        proposal.Id,
+                        SensitiveDataRedactor.SummarizeException(ex));
                 }
             }
         }

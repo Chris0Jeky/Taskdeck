@@ -170,10 +170,11 @@ public class CaptureRequestContractTests
     [Fact]
     public void ParsePayload_ShouldFail_WhenSourceIsInvalidString()
     {
+        const string sensitiveSource = "Authorization: Bearer secret-token";
         var payload = """
                       {
                         "version": 1,
-                        "source": "invalid_source",
+                        "source": "Authorization: Bearer secret-token",
                         "text": "capture text"
                       }
                       """;
@@ -182,7 +183,8 @@ public class CaptureRequestContractTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("Invalid capture source");
+        result.ErrorMessage.Should().Be("Invalid capture source value");
+        result.ErrorMessage.Should().NotContain(sensitiveSource);
     }
 
     [Fact]

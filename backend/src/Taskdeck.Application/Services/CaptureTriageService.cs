@@ -216,7 +216,9 @@ public class CaptureTriageService : ICaptureTriageService
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Failed to resolve LLM provider metadata for capture triage provenance. Falling back to unknown values.");
+            _logger?.LogWarning(
+                "Failed to resolve LLM provider metadata for capture triage provenance. Falling back to unknown values. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
             return ("unknown", "unknown");
         }
     }

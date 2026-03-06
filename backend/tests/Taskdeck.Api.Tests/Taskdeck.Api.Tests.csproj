@@ -30,4 +30,8 @@
     <ProjectReference Include="..\..\src\Taskdeck.Infrastructure\Taskdeck.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\TestUtilities\InMemoryLogger.cs" Link="Support\InMemoryLogger.cs" />
+  </ItemGroup>
+
 </Project>
