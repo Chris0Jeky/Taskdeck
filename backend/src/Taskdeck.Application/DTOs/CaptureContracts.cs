@@ -355,9 +355,9 @@ public static class CaptureRequestContract
         }
 
         parsedSource = default;
-            error = "Invalid capture source value";
-            return false;
-        }
+        error = "Invalid capture source value";
+        return false;
+    }
 
     private static Result ValidateForbiddenIdentityFields(JsonElement root, bool allowServerAttributionFields)
     {
