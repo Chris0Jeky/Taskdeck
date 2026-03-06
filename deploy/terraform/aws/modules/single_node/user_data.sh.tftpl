@@ -26,7 +26,10 @@ install -d -m 0755 /opt/taskdeck
 install -d -m 0755 /var/lib/taskdeck
 
 set +x
-JWT_SECRET="$(aws ssm get-parameter --name '${jwt_secret_ssm_parameter_name}' --with-decryption --region '${aws_region}' --query 'Parameter.Value' --output text)"
+if ! JWT_SECRET="$(aws ssm get-parameter --name '${jwt_secret_ssm_parameter_name}' --with-decryption --region '${aws_region}' --query 'Parameter.Value' --output text)"; then
+  echo "Failed to load Taskdeck JWT secret from SSM parameter ${jwt_secret_ssm_parameter_name} in ${aws_region}" >&2
+  exit 1
+fi
 
 install -m 0600 /dev/null /opt/taskdeck/.env
 cat > /opt/taskdeck/.env <<'EOF'
@@ -39,6 +42,7 @@ TASKDECK_AWS_REGION=${aws_region}
 TASKDECK_BACKUP_BUCKET=${backup_bucket_name}
 EOF
 printf 'TASKDECK_JWT_SECRET=%s\n' "$JWT_SECRET" >> /opt/taskdeck/.env
+chmod 600 /opt/taskdeck/.env
 unset JWT_SECRET
 set -x
 

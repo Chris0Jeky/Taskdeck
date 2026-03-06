@@ -167,6 +167,8 @@ Use the Terraform outputs to verify the host is actually serving Taskdeck:
 
 ```powershell
 terraform -chdir=deploy/terraform/aws/environments/staging output application_url
+terraform -chdir=deploy/terraform/aws/environments/staging output public_ip
+terraform -chdir=deploy/terraform/aws/environments/staging output ssh_command
 ```
 
 Then validate from a trusted network path:
@@ -174,12 +176,16 @@ Then validate from a trusted network path:
 - `GET {application_url}/health/ready` returns `200`
 - `GET {application_url}/api/boards` returns `401`
 - SSH to the host and confirm `docker compose ps` under `/opt/taskdeck`
+- verify `database_path` still points to `/var/lib/taskdeck/taskdeck.db`
 
 Example:
 
 ```powershell
-curl http://<public-ip>/health/ready
-curl -i http://<public-ip>/api/boards
+$applicationUrl = terraform -chdir=deploy/terraform/aws/environments/staging output -raw application_url
+$sshCommand = terraform -chdir=deploy/terraform/aws/environments/staging output -raw ssh_command
+curl "$applicationUrl/health/ready"
+curl -i "$applicationUrl/api/boards"
+Invoke-Expression $sshCommand
 ```
 
 ## TLS Boundary

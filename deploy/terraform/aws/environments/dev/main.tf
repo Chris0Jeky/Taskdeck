@@ -54,3 +54,15 @@ output "application_url" {
 output "backup_bucket_name" {
   value = module.taskdeck.backup_bucket_name
 }
+
+output "public_ip" {
+  value = module.taskdeck.public_ip
+}
+
+output "ssh_command" {
+  value = module.taskdeck.ssh_command
+}
+
+output "database_path" {
+  value = module.taskdeck.database_path
+}
