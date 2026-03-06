@@ -252,7 +252,7 @@ public class CaptureService : ICaptureService
             return Result.Success(parsedSource);
         }
 
-        return Result.Failure<CaptureSource>(ErrorCodes.ValidationError, $"Invalid capture source '{source}'");
+        return Result.Failure<CaptureSource>(ErrorCodes.ValidationError, "Invalid capture source value");
     }
 
     private static CaptureItemSummaryDto MapToSummaryDto(LlmRequest item)
