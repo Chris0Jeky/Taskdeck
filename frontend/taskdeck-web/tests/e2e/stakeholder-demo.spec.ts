@@ -3,7 +3,10 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
+import { parseTrueishEnv } from '../../scripts/demo-shared.mjs'
+import { resolveScenarioDefaultBoardName } from '../../scripts/demo-scenario-defaults.mjs'
 import type { AuthResult } from './support/authSession'
 import { attachSessionToPage } from './support/authSession'
 
@@ -11,6 +14,7 @@ const DEFAULT_SETUP_TIMEOUT_MS = 120_000
 const DEFAULT_SETUP_SCRIPT_MAX_BUFFER_BYTES = 64 * 1024 * 1024
 const MIN_SETUP_SCRIPT_MAX_BUFFER_BYTES = 1024 * 1024
 const DEFAULT_PLAYWRIGHT_TEST_TIMEOUT_MS = 180_000
+const REQUIRED_WALKTHROUGH_FEATURE_FLAGS = ['Activity & Audit Views', 'Ops Console']
 
 function isAppRoot(candidateDir: string): boolean {
   const hasPackageJson = existsSync(path.join(candidateDir, 'package.json'))
@@ -54,7 +58,7 @@ function parseOptionalNonNegativeInteger(value: string | undefined, fallback: nu
 function computeStakeholderDemoTimeoutMs(): number {
   const setupTimeoutMs = parseSetupTimeoutMs(process.env.TASKDECK_DEMO_SETUP_TIMEOUT_MS)
   const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
-  const skipSeed = process.env.TASKDECK_DEMO_SKIP_SEED === '1'
+  const skipSeed = parseTrueishEnv(process.env.TASKDECK_DEMO_SKIP_SEED)
   const autopilotTurns = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_TURNS, 0)
   const snapshotPath = (process.env.TASKDECK_DEMO_SNAPSHOT_PATH || '').trim()
 
@@ -67,6 +71,19 @@ function computeStakeholderDemoTimeoutMs(): number {
   const walkthroughBudgetMs = 120_000
   const setupBudgetMs = setupSteps * setupTimeoutMs
   return Math.max(DEFAULT_PLAYWRIGHT_TEST_TIMEOUT_MS, setupBudgetMs + walkthroughBudgetMs)
+}
+
+async function ensureWalkthroughFeatureFlagsEnabled(page: Page) {
+  await page.goto('/workspace/settings/profile')
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+
+  for (const flagLabel of REQUIRED_WALKTHROUGH_FEATURE_FLAGS) {
+    const flagToggle = page.getByLabel(flagLabel)
+    await expect(flagToggle).toBeVisible()
+    if (!(await flagToggle.isChecked())) {
+      await flagToggle.check()
+    }
+  }
 }
 
 function resolveAppRoot(startDir: string): string {
@@ -170,14 +187,6 @@ function runSetupScript({
   }
 }
 
-function defaultBoardNameForScenario(scenarioId: string): string {
-  const id = String(scenarioId || '').trim().toLowerCase()
-  if (id === 'engineering-sprint') return 'DEMO: Engineering Sprint'
-  if (id === 'content-calendar') return 'DEMO: Content Calendar'
-  if (id === 'support-triage') return 'DEMO: Support Triage'
-  return 'DEMO: Engineering Sprint'
-}
-
 /**
  * Stakeholder demo recorder.
  *
@@ -196,9 +205,9 @@ test.use({
 
 test.describe('Stakeholder demo recorder', () => {
   test.setTimeout(computeStakeholderDemoTimeoutMs())
-  test.skip(process.env.TASKDECK_RUN_DEMO !== '1', 'Set TASKDECK_RUN_DEMO=1 to run this opt-in spec.')
+  test.skip(!parseTrueishEnv(process.env.TASKDECK_RUN_DEMO), 'Set TASKDECK_RUN_DEMO=1 to run this opt-in spec.')
 
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     const __filename = fileURLToPath(import.meta.url)
     const __dirname = path.dirname(__filename)
     const appRoot = resolveAppRoot(__dirname)
@@ -210,17 +219,17 @@ test.describe('Stakeholder demo recorder', () => {
       process.env.TASKDECK_UI_BASE_URL ||
       'http://localhost:5173'
 
-    const isDirector = process.env.TASKDECK_DEMO_DIRECTOR === '1'
+    const isDirector = parseTrueishEnv(process.env.TASKDECK_DEMO_DIRECTOR)
     const artifactDir = (process.env.TASKDECK_DEMO_ARTIFACT_DIR || '').trim() || null
     const logsDir = artifactDir ? path.join(artifactDir, 'logs') : null
 
     const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
-    const skipSeed = process.env.TASKDECK_DEMO_SKIP_SEED === '1'
-    const skipLlm = process.env.TASKDECK_DEMO_SKIP_LLM === '1'
+    const skipSeed = parseTrueishEnv(process.env.TASKDECK_DEMO_SKIP_SEED)
+    const skipLlm = parseTrueishEnv(process.env.TASKDECK_DEMO_SKIP_LLM)
 
     const autopilotTurns = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_TURNS, 0)
     const autopilotBoardName =
-      (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim() || defaultBoardNameForScenario(scenarioId)
+      (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim() || (await resolveScenarioDefaultBoardName(scenarioId))
     const autopilotLoop = (process.env.TASKDECK_DEMO_AUTOPILOT_LOOP || 'mixed').trim() || 'mixed'
     const autopilotBrain = (process.env.TASKDECK_DEMO_AUTOPILOT_BRAIN || 'heuristic').trim() || 'heuristic'
     const autopilotIntervalMs = parseOptionalNonNegativeInteger(process.env.TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS, 700)
@@ -260,7 +269,7 @@ test.describe('Stakeholder demo recorder', () => {
     }
 
     if (scenarioId) {
-      const runArgs = ['scripts/demo-run.mjs', scenarioId]
+      const runArgs = ['scripts/demo-run.mjs', scenarioId, '--clean']
       if (skipLlm) {
         runArgs.push('--skip-llm')
       }
@@ -297,6 +306,8 @@ test.describe('Stakeholder demo recorder', () => {
     const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL || 'http://localhost:5000/api'
     const demoUsername = process.env.TASKDECK_DEMO_USERNAME || 'demo'
     const demoPassword = process.env.TASKDECK_DEMO_PASSWORD || 'demo123'
+    const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
+    const scenarioBoardName = await resolveScenarioDefaultBoardName(scenarioId)
 
     const loginResponse = await request.post(`${apiBaseUrl}/auth/login`, {
       data: {
@@ -308,40 +319,25 @@ test.describe('Stakeholder demo recorder', () => {
     expect(loginResponse.ok()).toBeTruthy()
     const auth = (await loginResponse.json()) as AuthResult
     await attachSessionToPage(page, auth)
-
-    await page.addInitScript(() => {
-      localStorage.setItem(
-        'taskdeck_feature_flags',
-        JSON.stringify({
-          newShell: true,
-          newAuth: true,
-          newAutomation: true,
-          newAccess: true,
-          newActivity: true,
-          newOps: true,
-          newArchive: true,
-        }),
-      )
-    })
+    await ensureWalkthroughFeatureFlagsEnabled(page)
 
     await page.goto('/workspace/boards')
     await expect(page.getByRole('heading', { name: /^(My Boards|Boards)$/ })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('01-boards.png'), fullPage: true })
 
-    const captureLoopBoardCard = page.locator('div.cursor-pointer').filter({ hasText: 'DEMO: Capture Loop' }).first()
-    await expect(captureLoopBoardCard).toBeVisible()
-    await captureLoopBoardCard.click()
-    await expect(page.getByRole('heading', { name: 'DEMO: Capture Loop' })).toBeVisible()
+    const scenarioBoardCard = page.locator('div.cursor-pointer').filter({ hasText: scenarioBoardName }).first()
+    await expect(scenarioBoardCard).toBeVisible()
+    await scenarioBoardCard.click()
+    await expect(page.getByRole('heading', { name: scenarioBoardName })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('02-capture-board.png'), fullPage: true })
 
     const firstCard = page.locator('[data-card-id]').first()
-    if (await firstCard.count()) {
-      await firstCard.click()
-      const cardEditorHeading = page.getByRole('heading', { name: 'Edit Card' })
-      await expect(cardEditorHeading).toBeVisible()
-      await page.screenshot({ path: testInfo.outputPath('03-card-modal.png'), fullPage: true })
-      await page.keyboard.press('Escape')
-    }
+    await expect(firstCard, `Scenario board "${scenarioBoardName}" should contain at least one seeded card.`).toBeVisible()
+    await firstCard.click()
+    const cardEditorHeading = page.getByRole('heading', { name: 'Edit Card' })
+    await expect(cardEditorHeading).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('03-card-modal.png'), fullPage: true })
+    await page.keyboard.press('Escape')
 
     await page.getByRole('link', { name: 'Inbox' }).click()
     await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
