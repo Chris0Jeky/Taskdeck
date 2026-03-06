@@ -228,12 +228,6 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         var knownColumnNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var positions = new HashSet<int>();
 
-        if (columns.Count == 0)
-        {
-            errors.Add(new StarterPackManifestValidationError("$.columns", "At least one column is required."));
-            return knownColumnNames;
-        }
-
         for (var i = 0; i < columns.Count; i++)
         {
             var column = columns[i];

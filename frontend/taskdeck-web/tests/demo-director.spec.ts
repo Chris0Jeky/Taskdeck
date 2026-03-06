@@ -3,7 +3,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { resetDemoDirectorArtifacts } from '../scripts/demo-director-lib.mjs'
+import {
+  resetDemoDirectorArtifacts,
+  resetDemoDirectorE2EDb,
+  resolveDemoDirectorRuntime,
+} from '../scripts/demo-director-lib.mjs'
 
 const tempDirs: string[] = []
 
@@ -48,5 +52,39 @@ describe('demo director artifacts', () => {
     expect(await pathExists(path.join(artifactDir, 'playwright'))).toBe(false)
 
     await expect(fs.readFile(path.join(artifactDir, 'keep.txt'), 'utf8')).resolves.toBe('preserve me')
+  })
+
+  it('resolves and resets an isolated smoke database without touching sibling files', async () => {
+    const webRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'taskdeck-demo-runtime-'))
+    tempDirs.push(webRoot)
+
+    const runtime = resolveDemoDirectorRuntime({
+      webRoot,
+      e2eDb: './taskdeck.demo.ci.db',
+      resetE2EDb: true,
+      freshServers: false,
+    })
+
+    expect(runtime.forceFreshServers).toBe(true)
+    expect(runtime.e2eDbPath).toBe(path.join(webRoot, 'taskdeck.demo.ci.db'))
+
+    await fs.writeFile(runtime.e2eDbPath!, 'sqlite bytes', 'utf8')
+    await fs.writeFile(path.join(webRoot, 'keep.txt'), 'preserve me', 'utf8')
+
+    await resetDemoDirectorE2EDb(runtime.e2eDbPath)
+
+    expect(await pathExists(runtime.e2eDbPath!)).toBe(false)
+    await expect(fs.readFile(path.join(webRoot, 'keep.txt'), 'utf8')).resolves.toBe('preserve me')
+  })
+
+  it('rejects resetting the e2e database when no path is configured', () => {
+    expect(() =>
+      resolveDemoDirectorRuntime({
+        webRoot: os.tmpdir(),
+        e2eDb: null,
+        resetE2EDb: true,
+        freshServers: false,
+      }),
+    ).toThrow('--reset-e2e-db requires --e2e-db')
   })
 })

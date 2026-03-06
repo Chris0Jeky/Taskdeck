@@ -16,6 +16,7 @@ const frontendPort = frontendConfig.port
 const frontendBaseUrl = frontendConfig.baseUrl
 const apiConfig = resolveApiConfig(process.env.TASKDECK_E2E_API_BASE_URL ?? defaultApiBaseUrl)
 const apiBaseUrl = apiConfig.baseUrl
+const reuseExistingServer = resolveReuseExistingServer()
 
 const backendCorsOrigins = resolveBackendCorsOrigins(
   frontendConfig.origin,
@@ -53,7 +54,7 @@ export default defineConfig({
       command: 'dotnet run --no-launch-profile --project ../../backend/src/Taskdeck.Api/Taskdeck.Api.csproj',
       url: apiConfig.readinessUrl,
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       stdout: 'pipe',
       stderr: 'pipe',
       env: backendServerEnv,
@@ -62,7 +63,7 @@ export default defineConfig({
       command: `npm run dev -- --host ${frontendHost} --port ${frontendPort}`,
       url: frontendBaseUrl,
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       stdout: 'pipe',
       stderr: 'pipe',
       env: {
@@ -261,4 +262,17 @@ function parseOriginList(rawOrigins: string | undefined): string[] {
 
 function dedupeOrigins(origins: string[]): string[] {
   return [...new Set(origins)]
+}
+
+function resolveReuseExistingServer(): boolean {
+  const override = process.env.TASKDECK_E2E_REUSE_EXISTING_SERVER?.trim().toLowerCase()
+  if (override === '1' || override === 'true') {
+    return true
+  }
+
+  if (override === '0' || override === 'false') {
+    return false
+  }
+
+  return !process.env.CI
 }

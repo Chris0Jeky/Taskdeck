@@ -498,7 +498,7 @@ public class StarterPackManifestValidatorTests
     }
 
     [Fact]
-    public void Validate_ShouldReturnError_WhenColumnsAreEmpty()
+    public void Validate_ShouldAllowPureLabelPack_WhenColumnsAndSeedCardsAreEmpty()
     {
         var manifest = BuildValidManifest();
         manifest.Columns = [];
@@ -506,7 +506,8 @@ public class StarterPackManifestValidatorTests
 
         var result = _validator.Validate(manifest);
 
-        ShouldContainError(result, "$.columns", "at least one column is required");
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
     }
 
     [Fact]
