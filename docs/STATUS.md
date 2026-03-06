@@ -95,7 +95,7 @@ Direction guardrails (explicit):
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
 - Demo baseline (migration batches A + B + C + D + E delivered):
-  - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation
+  - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation, now bounded on reruns so canonical seeded captures, queue samples, chat evidence, comments, and Ops logs are reused instead of appended indefinitely
   - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `frontend/taskdeck-web/scripts/demo-run.mjs`, `frontend/taskdeck-web/scripts/demo-autopilot.mjs`, `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`, `frontend/taskdeck-web/scripts/scenarios-json/*`, and `frontend/taskdeck-web/scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
   - `frontend/taskdeck-web/scripts/demo-director.mjs` + `frontend/taskdeck-web/scripts/demo-snapshot.mjs` with `npm run demo:director` and `npm run demo:snapshot` for one-command orchestration and artifact capture (`run-summary.json`, `trace.ndjson`, `snapshot.json`, screenshots, logs)
   - full Playwright-backed demos now auto-enable a live LLM provider when LLM steps are enabled and usable demo keys are present, preferring Gemini by default for long/manual runs while preserving explicit mock opt-out
@@ -104,8 +104,9 @@ Direction guardrails (explicit):
   - `frontend/taskdeck-web/package.json` now includes `npm run demo:director:smoke` for deterministic, LLM-free regression proof with stable artifact output (`demo-artifacts/ci-smoke`), isolated smoke DB reset (`taskdeck.demo.ci.db`), forced fresh Playwright servers, automatic local API port fallback when `5000` is occupied, and actionable conflict hints when explicit runtime port overrides cannot bind
   - `docs/DEMO_PLAYBOOK.md`, `docs/SCENARIOS.md`, `docs/DOGFOODING_GUIDE.md`, and `docs/USER_MANUAL.md` for seeded stakeholder walkthrough, JSON scenario authoring/runner usage, daily dogfooding cadence, and user-facing operations guidance
   - `demo/http/taskdeck-demo.http` for local API walkthrough against the dev backend
-  - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`) with director-mode bootstrap via `TASKDECK_DEMO_DIRECTOR=1`, scenario-aware board selection, UI-driven feature-flag enabling for advanced surfaces, and mandatory seeded-card presence checks
+  - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`) with director-mode bootstrap via `TASKDECK_DEMO_DIRECTOR=1`, scenario-aware board selection, explicit-board override alignment with autopilot targeting, UI-driven feature-flag enabling for advanced surfaces, and mandatory seeded-card presence checks
   - scenario runner and legacy JS compatibility checks now fail loudly on unresolved template references, missing starter-pack labels, ambiguous duplicate column/label names, and unknown scenario IDs so demo/test setup does not degrade into half-valid state
+  - `demo:director` now validates its own flags before Playwright passthrough (`--` required for forwarded args) so malformed option usage fails fast instead of silently drifting into partial demo state
   - required Playwright CI lanes explicitly pin `TASKDECK_RUN_DEMO=0`; opt-in demo smoke is exposed in `ci-extended.yml` via the reusable `demo-director-smoke` workflow for PRs that touch `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`, or through manual dispatch
   - autopilot loop controls now cover queue/capture/mixed paths with capture-triage flags for inbox-flow demonstration
   - autopilot deterministic replay supports `--rng-seed` (with `--seed` backward compatibility) and emits trace events for artifact summarization
@@ -442,12 +443,12 @@ Result:
 
 Commands:
 - `cd frontend/taskdeck-web && npm run lint`
-- `cd frontend/taskdeck-web && npm run test:coverage`
+- `cd frontend/taskdeck-web && npx vitest --run`
 - `cd frontend/taskdeck-web && npm run typecheck`
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 466/466 passing
+- Frontend unit: 473/473 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -477,7 +478,7 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): 1452/1452 passing
+- Combined automated total (backend + frontend unit/build + default frontend E2E): 1459/1459 passing
 
 ## CI Status
 
