@@ -1,10 +1,13 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
 namespace Taskdeck.Tests.Support;
 
 public sealed class InMemoryLogger<T> : ILogger<T>
 {
-    public List<InMemoryLogEntry> Entries { get; } = [];
+    private readonly ConcurrentQueue<InMemoryLogEntry> _entries = new();
+
+    public IReadOnlyList<InMemoryLogEntry> Entries => _entries.ToArray();
 
     public IDisposable BeginScope<TState>(TState state) where TState : notnull
     {
@@ -23,7 +26,7 @@ public sealed class InMemoryLogger<T> : ILogger<T>
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
-        Entries.Add(new InMemoryLogEntry(
+        _entries.Enqueue(new InMemoryLogEntry(
             logLevel,
             eventId,
             formatter(state, exception),
