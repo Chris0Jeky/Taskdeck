@@ -76,7 +76,8 @@ public class CaptureServiceTests
     {
         var userId = Guid.NewGuid();
         var user = new User("capture-user", "capture-user@example.com", "hash");
-        var dto = new CreateCaptureItemDto(null, "quick capture text", "unknown-source");
+        const string sensitiveSource = "Authorization: Bearer capture-secret";
+        var dto = new CreateCaptureItemDto(null, "quick capture text", sensitiveSource);
 
         _userRepositoryMock
             .Setup(r => r.GetByIdAsync(userId, default))
@@ -86,7 +87,8 @@ public class CaptureServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("Invalid capture source");
+        result.ErrorMessage.Should().Be("Invalid capture source value");
+        result.ErrorMessage.Should().NotContain(sensitiveSource);
         _llmQueueRepositoryMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
     }
 
