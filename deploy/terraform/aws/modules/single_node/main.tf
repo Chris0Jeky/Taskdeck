@@ -118,6 +118,21 @@ resource "aws_s3_bucket_versioning" "backups" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "backups" {
+  bucket = aws_s3_bucket.backups.id
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+  }
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "backups" {
   bucket = aws_s3_bucket.backups.id
 
