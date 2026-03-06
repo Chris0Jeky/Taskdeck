@@ -4,7 +4,7 @@ set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y ca-certificates curl gnupg lsb-release jq
+apt-get install -y awscli ca-certificates curl gnupg lsb-release jq
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -25,16 +25,22 @@ usermod -aG docker ubuntu || true
 install -d -m 0755 /opt/taskdeck
 install -d -m 0755 /var/lib/taskdeck
 
-cat > /opt/taskdeck/.env <<EOF
+set +x
+JWT_SECRET="$(aws ssm get-parameter --name '${jwt_secret_ssm_parameter_name}' --with-decryption --region '${aws_region}' --query 'Parameter.Value' --output text)"
+
+install -m 0600 /dev/null /opt/taskdeck/.env
+cat > /opt/taskdeck/.env <<'EOF'
 TASKDECK_PROXY_PORT=${proxy_port}
 TASKDECK_VITE_API_BASE_URL=/api
-TASKDECK_JWT_SECRET=${jwt_secret}
 TASKDECK_JWT_ISSUER=${jwt_issuer}
 TASKDECK_JWT_AUDIENCE=${jwt_audience}
 TASKDECK_JWT_EXPIRATION_MINUTES=${jwt_expiration_minutes}
 TASKDECK_AWS_REGION=${aws_region}
 TASKDECK_BACKUP_BUCKET=${backup_bucket_name}
 EOF
+printf 'TASKDECK_JWT_SECRET=%s\n' "$JWT_SECRET" >> /opt/taskdeck/.env
+unset JWT_SECRET
+set -x
 
 cat > /opt/taskdeck/docker-compose.yml <<'EOF'
 name: taskdeck
@@ -86,6 +92,9 @@ server {
     listen 8080;
     server_name _;
     server_tokens off;
+
+    # This listener is intentionally plain HTTP so the host can sit behind an ALB/CDN/reverse tunnel
+    # that terminates TLS. Do not expose it directly to the public internet without an external HTTPS edge.
 
     client_max_body_size 20m;
 

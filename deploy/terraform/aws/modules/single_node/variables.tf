@@ -45,7 +45,7 @@ variable "ssh_key_name" {
 }
 
 variable "allowed_ingress_cidrs" {
-  description = "CIDR blocks allowed to reach SSH and the reverse-proxy listener."
+  description = "CIDR blocks allowed to reach SSH and the reverse-proxy listener. Keep this limited to trusted admin ranges or an upstream TLS terminator."
   type        = list(string)
 }
 
@@ -64,10 +64,15 @@ variable "web_image" {
   type        = string
 }
 
-variable "jwt_secret" {
-  description = "JWT signing secret injected into the compose env file. Supply via untracked tfvars or TF_VAR_jwt_secret."
+variable "jwt_secret_ssm_parameter_name" {
+  description = "Name of the SecureString SSM parameter that stores the JWT signing secret for the host bootstrap."
   type        = string
-  sensitive   = true
+}
+
+variable "jwt_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used to decrypt the JWT secret SecureString parameter."
+  type        = string
+  default     = null
 }
 
 variable "jwt_issuer" {

@@ -1,4 +1,5 @@
 data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
 locals {
   base_name = "${var.name_prefix}-${var.environment}"
@@ -10,7 +11,9 @@ locals {
     },
     var.extra_tags,
   )
-  backup_bucket_name = lower(replace("${local.base_name}-${data.aws_caller_identity.current.account_id}-${var.aws_region}-backups", "_", "-"))
+  backup_bucket_name            = lower(replace("${local.base_name}-${data.aws_caller_identity.current.account_id}-${var.aws_region}-backups", "_", "-"))
+  jwt_secret_ssm_parameter_path = startswith(var.jwt_secret_ssm_parameter_name, "/") ? var.jwt_secret_ssm_parameter_name : "/${var.jwt_secret_ssm_parameter_name}"
+  jwt_secret_ssm_parameter_arn  = "arn:${data.aws_partition.current.partition}:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.jwt_secret_ssm_parameter_path}"
 }
 
 resource "aws_vpc" "this" {
@@ -177,6 +180,41 @@ resource "aws_iam_role_policy" "taskdeck_backups" {
   })
 }
 
+resource "aws_iam_role_policy" "taskdeck_jwt_secret" {
+  name = "${local.base_name}-jwt-secret-access"
+  role = aws_iam_role.taskdeck_host.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      [
+        {
+          Sid    = "TaskdeckJwtSecretRead"
+          Effect = "Allow"
+          Action = [
+            "ssm:GetParameter"
+          ]
+          Resource = [
+            local.jwt_secret_ssm_parameter_arn
+          ]
+        }
+      ],
+      var.jwt_secret_kms_key_arn == null ? [] : [
+        {
+          Sid    = "TaskdeckJwtSecretDecrypt"
+          Effect = "Allow"
+          Action = [
+            "kms:Decrypt"
+          ]
+          Resource = [
+            var.jwt_secret_kms_key_arn
+          ]
+        }
+      ],
+    )
+  })
+}
+
 resource "aws_iam_instance_profile" "taskdeck_host" {
   name = "${local.base_name}-ec2-profile"
   role = aws_iam_role.taskdeck_host.name
@@ -191,6 +229,12 @@ resource "aws_instance" "taskdeck_host" {
   associate_public_ip_address = true
   iam_instance_profile        = aws_iam_instance_profile.taskdeck_host.name
   key_name                    = var.ssh_key_name
+  user_data_replace_on_change = true
+
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
 
   root_block_device {
     volume_size           = var.root_volume_size_gb
@@ -200,15 +244,15 @@ resource "aws_instance" "taskdeck_host" {
   }
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    api_image              = var.api_image
-    web_image              = var.web_image
-    jwt_secret             = var.jwt_secret
-    jwt_issuer             = var.jwt_issuer
-    jwt_audience           = var.jwt_audience
-    jwt_expiration_minutes = var.jwt_expiration_minutes
-    proxy_port             = var.proxy_port
-    backup_bucket_name     = aws_s3_bucket.backups.bucket
-    aws_region             = var.aws_region
+    api_image                     = var.api_image
+    web_image                     = var.web_image
+    jwt_secret_ssm_parameter_name = local.jwt_secret_ssm_parameter_path
+    jwt_issuer                    = var.jwt_issuer
+    jwt_audience                  = var.jwt_audience
+    jwt_expiration_minutes        = var.jwt_expiration_minutes
+    proxy_port                    = var.proxy_port
+    backup_bucket_name            = aws_s3_bucket.backups.bucket
+    aws_region                    = var.aws_region
   })
 
   tags = merge(local.common_tags, {
