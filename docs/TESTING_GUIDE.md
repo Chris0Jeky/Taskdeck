@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-02
+Last Updated: 2026-03-06
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,22 +10,23 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-03-02)
+## Current Verified Totals (2026-03-06)
 
-- Backend: 933/933 passing
+- Backend: 935/935 passing
   - Domain: 122
-  - Application: 505
+  - Application: 507
   - API integration: 294
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 379/379 passing
+- Frontend unit: 414/414 passing
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 23/23 passing
-- Combined automated total: 1335/1335 passing
+- Combined automated total: 1372/1372 passing
 
 Verification note:
-- backend totals were re-verified on 2026-03-02 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
-- frontend unit/build totals were re-verified on 2026-02-25 via `npm run lint`, `npm run test:coverage`, `npm run typecheck`, and `npm run build`
+- backend totals were re-verified on 2026-03-06 via `dotnet test backend/Taskdeck.sln -c Release -m:1` with live providers forced off and `Llm__Provider=Mock`
+- frontend unit/build totals were re-verified on 2026-03-06 via `npm run lint`, `npx vitest --run`, `npm run typecheck`, and `npm run build`
 - frontend E2E totals were re-verified on 2026-02-25 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`23/23` passing)
+- demo director smoke was re-verified on 2026-03-06 via two consecutive `npm run demo:director:smoke` runs against the isolated `taskdeck.demo.ci.db` path
 
 ## Backend Commands
 
@@ -47,6 +48,8 @@ dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Test
 
 Note:
 - If `Debug` runs fail with file-lock errors, stop running `Taskdeck.Api` processes or use `-c Release`.
+- If backend tests unexpectedly bind to a live LLM provider in local Development, force deterministic mock mode before running the suite:
+  - PowerShell: `$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 ## Frontend Unit + Build
 
@@ -124,6 +127,7 @@ Optional E2E env overrides (Playwright config):
 - `TASKDECK_E2E_FRONTEND_BASE_URL` (default `http://{host}:{port}`; must be `http://` with explicit port and no path/query/hash)
 - `TASKDECK_E2E_API_BASE_URL` (default `http://localhost:5000/api`; must be `http://` with explicit port and API path)
 - `TASKDECK_E2E_API_CORS_ORIGINS` (comma-separated additional origins merged with defaults: frontend origin plus `http://localhost:5174`; each value is passed to backend process as `Cors__DevelopmentAllowedOrigins__{index}`)
+- `TASKDECK_E2E_REUSE_EXISTING_SERVER` (defaults to `true` locally and `false` in CI; set `0` to force fresh backend/frontend startup)
 
 Override behavior notes:
 - backend Playwright `webServer` readiness URL is derived from `TASKDECK_E2E_API_BASE_URL` as `{apiBaseUrl}/boards`
@@ -142,6 +146,27 @@ Run concurrency harness spec only:
 cd frontend/taskdeck-web
 npm run test:e2e:concurrency
 ```
+
+## Demo Tooling Policy
+
+Default CI posture:
+
+- Required Playwright regression lanes explicitly set `TASKDECK_RUN_DEMO=0`; the stakeholder recorder is never part of required CI.
+- Load/concurrency Playwright coverage also keeps demo recording off by default so those lanes stay focused on product/runtime regressions.
+- The deterministic demo regression command is `npm run demo:director:smoke`.
+
+Run the smoke path locally:
+
+```bash
+cd frontend/taskdeck-web
+npm run demo:director:smoke
+```
+
+Policy notes:
+
+- `demo:director:smoke` runs `engineering-sprint` with `--skip-llm`, zero autopilot turns, a fixed RNG seed, a stable artifact directory (`demo-artifacts/ci-smoke`), an isolated smoke DB (`taskdeck.demo.ci.db`), and fresh backend/frontend startup.
+- `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation`.
+- Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 
 ## Load Harness (k6 + Playwright Concurrency)
 
@@ -252,6 +277,9 @@ Extended workflow: `.github/workflows/ci-extended.yml`
 - `backend-solution` + `e2e-smoke` + `load-concurrency-harness`
   - opt-in on PRs labeled `testing` or manual `workflow_dispatch` (runs Playwright smoke suite via `reusable-e2e-smoke.yml`)
   - load harness lane runs k6 board-heavy profile plus Playwright multi-session concurrency spec via `reusable-load-concurrency-harness.yml`
+- `demo-director-smoke`
+  - opt-in on PRs labeled `automation` or manual `workflow_dispatch`
+  - runs the deterministic `demo:director:smoke` path via `reusable-demo-director-smoke.yml`
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 

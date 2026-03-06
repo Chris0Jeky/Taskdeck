@@ -3,10 +3,6 @@
 Taskdeck includes a JSON scenario runner for deterministic demo and test setup.
 Use it to seed boards, cards, captures, queue requests, and proposals without manual UI clicking.
 
-Scope note:
-- JSON scenario runner work is tracked as Batch C (`#300`) in the demo-expansion migration wave.
-- PR `#304` includes this Batch C surface because the branch now contains merged follow-on changes from PR `#305`.
-
 Runner files:
 
 - `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`
@@ -36,16 +32,18 @@ npm run demo:run -- engineering-sprint --continue-on-error
 npm run demo:run -- engineering-sprint --clean
 ```
 
-Compatibility note:
+CI note:
 
 - `--skip-llm` and `--continue-on-error` are for the JSON-runner flow.
-- If your local branch does not expose those flags yet, run the same scenario command without them.
+- Mark model-dependent steps with `requiresLlm: true` so they can be skipped deterministically.
+- `npm run demo:director:smoke` uses the same policy: deterministic seed, no autopilot turns, LLM-required steps skipped, isolated `taskdeck.demo.ci.db`, and forced fresh Playwright servers.
 
 Environment overrides:
 
 - `TASKDECK_API_BASE_URL` (default: `http://localhost:5000/api`)
 - `TASKDECK_UI_BASE_URL` (default: `http://localhost:5173`)
-- Legacy local setups may still use `http://localhost:4173` for UI.
+- Local fallback UI ports also include `http://localhost:4173` and `http://localhost:5001`.
+- Demo scripts reject non-local API targets unless `TASKDECK_DEMO_ALLOW_NON_LOCAL_API=1` is set.
 
 ## Template interpolation
 

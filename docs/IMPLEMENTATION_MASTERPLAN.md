@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-04  
+Last Updated: 2026-03-06  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -725,6 +725,12 @@ Batch D director/artifact orchestration (`#301`) status:
 - stakeholder recorder spec now supports director-mode bootstrap (seed/scenario/autopilot/snapshot orchestration + per-step logs under artifacts)
 - playbook and scenario docs updated for director usage and `runOps` authoring guidance
 
+Batch E integration hardening (`#302`) status:
+- demo smoke command added (`npm run demo:director:smoke`) for deterministic, LLM-free regression proof with stable artifact output, isolated smoke DB reset, and forced fresh Playwright servers
+- default Playwright CI lanes now explicitly pin `TASKDECK_RUN_DEMO=0` so recorder-style demo flows stay opt-in
+- `ci-extended.yml` now exposes reusable `demo-director-smoke` workflow wiring for explicit smoke validation (`workflow_dispatch` or PR label `automation`)
+- docs/index consolidation completed for demo script entry points, runtime preconditions, and CI policy boundaries
+
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
@@ -735,7 +741,7 @@ Batch D director/artifact orchestration (`#301`) status:
 6. Sequence capture-linked hardening by priority stage: `#212` in Priority III, `#213` in Priority IV.
 7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing analytics/starter-pack tracks (`#77`, `#175`) and the delivered import-adapter foundation (`#75`).
-9. Continue demo-expansion dependency chain after delivered batches `#298`, `#299`, `#300`, and `#301`: execute integration hardening `#302`.
+9. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues instead of reopening the migration batches.
 
 ## Documentation Operating Model
 Active docs:
