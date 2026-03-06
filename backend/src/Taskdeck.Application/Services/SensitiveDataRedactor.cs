@@ -8,6 +8,8 @@ public static class SensitiveDataRedactor
     public const string RedactedValue = "[redacted]";
     public const string GenericUnexpectedFailureMessage =
         "Unexpected processing error. Check server logs with the correlation ID.";
+    private const int MaxExceptionSummaryDepth = 5;
+    private const int MaxExceptionSummaryLength = 1_024;
 
     private static readonly (Regex Pattern, string Replacement)[] ReplacementRules =
     {
@@ -89,14 +91,27 @@ public static class SensitiveDataRedactor
         ArgumentNullException.ThrowIfNull(exception);
 
         var summaries = new List<string>();
-        for (var current = exception; current is not null; current = current.InnerException)
+        var depth = 0;
+        for (var current = exception; current is not null && depth < MaxExceptionSummaryDepth; current = current.InnerException)
         {
             var message = string.IsNullOrWhiteSpace(current.Message)
                 ? "(no message)"
                 : Redact(current.Message);
             summaries.Add($"{current.GetType().Name}: {message}");
+            depth += 1;
         }
 
-        return string.Join(" --> ", summaries);
+        if (depth == MaxExceptionSummaryDepth)
+        {
+            summaries.Add($"... additional inner exceptions truncated after {MaxExceptionSummaryDepth} levels");
+        }
+
+        var summary = string.Join(" --> ", summaries);
+        if (summary.Length <= MaxExceptionSummaryLength)
+        {
+            return summary;
+        }
+
+        return $"{summary[..MaxExceptionSummaryLength]}... [truncated]";
     }
 }

@@ -60,4 +60,22 @@ public class SensitiveDataRedactorTests
         redacted.Should().NotContain("apiKey \\\"nested\\\" value");
         redacted.Should().NotContain("secret-token");
     }
+
+    [Fact]
+    public void SummarizeException_ShouldLimitDepthAndLength()
+    {
+        var deepest = new InvalidOperationException(new string('x', 2_000));
+        var fourth = new InvalidOperationException("fourth", deepest);
+        var third = new InvalidOperationException("third", fourth);
+        var second = new InvalidOperationException("second", third);
+        var first = new InvalidOperationException("first", second);
+        var root = new InvalidOperationException("root", first);
+
+        var summary = SensitiveDataRedactor.SummarizeException(root);
+
+        summary.Should().Contain("InvalidOperationException: root");
+        summary.Should().Contain("additional inner exceptions truncated after");
+        summary.Length.Should().BeLessThanOrEqualTo(1_039); // cap + suffix length
+        summary.Should().NotContain(new string('x', 100));
+    }
 }
