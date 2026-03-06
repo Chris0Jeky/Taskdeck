@@ -3,12 +3,18 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -134,6 +140,23 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.GetAsync("/api/capture/items?status=not-a-real-status");
 
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task Create_ShouldNotEchoSensitiveSourceValue_WhenSourceIsInvalid()
+    {
+        await AuthenticateAsAsync("capture-invalid-source");
+        const string sensitiveSource = "Authorization: Bearer capture-secret";
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "capture text", sensitiveSource));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("Invalid capture source value");
+        payload.Should().NotContain(sensitiveSource);
+        payload.Should().NotContain("capture-secret");
     }
 
     [Fact]
@@ -365,6 +388,43 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Triage_ShouldPersistRedactedFailureMessage_WhenWorkerFailureContainsSensitiveDetails()
+    {
+        await using var factory = new SensitiveFailureCaptureWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var user = await ApiTestHarness.AuthenticateAsync(client, "capture-redacted-worker-failure");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "capture-redacted-worker-board");
+        var createColumnResponse = await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Inbox", null, null));
+        createColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(board.Id, "capture secret note"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var triageResponse = await client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var failedItem = await WaitForCaptureStatusAsync(client, created.Id, CaptureStatus.Failed);
+        failedItem.Status.Should().Be(CaptureStatus.Failed);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+        persistedItem.UserId.Should().Be(user.UserId);
+        persistedItem.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        persistedItem.ErrorMessage.Should().Be(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+        persistedItem.ErrorMessage.Should().NotContain("triage-secret");
+        persistedItem.ErrorMessage.Should().NotContain("capture secret note");
+        persistedItem.ErrorMessage.Should().NotContain("triage-token");
+    }
+
+    [Fact]
     public async Task Triage_ShouldReturnConflict_WhenCaptureIsIgnored()
     {
         await AuthenticateAsAsync("capture-triage-conflict");
@@ -427,5 +487,61 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
             diagnostics: item => item is null
                 ? "item=null"
                 : $"status={item.Status}, proposalId={item.Provenance?.ProposalId?.ToString() ?? "null"}, triageRunId={item.Provenance?.TriageRunId?.ToString() ?? "null"}");
+    }
+
+    private static async Task<CaptureItemDto> WaitForCaptureStatusAsync(HttpClient client, Guid itemId, CaptureStatus expectedStatus)
+    {
+        return await ApiTestHarness.PollUntilAsync(
+            async () =>
+            {
+                var response = await client.GetAsync($"/api/capture/items/{itemId}");
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                var item = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+                item.Should().NotBeNull();
+                return item!;
+            },
+            item => item.Status == expectedStatus || (item.Status == CaptureStatus.Failed && expectedStatus != CaptureStatus.Failed),
+            $"capture item {itemId} status to become {expectedStatus}",
+            maxAttempts: 40,
+            interval: TimeSpan.FromMilliseconds(250),
+            diagnostics: item => item is null
+                ? "item=null"
+                : $"status={item.Status}, proposalId={item.Provenance?.ProposalId?.ToString() ?? "null"}, triageRunId={item.Provenance?.TriageRunId?.ToString() ?? "null"}");
+    }
+
+    private sealed class SensitiveFailureCaptureWebApplicationFactory : TestWebApplicationFactory
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Workers:MaxRetries"] = "1"
+                });
+            });
+
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ICaptureTriageService>();
+                services.AddScoped<ICaptureTriageService, SensitiveFailureCaptureTriageService>();
+            });
+        }
+    }
+
+    private sealed class SensitiveFailureCaptureTriageService : ICaptureTriageService
+    {
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
+            Guid captureItemId,
+            Guid userId,
+            Guid? boardId,
+            CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<CaptureTriageProposalResultDto>(
+                ErrorCodes.UnexpectedError,
+                "Authorization: Bearer triage-secret {\"text\":\"capture secret note\"} token=triage-token"));
+        }
     }
 }
