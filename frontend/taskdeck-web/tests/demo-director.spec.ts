@@ -236,7 +236,9 @@ describe('demo director artifacts', () => {
     expect(hint).toContain('TASKDECK_E2E_API_BASE_URL')
     expect(hint).toContain('TASKDECK_E2E_FRONTEND_PORT')
   })
+})
 
+describe('demo director args and summary', () => {
   it('rejects missing values for required director options', () => {
     expect(() => parseDemoDirectorArgs(['node', 'demo-director.mjs', '--scenario', '--headed'])).toThrow(
       'Option --scenario requires a value',
