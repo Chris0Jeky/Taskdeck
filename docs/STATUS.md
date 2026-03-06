@@ -432,11 +432,11 @@ Command:
 
 Result:
 - Domain: 122/122 passing
-- Application: 511/511 passing
-- API integration: 301/301 passing
+- Application: 518/518 passing
+- API integration: 309/309 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 946/946 passing
+- Backend Total: 961/961 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -447,7 +447,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 464/464 passing
+- Frontend unit: 466/466 passing
 - Typecheck: passing
 - Production build: passing
 
@@ -477,7 +477,7 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): 1434/1434 passing
+- Combined automated total (backend + frontend unit/build + default frontend E2E): 1451/1451 passing
 
 ## CI Status
 
