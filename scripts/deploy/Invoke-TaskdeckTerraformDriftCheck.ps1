@@ -1,0 +1,59 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('dev', 'staging', 'prod')]
+    [string]$Environment,
+
+    [Parameter(Mandatory = $true)]
+    [string]$VarFile,
+
+    [string]$BackendConfigFile,
+
+    [switch]$RefreshOnly
+)
+
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent $root
+$tfDir = Join-Path $repoRoot "deploy/terraform/aws/environments/$Environment"
+
+if (-not (Test-Path $tfDir)) {
+    throw "Terraform environment not found: $tfDir"
+}
+
+if (-not (Test-Path $VarFile)) {
+    throw "Var file not found: $VarFile"
+}
+
+$initArgs = @("-chdir=$tfDir", 'init', '-input=false')
+if ($BackendConfigFile) {
+    if (-not (Test-Path $BackendConfigFile)) {
+        throw "Backend config file not found: $BackendConfigFile"
+    }
+
+    $initArgs += "-backend-config=$BackendConfigFile"
+}
+
+terraform @initArgs | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "terraform init failed for $Environment"
+}
+
+$planArgs = @("-chdir=$tfDir", 'plan', '-detailed-exitcode', "-var-file=$VarFile")
+if ($RefreshOnly) {
+    $planArgs += '-refresh-only'
+}
+
+terraform @planArgs | Out-Host
+switch ($LASTEXITCODE) {
+    0 {
+        Write-Host "No drift detected for $Environment." -ForegroundColor Green
+        exit 0
+    }
+    2 {
+        Write-Warning "Drift detected for $Environment."
+        exit 2
+    }
+    default {
+        throw "terraform plan failed for $Environment with exit code $LASTEXITCODE"
+    }
+}
