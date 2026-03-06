@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   applyDemoDirectorApiBaseUrl,
   buildDemoDirectorPortConflictHint,
+  createDemoDirectorRunSummary,
   resetDemoDirectorArtifacts,
   resolveDemoDirectorApiBaseUrl,
   resolveDemoDirectorRequestedApiBaseUrl,
   resetDemoDirectorE2EDb,
   resolveDemoDirectorRuntime,
 } from '../scripts/demo-director-lib.mjs'
+import { parseDemoDirectorArgs } from '../scripts/demo-director-args.mjs'
 
 const tempDirs: string[] = []
 
@@ -233,5 +235,70 @@ describe('demo director artifacts', () => {
 
     expect(hint).toContain('TASKDECK_E2E_API_BASE_URL')
     expect(hint).toContain('TASKDECK_E2E_FRONTEND_PORT')
+  })
+
+  it('rejects missing values for required director options', () => {
+    expect(() => parseDemoDirectorArgs(['node', 'demo-director.mjs', '--scenario', '--headed'])).toThrow(
+      'Option --scenario requires a value',
+    )
+    expect(() => parseDemoDirectorArgs(['node', 'demo-director.mjs', '--turns'])).toThrow(
+      'Option --turns requires a value',
+    )
+  })
+
+  it('rejects unknown director flags before the playwright passthrough separator', () => {
+    expect(() => parseDemoDirectorArgs(['node', 'demo-director.mjs', '--fresh-server'])).toThrow(
+      'Unknown demo-director option: --fresh-server',
+    )
+  })
+
+  it('preserves playwright passthrough args only after --', () => {
+    const args = parseDemoDirectorArgs([
+      'node',
+      'demo-director.mjs',
+      '--scenario',
+      'engineering-sprint',
+      '--',
+      '--grep',
+      'demo',
+    ])
+
+    expect(args.scenario).toBe('engineering-sprint')
+    expect(args.playwrightArgs).toEqual(['--grep', 'demo'])
+  })
+
+  it('records the selected board name in the run summary autopilot metadata', () => {
+    const args = parseDemoDirectorArgs([
+      'node',
+      'demo-director.mjs',
+      '--scenario',
+      'engineering-sprint',
+      '--autopilot-board',
+      'DEMO: Override Board',
+      '--turns',
+      '0',
+    ])
+
+    const summary = createDemoDirectorRunSummary({
+      runId: 'run-1',
+      startedAt: '2026-03-06T18:00:00.000Z',
+      endedAt: '2026-03-06T18:01:00.000Z',
+      playwrightExitCode: 0,
+      playwrightSignal: null,
+      args,
+      selectedBoardName: 'DEMO: Override Board',
+      screenshots: [],
+      summary: {
+        byType: {},
+        autopilot: { starts: 0, ends: 0, turnsOk: 0, turnsError: 0 },
+        proposals: [],
+        captures: [],
+      },
+      events: [],
+      portConflictHint: null,
+    })
+
+    expect(summary.status).toBe('ok')
+    expect(summary.autopilot.board).toBe('DEMO: Override Board')
   })
 })
