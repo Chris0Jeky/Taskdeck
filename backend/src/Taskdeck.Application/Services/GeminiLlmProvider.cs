@@ -74,7 +74,9 @@ public class GeminiLlmProvider : ILlmProvider
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Gemini completion request failed with unexpected error.");
+            _logger.LogError(
+                "Gemini completion request failed with unexpected error. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
             return BuildFallbackResult(lastUserMessage, "Live provider request errored.", GetConfiguredModelOrDefault());
         }
     }
