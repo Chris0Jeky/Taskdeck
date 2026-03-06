@@ -238,6 +238,18 @@ export function hasSeededChatEvidence(chatMessages, renameInstruction) {
   )
 }
 
+export function collectSeededChatProposalIds(chatMessages) {
+  const proposalIds = []
+  for (const message of chatMessages || []) {
+    const proposalId = String(message?.proposalId || '').trim()
+    if (!proposalId || proposalIds.includes(proposalId)) {
+      continue
+    }
+    proposalIds.push(proposalId)
+  }
+  return proposalIds
+}
+
 export function mergeSeedPlanChatSessions(chatSessions, sessionId, sessionDetail) {
   if (!sessionId) {
     return chatSessions || []
@@ -259,16 +271,17 @@ export function shouldRecreateCaptureSeed(detail, { ignore = false, applyProposa
   const isConverted = hasStatus(detail?.status, 'Converted', 4)
   const isIgnored = hasStatus(detail?.status, 'Ignored', 5)
   const isFailed = hasStatus(detail?.status, 'Failed', 6)
+  const hasLinkedProposal = Boolean(String(detail?.provenance?.proposalId || '').trim())
 
   if (ignore) {
     return isTriaging || isTriaged || isProposalCreated || isConverted
   }
 
   if (isConverted) {
-    return !applyProposal
+    return !applyProposal || !hasLinkedProposal
   }
 
-  if (detail?.provenance?.proposalId) {
+  if (hasLinkedProposal) {
     return false
   }
 
@@ -748,10 +761,12 @@ async function ensureChatSeed(boardId, token) {
   let session = findChatSessionByTitle(sessions, boardId, SEEDED_CHAT.sessionTitle)
   let sessionDetail = session?.id ? await getChatSessionDetail(session.id, token) : null
   let hasSeededMessage = hasSeededChatEvidence(sessionDetail?.recentMessages, renameInstruction)
+  let seededProposalIds = collectSeededChatProposalIds(sessionDetail?.recentMessages)
 
   if (session && !sessionDetail) {
     session = null
     hasSeededMessage = false
+    seededProposalIds = []
   }
 
   if (!session) {
@@ -761,10 +776,16 @@ async function ensureChatSeed(boardId, token) {
     })
     sessionDetail = session
     hasSeededMessage = false
+    seededProposalIds = []
   }
 
   let appliedRenameProposal = false
-  if (!hasSeededMessage) {
+  if (seededProposalIds.length > 0) {
+    for (const proposalId of seededProposalIds) {
+      await ensureProposalApplied(proposalId, token)
+      appliedRenameProposal = true
+    }
+  } else if (!hasSeededMessage) {
     const chatMessage = await http('POST', `/llm/chat/sessions/${session.id}/messages`, {
       token,
       body: { content: renameInstruction, requestProposal: true },

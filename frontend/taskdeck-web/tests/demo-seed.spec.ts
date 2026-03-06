@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildProposalLookupPath,
+  collectSeededChatProposalIds,
   hasSeededChatEvidence,
   mergeSeedPlanChatSessions,
   planDemoSeedRerunState,
@@ -142,6 +143,17 @@ describe('demo seed rerun planning', () => {
     ).toBe(true)
   })
 
+  it('deduplicates seeded chat proposal ids so reruns can apply partial chat proposals once', () => {
+    expect(
+      collectSeededChatProposalIds([
+        { id: 'msg-1', proposalId: 'proposal-1' },
+        { id: 'msg-2', proposalId: 'proposal-1' },
+        { id: 'msg-3', proposalId: 'proposal-2' },
+        { id: 'msg-4', proposalId: '' },
+      ]),
+    ).toEqual(['proposal-1', 'proposal-2'])
+  })
+
   it('recreates terminal capture items that have no proposal to reuse on rerun', () => {
     expect(
       shouldRecreateCaptureSeed({
@@ -184,13 +196,23 @@ describe('demo seed rerun planning', () => {
         { applyProposal: true },
       ),
     ).toBe(false)
+    expect(
+      shouldRecreateCaptureSeed(
+        {
+          id: 'capture-6',
+          status: 'Converted',
+          provenance: { proposalId: null },
+        },
+        { applyProposal: true },
+      ),
+    ).toBe(true)
   })
 
   it('recreates ignored demo samples that can no longer be cancelled back to ignored', () => {
     expect(
       shouldRecreateCaptureSeed(
         {
-          id: 'capture-6',
+          id: 'capture-7',
           status: 'ProposalCreated',
           provenance: { proposalId: 'proposal-1' },
         },
@@ -200,7 +222,7 @@ describe('demo seed rerun planning', () => {
     expect(
       shouldRecreateCaptureSeed(
         {
-          id: 'capture-7',
+          id: 'capture-8',
           status: 'Failed',
           provenance: { proposalId: null },
         },
@@ -210,7 +232,7 @@ describe('demo seed rerun planning', () => {
     expect(
       shouldRecreateCaptureSeed(
         {
-          id: 'capture-8',
+          id: 'capture-9',
           status: 'Ignored',
           provenance: { proposalId: null },
         },
