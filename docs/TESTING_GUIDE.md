@@ -330,6 +330,7 @@ Nightly quality workflow: `.github/workflows/nightly-quality.yml`
 - dependency/security signal artifacts:
   - `dotnet list package --vulnerable --include-transitive` output + exit code
   - `npm audit --audit-level=high --json` output + exit code
+  - normalized dependency-security summary (`summary.md`, `summary.json`) linked to `docs/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
 
 Triage usage:
 - check workflow step summary first for signal exit codes
@@ -340,7 +341,13 @@ Release/security workflow: `.github/workflows/release-security.yml`
 
 - release/tag/manual dependency inventory artifact generation
 - backend/frontend vulnerability signal capture
+- manual strict-enforcement option that fails on unresolved high/critical findings or unparseable scan outputs
 - reusable container artifact/checksum lane for release-ready outputs
+
+CI extended dependency-security lane:
+
+- `.github/workflows/ci-extended.yml` now exposes an opt-in `Dependency Security Signals` job through manual dispatch or PRs labeled `security`
+- this lane is reporting-first and uses the same normalized summary format as nightly/release flows
 
 ## Testing Harness Improvement Wave (Delivered 2026-02-24)
 

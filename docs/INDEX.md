@@ -45,6 +45,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - API abuse-protection policy, throttle contract, and tuning guidance for rate-limited endpoints (`#81`, delivered).
 - `SECURITY_OWASP_BASELINE.md`
   - OWASP baseline hardening record for API security headers and CSRF posture (`#80`, delivered).
+- `SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
+  - Dependency vulnerability scan policy, severity SLAs, exception rules, and CI/release signal workflow (`#106`).
 - `SECURITY_LOGGING_REDACTION.md`
   - Logging redaction policy and implementation guidance for capture/auth-sensitive flows (`#212`, delivered).
 - `DEMO_PLAYBOOK.md`

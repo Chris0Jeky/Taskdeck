@@ -12,6 +12,7 @@ It is intentionally narrow and focuses on headers, CSRF posture, and explicit fo
 Related active security docs:
 
 - `docs/SECURITY_LOGGING_REDACTION.md` for capture/auth-sensitive logging and telemetry redaction policy (`#212`).
+- `docs/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md` for dependency scan cadence, severity handling, and exception policy (`#106`).
 
 ## Enforced Security Headers
 
