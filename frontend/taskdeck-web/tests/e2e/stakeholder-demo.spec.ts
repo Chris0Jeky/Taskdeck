@@ -229,9 +229,10 @@ test.describe('Stakeholder demo recorder', () => {
 
     const autopilotTurns = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_TURNS, 0)
     const walkthroughBoardName = (process.env.TASKDECK_DEMO_WALKTHROUGH_BOARD || '').trim()
+    const autopilotBoardOverride = (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim()
     const autopilotBoardName = await resolveScenarioSelectedBoardName({
       scenarioIdOrPath: scenarioId,
-      explicitBoardName: (process.env.TASKDECK_DEMO_AUTOPILOT_BOARD || '').trim() || walkthroughBoardName,
+      explicitBoardName: walkthroughBoardName || autopilotBoardOverride,
     })
     const autopilotLoop = (process.env.TASKDECK_DEMO_AUTOPILOT_LOOP || 'mixed').trim() || 'mixed'
     const autopilotBrain = (process.env.TASKDECK_DEMO_AUTOPILOT_BRAIN || 'heuristic').trim() || 'heuristic'
