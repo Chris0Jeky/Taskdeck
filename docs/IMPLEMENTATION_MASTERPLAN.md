@@ -726,7 +726,7 @@ Batch D director/artifact orchestration (`#301`) status:
 - playbook and scenario docs updated for director usage and `runOps` authoring guidance
 
 Batch E integration hardening (`#302`) status:
-- demo smoke command added (`npm run demo:director:smoke`) for deterministic, LLM-free regression proof with stable artifact output, isolated smoke DB reset, and forced fresh Playwright servers
+- demo smoke command added (`npm run demo:director:smoke`) for deterministic, LLM-free regression proof with stable artifact output, isolated smoke DB reset, forced fresh Playwright servers, automatic local API port fallback when `5000` is occupied, and actionable remediation hints when explicit runtime port overrides conflict
 - default Playwright CI lanes now explicitly pin `TASKDECK_RUN_DEMO=0` so recorder-style demo flows stay opt-in
 - `ci-extended.yml` now exposes reusable `demo-director-smoke` workflow wiring for explicit smoke validation (`workflow_dispatch` or PR label `automation`)
 - docs/index consolidation completed for demo script entry points, runtime preconditions, and CI policy boundaries

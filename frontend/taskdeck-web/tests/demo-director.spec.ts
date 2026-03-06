@@ -4,7 +4,9 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  buildDemoDirectorPortConflictHint,
   resetDemoDirectorArtifacts,
+  resolveDemoDirectorApiBaseUrl,
   resetDemoDirectorE2EDb,
   resolveDemoDirectorRuntime,
 } from '../scripts/demo-director-lib.mjs'
@@ -86,5 +88,23 @@ describe('demo director artifacts', () => {
         freshServers: false,
       }),
     ).toThrow('--reset-e2e-db requires --e2e-db')
+  })
+
+  it('falls back to a free api port when fresh-server mode cannot bind the default backend port', async () => {
+    const resolvedApiBaseUrl = await resolveDemoDirectorApiBaseUrl({
+      requestedApiBaseUrl: null,
+      forceFreshServers: true,
+      canBind: async () => false,
+      reservePort: async () => 51234,
+    })
+
+    expect(resolvedApiBaseUrl).toBe('http://localhost:51234/api')
+  })
+
+  it('reports an actionable hint for fresh-server port conflicts', () => {
+    const hint = buildDemoDirectorPortConflictHint('listen EADDRINUSE: address already in use 127.0.0.1:5000')
+
+    expect(hint).toContain('TASKDECK_E2E_API_BASE_URL')
+    expect(hint).toContain('TASKDECK_E2E_FRONTEND_PORT')
   })
 })

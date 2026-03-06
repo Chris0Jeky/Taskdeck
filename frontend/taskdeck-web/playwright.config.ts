@@ -9,6 +9,7 @@ import {
 
 const e2eDbPath = process.env.TASKDECK_E2E_DB ?? 'taskdeck.e2e.db'
 const defaultApiBaseUrl = 'http://localhost:5000/api'
+const reuseExistingServer = resolveReuseExistingServer()
 
 const frontendConfig = resolveFrontendConfig()
 const frontendHost = frontendConfig.host
@@ -16,7 +17,6 @@ const frontendPort = frontendConfig.port
 const frontendBaseUrl = frontendConfig.baseUrl
 const apiConfig = resolveApiConfig(process.env.TASKDECK_E2E_API_BASE_URL ?? defaultApiBaseUrl)
 const apiBaseUrl = apiConfig.baseUrl
-const reuseExistingServer = resolveReuseExistingServer()
 
 const backendCorsOrigins = resolveBackendCorsOrigins(
   frontendConfig.origin,
@@ -108,7 +108,7 @@ function resolveFrontendConfig(): FrontendConfig {
           'TASKDECK_E2E_RESOLVED_FRONTEND_PORT',
         )
       : resolveDefaultFrontendPort(host, {
-          allowExistingFrontendReuse: !process.env.CI,
+          allowExistingFrontendReuse: reuseExistingServer,
         })
 
   if (!explicitFrontendPort && !resolvedFrontendPort) {

@@ -15,7 +15,9 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  buildDemoDirectorPortConflictHint,
   resetDemoDirectorArtifacts,
+  resolveDemoDirectorApiBaseUrl,
   resetDemoDirectorE2EDb,
   resolveDemoDirectorRuntime,
 } from './demo-director-lib.mjs'
@@ -267,6 +269,11 @@ async function main() {
     resetE2EDb: args.resetE2EDb,
     freshServers: args.freshServers,
   })
+  const selectedApiBaseUrl = await resolveDemoDirectorApiBaseUrl({
+    requestedApiBaseUrl:
+      process.env.TASKDECK_E2E_API_BASE_URL || process.env.TASKDECK_API_BASE_URL || process.env.TASKDECK_API_BASE,
+    forceFreshServers: runtime.forceFreshServers,
+  })
 
   const runId = args.runId || nowStamp()
   const artifactDir = path.resolve(args.outputDir || path.join(webRoot, 'demo-artifacts', `run-${runId}`))
@@ -300,6 +307,7 @@ async function main() {
     TASKDECK_DEMO_AUTOPILOT_BRAIN: args.brain,
     TASKDECK_DEMO_AUTOPILOT_INTERVAL_MS: String(args.intervalMs),
     TASKDECK_DEMO_AUTOPILOT_RNG_SEED: args.rngSeed || '',
+    TASKDECK_E2E_API_BASE_URL: selectedApiBaseUrl,
     ...(runtime.e2eDbPath ? { TASKDECK_E2E_DB: runtime.e2eDbPath } : {}),
     ...(runtime.forceFreshServers ? { TASKDECK_E2E_REUSE_EXISTING_SERVER: '0' } : {}),
   }
@@ -338,6 +346,10 @@ async function main() {
 
   const playwrightLog = `${playwrightResult.stdout || ''}${playwrightResult.stderr || ''}`
   await fs.writeFile(path.join(logsDir, 'playwright.log'), playwrightLog, 'utf8')
+  const portConflictHint = buildDemoDirectorPortConflictHint(playwrightLog)
+  if (portConflictHint) {
+    console.error(portConflictHint)
+  }
 
   const screenshots = []
   try {
@@ -399,6 +411,9 @@ async function main() {
       autopilot: summary.autopilot,
       proposals: summary.proposals.length,
       captures: summary.captures.length,
+    },
+    diagnostics: {
+      hints: portConflictHint ? [portConflictHint] : [],
     },
   }
 
@@ -492,6 +507,9 @@ async function main() {
   lines.push('- Use `snapshot.json` to verify that key surfaces have data.')
   lines.push('- Use `trace.ndjson` to inspect scenario/autopilot behavior.')
   lines.push('- For CI, use `--rng-seed <fixed>` and `--skip-llm` for deterministic runs.')
+  if (portConflictHint) {
+    lines.push(`- Port-conflict hint: ${portConflictHint}`)
+  }
   lines.push('')
 
   await fs.writeFile(path.join(artifactDir, 'README.md'), lines.join('\n'), 'utf8')
