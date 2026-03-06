@@ -171,6 +171,8 @@ The EC2 instance is intentionally configured with `user_data_replace_on_change =
 Changing bootstrap inputs such as container images, proxy port, or SSM parameter wiring replaces the host instead of silently leaving the old runtime in place.
 Taskdeck state survives that replacement because the SQLite path now lives on a separate persistent EBS data volume that Terraform reattaches to the replacement instance.
 For `staging` and `prod`, the data volume is also protected with Terraform `prevent_destroy` by default. Intentional teardown or migration that must remove it is a two-step reviewed workflow: first switch the environment to the unprotected volume path (`protect_data_volume = false`), then remove or relax the protected-volume `prevent_destroy` guard in module source before applying the destroying change.
+Changing an existing environment from `protect_data_volume = false` to `true` is also destructive: Terraform replaces the current EBS volume with a new protected one, and the bootstrap will format that replacement volume before mounting it, so take a backup or EBS snapshot first.
+The attachment resource now uses `stop_instance_before_detaching = true`, so planned volume detach/replacement workflows prefer a brief outage over a forced live detach that could corrupt `/var/lib/taskdeck`.
 
 ## Post-Apply Checks
 
