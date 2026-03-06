@@ -617,11 +617,11 @@ Strategic reconciliation applied:
 
 Covered by seeded issues:
 - Docker + reverse proxy + compression baseline: `#69` (delivered)
+- IaC baseline for single-node AWS environments hosting the Docker workload layer: `#102` (delivered)
 - Developer MCP baseline and Docker Marketplace setup hardening: delivered (2026-02-20 local ops cycle)
 - MCP operator wiring + verification workflow: `#140` (delivered via `#144`)
 - MCP integration smoke/regression harness: `#141` (delivered)
 - Staged rollout policy (blue/green/canary): `#101`
-- IaC baseline: `#102`
 - SBOM/release provenance: `#103`
 - Cost guardrails: `#104`
 - Backup/restore disaster recovery: `#86`
