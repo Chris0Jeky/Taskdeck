@@ -12,17 +12,22 @@ Taskdeck focuses on the failure mode that kills most personal task systems: main
 - Trust comes from provenance, auditability, and explicit approval.
 
 Current direction:
-- capture/inbox pipeline wave is active in backlog (`#199` to `#213`)
+- capture/inbox pipeline wave is now shipped with follow-up hardening tracked in `#213`
+- demo/tooling baseline is now strong; the next planning pivot is product legibility inside the app, not just outside it
+- near-horizon productization is `Home` / `Today` / `Review` / board-centered workflow clarity before broader autonomy work
 - proposal-first automation remains the default and non-negotiable
 - no destructive/autonomous apply behavior is enabled by default
+- agent/knowledge/integration expansion is planned after novice-first shell work lands
 - outreach CRM deferred expansion wave is seeded for later maturity-track execution (`#262` to `#268`)
 
 ## What It Does
 
 - Boards, columns, cards, and labels with WIP-aware flow management
+- Capture/inbox flow with proposal-first triage and provenance
+- Proposal review, chat/bootstrap, comments/notifications, and realtime board collaboration baseline
 - Archive and restore operations
 - Workspace activity and operational surfaces
-- Proposal-first automation flows (review before apply)
+- Demo/testing harness for seeded scenarios, autopilot, and artifact capture
 - Local-first persistence via SQLite
 
 ## Core Loop (Direction)
@@ -34,12 +39,12 @@ North-star loop:
 4. Review and apply explicitly.
 
 What is shipped today:
-- proposal-first automation, chat/bootstrap, archive, ops/logs, notifications, realtime collaboration baseline
+- proposal-first automation, inbox/capture, chat/bootstrap, archive, ops/logs, notifications, and realtime collaboration baseline
 
-What is being delivered in the capture wave:
-- inbox route and capture modal
-- capture triage pipeline to proposal
-- capture provenance visibility and end-to-end regression coverage
+What is not shipped yet:
+- `Home`, `Today`, and `guided/workbench/agent` workspace modes
+- product-grade proposal summary cards and board action rails
+- `Agents`, `Runs`, `Knowledge`, and `Integrations` product surfaces
 
 ## Direction Success Criteria (Next 8-12 Weeks)
 
@@ -93,8 +98,7 @@ Default URLs:
 
 Current shipped runtime:
 - `Mock` provider is default.
-- `OpenAI` is supported behind explicit config gates.
-- `Gemini` runtime support is tracked as `#232` and not shipped yet.
+- `OpenAI` and `Gemini` are supported behind explicit config gates.
 - managed-key abuse-control strategy wave is tracked in `#235` to `#240`.
 
 Use `docs/LLM_PROVIDER_SETUP_GUIDE.md` for:
@@ -169,6 +173,11 @@ Start here:
 - `docs/STATUS.md` for current shipped reality
 - `docs/IMPLEMENTATION_MASTERPLAN.md` for delivery sequencing
 - `docs/INDEX.md` for documentation map
+
+Current planning pivot (2026-03-07):
+- make the product teach itself before adding broader autonomy or surface breadth
+- next wave is novice-first shell + board-centered review workflow
+- see `docs/IMPLEMENTATION_MASTERPLAN.md` for the staged `Home` / `Today` / `Review` first roadmap
 
 Rebranding/thesis alignment inputs:
 - `docs/InReview/HUMAN/01_PRODUCT_THESIS.md`

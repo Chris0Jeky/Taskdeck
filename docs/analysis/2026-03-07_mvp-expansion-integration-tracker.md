@@ -1,7 +1,7 @@
 # MVP Expansion Integration Tracker
 
 Date: 2026-03-07
-Branch: `docs/mvp-expansion-integration`
+Branch: `docs/mvp-expansion-reconciliation`
 Owner: Codex
 Status: In progress
 
@@ -138,6 +138,12 @@ Known review-driven buckets to map against existing issues:
 - knowledge docs/search/integrations surface
 - telemetry/launch criteria and docs governance updates
 
+Current overlap conclusion:
+
+- partial reuse exists for onboarding/help/search/manual/metrics (`#96`, `#93`, `#100`, `#77`)
+- partial reuse exists for import/integration intake foundations (`#75`, `#98`, `#218`, `#219`)
+- most of the novice-first shell, `Home`/`Today`, review-centric workflow, and agent/knowledge substrate remains unseeded
+
 ## Decision Log
 
 ### 2026-03-07
@@ -146,6 +152,7 @@ Known review-driven buckets to map against existing issues:
 - Treat the `MINIMAL` package as the near-horizon execution filter when `EXPANDED` suggests larger future breadth.
 - Keep agent workspace and knowledge/integrations in the active roadmap, but sequence them after novice-first productization.
 - Use file-scoped or batch-scoped commits instead of one large documentation commit.
+- Add the future productization wave to `#107` when the issue seeding pass happens; do not scatter it across disconnected older issues.
 
 ## Progress Log
 
@@ -153,13 +160,13 @@ Known review-driven buckets to map against existing issues:
 
 - Read required repository governance docs and current source-of-truth planning docs.
 - Reviewed the new `MINIMAL` and `EXPANDED` package structure and key blueprint files.
-- Created branch `docs/mvp-expansion-integration`.
+- Created branch `docs/mvp-expansion-reconciliation`.
 - Created this tracker.
+- Reconciled current GitHub backlog overlap at a planning level; confirmed that most product-legibility work is not yet represented as a dedicated issue wave.
 
 ### In progress
 
-- Compare blueprint recommendations against current docs and GitHub backlog.
-- Draft Batch 1 updates for source-of-truth planning docs.
+- Batch 1 planning-spine updates (`STATUS`, `MASTERPLAN`, `ISSUE_EXECUTION_GUIDE`, `INDEX`, `README`).
 
 ### Pending
 
@@ -169,7 +176,7 @@ Known review-driven buckets to map against existing issues:
 
 ## Commit Ledger
 
-- Pending
+- `0871cf0` - Add MVP expansion integration tracker
 
 ## Follow-ups / Open Questions
 

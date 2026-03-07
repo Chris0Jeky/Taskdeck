@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-06  
+Last Updated: 2026-03-07  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -30,6 +30,8 @@ Current constraints are mostly hardening and consistency:
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
+- post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
+- cold first-run still depends too much on docs/scripts; guided `Home`, `Today`, workspace modes, board action rails, and broad action-oriented empty/help states are planned but not yet shipped
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -85,6 +87,8 @@ Direction guardrails (explicit):
   - ops (cli/endpoints/logs)
   - settings (profile/preferences/access/export-import)
   - archive
+- Current navigation is still implementation-shaped:
+  - product-facing `home`, `today`, `review`, `agents`, `runs`, `knowledge`, and `integrations` routes are planned but not shipped
 - Feature slices integrated end to end:
   - proposal review/approve/reject/execute and diff viewing
   - chat session flow with proposal handoff
@@ -158,6 +162,7 @@ Completed in Phase 4:
 
 Remaining for Phase 4 completion:
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
+- product-legibility hardening so the app teaches the `capture -> review -> board` loop without relying on demo scripts or internal docs
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
 
@@ -215,6 +220,34 @@ Implementation delivery (shipped in this context):
 - `#301` Batch D (`v3`): demo director + snapshot scripts (`demo:director`, `demo:snapshot`), trace-aware scenario/autopilot/runtime events, `runOps` scenario step support, and director-mode stakeholder recorder bootstrap with artifact logs/snapshots
 - `#302` Batch E: integration hardening delivered with explicit demo CI policy (`TASKDECK_RUN_DEMO=0` in default Playwright lanes), opt-in `demo-director-smoke` workflow wiring in `ci-extended.yml`, deterministic smoke command (`npm run demo:director:smoke`) with isolated smoke DB reset + forced fresh servers, automatic free-port fallback for local API startup, actionable explicit-port remediation hints, and docs/index/runtime-precondition consolidation for the migrated demo tooling
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
+
+## MVP Expansion Planning Integration (2026-03-07)
+
+New review packages under `docs/InReview/MVP_EXPANSION/` were cross-read against the current repo state and backlog:
+
+- `MINIMAL/`: near-horizon execution filter
+- `EXPANDED/`: staged product and architecture roadmap
+
+Planning conclusion adopted into canonical docs:
+
+- demoability improved faster than self-serve product clarity
+- near-horizon work should prioritize product legibility before adding broad new capability families
+- preferred sequence is:
+  1. novice-first shell and entry clarity (`Home`, `Review`, workspace modes, empty/help states, board selectors)
+  2. board-centered daily workflow (`Today`, proposal readability, board action rails, deep links, onboarding)
+  3. docs/help/testing coherence
+  4. agent substrate
+  5. knowledge/integrations surface
+
+Backlog implication:
+
+- existing overlap is partial (`#96`, `#93`, `#100`, `#77`, `#75`, `#98`, `#218`, `#219`)
+- most of the novice-first productization wave is not yet seeded as numbered GitHub issues
+- planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
+  - `guided` / `workbench` / `agent` workspace modes
+  - `Home` and `Today` product routes
+  - board action rails and proposal summary cards
+  - `Agents`, `Runs`, `Knowledge`, and `Integrations` product surfaces
 
 ## Capture Realignment Wave (2026-02-23)
 
@@ -550,6 +583,8 @@ Observability and scalability:
 
 UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
+- primary product gap is legibility rather than missing engine capability: the product still relies too much on docs/demo setup to explain first-run behavior
+- review/proposal flow is functional but still system-shaped; readable proposal summaries, stronger deep links, and board-centered return paths remain next-cycle work
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)

@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-03-06
+Last Updated: 2026-03-07
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -27,13 +27,52 @@ Use this file when starting backlog work. It prevents out-of-order development a
 ## Priority Model (Required)
 
 - `Priority I`: Current Phase 4 completion path and blockers.
-- `Priority II`: Immediate post-Phase-4 foundation work.
+- `Priority II`: Immediate post-Phase-4 foundation work, including novice-first productization.
 - `Priority III`: Expansion tranche (analytics/security/compliance).
 - `Priority IV`: Maturity tranche (platform/test/UX/docs).
 - `Priority V`: Meta/historical/low-urgency tracking.
 
 Rule:
 - Never start a lower-priority issue while an unblocked higher-priority issue is ready, unless explicitly directed.
+
+## 2026-03-07 Productization Seeding Rule
+
+The next major seeding pass should create a dedicated product-legibility wave before promoting more disconnected future-breadth work.
+
+Seed in this order:
+
+1. novice-first shell:
+   - workspace mode preference (`guided`, `workbench`, `agent`)
+   - `Home`
+   - `Review` route/terminology
+   - action-oriented empty/help states
+   - board selectors instead of raw-ID happy paths
+2. board-centered daily workflow:
+   - `Today`
+   - onboarding checklist/wizard
+   - proposal summary service/cards
+   - board action rail
+   - deep links and next-step shortcuts across inbox/review/notifications/boards
+3. docs/help/testing coherence:
+   - `START_HERE`
+   - manual/docs index reshape
+   - first-run golden-path smoke
+   - contextual help/help-center direction
+4. agent substrate
+5. knowledge and integrations surface
+
+Reuse instead of duplicate when seeding:
+
+- `#96` onboarding/contextual help
+- `#93` global search and quick actions
+- `#100` user guides/tutorials/FAQ
+- `#77` metrics dashboard / telemetry alignment
+- `#75`, `#98`, `#218`, `#219` for import/integration intake overlap
+
+Project rule:
+
+- add the resulting wave to `#107` before active execution begins
+- do not promote agent/knowledge breadth ahead of the novice-first shell and board-centered workflow wave
 
 ## Execution Order (Dependency-Aware)
 
@@ -146,6 +185,10 @@ Provider runtime expansion (2026-02-23):
 38. `#236` SEC-16 managed-key identity attribution contract
 39. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails
 
+Pending seeding note (2026-03-07 MVP expansion integration):
+- before promoting more isolated Priority III/IV UX maturity items, seed the novice-first productization wave described above
+- minimum seed set should cover `Home`, `Review`, workspace modes, empty/help states, selectors, `Today`, onboarding, proposal summaries, board action rails, and the first-run smoke/manual/help work
+
 ### Stage 3: Priority III - Expansion Wave
 
 1. `#77` ANL-01 metrics dashboard
@@ -174,6 +217,7 @@ Provider runtime expansion (2026-02-23):
 
 Execution note (premium UI wave):
 - Reused dependencies are intentionally not re-seeded as duplicates: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization).
+- Do not promote agent/knowledge/integrations breadth ahead of the unseeded productization wave from the 2026-03-07 MVP expansion integration.
 
 ### Stage 4: Priority IV - Maturity Wave
 
