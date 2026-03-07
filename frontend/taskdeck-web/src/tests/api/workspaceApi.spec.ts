@@ -22,6 +22,14 @@ describe('workspaceApi', () => {
     expect(http.get).toHaveBeenCalledWith('/workspace/home')
   })
 
+  it('loads today summary', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { summary: { dueTodayCards: 0 } } })
+
+    await workspaceApi.getTodaySummary()
+
+    expect(http.get).toHaveBeenCalledWith('/workspace/today')
+  })
+
   it('loads preferences', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: { workspaceMode: 'guided' } })
 
@@ -36,5 +44,13 @@ describe('workspaceApi', () => {
     await workspaceApi.updatePreferences({ workspaceMode: 'agent' })
 
     expect(http.put).toHaveBeenCalledWith('/workspace/preferences', { workspaceMode: 'agent' })
+  })
+
+  it('updates onboarding visibility', async () => {
+    vi.mocked(http.put).mockResolvedValue({ data: { visibility: 'dismissed' } })
+
+    await workspaceApi.updateOnboarding({ action: 'dismiss' })
+
+    expect(http.put).toHaveBeenCalledWith('/workspace/onboarding', { action: 'dismiss' })
   })
 })

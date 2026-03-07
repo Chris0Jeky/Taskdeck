@@ -15,6 +15,7 @@ import NotificationInboxView from '../views/NotificationInboxView.vue'
 import NotificationPreferencesView from '../views/NotificationPreferencesView.vue'
 import InboxView from '../views/InboxView.vue'
 import HomeView from '../views/HomeView.vue'
+import TodayView from '../views/TodayView.vue'
 import ReviewView from '../views/ReviewView.vue'
 import { isTokenExpired } from '../utils/jwt'
 
@@ -58,6 +59,12 @@ const router = createRouter({
       path: '/workspace/home',
       name: 'workspace-home',
       component: HomeView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/today',
+      name: 'workspace-today',
+      component: TodayView,
       meta: { requiresShell: true },
     },
     {

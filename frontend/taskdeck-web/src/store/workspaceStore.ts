@@ -5,7 +5,14 @@ import { useSessionStore } from './sessionStore'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../utils/storageKeys'
-import type { HomeSummary, WorkspaceMode, WorkspacePreference } from '../types/workspace'
+import type {
+  HomeSummary,
+  TodaySummary,
+  WorkspaceMode,
+  WorkspaceOnboarding,
+  WorkspaceOnboardingAction,
+  WorkspacePreference,
+} from '../types/workspace'
 
 const workspaceModes = ['guided', 'workbench', 'agent'] as const
 
@@ -26,11 +33,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const preferenceLoading = ref(false)
   const preferenceError = ref<string | null>(null)
   const preferencesHydrated = ref(false)
+  const onboarding = ref<WorkspaceOnboarding | null>(null)
   const homeSummary = ref<HomeSummary | null>(null)
   const homeLoading = ref(false)
   const homeError = ref<string | null>(null)
+  const todaySummary = ref<TodaySummary | null>(null)
+  const todayLoading = ref(false)
+  const todayError = ref<string | null>(null)
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
+  const hasTodaySummary = computed(() => todaySummary.value !== null)
 
   function persistLocalMode(nextMode: WorkspaceMode) {
     localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, nextMode)
@@ -39,6 +51,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function applyMode(nextMode: WorkspaceMode) {
     mode.value = nextMode
     persistLocalMode(nextMode)
+  }
+
+  function syncOnboarding(nextOnboarding: WorkspaceOnboarding | null) {
+    onboarding.value = nextOnboarding
+
+    if (homeSummary.value && nextOnboarding) {
+      homeSummary.value = {
+        ...homeSummary.value,
+        onboarding: nextOnboarding,
+      }
+    }
+
+    if (todaySummary.value && nextOnboarding) {
+      todaySummary.value = {
+        ...todaySummary.value,
+        onboarding: nextOnboarding,
+      }
+    }
   }
 
   async function hydratePreferences(): Promise<WorkspacePreference | null> {
@@ -52,6 +82,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       preferenceError.value = null
       const preference = await workspaceApi.getPreferences()
       applyMode(preference.workspaceMode)
+      syncOnboarding(preference.onboarding)
       preferencesHydrated.value = true
       return preference
     } catch (e: unknown) {
@@ -74,6 +105,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       preferenceError.value = null
       const preference = await workspaceApi.updatePreferences({ workspaceMode: nextMode })
       applyMode(preference.workspaceMode)
+      syncOnboarding(preference.onboarding)
       preferencesHydrated.value = true
     } catch (e: unknown) {
       preferenceError.value = getErrorMessage(e, 'Failed to save workspace mode')
@@ -91,6 +123,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const summary = await workspaceApi.getHomeSummary()
       homeSummary.value = summary
       applyMode(summary.workspaceMode)
+      syncOnboarding(summary.onboarding)
       return summary
     } catch (e: unknown) {
       homeError.value = getErrorMessage(e, 'Failed to load workspace summary')
@@ -100,15 +133,55 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  async function fetchTodaySummary(): Promise<TodaySummary> {
+    try {
+      todayLoading.value = true
+      todayError.value = null
+      const summary = await workspaceApi.getTodaySummary()
+      todaySummary.value = summary
+      applyMode(summary.workspaceMode)
+      syncOnboarding(summary.onboarding)
+      return summary
+    } catch (e: unknown) {
+      todayError.value = getErrorMessage(e, 'Failed to load today agenda')
+      throw e
+    } finally {
+      todayLoading.value = false
+    }
+  }
+
+  async function updateOnboarding(action: WorkspaceOnboardingAction): Promise<WorkspaceOnboarding> {
+    try {
+      preferenceLoading.value = true
+      preferenceError.value = null
+      const nextOnboarding = await workspaceApi.updateOnboarding({ action })
+      syncOnboarding(nextOnboarding)
+      return nextOnboarding
+    } catch (e: unknown) {
+      preferenceError.value = getErrorMessage(e, 'Failed to update onboarding state')
+      toast.warning(preferenceError.value)
+      throw e
+    } finally {
+      preferenceLoading.value = false
+    }
+  }
+
   function clearHomeSummary() {
     homeSummary.value = null
     homeError.value = null
   }
 
+  function clearTodaySummary() {
+    todaySummary.value = null
+    todayError.value = null
+  }
+
   function resetForLogout() {
     preferencesHydrated.value = false
     preferenceError.value = null
+    onboarding.value = null
     clearHomeSummary()
+    clearTodaySummary()
     applyMode(getLocalWorkspaceMode())
   }
 
@@ -117,14 +190,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     preferenceLoading,
     preferenceError,
     preferencesHydrated,
+    onboarding,
     homeSummary,
     homeLoading,
     homeError,
+    todaySummary,
+    todayLoading,
+    todayError,
     hasHomeSummary,
+    hasTodaySummary,
     hydratePreferences,
     updateMode,
     fetchHomeSummary,
+    fetchTodaySummary,
+    updateOnboarding,
     clearHomeSummary,
+    clearTodaySummary,
     resetForLogout,
   }
 })
