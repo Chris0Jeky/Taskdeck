@@ -21,6 +21,7 @@ const loadingSessions = ref(false)
 const loadingBoards = ref(false)
 const creatingSession = ref(false)
 const sendingMessage = ref(false)
+let boardOptionsRequest: Promise<void> | null = null
 
 const newSessionTitle = ref('')
 const newSessionBoardId = ref('')
@@ -105,6 +106,10 @@ async function handleCreateSession() {
     return
   }
 
+  if (newSessionBoardId.value.trim()) {
+    await loadBoardOptions()
+  }
+
   const normalizedBoardId = normalizeSelectedBoardId(newSessionBoardId.value)
   if (newSessionBoardId.value.trim() && !normalizedBoardId) {
     toast.error('Choose a board from the list or leave board context blank.')
@@ -154,14 +159,28 @@ async function handleSendMessage() {
 }
 
 async function loadBoardOptions() {
-  try {
-    loadingBoards.value = true
-    availableBoards.value = await boardsApi.getBoards()
-  } catch (e: unknown) {
-    toast.error(getErrorDisplay(e, 'Failed to load boards').message)
-  } finally {
-    loadingBoards.value = false
+  if (boardOptionsRequest) {
+    await boardOptionsRequest
+    return
   }
+
+  let request: Promise<void> | null = null
+  request = (async () => {
+    try {
+      loadingBoards.value = true
+      availableBoards.value = await boardsApi.getBoards()
+    } catch (e: unknown) {
+      toast.error(getErrorDisplay(e, 'Failed to load boards').message)
+    } finally {
+      loadingBoards.value = false
+      if (boardOptionsRequest === request) {
+        boardOptionsRequest = null
+      }
+    }
+  })()
+
+  boardOptionsRequest = request
+  await boardOptionsRequest
 }
 
 function openRoute(path: string) {

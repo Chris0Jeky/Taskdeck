@@ -126,7 +126,14 @@ async function handleApproveProposal(proposalId: string) {
 
 async function handleRejectProposal(proposalId: string, riskLevel: ApiProposal['riskLevel']) {
   const requiresReason = ['High', 'Critical'].includes(normalizeProposalRiskLevel(riskLevel))
-  const reason = prompt(requiresReason ? 'Reason is required for this risk level:' : 'Optional rejection reason:') ?? ''
+  const promptedReason = prompt(
+    requiresReason ? 'Reason is required for this risk level:' : 'Optional rejection reason:',
+  )
+  if (promptedReason === null) {
+    return
+  }
+
+  const reason = promptedReason.trim()
   if (requiresReason && !reason.trim()) {
     toast.error('Rejection reason is required for high and critical risk proposals')
     return
@@ -134,7 +141,7 @@ async function handleRejectProposal(proposalId: string, riskLevel: ApiProposal['
 
   try {
     proposalActionBusyId.value = proposalId
-    const updated = await automationApi.rejectProposal(proposalId, reason.trim())
+    const updated = await automationApi.rejectProposal(proposalId, reason)
     proposals.value = proposals.value.map((proposal) => (proposal.id === proposalId ? updated : proposal))
     toast.success('Proposal rejected')
   } catch (e: unknown) {
