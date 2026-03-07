@@ -585,7 +585,7 @@ These continue in parallel where they protect trust, performance, or operator po
 - Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76` (delivered)
 - Seeded Wave P from the 2026-03-07 MVP expansion integration:
   - `#318` tracker
-  - `#320` workspace modes + `Home` summary shell
+  - `#320` workspace modes + `Home` summary shell (delivered)
   - `#322` `Review`-first routing + empty/help states + board selectors
   - `#324` `Today` agenda + onboarding path
   - `#326` proposal readability + board-centered action flow
@@ -783,8 +783,8 @@ Batch E integration hardening (`#302`) status:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Execute the seeded novice-first shell tranche in order: `#318` -> `#320` -> `#322`.
-3. Execute the seeded board-centered daily workflow tranche immediately after shell foundations: `#324` -> `#326`.
+2. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
+3. Execute the seeded board-centered daily workflow tranche immediately after the remaining shell slice: `#324` -> `#326`.
 4. Keep the docs/help/testing tranche synchronized with shipped behavior: `#96`, `#100`, then `#328`.
 5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
 6. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.

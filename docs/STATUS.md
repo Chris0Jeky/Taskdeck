@@ -31,7 +31,7 @@ Current constraints are mostly hardening and consistency:
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
-- cold first-run still depends too much on docs/scripts; guided `Home`, `Today`, workspace modes, board action rails, and broad action-oriented empty/help states are planned but not yet shipped
+- cold first-run still depends too much on docs/scripts; guided `Home` and durable workspace modes are now shipped, but `Today`, board action rails, and broader action-oriented empty/help states are still planned follow-through
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -80,6 +80,7 @@ Direction guardrails (explicit):
 
 - Stack: Vue 3 + TypeScript + Pinia + Vue Router + Vite
 - Workspace routes include:
+  - home
   - boards
   - activity
   - automations (queue/proposals/chat)
@@ -87,9 +88,11 @@ Direction guardrails (explicit):
   - ops (cli/endpoints/logs)
   - settings (profile/preferences/access/export-import)
   - archive
-- Current navigation is still implementation-shaped:
-  - product-facing `home`, `today`, `review`, `agents`, `runs`, `knowledge`, and `integrations` routes are planned but not shipped
+- Current navigation is now partially product-shaped:
+  - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
+  - `Today`, `Agents`, `Runs`, `Knowledge`, and `Integrations` routes are still planned but not shipped
 - Feature slices integrated end to end:
+  - workspace home summary shell with server-backed workspace mode persistence
   - proposal review/approve/reject/execute and diff viewing
   - chat session flow with proposal handoff
   - ops template execution and log querying
@@ -243,11 +246,11 @@ Backlog implication:
 
 - existing overlap and reuse anchors are partial (`#96`, `#93`, `#100`, `#77`, `#75`, `#98`, `#216`, `#218`, `#219`, `#311`)
 - the novice-first productization wave is now seeded as `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, with `#96` and `#100` updated into the same `Priority II` tranche
+- `#320` is now shipped: durable `UserPreference` workspace mode persistence, `/api/workspace/home` + `/api/workspace/preferences`, `Home` default routing, and mode-aware shell navigation
 - the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave P, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
 - the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave P and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
 - planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
-  - `guided` / `workbench` / `agent` workspace modes
-  - `Home` and `Today` product routes
+  - `Today` product route plus onboarding/checklist recovery path
   - board action rails and proposal summary cards
   - `Agents`, `Runs`, `Knowledge`, and `Integrations` product surfaces
   - `Demo Tools`, guided narrative/demo-tour flow, HTML report/assertions, and saved views
