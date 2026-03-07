@@ -8,6 +8,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -171,6 +172,70 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Today_ShouldKeepReviewStepIncomplete_WhenAnotherUserMakesTheDecision()
+    {
+        using var requesterClient = _factory.CreateClient();
+        using var reviewerClient = _factory.CreateClient();
+        var requester = await ApiTestHarness.AuthenticateAsync(requesterClient, "workspace-today-requester");
+        var reviewer = await ApiTestHarness.AuthenticateAsync(reviewerClient, "workspace-today-reviewer");
+        var board = await ApiTestHarness.CreateBoardAsync(requesterClient, "workspace-today-shared-board");
+
+        await SeedWorkspaceTodayDataAsync(requester.UserId, board.Id, reviewer.UserId);
+
+        var response = await requesterClient.GetAsync("/api/workspace/today");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var today = await response.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        today.Should().NotBeNull();
+        today!.Onboarding.IsComplete.Should().BeFalse();
+        today.Onboarding.CurrentStepId.Should().Be("review-first-proposal");
+    }
+
+    [Fact]
+    public async Task Today_ShouldKeepReviewStepIncomplete_WhenOnlyExpiredProposalExists()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-today-expired");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-today-expired-board");
+
+        await SeedWorkspaceExpiredProposalAsync(user.UserId, board.Id);
+
+        var response = await client.GetAsync("/api/workspace/today");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var today = await response.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        today.Should().NotBeNull();
+        today!.Onboarding.IsComplete.Should().BeFalse();
+        today.Onboarding.CurrentStepId.Should().Be("review-first-proposal");
+        today.Summary.ProposalsPendingReview.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AgendaRepository_ShouldOnlyReturnCardsThatNeedAgendaAttention()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "workspace-agenda-repository");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-agenda-repository-board");
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repository = new CardRepository(dbContext);
+        var column = new Column(board.Id, "Backlog", 0);
+        var plainCard = new Card(board.Id, column.Id, "Plain task");
+        var dueCard = new Card(board.Id, column.Id, "Due task", dueDate: DateTimeOffset.UtcNow.AddDays(1));
+        var blockedCard = new Card(board.Id, column.Id, "Blocked task");
+        blockedCard.Block("Waiting on dependency");
+
+        dbContext.Columns.Add(column);
+        dbContext.Cards.AddRange(plainCard, dueCard, blockedCard);
+        await dbContext.SaveChangesAsync();
+
+        var agendaCards = (await repository.GetAgendaByBoardIdsAsync([board.Id])).ToList();
+
+        agendaCards.Select(card => card.Title).Should().BeEquivalentTo(["Due task", "Blocked task"]);
+    }
+
+    [Fact]
     public async Task OnboardingEndpoint_ShouldDismissAndReplayCurrentUserState()
     {
         using var client = _factory.CreateClient();
@@ -233,7 +298,7 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         await dbContext.SaveChangesAsync();
     }
 
-    private async Task SeedWorkspaceTodayDataAsync(Guid userId, Guid boardId)
+    private async Task SeedWorkspaceTodayDataAsync(Guid userId, Guid boardId, Guid? decidedByUserId = null)
     {
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -250,12 +315,33 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
             RiskLevel.Low,
             Guid.NewGuid().ToString("N"),
             boardId);
-        reviewedProposal.Approve(userId);
+        reviewedProposal.Approve(decidedByUserId ?? userId);
 
         dbContext.Columns.Add(column);
         dbContext.Cards.AddRange(overdueCard, dueTodayCard, blockedCard);
         dbContext.LlmRequests.Add(CreateCaptureRequest(userId, boardId, RequestStatus.Pending));
         dbContext.AutomationProposals.Add(reviewedProposal);
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task SeedWorkspaceExpiredProposalAsync(Guid userId, Guid boardId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var column = new Column(boardId, "Backlog", 0);
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Expired proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString("N"),
+            boardId);
+        proposal.Expire();
+
+        dbContext.Columns.Add(column);
+        dbContext.LlmRequests.Add(CreateCaptureRequest(userId, boardId, RequestStatus.Pending));
+        dbContext.AutomationProposals.Add(proposal);
 
         await dbContext.SaveChangesAsync();
     }

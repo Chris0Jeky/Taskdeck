@@ -14,7 +14,6 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         ProposalStatus.Rejected,
         ProposalStatus.Applied,
         ProposalStatus.Failed,
-        ProposalStatus.Expired,
     ];
 
     public AutomationProposalRepository(TaskdeckDbContext context) : base(context)
@@ -43,7 +42,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return await _dbSet
             .AsNoTracking()
             .AnyAsync(
-                proposal => proposal.RequestedByUserId == userId && ReviewedStatuses.Contains(proposal.Status),
+                proposal => proposal.DecidedByUserId == userId && ReviewedStatuses.Contains(proposal.Status),
                 cancellationToken);
     }
 

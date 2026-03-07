@@ -54,7 +54,9 @@ public class CardRepository : Repository<Card>, ICardRepository
 
         return await _dbSet
             .AsNoTracking()
-            .Where(card => materializedBoardIds.Contains(card.BoardId))
+            .Where(card =>
+                materializedBoardIds.Contains(card.BoardId) &&
+                (card.IsBlocked || card.DueDate.HasValue))
             .OrderBy(card => card.BoardId)
             .ThenBy(card => card.ColumnId)
             .ThenBy(card => card.Position)
