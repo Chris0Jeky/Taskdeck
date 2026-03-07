@@ -117,7 +117,7 @@ jobs:
         if: inputs.enforce-findings
         shell: bash
         run: |
-          node -e "const fs = require('node:fs'); const summary = JSON.parse(fs.readFileSync('artifacts/dependency-security/summary.json', 'utf8')); if (summary.totals.parseFailures > 0 || summary.totals.hasActionableFindings) { console.error('Dependency security enforcement failed. Review artifacts/dependency-security/summary.md and the linked policy doc.'); process.exit(1); }"
+          node -e "const fs = require('node:fs'); const summary = JSON.parse(fs.readFileSync('artifacts/dependency-security/summary.json', 'utf8')); if (summary.totals.hasEnforcementFailures) { console.error('Dependency security enforcement failed. Review artifacts/dependency-security/summary.md and the linked policy doc.'); process.exit(1); }"
 
       - name: Upload dependency and security signal artifacts
         if: always()
