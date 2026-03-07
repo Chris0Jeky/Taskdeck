@@ -31,42 +31,53 @@ Track the reconciliation of the new MVP expansion review packs into the active T
 
 ### Batch 1
 
-- Create branch and tracker.
+- Complete.
+- Created branch and tracker.
 - Read source-of-truth docs and MVP expansion packs.
-- Build current-doc gap map.
-- Build GitHub issue overlap map.
+- Built current-doc gap map.
+- Built GitHub issue overlap map.
 
 ### Batch 2
 
-- Update canonical planning docs:
+- Complete.
+- Updated canonical planning docs:
   - `docs/IMPLEMENTATION_MASTERPLAN.md`
   - `docs/STATUS.md`
   - `docs/INDEX.md`
-- Add or promote a clearer novice-first documentation entry point if justified.
+  - `docs/ISSUE_EXECUTION_GUIDE.md`
+  - `docs/TaskdeckNextWorkChecklist.md`
+- Promoted a clearer novice-first entry point:
+  - `docs/START_HERE.md`
 
 ### Batch 3
 
-- Update user-facing/product docs:
+- Complete except verification/commit finalization.
+- Updated user-facing/product docs:
+  - `README.md`
   - `docs/USER_MANUAL.md`
   - `docs/DOGFOODING_GUIDE.md`
+  - `docs/DEMO_PLAYBOOK.md`
   - `docs/SCENARIOS.md`
   - `docs/TESTING_GUIDE.md`
-- Add reconciliation notes for issue planning and future batch execution.
+- Added reconciliation notes for issue planning and future batch execution.
 
 ## Current Findings
 
 ### Documentation gaps
 
-- Active docs describe the product mostly through current surfaces (`Boards`, `Inbox`, `Automations`, `Ops`) rather than a novice-first `Home -> Inbox/Review -> Projects` journey.
-- `USER_MANUAL.md` and `DOGFOODING_GUIDE.md` still normalize raw `Board ID` usage for queue flows.
-- There is no canonical `Start Here` / first-15-minutes doc bridging repo setup, product thesis, seeded demo flow, and daily-use golden path.
-- `INDEX.md` is maintainers-strong but not yet oriented around audience entry points.
+- Canonical docs now explicitly record the near-horizon gap as product legibility rather than missing engine capability.
+- `docs/START_HERE.md` now bridges repo setup, product thesis, seeded demo flow, and the current golden path.
+- `USER_MANUAL.md`, `DOGFOODING_GUIDE.md`, and `DEMO_PLAYBOOK.md` now distinguish the normal capture/review/board path from advanced/operator surfaces.
+- `INDEX.md` now includes audience-first read paths.
 
 ### GitHub issue overlap
 
 - Existing overlap found:
   - `#96` onboarding/contextual help
   - `#93` global search and quick actions
+  - `#100` end-user guides/tutorials/FAQ
+  - `#216` thesis-aligned demo and landing baseline
+  - `#97` / `#98` for later integration/plugin breadth
 - No clear existing issue coverage found yet for:
   - `Home` route / start surface
   - `Today` route
@@ -82,13 +93,19 @@ Track the reconciliation of the new MVP expansion review packs into the active T
 - read `STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, `GOLDEN_PRINCIPLES.md`, `ISSUE_EXECUTION_GUIDE.md`, `TESTING_GUIDE.md`, `MCP_TOOLING_GUIDE.md`, `GITHUB_PROJECT_AUTOMATION.md`
 - reviewed `MINIMAL` and `EXPANDED` master/index files plus key backlog/manual/testing/roadmap sections
 - searched GitHub issues for overlap on onboarding, search, and new productization themes
+- created and committed:
+  - tracker baseline
+  - dated MVP expansion gap map
+  - audience-first entry docs batch
 
 ## Verification Log
 
-- pending
+- pending:
+  - `node scripts/check-docs-governance.mjs`
+  - `node scripts/check-github-ops-governance.mjs`
 
 ## Next Actions
 
-1. Finish the current-doc gap map with explicit file-level recommendations.
-2. Capture the MVP expansion roadmap inside `IMPLEMENTATION_MASTERPLAN.md` without overstating shipped reality.
-3. Add a clearer documentation entry point for the novice-first product story.
+1. Commit the planning-doc batch and the remaining guidance/testing-doc batch.
+2. Run docs governance checks.
+3. Record verification results and final branch status.
