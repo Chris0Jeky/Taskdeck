@@ -304,7 +304,12 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var column = new Column(boardId, "Backlog", 0);
         var overdueCard = new Card(boardId, column.Id, "Overdue follow-up", dueDate: DateTimeOffset.UtcNow.AddDays(-1));
-        var dueTodayCard = new Card(boardId, column.Id, "Due today", dueDate: DateTimeOffset.UtcNow.AddHours(4));
+        var utcToday = DateTimeOffset.UtcNow;
+        var dueTodayCard = new Card(
+            boardId,
+            column.Id,
+            "Due today",
+            dueDate: new DateTimeOffset(utcToday.Year, utcToday.Month, utcToday.Day, 12, 0, 0, TimeSpan.Zero));
         var blockedCard = new Card(boardId, column.Id, "Blocked review");
         blockedCard.Block("Waiting on dependency");
 
