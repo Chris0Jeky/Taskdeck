@@ -9,17 +9,17 @@ describe('navigation utils', () => {
 
   it('rejects absolute external URLs', () => {
     const redirect = sanitizeInternalRedirect('https://example.com')
-    expect(redirect).toBe('/workspace/boards')
+    expect(redirect).toBe('/workspace/home')
   })
 
   it('rejects protocol-relative redirects', () => {
     const redirect = sanitizeInternalRedirect('//example.com')
-    expect(redirect).toBe('/workspace/boards')
+    expect(redirect).toBe('/workspace/home')
   })
 
   it('uses fallback for empty values', () => {
     const redirect = sanitizeInternalRedirect('')
-    expect(redirect).toBe('/workspace/boards')
+    expect(redirect).toBe('/workspace/home')
   })
 
   it('normalizes trailing slashes for paths', () => {

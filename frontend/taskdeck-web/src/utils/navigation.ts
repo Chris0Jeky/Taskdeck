@@ -1,6 +1,6 @@
 export function sanitizeInternalRedirect(
   redirect: string | null | undefined,
-  fallback = '/workspace/boards'
+  fallback = '/workspace/home'
 ): string {
   if (!redirect) return fallback
   if (!redirect.startsWith('/')) return fallback

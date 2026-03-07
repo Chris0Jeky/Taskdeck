@@ -3,13 +3,16 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import CaptureModal from '../common/CaptureModal.vue'
+import type { WorkspaceMode } from '../../types/workspace'
 
 const router = useRouter()
 const route = useRoute()
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
+const workspace = useWorkspaceStore()
 
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
@@ -21,10 +24,14 @@ const selectedCommandIndex = ref(0)
 const commandListboxId = 'td-command-palette-listbox'
 
 type NavItem = {
+  id: string
   label: string
   icon: string
   path: string
   flag: string | null
+  primaryModes: WorkspaceMode[]
+  secondaryModes?: WorkspaceMode[]
+  keywords?: string
 }
 
 type CommandItem = {
@@ -37,26 +44,150 @@ type CommandItem = {
   action?: () => void
 }
 
-const navItems = computed(() => {
-  const items: NavItem[] = [
-    { label: 'Boards', icon: 'B', path: '/workspace/boards', flag: null as string | null },
-    // Default to review/apply flow instead of the low-level queue view.
-    { label: 'Automations', icon: 'A', path: '/workspace/automations/proposals', flag: 'newAutomation' as string | null },
-    { label: 'Activity', icon: 'T', path: '/workspace/activity', flag: 'newActivity' as string | null },
-    { label: 'Inbox', icon: 'I', path: '/workspace/inbox', flag: null as string | null },
-    { label: 'Notifications', icon: 'N', path: '/workspace/notifications', flag: null as string | null },
-    { label: 'Ops', icon: 'O', path: '/workspace/ops/cli', flag: 'newOps' as string | null },
-    { label: 'Settings', icon: 'S', path: '/workspace/settings/profile', flag: 'newAuth' as string | null },
-    { label: 'Preferences', icon: 'P', path: '/workspace/settings/preferences', flag: null as string | null },
-    { label: 'Access', icon: 'R', path: '/workspace/settings/access', flag: 'newAccess' as string | null },
-    { label: 'Archive', icon: 'H', path: '/workspace/archive', flag: 'newArchive' as string | null },
-  ]
+const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: string }> = {
+  guided: {
+    label: 'Guided',
+    description: 'Keep Home, Review, and board work front and center.',
+  },
+  workbench: {
+    label: 'Workbench',
+    description: 'Keep every workspace surface visible for hands-on work.',
+  },
+  agent: {
+    label: 'Agent',
+    description: 'Hold the same review-first path while agent surfaces are staged in later work.',
+  },
+}
 
-  return items.filter((item) => {
-    if (!item.flag) return true
-    return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
-  })
-})
+const navCatalog: NavItem[] = [
+  {
+    id: 'home',
+    label: 'Home',
+    icon: 'H',
+    path: '/workspace/home',
+    flag: null,
+    primaryModes: ['guided', 'workbench', 'agent'],
+    keywords: 'home start summary workspace',
+  },
+  {
+    id: 'review',
+    label: 'Review',
+    icon: 'R',
+    path: '/workspace/automations/proposals',
+    flag: 'newAutomation',
+    primaryModes: ['guided', 'workbench', 'agent'],
+    keywords: 'review proposals automations approve reject execute',
+  },
+  {
+    id: 'boards',
+    label: 'Boards',
+    icon: 'B',
+    path: '/workspace/boards',
+    flag: null,
+    primaryModes: ['guided', 'workbench', 'agent'],
+    keywords: 'boards projects workspace',
+  },
+  {
+    id: 'inbox',
+    label: 'Inbox',
+    icon: 'I',
+    path: '/workspace/inbox',
+    flag: null,
+    primaryModes: ['guided', 'workbench', 'agent'],
+    keywords: 'inbox captures triage',
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    icon: 'N',
+    path: '/workspace/notifications',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'notifications updates mention assignment',
+  },
+  {
+    id: 'chat',
+    label: 'Chat',
+    icon: 'C',
+    path: '/workspace/automations/chat',
+    flag: 'newAutomation',
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'chat automation assistant board context',
+  },
+  {
+    id: 'activity',
+    label: 'Activity',
+    icon: 'T',
+    path: '/workspace/activity',
+    flag: 'newActivity',
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'activity audit history events',
+  },
+  {
+    id: 'ops',
+    label: 'Ops',
+    icon: 'O',
+    path: '/workspace/ops/cli',
+    flag: 'newOps',
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'ops logs cli endpoints',
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: 'S',
+    path: '/workspace/settings/profile',
+    flag: 'newAuth',
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'settings profile password account',
+  },
+  {
+    id: 'preferences',
+    label: 'Preferences',
+    icon: 'P',
+    path: '/workspace/settings/preferences',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'preferences notifications',
+  },
+  {
+    id: 'access',
+    label: 'Access',
+    icon: 'A',
+    path: '/workspace/settings/access',
+    flag: 'newAccess',
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'access board sharing permissions',
+  },
+  {
+    id: 'archive',
+    label: 'Archive',
+    icon: 'Z',
+    path: '/workspace/archive',
+    flag: 'newArchive',
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'archive restore hidden boards',
+  },
+]
+
+const availableNavItems = computed(() => navCatalog.filter((item) => {
+  if (!item.flag) return true
+  return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
+}))
+
+const primaryNavItems = computed(() => availableNavItems.value.filter((item) => item.primaryModes.includes(workspace.mode)))
+
+const secondaryNavItems = computed(() => availableNavItems.value.filter((item) => item.secondaryModes?.includes(workspace.mode)))
+
+const currentModeMeta = computed(() => workspaceModeMeta[workspace.mode])
 
 function openCaptureModal() {
   showCaptureModal.value = true
@@ -72,12 +203,12 @@ function handleCaptureCreated() {
 }
 
 const commandItems = computed<CommandItem[]>(() => {
-  const navigationItems = navItems.value.map((item) => ({
+  const navigationItems = availableNavItems.value.map((item) => ({
     id: `nav:${item.path}`,
     label: item.label,
     icon: item.icon,
     path: item.path,
-    keywords: item.path,
+    keywords: `${item.path} ${item.keywords ?? ''}`.trim(),
     kind: 'navigation' as const,
   }))
 
@@ -116,12 +247,18 @@ const activeCommandId = computed(() => {
 })
 
 function isActiveRoute(path: string): boolean {
+  if (path === '/workspace/home') {
+    return route.path === path
+  }
+
   if (path.startsWith('/workspace/automations')) {
     return route.path.startsWith('/workspace/automations')
   }
+
   if (path === '/workspace/ops/cli') {
     return route.path.startsWith('/workspace/ops')
   }
+
   return route.path.startsWith(path)
 }
 
@@ -131,7 +268,12 @@ function toggleSidebar() {
 
 function handleLogout() {
   session.logout()
-  router.push('/login')
+  void router.push('/login')
+}
+
+function handleWorkspaceModeChange(event: Event) {
+  const nextMode = (event.target as HTMLSelectElement).value as WorkspaceMode
+  void workspace.updateMode(nextMode)
 }
 
 function openCommandPalette() {
@@ -170,7 +312,7 @@ function activateCommand(item: CommandItem) {
   }
 
   if (item.path) {
-    router.push(item.path)
+    void router.push(item.path)
   }
 
   closeCommandPalette()
@@ -187,9 +329,9 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
     target instanceof HTMLTextAreaElement
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-    e.preventDefault()
+function handleKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
     if (showCommandPalette.value) {
       closeCommandPalette()
       return
@@ -197,12 +339,12 @@ function handleKeydown(e: KeyboardEvent) {
     openCommandPalette()
   }
 
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c' && !isTextEntryTarget(e.target)) {
-    e.preventDefault()
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'c' && !isTextEntryTarget(event.target)) {
+    event.preventDefault()
     openCaptureModal()
   }
 
-  if (e.key === '?' && !isTextEntryTarget(e.target)) {
+  if (event.key === '?' && !isTextEntryTarget(event.target)) {
     showKeyboardHelp.value = !showKeyboardHelp.value
   }
 }
@@ -272,8 +414,8 @@ onUnmounted(() => {
 
       <nav class="td-sidebar__nav">
         <router-link
-          v-for="item in navItems"
-          :key="item.path"
+          v-for="item in primaryNavItems"
+          :key="item.id"
           :to="item.path"
           class="td-nav-item"
           :class="{ 'td-nav-item--active': isActiveRoute(item.path) }"
@@ -282,6 +424,21 @@ onUnmounted(() => {
           <span class="td-nav-item__icon">{{ item.icon }}</span>
           <span v-if="!sidebarCollapsed" class="td-nav-item__label">{{ item.label }}</span>
         </router-link>
+
+        <div v-if="secondaryNavItems.length > 0" class="td-sidebar__section">
+          <div v-if="!sidebarCollapsed" class="td-sidebar__section-label">Workbench Tools</div>
+          <router-link
+            v-for="item in secondaryNavItems"
+            :key="item.id"
+            :to="item.path"
+            class="td-nav-item td-nav-item--secondary"
+            :class="{ 'td-nav-item--active': isActiveRoute(item.path) }"
+            :aria-current="isActiveRoute(item.path) ? 'page' : undefined"
+          >
+            <span class="td-nav-item__icon">{{ item.icon }}</span>
+            <span v-if="!sidebarCollapsed" class="td-nav-item__label">{{ item.label }}</span>
+          </router-link>
+        </div>
       </nav>
 
       <div class="td-sidebar__footer">
@@ -300,13 +457,31 @@ onUnmounted(() => {
     <div class="td-main-container">
       <header class="td-topbar" role="banner">
         <div class="td-topbar__left">
+          <div class="td-topbar__mode">
+            <label class="td-topbar__mode-label" for="workspace-mode-select">Workspace mode</label>
+            <div class="td-topbar__mode-controls">
+              <select
+                id="workspace-mode-select"
+                class="td-topbar__mode-select"
+                :value="workspace.mode"
+                aria-label="Workspace mode"
+                @change="handleWorkspaceModeChange"
+              >
+                <option value="guided">Guided</option>
+                <option value="workbench">Workbench</option>
+                <option value="agent">Agent</option>
+              </select>
+              <span class="td-topbar__mode-copy">{{ currentModeMeta.description }}</span>
+            </div>
+          </div>
+
           <button
             class="td-topbar__palette-trigger"
             aria-label="Open command palette (Ctrl+K)"
             @click="openCommandPalette"
           >
             <span class="td-topbar__search-icon">/</span>
-            <span class="td-topbar__search-text">Search or command... (Ctrl+K)</span>
+            <span class="td-topbar__search-text">Go anywhere or run a command... (Ctrl+K)</span>
           </button>
         </div>
 
@@ -502,6 +677,22 @@ onUnmounted(() => {
   gap: var(--td-space-1);
 }
 
+.td-sidebar__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-1);
+  margin-top: var(--td-space-3);
+}
+
+.td-sidebar__section-label {
+  padding: var(--td-space-2) var(--td-space-3);
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .td-sidebar__footer {
   padding: var(--td-space-2);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -535,6 +726,10 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+.td-nav-item--secondary {
+  color: rgba(255, 255, 255, 0.62);
+}
+
 .td-nav-item__icon {
   font-size: var(--td-font-lg);
   flex-shrink: 0;
@@ -552,18 +747,57 @@ onUnmounted(() => {
 }
 
 .td-topbar {
-  height: var(--td-topbar-height);
   background: var(--td-surface-primary);
   border-bottom: 1px solid var(--td-border-default);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--td-space-4);
+  padding: var(--td-space-3) var(--td-space-4);
   flex-shrink: 0;
+  gap: var(--td-space-3);
 }
 
 .td-topbar__left {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+}
+
+.td-topbar__mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.td-topbar__mode-label {
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--td-text-tertiary);
+}
+
+.td-topbar__mode-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+  flex-wrap: wrap;
+}
+
+.td-topbar__mode-select {
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-primary);
+  color: var(--td-text-primary);
+  padding: 0.35rem 0.75rem;
+  font-size: var(--td-font-sm);
+  min-width: 140px;
+}
+
+.td-topbar__mode-copy {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
 }
 
 .td-topbar__palette-trigger {
@@ -577,7 +811,8 @@ onUnmounted(() => {
   color: var(--td-text-tertiary);
   cursor: pointer;
   font-size: var(--td-font-sm);
-  min-width: 240px;
+  min-width: 280px;
+  width: fit-content;
 }
 
 .td-topbar__palette-trigger:hover {
@@ -750,5 +985,21 @@ onUnmounted(() => {
   padding: 1px 6px;
   font-family: monospace;
   font-size: var(--td-font-xs);
+}
+
+@media (max-width: 900px) {
+  .td-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .td-topbar__palette-trigger {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .td-topbar__right {
+    justify-content: space-between;
+  }
 }
 </style>

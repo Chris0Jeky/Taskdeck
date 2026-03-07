@@ -11,6 +11,29 @@ test.beforeEach(async ({ page, request }) => {
   await registerAndAttachSession(page, request, 'smoke')
 })
 
+test('home landing and workspace mode preference should persist across navigation and reload', async ({ page }) => {
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/workspace\/home$/)
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
+
+  const workspaceModeSelect = page.getByLabel('Workspace mode')
+  const savePreferenceResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/workspace/preferences') &&
+    response.request().method() === 'PUT' &&
+    response.ok())
+
+  await workspaceModeSelect.selectOption('workbench')
+  await savePreferenceResponse
+  await expect(workspaceModeSelect).toHaveValue('workbench')
+
+  await page.goto('/workspace/boards')
+  await expect(page).toHaveURL(/\/workspace\/boards$/)
+  await expect(page.getByLabel('Workspace mode')).toHaveValue('workbench')
+
+  await page.reload()
+  await expect(page.getByLabel('Workspace mode')).toHaveValue('workbench')
+})
+
 async function createBoard(page: Page, boardName: string) {
   await gotoBoardsWorkspace(page)
   await page.getByRole('button', { name: '+ New Board' }).click()

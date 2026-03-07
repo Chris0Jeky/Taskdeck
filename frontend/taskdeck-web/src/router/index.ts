@@ -14,6 +14,7 @@ import ArchiveView from '../views/ArchiveView.vue'
 import NotificationInboxView from '../views/NotificationInboxView.vue'
 import NotificationPreferencesView from '../views/NotificationPreferencesView.vue'
 import InboxView from '../views/InboxView.vue'
+import HomeView from '../views/HomeView.vue'
 import { isTokenExpired } from '../utils/jwt'
 
 const router = createRouter({
@@ -36,7 +37,7 @@ const router = createRouter({
     // Legacy routes (backward compatible)
     {
       path: '/',
-      redirect: '/workspace/boards',
+      redirect: '/workspace/home',
     },
     {
       path: '/boards',
@@ -48,6 +49,16 @@ const router = createRouter({
     },
 
     // Workspace routes
+    {
+      path: '/workspace',
+      redirect: '/workspace/home',
+    },
+    {
+      path: '/workspace/home',
+      name: 'workspace-home',
+      component: HomeView,
+      meta: { requiresShell: true },
+    },
     {
       path: '/workspace/boards',
       name: 'workspace-boards',
@@ -199,7 +210,7 @@ router.beforeEach((to) => {
   }
 
   if (isPublic && tokenValid && (to.path === '/login' || to.path === '/register')) {
-    return { path: '/workspace/boards' }
+    return { path: '/workspace/home' }
   }
 })
 
