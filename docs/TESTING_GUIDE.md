@@ -341,7 +341,7 @@ Release/security workflow: `.github/workflows/release-security.yml`
 
 - release/tag/manual dependency inventory artifact generation
 - backend/frontend vulnerability signal capture
-- manual strict-enforcement option that fails on unresolved high/critical findings or unparseable scan outputs
+- manual strict-enforcement option that fails on unresolved high/critical findings, non-zero dependency scan exits, or unparseable scan outputs
 - reusable container artifact/checksum lane for release-ready outputs
 
 CI extended dependency-security lane:
