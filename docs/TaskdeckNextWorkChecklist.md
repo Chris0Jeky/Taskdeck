@@ -39,13 +39,14 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
 - [ ] Meta index maintenance: `#107` (`Priority V`)
 
-## MVP Expansion Productization (Wave I Seeded)
+## MVP Expansion Productization (Wave P Seeded)
 
 Detailed reconciliation:
 - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
 - `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
+- canonical GitHub naming uses `Wave P` for the novice-first productization tranche
 
-- [ ] Wave I tracker: `#318`
+- [ ] Wave P tracker: `#318`
 - [ ] Batch A novice-first shell and entry clarity:
   - `#320` workspace modes + `Home` summary shell
   - `#322` `Review`-first routing + empty/help states + board selectors
@@ -56,7 +57,7 @@ Detailed reconciliation:
   - `#96` onboarding/contextual help (reused, reprioritized to `Priority II`)
   - `#100` user guides/tutorials/FAQ (reused, reprioritized to `Priority II`)
   - `#328` first-run smoke + launch-criteria guardrail
-- [ ] Wave I implementation carry-forward:
+- [ ] Wave P implementation carry-forward:
   - `#320`: durable workspace-mode preference + product-shaped summary endpoint direction
   - `#324`: onboarding checklist plus first useful project/wizard flow
   - `#326`: application-layer proposal summaries + explicit board-aware action rail
@@ -74,7 +75,7 @@ Detailed reconciliation:
 - [ ] Expanded testing/release framing follow-through:
   - `#341` product telemetry taxonomy + `R1` / `R2` / `R3` launch gates
 
-Related reuse anchors that stay outside the immediate Wave I execution core:
+Related reuse anchors that stay outside the immediate Wave P execution core:
 - [ ] `#93`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`
 
 Secondary lower-priority follow-through wave seeded from the audit:

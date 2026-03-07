@@ -243,8 +243,8 @@ Backlog implication:
 
 - existing overlap and reuse anchors are partial (`#96`, `#93`, `#100`, `#77`, `#75`, `#98`, `#216`, `#218`, `#219`, `#311`)
 - the novice-first productization wave is now seeded as `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, with `#96` and `#100` updated into the same `Priority II` tranche
-- the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave I, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
-- the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave I and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
+- the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave P, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
+- the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave P and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
 - planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
   - `guided` / `workbench` / `agent` workspace modes
   - `Home` and `Today` product routes

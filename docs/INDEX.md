@@ -91,8 +91,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - Dated repository analysis snapshots and follow-through mapping notes (non-authoritative unless promoted into active docs).
   - includes `analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md` for ongoing promotion of `docs/InReview/MVP_EXPANSION/` into canonical docs and backlog guidance.
   - includes `analysis/2026-03-07_mvp-expansion-gap-map.md` for the dated doc and issue reconciliation baseline.
-  - includes `analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` for the full file-by-file and snippet-by-snippet audit of what from `MVP_EXPANSION/` is promoted, deferred, or still unseeded.
-  - includes `analysis/2026-03-07_mvp-productization-seeding-plan.md` for the concrete GitHub issue-seeding and duplicate-resolution record for the seeded Wave I productization tranche.
+  - includes `analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` for the full file-by-file and snippet-by-snippet audit of what from `MVP_EXPANSION/` is promoted, deferred, or carried into later-wave issue scope.
+  - includes `analysis/2026-03-07_mvp-productization-seeding-plan.md` for the concrete GitHub issue-seeding and duplicate-resolution record for the seeded Wave P productization tranche.
   - includes `analysis/2026-02-23_testing-harness-synthesis.md` for testing-harness wave reconciliation (`#254` to `#260`).
   - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
 - `InReview/`

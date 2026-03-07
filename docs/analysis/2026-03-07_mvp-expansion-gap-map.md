@@ -143,9 +143,9 @@ Recommended release framing from the expanded package:
   - integrations page
   - at least two meaningful inbound context/capture paths
 
-## Operational Seeding Rules
+## Operational Execution Rules
 
-- Keep the seeded productization wave indexed in `#107` before active execution begins.
+- Keep the seeded productization wave indexed in `#107` throughout active execution.
 - Use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` as the audit ledger for anything promoted only partially or carried into later waves.
 - Keep Wave Q (`#329` to `#334`) below Wave P in urgency.
 - Keep Wave R (`#335` to `#341`) below Wave Q in urgency.

@@ -2,7 +2,7 @@
 
 Date: 2026-03-07
 Branch: `docs/mvp-expansion-reconciliation`
-Status: Coverage audit complete; Wave P/Q/R seeded; root-docs curation and path cleanup still in progress
+Status: Coverage audit complete; Wave P/Q/R seeded; docs-root curation intentionally split into follow-on work
 
 ## Purpose
 
@@ -40,6 +40,7 @@ Primary current-doc inputs:
 - Treat the `MINIMAL` pack as the concise product diagnosis and prioritization source.
 - Treat the `EXPANDED` pack as the architectural and issue-seeding expansion layer.
 - Keep immediate productization work separate from later agent/knowledge/integration expansion.
+- Keep docs-root curation/path cleanup separate from this reconciliation branch so the backlog/doc-integration diff stays reviewable on its own.
 - Avoid rewriting `STATUS.md` as aspiration; put future-facing work in roadmap/backlog docs instead.
 
 ## Working Synthesis
@@ -134,7 +135,7 @@ It needs a product-legibility correction that turns the current harness and capt
 The 2026-03-07 full-source audit found three buckets:
 
 1. Promoted well:
-   - the core `MINIMAL` diagnosis and the Wave I novice-first productization direction
+   - the core `MINIMAL` diagnosis and the Wave P novice-first productization direction (the source pack called this same tranche `Wave I`)
 2. Promoted, but too implicitly:
    - durable workspace-mode preference
    - aggregated `Home` / `Today` / `Review` summary APIs
@@ -164,7 +165,7 @@ The 2026-03-07 full-source audit found three buckets:
   - `#100` end-user guides/tutorials/FAQ
   - `#216` thesis-aligned demo and landing baseline
   - `#97` / `#98` for later integration/plugin breadth
-- Seeded in the new Wave I pass:
+- Seeded in the new Wave P pass:
   - `#318` tracker
   - `#320` workspace modes + `Home`
   - `#322` `Review`-first routing, empty/help states, and selectors
@@ -174,7 +175,7 @@ The 2026-03-07 full-source audit found three buckets:
 - Updated existing overlap issues in the same pass:
   - `#96` reprioritized to `Priority II` and narrowed to onboarding/help follow-through for the productization wave
   - `#100` reprioritized to `Priority II` and narrowed to user-docs/FAQ follow-through for the productization wave
-- Tightened Wave I issue bodies after the full-source audit so the most useful source-derived details are now carried directly in GitHub:
+- Tightened Wave P issue bodies after the full-source audit so the most useful source-derived details are now carried directly in GitHub:
   - `#320` durable workspace-mode preference + product-shaped `Home` aggregation
   - `#324` onboarding/project-wizard clarity
   - `#326` application-layer proposal summaries + explicit board-aware action rail
@@ -186,7 +187,7 @@ The 2026-03-07 full-source audit found three buckets:
   - `#330` in-app demoability and live attention cues
   - `#331` demo director reporting/assertions/presets/soak
   - `#332` replay-from-trace and scenario-authoring follow-through
-  - `#333` saved views and post-Wave-I productivity shortcuts
+  - `#333` saved views and post-Wave-P productivity shortcuts
   - `#334` note-style import and clip intake follow-through
 - Seeded expanded-blueprint architecture wave after the later audit pass:
   - `#335` tracker
@@ -208,9 +209,9 @@ The 2026-03-07 full-source audit found three buckets:
   - `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/snippets/`
 - extracted headings and snippet payloads to verify no source file was being ignored
 - searched GitHub issues for overlap on onboarding, search, and new productization themes
-- re-read selected issue bodies for reuse-anchor and Wave I scope validation:
+- re-read selected issue bodies for reuse-anchor and Wave P scope validation:
   - `#93`, `#96`, `#100`, `#216`, `#311`, `#318`, `#320`, `#324`, `#326`, `#328`
-- updated Wave I issue bodies to preserve source-audit detail:
+- updated Wave P issue bodies to preserve source-audit detail:
   - `#320`, `#324`, `#326`, `#96`, `#100`, `#328`
 - tightened existing issue bodies with expanded-blueprint detail on route/manual contracts:
   - `#320`, `#322`, `#100`
@@ -254,7 +255,7 @@ The 2026-03-07 full-source audit found three buckets:
 - Treat the `MINIMAL` pack as the near-horizon execution filter when `EXPANDED` suggests larger future breadth.
 - Keep agent workspace and knowledge/integrations on the roadmap, but sequence them behind novice-first productization.
 - Use file-scoped or batch-scoped commits instead of one large documentation commit.
-- Add the resulting productization wave to `#107` before active execution begins; do not scatter the new scope across disconnected old issues.
+- Keep the resulting productization wave indexed in `#107` throughout active execution; do not scatter the new scope across disconnected old issues.
 - Keep a single canonical tracker file and fold continuity-critical detail into it instead of maintaining parallel trackers.
 
 ### 2026-03-08 deletion audit
@@ -263,7 +264,7 @@ The 2026-03-07 full-source audit found three buckets:
 - Confirmed the surviving reconciliation tracker is the canonical continuity record and already preserves the high-signal synthesis, source inputs, decision log, and commit ledger that mattered operationally.
 - Residual risk from the consolidation was not data loss in Git history; it was future confusion about whether one or two tracker files should remain active. That risk is now treated as resolved: keep only this tracker live.
 - Chosen next seeding shape: one dedicated productization wave tracker plus a small set of focused child issues, while updating overlapping existing issues (`#96`, `#100`, `#107`) instead of cloning their scope into new duplicates.
-- Seeded the chosen Wave I shape as `#318`, `#320`, `#322`, `#324`, `#326`, and `#328`, with `#96` and `#100` updated into the same `Priority II` tranche.
+- Seeded the chosen Wave P shape as `#318`, `#320`, `#322`, `#324`, `#326`, and `#328`, with `#96` and `#100` updated into the same `Priority II` tranche.
 - Closed the competing parallel-created batch (`#317`, `#319`, `#321`, `#323`, `#325`, `#327`) as duplicates once the overlap was detected, keeping `#318` / `#320` / `#322` / `#324` / `#326` / `#328` as the canonical sequence.
 
 ## Commit Ledger
@@ -285,7 +286,7 @@ The 2026-03-07 full-source audit found three buckets:
 ## Next Actions
 
 1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`, and `#107` synchronized if the wave map changes.
-2. Keep `#329` to `#334` subordinated to Wave I so the secondary follow-through does not compete with the main productization tranche.
+2. Keep `#329` to `#334` subordinated to Wave P so the secondary follow-through does not compete with the main productization tranche.
 3. Keep `#335` to `#341` subordinated to Wave Q so the remaining expanded-blueprint architecture stays future-facing and bounded.
 4. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
 5. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.
