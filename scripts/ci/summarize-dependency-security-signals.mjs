@@ -206,6 +206,10 @@ function toRepoRelative(path) {
   return relative(process.cwd(), resolve(path)).replaceAll('\\', '/')
 }
 
+function hasScanFailure(scan) {
+  return scan.exitCode !== 0 || scan.parseFailed
+}
+
 export async function buildSummary(options) {
   const backendExitCode = await readExitCode(options.backendExitCodeFile)
   const frontendExitCode = await readExitCode(options.frontendExitCodeFile)
@@ -232,8 +236,13 @@ export async function buildSummary(options) {
     frontend,
     totals: {
       highOrCriticalFindings: backend.highOrCriticalCount + frontend.highOrCriticalCount,
+      scanFailures: Number(hasScanFailure(backend)) + Number(hasScanFailure(frontend)),
       parseFailures: Number(backend.parseFailed) + Number(frontend.parseFailed),
       hasActionableFindings: backend.highOrCriticalCount + frontend.highOrCriticalCount > 0,
+      hasEnforcementFailures:
+        backend.highOrCriticalCount + frontend.highOrCriticalCount > 0 ||
+        hasScanFailure(backend) ||
+        hasScanFailure(frontend),
     },
   }
 
@@ -242,7 +251,7 @@ export async function buildSummary(options) {
     '',
     `- Workflow context: ${options.workflowContext}`,
     options.policyDoc ? `- Policy: \`${toRepoRelative(options.policyDoc)}\`` : null,
-    '- Release-blocking threshold: unresolved high/critical dependency findings or scan command failures in an enforcement run.',
+    '- Release-blocking threshold: unresolved high/critical dependency findings, non-zero scan exits, or parse failures (unparseable or missing reports) in an enforcement run.',
     '',
     '### Backend',
     `- Exit code: ${backend.exitCode}`,
