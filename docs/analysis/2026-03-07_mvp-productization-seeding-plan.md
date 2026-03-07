@@ -1,7 +1,7 @@
 # MVP Productization Seeding Plan
 
 Date: 2026-03-07
-Status: Proposed for GitHub write-back
+Status: Executed on GitHub
 Source basis:
 
 - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
@@ -20,9 +20,36 @@ This note defines the concrete seeding shape before new GitHub issues are create
 - small enough to review
 - explicit about reuse versus new scope
 
+## Executed Outcome
+
+Canonical seeded wave:
+
+- `#318` tracker
+- `#320` workspace modes + `Home` summary shell
+- `#322` `Review`-first routing, empty/help states, and selector/raw-ID cleanup
+- `#324` `Today` agenda + onboarding path
+- `#326` proposal readability + board-centered action flow
+- `#96` onboarding/contextual help (reused and reprioritized to `Priority II`)
+- `#100` docs/manual/FAQ/help-center follow-through (reused and reprioritized to `Priority II`)
+- `#328` product first-run smoke + launch-criteria guardrail
+
+Wave index update:
+
+- `#107` now includes the seeded productization wave as `Wave P`
+
+Duplicate cleanup:
+
+- `#317`, `#319`, `#321`, `#323`, `#325`, and `#327` were closed as duplicates after a parallel-creation conflict was detected during the project-hygiene pass
+
+Project metadata outcome:
+
+- `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, `#96`, and `#100` were verified in GitHub Project v2 with `Status=Pending`
+- their `Priority` field was synced to `Priority II`
+
 ## Seeding Decision
 
 Seed one dedicated productization wave tracker plus five focused child issues.
+That exact structure was kept, but the final canonical issue split used the `#318` / `#320` / `#322` / `#324` / `#326` / `#328` set above.
 
 Do not create duplicate tickets for:
 
@@ -41,8 +68,8 @@ Instead:
 
 ### 1. Productization wave tracker
 
-Suggested title:
-- `MVP-02: Novice-first productization wave tracker (Home -> Review -> Today -> help)`
+Canonical issue:
+- `#318` `UX-13: MVP productization wave tracker (Home -> Review -> Today)`
 
 Priority:
 - `Priority II`
@@ -70,8 +97,8 @@ Reused but not duplicated:
 
 ### 2. Product shell, `Home`, and empty/help-state foundation
 
-Suggested title:
-- `UX-11: Product shell modes, Home route, and action-oriented empty/help states`
+Canonical issue:
+- `#320` `UX-14: Add workspace mode foundation and Home summary shell`
 
 Priority:
 - `Priority II`
@@ -100,10 +127,10 @@ Acceptance notes:
 - guided mode surfaces `capture`, `review`, `today`, and board continuation paths
 - workbench mode preserves the current implementation-shaped navigation for power users
 
-### 3. Review-first navigation and proposal readability
+### 3. Review-first navigation, empty/help states, and selector cleanup
 
-Suggested title:
-- `UX-12: Review-first route, navigation terminology, and readable proposal summaries`
+Canonical issue:
+- `#322` `UX-15: Make Review the primary automation surface and remove raw-ID happy paths`
 
 Priority:
 - `Priority II`
@@ -116,11 +143,8 @@ Scope:
 
 - add `/workspace/review` as the normal-user automation route
 - shift navigation terminology from implementation language toward review-first language
-- make proposal cards/summaries readable in plain language:
-  - intent
-  - affected board/card scope
-  - risk/confidence context
-  - obvious next action
+- replace dead-end empty states on primary product pages with action-oriented guidance
+- remove raw board-ID happy paths from common flows via selectors/pickers
 - keep queue/advanced controls available but explicitly secondary
 
 Acceptance notes:
@@ -128,10 +152,10 @@ Acceptance notes:
 - review becomes the default place to evaluate automation work
 - users no longer need internal mental models of queue mechanics to understand pending work
 
-### 4. `Today`, board action rail, and cross-surface continuity
+### 4. `Today` agenda and onboarding path
 
-Suggested title:
-- `UX-13: Today agenda, board action rail, and cross-surface deep-link continuity`
+Canonical issue:
+- `#324` `UX-16: Add Today agenda and first-run onboarding path`
 
 Priority:
 - `Priority II`
@@ -143,43 +167,40 @@ Recommended dependencies:
 
 Scope:
 
-- add `Today` route and supporting agenda endpoint
-- surface pending review, inbox follow-up, and board continuation cues in one place
-- add board action rail to make next moves obvious from a board
-- strengthen deep links and next-step shortcuts across:
-  - inbox
-  - review
-  - notifications
-  - boards
-  - home
+- add `Today` route and supporting agenda aggregation
+- add the first-run onboarding/checklist or wizard path for the current MVP loop
+- connect onboarding progression back to `Home`, `Review`, and board execution
+- keep onboarding resumable/replayable/dismissible for experienced users
 
 Acceptance notes:
 
 - user can move from `Home` to `Today` to `Review` to a board without context loss
 - board surfaces expose the obvious follow-up actions instead of forcing route hunting
 
-### 5. Selector-first targeting and raw-ID removal
+### 5. Proposal readability and board-centered action flow
 
-Suggested title:
-- `UX-14: Selector-first board targeting and raw-ID removal for common flows`
+Canonical issue:
+- `#326` `UX-17: Improve proposal readability and board-centered action flow`
 
 Priority:
 - `Priority II`
 
 Recommended dependencies:
 
-- `#38`
+- `#318`
+- `#320`
+- `#322`
 
 Scope:
 
-- remove raw board-ID happy paths from common user flows
-- add selector/picker targeting in the places that still feel operator-first
-- keep raw IDs available only as diagnostic/advanced affordances
-- shape the selector contracts so later global search in `#93` can build on them
+- improve proposal readability on the main review surfaces
+- add clearer proposal cards with plain-language summaries and next-step links
+- add board-centered action affordances and better cross-surface travel
+- keep board execution as the visible center of the normal user path
 
-Non-goal:
+Related reuse:
 
-- this is not the full global search/launcher issue from `#93`
+- `#93` remains the later broader search/launcher issue
 
 Acceptance notes:
 
@@ -188,8 +209,8 @@ Acceptance notes:
 
 ### 6. First-run smoke and launch-criteria slice
 
-Suggested title:
-- `TST-20: First-run golden-path smoke and novice-beta launch criteria`
+Canonical issue:
+- `#328` `TST-20: Product first-run smoke and launch-criteria guardrail`
 
 Priority:
 - `Priority II`
@@ -303,3 +324,4 @@ These remain later expansion surfaces unless a concrete productization slice pro
 3. Update `#96` and `#100` to join the wave and raise them to `Priority II`.
 4. Update `#107` with the new wave section and child checklist.
 5. Read back the created/updated issues and verify dependency text, labels, and priority consistency.
+6. If a parallel issue batch appears, close the duplicates immediately instead of trying to keep both decompositions alive.
