@@ -471,18 +471,21 @@ Exit Criteria:
 ### Horizon B (Week 3 to 6): Board-Centered Daily Workflow
 
 Focus:
-- add `Today` as a compact daily agenda surface
-- add first-run onboarding checklist and project creation wizard
+- shipped in `#324`: `Today` as a compact daily agenda surface
+- shipped in `#324`: first-run onboarding checklist and first useful board creation wizard
 - add proposal summary service and readable proposal cards with plain-language summaries, risk, and deep links
 - add board action rails so capture/chat/review follow the current board context by default (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`)
 - strengthen deep links across inbox, review, notifications, activity, and resulting boards/cards
-- make `Today` carry actual daily utility:
+- shipped `Today` utility now covers:
   - due today / overdue
   - blocked
-  - recently touched
   - proposals waiting review
   - inbox needing triage
   - resume point
+- remaining follow-through for this horizon:
+  - readable proposal summary cards
+  - board action rails
+  - stronger board-aware deep links across inbox/review/notifications/boards
 
 Exit Criteria:
 - the `capture -> review -> board` loop is visible and coherent inside the product
@@ -591,7 +594,7 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#318` tracker
   - `#320` workspace modes + `Home` summary shell (delivered)
   - `#322` `Review`-first routing + empty/help states + board selectors (delivered)
-  - `#324` `Today` agenda + onboarding path
+  - `#324` `Today` agenda + onboarding path (delivered)
   - `#326` proposal readability + board-centered action flow
   - `#96` onboarding/contextual help (reused, moved to `Priority II`)
   - `#100` user guides/tutorials/FAQ (reused, moved to `Priority II`)
@@ -788,7 +791,7 @@ Batch E integration hardening (`#302`) status:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
-3. Execute the seeded board-centered daily workflow tranche immediately after the remaining shell slice: `#324` -> `#326`.
+3. Continue the remaining board-centered daily workflow tranche after shipped `#324`: `#326`.
 4. Keep the docs/help/testing tranche synchronized with shipped behavior: `#96`, `#100`, then `#328`.
 5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
 6. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
