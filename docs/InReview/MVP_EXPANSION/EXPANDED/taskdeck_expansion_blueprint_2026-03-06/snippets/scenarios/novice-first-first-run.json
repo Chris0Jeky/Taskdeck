@@ -1,0 +1,47 @@
+{
+  "id": "novice-first-first-run",
+  "title": "Novice-first first run",
+  "description": "Seeds a simple first-run workspace for product smoke and manual UX review.",
+  "steps": [
+    {
+      "type": "createBoard",
+      "alias": "project",
+      "name": "DEMO: First Project",
+      "description": "A clean starter project for first-run UX validation."
+    },
+    {
+      "type": "applyStarterPack",
+      "board": "project",
+      "starterPackId": "common-column-flow-kanban"
+    },
+    {
+      "type": "createCapture",
+      "alias": "capture1",
+      "board": "project",
+      "text": "- [ ] Draft onboarding empty states\n- [ ] Review proposal summaries\n- [ ] Add Today page"
+    },
+    {
+      "type": "triageCapture",
+      "capture": "capture1",
+      "requiresLlm": true
+    },
+    {
+      "type": "waitForCaptureProposal",
+      "capture": "capture1",
+      "proposalAlias": "capture1Proposal",
+      "requiresLlm": true
+    },
+    {
+      "type": "executeProposal",
+      "proposal": "capture1Proposal",
+      "requiresLlm": true
+    },
+    {
+      "type": "runOps",
+      "templateName": "health.check",
+      "parameters": {},
+      "includeLogs": true,
+      "alias": "opsHealth"
+    }
+  ]
+}
