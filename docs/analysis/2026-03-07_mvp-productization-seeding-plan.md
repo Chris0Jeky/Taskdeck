@@ -35,7 +35,7 @@ Canonical seeded wave:
 
 Wave index update:
 
-- `#107` now includes the seeded productization wave as `Wave P`
+- `#107` now includes the seeded productization wave as `Wave I`
 
 Duplicate cleanup:
 
@@ -79,15 +79,15 @@ Purpose:
 - act as the parent reference from `#107`
 - keep child ordering explicit
 
-Child checklist should include:
+Child checklist now includes:
 
-- new shell/home issue
-- new review/readability issue
-- new today/action-rail issue
-- new selector/raw-ID-removal issue
-- existing `#96`
-- existing `#100`
-- new first-run smoke/launch-criteria issue
+- `#320`
+- `#322`
+- `#324`
+- `#326`
+- `#96`
+- `#100`
+- `#328`
 
 Reused but not duplicated:
 
@@ -137,7 +137,8 @@ Priority:
 
 Recommended dependencies:
 
-- new `UX-11`
+- `#318`
+- `#320`
 
 Scope:
 
@@ -162,8 +163,9 @@ Priority:
 
 Recommended dependencies:
 
-- new `UX-11`
-- new `UX-12`
+- `#318`
+- `#320`
+- `#322`
 
 Scope:
 
@@ -175,7 +177,7 @@ Scope:
 Acceptance notes:
 
 - user can move from `Home` to `Today` to `Review` to a board without context loss
-- board surfaces expose the obvious follow-up actions instead of forcing route hunting
+- onboarding is tied to the same `Home` / `Today` / `Review` story rather than a detached tour
 
 ### 5. Proposal readability and board-centered action flow
 
@@ -204,8 +206,8 @@ Related reuse:
 
 Acceptance notes:
 
-- normal flows no longer require users to know opaque board IDs
-- selectors are reusable, keyboard-safe, and consistent with existing input-assist work
+- proposal cards keep board continuation obvious instead of hiding next actions behind route-hunting
+- board-centered follow-through stays explicit even as review surfaces become easier to scan
 
 ### 6. First-run smoke and launch-criteria slice
 
@@ -217,9 +219,11 @@ Priority:
 
 Recommended dependencies:
 
-- new `UX-11`
-- new `UX-12`
-- new `UX-13`
+- `#318`
+- `#320`
+- `#322`
+- `#324`
+- `#326`
 - `#96`
 
 Scope:
@@ -250,8 +254,9 @@ Update direction:
 
 Recommended new dependencies:
 
-- `#50`
-- new `UX-11`
+- `#318`
+- `#320`
+- `#324`
 
 ### `#100`
 
@@ -265,10 +270,9 @@ Update direction:
 
 Recommended new dependencies:
 
+- `#318`
 - `#96`
-- new `UX-11`
-- new `UX-12`
-- new `UX-13`
+- `#199`
 
 ### `#107`
 
@@ -317,11 +321,11 @@ These remain later expansion surfaces unless a concrete productization slice pro
 - the missing work is not mostly documentation
 - the product shell, route model, and review/today surfaces need dedicated implementation issues
 
-## Recommended GitHub Write Sequence
+## Executed GitHub Write Sequence
 
-1. Create the productization wave tracker.
-2. Create the four new UX/TST child issues.
-3. Update `#96` and `#100` to join the wave and raise them to `Priority II`.
-4. Update `#107` with the new wave section and child checklist.
-5. Read back the created/updated issues and verify dependency text, labels, and priority consistency.
-6. If a parallel issue batch appears, close the duplicates immediately instead of trying to keep both decompositions alive.
+1. Created the productization wave tracker.
+2. Created the new Wave I child issues.
+3. Updated `#96` and `#100` to join the wave and raised them to `Priority II`.
+4. Updated `#107` with the new wave section and child checklist.
+5. Read back the created/updated issues and verified dependency text, labels, and priority consistency.
+6. Closed the parallel duplicate batch when the conflict was detected.
