@@ -1,145 +1,231 @@
 # Taskdeck User Manual
 
-This manual covers daily usage across Boards, Inbox, Automations, Ops, Activity, and Notifications.
+If you are new to Taskdeck, read [START_HERE.md](/C:/Users/jekyt/source/Taskdeck/docs/START_HERE.md) first.
+This manual is the reference for the current shipped product shape.
 
-## Core Concepts
+## What Taskdeck Is
 
-Boards
-- A board contains columns, cards, labels, and comments.
-- Boards can be archived and restored.
+Taskdeck is a capture-first execution workspace.
+Its main loop is:
 
-Columns
-- Represent workflow stages (for example `Backlog -> In Progress -> Done`).
+1. capture something quickly
+2. triage it into a proposal
+3. review the proposal
+4. apply it explicitly
+5. work the resulting board/cards
 
-Cards
-- Work items with title, description, labels, due date, blocked state/reason, and comments.
+Current product shape:
+- the shipped shell still starts from `Boards`
+- the current UI is closer to a workbench than a novice-first guided product
+- planned `Home` and `Today` surfaces are roadmap work, not current UI
 
-Inbox (Capture)
-- Stores raw inputs.
-- Items can be ignored or triaged into proposals.
+## Current Golden Path
 
-Automation Proposals
-- Taskdeck is proposal-first.
-1. Proposal is generated.
-2. User reviews operations.
-3. User approves.
-4. User executes.
+The fastest current path to value is:
+
+1. create or open a board
+2. capture rough input into `Inbox`
+3. start triage on that Inbox item
+4. open `Automations -> Proposals`
+5. review, approve, and execute the proposal
+6. return to the board and work the cards
+
+This is the core loop Taskdeck already supports well.
+
+## Choose The Right Surface
+
+Use `Boards` when:
+- you are doing the actual work
+- you need to move cards, update details, or collaborate through comments
+
+Use `Inbox` when:
+- the input is messy
+- you want to save it now and structure it later
+- you do not want to decide the board/card shape yet
+
+Use `Automations -> Proposals` when:
+- you need the review boundary
+- you want to inspect what Taskdeck is about to change
+
+Use `Chat` when:
+- you want a conversational workflow
+- you want board-scoped assistance without dropping to the raw Queue path
+
+Use `Queue` only when:
+- you already know the explicit instruction flow
+- you are doing a power-user, debugging, or demo-operator task
+
+Use `Ops` when:
+- you are diagnosing behavior
+- you need logs, endpoint exploration, or operator tooling
 
 ## Getting Started
 
-1. Register/login.
-2. Create a board in `Boards`.
-3. Optionally apply starter packs from board settings.
-4. Capture tasks in `Inbox`.
-5. Triage and execute reviewed proposals.
+1. Register or log in.
+2. Open `Boards`.
+3. Create a board.
+4. Optionally apply a starter pack from board settings.
+5. Create one Inbox item and run the golden path above.
 
-## Boards
+If you want a richer first run, seed the demo workspace from `frontend/taskdeck-web`:
 
-Create/open boards
-1. Open `Boards`.
-2. Click `+ New Board`.
-3. Open a board card.
+```bash
+npm run demo:seed
+```
 
-Board settings
-- Name and description
-- Archive/unarchive
-- Starter packs
-- Access control
+## Boards And Cards
 
-Starter packs
-- Scaffold columns, labels, and optional seed cards.
-- Safe to reapply due to dedupe/idempotency behavior.
+Boards:
+- contain columns, cards, labels, comments, and board settings
+- can be archived and restored
+- are where work should feel visible and actionable
 
-## Cards
+Board settings include:
+- name and description
+- archive/restore
+- starter packs
+- access control
 
-Create cards
-- Use `Add Card` in a column.
+Cards support:
+- title and description
+- due date
+- labels
+- blocked state and blocked reason
+- threaded comments and mentions
 
-Edit cards
-- Title, description, due date, labels, blocked reason.
+`@username` mentions create notifications for the mentioned user.
 
-Move cards
-- Drag-and-drop between columns.
-- Or use Queue/Chat proposals.
+Starter packs:
+- scaffold columns, labels, and optional seed cards
+- are safe to reapply because apply behavior is idempotent and conflict-aware
 
-Comments and mentions
-- `@username` mentions generate notifications for mentioned users.
+## Inbox And Review
 
-## Inbox
-
-Use Inbox for:
-- meeting notes
+Use `Inbox` for:
+- notes
 - bugs
 - follow-ups
-- ideas
+- rough plans
+- ideas you do not want to lose
 
-Actions:
-- Ignore: remove noise/duplicates.
-- Start Triage: produce a reviewed proposal.
+Inbox actions:
+- `Ignore` for noise or duplicates
+- `Start Triage` to request a reviewed proposal
 
-## Automations
+Proposal review:
+- happens in `Automations -> Proposals`
+- is the primary trust boundary for board mutation
+- should answer: what changes, where, and why
 
-Proposals
-- Central review surface.
-- Inspect operations and approve/reject/execute.
+Current review model:
+1. proposal is generated
+2. user reviews operations
+3. user approves or rejects
+4. user executes explicitly
 
-Queue
-- Advanced instruction ingestion.
-- Keep `requestType` as `instruction`.
-- Provide `Board ID` for board-scoped operations.
+## Advanced Automation And Operator Surfaces
 
-Examples:
-- `create card "Write demo script"`
-- `rename board to "Sprint 14"`
-- `move column "Backlog" to position 1`
-- `move card <cardId> to column "Done"`
+### Chat
 
-Chat
-- Conversational workflow.
-- Board-scoped chat can request proposal generation.
+Use Chat when:
+- you want to discuss a task or plan conversationally
+- you want board-scoped assistance
+- you want checklist/bootstrap behavior for a board-scoped flow
 
-## Ops
+### Queue
+
+Queue is an advanced instruction ingestion surface.
+It is not the recommended first-run path.
+
+Use Queue when:
+- you are intentionally issuing direct instructions
+- you want a narrow, explicit automation request
+
+Current limitation:
+- some Queue flows still expose board-scoped technical fields
+- if a raw board identifier is requested, treat that as a temporary advanced workaround, not the normal user journey
+
+### Ops
 
 Ops includes:
-- CLI Runner (`/workspace/ops/cli`)
-- Endpoint Explorer
-- Logs
+- CLI runner
+- endpoint explorer
+- logs
 
-Use Ops for diagnostics and operational workflows.
+Use Ops for diagnostics and operational workflows, not for ordinary daily task capture.
 
-## Activity and Notifications
+## Trust And Visibility
 
-Activity
-- Audit-style history for user and board events.
+### Notifications
 
-Notifications
-- User-targeted events, including mentions and proposal outcomes.
+Notifications surface:
+- mentions
+- proposal outcomes
+- other user-targeted events
 
-## Settings
+### Activity
 
-Profile
-- Account identity details.
+Activity provides:
+- audit-style history
+- board/entity/user exploration
+- visibility into what changed and when
 
-Feature flags
-- Enable advanced surfaces (`Activity`, `Ops`, `Access`, `Archive`) when needed.
+These surfaces support trust.
+They should explain the system, not replace the main board workflow.
 
-Access
-- Board membership and role assignment.
+## Settings And Advanced Management
 
-## Demo and Testing Workflows
+Profile:
+- account identity details
+
+Feature flags:
+- enable advanced surfaces such as `Activity`, `Ops`, `Access`, and `Archive` when needed
+
+Access:
+- board membership and role assignment
+
+Archive:
+- archived-board management and restore flows
+
+## Demo And Testing Workflows
 
 From `frontend/taskdeck-web`:
-- `npm run demo:seed` seeds a full baseline workspace.
-- `npm run demo:run -- --list` lists scenario modules.
-- `npm run demo:run -- engineering-sprint` runs one scenario.
-- `npm run demo:autopilot -- --turns 5 --brain heuristic` simulates realistic activity.
+- `npm run demo:seed` seeds a reusable baseline workspace
+- `npm run demo:run -- --list` lists scenarios
+- `npm run demo:run -- engineering-sprint` runs one scenario
+- `npm run demo:autopilot -- --turns 5 --brain heuristic` simulates activity
+- `npm run demo:director:smoke` runs the deterministic smoke/demo regression path
 
 For direct API walkthroughs:
-- Use `demo/http/taskdeck-demo.http` with VS Code REST Client.
+- use `demo/http/taskdeck-demo.http` with the VS Code REST Client
+
+For the full demo/operator path:
+- see [DEMO_PLAYBOOK.md](/C:/Users/jekyt/source/Taskdeck/docs/DEMO_PLAYBOOK.md)
+- see [SCENARIOS.md](/C:/Users/jekyt/source/Taskdeck/docs/SCENARIOS.md)
+
+## Troubleshooting
+
+If `Notifications` is empty:
+- you may not have any mentions or proposal-outcome events yet
+
+If `Activity` is empty:
+- you may not have enough board/entity events yet for the selected scope
+
+If triage does not produce a proposal:
+- check provider setup and current model/runtime configuration
+- confirm the capture item is still in a triageable state
+
+If Queue feels too technical:
+- use `Inbox` or `Chat` instead unless you explicitly need the advanced instruction flow
+
+If you are unsure where to start:
+- create one board
+- create one Inbox item
+- run the review/apply loop once
 
 ## Current Constraints
 
-- Automation parsing is pattern-based and board-centric.
-- Some advanced surfaces are hidden by default feature flags on first run.
-- Review-first behavior is intentional; destructive autonomy is out of scope.
-
+- the current shell still starts from `Boards`; dedicated `Home` and `Today` pages are not shipped yet
+- some advanced flows still expose internal scope concepts more than a novice-ready product should
+- automation parsing remains pattern-based and board-centric
+- review-first behavior is intentional; destructive autonomy is out of scope

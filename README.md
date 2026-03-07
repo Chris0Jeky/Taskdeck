@@ -3,6 +3,8 @@
 Taskdeck is a local-first execution workspace for developers.
 It is being shaped around one thesis: capture should be near-zero friction, and automation should stay safe via review-first proposals.
 
+If you are evaluating the product or contributing for the first time, start with [docs/START_HERE.md](docs/START_HERE.md).
+
 ## Product Thesis
 
 Taskdeck focuses on the failure mode that kills most personal task systems: maintenance overhead.
@@ -170,6 +172,7 @@ For latest verified totals and CI parity, see `docs/STATUS.md` and `docs/TESTING
 ## Roadmap and Current Status
 
 Start here:
+- `docs/START_HERE.md` for the first 15 minutes and the current golden path
 - `docs/STATUS.md` for current shipped reality
 - `docs/IMPLEMENTATION_MASTERPLAN.md` for delivery sequencing
 - `docs/INDEX.md` for documentation map

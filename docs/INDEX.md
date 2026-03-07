@@ -15,6 +15,15 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 - `GOLDEN_PRINCIPLES.md`
   - Stable repository invariants and lightweight mechanically enforced principles.
 
+## Recommended Read Paths
+
+- New user / evaluator:
+  - `START_HERE.md` -> `USER_MANUAL.md` -> `DEMO_PLAYBOOK.md`
+- Maintainer / planner:
+  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `TESTING_GUIDE.md`
+- Demo operator:
+  - `START_HERE.md` -> `DEMO_PLAYBOOK.md` -> `SCENARIOS.md` -> `DOGFOODING_GUIDE.md`
+
 ## Active Operational Docs
 
 - `GITHUB_PROJECT_AUTOMATION.md`
@@ -56,8 +65,10 @@ This directory is the canonical documentation entrypoint for Taskdeck.
   - JSON scenario runner reference for deterministic demo/test setup, step contracts, and interpolation rules.
 - `DOGFOODING_GUIDE.md`
   - Daily operating cadence for capture-triage-proposal execution and friction logging.
+- `START_HERE.md`
+  - Audience-first bridge doc for the first 15 minutes: product thesis, current golden path, demo entry point, and page map.
 - `USER_MANUAL.md`
-  - End-user usage reference across Boards, Inbox, Automations, Ops, Activity, Notifications, and demo tooling.
+  - End-user reference for current shipped workbench flows; distinguishes the normal capture/review/board path from advanced/operator surfaces.
 - `DEMO_EXPANSION_MIGRATION_SOT.md`
   - Canonical staged migration map for importing `TaskdeckDemoExpansion` (`v0` through `v3`) into this repository.
 - `temp_description.txt`
@@ -78,7 +89,8 @@ This directory is the canonical documentation entrypoint for Taskdeck.
 
 - `analysis/`
   - Dated repository analysis snapshots and follow-through mapping notes (non-authoritative unless promoted into active docs).
-  - includes `analysis/2026-03-07_mvp-expansion-integration-tracker.md` for ongoing promotion of `docs/InReview/MVP_EXPANSION/` into canonical docs and backlog guidance.
+  - includes `analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md` for ongoing promotion of `docs/InReview/MVP_EXPANSION/` into canonical docs and backlog guidance.
+  - includes `analysis/2026-03-07_mvp-expansion-gap-map.md` for the dated doc and issue reconciliation baseline.
   - includes `analysis/2026-02-23_testing-harness-synthesis.md` for testing-harness wave reconciliation (`#254` to `#260`).
   - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
 - `InReview/`
