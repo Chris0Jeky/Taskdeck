@@ -83,6 +83,7 @@ Implementation note from the full-source audit:
   - application-layer proposal summary generation plus explicit board-aware action-rail behavior
   - dismissible in-app help blocks and the `novice-first-first-run` smoke/scenario shape
 - treat the audit’s secondary demoability/harness/productivity follow-through as deferred, not dropped
+- that secondary follow-through is now seeded as `#329` to `#334`; execute it only after the Wave I core is underway or delivered, and do not mix it into `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, or `#328`
 
 ## Execution Order (Dependency-Aware)
 
@@ -230,6 +231,10 @@ MVP productization wave seeded from the 2026-03-07 integration:
 21. `#249` UI-07 inbox premium primitives pass
 22. `#248` UI-06 drag/drop premium behavior + keyboard alternatives
 23. `#250` PERF-08 frontend interaction latency budgets + instrumentation
+24. `#329` MVP-03 lower-priority secondary MVP follow-through tracker
+25. `#330` UX-18 in-app demoability and live attention cues
+26. `#331` TST-21 demo director reporting/assertions/presets/soak follow-through
+27. `#332` TST-22 replay-from-trace and scenario-authoring follow-through
 
 Execution note (premium UI wave):
 - Reused dependencies are intentionally not re-seeded as duplicates: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization).
@@ -275,6 +280,8 @@ Testing/UX/docs:
 33. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
 34. `#267` OUT-05 daily outreach dashboard (keyboard-first)
 35. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
+36. `#333` UX-19 saved views and post-Wave-I productivity shortcuts
+37. `#334` INT-05 note-style import and clip intake follow-through
 
 Execution note (testing harness knowledge-transfer):
 - Existing Priority IV items were updated with pack-derived scope clarifications:
@@ -287,6 +294,13 @@ Execution note (testing harness knowledge-transfer):
   - `#75` import adapters
   - `#77` analytics model/dashboards
   - `#175` starter-pack catalog expansion
+- Secondary MVP follow-through wave explicitly reuses adjacent anchors instead of duplicating scope:
+  - `#93` global search/actions
+  - `#216` thesis-aligned demo/landing baseline
+  - `#77` dashboard-scale telemetry/reporting overlap
+  - `#98` later connector/integrations architecture
+  - `#311` completed demo hardening baseline
+  - `#75`, `#218`, `#219` note/import/capture-source overlap
 
 Maintainability hotspot refactor wave (analysis-driven):
 38. `#158` REF-11 decompose `AppShell.vue`

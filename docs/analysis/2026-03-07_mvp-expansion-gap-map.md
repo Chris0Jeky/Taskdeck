@@ -42,17 +42,13 @@ Full-source audit companion:
 Audit addendum:
 
 - the Wave I productization core is represented well enough to execute
-- the full source corpus still contains a second-order deferred set that should not be treated as “handled” just because it is not in Wave I:
-  - `Demo Tools`
-  - guided narrative/demo-tour mode
-  - nav badges
-  - hero-board quality
-  - HTML report
-  - snapshot/trace assertions
-  - director presets and soak mode
-  - replay-from-trace
-  - internal scenario composer/editor
-  - saved views
+- the secondary second-order follow-through set is now seeded as a lower-priority wave:
+  - `#329` tracker
+  - `#330` in-app demoability/product evidence
+  - `#331` harness reporting/assertions/presets/soak
+  - `#332` replay-from-trace and scenario authoring
+  - `#333` saved views/productivity follow-through
+  - `#334` broader note-style import/clip intake follow-through
 - the expanded pack’s concrete agent and knowledge/integration issue shapes are still not seeded as numbered issues
 
 ## What Already Overlaps
@@ -173,26 +169,16 @@ Current issue coverage:
 - `#75`, `#98`, `#218`, `#219` are the main reuse anchors
 - no product-facing knowledge/integrations wave exists yet
 
-### Secondary deferred carry-forward from the full audit
+### Secondary lower-priority follow-through wave
 
-These are not Wave I blockers, but they were real recommendations in the source corpus and should remain visible until they are either seeded or intentionally discarded:
+This formerly deferred set is now seeded and intentionally kept below Wave I:
 
-- product evidence/demoability:
-  - in-app `Demo Tools`
-  - guided narrative/demo-tour mode
-  - nav badges
-  - hero-board quality
-- harness maturity:
-  - static HTML demo report
-  - snapshot assertions
-  - trace assertions
-  - director presets
-  - soak mode
-  - replay-from-trace
-  - scenario composer/editor
-- day-to-day productivity follow-through:
-  - saved views
-  - broader import surfaces beyond current anchors
+- `#329` tracker
+- `#330` product evidence/demoability
+- `#331` harness reporting/assertions/presets/soak
+- `#332` replay-from-trace and scenario authoring
+- `#333` saved views/productivity follow-through
+- `#334` broader note-style import and clip intake follow-through
 
 ## Recommended Seeding Order
 
@@ -208,7 +194,7 @@ Reason:
 
 - this is the shortest path from "good demo infrastructure" to "self-explaining product"
 
-### Priority III
+### Priority III and later lower-priority follow-through
 
 Seed only after the above is underway:
 
@@ -218,6 +204,7 @@ Seed only after the above is underway:
 Reason:
 
 - the blueprint is explicit that agents, traces, and knowledge should formalize only after the human product is clear
+- the secondary follow-through wave is now separately seeded as `#329` to `#334`; keep it below Wave I while Batch D and Batch E remain broader unseeded architecture
 
 ## Release Framing
 
@@ -246,6 +233,7 @@ Recommended release framing from the expansion package:
 
 - Keep the seeded productization wave indexed in `#107` before active execution begins.
 - Use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` as the audit ledger for anything that was promoted only partially or explicitly deferred.
+- Keep the seeded lower-priority secondary follow-through wave (`#329` to `#334`) below Wave I in urgency.
 - Reuse the overlap issues above instead of cloning scope into disconnected new tickets.
 - Keep `MINIMAL` as the near-horizon filter when `EXPANDED` suggests broader future breadth.
 - Do not let plugin/connector/agent breadth outrun `Home` / `Today` / `Review` productization.

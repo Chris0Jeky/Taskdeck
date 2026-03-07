@@ -63,24 +63,28 @@ Detailed reconciliation:
   - `#96`: dismissible in-app help blocks/help-center direction
   - `#328`: `novice-first-first-run` scenario shape and launch-criteria sync
 - [ ] Batch D agent substrate:
+  - still unseeded later-wave architecture
   - profiles
   - runs
   - run events
   - policies
   - first narrow template
 - [ ] Batch E knowledge/integrations surface:
+  - still unseeded later-wave architecture
   - knowledge documents
   - SQLite FTS search
-  - note/transcript/clip intake
+  - deeper knowledge-safe transcript/clip intake architecture beyond the narrower follow-through in `#334`
   - integrations registry page
 
 Related reuse anchors that stay outside the immediate Wave I execution core:
 - [ ] `#93`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`
 
-Secondary deferred set preserved by the audit and still needing later disposition:
-- [ ] `Demo Tools`, guided narrative/demo tour, nav badges, hero-board quality
-- [ ] HTML report, snapshot/trace assertions, presets/soak, replay-from-trace, scenario composer
-- [ ] saved views and broader import-surface follow-through
+Secondary lower-priority follow-through wave seeded from the audit:
+- [ ] Secondary lower-priority follow-through wave tracker: `#329`
+- [ ] Demoability/product evidence: `#330`
+- [ ] Harness maturity/reporting: `#331`, `#332`
+- [ ] Productivity follow-through: `#333`
+- [ ] Note-style import/clip intake follow-through: `#334`
 
 ## Out-of-Code and Configuration Actions Coverage
 

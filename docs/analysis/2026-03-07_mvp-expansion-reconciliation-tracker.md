@@ -2,7 +2,7 @@
 
 Date: 2026-03-07
 Branch: `docs/mvp-expansion-reconciliation`
-Status: Coverage audit complete; secondary carry-forward preserved
+Status: Coverage audit complete; lower-priority secondary follow-through seeded; broader architecture still unseeded
 
 ## Purpose
 
@@ -142,12 +142,14 @@ The 2026-03-07 full-source audit found three buckets:
    - explicit board-aware action-rail behavior
    - dismissible help-block and help-center shape
    - first-run scenario shape for the eventual smoke path
-3. Preserved only as deferred/backlog context:
-   - `Demo Tools`
-   - guided narrative/demo-tour mode
-   - nav badges
-   - hero-board quality
-   - HTML report, snapshot/trace assertions, presets, soak, replay-from-trace, scenario composer
+3. Preserved as lower-priority/backlog follow-through context:
+   - a lower-priority seeded secondary follow-through wave now captures:
+     - `#329` tracker
+     - `#330` in-app demoability/product evidence
+     - `#331` harness reporting/assertions/presets/soak
+     - `#332` replay-from-trace and scenario authoring
+     - `#333` saved views/productivity follow-through
+     - `#334` broader note-style import/clip intake follow-through
    - unseeded agent substrate and knowledge/integration epics
 
 ### GitHub issue overlap
@@ -175,6 +177,13 @@ The 2026-03-07 full-source audit found three buckets:
   - `#96` dismissible help blocks
   - `#100` navigation-shaped docs/manual structure
   - `#328` `novice-first-first-run` scenario contract
+- Seeded lower-priority secondary follow-through wave after the full-source audit:
+  - `#329` tracker
+  - `#330` in-app demoability and live attention cues
+  - `#331` demo director reporting/assertions/presets/soak
+  - `#332` replay-from-trace and scenario-authoring follow-through
+  - `#333` saved views and post-Wave-I productivity shortcuts
+  - `#334` note-style import and clip intake follow-through
 - Still intentionally not seeded yet:
   - agent profile/run/knowledge foundation slice as described in the new blueprint
 
@@ -193,11 +202,16 @@ The 2026-03-07 full-source audit found three buckets:
   - `#93`, `#96`, `#100`, `#216`, `#311`, `#318`, `#320`, `#324`, `#326`, `#328`
 - updated Wave I issue bodies to preserve source-audit detail:
   - `#320`, `#324`, `#326`, `#96`, `#100`, `#328`
+- seeded lower-priority secondary follow-through issues:
+  - created `#329`, `#330`, `#331`, `#332`, `#333`, `#334`
+- updated wave index issue:
+  - `#107`
 - seeded GitHub productization issues:
   - created `#318`, `#320`, `#322`, `#324`, `#326`, `#328`
   - updated `#96`, `#100`, and `#107`
 - spot-checked GitHub Project v2 metadata via `gh api graphql`
   - confirmed new wave issues auto-added with `Status=Pending`
+  - synchronized `Priority III` / `Priority IV` project-field values for `#329` to `#334` to match their labels
   - confirmed new wave issues and updated `#96` / `#100` carry `Priority II`
   - confirmed `#107` remains `Priority V`
   - detected broader legacy `Priority`-field drift outside this new wave; treated as a separate follow-up concern rather than expanding this pass into a full historical cleanup
@@ -256,6 +270,6 @@ The 2026-03-07 full-source audit found three buckets:
 ## Next Actions
 
 1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`, `#318`, and `#107` synchronized if the Wave I slice map changes.
-2. Decide whether the secondary deferred backlog from the audit (`Demo Tools`, guided narrative, nav badges, hero-board quality, HTML report, snapshot/trace assertions, presets, soak, replay-from-trace, scenario composer, saved views) should be seeded as a later focused follow-through wave.
+2. Keep `#329` to `#334` subordinated to Wave I so the secondary follow-through does not compete with the main productization tranche.
 3. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
 4. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.

@@ -1,6 +1,6 @@
 # 2026-03-07 MVP Expansion Source Coverage Audit
 
-Status: Non-authoritative audit record.
+Status: Non-authoritative audit record with seeded lower-priority follow-through captured.
 
 Purpose:
 - verify that every file under `docs/InReview/MVP_EXPANSION/` is either:
@@ -19,10 +19,10 @@ Purpose:
   - onboarding/help/docs/testing coherence
 - The exact mode/navigation contracts and the backend aggregate-service direction from the `EXPANDED` pack are only partially preserved.
 - The snippet assets were not lost, but several of their most useful implications were only implied in current docs/issues rather than carried explicitly.
-- The secondary backlog from the full pack is still unevenly represented:
-  - some items are intentionally deferred
-  - some are partially mapped to reuse anchors
-  - some remain unseeded
+- The secondary backlog from the full pack now has split treatment:
+  - useful secondary follow-through is seeded as `#329` to `#334`
+  - some details still sit on reuse anchors instead of dedicated issues
+  - broader agent/knowledge architecture remains unseeded
 
 ## Source-to-Target Matrix
 
@@ -30,13 +30,13 @@ Purpose:
 
 | Source | Key signal | Current target(s) | Status | Carry-forward note |
 |---|---|---|---|---|
-| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/00_READ_ME_FIRST.md` | demo infrastructure is ahead of self-serve product clarity | `README.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`, `#318` to `#328` | promoted + seeded | in-app demo/self-serve affordances are still deferred |
-| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/01_DEMO_COMPLETENESS_ASSESSMENT.md` | distinguish demo-as-proof from self-serve product onboarding | `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/DEMO_PLAYBOOK.md`, `docs/TESTING_GUIDE.md` | partial | `Demo Tools`, guided narrative/demo-tour, and hero-board quality are not explicitly issue-tracked yet |
+| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/00_READ_ME_FIRST.md` | demo infrastructure is ahead of self-serve product clarity | `README.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`, `#318` to `#334` | promoted + seeded | in-app demo/self-serve affordances are now preserved in the lower-priority `#330` follow-through slice |
+| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/01_DEMO_COMPLETENESS_ASSESSMENT.md` | distinguish demo-as-proof from self-serve product onboarding | `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/DEMO_PLAYBOOK.md`, `docs/TESTING_GUIDE.md`, `#330` | partial + seeded | `Demo Tools`, guided narrative/demo-tour, and hero-board quality now have explicit issue coverage in `#330` |
 | `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/02_GOLDEN_PATH_AND_PRODUCTIZATION.md` | surface taxonomy, start surface, board context travel, selectors, readable proposals, empty/help states | `docs/START_HERE.md`, `docs/USER_MANUAL.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `#320`, `#322`, `#324`, `#326` | promoted + seeded | board-aware quick capture and exact CTA patterns should stay explicit in `#326` implementation |
-| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/03_DOGFOODING_AND_USEFUL_NOW.md` | honest useful-now posture, solo-dev dogfooding shape, friction metrics | `docs/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `README.md` | partial | exact board/column/label defaults, metric taxonomy, and saved-views follow-through remain weakly represented |
-| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/04_SCENARIO_MATRIX_AND_TEST_PLAN.md` | tiered product smoke/scenario/live/adversarial testing strategy | `docs/TESTING_GUIDE.md`, `docs/SCENARIOS.md`, `#328` | partial | named scenario matrix, snapshot/trace assertions, HTML report, presets, soak mode, and internal scenario composer are not yet preserved as explicit backlog items |
+| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/03_DOGFOODING_AND_USEFUL_NOW.md` | honest useful-now posture, solo-dev dogfooding shape, friction metrics | `docs/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `README.md`, `#333` | partial + seeded | saved-views follow-through is now preserved in `#333`; exact board/column/label defaults and metric taxonomy still remain weakly represented |
+| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/04_SCENARIO_MATRIX_AND_TEST_PLAN.md` | tiered product smoke/scenario/live/adversarial testing strategy | `docs/TESTING_GUIDE.md`, `docs/SCENARIOS.md`, `#328`, `#331`, `#332` | partial + seeded | named scenario matrix, HTML report, assertions, presets, soak mode, replay-from-trace, and internal scenario composer are now preserved as explicit backlog items |
 | `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/05_MANUAL_AND_DOCS_STRATEGY.md` | audience-layered docs set with `START_HERE` as bridge doc | `README.md`, `docs/START_HERE.md`, `docs/USER_MANUAL.md`, `docs/INDEX.md`, `#100` | promoted + seeded | screenshot/gif placement and fuller manual appendix structure remain later maturity work |
-| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/06_PRIORITIZED_BACKLOG.md` | Wave I ordering plus secondary demoability/harness/productivity/agent backlog | `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/TaskdeckNextWorkChecklist.md`, `#318` to `#328` | core promoted; secondary deferred | `Demo Tools`, guided narrative, nav badges, hero-board quality, HTML report, saved views, replay-from-trace, and scenario composer are still not sharply mapped |
+| `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/06_PRIORITIZED_BACKLOG.md` | Wave I ordering plus secondary demoability/harness/productivity/agent backlog | `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/TaskdeckNextWorkChecklist.md`, `#318` to `#334` | core promoted; secondary follow-through seeded | `Demo Tools`, guided narrative, nav badges, hero-board quality, HTML report, saved views, replay-from-trace, and scenario composer now map to `#330` to `#333`; agent/knowledge slices are still not sharply mapped |
 | `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/INDEX.md` | pack inventory only | `docs/analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`, this audit | accounted for | no extra action needed |
 | `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/TASKDECK_REVIEW_MASTER.md` | compiled copy of the numbered review files | same union as rows above | accounted for | treat as convenience artifact, not a second canonical source |
 
@@ -95,24 +95,20 @@ Purpose:
   - the `novice-first-first-run` scenario shape
   - launch criteria and first-run smoke synchronization
 
-### Secondary backlog preserved but not yet seeded cleanly
+### Secondary backlog now seeded as a lower-priority follow-through wave
 
+- tracker:
+  - `#329` secondary MVP follow-through tracker
 - product evidence / demoability follow-through:
-  - in-app `Demo Tools`
-  - guided narrative/demo tour
-  - nav badges
-  - hero-board quality
+  - `#330` in-app `Demo Tools`, guided narrative/demo-tour, nav badges, hero-board quality
 - harness maturity follow-through:
-  - static HTML demo report
-  - snapshot assertions
-  - trace assertions
-  - director narrative presets
-  - long-run soak mode
-  - replay-from-trace
-  - internal scenario composer/editor
-- productivity follow-through:
-  - saved views
-  - broader import surfaces beyond current anchors
+  - `#331` static HTML demo report, snapshot/trace assertions, director presets, soak mode
+  - `#332` replay-from-trace and scenario-authoring follow-through
+- productivity/import follow-through:
+  - `#333` saved views and post-Wave-I productivity shortcuts
+  - `#334` broader note-style import and clip intake follow-through
+
+These issues are intentionally lower priority than Wave I and should not compete with the `#318` to `#328` tranche.
 
 ### Still-unseeded architecture work
 

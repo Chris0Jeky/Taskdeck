@@ -414,7 +414,7 @@ Implementation carry-forward from the full source audit:
 - prefer aggregated product-shaped APIs for `Home`, `Today`, `Review`, and board summary needs over client-side fetch fan-out
 - keep proposal summary generation in the application layer instead of forcing the frontend to reverse-engineer meaning from low-level operations
 - keep board-aware action-rail behavior explicit (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) so board context actually travels
-- preserve the secondary deferred set from the audit (`Demo Tools`, guided narrative/demo tour, nav badges, hero-board quality, HTML report, snapshot/trace assertions, presets/soak, replay-from-trace, scenario composer, saved views`) as later follow-through rather than letting it disappear
+- the secondary follow-through set from the audit is now seeded as `#329` to `#334`; keep it below Wave I and reuse anchors such as `#216`, `#77`, `#93`, `#98`, `#311`, `#75`, `#218`, and `#219` instead of duplicating their scope
 
 ## Roadmap by Horizon
 
@@ -539,9 +539,14 @@ These continue in parallel where they protect trust, performance, or operator po
 - Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212` (delivered), `#238`, `#239`, `#240`
 - Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
+- Seeded secondary MVP follow-through wave (lower priority than Wave I):
+  - `#329` tracker
+  - `#330` in-app demoability and live attention cues
+  - `#331` demo director reporting/assertions/presets/soak
+  - `#332` replay-from-trace and scenario-authoring follow-through
 - Planned seeding from the 2026-03-07 MVP expansion integration (not yet created as numbered issues):
   - agent workspace foundation (`AgentProfile`, `AgentRun`, `AgentRunEvent`, tool registry, policies, first agent template, agent views)
-  - local-first knowledge and integrations product surface (`KnowledgeDocument`, SQLite FTS search, notes/transcript/clip intake, integrations registry page)
+  - broader local-first knowledge and integrations product surface (`KnowledgeDocument`, SQLite FTS search, deeper transcript/clip intake architecture, integrations registry page) beyond the narrower follow-through already captured in `#334`
 - Reuse-before-duplicate candidates for that later seeding pass: `#75`, `#97`, `#98`, `#218`, `#219`
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
@@ -550,6 +555,9 @@ These continue in parallel where they protect trust, performance, or operator po
 - Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
+- Lower-priority secondary MVP follow-through continuation:
+  - `#333` saved views and productivity shortcuts
+  - `#334` note-style import and clip intake follow-through
 - Optional premium UI documentation/component tooling: `#251`
 - Developer/user docs maturity: `#99`, `#216`, `#217`
 - Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
