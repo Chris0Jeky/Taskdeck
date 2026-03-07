@@ -27,11 +27,11 @@ public class WorkspaceService : IWorkspaceService
             return Result.Failure<WorkspaceHomeDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
         var preference = await EnsurePreferenceAsync(userId, cancellationToken);
-        var captureStatuses = await GetCaptureStatusesAsync(userId, cancellationToken);
+        var captureSummary = await _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
         var recentCutoff = DateTimeOffset.UtcNow.Subtract(RecentBoardWindow);
-        var capturesNeedingTriage = captureStatuses.Count(status => status is CaptureStatus.New or CaptureStatus.Failed);
-        var capturesInProgress = captureStatuses.Count(status => status == CaptureStatus.Triaging);
-        var capturesReadyForFollowUp = captureStatuses.Count(status => status == CaptureStatus.Triaged);
+        var capturesNeedingTriage = captureSummary.NewCount + captureSummary.FailedCount;
+        var capturesInProgress = captureSummary.TriagingCount;
+        var capturesReadyForFollowUp = captureSummary.TriagedCount;
         var proposalsPendingReview = await _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
         var totalBoards = await _unitOfWork.Boards.CountReadableByUserIdAsync(userId, includeArchived: false, cancellationToken);
         var recentBoardsCount = await _unitOfWork.Boards.CountReadableUpdatedSinceAsync(
@@ -54,7 +54,7 @@ public class WorkspaceService : IWorkspaceService
 
         var isFirstRun =
             totalBoards == 0 &&
-            captureStatuses.Count == 0 &&
+            captureSummary.TotalCaptures == 0 &&
             proposalsPendingReview == 0;
 
         return Result.Success(new WorkspaceHomeDto(
@@ -128,28 +128,6 @@ public class WorkspaceService : IWorkspaceService
         await _unitOfWork.UserPreferences.AddAsync(defaultPreference, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return await _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken) ?? defaultPreference;
-    }
-
-    private async Task<IReadOnlyList<CaptureStatus>> GetCaptureStatusesAsync(
-        Guid userId,
-        CancellationToken cancellationToken)
-    {
-        var items = await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
-
-        return items
-            .Where(item => CaptureRequestContract.IsCaptureRequestType(item.RequestType))
-            .Select(ResolveCaptureStatus)
-            .ToList();
-    }
-
-    private static CaptureStatus ResolveCaptureStatus(LlmRequest item)
-    {
-        var payloadResult = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
-        var hasLinkedProposal = payloadResult.IsSuccess &&
-                                payloadResult.Value.Provenance?.ProposalId is Guid proposalId &&
-                                proposalId != Guid.Empty;
-
-        return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal);
     }
 
     private static WorkspacePreferenceDto MapPreference(UserPreference preference)

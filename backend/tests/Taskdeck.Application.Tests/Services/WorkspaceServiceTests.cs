@@ -87,11 +87,6 @@ public class WorkspaceServiceTests
         boardA.Update(description: "Alpha board updated");
 
         var preference = new UserPreference(userId, WorkspaceMode.Workbench);
-        var pendingCapture = CreateCaptureRequest(userId, RequestStatus.Pending);
-        var triagingCapture = CreateCaptureRequest(userId, RequestStatus.Processing);
-        var triagedCapture = CreateCaptureRequest(userId, RequestStatus.Completed);
-        var failedCapture = CreateCaptureRequest(userId, RequestStatus.Failed);
-        var proposalCreatedCapture = CreateCaptureRequest(userId, RequestStatus.Completed, Guid.NewGuid());
 
         _userPreferenceRepositoryMock
             .Setup(repository => repository.GetByUserIdAsync(userId, default))
@@ -110,8 +105,8 @@ public class WorkspaceServiceTests
             .Setup(repository => repository.GetRecentReadableByUserIdAsync(userId, 3, false, default))
             .ReturnsAsync([boardA, boardB]);
         _llmQueueRepositoryMock
-            .Setup(repository => repository.GetByUserAsync(userId, default))
-            .ReturnsAsync([pendingCapture, triagingCapture, triagedCapture, failedCapture, proposalCreatedCapture]);
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((5, 1, 1, 1, 1));
         _proposalRepositoryMock
             .Setup(repository => repository.CountPendingReviewByUserIdAsync(userId, default))
             .ReturnsAsync(2);
@@ -134,49 +129,6 @@ public class WorkspaceServiceTests
             "resume-recent-board",
             "capture-now"
         ]);
-    }
-
-    private static LlmRequest CreateCaptureRequest(Guid userId, RequestStatus status, Guid? proposalId = null)
-    {
-        var payload = new CapturePayloadV1(
-            CaptureRequestContract.CurrentSchemaVersion,
-            CaptureSource.Typed,
-            $"Capture for {status}");
-        var request = new LlmRequest(
-            userId,
-            CaptureRequestContract.RequestTypeV1,
-            CaptureRequestContract.SerializePayload(payload));
-
-        if (proposalId.HasValue)
-        {
-            var payloadWithProvenance = CaptureRequestContract.WithProvenance(
-                payload,
-                request.Id,
-                proposalId: proposalId,
-                requestedByUserId: userId,
-                correlationId: Guid.NewGuid().ToString("N"),
-                sourceSurface: "capture");
-            request.UpdatePayload(CaptureRequestContract.SerializePayload(payloadWithProvenance));
-        }
-
-        switch (status)
-        {
-            case RequestStatus.Pending:
-                break;
-            case RequestStatus.Processing:
-                request.MarkAsProcessing();
-                break;
-            case RequestStatus.Completed:
-                request.MarkAsProcessing();
-                request.MarkAsCompleted();
-                break;
-            case RequestStatus.Failed:
-                request.MarkAsFailed("triage failed");
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported capture status for test setup.");
-        }
-
-        return request;
+        _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

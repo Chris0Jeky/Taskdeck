@@ -78,6 +78,15 @@ describe('HomeView', () => {
     expect(mockWorkspaceStore.fetchHomeSummary).toHaveBeenCalledTimes(1)
   })
 
+  it('refreshes the home summary even when cached data already exists', async () => {
+    mockWorkspaceStore.hasHomeSummary = true
+
+    mount(HomeView)
+    await waitForUi()
+
+    expect(mockWorkspaceStore.fetchHomeSummary).toHaveBeenCalledTimes(1)
+  })
+
   it('renders first-run guidance, workload, and recent boards', async () => {
     const wrapper = mount(HomeView)
     await waitForUi()

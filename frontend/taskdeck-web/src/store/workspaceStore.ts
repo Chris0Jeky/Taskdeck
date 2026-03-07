@@ -29,6 +29,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const homeSummary = ref<HomeSummary | null>(null)
   const homeLoading = ref(false)
   const homeError = ref<string | null>(null)
+  let preferenceRequestVersion = 0
+  let pendingPreferenceRequests = 0
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
 
@@ -41,46 +43,76 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     persistLocalMode(nextMode)
   }
 
+  function startPreferenceRequest(): number {
+    pendingPreferenceRequests += 1
+    preferenceLoading.value = true
+    return ++preferenceRequestVersion
+  }
+
+  function finishPreferenceRequest() {
+    pendingPreferenceRequests = Math.max(0, pendingPreferenceRequests - 1)
+    preferenceLoading.value = pendingPreferenceRequests > 0
+  }
+
+  function isCurrentPreferenceRequest(version: number) {
+    return version === preferenceRequestVersion
+  }
+
   async function hydratePreferences(): Promise<WorkspacePreference | null> {
     if (!session.isAuthenticated) {
       preferencesHydrated.value = false
       return null
     }
 
+    const requestVersion = startPreferenceRequest()
+
     try {
-      preferenceLoading.value = true
       preferenceError.value = null
       const preference = await workspaceApi.getPreferences()
-      applyMode(preference.workspaceMode)
-      preferencesHydrated.value = true
+
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        applyMode(preference.workspaceMode)
+        preferencesHydrated.value = true
+      }
+
       return preference
     } catch (e: unknown) {
-      preferenceError.value = getErrorMessage(e, 'Failed to load workspace preferences')
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        preferenceError.value = getErrorMessage(e, 'Failed to load workspace preferences')
+      }
+
       return null
     } finally {
-      preferenceLoading.value = false
+      finishPreferenceRequest()
     }
   }
 
   async function updateMode(nextMode: WorkspaceMode): Promise<void> {
+    const requestVersion = startPreferenceRequest()
     applyMode(nextMode)
 
     if (!session.isAuthenticated) {
+      preferencesHydrated.value = false
+      finishPreferenceRequest()
       return
     }
 
     try {
-      preferenceLoading.value = true
       preferenceError.value = null
       const preference = await workspaceApi.updatePreferences({ workspaceMode: nextMode })
-      applyMode(preference.workspaceMode)
-      preferencesHydrated.value = true
+
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        applyMode(preference.workspaceMode)
+        preferencesHydrated.value = true
+      }
     } catch (e: unknown) {
-      preferenceError.value = getErrorMessage(e, 'Failed to save workspace mode')
-      preferencesHydrated.value = false
-      toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        preferenceError.value = getErrorMessage(e, 'Failed to save workspace mode')
+        preferencesHydrated.value = false
+        toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
+      }
     } finally {
-      preferenceLoading.value = false
+      finishPreferenceRequest()
     }
   }
 

@@ -28,6 +28,17 @@ vi.mock('../../store/sessionStore', () => ({
   useSessionStore: () => sessionMock,
 }))
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+
+  return { promise, resolve, reject }
+}
+
 describe('workspaceStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -66,6 +77,46 @@ describe('workspaceStore', () => {
     expect(store.mode).toBe('agent')
     expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
     expect(workspaceApi.updatePreferences).toHaveBeenCalledWith({ workspaceMode: 'agent' })
+  })
+
+  it('keeps the latest mode when an older hydration request resolves after an update', async () => {
+    const store = useWorkspaceStore()
+    const hydration = createDeferred<Awaited<ReturnType<typeof workspaceApi.getPreferences>>>()
+    const update = createDeferred<Awaited<ReturnType<typeof workspaceApi.updatePreferences>>>()
+
+    vi.mocked(workspaceApi.getPreferences).mockReturnValue(hydration.promise)
+    vi.mocked(workspaceApi.updatePreferences).mockReturnValue(update.promise)
+
+    const hydratePromise = store.hydratePreferences()
+    expect(store.preferenceLoading).toBe(true)
+
+    const updatePromise = store.updateMode('agent')
+    expect(store.mode).toBe('agent')
+    expect(store.preferenceLoading).toBe(true)
+
+    update.resolve({
+      userId: crypto.randomUUID(),
+      workspaceMode: 'agent',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    await updatePromise
+
+    expect(store.mode).toBe('agent')
+    expect(store.preferenceLoading).toBe(true)
+
+    hydration.resolve({
+      userId: crypto.randomUUID(),
+      workspaceMode: 'guided',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    await hydratePromise
+
+    expect(store.mode).toBe('agent')
+    expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
+    expect(store.preferencesHydrated).toBe(true)
+    expect(store.preferenceLoading).toBe(false)
   })
 
   it('keeps the local mode when server persistence fails', async () => {
