@@ -391,6 +391,7 @@ Reconciliation record:
 Recent follow-through (2026-02-24):
 - `#260` adds `.github/workflows/nightly-quality.yml` (scheduled + manual) to collect non-blocking quality telemetry artifacts on `main`
 - workflow now publishes backend (Domain/Application) coverage artifacts, frontend coverage artifacts, and dependency/security signal artifacts (`dotnet list package --vulnerable`, `npm audit`)
+- dependency/security signal handling is now policy-backed (`#106`): reusable normalized summaries, PR/manual opt-in `ci-extended` scan lane, nightly scheduled signal collection, release-lane enforcement option, severity SLAs, and expiry-bound exception rules are documented in `docs/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
 - workflow surfaces signal exits in step summary/warnings while keeping required PR CI path unchanged (reporting-first nightly lane)
 - `#259` adds `docs/GOLDEN_PRINCIPLES.md` as a concise invariant baseline and cross-links it from canonical active docs/index and contributor guidance
 - governance lane now runs `scripts/check-golden-principles.mjs` and docs-governance now requires/validates the golden-principles document alongside canonical active docs
@@ -555,7 +556,6 @@ Security/compliance hardening backlog added from research cross-check:
 - API abuse/rate-limiting policy (`#81`, delivered)
 - SSO/OIDC + optional MFA (`#82`)
 - data portability/deletion workflow (`#83`)
-- dependency vulnerability management policy (`#106`)
 - secrets/configuration management baseline (`#110`)
 
 ## Recently Resolved (This Cycle)

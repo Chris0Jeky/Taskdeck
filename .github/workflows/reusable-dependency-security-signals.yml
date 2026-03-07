@@ -1,0 +1,129 @@
+name: Reusable Dependency Security Signals
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        required: false
+        type: string
+        default: 8.0.x
+      node-version:
+        required: false
+        type: string
+        default: 24.13.1
+      frontend-audit-level:
+        required: false
+        type: string
+        default: high
+      frontend-omit-dev:
+        required: false
+        type: boolean
+        default: false
+      artifact-name:
+        required: false
+        type: string
+        default: dependency-security-signals
+      retention-days:
+        required: false
+        type: number
+        default: 14
+      summary-title:
+        required: false
+        type: string
+        default: Dependency Security Signal Summary
+      workflow-context:
+        required: false
+        type: string
+        default: unspecified
+      enforce-findings:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-security-signals:
+    name: Dependency Security Signals
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Restore backend dependencies
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Collect dependency and security reports
+        shell: bash
+        run: |
+          mkdir -p artifacts/dependency-security
+
+          frontend_args=(--json --audit-level=${{ inputs.frontend-audit-level }})
+          if [ "${{ inputs.frontend-omit-dev }}" = "true" ]; then
+            frontend_args+=(--omit=dev)
+          fi
+
+          set +e
+          dotnet list backend/Taskdeck.sln package --vulnerable --include-transitive --format json > artifacts/dependency-security/backend-vulnerabilities.json 2> artifacts/dependency-security/backend-vulnerabilities.stderr
+          backend_exit=$?
+          printf '%s' "$backend_exit" > artifacts/dependency-security/backend-vulnerabilities.exitcode
+
+          npm audit "${frontend_args[@]}" --prefix frontend/taskdeck-web > artifacts/dependency-security/frontend-audit.json 2> artifacts/dependency-security/frontend-audit.stderr
+          frontend_exit=$?
+          printf '%s' "$frontend_exit" > artifacts/dependency-security/frontend-audit.exitcode
+          set -e
+
+      - name: Summarize dependency security signals
+        shell: bash
+        run: |
+          node scripts/ci/summarize-dependency-security-signals.mjs \
+            --backend-report artifacts/dependency-security/backend-vulnerabilities.json \
+            --backend-exit-code-file artifacts/dependency-security/backend-vulnerabilities.exitcode \
+            --frontend-report artifacts/dependency-security/frontend-audit.json \
+            --frontend-exit-code-file artifacts/dependency-security/frontend-audit.exitcode \
+            --policy-doc docs/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md \
+            --summary-title "${{ inputs.summary-title }}" \
+            --workflow-context "${{ inputs.workflow-context }}" \
+            --output-markdown artifacts/dependency-security/summary.md \
+            --output-json artifacts/dependency-security/summary.json
+
+          cat artifacts/dependency-security/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce dependency findings
+        if: inputs.enforce-findings
+        shell: bash
+        run: |
+          node -e "const fs = require('node:fs'); const summary = JSON.parse(fs.readFileSync('artifacts/dependency-security/summary.json', 'utf8')); if (summary.totals.hasEnforcementFailures) { console.error('Dependency security enforcement failed. Review artifacts/dependency-security/summary.md and the linked policy doc.'); process.exit(1); }"
+
+      - name: Upload dependency and security signal artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: artifacts/dependency-security
+          if-no-files-found: ignore
+          retention-days: ${{ inputs.retention-days }}

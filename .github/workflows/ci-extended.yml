@@ -48,6 +48,18 @@ jobs:
       - name: Run dependency review
         uses: actions/dependency-review-action@v4
 
+  dependency-security-signals:
+    name: Dependency Security Signals
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'security'))
+    uses: ./.github/workflows/reusable-dependency-security-signals.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+      artifact-name: ci-extended-dependency-security-signals
+      retention-days: 14
+      summary-title: CI Extended Dependency Security Summary
+      workflow-context: ci-extended
+
   openapi-guardrail:
     name: OpenAPI Guardrail
     uses: ./.github/workflows/reusable-openapi-guardrail.yml

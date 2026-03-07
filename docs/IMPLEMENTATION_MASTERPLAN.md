@@ -631,7 +631,8 @@ Covered by seeded issues:
 - Multi-tenancy strategy ADR: `#71` (delivered)
 - API abuse/rate limiting: `#81` (delivered)
 - OWASP/security headers and CSRF/XSS baseline: `#80` (delivered)
-- Dependency vulnerability management policy: `#106`
+- Dependency vulnerability management policy: `#106` (delivered)
+  - reusable dependency-security signal workflow now normalizes backend/frontend scan results for PR/manual, nightly, and release contexts; remaining follow-through is limited to future automation escalation (for example auto-ticketing or stricter PR gating) rather than baseline policy definition
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`
 - Cloud target topology and autoscaling ADR: `#111`
