@@ -352,11 +352,12 @@ test.describe('Stakeholder demo recorder', () => {
     await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('04-inbox.png'), fullPage: true })
 
-    await page.getByRole('link', { name: 'Automations' }).click()
-    await expect(page.getByRole('heading', { name: 'Automations' })).toBeVisible()
+    await page.getByRole('link', { name: 'Review' }).click()
+    await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('05-automations-proposals.png'), fullPage: true })
 
-    await page.getByRole('button', { name: 'Queue' }).click()
+    await page.getByRole('button', { name: 'Open Queue (Advanced)' }).click()
+    await expect(page.getByRole('heading', { name: 'Automation Queue', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: /New Request/ })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('06-automations-queue.png'), fullPage: true })
 

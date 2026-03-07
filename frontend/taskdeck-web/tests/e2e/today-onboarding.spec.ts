@@ -9,7 +9,7 @@ test('today agenda should create a useful board from setup flow', async ({ page 
   const boardName = `Today Setup ${Date.now()}`
 
   await page.goto('/workspace/today')
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Start Useful Board' }).click()
   const setupDialog = page.getByRole('dialog', { name: 'Workspace setup' })
   await expect(setupDialog).toBeVisible()
