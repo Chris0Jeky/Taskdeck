@@ -1,100 +1,142 @@
 # Start Here
 
-Taskdeck is a local-first execution workspace built around one simple loop:
+This is the first doc to read if you are new to Taskdeck.
+
+Taskdeck is a local-first, capture-first execution workspace.
+Its main idea is simple:
 
 1. capture something quickly
-2. triage it into a proposal
-3. review the proposal
-4. apply it explicitly
-5. work the resulting board/cards
+2. turn it into a reviewed proposal
+3. apply it explicitly
+4. work the resulting board/cards
 
-If you only remember one thing, remember this:
-Taskdeck is strongest when capture is cheap and board mutation stays review-first.
+## What Taskdeck Is Good At Right Now
 
-## What To Know Up Front
+Taskdeck is strongest today as:
 
-- `Boards` are where work is done.
-- `Inbox` is where messy input belongs first.
-- `Automations -> Proposals` is the main review surface.
-- `Queue` and `Ops` are advanced/operator surfaces, not the normal first-run path.
-- The current shipped shell still starts from `Boards`; planned `Home` and `Today` surfaces are not shipped yet.
+- a safe execution workspace for developers and builders
+- a place to capture rough work without losing it
+- a review-first board system where automation proposes changes instead of mutating silently
 
-## First 15 Minutes
+Taskdeck is not yet a polished novice-first product shell.
+The current shipped UI still starts from `Boards`, and the planned `Home` and `Today` surfaces are roadmap work, not current product routes.
 
-### Option A: use the current product loop
+## Fastest Path To First Value
 
-1. Start the backend and frontend.
-2. Register or log in.
-3. Create a board from `Boards`.
-4. Optionally apply a starter pack from board settings.
-5. Capture a note, task, or idea into `Inbox`.
-6. Start triage on that Inbox item.
-7. Open `Automations -> Proposals`.
-8. Review, approve, and execute the proposal.
-9. Return to the board and work the resulting cards.
+If you want the shortest real workflow:
 
-### Option B: use the seeded demo workspace
+1. start the backend and frontend
+2. create or open a board
+3. create one Inbox item or quick capture
+4. start triage
+5. open `Automations -> Proposals`
+6. review, approve, and execute
+7. return to the board and keep working there
 
-From `frontend/taskdeck-web`:
+That is the current golden path.
+
+## Quick Local Start
+
+Backend:
 
 ```bash
+dotnet restore backend/Taskdeck.sln
+dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+```
+
+Frontend:
+
+```bash
+cd frontend/taskdeck-web
+npm install
+npm run dev
+```
+
+Default URLs:
+
+- API: `http://localhost:5000`
+- Swagger: `http://localhost:5000/swagger`
+- Frontend: `http://localhost:5173`
+
+## If You Want A Better First Run
+
+Seed the demo workspace so the app starts populated instead of mostly empty:
+
+```bash
+cd frontend/taskdeck-web
 npm run demo:seed
 ```
 
-Then:
+Use this when:
 
-1. sign in
-2. open the seeded boards
-3. inspect `Inbox`
-4. open `Automations -> Proposals`
-5. execute a proposal and return to a board
+- you are evaluating the product
+- you want to understand event-driven surfaces faster
+- you need a believable walkthrough state
 
-For the full demo/operator workflow, use [DEMO_PLAYBOOK.md](/C:/Users/jekyt/source/Taskdeck/docs/DEMO_PLAYBOOK.md).
+If you want the full seeded demo/operator path, then read [DEMO_PLAYBOOK.md](DEMO_PLAYBOOK.md).
 
 ## Page Map
 
 Core surfaces:
+
 - `Boards`
-- `Board view`
 - `Inbox`
 - `Automations -> Proposals`
+- quick capture
 - starter packs
+- `Chat` when you want conversational board-scoped help
 
-Supporting trust surfaces:
+Trust surfaces:
+
 - `Notifications`
 - `Activity`
 - comments and mentions
 
 Advanced/operator surfaces:
+
 - `Queue`
-- `Chat`
 - `Ops`
 - `Access`
 - `Archive`
 
-## When To Use What
+Rule of thumb:
 
-Use `Inbox` when:
-- the input is messy
-- you do not want to structure it yet
-- you want Taskdeck to suggest the board update later
+- if you are unsure where to begin, stay in `Boards`, `Inbox`, and `Automations -> Proposals`
+- treat `Queue` and `Ops` as advanced tools, not the normal first-run path
 
-Use `Automations -> Proposals` when:
-- you want to review what Taskdeck is about to change
-- you need the trust boundary before board mutation
+## What To Click First
 
-Use `Boards` when:
-- you are executing work
-- you need to move cards, add details, or collaborate through comments
+If the app is empty:
 
-Use `Queue` only when:
-- you already know the explicit instruction flow
-- you are doing a power-user or debugging task
+1. create a board
+2. optionally apply a starter pack
+3. create one capture or Inbox item
+4. run triage
+5. open the proposal
+6. execute it
 
-## Read Next
+If the app is seeded:
 
-- [USER_MANUAL.md](/C:/Users/jekyt/source/Taskdeck/docs/USER_MANUAL.md): full current usage reference
-- [DOGFOODING_GUIDE.md](/C:/Users/jekyt/source/Taskdeck/docs/DOGFOODING_GUIDE.md): daily-use cadence and friction logging
-- [DEMO_PLAYBOOK.md](/C:/Users/jekyt/source/Taskdeck/docs/DEMO_PLAYBOOK.md): seeded demo and walkthrough flow
-- [SCENARIOS.md](/C:/Users/jekyt/source/Taskdeck/docs/SCENARIOS.md): JSON scenario runner
-- [STATUS.md](/C:/Users/jekyt/source/Taskdeck/docs/STATUS.md): current shipped reality
+1. open the demo board
+2. open `Inbox`
+3. follow a capture item into a proposal
+4. execute the proposal
+5. go back to the board and inspect the result
+
+## If You Only Remember One Thing
+
+Do not overthink the taxonomy on day one.
+
+Use Taskdeck like this:
+
+- capture now
+- triage later
+- review before apply
+- work from the board
+
+## Next Docs
+
+- [USER_MANUAL.md](USER_MANUAL.md) for the current shipped product reference
+- [DOGFOODING_GUIDE.md](DOGFOODING_GUIDE.md) for daily internal use
+- [DEMO_PLAYBOOK.md](DEMO_PLAYBOOK.md) for seeded demos and stakeholder walkthroughs
+- [TESTING_GUIDE.md](TESTING_GUIDE.md) for verification commands and test policy

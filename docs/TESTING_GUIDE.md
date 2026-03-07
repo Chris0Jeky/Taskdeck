@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-06
+Last Updated: 2026-03-07
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -27,6 +27,26 @@ Verification note:
 - frontend unit/build totals were re-verified on 2026-03-06 via `npm run lint`, `npx vitest --run`, `npm run typecheck`, and `npm run build`
 - frontend E2E totals were re-verified on 2026-03-06 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`24/24` passing; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default)
 - demo director smoke was re-verified on 2026-03-06 via `npm run demo:director:smoke` against the isolated `taskdeck.demo.ci.db` path
+
+## Product-Coherence Testing Priorities (2026-03-07)
+
+Testing priorities have shifted from "does the harness exist?" toward "does the product remain understandable under change?"
+
+Near-horizon priorities:
+
+- protect the current golden path: capture -> triage -> review -> execute -> board
+- evolve required product smoke toward `Home -> capture -> review -> execute -> board` once `Home` ships
+- add explicit coverage for action-oriented empty states and board-centered context travel as those surfaces land
+- keep stakeholder/demo recording opt-in; it supports product evidence, but it is not the primary product smoke
+
+Planned high-signal additions when the productization wave ships:
+
+- `Home` view state coverage
+- `Today` view state coverage
+- workspace mode navigation rendering
+- proposal summary card coverage
+- board action rail coverage
+- first-run golden-path Playwright smoke
 
 ## Backend Commands
 
@@ -155,6 +175,7 @@ Default CI posture:
 - Required Playwright regression lanes explicitly set `TASKDECK_RUN_DEMO=0`; the stakeholder recorder is never part of required CI.
 - Load/concurrency Playwright coverage also keeps demo recording off by default so those lanes stay focused on product/runtime regressions.
 - The deterministic demo regression command is `npm run demo:director:smoke`.
+- Demo tooling remains supporting evidence for seeded workflows; it does not replace the required product smoke path.
 
 Run the smoke path locally:
 

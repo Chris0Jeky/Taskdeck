@@ -1,6 +1,6 @@
 # Taskdeck User Manual
 
-If you are new to Taskdeck, read [START_HERE.md](/C:/Users/jekyt/source/Taskdeck/docs/START_HERE.md) first.
+If you are new to Taskdeck, read [START_HERE.md](START_HERE.md) first.
 This manual is the reference for the current shipped product shape.
 
 ## What Taskdeck Is
@@ -31,6 +31,31 @@ The fastest current path to value is:
 6. return to the board and work the cards
 
 This is the core loop Taskdeck already supports well.
+
+## Current Navigation Map
+
+Core product surfaces:
+- `Boards`
+- `Inbox`
+- `Automations -> Proposals`
+- quick capture
+- starter packs
+- `Chat` when you want conversational board-scoped help
+
+Trust and validation surfaces:
+- `Notifications`
+- `Activity`
+- comments and mentions
+
+Advanced/operator surfaces:
+- `Queue`
+- `Ops`
+- `Access`
+- `Archive`
+
+Rule of thumb:
+- if you are new, stay in `Boards`, `Inbox`, and `Automations -> Proposals`
+- treat `Queue` and `Ops` as advanced surfaces unless you explicitly need them
 
 ## Choose The Right Surface
 
@@ -72,6 +97,23 @@ If you want a richer first run, seed the demo workspace from `frontend/taskdeck-
 ```bash
 npm run demo:seed
 ```
+
+## Daily Use Rhythm
+
+Morning:
+- triage Inbox
+- review pending proposals
+- choose 1 to 3 cards for active work
+
+During work:
+- capture follow-ups immediately instead of holding them in your head
+- use comments to preserve context on cards
+- return to the board when proposals create or update work
+
+End of day:
+- move cards forward honestly
+- capture loose ends into Inbox
+- avoid leaving important context only in local notes or memory
 
 ## Boards And Cards
 
@@ -142,8 +184,8 @@ Use Queue when:
 - you want a narrow, explicit automation request
 
 Current limitation:
-- some Queue flows still expose board-scoped technical fields
-- if a raw board identifier is requested, treat that as a temporary advanced workaround, not the normal user journey
+- Queue is still intentionally more system-shaped than Inbox or Chat
+- use board selectors/context when available and treat any raw-ID requirement as an advanced workaround, not the normal user journey
 
 ### Ops
 
@@ -200,8 +242,8 @@ For direct API walkthroughs:
 - use `demo/http/taskdeck-demo.http` with the VS Code REST Client
 
 For the full demo/operator path:
-- see [DEMO_PLAYBOOK.md](/C:/Users/jekyt/source/Taskdeck/docs/DEMO_PLAYBOOK.md)
-- see [SCENARIOS.md](/C:/Users/jekyt/source/Taskdeck/docs/SCENARIOS.md)
+- see [DEMO_PLAYBOOK.md](DEMO_PLAYBOOK.md)
+- see [SCENARIOS.md](SCENARIOS.md)
 
 ## Troubleshooting
 
@@ -222,6 +264,10 @@ If you are unsure where to start:
 - create one board
 - create one Inbox item
 - run the review/apply loop once
+
+If you expected `Home` or `Today`:
+- those are planned roadmap surfaces, not current shipped routes
+- today the intended starting point is still `Boards` plus the Inbox/review loop
 
 ## Current Constraints
 
