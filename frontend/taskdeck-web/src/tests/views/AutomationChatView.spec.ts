@@ -2,6 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AutomationChatView from '../../views/AutomationChatView.vue'
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+
+  return { promise, resolve }
+}
+
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
 }))
@@ -182,5 +191,48 @@ describe('AutomationChatView', () => {
     await waitForAsyncUi()
 
     expect(wrapper.text()).not.toContain('Open in Review')
+  })
+
+  it('waits for boards to finish loading before validating the board context', async () => {
+    const deferredBoards = createDeferred([
+      {
+        id: 'board-1',
+        name: 'Board One',
+        description: 'Primary workspace board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+    mocks.getBoards.mockReturnValueOnce(deferredBoards.promise)
+
+    const wrapper = mountView()
+    await Promise.resolve()
+
+    await wrapper.get('input[placeholder="Session title"]').setValue('Scoped session')
+    await wrapper.get('input[placeholder="Board context (optional)"]').setValue('Board One')
+
+    const createSessionTrigger = findButtonByText(wrapper, 'Create Session').trigger('click')
+    expect(mocks.createSession).not.toHaveBeenCalled()
+
+    deferredBoards.resolve([
+      {
+        id: 'board-1',
+        name: 'Board One',
+        description: 'Primary workspace board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    await createSessionTrigger
+    await waitForAsyncUi()
+
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(mocks.createSession).toHaveBeenCalledWith({
+      title: 'Scoped session',
+      boardId: 'board-1',
+    })
   })
 })

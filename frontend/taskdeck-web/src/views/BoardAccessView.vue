@@ -17,7 +17,17 @@ const permissions = usePermissionsStore()
 const session = useSessionStore()
 const toast = useToastStore()
 
-const activeBoardId = ref<string>(props.boardId ?? (route.query.boardId as string ?? ''))
+function normalizeBoardIdCandidate(
+  boardId: string | null | undefined | ReadonlyArray<string | null | undefined>,
+): string {
+  if (Array.isArray(boardId)) {
+    return normalizeBoardIdCandidate(boardId[0])
+  }
+
+  return typeof boardId === 'string' ? boardId.trim() : ''
+}
+
+const activeBoardId = ref<string>(normalizeBoardIdCandidate(props.boardId ?? route.query.boardId))
 const availableBoards = ref<Board[]>([])
 const loadingBoards = ref(false)
 const newUserId = ref('')
@@ -93,7 +103,7 @@ onMounted(async () => {
 watch(
   () => props.boardId,
   (boardId) => {
-    const normalizedBoardId = boardId?.trim()
+    const normalizedBoardId = normalizeBoardIdCandidate(boardId)
     if (!normalizedBoardId || normalizedBoardId === activeBoardId.value.trim()) return
     activeBoardId.value = normalizedBoardId
   }
@@ -102,7 +112,7 @@ watch(
 watch(
   () => route.query.boardId,
   (boardId) => {
-    const normalizedBoardId = typeof boardId === 'string' ? boardId.trim() : ''
+    const normalizedBoardId = normalizeBoardIdCandidate(boardId)
     if (!normalizedBoardId || normalizedBoardId === activeBoardId.value.trim()) return
     activeBoardId.value = normalizedBoardId
   }

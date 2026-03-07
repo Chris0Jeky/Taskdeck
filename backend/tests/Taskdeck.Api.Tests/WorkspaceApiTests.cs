@@ -152,6 +152,25 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Today_ShouldTreatPositiveOffsetDueDatesAsDueTodayInTheirLocalCalendarDay()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-today-offset");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-today-offset-board");
+
+        await SeedWorkspaceOffsetTodayCardAsync(user.UserId, board.Id);
+
+        var response = await client.GetAsync("/api/workspace/today");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var today = await response.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        today.Should().NotBeNull();
+        today!.Summary.DueTodayCards.Should().Be(1);
+        today.Summary.OverdueCards.Should().Be(0);
+        today.DueTodayCards.Should().ContainSingle(card => card.Title == "Offset due today");
+    }
+
+    [Fact]
     public async Task OnboardingEndpoint_ShouldDismissAndReplayCurrentUserState()
     {
         using var client = _factory.CreateClient();
@@ -237,6 +256,25 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         dbContext.Cards.AddRange(overdueCard, dueTodayCard, blockedCard);
         dbContext.LlmRequests.Add(CreateCaptureRequest(userId, boardId, RequestStatus.Pending));
         dbContext.AutomationProposals.Add(reviewedProposal);
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task SeedWorkspaceOffsetTodayCardAsync(Guid userId, Guid boardId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var column = new Column(boardId, "Backlog", 0);
+        var offset = TimeSpan.FromHours(14);
+        var localToday = DateTimeOffset.UtcNow.ToOffset(offset).Date;
+        var dueTodayCard = new Card(
+            boardId,
+            column.Id,
+            "Offset due today",
+            dueDate: new DateTimeOffset(localToday.Year, localToday.Month, localToday.Day, 0, 30, 0, offset));
+
+        dbContext.Columns.Add(column);
+        dbContext.Cards.Add(dueTodayCard);
 
         await dbContext.SaveChangesAsync();
     }

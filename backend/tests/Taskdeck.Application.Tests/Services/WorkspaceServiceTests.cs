@@ -46,16 +46,28 @@ public class WorkspaceServiceTests
         _llmQueueRepositoryMock
             .Setup(repository => repository.GetByUserAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync([]);
+        _llmQueueRepositoryMock
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync((0, 0, 0, 0, 0));
 
         _boardRepositoryMock
             .Setup(repository => repository.CountReadableByUserIdAsync(It.IsAny<Guid>(), false, default))
             .ReturnsAsync(0);
+        _boardRepositoryMock
+            .Setup(repository => repository.CountReadableUpdatedSinceAsync(It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), false, default))
+            .ReturnsAsync(0);
+        _boardRepositoryMock
+            .Setup(repository => repository.GetRecentReadableByUserIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), false, default))
+            .ReturnsAsync([]);
         _boardRepositoryMock
             .Setup(repository => repository.GetReadableByUserIdAsync(It.IsAny<Guid>(), false, default))
             .ReturnsAsync([]);
 
         _cardRepositoryMock
             .Setup(repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync([]);
+        _cardRepositoryMock
+            .Setup(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
             .ReturnsAsync([]);
 
         _service = new WorkspaceService(_unitOfWorkMock.Object);
@@ -91,20 +103,18 @@ public class WorkspaceServiceTests
         _boardRepositoryMock
             .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
             .ReturnsAsync(1);
+        _llmQueueRepositoryMock
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((1, 1, 0, 0, 0));
 
         var result = await _service.GetPreferencesAsync(userId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.UserId.Should().Be(userId);
-        _proposalRepositoryMock.Verify(
-            repository => repository.GetByUserIdAsync(userId, int.MaxValue, default),
-            Times.Never);
-        _boardRepositoryMock.Verify(
-            repository => repository.GetReadableByUserIdAsync(userId, false, default),
-            Times.Never);
-        _cardRepositoryMock.Verify(
-            repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default),
-            Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default), Times.Never);
+        _boardRepositoryMock.Verify(repository => repository.GetReadableByUserIdAsync(userId, false, default), Times.Never);
+        _cardRepositoryMock.Verify(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default), Times.Never);
+        _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(userId, default), Times.Never);
     }
 
     [Fact]
@@ -152,15 +162,10 @@ public class WorkspaceServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Agent);
-        _proposalRepositoryMock.Verify(
-            repository => repository.GetByUserIdAsync(userId, int.MaxValue, default),
-            Times.Never);
-        _boardRepositoryMock.Verify(
-            repository => repository.GetReadableByUserIdAsync(userId, false, default),
-            Times.Never);
-        _cardRepositoryMock.Verify(
-            repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default),
-            Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default), Times.Never);
+        _boardRepositoryMock.Verify(repository => repository.GetReadableByUserIdAsync(userId, false, default), Times.Never);
+        _cardRepositoryMock.Verify(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default), Times.Never);
+        _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(userId, default), Times.Never);
     }
 
     [Fact]
@@ -172,21 +177,22 @@ public class WorkspaceServiceTests
         boardA.Update(description: "Alpha board updated");
 
         var preference = new UserPreference(userId, WorkspaceMode.Workbench);
-        var pendingCapture = CreateCaptureRequest(userId, RequestStatus.Pending);
-        var triagingCapture = CreateCaptureRequest(userId, RequestStatus.Processing);
-        var triagedCapture = CreateCaptureRequest(userId, RequestStatus.Completed);
-        var failedCapture = CreateCaptureRequest(userId, RequestStatus.Failed);
-        var proposalCreatedCapture = CreateCaptureRequest(userId, RequestStatus.Completed, Guid.NewGuid());
 
         _userPreferenceRepositoryMock
             .Setup(repository => repository.GetByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
         _boardRepositoryMock
-            .Setup(repository => repository.GetReadableByUserIdAsync(userId, false, default))
+            .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(2);
+        _boardRepositoryMock
+            .Setup(repository => repository.CountReadableUpdatedSinceAsync(userId, It.IsAny<DateTimeOffset>(), false, default))
+            .ReturnsAsync(2);
+        _boardRepositoryMock
+            .Setup(repository => repository.GetRecentReadableByUserIdAsync(userId, 3, false, default))
             .ReturnsAsync([boardA, boardB]);
         _llmQueueRepositoryMock
-            .Setup(repository => repository.GetByUserAsync(userId, default))
-            .ReturnsAsync([pendingCapture, triagingCapture, triagedCapture, failedCapture, proposalCreatedCapture]);
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((5, 1, 1, 1, 1));
         _proposalRepositoryMock
             .Setup(repository => repository.CountPendingReviewByUserIdAsync(userId, default))
             .ReturnsAsync(2);
@@ -214,6 +220,7 @@ public class WorkspaceServiceTests
             "resume-recent-board",
             "capture-now"
         ]);
+        _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -228,15 +235,6 @@ public class WorkspaceServiceTests
         blockedCard.Block("Waiting on dependency");
 
         var preference = new UserPreference(userId, WorkspaceMode.Guided);
-        var capture = CreateCaptureRequest(userId, RequestStatus.Pending);
-        var reviewedProposal = new AutomationProposal(
-            ProposalSourceType.Queue,
-            userId,
-            "Reviewed proposal",
-            RiskLevel.Low,
-            Guid.NewGuid().ToString("N"),
-            board.Id);
-        reviewedProposal.Approve(userId);
 
         _userPreferenceRepositoryMock
             .Setup(repository => repository.GetByUserIdAsync(userId, default))
@@ -245,13 +243,16 @@ public class WorkspaceServiceTests
             .Setup(repository => repository.GetReadableByUserIdAsync(userId, false, default))
             .ReturnsAsync([board]);
         _llmQueueRepositoryMock
-            .Setup(repository => repository.GetByUserAsync(userId, default))
-            .ReturnsAsync([capture]);
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((1, 1, 0, 0, 0));
         _proposalRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default))
-            .ReturnsAsync([reviewedProposal]);
+            .Setup(repository => repository.CountPendingReviewByUserIdAsync(userId, default))
+            .ReturnsAsync(0);
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasReviewedByUserIdAsync(userId, default))
+            .ReturnsAsync(true);
         _cardRepositoryMock
-            .Setup(repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .Setup(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
             .ReturnsAsync([overdueCard, dueTodayCard, blockedCard]);
 
         var result = await _service.GetTodayAsync(userId);
@@ -266,7 +267,44 @@ public class WorkspaceServiceTests
         result.Value.DueTodayCards.Should().ContainSingle(card => card.Title == "Due today");
         result.Value.BlockedCards.Should().ContainSingle(card => card.BlockReason == "Waiting on dependency");
         preference.OnboardingCompletedAt.Should().NotBeNull();
+        _proposalRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default), Times.Never);
+        _cardRepositoryMock.Verify(repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default), Times.Never);
         _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetTodayAsync_ShouldBucketDueDatesUsingCardOffsetCalendarDay()
+    {
+        var userId = Guid.NewGuid();
+        var board = new Board("Alpha", "Alpha board", userId);
+        var column = new Column(board.Id, "Backlog", 0);
+        var offset = TimeSpan.FromHours(14);
+        var localToday = DateTimeOffset.UtcNow.ToOffset(offset).Date;
+        var dueTodayWithPositiveOffset = new Card(
+            board.Id,
+            column.Id,
+            "Offset due today",
+            dueDate: new DateTimeOffset(localToday.Year, localToday.Month, localToday.Day, 0, 30, 0, offset));
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .ReturnsAsync(new UserPreference(userId, WorkspaceMode.Guided));
+        _boardRepositoryMock
+            .Setup(repository => repository.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync([board]);
+        _llmQueueRepositoryMock
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((0, 0, 0, 0, 0));
+        _cardRepositoryMock
+            .Setup(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync([dueTodayWithPositiveOffset]);
+
+        var result = await _service.GetTodayAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Summary.DueTodayCards.Should().Be(1);
+        result.Value.DueTodayCards.Should().ContainSingle(card => card.Title == "Offset due today");
+        result.Value.Summary.OverdueCards.Should().Be(0);
     }
 
     [Fact]
@@ -294,49 +332,5 @@ public class WorkspaceServiceTests
         replayResult.IsSuccess.Should().BeTrue();
         replayResult.Value.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Active);
         preference.OnboardingDismissedAt.Should().BeNull();
-    }
-
-    private static LlmRequest CreateCaptureRequest(Guid userId, RequestStatus status, Guid? proposalId = null)
-    {
-        var payload = new CapturePayloadV1(
-            CaptureRequestContract.CurrentSchemaVersion,
-            CaptureSource.Typed,
-            $"Capture for {status}");
-        var request = new LlmRequest(
-            userId,
-            CaptureRequestContract.RequestTypeV1,
-            CaptureRequestContract.SerializePayload(payload));
-
-        if (proposalId.HasValue)
-        {
-            var payloadWithProvenance = CaptureRequestContract.WithProvenance(
-                payload,
-                request.Id,
-                proposalId: proposalId,
-                requestedByUserId: userId,
-                correlationId: Guid.NewGuid().ToString("N"),
-                sourceSurface: "capture");
-            request.UpdatePayload(CaptureRequestContract.SerializePayload(payloadWithProvenance));
-        }
-
-        switch (status)
-        {
-            case RequestStatus.Pending:
-                break;
-            case RequestStatus.Processing:
-                request.MarkAsProcessing();
-                break;
-            case RequestStatus.Completed:
-                request.MarkAsProcessing();
-                request.MarkAsCompleted();
-                break;
-            case RequestStatus.Failed:
-                request.MarkAsFailed("triage failed");
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported capture status for test setup.");
-        }
-
-        return request;
     }
 }

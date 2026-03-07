@@ -40,6 +40,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const todaySummary = ref<TodaySummary | null>(null)
   const todayLoading = ref(false)
   const todayError = ref<string | null>(null)
+  let preferenceRequestVersion = 0
+  let pendingPreferenceRequests = 0
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
   const hasTodaySummary = computed(() => todaySummary.value !== null)
@@ -71,48 +73,82 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  function beginPreferenceLoading() {
+    pendingPreferenceRequests += 1
+    preferenceLoading.value = true
+  }
+
+  function finishPreferenceLoading() {
+    pendingPreferenceRequests = Math.max(0, pendingPreferenceRequests - 1)
+    preferenceLoading.value = pendingPreferenceRequests > 0
+  }
+
+  function startVersionedPreferenceRequest(): number {
+    beginPreferenceLoading()
+    return ++preferenceRequestVersion
+  }
+
+  function isCurrentPreferenceRequest(version: number) {
+    return version === preferenceRequestVersion
+  }
+
   async function hydratePreferences(): Promise<WorkspacePreference | null> {
     if (!session.isAuthenticated) {
       preferencesHydrated.value = false
       return null
     }
 
+    const requestVersion = startVersionedPreferenceRequest()
+
     try {
-      preferenceLoading.value = true
       preferenceError.value = null
       const preference = await workspaceApi.getPreferences()
-      applyMode(preference.workspaceMode)
-      syncOnboarding(preference.onboarding)
-      preferencesHydrated.value = true
+
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        applyMode(preference.workspaceMode)
+        syncOnboarding(preference.onboarding)
+        preferencesHydrated.value = true
+      }
+
       return preference
     } catch (e: unknown) {
-      preferenceError.value = getErrorMessage(e, 'Failed to load workspace preferences')
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        preferenceError.value = getErrorMessage(e, 'Failed to load workspace preferences')
+      }
+
       return null
     } finally {
-      preferenceLoading.value = false
+      finishPreferenceLoading()
     }
   }
 
   async function updateMode(nextMode: WorkspaceMode): Promise<void> {
+    const requestVersion = startVersionedPreferenceRequest()
     applyMode(nextMode)
 
     if (!session.isAuthenticated) {
+      preferencesHydrated.value = false
+      finishPreferenceLoading()
       return
     }
 
     try {
-      preferenceLoading.value = true
       preferenceError.value = null
       const preference = await workspaceApi.updatePreferences({ workspaceMode: nextMode })
-      applyMode(preference.workspaceMode)
-      syncOnboarding(preference.onboarding)
-      preferencesHydrated.value = true
+
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        applyMode(preference.workspaceMode)
+        syncOnboarding(preference.onboarding)
+        preferencesHydrated.value = true
+      }
     } catch (e: unknown) {
-      preferenceError.value = getErrorMessage(e, 'Failed to save workspace mode')
-      preferencesHydrated.value = false
-      toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
+      if (isCurrentPreferenceRequest(requestVersion)) {
+        preferenceError.value = getErrorMessage(e, 'Failed to save workspace mode')
+        preferencesHydrated.value = false
+        toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
+      }
     } finally {
-      preferenceLoading.value = false
+      finishPreferenceLoading()
     }
   }
 
@@ -152,7 +188,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function updateOnboarding(action: WorkspaceOnboardingAction): Promise<WorkspaceOnboarding> {
     try {
-      preferenceLoading.value = true
+      beginPreferenceLoading()
       preferenceError.value = null
       const nextOnboarding = await workspaceApi.updateOnboarding({ action })
       syncOnboarding(nextOnboarding)
@@ -162,7 +198,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       toast.warning(preferenceError.value)
       throw e
     } finally {
-      preferenceLoading.value = false
+      finishPreferenceLoading()
     }
   }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import { useWorkspaceStore } from '../store/workspaceStore'
@@ -137,13 +137,16 @@ async function replayOnboarding() {
   }
 }
 
-onMounted(() => {
-  if (workspace.homeLoading || workspace.hasHomeSummary) {
+function refreshHomeSummary() {
+  if (workspace.homeLoading) {
     return
   }
 
   void loadHomeSummary()
-})
+}
+
+onMounted(refreshHomeSummary)
+onActivated(refreshHomeSummary)
 </script>
 
 <template>

@@ -38,7 +38,26 @@ public class CardRepository : Repository<Card>, ICardRepository
                 .ThenInclude(cardLabel => cardLabel.Label)
             .OrderBy(card => card.BoardId)
                 .ThenBy(card => card.ColumnId)
-                .ThenBy(card => card.Position)
+            .ThenBy(card => card.Position)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IEnumerable<Card>> GetAgendaByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default)
+    {
+        var materializedBoardIds = boardIds
+            .Where(boardId => boardId != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (materializedBoardIds.Count == 0)
+            return [];
+
+        return await _dbSet
+            .AsNoTracking()
+            .Where(card => materializedBoardIds.Contains(card.BoardId))
+            .OrderBy(card => card.BoardId)
+            .ThenBy(card => card.ColumnId)
+            .ThenBy(card => card.Position)
             .ToListAsync(cancellationToken);
     }
 

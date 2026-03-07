@@ -17,7 +17,7 @@ const routerMocks = vi.hoisted(() => ({
 }))
 
 const routeMock = reactive({
-  query: {} as Record<string, string>,
+  query: {} as Record<string, string | string[]>,
 })
 
 const boardsApiMocks = vi.hoisted(() => ({
@@ -169,6 +169,17 @@ describe('BoardAccessView', () => {
 
     expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledTimes(1)
     expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledWith('board-2')
+  })
+
+  it('uses the first board id when the route query provides multiple values', async () => {
+    routeMock.query = { boardId: ['board-2', 'board-1'] }
+
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledWith('board-2')
+    expect((wrapper.get('#board-selector').element as HTMLSelectElement).value).toBe('board-2')
   })
 
   it('disables refresh while access is already loading', async () => {

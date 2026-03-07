@@ -113,11 +113,13 @@ async function mountAt(path: string) {
 
 let mountedWrapper: ReturnType<typeof mount> | null = null
 let originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView
+let originalPrompt: typeof window.prompt
 
 describe('ReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    originalPrompt = window.prompt
     mocks.getProposals.mockResolvedValue([])
     mocks.approveProposal.mockResolvedValue(buildProposal({ status: 'Approved' }))
     mocks.rejectProposal.mockResolvedValue(buildProposal({ status: 'Rejected' }))
@@ -135,6 +137,8 @@ describe('ReviewView', () => {
       writable: true,
       value: originalScrollIntoView,
     })
+
+    window.prompt = originalPrompt
   })
 
   it('shows guided empty-state actions when there are no proposals', async () => {
@@ -239,6 +243,20 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('diff-b')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+  })
+
+  it('does not reject a proposal when the rejection prompt is cancelled', async () => {
+    mocks.getProposals.mockResolvedValue([buildProposal()])
+    window.prompt = vi.fn(() => null)
+
+    const { wrapper } = await mountAt('/workspace/review')
+    const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button')[2]!
+
+    await rejectButton.trigger('click')
+    await Promise.resolve()
+
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 })

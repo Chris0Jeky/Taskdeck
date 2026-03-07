@@ -12,6 +12,7 @@ namespace Taskdeck.Infrastructure.Repositories;
 public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 {
     private const string CaptureRequestTypeLike = "inbox.capture.%";
+    private const string ProposalIdPayloadMarker = "\"proposalId\":\"";
 
     public LlmQueueRepository(TaskdeckDbContext context) : base(context)
     {
@@ -36,6 +37,45 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .OrderBy(lr => lr.CreatedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<(int TotalCaptures, int NewCount, int FailedCount, int TriagingCount, int TriagedCount)> GetCaptureSummaryByUserAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var captureQuery = _context.LlmRequests
+            .AsNoTracking()
+            .Where(request =>
+                request.UserId == userId
+                && EF.Functions.Like(request.RequestType, CaptureRequestTypeLike));
+
+        var statusCounts = await captureQuery
+            .GroupBy(request => request.Status)
+            .Select(group => new
+            {
+                Status = group.Key,
+                Count = group.Count(),
+            })
+            .ToListAsync(cancellationToken);
+
+        var countsByStatus = statusCounts.ToDictionary(group => group.Status, group => group.Count);
+        var completedWithLinkedProposal = await captureQuery
+            .Where(request =>
+                request.Status == RequestStatus.Completed
+                && request.Payload.Contains(ProposalIdPayloadMarker))
+            .CountAsync(cancellationToken);
+
+        countsByStatus.TryGetValue(RequestStatus.Completed, out var completedCount);
+        countsByStatus.TryGetValue(RequestStatus.Pending, out var pendingCount);
+        countsByStatus.TryGetValue(RequestStatus.Failed, out var failedCount);
+        countsByStatus.TryGetValue(RequestStatus.Processing, out var processingCount);
+
+        return (
+            TotalCaptures: countsByStatus.Values.Sum(),
+            NewCount: pendingCount,
+            FailedCount: failedCount,
+            TriagingCount: processingCount,
+            TriagedCount: Math.Max(0, completedCount - completedWithLinkedProposal));
     }
 
     public async Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
