@@ -10,6 +10,7 @@ namespace Taskdeck.Application.Services;
 public class WorkspaceService : IWorkspaceService
 {
     private const int RecentBoardLimit = 3;
+    private const int TodayCardLimit = 5;
     private static readonly TimeSpan RecentBoardWindow = TimeSpan.FromDays(14);
 
     private readonly IUnitOfWork _unitOfWork;
@@ -30,23 +31,16 @@ public class WorkspaceService : IWorkspaceService
         if (userId == Guid.Empty)
             return Result.Failure<WorkspaceHomeDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
-        var preference = await EnsurePreferenceAsync(userId, cancellationToken);
-        var captureStatuses = await GetCaptureStatusesAsync(userId, cancellationToken);
-        var proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(userId, int.MaxValue, cancellationToken);
-        var accessibleBoardsResult = await GetAccessibleBoardsAsync(userId, cancellationToken);
-        if (!accessibleBoardsResult.IsSuccess)
-            return Result.Failure<WorkspaceHomeDto>(accessibleBoardsResult.ErrorCode, accessibleBoardsResult.ErrorMessage);
+        var aggregateResult = await GetWorkspaceAggregateAsync(userId, includeCards: false, cancellationToken);
+        if (!aggregateResult.IsSuccess)
+            return Result.Failure<WorkspaceHomeDto>(aggregateResult.ErrorCode, aggregateResult.ErrorMessage);
 
-        var accessibleBoards = accessibleBoardsResult.Value
-            .OrderByDescending(board => board.UpdatedAt)
-            .ThenByDescending(board => board.CreatedAt)
-            .ToList();
-        var recentCutoff = DateTimeOffset.UtcNow.Subtract(RecentBoardWindow);
-        var capturesNeedingTriage = captureStatuses.Count(status => status is CaptureStatus.New or CaptureStatus.Failed);
-        var capturesInProgress = captureStatuses.Count(status => status == CaptureStatus.Triaging);
-        var capturesReadyForFollowUp = captureStatuses.Count(status => status == CaptureStatus.Triaged);
-        var proposalsPendingReview = proposals.Count(proposal => proposal.Status == ProposalStatus.PendingReview);
-        var recentBoards = accessibleBoards
+        var aggregate = aggregateResult.Value;
+        var capturesNeedingTriage = aggregate.CaptureStatuses.Count(status => status is CaptureStatus.New or CaptureStatus.Failed);
+        var capturesInProgress = aggregate.CaptureStatuses.Count(status => status == CaptureStatus.Triaging);
+        var capturesReadyForFollowUp = aggregate.CaptureStatuses.Count(status => status == CaptureStatus.Triaged);
+        var proposalsPendingReview = aggregate.Proposals.Count(proposal => proposal.Status == ProposalStatus.PendingReview);
+        var recentBoards = aggregate.AccessibleBoards
             .Take(RecentBoardLimit)
             .Select(board => new WorkspaceRecentBoardDto(
                 board.Id,
@@ -54,23 +48,24 @@ public class WorkspaceService : IWorkspaceService
                 board.Description,
                 board.UpdatedAt))
             .ToList();
-        var recentBoardsCount = accessibleBoards.Count(board => board.UpdatedAt >= recentCutoff);
-
+        var recentCutoff = DateTimeOffset.UtcNow.Subtract(RecentBoardWindow);
+        var recentBoardsCount = aggregate.AccessibleBoards.Count(board => board.UpdatedAt >= recentCutoff);
         var isFirstRun =
-            accessibleBoards.Count == 0 &&
-            captureStatuses.Count == 0 &&
-            proposalsPendingReview == 0;
+            aggregate.AccessibleBoards.Count == 0 &&
+            aggregate.CaptureStatuses.Count == 0 &&
+            aggregate.Proposals.Count == 0;
 
         return Result.Success(new WorkspaceHomeDto(
-            preference.WorkspaceMode.ToContractValue(),
+            aggregate.Preference.WorkspaceMode.ToContractValue(),
             isFirstRun,
+            aggregate.Onboarding,
             new WorkspaceHomeWorkloadDto(
                 capturesNeedingTriage,
                 capturesInProgress,
                 capturesReadyForFollowUp,
                 proposalsPendingReview),
             new WorkspaceBoardSummaryDto(
-                accessibleBoards.Count,
+                aggregate.AccessibleBoards.Count,
                 recentBoardsCount,
                 recentBoards),
             BuildRecommendedActions(
@@ -81,6 +76,77 @@ public class WorkspaceService : IWorkspaceService
                 recentBoards.FirstOrDefault())));
     }
 
+    public async Task<Result<WorkspaceTodayDto>> GetTodayAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<WorkspaceTodayDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        var aggregateResult = await GetWorkspaceAggregateAsync(userId, includeCards: true, cancellationToken);
+        if (!aggregateResult.IsSuccess)
+            return Result.Failure<WorkspaceTodayDto>(aggregateResult.ErrorCode, aggregateResult.ErrorMessage);
+
+        var aggregate = aggregateResult.Value;
+        var capturesNeedingTriage = aggregate.CaptureStatuses.Count(status => status is CaptureStatus.New or CaptureStatus.Failed);
+        var capturesReadyForFollowUp = aggregate.CaptureStatuses.Count(status => status == CaptureStatus.Triaged);
+        var proposalsPendingReview = aggregate.Proposals.Count(proposal => proposal.Status == ProposalStatus.PendingReview);
+        var today = DateTime.UtcNow.Date;
+        var boardsById = aggregate.AccessibleBoards.ToDictionary(board => board.Id);
+        var overdueCards = BuildTodayCards(
+            aggregate.Cards,
+            boardsById,
+            card => card.DueDate.HasValue && card.DueDate.Value.UtcDateTime.Date < today,
+            cards => cards
+                .OrderBy(card => card.DueDate)
+                .ThenByDescending(card => card.UpdatedAt));
+        var dueTodayCards = BuildTodayCards(
+            aggregate.Cards,
+            boardsById,
+            card => card.DueDate.HasValue && card.DueDate.Value.UtcDateTime.Date == today,
+            cards => cards
+                .OrderBy(card => card.DueDate)
+                .ThenByDescending(card => card.UpdatedAt));
+        var blockedCards = BuildTodayCards(
+            aggregate.Cards,
+            boardsById,
+            card => card.IsBlocked,
+            cards => cards
+                .OrderBy(card => card.DueDate.HasValue ? 0 : 1)
+                .ThenBy(card => card.DueDate)
+                .ThenByDescending(card => card.UpdatedAt));
+        var isFirstRun =
+            aggregate.AccessibleBoards.Count == 0 &&
+            aggregate.CaptureStatuses.Count == 0 &&
+            aggregate.Proposals.Count == 0;
+        var recentBoard = aggregate.AccessibleBoards.FirstOrDefault();
+
+        return Result.Success(new WorkspaceTodayDto(
+            aggregate.Preference.WorkspaceMode.ToContractValue(),
+            aggregate.Onboarding,
+            new WorkspaceTodaySummaryDto(
+                capturesNeedingTriage,
+                proposalsPendingReview,
+                overdueCards.Count,
+                dueTodayCards.Count,
+                blockedCards.Count),
+            overdueCards.Take(TodayCardLimit).ToList(),
+            dueTodayCards.Take(TodayCardLimit).ToList(),
+            blockedCards.Take(TodayCardLimit).ToList(),
+            BuildRecommendedActions(
+                isFirstRun,
+                capturesNeedingTriage,
+                capturesReadyForFollowUp,
+                proposalsPendingReview,
+                recentBoard is null
+                    ? null
+                    : new WorkspaceRecentBoardDto(
+                        recentBoard.Id,
+                        recentBoard.Name,
+                        recentBoard.Description,
+                        recentBoard.UpdatedAt))));
+    }
+
     public async Task<Result<WorkspacePreferenceDto>> GetPreferencesAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
@@ -88,8 +154,11 @@ public class WorkspaceService : IWorkspaceService
         if (userId == Guid.Empty)
             return Result.Failure<WorkspacePreferenceDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
-        var preference = await EnsurePreferenceAsync(userId, cancellationToken);
-        return Result.Success(MapPreference(preference));
+        var aggregateResult = await GetWorkspaceAggregateAsync(userId, includeCards: false, cancellationToken);
+        if (!aggregateResult.IsSuccess)
+            return Result.Failure<WorkspacePreferenceDto>(aggregateResult.ErrorCode, aggregateResult.ErrorMessage);
+
+        return Result.Success(MapPreference(aggregateResult.Value.Preference, aggregateResult.Value.Onboarding));
     }
 
     public async Task<Result<WorkspacePreferenceDto>> UpdatePreferencesAsync(
@@ -107,11 +176,15 @@ public class WorkspaceService : IWorkspaceService
                 "Workspace mode must be one of: guided, workbench, agent");
         }
 
-        var preference = await EnsurePreferenceAsync(userId, cancellationToken);
+        var aggregateResult = await GetWorkspaceAggregateAsync(userId, includeCards: false, cancellationToken);
+        if (!aggregateResult.IsSuccess)
+            return Result.Failure<WorkspacePreferenceDto>(aggregateResult.ErrorCode, aggregateResult.ErrorMessage);
+
+        var aggregate = aggregateResult.Value;
 
         try
         {
-            preference.UpdateWorkspaceMode(workspaceMode);
+            aggregate.Preference.UpdateWorkspaceMode(workspaceMode);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (DomainException ex)
@@ -119,7 +192,96 @@ public class WorkspaceService : IWorkspaceService
             return Result.Failure<WorkspacePreferenceDto>(ex.ErrorCode, ex.Message);
         }
 
-        return Result.Success(MapPreference(preference));
+        return Result.Success(MapPreference(aggregate.Preference, aggregate.Onboarding));
+    }
+
+    public async Task<Result<WorkspaceOnboardingDto>> UpdateOnboardingAsync(
+        Guid userId,
+        UpdateWorkspaceOnboardingDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<WorkspaceOnboardingDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        if (!WorkspaceOnboardingActionContract.TryParse(dto.Action, out var action))
+        {
+            return Result.Failure<WorkspaceOnboardingDto>(
+                ErrorCodes.ValidationError,
+                "Onboarding action must be one of: dismiss, replay");
+        }
+
+        var aggregateResult = await GetWorkspaceAggregateAsync(userId, includeCards: false, cancellationToken);
+        if (!aggregateResult.IsSuccess)
+            return Result.Failure<WorkspaceOnboardingDto>(aggregateResult.ErrorCode, aggregateResult.ErrorMessage);
+
+        var aggregate = aggregateResult.Value;
+
+        switch (action)
+        {
+            case WorkspaceOnboardingAction.Dismiss:
+                aggregate.Preference.DismissOnboarding();
+                break;
+            case WorkspaceOnboardingAction.Replay:
+                aggregate.Preference.ReplayOnboarding();
+                break;
+            default:
+                return Result.Failure<WorkspaceOnboardingDto>(
+                    ErrorCodes.ValidationError,
+                    $"Unsupported onboarding action '{action}'.");
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var onboarding = MapOnboarding(
+            aggregate.Preference,
+            BuildOnboardingSteps(aggregate.CaptureStatuses, aggregate.Proposals, aggregate.AccessibleBoards));
+        return Result.Success(onboarding);
+    }
+
+    private async Task<Result<WorkspaceAggregate>> GetWorkspaceAggregateAsync(
+        Guid userId,
+        bool includeCards,
+        CancellationToken cancellationToken)
+    {
+        var preference = await EnsurePreferenceAsync(userId, cancellationToken);
+        var captureStatuses = await GetCaptureStatusesAsync(userId, cancellationToken);
+        var proposals = (await _unitOfWork.AutomationProposals.GetByUserIdAsync(userId, int.MaxValue, cancellationToken))
+            .ToList();
+        var accessibleBoardsResult = await GetAccessibleBoardsAsync(userId, cancellationToken);
+        if (!accessibleBoardsResult.IsSuccess)
+        {
+            return Result.Failure<WorkspaceAggregate>(
+                accessibleBoardsResult.ErrorCode,
+                accessibleBoardsResult.ErrorMessage);
+        }
+
+        var accessibleBoards = accessibleBoardsResult.Value
+            .OrderByDescending(board => board.UpdatedAt)
+            .ThenByDescending(board => board.CreatedAt)
+            .ToList();
+
+        IReadOnlyList<Card> cards = [];
+        if (includeCards && accessibleBoards.Count > 0)
+        {
+            cards = (await _unitOfWork.Cards.GetByBoardIdsAsync(
+                    accessibleBoards.Select(board => board.Id),
+                    cancellationToken))
+                .ToList();
+        }
+
+        var onboarding = await BuildOnboardingAsync(
+            preference,
+            captureStatuses,
+            proposals,
+            accessibleBoards,
+            cancellationToken);
+
+        return Result.Success(new WorkspaceAggregate(
+            preference,
+            captureStatuses,
+            proposals,
+            accessibleBoards,
+            cards,
+            onboarding));
     }
 
     private async Task<UserPreference> EnsurePreferenceAsync(Guid userId, CancellationToken cancellationToken)
@@ -178,6 +340,75 @@ public class WorkspaceService : IWorkspaceService
             .ToList();
     }
 
+    private async Task<WorkspaceOnboardingDto> BuildOnboardingAsync(
+        UserPreference preference,
+        IReadOnlyList<CaptureStatus> captureStatuses,
+        IReadOnlyList<AutomationProposal> proposals,
+        IReadOnlyList<Board> accessibleBoards,
+        CancellationToken cancellationToken)
+    {
+        var steps = BuildOnboardingSteps(captureStatuses, proposals, accessibleBoards);
+        if (steps.All(step => step.IsComplete) && preference.OnboardingCompletedAt is null)
+        {
+            preference.RecordOnboardingCompletion();
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        return MapOnboarding(preference, steps);
+    }
+
+    private static IReadOnlyList<WorkspaceOnboardingStepDto> BuildOnboardingSteps(
+        IReadOnlyList<CaptureStatus> captureStatuses,
+        IReadOnlyList<AutomationProposal> proposals,
+        IReadOnlyList<Board> accessibleBoards)
+    {
+        var hasBoard = accessibleBoards.Count > 0;
+        var hasCapture = captureStatuses.Count > 0;
+        var hasReviewedProposal = proposals.Any(proposal =>
+            proposal.Status is ProposalStatus.Approved
+                or ProposalStatus.Rejected
+                or ProposalStatus.Applied
+                or ProposalStatus.Failed
+                or ProposalStatus.Expired);
+
+        return
+        [
+            new WorkspaceOnboardingStepDto(
+                "create-first-board",
+                "Create your first board",
+                "Start with a real destination so captures and proposals can land somewhere useful.",
+                "boards",
+                hasBoard),
+            new WorkspaceOnboardingStepDto(
+                "capture-first-item",
+                "Capture one real task",
+                "Drop a note, task, or follow-up into Inbox so the review loop has something to shape.",
+                "capture",
+                hasCapture),
+            new WorkspaceOnboardingStepDto(
+                "review-first-proposal",
+                "Review your first proposal",
+                "Use Review to decide what should reach a board before anything is applied.",
+                "review",
+                hasReviewedProposal)
+        ];
+    }
+
+    private static WorkspaceOnboardingDto MapOnboarding(
+        UserPreference preference,
+        IReadOnlyList<WorkspaceOnboardingStepDto> steps)
+    {
+        var currentStepId = steps.FirstOrDefault(step => !step.IsComplete)?.StepId;
+
+        return new WorkspaceOnboardingDto(
+            preference.OnboardingVisibility.ToContractValue(),
+            steps.All(step => step.IsComplete),
+            currentStepId,
+            preference.OnboardingDismissedAt,
+            preference.OnboardingCompletedAt,
+            steps);
+    }
+
     private static CaptureStatus ResolveCaptureStatus(LlmRequest item)
     {
         var payloadResult = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
@@ -188,13 +419,39 @@ public class WorkspaceService : IWorkspaceService
         return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal);
     }
 
-    private static WorkspacePreferenceDto MapPreference(UserPreference preference)
+    private static WorkspacePreferenceDto MapPreference(
+        UserPreference preference,
+        WorkspaceOnboardingDto onboarding)
     {
         return new WorkspacePreferenceDto(
             preference.UserId,
             preference.WorkspaceMode.ToContractValue(),
+            onboarding,
             preference.CreatedAt,
             preference.UpdatedAt);
+    }
+
+    private static IReadOnlyList<WorkspaceTodayCardDto> BuildTodayCards(
+        IReadOnlyList<Card> cards,
+        IReadOnlyDictionary<Guid, Board> boardsById,
+        Func<Card, bool> filter,
+        Func<IEnumerable<Card>, IOrderedEnumerable<Card>> order)
+    {
+        return order(cards.Where(filter))
+            .Where(card => boardsById.ContainsKey(card.BoardId))
+            .Select(card =>
+            {
+                var board = boardsById[card.BoardId];
+                return new WorkspaceTodayCardDto(
+                    card.BoardId,
+                    board.Name,
+                    card.Id,
+                    card.Title,
+                    card.DueDate,
+                    card.BlockReason,
+                    card.UpdatedAt);
+            })
+            .ToList();
     }
 
     private static IReadOnlyList<WorkspaceNextActionDto> BuildRecommendedActions(
@@ -266,4 +523,12 @@ public class WorkspaceService : IWorkspaceService
             .Select(group => group.First())
             .ToList();
     }
+
+    private sealed record WorkspaceAggregate(
+        UserPreference Preference,
+        IReadOnlyList<CaptureStatus> CaptureStatuses,
+        IReadOnlyList<AutomationProposal> Proposals,
+        IReadOnlyList<Board> AccessibleBoards,
+        IReadOnlyList<Card> Cards,
+        WorkspaceOnboardingDto Onboarding);
 }

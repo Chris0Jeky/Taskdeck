@@ -23,6 +23,15 @@ public class UserPreferenceConfiguration : IEntityTypeConfiguration<UserPreferen
             .HasMaxLength(32)
             .IsRequired();
 
+        builder.Property(preference => preference.OnboardingVisibility)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        builder.Property(preference => preference.OnboardingDismissedAt);
+
+        builder.Property(preference => preference.OnboardingCompletedAt);
+
         builder.Property(preference => preference.CreatedAt)
             .IsRequired();
 

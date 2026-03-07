@@ -22,6 +22,26 @@ public class CardRepository : Repository<Card>, ICardRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<Card>> GetByBoardIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default)
+    {
+        var materializedBoardIds = boardIds
+            .Where(boardId => boardId != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (materializedBoardIds.Count == 0)
+            return [];
+
+        return await _dbSet
+            .Where(card => materializedBoardIds.Contains(card.BoardId))
+            .Include(card => card.CardLabels)
+                .ThenInclude(cardLabel => cardLabel.Label)
+            .OrderBy(card => card.BoardId)
+                .ThenBy(card => card.ColumnId)
+                .ThenBy(card => card.Position)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<Card>> GetByColumnIdAsync(Guid columnId, CancellationToken cancellationToken = default)
     {
         return await _dbSet

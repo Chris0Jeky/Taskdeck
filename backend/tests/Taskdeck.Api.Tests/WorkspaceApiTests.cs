@@ -26,10 +26,14 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
 
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/home"));
+        await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/today"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/preferences"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.PutAsJsonAsync(
             "/api/workspace/preferences",
             new UpdateWorkspacePreferenceDto(WorkspaceModeContract.Workbench)));
+        await ApiTestHarness.AssertUnauthorizedAsync(await client.PutAsJsonAsync(
+            "/api/workspace/onboarding",
+            new UpdateWorkspaceOnboardingDto(WorkspaceOnboardingActionContract.Dismiss)));
     }
 
     [Fact]
@@ -45,6 +49,7 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         preferences.Should().NotBeNull();
         preferences!.UserId.Should().Be(user.UserId);
         preferences.WorkspaceMode.Should().Be(WorkspaceModeContract.Guided);
+        preferences.Onboarding.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Active);
 
         var updateResponse = await client.PutAsJsonAsync(
             "/api/workspace/preferences",
@@ -72,7 +77,7 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         var ownerBoard = await ApiTestHarness.CreateBoardAsync(ownerClient, "workspace-home-owner");
         _ = await ApiTestHarness.CreateBoardAsync(otherClient, "workspace-home-other");
 
-        await SeedWorkspaceDataAsync(owner.UserId, ownerBoard.Id);
+        await SeedWorkspaceHomeDataAsync(owner.UserId, ownerBoard.Id);
 
         var response = await ownerClient.GetAsync("/api/workspace/home");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -81,6 +86,7 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         home.Should().NotBeNull();
         home!.WorkspaceMode.Should().Be(WorkspaceModeContract.Guided);
         home.IsFirstRun.Should().BeFalse();
+        home.Onboarding.CurrentStepId.Should().Be("review-first-proposal");
         home.Workload.CapturesNeedingTriage.Should().Be(2);
         home.Workload.CapturesInProgress.Should().Be(1);
         home.Workload.CapturesReadyForFollowUp.Should().Be(1);
@@ -91,7 +97,68 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         home.RecommendedActions.Select(action => action.ActionId).Should().Contain("triage-captures");
     }
 
-    private async Task SeedWorkspaceDataAsync(Guid userId, Guid boardId)
+    [Fact]
+    public async Task Today_ShouldReturnAgendaAndPersistOnboardingCompletion()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-today");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-today-board");
+
+        await SeedWorkspaceTodayDataAsync(user.UserId, board.Id);
+
+        var response = await client.GetAsync("/api/workspace/today");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var today = await response.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        today.Should().NotBeNull();
+        today!.Onboarding.IsComplete.Should().BeTrue();
+        today.Onboarding.CurrentStepId.Should().BeNull();
+        today.Summary.OverdueCards.Should().Be(1);
+        today.Summary.DueTodayCards.Should().Be(1);
+        today.Summary.BlockedCards.Should().Be(1);
+        today.OverdueCards.Should().ContainSingle(card => card.Title == "Overdue follow-up");
+        today.DueTodayCards.Should().ContainSingle(card => card.Title == "Due today");
+        today.BlockedCards.Should().ContainSingle(card => card.BlockReason == "Waiting on dependency");
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedPreference = dbContext.UserPreferences.Single(preference => preference.UserId == user.UserId);
+        persistedPreference.OnboardingCompletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task OnboardingEndpoint_ShouldDismissAndReplayCurrentUserState()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-onboarding");
+
+        var dismissResponse = await client.PutAsJsonAsync(
+            "/api/workspace/onboarding",
+            new UpdateWorkspaceOnboardingDto(WorkspaceOnboardingActionContract.Dismiss));
+        dismissResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var dismissed = await dismissResponse.Content.ReadFromJsonAsync<WorkspaceOnboardingDto>();
+        dismissed.Should().NotBeNull();
+        dismissed!.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Dismissed);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var persistedPreference = dbContext.UserPreferences.Single(preference => preference.UserId == user.UserId);
+            persistedPreference.OnboardingVisibility.Should().Be(WorkspaceOnboardingVisibility.Dismissed);
+        }
+
+        var replayResponse = await client.PutAsJsonAsync(
+            "/api/workspace/onboarding",
+            new UpdateWorkspaceOnboardingDto(WorkspaceOnboardingActionContract.Replay));
+        replayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var replayed = await replayResponse.Content.ReadFromJsonAsync<WorkspaceOnboardingDto>();
+        replayed.Should().NotBeNull();
+        replayed!.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Active);
+    }
+
+    private async Task SeedWorkspaceHomeDataAsync(Guid userId, Guid boardId)
     {
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -118,6 +185,33 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
                 RiskLevel.Medium,
                 Guid.NewGuid().ToString("N"),
                 boardId));
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task SeedWorkspaceTodayDataAsync(Guid userId, Guid boardId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var column = new Column(boardId, "Backlog", 0);
+        var overdueCard = new Card(boardId, column.Id, "Overdue follow-up", dueDate: DateTimeOffset.UtcNow.AddDays(-1));
+        var dueTodayCard = new Card(boardId, column.Id, "Due today", dueDate: DateTimeOffset.UtcNow.AddHours(4));
+        var blockedCard = new Card(boardId, column.Id, "Blocked review");
+        blockedCard.Block("Waiting on dependency");
+
+        var reviewedProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Reviewed proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString("N"),
+            boardId);
+        reviewedProposal.Approve(userId);
+
+        dbContext.Columns.Add(column);
+        dbContext.Cards.AddRange(overdueCard, dueTodayCard, blockedCard);
+        dbContext.LlmRequests.Add(CreateCaptureRequest(userId, boardId, RequestStatus.Pending));
+        dbContext.AutomationProposals.Add(reviewedProposal);
 
         await dbContext.SaveChangesAsync();
     }
