@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onActivated, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { HomeRecommendedAction } from '../types/workspace'
@@ -85,13 +85,16 @@ function openBoard(boardId: string) {
   void router.push(`/workspace/boards/${boardId}`)
 }
 
-onMounted(() => {
-  if (workspace.homeLoading || workspace.hasHomeSummary) {
+function refreshHomeSummary() {
+  if (workspace.homeLoading) {
     return
   }
 
   void loadHomeSummary()
-})
+}
+
+onMounted(refreshHomeSummary)
+onActivated(refreshHomeSummary)
 </script>
 
 <template>

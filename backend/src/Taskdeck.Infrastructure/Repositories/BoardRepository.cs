@@ -25,8 +25,35 @@ public class BoardRepository : Repository<Board>, IBoardRepository
         bool includeArchived,
         CancellationToken cancellationToken = default)
     {
-        var boards = await BuildReadableQuery(userId, includeArchived).ToListAsync(cancellationToken);
-        return boards.Count(board => board.UpdatedAt >= updatedSince);
+        if (_context.Database.IsSqlite())
+        {
+            var readableBoards = includeArchived
+                ? _dbSet.FromSqlInterpolated(
+                    $"""
+                    SELECT DISTINCT b.*
+                    FROM Boards AS b
+                    LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
+                    WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
+                      AND b.UpdatedAt >= {updatedSince}
+                    """)
+                : _dbSet.FromSqlInterpolated(
+                    $"""
+                    SELECT DISTINCT b.*
+                    FROM Boards AS b
+                    LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
+                    WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
+                      AND b.IsArchived = 0
+                      AND b.UpdatedAt >= {updatedSince}
+                    """);
+
+            return await readableBoards
+                .AsNoTracking()
+                .CountAsync(cancellationToken);
+        }
+
+        return await BuildReadableQuery(userId, includeArchived)
+            .Where(board => board.UpdatedAt >= updatedSince)
+            .CountAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<Board>> GetRecentReadableByUserIdAsync(
@@ -35,14 +62,42 @@ public class BoardRepository : Repository<Board>, IBoardRepository
         bool includeArchived,
         CancellationToken cancellationToken = default)
     {
-        var boundedLimit = limit <= 0 ? 1 : limit;
-        var boards = await BuildReadableQuery(userId, includeArchived).ToListAsync(cancellationToken);
+        if (limit <= 0)
+            return Array.Empty<Board>();
 
-        return boards
+        if (_context.Database.IsSqlite())
+        {
+            var readableBoards = includeArchived
+                ? _dbSet.FromSqlInterpolated(
+                    $"""
+                    SELECT DISTINCT b.*
+                    FROM Boards AS b
+                    LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
+                    WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
+                    ORDER BY b.UpdatedAt DESC, b.CreatedAt DESC
+                    LIMIT {limit}
+                    """)
+                : _dbSet.FromSqlInterpolated(
+                    $"""
+                    SELECT DISTINCT b.*
+                    FROM Boards AS b
+                    LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
+                    WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
+                      AND b.IsArchived = 0
+                    ORDER BY b.UpdatedAt DESC, b.CreatedAt DESC
+                    LIMIT {limit}
+                    """);
+
+            return await readableBoards
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+        }
+
+        return await BuildReadableQuery(userId, includeArchived)
             .OrderByDescending(board => board.UpdatedAt)
             .ThenByDescending(board => board.CreatedAt)
-            .Take(boundedLimit)
-            .ToList();
+            .Take(limit)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<Board>> SearchAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
