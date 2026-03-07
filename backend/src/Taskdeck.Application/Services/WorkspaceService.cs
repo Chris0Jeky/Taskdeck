@@ -41,12 +41,15 @@ public class WorkspaceService : IWorkspaceService
             recentCutoff,
             includeArchived: false,
             cancellationToken);
-        var recentBoards = (await _unitOfWork.Boards.GetRecentReadableByUserIdAsync(
+        var recentBoardCandidates = (await _unitOfWork.Boards.GetRecentReadableByUserIdAsync(
                 userId,
                 RecentBoardLimit,
                 includeArchived: false,
                 cancellationToken))
             .Take(RecentBoardLimit)
+            .ToList();
+        var recentBoards = recentBoardCandidates
+            .Where(board => board.UpdatedAt >= recentCutoff)
             .Select(board => new WorkspaceRecentBoardDto(
                 board.Id,
                 board.Name,
@@ -82,7 +85,13 @@ public class WorkspaceService : IWorkspaceService
                 capturesNeedingTriage,
                 capturesReadyForFollowUp,
                 proposalsPendingReview,
-                recentBoards.FirstOrDefault())));
+                recentBoardCandidates
+                    .Select(board => new WorkspaceRecentBoardDto(
+                        board.Id,
+                        board.Name,
+                        board.Description,
+                        board.UpdatedAt))
+                    .FirstOrDefault())));
     }
 
     public async Task<Result<WorkspaceTodayDto>> GetTodayAsync(

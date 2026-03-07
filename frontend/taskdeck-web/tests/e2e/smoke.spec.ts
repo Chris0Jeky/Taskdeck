@@ -80,14 +80,23 @@ async function addColumn(page: Page, columnName: string) {
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 }
 
-async function addCard(page: Page, columnName: string, cardTitle: string) {
+async function addCard(
+  page: Page,
+  columnName: string,
+  cardTitle: string,
+  options: { expectVisible?: boolean } = {}
+) {
+  const { expectVisible = true } = options
   const column = columnByName(page, columnName)
   await column.getByRole('button', { name: 'Add Card' }).click()
   const addCardInput = column.getByPlaceholder('Enter card title...')
   await expect(addCardInput).toBeVisible()
   await addCardInput.fill(cardTitle)
   await column.getByRole('button', { name: 'Add', exact: true }).click()
-  await expect(cardByTitle(page, cardTitle)).toBeVisible()
+
+  if (expectVisible) {
+    await expect(cardByTitle(page, cardTitle)).toBeVisible()
+  }
 }
 
 async function expectColumnOrder(page: Page, expectedOrder: string[]) {
@@ -274,7 +283,7 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
   await addCard(page, columnName, firstCard)
   await expect(page.locator('[data-card-id]').filter({ hasText: firstCard }).first()).toBeVisible()
 
-  await addCard(page, columnName, secondCard)
+  await addCard(page, columnName, secondCard, { expectVisible: false })
   await expect(page.locator('[data-card-id]').filter({ hasText: secondCard })).toHaveCount(0)
   await expect(page.locator('text=has reached its WIP limit').first()).toBeVisible()
 })

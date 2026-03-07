@@ -282,7 +282,12 @@ onActivated(refreshHomeSummary)
             </div>
           </dl>
           <div v-if="recentBoards.length === 0" class="td-home-card__empty">
-            No boards yet. Start setup from Home or Today so captures and review can land somewhere useful.
+            <template v-if="summary.boards.totalBoards === 0">
+              No boards yet. Start setup from Home or Today so captures and review can land somewhere useful.
+            </template>
+            <template v-else>
+              No recently active boards yet. Open Boards to pick up where you left off.
+            </template>
           </div>
           <div v-else class="td-home-card__board-list">
             <button

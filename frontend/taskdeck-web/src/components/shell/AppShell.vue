@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import CaptureModal from '../common/CaptureModal.vue'
 import type { WorkspaceMode } from '../../types/workspace'
+import { isWorkspaceMode } from '../../types/workspace'
 
 const router = useRouter()
 const route = useRoute()
@@ -57,12 +58,6 @@ const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: str
     label: 'Agent',
     description: 'Hold the same review-first path while agent surfaces are staged in later work.',
   },
-}
-
-const supportedWorkspaceModes = ['guided', 'workbench', 'agent'] as const
-
-function isWorkspaceMode(value: string): value is WorkspaceMode {
-  return supportedWorkspaceModes.includes(value as WorkspaceMode)
 }
 
 const navCatalog: NavItem[] = [

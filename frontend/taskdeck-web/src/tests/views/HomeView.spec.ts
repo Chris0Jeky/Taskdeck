@@ -146,6 +146,22 @@ describe('HomeView', () => {
     expect(wrapper.text()).toContain('Failed to load workspace summary')
   })
 
+  it('shows a recent-boards empty state when boards exist but none were active recently', async () => {
+    mockWorkspaceStore.homeSummary = {
+      ...mockWorkspaceStore.homeSummary!,
+      boards: {
+        totalBoards: 2,
+        recentBoardsCount: 0,
+        recentBoards: [],
+      },
+    }
+
+    const wrapper = mount(HomeView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('No recently active boards yet.')
+  })
+
   it('navigates from hero actions, onboarding steps, actions, and board cards', async () => {
     const wrapper = mount(HomeView)
     await waitForUi()

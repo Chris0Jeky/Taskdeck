@@ -1,7 +1,13 @@
-export type WorkspaceMode = 'guided' | 'workbench' | 'agent'
+export const workspaceModes = ['guided', 'workbench', 'agent'] as const
+
+export type WorkspaceMode = typeof workspaceModes[number]
 export type WorkspaceOnboardingVisibility = 'active' | 'dismissed'
 export type WorkspaceOnboardingAction = 'dismiss' | 'replay'
 export type WorkspaceSurface = 'capture' | 'review' | 'boards' | 'board'
+
+export function isWorkspaceMode(value: string | null | undefined): value is WorkspaceMode {
+  return workspaceModes.includes(value as WorkspaceMode)
+}
 
 export interface WorkspaceOnboardingStep {
   stepId: string
