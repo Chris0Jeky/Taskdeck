@@ -44,7 +44,6 @@ public class WorkspaceService : IWorkspaceService
                 RecentBoardLimit,
                 includeArchived: false,
                 cancellationToken))
-            .Take(RecentBoardLimit)
             .ToList();
         var recentBoards = recentBoardCandidates
             .Where(board => board.UpdatedAt >= recentCutoff)
