@@ -2,17 +2,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AutomationChatView from '../../views/AutomationChatView.vue'
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+}))
+
 const mocks = vi.hoisted(() => ({
   getMySessions: vi.fn(),
   getSession: vi.fn(),
   sendMessage: vi.fn(),
   createSession: vi.fn(),
   getBoards: vi.fn(),
-  approveProposal: vi.fn(),
-  executeProposal: vi.fn(),
-  createRequestId: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: routerMocks.push,
+  }),
 }))
 
 vi.mock('../../api/chatApi', () => ({
@@ -28,17 +35,6 @@ vi.mock('../../api/boardsApi', () => ({
   boardsApi: {
     getBoards: mocks.getBoards,
   },
-}))
-
-vi.mock('../../api/automationApi', () => ({
-  automationApi: {
-    approveProposal: mocks.approveProposal,
-    executeProposal: mocks.executeProposal,
-  },
-}))
-
-vi.mock('../../utils/requestId', () => ({
-  createRequestId: mocks.createRequestId,
 }))
 
 vi.mock('../../store/toastStore', () => ({
@@ -80,113 +76,111 @@ function buildSession(messageType = 'proposal-reference') {
 async function waitForAsyncUi() {
   await Promise.resolve()
   await Promise.resolve()
+  await Promise.resolve()
+}
+
+function mountView() {
+  return mount(AutomationChatView, {
+    global: {
+      stubs: {
+        InputAssistField: {
+          props: ['modelValue', 'placeholder'],
+          emits: ['update:modelValue'],
+          template: `
+            <input
+              class="td-input-assist-stub"
+              :placeholder="placeholder"
+              :value="modelValue"
+              @input="$emit('update:modelValue', $event.target.value)"
+            />
+          `,
+        },
+      },
+    },
+  })
+}
+
+function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper.findAll('button').find((node) => node.text().trim() === text)
+  expect(button).toBeTruthy()
+  return button!
 }
 
 describe('AutomationChatView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const session = buildSession()
     mocks.getMySessions.mockResolvedValue([session])
     mocks.getSession.mockResolvedValue(session)
-    mocks.getBoards.mockResolvedValue([])
-    mocks.approveProposal.mockResolvedValue({ id: 'proposal-1' })
-    mocks.executeProposal.mockResolvedValue({ id: 'proposal-1' })
-    mocks.createRequestId.mockReturnValue('req-123')
-  })
-
-  it('approves and executes proposal references from chat in one click', async () => {
-    const wrapper = mount(AutomationChatView, {
-      global: {
-        stubs: {
-          InputAssistField: true,
-        },
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-1',
+        name: 'Board One',
+        description: 'Primary workspace board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
-    })
-
-    await waitForAsyncUi()
-
-    const applyButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Approve & Execute'))
-    expect(applyButton).toBeTruthy()
-
-    await applyButton!.trigger('click')
-    await waitForAsyncUi()
-
-    expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-1')
-    expect(mocks.executeProposal).toHaveBeenCalledWith('proposal-1', 'req-123')
-    expect(mocks.successToast).toHaveBeenCalledWith('Proposal approved and executed')
+    ])
+    mocks.createSession.mockResolvedValue({ id: 'session-created' })
+    mocks.sendMessage.mockResolvedValue(undefined)
   })
 
-  it('does not apply proposal when confirmation is cancelled', async () => {
-    vi.mocked(window.confirm).mockReturnValue(false)
-
-    const wrapper = mount(AutomationChatView, {
-      global: {
-        stubs: {
-          InputAssistField: true,
-        },
-      },
-    })
-
+  it('opens linked proposals in Review instead of approving them inline', async () => {
+    const wrapper = mountView()
     await waitForAsyncUi()
 
-    const applyButton = wrapper
+    expect(wrapper.text()).not.toContain('Approve & Execute')
+
+    const reviewButton = wrapper
       .findAll('button')
-      .find((button) => button.text().includes('Approve & Execute'))
-    expect(applyButton).toBeTruthy()
+      .find((button) => button.text().includes('Open in Review'))
+    expect(reviewButton).toBeTruthy()
 
-    await applyButton!.trigger('click')
-    await waitForAsyncUi()
+    await reviewButton!.trigger('click')
 
-    expect(mocks.approveProposal).not.toHaveBeenCalled()
-    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      hash: '#proposal-proposal-1',
+    })
   })
 
-  it('shows an error toast when proposal application fails', async () => {
-    mocks.approveProposal.mockRejectedValue(new Error('approval failed'))
-
-    const wrapper = mount(AutomationChatView, {
-      global: {
-        stubs: {
-          InputAssistField: true,
-        },
-      },
-    })
-
+  it('rejects unknown board context values when creating a session', async () => {
+    const wrapper = mountView()
     await waitForAsyncUi()
 
-    const applyButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Approve & Execute'))
-    expect(applyButton).toBeTruthy()
-
-    await applyButton!.trigger('click')
+    await wrapper.get('input[placeholder="Session title"]').setValue('Scoped session')
+    await wrapper.get('input[placeholder="Board context (optional)"]').setValue('mystery board')
+    await findButtonByText(wrapper, 'Create Session').trigger('click')
     await waitForAsyncUi()
 
-    expect(mocks.executeProposal).not.toHaveBeenCalled()
-    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to apply proposal from chat')
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.errorToast).toHaveBeenCalledWith('Choose a board from the list or leave board context blank.')
   })
 
-  it('does not show approve action for non proposal-reference messages', async () => {
+  it('accepts board selection by name and stores the linked board id', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await wrapper.get('input[placeholder="Session title"]').setValue('Scoped session')
+    await wrapper.get('input[placeholder="Board context (optional)"]').setValue('Board One')
+    await findButtonByText(wrapper, 'Create Session').trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.createSession).toHaveBeenCalledWith({
+      title: 'Scoped session',
+      boardId: 'board-1',
+    })
+  })
+
+  it('does not show proposal review action for non proposal-reference messages', async () => {
     const session = buildSession('status')
     mocks.getMySessions.mockResolvedValue([session])
     mocks.getSession.mockResolvedValue(session)
 
-    const wrapper = mount(AutomationChatView, {
-      global: {
-        stubs: {
-          InputAssistField: true,
-        },
-      },
-    })
-
+    const wrapper = mountView()
     await waitForAsyncUi()
 
-    const applyButton = wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('Approve & Execute'))
-    expect(applyButton).toBeFalsy()
+    expect(wrapper.text()).not.toContain('Open in Review')
   })
 })

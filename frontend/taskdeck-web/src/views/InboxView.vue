@@ -213,9 +213,13 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
 
 function openProposal(proposalId: string): void {
   void router.push({
-    name: 'workspace-automations-proposals',
+    name: 'workspace-review',
     hash: `#proposal-${encodeURIComponent(proposalId)}`,
   })
+}
+
+function openRoute(path: string): void {
+  void router.push(path)
 }
 
 watch(items, (nextItems) => {
@@ -280,7 +284,14 @@ onMounted(() => {
         >
           <div v-if="captureStore.loadingList" class="td-placeholder">Loading inbox items...</div>
           <div v-else-if="captureStore.listError" class="td-alert td-alert--error">{{ captureStore.listError }}</div>
-          <div v-else-if="!captureStore.hasItems" class="td-placeholder">No capture items yet.</div>
+          <div v-else-if="!captureStore.hasItems" class="td-placeholder td-placeholder--empty-state">
+            <h3>No capture items yet</h3>
+            <p>Start from Home when you want to drop in fresh notes or transcripts. Review will light up once triage creates proposals.</p>
+            <div class="td-placeholder__actions">
+              <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
+              <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+            </div>
+          </div>
 
           <div
             v-for="(item, index) in items"
@@ -309,7 +320,7 @@ onMounted(() => {
 
       <section class="td-inbox__detail-panel">
         <div v-if="!selectedItemId" class="td-placeholder td-placeholder--detail">
-          Select an item to view full text and actions.
+          Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it.
         </div>
         <div
           v-else-if="captureStore.loadingDetail && !selectedItem"
@@ -550,6 +561,31 @@ onMounted(() => {
   color: var(--td-text-secondary);
   padding: var(--td-space-6);
   text-align: center;
+}
+
+.td-placeholder--empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+  align-items: center;
+  justify-content: center;
+}
+
+.td-placeholder--empty-state h3 {
+  margin: 0;
+  color: var(--td-text-primary);
+}
+
+.td-placeholder--empty-state p {
+  margin: 0;
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+.td-placeholder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-2);
 }
 
 .td-placeholder--detail {

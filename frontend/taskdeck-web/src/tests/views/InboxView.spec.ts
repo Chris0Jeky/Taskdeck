@@ -162,7 +162,7 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('Select an item to view full text')
+    expect(wrapper.text()).toContain('Select an item to inspect the captured text')
 
     const firstRow = wrapper.get('[role="option"]')
     await firstRow.trigger('click')
@@ -239,7 +239,21 @@ describe('InboxView', () => {
     escapeHandlers[escapeHandlers.length - 1]()
     await waitForUi()
 
-    expect(wrapper.text()).toContain('Select an item to view full text')
+    expect(wrapper.text()).toContain('Select an item to inspect the captured text')
+  })
+
+  it('shows guided empty-state actions when there are no capture items', async () => {
+    mockCaptureStore.items = []
+    mockCaptureStore.hasItems = false
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('No capture items yet')
+    expect(wrapper.text()).toContain('Start from Home')
+    expect(wrapper.find('button').text()).toContain('Refresh')
+    expect(wrapper.findAll('button').some((node) => node.text() === 'Open Home')).toBe(true)
+    expect(wrapper.findAll('button').some((node) => node.text() === 'Open Review')).toBe(true)
   })
 
   it('disables ignore and cancel for non-cancellable statuses', async () => {
@@ -320,7 +334,7 @@ describe('InboxView', () => {
     await proposalButton?.trigger('click')
 
     expect(routerMocks.push).toHaveBeenCalledWith({
-      name: 'workspace-automations-proposals',
+      name: 'workspace-review',
       hash: '#proposal-proposal-42',
     })
   })
@@ -333,7 +347,7 @@ describe('InboxView', () => {
     await wrapper.get('[role="option"]').trigger('click')
     await waitForUi()
 
-    expect(wrapper.text()).toContain('Select an item to view full text')
+    expect(wrapper.text()).toContain('Select an item to inspect the captured text')
   })
 
   it('does not clear a newer selection when stale detail request fails', async () => {
@@ -373,7 +387,7 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Full text for capture-2')
-    expect(wrapper.text()).not.toContain('Select an item to view full text')
+    expect(wrapper.text()).not.toContain('Select an item to inspect the captured text')
   })
 
   it('shows loading placeholder while selected detail is still loading', async () => {
