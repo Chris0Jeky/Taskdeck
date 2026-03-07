@@ -258,6 +258,10 @@ Delivered in the latest cycle:
 61. Capture realignment backlog seeding delivery (`#199` to `#213`):
    - reconciled in-review capture/security/performance planning packs into dependency-mapped GitHub issues
    - seeded a dedicated capture wave tracker (`#199`) with execution issues (`#200` to `#211`) plus linked security/performance follow-through (`#212`, `#213`)
+62. UX-15 review-first routing and selector cleanup delivery (`#322`):
+   - `/workspace/review` is now the canonical normal-user automation route, with legacy proposals URLs redirected compatibly and shell/home/inbox/card links pointed at Review
+   - queue, chat, ops, and access surfaces now explain their advanced/operator purpose in plain language and expose action-oriented next steps instead of orphan empty states
+   - board access now uses a board picker, automation chat accepts selector-safe board context instead of raw-ID happy paths, and frontend unit + Playwright coverage now locks selector flow, route defaults, and representative empty-state branches
    - linked follow-through status is now split: `#212` delivered the logging/telemetry redaction policy and runtime guardrails, while `#213` remains the pending performance/responsiveness slice
    - updated existing SEC-06 rate-limiting issue (`#81`) and wave index (`#107`) to integrate capture-specific scope without duplicate issue creation
 62. InReview extraction coverage expansion (`#216` to `#220`):
@@ -586,7 +590,7 @@ These continue in parallel where they protect trust, performance, or operator po
 - Seeded Wave P from the 2026-03-07 MVP expansion integration:
   - `#318` tracker
   - `#320` workspace modes + `Home` summary shell (delivered)
-  - `#322` `Review`-first routing + empty/help states + board selectors
+  - `#322` `Review`-first routing + empty/help states + board selectors (delivered)
   - `#324` `Today` agenda + onboarding path
   - `#326` proposal readability + board-centered action flow
   - `#96` onboarding/contextual help (reused, moved to `Priority II`)

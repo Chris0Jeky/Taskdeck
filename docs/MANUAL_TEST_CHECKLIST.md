@@ -154,8 +154,8 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: assistant response appears.
 3. Create board-scoped chat session and send actionable instruction with `Request proposal generation` enabled.
    - Expected: assistant response includes proposal reference.
-4. Open `/workspace/automations/proposals` and locate proposal.
-   - Expected: proposal card visible with status/actions.
+4. Open `/workspace/review` and locate proposal.
+   - Expected: review card visible with status/actions, and legacy `/workspace/automations/proposals` links redirect here.
 5. Approve proposal.
    - Expected: status transitions to `Approved`.
 6. Execute proposal with confirmation.
