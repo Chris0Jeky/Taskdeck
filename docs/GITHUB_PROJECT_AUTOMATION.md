@@ -22,7 +22,7 @@ Rules:
 ## Required Labels
 
 Canonical descriptions and usage rules live in:
-- `docs/GITHUB_LABEL_TAXONOMY.md`
+- `docs/ops/GITHUB_LABEL_TAXONOMY.md`
 
 Operational labels:
 - `bug` (GitHub default; keep it present because `bug_report` template uses it)

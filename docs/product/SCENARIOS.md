@@ -3,6 +3,10 @@
 Taskdeck includes a JSON scenario runner for deterministic demo and test setup.
 Use it to seed boards, cards, captures, queue requests, and proposals without manual UI clicking.
 
+Productization note:
+- prefer scenarios that tell one causal story (`capture -> triage -> proposal -> board`) instead of broad page-tour coverage
+- the MVP expansion blueprint stages a future `novice-first-first-run` scenario; treat that shape as the target for first-run acceptance work when it is promoted
+
 Runner files:
 
 - `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`
@@ -191,3 +195,4 @@ Keep step semantics deterministic if you want to reuse scenarios in tests.
 For LLM-driven steps, set `requiresLlm: true` so they can be skipped in CI.
 Starter-pack-backed scenarios should only reference columns and labels that the applied starter pack actually creates; the frontend unit suite now asserts that shipped JSON scenarios stay aligned with those contracts.
 When scenario steps resolve columns or labels by name, duplicate board names are treated as an error so setup does not silently bind to the wrong column/label.
+When adding new scenarios, prefer board-centered, review-first flows that help validate actual product understanding rather than isolated surface coverage.

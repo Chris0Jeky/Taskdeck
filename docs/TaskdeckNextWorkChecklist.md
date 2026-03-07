@@ -1,6 +1,6 @@
 # Taskdeck Next Work Checklist
 
-Last Updated: 2026-02-23
+Last Updated: 2026-03-07
 Source of truth for issue-level execution is now:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -38,6 +38,54 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave G testing harness guardrails: `#254` to `#260`
 - [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
 - [ ] Meta index maintenance: `#107` (`Priority V`)
+
+## MVP Expansion Productization (Wave P Seeded)
+
+Detailed reconciliation:
+- `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
+- `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
+- canonical GitHub naming uses `Wave P` for the novice-first productization tranche
+
+- [ ] Wave P tracker: `#318`
+- [ ] Batch A novice-first shell and entry clarity:
+  - `#320` workspace modes + `Home` summary shell
+  - `#322` `Review`-first routing + empty/help states + board selectors
+- [ ] Batch B board-centered daily workflow:
+  - `#324` `Today` agenda + onboarding path
+  - `#326` proposal readability + board-centered action flow
+- [ ] Batch C docs/help/testing coherence:
+  - `#96` onboarding/contextual help (reused, reprioritized to `Priority II`)
+  - `#100` user guides/tutorials/FAQ (reused, reprioritized to `Priority II`)
+  - `#328` first-run smoke + launch-criteria guardrail
+- [ ] Wave P implementation carry-forward:
+  - `#320`: durable workspace-mode preference + guided/workbench/agent shell contract + product-shaped summary endpoint direction
+  - `#322`: `Review` alias + plain-language top boxes + action-state empty/help states + no orphan surfaces
+  - `#324`: onboarding checklist plus first useful project/wizard flow and `Today` agenda blocks
+  - `#326`: application-layer proposal summaries + explicit board-aware action rail
+  - `#96`: dismissible in-app help blocks/help-center direction
+  - `#100`: navigation-shaped manual structure and future chapter split under `docs/manual/`
+  - `#328`: `novice-first-first-run` scenario shape and launch-criteria sync
+- [ ] Expanded-blueprint architecture tracker: `#335`
+- [ ] Batch D agent substrate:
+  - `#336` agent profile/run/event foundation
+  - `#337` tool registry + policy evaluator + first bounded template
+  - `#338` agent mode surfaces and run detail
+- [ ] Batch E knowledge/integrations surface:
+  - `#339` knowledge documents + SQLite FTS search
+  - `#340` integrations registry + supervised inbound connector foundation
+  - note/transcript/clip intake stays split between `#334`, `#218`, `#219`, and `#340`
+- [ ] Expanded testing/release framing follow-through:
+  - `#341` product telemetry taxonomy + `R1` / `R2` / `R3` launch gates
+
+Related reuse anchors that stay outside the immediate Wave P execution core:
+- [ ] `#93`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`
+
+Secondary lower-priority follow-through wave seeded from the audit:
+- [ ] Secondary lower-priority follow-through wave tracker: `#329`
+- [ ] Demoability/product evidence: `#330`
+- [ ] Harness maturity/reporting: `#331`, `#332`
+- [ ] Productivity follow-through: `#333`
+- [ ] Note-style import/clip intake follow-through: `#334`
 
 ## Out-of-Code and Configuration Actions Coverage
 

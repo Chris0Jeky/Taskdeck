@@ -1,0 +1,293 @@
+# MVP Expansion Reconciliation Tracker
+
+Date: 2026-03-07
+Branch: `docs/mvp-expansion-reconciliation`
+Status: Coverage audit complete; Wave P/Q/R seeded; root-docs curation, manual structure, and path cleanup complete
+
+## Purpose
+
+Track the reconciliation of the new MVP expansion review packs into the active Taskdeck documentation spine and backlog framing.
+
+## Source Packs
+
+- `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/`
+- `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/`
+
+## Source Inputs
+
+Primary current-doc inputs:
+
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/GOLDEN_PRINCIPLES.md`
+- `docs/ISSUE_EXECUTION_GUIDE.md`
+- `docs/TESTING_GUIDE.md`
+- `docs/MCP_TOOLING_GUIDE.md`
+- `docs/GITHUB_PROJECT_AUTOMATION.md`
+- `docs/INDEX.md`
+- `docs/USER_MANUAL.md`
+- `README.md`
+
+## Primary Goals
+
+1. Integrate the new novice-first MVP/productization direction into canonical docs.
+2. Reconcile the new blueprint with current shipped reality so `STATUS.md` stays truthful.
+3. Reconcile the new blueprint with current backlog/issues so future execution stays focused and duplicate issue seeding is avoided.
+4. Improve documentation entry points for new contributors, evaluators, and future users.
+
+## Working Decisions
+
+- Treat the `MINIMAL` pack as the concise product diagnosis and prioritization source.
+- Treat the `EXPANDED` pack as the architectural and issue-seeding expansion layer.
+- Keep immediate productization work separate from later agent/knowledge/integration expansion.
+- Avoid rewriting `STATUS.md` as aspiration; put future-facing work in roadmap/backlog docs instead.
+
+## Working Synthesis
+
+### Core conclusion
+
+Taskdeck does not need another broad capability brainstorm before the next delivery cycle.
+It needs a product-legibility correction that turns the current harness and capture strengths into a product that teaches itself:
+
+- novice-first entry point
+- clearer golden path
+- board-centered context travel
+- readable review surface
+- stronger docs/help entry points
+
+### Planning posture adopted for integration
+
+1. Preserve the current product thesis:
+   - capture should stay near-zero friction
+   - automation remains proposal-first and review-first
+   - board execution remains the visible work surface
+2. Reframe the next major work as a staged productization track:
+   - Phase A: novice-first shell and self-explaining UX
+   - Phase B: board-centered daily workflow and review readability
+   - Phase C: only then expand into agent substrate and knowledge/integrations
+3. Keep advanced/operator surfaces visible in docs, but explicitly secondary to the core MVP loop.
+
+### Review-driven priorities promoted into active docs
+
+- Add a first-class `Home` / start-surface direction.
+- Add a `Today` / agenda direction after the start and review surfaces are coherent.
+- Replace raw board-ID happy paths with board pickers/search selectors.
+- Make proposals legible in plain language with stronger next-step links.
+- Require action-oriented empty/help states on main pages.
+- Keep agent/runs/knowledge/integrations as planned expansion, not the immediate MVP cycle.
+
+## Batch Plan
+
+### Batch 1
+
+- Complete.
+- Created branch and tracker.
+- Read source-of-truth docs and MVP expansion packs.
+- Built current-doc gap map.
+- Built GitHub issue overlap map.
+
+### Batch 2
+
+- Complete.
+- Updated canonical planning docs:
+  - `docs/IMPLEMENTATION_MASTERPLAN.md`
+  - `docs/STATUS.md`
+  - `docs/INDEX.md`
+  - `docs/ISSUE_EXECUTION_GUIDE.md`
+  - `docs/TaskdeckNextWorkChecklist.md`
+- Promoted a clearer novice-first entry point:
+  - `docs/START_HERE.md`
+
+### Batch 3
+
+- Complete.
+- Updated user-facing/product docs:
+  - `README.md`
+  - `docs/USER_MANUAL.md`
+  - `docs/product/DOGFOODING_GUIDE.md`
+  - `docs/product/DEMO_PLAYBOOK.md`
+  - `docs/product/SCENARIOS.md`
+  - `docs/TESTING_GUIDE.md`
+- Added reconciliation notes for issue planning and future batch execution.
+
+### Batch 4
+
+- Complete.
+- Consolidated the analysis record to:
+  - `docs/analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`
+  - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
+- Removed the duplicate interim tracker variant after preserving its high-signal decisions here.
+
+## Current Findings
+
+### Documentation gaps
+
+- Canonical docs now explicitly record the near-horizon gap as product legibility rather than missing engine capability.
+- `docs/START_HERE.md` now bridges repo setup, product thesis, seeded demo flow, and the current golden path.
+- `USER_MANUAL.md`, `DOGFOODING_GUIDE.md`, and `DEMO_PLAYBOOK.md` now distinguish the normal capture/review/board path from advanced/operator surfaces.
+- `INDEX.md` now includes audience-first read paths.
+- root `docs/` is now restricted to the living-doc spine, while stable reference material is sorted under `product/`, `manual/`, `ops/`, `platform/`, `security/`, and `tooling/`.
+- `docs/manual/README.md` now preserves the manual chapter map and in-app help mapping without forcing the root docs to expand again.
+- Full-source coverage now has a dedicated audit ledger:
+  - `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
+
+### Coverage audit addendum
+
+The 2026-03-07 full-source audit found three buckets:
+
+1. Promoted well:
+   - the core `MINIMAL` diagnosis and the Wave P novice-first productization direction (the source pack called this same tranche `Wave I`)
+2. Promoted, but too implicitly:
+   - durable workspace-mode preference
+   - aggregated `Home` / `Today` / `Review` summary APIs
+   - application-layer proposal summary generation
+   - explicit board-aware action-rail behavior
+   - dismissible help-block and help-center shape
+   - first-run scenario shape for the eventual smoke path
+3. Preserved as lower-priority/backlog follow-through context:
+   - a lower-priority seeded secondary follow-through wave now captures:
+     - `#329` tracker
+     - `#330` in-app demoability/product evidence
+     - `#331` harness reporting/assertions/presets/soak
+     - `#332` replay-from-trace and scenario authoring
+     - `#333` saved views/productivity follow-through
+     - `#334` broader note-style import/clip intake follow-through
+   - a seeded expanded-blueprint architecture wave now captures:
+     - `#335` tracker
+     - `#336`, `#337`, `#338` for the agent substrate
+     - `#339`, `#340` for knowledge/integrations
+     - `#341` for telemetry and release-gate framing
+
+### GitHub issue overlap
+
+- Existing overlap found:
+  - `#96` onboarding/contextual help
+  - `#93` global search and quick actions
+  - `#100` end-user guides/tutorials/FAQ
+  - `#216` thesis-aligned demo and landing baseline
+  - `#97` / `#98` for later integration/plugin breadth
+- Seeded in the new Wave P pass:
+  - `#318` tracker
+  - `#320` workspace modes + `Home`
+  - `#322` `Review`-first routing, empty/help states, and selectors
+  - `#324` `Today` + onboarding path
+  - `#326` proposal readability + board-centered action flow
+  - `#328` first-run smoke + launch-criteria guardrail
+- Updated existing overlap issues in the same pass:
+  - `#96` reprioritized to `Priority II` and narrowed to onboarding/help follow-through for the productization wave
+  - `#100` reprioritized to `Priority II` and narrowed to user-docs/FAQ follow-through for the productization wave
+- Tightened Wave P issue bodies after the full-source audit so the most useful source-derived details are now carried directly in GitHub:
+  - `#320` durable workspace-mode preference + product-shaped `Home` aggregation
+  - `#324` onboarding/project-wizard clarity
+  - `#326` application-layer proposal summaries + explicit board-aware action rail
+  - `#96` dismissible help blocks
+  - `#100` navigation-shaped docs/manual structure
+  - `#328` `novice-first-first-run` scenario contract
+- Seeded lower-priority secondary follow-through wave after the full-source audit:
+  - `#329` tracker
+  - `#330` in-app demoability and live attention cues
+  - `#331` demo director reporting/assertions/presets/soak
+  - `#332` replay-from-trace and scenario-authoring follow-through
+  - `#333` saved views and post-Wave-P productivity shortcuts
+  - `#334` note-style import and clip intake follow-through
+- Seeded expanded-blueprint architecture wave after the later audit pass:
+  - `#335` tracker
+  - `#336` agent foundation entities and manual-run API
+  - `#337` tool registry, policies, and bounded first template
+  - `#338` agent mode surfaces and run-detail timeline
+  - `#339` knowledge documents and SQLite FTS foundation
+  - `#340` integrations registry and supervised connector foundation
+  - `#341` telemetry taxonomy and `R1` / `R2` / `R3` launch gates
+
+## Commands Run
+
+- listed active docs and MVP expansion folders
+- read `STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, `GOLDEN_PRINCIPLES.md`, `ISSUE_EXECUTION_GUIDE.md`, `TESTING_GUIDE.md`, `MCP_TOOLING_GUIDE.md`, `GITHUB_PROJECT_AUTOMATION.md`
+- reviewed `MINIMAL` and `EXPANDED` master/index files plus key backlog/manual/testing/roadmap sections
+- audited every file under:
+  - `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/`
+  - `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/`
+  - `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/snippets/`
+- extracted headings and snippet payloads to verify no source file was being ignored
+- searched GitHub issues for overlap on onboarding, search, and new productization themes
+- re-read selected issue bodies for reuse-anchor and Wave P scope validation:
+  - `#93`, `#96`, `#100`, `#216`, `#311`, `#318`, `#320`, `#324`, `#326`, `#328`
+- updated Wave P issue bodies to preserve source-audit detail:
+  - `#320`, `#324`, `#326`, `#96`, `#100`, `#328`
+- tightened existing issue bodies with expanded-blueprint detail on route/manual contracts:
+  - `#320`, `#322`, `#100`
+- seeded lower-priority secondary follow-through issues:
+  - created `#329`, `#330`, `#331`, `#332`, `#333`, `#334`
+- seeded expanded-blueprint architecture issues:
+  - created `#335`, `#336`, `#337`, `#338`, `#339`, `#340`, `#341`
+- updated wave index issue:
+  - `#107`
+- seeded GitHub productization issues:
+  - created `#318`, `#320`, `#322`, `#324`, `#326`, `#328`
+  - updated `#96`, `#100`, and `#107`
+- spot-checked GitHub Project v2 metadata via `gh api graphql`
+  - confirmed new wave issues auto-added with `Status=Pending`
+  - synchronized `Priority III` / `Priority IV` project-field values for `#329` to `#334` to match their labels
+  - synchronized `Priority IV` / `Priority V` project-field values for `#335` to `#341` to match their labels
+  - confirmed new wave issues and updated `#96` / `#100` carry `Priority II`
+  - confirmed `#107` remains `Priority V`
+  - detected broader legacy `Priority`-field drift outside this new wave; treated as a separate follow-up concern rather than expanding this pass into a full historical cleanup
+- created and committed:
+  - tracker baseline
+  - dated MVP expansion gap map
+  - audience-first entry docs batch
+  - planning-wave integration batch
+  - product guidance/testing docs batch
+- verification:
+  - `node scripts/check-docs-governance.mjs`
+  - `node scripts/check-github-ops-governance.mjs`
+
+## Verification Log
+
+- `node scripts/check-docs-governance.mjs` -> passed
+- `node scripts/check-github-ops-governance.mjs` -> passed
+- GitHub Project v2 spot-check -> passed (`Status`/`Priority` fields aligned for `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, `#96`, `#100`, `#107`)
+
+## Decision Log
+
+### 2026-03-07
+
+- Adopt `docs/START_HERE.md` as the preferred new bridge-doc entry point.
+- Treat the `MINIMAL` pack as the near-horizon execution filter when `EXPANDED` suggests larger future breadth.
+- Keep agent workspace and knowledge/integrations on the roadmap, but sequence them behind novice-first productization.
+- Use file-scoped or batch-scoped commits instead of one large documentation commit.
+- Keep the resulting productization wave indexed in `#107` throughout active execution; do not scatter the new scope across disconnected old issues.
+- Keep a single canonical tracker file and fold continuity-critical detail into it instead of maintaining parallel trackers.
+
+### 2026-03-08 deletion audit
+
+- Re-audited commit `849eaaf` to confirm the deletion of `docs/analysis/2026-03-07_mvp-expansion-integration-tracker.md` was intentional and happened in the original consolidation commit, not during context compaction.
+- Confirmed the surviving reconciliation tracker is the canonical continuity record and already preserves the high-signal synthesis, source inputs, decision log, and commit ledger that mattered operationally.
+- Residual risk from the consolidation was not data loss in Git history; it was future confusion about whether one or two tracker files should remain active. That risk is now treated as resolved: keep only this tracker live.
+- Chosen next seeding shape: one dedicated productization wave tracker plus a small set of focused child issues, while updating overlapping existing issues (`#96`, `#100`, `#107`) instead of cloning their scope into new duplicates.
+- Seeded the chosen Wave P shape as `#318`, `#320`, `#322`, `#324`, `#326`, and `#328`, with `#96` and `#100` updated into the same `Priority II` tranche.
+- Closed the competing parallel-created batch (`#317`, `#319`, `#321`, `#323`, `#325`, `#327`) as duplicates once the overlap was detected, keeping `#318` / `#320` / `#322` / `#324` / `#326` / `#328` as the canonical sequence.
+
+## Commit Ledger
+
+- `8f407bb` - Add MVP expansion reconciliation tracker
+- `0871cf0` - Add MVP expansion integration tracker
+- `9809cda` - Add MVP expansion gap map
+- `9622f07` - Integrate MVP expansion planning spine
+- `be5064d` - Add audience-first entry docs
+- `ba187e1` - Add start-here and reshape user docs
+- `71c43db` - Integrate MVP expansion planning wave
+- `b9b77a0` - Refine product guidance and testing docs
+- `849eaaf` - Consolidate MVP expansion analysis notes
+
+## Open Questions
+
+- Whether the public-story follow-through in `#216` should be reprioritized immediately with the internal productization wave, or stay linked but secondary until `Home` / `Review` / `Today` are partially shipped.
+
+## Next Actions
+
+1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`, and `#107` synchronized if the wave map changes.
+2. Keep `#329` to `#334` subordinated to Wave P so the secondary follow-through does not compete with the main productization tranche.
+3. Keep `#335` to `#341` subordinated to Wave Q so the remaining expanded-blueprint architecture stays future-facing and bounded.
+4. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
+5. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.

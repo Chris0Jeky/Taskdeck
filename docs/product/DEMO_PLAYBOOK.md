@@ -8,6 +8,9 @@ This playbook gives you:
 2. Scenario harness commands for repeatable demos.
 3. A short stakeholder flow and an opt-in recorder.
 
+Use [START_HERE.md](START_HERE.md) first if you are trying to understand the product.
+This playbook is for seeded demos, stakeholder walkthroughs, and regression/operator use, not the main onboarding path.
+
 Core story:
 
 Capture -> Triage -> Proposal -> Apply -> Board
@@ -64,7 +67,7 @@ On reruns against the canonical demo account, it now reuses the seeded artifacts
 
 ## Scenario Harness
 
-Scenario reference: [docs/SCENARIOS.md](SCENARIOS.md)
+Scenario reference: [SCENARIOS.md](SCENARIOS.md)
 
 List scenarios:
 

@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-03-06
+Last Updated: 2026-03-07
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -27,13 +27,67 @@ Use this file when starting backlog work. It prevents out-of-order development a
 ## Priority Model (Required)
 
 - `Priority I`: Current Phase 4 completion path and blockers.
-- `Priority II`: Immediate post-Phase-4 foundation work.
+- `Priority II`: Immediate post-Phase-4 foundation work, including novice-first productization.
 - `Priority III`: Expansion tranche (analytics/security/compliance).
 - `Priority IV`: Maturity tranche (platform/test/UX/docs).
 - `Priority V`: Meta/historical/low-urgency tracking.
 
 Rule:
 - Never start a lower-priority issue while an unblocked higher-priority issue is ready, unless explicitly directed.
+
+## 2026-03-07 Productization Seeding Record and Execution Rule
+
+The 2026-03-07 seeding pass created Wave P, the dedicated product-legibility wave, before promoting more disconnected future-breadth work.
+
+The seeded sequence is:
+
+1. novice-first shell:
+   - workspace mode preference (`guided`, `workbench`, `agent`)
+   - `Home`
+   - `Review` route/terminology
+   - action-oriented empty/help states
+   - board selectors instead of raw-ID happy paths
+2. board-centered daily workflow:
+   - `Today`
+   - onboarding checklist/wizard
+   - proposal summary service/cards
+   - board action rail
+   - deep links and next-step shortcuts across inbox/review/notifications/boards
+3. docs/help/testing coherence:
+   - `START_HERE`
+   - manual/docs index reshape
+   - first-run golden-path smoke
+   - contextual help/help-center direction
+4. agent substrate
+5. knowledge and integrations surface
+
+Reuse instead of duplicate when seeding:
+
+- `#96` onboarding/contextual help
+- `#93` global search and quick actions
+- `#100` user guides/tutorials/FAQ
+- `#216` thesis-aligned demo and landing baseline
+- `#77` metrics dashboard / telemetry alignment
+- `#75`, `#97`, `#98`, `#218`, `#219` for import/integration intake overlap
+
+Execution rule:
+
+- keep Wave P indexed in `#107`
+- do not promote agent/knowledge breadth ahead of the novice-first shell and board-centered workflow wave
+
+Implementation note from the full-source audit:
+
+- use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` when executing `#320`, `#324`, `#326`, `#96`, `#100`, and `#328`
+- preserve these carry-forwards explicitly during implementation:
+  - durable workspace-mode preference and aggregate workspace summary APIs
+  - guided/workbench/agent shell contract plus product-facing route aliases
+  - application-layer proposal summary generation plus explicit board-aware action-rail behavior
+  - plain-language top boxes, action-state empty/help states, and no orphan surfaces across board/inbox/review/notification flows
+  - dismissible in-app help blocks and the `novice-first-first-run` smoke/scenario shape
+  - manual/help work should stay aligned to `docs/manual/README.md` instead of drifting back to implementation-slice docs
+- treat the audit's secondary demoability/harness/productivity follow-through as deferred, not dropped
+- that secondary follow-through is now seeded as `#329` to `#334`; execute it only after the Wave P core is underway or delivered, and do not mix it into `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, or `#328`
+- the remaining expanded-blueprint architecture is now seeded as `#335` to `#341`; execute it only after Wave Q is stable enough that agent/knowledge breadth will not compete with product legibility work
 
 ## Execution Order (Dependency-Aware)
 
@@ -146,6 +200,16 @@ Provider runtime expansion (2026-02-23):
 38. `#236` SEC-16 managed-key identity attribution contract
 39. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails
 
+MVP productization wave seeded from the 2026-03-07 integration:
+40. `#318` `UX-13` MVP productization wave tracker
+41. `#320` `UX-14` workspace mode foundation + `Home` summary shell
+42. `#322` `UX-15` `Review`-first routing + empty/help states + board selectors
+43. `#324` `UX-16` `Today` agenda + first-run onboarding path
+44. `#326` `UX-17` proposal readability + board-centered action flow
+45. `#96` `UX-10` interactive onboarding/help (reused and reprioritized to `Priority II`)
+46. `#100` `DOC-04` user guides/tutorials/FAQ (reused and reprioritized to `Priority II`)
+47. `#328` `TST-20` product first-run smoke + launch-criteria guardrail
+
 ### Stage 3: Priority III - Expansion Wave
 
 1. `#77` ANL-01 metrics dashboard
@@ -171,9 +235,14 @@ Provider runtime expansion (2026-02-23):
 21. `#249` UI-07 inbox premium primitives pass
 22. `#248` UI-06 drag/drop premium behavior + keyboard alternatives
 23. `#250` PERF-08 frontend interaction latency budgets + instrumentation
+24. `#329` MVP-03 lower-priority secondary MVP follow-through tracker
+25. `#330` UX-18 in-app demoability and live attention cues
+26. `#331` TST-21 demo director reporting/assertions/presets/soak follow-through
+27. `#332` TST-22 replay-from-trace and scenario-authoring follow-through
 
 Execution note (premium UI wave):
 - Reused dependencies are intentionally not re-seeded as duplicates: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization).
+- Do not promote agent/knowledge/integrations breadth ahead of the seeded `Priority II` productization wave (`#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, `#328`).
 
 ### Stage 4: Priority IV - Maturity Wave
 
@@ -198,25 +267,29 @@ Testing/UX/docs:
 16. `#93` UX-07 global search/actions
 17. `#94` UX-08 calendar/timeline views
 18. `#95` UX-09 PWA/offline readiness
-19. `#96` UX-10 onboarding/help
-20. `#213` PERF-07 long-list virtualization
-21. `#97` INT-03 plugin architecture RFC
-22. `#98` INT-04 connector framework
-23. `#99` DOC-03 developer portal generation
-24. `#100` DOC-04 user guides/tutorials/FAQ
-25. `#216` GTM-01 thesis-aligned demo/landing baseline
-26. `#217` RES-01 user-research execution slice
-27. `#218` CAP-20 transcript capture source
-28. `#219` CAP-21 voice capture/transcription (opt-in)
-29. `#220` CAP-22 batch triage + suggestion editing
-30. `#251` UI-12 optional Storybook baseline for primitives
-31. `#262` OUT-00 outreach CRM deferred wave tracker
-32. `#263` OUT-01 JSON manifest import path for starter packs
-33. `#264` OUT-02 contact-card YAML parser/serializer contract
-34. `#265` OUT-03 structured contact detail + timeline logging UX
-35. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
-36. `#267` OUT-05 daily outreach dashboard (keyboard-first)
-37. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
+19. `#213` PERF-07 long-list virtualization
+20. `#97` INT-03 plugin architecture RFC
+21. `#98` INT-04 connector framework
+22. `#99` DOC-03 developer portal generation
+23. `#216` GTM-01 thesis-aligned demo/landing baseline
+24. `#217` RES-01 user-research execution slice
+25. `#218` CAP-20 transcript capture source
+26. `#219` CAP-21 voice capture/transcription (opt-in)
+27. `#220` CAP-22 batch triage + suggestion editing
+28. `#251` UI-12 optional Storybook baseline for primitives
+29. `#262` OUT-00 outreach CRM deferred wave tracker
+30. `#263` OUT-01 JSON manifest import path for starter packs
+31. `#264` OUT-02 contact-card YAML parser/serializer contract
+32. `#265` OUT-03 structured contact detail + timeline logging UX
+33. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
+34. `#267` OUT-05 daily outreach dashboard (keyboard-first)
+35. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
+36. `#333` UX-19 saved views and post-Wave-P productivity shortcuts
+37. `#334` INT-05 note-style import and clip intake follow-through
+38. `#335` MVP-04 expanded blueprint architecture tracker
+39. `#336` AGT-01 agent profile/run/event foundation and manual-run API
+40. `#337` AGT-02 tool registry, policy evaluator, and bounded inbox-triage template
+41. `#339` KNOW-01 knowledge document and SQLite FTS search foundation
 
 Execution note (testing harness knowledge-transfer):
 - Existing Priority IV items were updated with pack-derived scope clarifications:
@@ -229,23 +302,41 @@ Execution note (testing harness knowledge-transfer):
   - `#75` import adapters
   - `#77` analytics model/dashboards
   - `#175` starter-pack catalog expansion
+- Secondary MVP follow-through wave explicitly reuses adjacent anchors instead of duplicating scope:
+  - `#93` global search/actions
+  - `#216` thesis-aligned demo/landing baseline
+  - `#77` dashboard-scale telemetry/reporting overlap
+  - `#98` later connector/integrations architecture
+  - `#311` completed demo hardening baseline
+  - `#75`, `#218`, `#219` note/import/capture-source overlap
+- Expanded-blueprint architecture wave explicitly reuses adjacent anchors instead of duplicating scope:
+  - `#75` import adapters baseline
+  - `#77` analytics/telemetry baseline
+  - `#98` connector framework
+  - `#100` manual/help-center restructuring
+  - `#216` thesis-aligned public/demo framing
+  - `#218`, `#219` transcript/voice capture overlap
+  - `#328` first-run smoke and launch-criteria baseline
 
 Maintainability hotspot refactor wave (analysis-driven):
-38. `#158` REF-11 decompose `AppShell.vue`
-39. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
-40. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
-41. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
-42. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
-43. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
-44. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
-45. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
-46. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
-47. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
+42. `#158` REF-11 decompose `AppShell.vue`
+43. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
+44. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
+45. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
+46. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
+47. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
+48. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
+49. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
+50. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
+51. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
 
 ### Stage 5: Priority V - Meta/Historical
 
 1. `#107` OPS-13 future expansion wave index
-2. Closed historical issues remain `Priority V` for archival consistency.
+2. `#338` AGT-03 agent mode surfaces and run-detail timeline
+3. `#340` INT-06 integrations registry and supervised inbound connector foundation
+4. `#341` TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through
+5. Closed historical issues remain `Priority V` for archival consistency.
 
 ## Per-Issue Delivery Checklist
 

@@ -4,7 +4,7 @@
 **Goal:** Make tool usage automatic and predictable.
 
 Operational companion:
-- `docs/MCP_OPERATIONS_RUNBOOK.md` (credential setup, verification, and recurring workflow)
+- `docs/tooling/MCP_OPERATIONS_RUNBOOK.md` (credential setup, verification, and recurring workflow)
 
 ---
 

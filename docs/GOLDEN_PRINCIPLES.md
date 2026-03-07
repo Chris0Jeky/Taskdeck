@@ -1,6 +1,6 @@
 # Taskdeck Golden Principles
 
-Last Updated: 2026-02-24
+Last Updated: 2026-03-07
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -29,6 +29,10 @@ Mechanical enforcement stays intentionally lightweight and focuses only on low-c
   - Keep automation proposal-first; do not introduce silent/destructive autonomy by default.
 - `GP-07 Lightweight Mechanical Governance`
   - Prefer maintainable, low-brittleness checks over broad regex or policy sprawl.
+- `GP-08 Product Legibility Before Breadth`
+  - Do not add major surface breadth ahead of a clear golden path; raw IDs in the happy path, dead-end empty states, or orphan pages without a next step are not novice-ready.
+- `GP-09 Traceable Agent Expansion`
+  - Do not expose agent/autonomy breadth unless runs, policies, and resulting proposals/artifacts stay inspectable in product language.
 
 ## Mechanical Enforcement (Current)
 

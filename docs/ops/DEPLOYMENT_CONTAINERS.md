@@ -9,10 +9,10 @@ This runbook defines the minimal production-oriented container baseline for Task
 - reverse proxy entrypoint with compression and proxy security headers
 
 Hardening verification follow-through:
-- `#142` OPS-16 deployment/container hardening verification matrix (`docs/DEPLOYMENT_HARDENING_MATRIX.md`)
+- `#142` OPS-16 deployment/container hardening verification matrix (`docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`)
 
 Terraform follow-through:
-- `#102` OPS-10 Terraform/IaC baseline (`docs/DEPLOYMENT_TERRAFORM_BASELINE.md`)
+- `#102` OPS-10 Terraform/IaC baseline (`docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md`)
 
 ## Files
 
@@ -91,7 +91,7 @@ This command verifies:
 - startup/restart/shutdown reliability for the baseline stack
 
 Matrix details and pass/fail criteria:
-- `docs/DEPLOYMENT_HARDENING_MATRIX.md`
+- `docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`
 
 ## Staging Bootstrap Path
 

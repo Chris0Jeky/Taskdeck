@@ -6,7 +6,7 @@ Date: 2026-03-06
 I reviewed the repository state in the zip, focusing on:
 
 - product docs: `README.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`
-- demo/dogfooding docs: `docs/DEMO_PLAYBOOK.md`, `docs/SCENARIOS.md`, `docs/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `docs/TESTING_GUIDE.md`
+- demo/dogfooding docs: `docs/product/DEMO_PLAYBOOK.md`, `docs/product/SCENARIOS.md`, `docs/product/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `docs/TESTING_GUIDE.md`
 - frontend product surfaces: boards, board view, inbox, automations, chat, ops, activity, notifications, settings
 - demo tooling: `demo:seed`, `demo:run`, `demo:autopilot`, `demo:snapshot`, `demo:director`
 - tests around the harness and e2e flows
@@ -1631,4 +1631,3 @@ Spend it making the current capability set feel:
 
 
 ---
-

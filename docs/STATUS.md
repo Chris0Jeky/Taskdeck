@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-06  
+Last Updated: 2026-03-07  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -30,6 +30,8 @@ Current constraints are mostly hardening and consistency:
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
+- post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
+- cold first-run still depends too much on docs/scripts; guided `Home`, `Today`, workspace modes, board action rails, and broad action-oriented empty/help states are planned but not yet shipped
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -85,6 +87,8 @@ Direction guardrails (explicit):
   - ops (cli/endpoints/logs)
   - settings (profile/preferences/access/export-import)
   - archive
+- Current navigation is still implementation-shaped:
+  - product-facing `home`, `today`, `review`, `agents`, `runs`, `knowledge`, and `integrations` routes are planned but not shipped
 - Feature slices integrated end to end:
   - proposal review/approve/reject/execute and diff viewing
   - chat session flow with proposal handoff
@@ -102,7 +106,7 @@ Direction guardrails (explicit):
   - non-demo Playwright backend startup now stays pinned to deterministic `Mock` mode by default even when local shell env exports live-provider keys; demo-only overrides still take precedence when explicitly enabled
   - when demo-specific live-provider overrides need to be injected, Playwright now disables existing-server reuse by default so full demos do not silently stick to an older mock backend unless the operator explicitly forces reuse
   - `frontend/taskdeck-web/package.json` now includes `npm run demo:director:smoke` for deterministic, LLM-free regression proof with stable artifact output (`demo-artifacts/ci-smoke`), isolated smoke DB reset (`taskdeck.demo.ci.db`), forced fresh Playwright servers, automatic local API port fallback when `5000` is occupied, and actionable conflict hints when explicit runtime port overrides cannot bind
-  - `docs/DEMO_PLAYBOOK.md`, `docs/SCENARIOS.md`, `docs/DOGFOODING_GUIDE.md`, and `docs/USER_MANUAL.md` for seeded stakeholder walkthrough, JSON scenario authoring/runner usage, daily dogfooding cadence, and user-facing operations guidance
+  - `docs/product/DEMO_PLAYBOOK.md`, `docs/product/SCENARIOS.md`, `docs/product/DOGFOODING_GUIDE.md`, and `docs/USER_MANUAL.md` for seeded stakeholder walkthrough, JSON scenario authoring/runner usage, daily dogfooding cadence, and user-facing operations guidance
   - `demo/http/taskdeck-demo.http` for local API walkthrough against the dev backend
   - opt-in stakeholder walkthrough recorder spec: `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts` (gated by `TASKDECK_RUN_DEMO=1`) with director-mode bootstrap via `TASKDECK_DEMO_DIRECTOR=1`, scenario-aware board selection, explicit-board override alignment with autopilot targeting, UI-driven feature-flag enabling for advanced surfaces, and mandatory seeded-card presence checks
   - scenario runner and legacy JS compatibility checks now fail loudly on unresolved template references, missing starter-pack labels, ambiguous duplicate column/label names, and unknown scenario IDs so demo/test setup does not degrade into half-valid state
@@ -158,6 +162,7 @@ Completed in Phase 4:
 
 Remaining for Phase 4 completion:
 - UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
+- product-legibility hardening so the app teaches the `capture -> review -> board` loop without relying on demo scripts or internal docs
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
 
@@ -211,10 +216,43 @@ Execution constraints:
 Implementation delivery (shipped in this context):
 - `#298` Batch A (`v0`): baseline demo seeding command + first-run UX defaults + seeded playbook promotion
 - `#299` Batch B (`v1`): reusable demo harness scripts (`demo:run`, `demo:autopilot`), scenario modules, API walkthrough asset, stakeholder opt-in recorder spec, and expanded demo/dogfooding/user docs
-- `#300` Batch C (`v2`): JSON scenario runner + schema/sample scenarios, `demo:run` JSON-first flags (`--list`, `--skip-llm`, `--continue-on-error`), capture-aware autopilot loop modes (`queue|capture|mixed`), capture helper library additions, and scenario authoring docs (`docs/SCENARIOS.md`)
+- `#300` Batch C (`v2`): JSON scenario runner + schema/sample scenarios, `demo:run` JSON-first flags (`--list`, `--skip-llm`, `--continue-on-error`), capture-aware autopilot loop modes (`queue|capture|mixed`), capture helper library additions, and scenario authoring docs (`docs/product/SCENARIOS.md`)
 - `#301` Batch D (`v3`): demo director + snapshot scripts (`demo:director`, `demo:snapshot`), trace-aware scenario/autopilot/runtime events, `runOps` scenario step support, and director-mode stakeholder recorder bootstrap with artifact logs/snapshots
 - `#302` Batch E: integration hardening delivered with explicit demo CI policy (`TASKDECK_RUN_DEMO=0` in default Playwright lanes), opt-in `demo-director-smoke` workflow wiring in `ci-extended.yml`, deterministic smoke command (`npm run demo:director:smoke`) with isolated smoke DB reset + forced fresh servers, automatic free-port fallback for local API startup, actionable explicit-port remediation hints, and docs/index/runtime-precondition consolidation for the migrated demo tooling
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
+
+## MVP Expansion Planning Integration (2026-03-07)
+
+New review packages under `docs/InReview/MVP_EXPANSION/` were cross-read against the current repo state and backlog:
+
+- `MINIMAL/`: near-horizon execution filter
+- `EXPANDED/`: staged product and architecture roadmap
+
+Planning conclusion adopted into canonical docs:
+
+- demoability improved faster than self-serve product clarity
+- near-horizon work should prioritize product legibility before adding broad new capability families
+- preferred sequence is:
+  1. novice-first shell and entry clarity (`Home`, `Review`, workspace modes, empty/help states, board selectors)
+  2. board-centered daily workflow (`Today`, proposal readability, board action rails, deep links, onboarding)
+  3. docs/help/testing coherence
+  4. agent substrate
+  5. knowledge/integrations surface
+
+Backlog implication:
+
+- existing overlap and reuse anchors are partial (`#96`, `#93`, `#100`, `#77`, `#75`, `#98`, `#216`, `#218`, `#219`, `#311`)
+- the novice-first productization wave is now seeded as `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, with `#96` and `#100` updated into the same `Priority II` tranche
+- the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave P, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
+- the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave P and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
+- planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
+  - `guided` / `workbench` / `agent` workspace modes
+  - `Home` and `Today` product routes
+  - board action rails and proposal summary cards
+  - `Agents`, `Runs`, `Knowledge`, and `Integrations` product surfaces
+  - `Demo Tools`, guided narrative/demo-tour flow, HTML report/assertions, and saved views
+  - explicit release framing for `R1` novice-first beta, `R2` agent foundation alpha, and `R3` knowledge/integrations alpha
+- active docs root is now curated as a living-doc spine only; stable reference material is organized under `docs/product`, `docs/manual`, `docs/ops`, `docs/platform`, `docs/security`, and `docs/tooling`
 
 ## Capture Realignment Wave (2026-02-23)
 
@@ -263,7 +301,7 @@ Implementation delivery (shipped):
   - triage provenance now persists prompt version `triage.v1` per triage run for capture item linkage/audit visibility
   - added golden and negative fixture coverage for schema validation failures (missing tasks, wrong prompt version, unknown properties)
 - `#212` SEC-14 logging redaction guardrails delivered and regression-tested:
-  - published `docs/SECURITY_LOGGING_REDACTION.md` and linked it from active security docs
+  - published `docs/security/SECURITY_LOGGING_REDACTION.md` and linked it from active security docs
   - invalid capture-source validation now returns generic messages without echoing caller-controlled values
   - unexpected middleware/provider/worker failures now log sanitized exception summaries instead of raw exception objects on sensitive paths
   - queue and webhook failure persistence now redacts or generalizes sensitive exception text before storage, and ASP.NET Core trace auto-exception recording is disabled to keep raw exception events out of default telemetry
@@ -325,7 +363,7 @@ Reconciliation record:
 
 Documentation baseline for this track:
 
-- `docs/LLM_PROVIDER_SETUP_GUIDE.md`
+- `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`
 
 ## Managed-Key Abuse-Control Track (2026-02-23)
 
@@ -391,7 +429,7 @@ Reconciliation record:
 Recent follow-through (2026-02-24):
 - `#260` adds `.github/workflows/nightly-quality.yml` (scheduled + manual) to collect non-blocking quality telemetry artifacts on `main`
 - workflow now publishes backend (Domain/Application) coverage artifacts, frontend coverage artifacts, and dependency/security signal artifacts (`dotnet list package --vulnerable`, `npm audit`)
-- dependency/security signal handling is now policy-backed (`#106`): reusable normalized summaries, PR/manual opt-in `ci-extended` scan lane, nightly scheduled signal collection, release-lane enforcement option, severity SLAs, and expiry-bound exception rules are documented in `docs/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
+- dependency/security signal handling is now policy-backed (`#106`): reusable normalized summaries, PR/manual opt-in `ci-extended` scan lane, nightly scheduled signal collection, release-lane enforcement option, severity SLAs, and expiry-bound exception rules are documented in `docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
 - workflow surfaces signal exits in step summary/warnings while keeping required PR CI path unchanged (reporting-first nightly lane)
 - `#259` adds `docs/GOLDEN_PRINCIPLES.md` as a concise invariant baseline and cross-links it from canonical active docs/index and contributor guidance
 - governance lane now runs `scripts/check-golden-principles.mjs` and docs-governance now requires/validates the golden-principles document alongside canonical active docs
@@ -550,6 +588,9 @@ Observability and scalability:
 
 UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
+- primary product gap is legibility rather than missing engine capability: the product still relies too much on docs/demo setup to explain first-run behavior
+- review/proposal flow is functional but still system-shaped; readable proposal summaries, stronger deep links, and board-centered return paths remain next-cycle work
+- `docs/START_HERE.md` now provides the documentation bridge for first-run understanding, but equivalent in-product `Home`/`Today`/help-state guidance is still not shipped
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)
@@ -597,7 +638,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered API-06 centralized exception/fallback error-contract hardening (`#153`): added global unhandled-exception middleware returning deterministic `ApiErrorResponse` (`UnexpectedError`) without internal exception leakage, standardized unknown-result fallback `500` mapping to the same contract shape, and added fault-injection API integration coverage asserting fallback payload shape plus correlation header expectations.
 - Delivered SEC-06 API rate-limiting hardening (`#81`): added partitioned fixed-window rate limiting policies (auth per-IP, capture write per-user, hot-path per-user), deterministic `429` `ApiErrorResponse` contract with retry metadata headers (`Retry-After`, `X-RateLimit-Policy`), endpoint-level policy application across auth/capture/chat/llm queue paths, and regression coverage for burst throttling, reset-window recovery, and cross-user false-positive boundaries.
 - Delivered SEC-06 forwarded-header trust follow-through (`#81`): rate-limit partitioning now supports trusted forwarded-header processing behind explicit proxy/network allowlists plus configurable forwarded-hop depth (`ForwardedHeaders:ForwardLimit`), keeps safe no-trust defaults when allowlists are unset, hardens `OnRejected` write-order guardrails for started responses, adds regression coverage for trusted multi-hop forwarded-client partition behavior, and documents emergency kill-switch + proxy-topology smoke-check operations.
-- Delivered SEC-05 OWASP baseline hardening (`#80`): added API security-header middleware with environment-aware HSTS behavior, added API integration coverage for security-header presence on success/auth-failure responses and HTTPS HSTS emission posture, and published `docs/SECURITY_OWASP_BASELINE.md` to document CSRF/XSS posture and tracked follow-up gaps.
+- Delivered SEC-05 OWASP baseline hardening (`#80`): added API security-header middleware with environment-aware HSTS behavior, added API integration coverage for security-header presence on success/auth-failure responses and HTTPS HSTS emission posture, and published `docs/security/SECURITY_OWASP_BASELINE.md` to document CSRF/XSS posture and tracked follow-up gaps.
 - Delivered TST-14 architecture-guard expansion (`#157`): added deterministic architecture invariants for source-layer purity (forbidden namespace imports in Domain/Application), controller boundary rules (`ControllerBase` direct inheritance restricted to auth/health controllers), and protected-controller `[Authorize]` declaration enforcement.
 - Delivered AUTH-06 register/login hardening (`#174`) by preventing inactive-candidate short-circuit lockout in identifier-collision login paths, adding actionable duplicate-registration guidance, and expanding backend/frontend regression coverage for duplicate-register-then-login flow plus account-state vs invalid-credentials contract behavior.
 - Delivered TST-01 load/concurrency regression harness (`#70`): added k6 board-heavy API profile with thresholds and diagnostics, added Playwright multi-session concurrency scenarios, and wired reusable load harness workflow into `ci-extended`/`ci-nightly` with artifact uploads.
@@ -606,7 +647,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered FE-12 frontend coverage threshold gate (`#155`): enforced global + critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`), switched required frontend CI lane to thresholded coverage execution, and standardized JUnit+coverage artifact upload for triage.
 - Delivered COL-02 notification framework (`#72`): added notification domain/persistence + preferences model, shipped authenticated inbox/preferences/read-state APIs with preference-aware deduped event publication for mention/assignment/proposal-outcome families, integrated frontend inbox/preferences routes + stores, and expanded backend/frontend regression coverage.
 - Delivered COL-04 card comments/mentions workflow (`#74`): added threaded card comments with reply constraints and moderation-aware edit/delete policy, integrated mention parsing with board-scope user linking and notification publication, shipped board/card comment APIs + frontend modal interactions, and expanded backend/frontend regression coverage.
-- Delivered INT-01 external import adapters foundation (`#75`): added board-scoped external import endpoint with provider-registry orchestration, shipped CSV adapter path with outreach-contact mapping and deterministic dedupe-key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`), added dry-run/apply create-update-skip/conflict reporting and rollback-safe apply semantics, enforced CSV payload/row guardrails plus archived-board import rejection behavior, and documented mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`.
+- Delivered INT-01 external import adapters foundation (`#75`): added board-scoped external import endpoint with provider-registry orchestration, shipped CSV adapter path with outreach-contact mapping and deterministic dedupe-key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`), added dry-run/apply create-update-skip/conflict reporting and rollback-safe apply semantics, enforced CSV payload/row guardrails plus archived-board import rejection behavior, and documented mapping guidance in `docs/platform/IMPORT_ADAPTERS_GUIDE.md`.
 - Delivered INT-02 webhook integration security model (`#76`): added board-scoped outbound webhook subscription/delivery runtime with endpoint + event-filter + secret-rotation/revocation controls, signed delivery dispatch, atomic claim/reload worker processing, and retry/dead-letter handling for non-success dispatch outcomes.
 - Standardized middleware-level auth failures to emit `ApiErrorResponse` payloads and added SEC-04 API integration assertions for auth + validation contract stability.
 - Aligned board archive lifecycle UX/API contract: board settings archive action now reflects soft-delete semantics, archive workspace lists/restores archived boards, and API integration covers archive-to-restore roundtrip.
@@ -633,7 +674,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered COL-01 realtime board updates (`#67`): added authz-safe SignalR board subscriptions, app-layer mutation event publishing, frontend realtime lifecycle with polling fallback, and regression coverage across API/unit/E2E suites.
 - Delivered OBS-01 observability baseline (`#68`): added OpenTelemetry tracing/metrics wiring, worker/queue/heartbeat telemetry emission, correlation-to-trace tagging, and versioned runbook/alert threshold documentation.
 - Delivered OPS-07 containerized deployment baseline (`#69`): added production-oriented backend/frontend Dockerfiles, compose-based proxy stack with gzip/security header posture, CI image artifact packaging, and deployment runbook coverage.
-- Delivered OPS-16 deployment/container hardening verification matrix (`#142`): added `scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1` to automate secret-enforcement, proxy-header, unauthorized-path, and startup/restart/shutdown checks; published pass/fail matrix criteria in `docs/DEPLOYMENT_HARDENING_MATRIX.md`; and extended testing/manual/deployment runbooks with the new verification path.
+- Delivered OPS-16 deployment/container hardening verification matrix (`#142`): added `scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1` to automate secret-enforcement, proxy-header, unauthorized-path, and startup/restart/shutdown checks; published pass/fail matrix criteria in `docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`; and extended testing/manual/deployment runbooks with the new verification path.
 - Expanded local Docker MCP Marketplace setup: enabled additional Docker catalog servers (including SQLite/JetBrains/Postman candidates), configured Docker gateway defaults in project Codex config, and documented optional credential-gated integrations.
 - Added MCP operator runbook + scripts (`Set-MarketplaceMcpCredentials.ps1`, `Test-DockerMcpProfile.ps1`) for daily/weekly workflow integration and deterministic optional-server verification.
 - Delivered TST-07 MCP integration smoke/regression harness (`#141`): optional-server prerequisite diagnostics are now explicit, strict/warning/skip policies are codified, and CI-friendly deterministic status output is documented and shipped.
@@ -650,6 +691,11 @@ Authoritative docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+
+Audience-first product docs:
+- `docs/START_HERE.md`
+- `docs/USER_MANUAL.md`
+- `docs/product/DEMO_PLAYBOOK.md`
 
 Historical/spec detail material:
 - `docs/archive/` (latest consolidation bundle: `docs/archive/2026-02-13_phase4-doc-consolidation/`)

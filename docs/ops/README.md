@@ -1,0 +1,11 @@
+# Ops Docs
+
+This folder contains deployment, observability, and human-operator runbooks.
+
+- `DEPLOYMENT_CONTAINERS.md`
+- `DEPLOYMENT_HARDENING_MATRIX.md`
+- `DEPLOYMENT_TERRAFORM_BASELINE.md`
+- `OBSERVABILITY_BASELINE.md`
+- `SESSION_START_CHECKLIST.md`
+- `TASKDECK_HUMAN_OPERATIONS.md`
+- `GITHUB_LABEL_TAXONOMY.md`

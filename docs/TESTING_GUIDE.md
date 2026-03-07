@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-06
+Last Updated: 2026-03-07
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -27,6 +27,35 @@ Verification note:
 - frontend unit/build totals were re-verified on 2026-03-06 via `npm run lint`, `npx vitest --run`, `npm run typecheck`, and `npm run build`
 - frontend E2E totals were re-verified on 2026-03-06 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`24/24` passing; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default)
 - demo director smoke was re-verified on 2026-03-06 via `npm run demo:director:smoke` against the isolated `taskdeck.demo.ci.db` path
+
+## Product-Coherence Testing Priorities (2026-03-07)
+
+Testing priorities have shifted from "does the harness exist?" toward "does the product remain understandable under change?"
+
+Near-horizon priorities:
+
+- protect the current golden path: capture -> triage -> review -> execute -> board
+- evolve required product smoke toward `Home -> capture -> review -> execute -> board` once `Home` ships
+- add explicit coverage for action-oriented empty states and board-centered context travel as those surfaces land
+- keep stakeholder/demo recording opt-in; it supports product evidence, but it is not the primary product smoke
+
+Planned high-signal additions when the productization wave ships:
+
+- `Home` view state coverage
+- `Today` view state coverage
+- workspace mode navigation rendering
+- proposal summary card coverage
+- board action rail coverage
+- first-run golden-path Playwright smoke
+
+Telemetry and release-gate follow-through from the expanded blueprint:
+
+- product telemetry/event taxonomy is now explicitly tracked in `#341` with reuse of `#77` and `#328`
+- keep event names privacy-safe and product-shaped (for example `home_loaded`, `today_loaded`, `capture_created`, `proposal_opened`, `proposal_approved`, `board_action_capture_here_clicked`, `workspace_mode_changed`, `agent_run_started`, `agent_run_completed`, `agent_run_failed`)
+- treat launch framing as evidence gates, not marketing labels:
+  - `R1` novice-first beta -> coherent `Home -> capture -> review -> execute -> board` path
+  - `R2` agent foundation alpha -> inspectable runs, policies, and bounded templates
+  - `R3` knowledge/integrations alpha -> durable searchable context plus supervised connector flows
 
 ## Backend Commands
 
@@ -155,6 +184,7 @@ Default CI posture:
 - Required Playwright regression lanes explicitly set `TASKDECK_RUN_DEMO=0`; the stakeholder recorder is never part of required CI.
 - Load/concurrency Playwright coverage also keeps demo recording off by default so those lanes stay focused on product/runtime regressions.
 - The deterministic demo regression command is `npm run demo:director:smoke`.
+- Demo tooling remains supporting evidence for seeded workflows; it does not replace the required product smoke path.
 
 Run the smoke path locally:
 
@@ -216,7 +246,7 @@ powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8
 ```
 
 Hardening matrix pass/fail criteria:
-- `docs/DEPLOYMENT_HARDENING_MATRIX.md`
+- `docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`
 
 ## Terraform IaC Baseline Validation
 
@@ -330,7 +360,7 @@ Nightly quality workflow: `.github/workflows/nightly-quality.yml`
 - dependency/security signal artifacts:
   - `dotnet list package --vulnerable --include-transitive` output + exit code
   - `npm audit --audit-level=high --json` output + exit code
-  - normalized dependency-security summary (`summary.md`, `summary.json`) linked to `docs/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
+  - normalized dependency-security summary (`summary.md`, `summary.json`) linked to `docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
 
 Triage usage:
 - check workflow step summary first for signal exit codes
@@ -466,7 +496,7 @@ Planned quality expectations when implementation starts:
 ## Manual Verification
 
 Use `docs/MANUAL_TEST_CHECKLIST.md` for action-by-action manual validation.
-Use `docs/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
+Use `docs/ops/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
 
 ## Thesis Alignment Validation (Capture Realignment)
 

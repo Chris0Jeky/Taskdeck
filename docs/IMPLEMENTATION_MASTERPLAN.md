@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-06  
+Last Updated: 2026-03-07  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -18,6 +18,7 @@ Update this file at the end of each meaningful delivery cycle.
 
 - `docs/STATUS.md` is authoritative for current shipped reality.
 - Product north star: make capture nearly free and keep automation safe through review-first proposals.
+- Product legibility is now the immediate product focus: the app should explain its core loop from inside the UI, not mainly through docs and demo scripts.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
 - Security and identity convergence remains the highest-priority engineering track.
 - Cross-user existence policy is fixed: return `403` for authenticated-but-unauthorized access and `404` for true missing resources.
@@ -25,6 +26,9 @@ Update this file at the end of each meaningful delivery cycle.
 - Do not claim or ship silent/destructive autonomy by default; trust posture takes precedence over convenience.
 - MVP should include a dogfooding workflow: paste structured plan text in chat and bootstrap a board/project from approved proposals.
 - UX investments should be modular and reusable (keyboard-first, discoverable selectors, shared input-assist patterns).
+- Use `docs/InReview/MVP_EXPANSION/MINIMAL/` as the near-horizon execution filter and `docs/InReview/MVP_EXPANSION/EXPANDED/` as the staged roadmap reference.
+- Do not add major new surface breadth ahead of `Home` / `Today` / `Review` productization unless the work closes a real trust, safety, or operability gap.
+- Agent, knowledge, and integrations expansion stay sequenced behind novice-first productization even though their longer-term architecture is now clearer.
 - Every issue must carry exactly one priority label (`Priority I` through `Priority V`).
 - Out-of-code and configuration work (containerization, deployment, security posture, observability, DR) must be tracked as first-class backlog items.
 
@@ -164,7 +168,7 @@ Delivered in the latest cycle:
    - stabilized default Docker gateway server set for Codex project config to avoid secret-gated startup failures while preserving optional integrations
    - documented setup/credential expectations in `docs/MCP_TOOLING_GUIDE.md`
 37. MCP operations workflow integration:
-   - added operator runbook (`docs/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
+   - added operator runbook (`docs/tooling/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
    - added helper scripts to wire credential-gated Docker MCP servers and verify baseline/optional MCP dry-run paths
    - integrated MCP operations checks into active testing guidance
 38. TST-07 MCP smoke/regression harness delivery:
@@ -330,7 +334,7 @@ Delivered in the latest cycle:
    - added provider-registry external import orchestration (`IExternalImportAdapter`, `IExternalImportService`) so new providers can be added without core import-service rewrite
    - shipped CSV adapter baseline with outreach-contact profile mapping and deterministic dedupe key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`)
    - added board-scoped authenticated import endpoint (`POST /api/boards/{boardId}/imports/external`) with dry-run/apply result contracts (`create/update/skip/conflicts`) and rollback-safe apply behavior
-   - added backend regression coverage for malformed CSV, duplicate input handling, deterministic upsert behavior, rollback safety, archived-board rejection behavior, and CSV payload/row guardrails, plus operator-facing mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`
+   - added backend regression coverage for malformed CSV, duplicate input handling, deterministic upsert behavior, rollback safety, archived-board rejection behavior, and CSV payload/row guardrails, plus operator-facing mapping guidance in `docs/platform/IMPORT_ADAPTERS_GUIDE.md`
 78. INT-02 webhook integration security model delivery (`#76`):
    - added board-scoped outbound webhook subscription and delivery contracts (`POST/GET/PATCH/DELETE /api/boards/{boardId}/webhooks`) with authz-safe ownership and revocation handling
    - added mutation-event queueing and signed webhook dispatch (`X-Taskdeck-Webhook-*` headers) with HTTPS/default host safety checks and localhost gating controls
@@ -343,7 +347,7 @@ Delivered in the latest cycle:
    - API integration coverage now verifies both default-origin allowance and development-configured alternate-origin allowance via deterministic in-memory config overrides
 80. OPS-16 deployment/container hardening verification matrix delivery (`#142`):
    - added deployment verification script (`scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1`) covering secret-enforcement validation, reverse-proxy header checks, unauthorized-path checks, and startup/restart/shutdown reliability checks for the compose baseline
-   - added explicit pass/fail matrix doc (`docs/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
+   - added explicit pass/fail matrix doc (`docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
    - expanded manual checklist coverage for non-automatable deployment controls (backend exposure posture, edge TLS termination posture, host restart rehearsal expectations)
 81. PACK-07 warning-first starter-pack apply UX delivery (`#176`):
    - starter-pack apply conflict contract now includes severity (`blocking`/`warning`) and controller conflict responses now hard-stop only on blocking conflicts
@@ -378,178 +382,185 @@ Delivered in the latest cycle:
    - added API security-header middleware with explicit baseline headers (`Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`)
    - added environment-aware HSTS behavior (enabled for HTTPS, disabled by default in development unless explicitly configured)
    - added API integration coverage for header presence on success and auth-failure paths, plus HTTPS HSTS emission behavior in non-development hosting
-   - published `docs/SECURITY_OWASP_BASELINE.md` with CSRF posture, OWASP checklist, and tracked follow-up security gaps
+   - published `docs/security/SECURITY_OWASP_BASELINE.md` with CSRF posture, OWASP checklist, and tracked follow-up security gaps
 88. SEC-06 API rate-limiting and abuse-protection hardening (`#81`, delivered):
    - added partitioned fixed-window rate limiter policies for auth (`AuthPerIp`), capture create/triage (`CaptureWritePerUser`), and hot/costly paths (`HotPathPerUser`)
    - applied endpoint-level rate-limit policies across auth, capture, chat, and llm-queue write/stream surfaces
    - standardized throttle response contract (`429` + `ApiErrorResponse`) with deterministic retry diagnostics headers (`Retry-After`, `X-RateLimit-Policy`)
-   - published operator tuning guidance and safe defaults in `docs/RATE_LIMITING_POLICY.md` with regression coverage for burst, reset-window recovery, and cross-user boundary behavior
+   - published operator tuning guidance and safe defaults in `docs/security/RATE_LIMITING_POLICY.md` with regression coverage for burst, reset-window recovery, and cross-user boundary behavior
    - follow-through hardening now supports trusted forwarded-header processing via explicit proxy/network allowlists and configurable forwarded-hop depth (`ForwardedHeaders:ForwardLimit`), while preserving no-trust defaults when allowlists are unset and documenting emergency/rollback plus proxy-topology smoke checks
+
+## Current Planning Pivot (2026-03-07)
+
+The 2026-03-06 MVP expansion review packages change the next-cycle emphasis without invalidating the current architecture.
+
+Key conclusion:
+
+- Taskdeck's main near-horizon gap is product legibility, not missing backend capability.
+- The demo/tooling layer is now strong enough that the next cycle should focus on making the product teach itself.
+- One core system can support three presentation modes (`guided`, `workbench`, `agent`), but only the first two should drive near-horizon execution.
+
+Operational planning rules from this pivot:
+
+1. Prioritize novice-first shell work before broader autonomy, knowledge, or connector breadth.
+2. Keep the board as the execution center and make board context travel across capture, review, chat, notifications, and follow-through actions.
+3. Treat `Review` as the main automation surface for normal users; keep queue and ops explicitly advanced.
+4. Reuse existing backlog items where overlap is real (`#96`, `#93`, `#100`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`) instead of duplicating scope.
+5. Keep the seeded productization wave (`#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, `#328`) synchronized in `#107` before promoting more disconnected UX or future-breadth items.
+
+Decision rules promoted from the expanded blueprint:
+
+- If a feature makes demos better but makes the product harder to understand, it is not done.
+- If a normal happy path depends on raw internal IDs, it is not novice-ready.
+- If a page is empty and offers no next step, it is incomplete.
+- If an agent action cannot be traced to a run, policy posture, and proposal/artifact outcome, it is not ready.
+- Do not let chat-first or disconnected agent-database thinking replace the board/capture/review product core.
+
+Implementation carry-forward from the full source audit:
+
+- treat workspace mode as durable product state; do not let it collapse into local-only view toggles once server-backed preferences become practical
+- prefer aggregated product-shaped APIs for `Home`, `Today`, `Review`, and board summary needs over client-side fetch fan-out
+- keep proposal summary generation in the application layer instead of forcing the frontend to reverse-engineer meaning from low-level operations
+- keep the one-core-three-surfaces navigation contract explicit:
+  - guided primary: `Home`, `Today`, `Inbox`, `Projects`, `Review`, `Settings`
+  - workbench primary: `Home`, `Projects`, `Inbox`, `Review`, `Automations`, `Activity`, `Notifications`, `Settings`
+  - agent primary: `Home`, `Agents`, `Runs`, `Knowledge`, `Inbox`, `Projects`, `Review`, `Integrations`, `Settings`
+- preserve product-facing route aliases such as `/workspace/home`, `/workspace/today`, `/workspace/projects`, and `/workspace/review` even when the old implementation-shaped routes remain valid
+- keep novice vocabulary explicit in guided surfaces: `Project`, `Review`, and `Inbox` should lead; queue and ops stay clearly advanced
+- keep board-aware action-rail behavior explicit (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) so board context actually travels
+- require action-state empty/help states and plain-language top boxes on advanced pages; no page should leave the user with no next step
+- avoid orphan surfaces: board, inbox item, proposal, notification, and later agent-run views should deep-link to the related next action or affected entity
+- hold the frontend to a minimum polish bar: visible keyboard focus, modal focus trap, listbox aria state, explicit destructive confirmations, and no hover-only critical affordances
+- keep first-class backend contracts explicit for Wave P and Wave R:
+  - `UserPreference` server state for workspace mode/onboarding/default board
+  - aggregate DTOs such as `WorkspaceHomeDto`, `TodayAgendaDto`, `ReviewSummaryDto`, `BoardSummaryDto`
+  - `IProposalSummaryService`
+  - later `ITaskdeckTool`, `ITaskdeckToolRegistry`, and `IAgentPolicyEvaluator`
+- the secondary follow-through set from the audit is now seeded as `#329` to `#334`; keep it below Wave P and reuse anchors such as `#216`, `#77`, `#93`, `#98`, `#311`, `#75`, `#218`, and `#219` instead of duplicating their scope
+- the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`; keep it below Wave Q and reuse anchors such as `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, and `#328` instead of stretching Wave P issues beyond their productization purpose
 
 ## Roadmap by Horizon
 
-### Horizon A (Week 1 to 2): Security and Identity Convergence
+### Horizon A (Week 1 to 2): Novice-First Shell and Entry Clarity
 
 Focus:
-- enforce `[Authorize]` and claim-derived identity on legacy controller families
-- remove query/body actor identity where claims should be source of truth
-- align all controller failure responses with shared error contract patterns
-- enforce the `401/403/404` contract (`401` unauthenticated, `403` authenticated-but-unauthorized/cross-user, `404` true missing)
-- add integration coverage for unauthorized/forbidden/cross-user paths
+- add workspace mode preference (`guided`, `workbench`, `agent`) and persist it as durable product state
+- add a true start surface (`Home`) instead of dropping every user into an implementation-shaped boards list
+- make the guided shell contract concrete: `Home`, `Today`, `Inbox`, `Projects`, `Review`, `Settings`, with notifications/archive/help secondary and operator surfaces hidden by default
+- make `Review` the primary normal-user automation surface and keep queue explicitly advanced
+- replace dead-end empty states with action-oriented help blocks on primary pages
+- replace raw board-ID happy paths with selectors/pickers in common flows
+- prefer aggregate/product-shaped APIs for shell summaries instead of client-side stitching
+- make `Home` product-shaped rather than dashboard-shaped:
+  - thesis/welcome line
+  - start-here CTAs
+  - needs-attention counts
+  - continue-working/resume context
+  - learn-Taskdeck cards
 
 Exit Criteria:
-- no production endpoint depends on caller-supplied actor IDs for identity
-- core + advanced controllers have consistent auth behavior
-- security failures expose stable, documented response shapes
+- a guided-mode user lands on a product-shaped entry surface
+- the UI tells the user what to do first without requiring internal docs
+- common capture/review/project flows do not require raw IDs
+- queue remains available for power users but is no longer the implied default
 
-### Horizon B (Week 3 to 6): Automation Hardening and Provider Strategy
+### Horizon B (Week 3 to 6): Board-Centered Daily Workflow
 
 Focus:
-- operationalize real-provider usage with deterministic policy gates and safe defaults across environments
-- maintain shipped provider-agnostic live-provider runtime (`OpenAI` + `Gemini`) and demo-first setup posture (`#232`, delivered)
-- maintain delivered managed-key identity attribution baseline (`#236`) and complete remaining control-plane foundations for shared provider-token exposure (`#235`, `#237`)
-- expand planner operation extraction in a structured, test-backed way
-- harden executor behavior for partial failure semantics and audit quality
-- improve archive and automation coherence for board-level restore/execution workflows
+- add `Today` as a compact daily agenda surface
+- add first-run onboarding checklist and project creation wizard
+- add proposal summary service and readable proposal cards with plain-language summaries, risk, and deep links
+- add board action rails so capture/chat/review follow the current board context by default (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`)
+- strengthen deep links across inbox, review, notifications, activity, and resulting boards/cards
+- make `Today` carry actual daily utility:
+  - due today / overdue
+  - blocked
+  - recently touched
+  - proposals waiting review
+  - inbox needing triage
+  - resume point
 
 Exit Criteria:
-- provider strategy supports safe mock/prod switching
-- provider selection/runtime behavior is provider-agnostic at app-service boundaries (`ILlmProvider`) and test-backed for `OpenAI` + `Gemini` + `Mock` fallback
-- managed-key mode has explicit attribution and quota control baselines before broad external exposure
-- planner/executor coverage materially expanded with explicit safety constraints
-- archive + automation workflows are behaviorally consistent in UI/API
+- the `capture -> review -> board` loop is visible and coherent inside the product
+- board context travels without manual re-entry across primary surfaces
+- a first-time user can create first value without wandering through operator pages
+- proposal review feels like a product surface, not just a diff viewer
 
-### Horizon C (Week 7 to 12): UX and Operability Hardening
+### Horizon C (Week 6 to 8): Docs, Help, and Verification Coherence
 
 Focus:
-- command palette keyboard-first item navigation and activation
-- activity view discoverability via selectors/autocomplete instead of raw ID-only flow
-- ops/automation input ergonomics via modular autocomplete/option generation
-- drag/edit interaction conflict hardening and escape-driven navigation ergonomics
-- sticky/always-reachable shortcuts/help affordance in workspace shell
+- add a bridge doc (`START_HERE`) for first-run product understanding
+- reshape the manual and index around top-level navigation and user goals
+- keep `START_HERE.md` and `USER_MANUAL.md` at `docs/` root, while future chapter splits and in-app help mapping live under `docs/manual/`
+- add a required first-run golden-path smoke test
+- define product-shaped telemetry and launch criteria for novice beta and later agent alpha
+- treat the staged `novice-first-first-run` scenario shape as the acceptance target for the eventual first-run smoke path
+- keep demo tooling as evidence and acceptance support rather than the main onboarding path
 
 Exit Criteria:
-- key operations can be completed keyboard-first in shell-level and ops flows
-- ID-heavy workflows are replaced or assisted by discoverable selectors
-- drag/edit and escape interaction regressions are resolved and test-backed
-- shared input-assist and navigation patterns are reusable across feature modules
+- docs entry points match the product's intended top-level navigation
+- the first-run smoke path covers `Home -> capture -> review -> execute -> board`
+- novice users can recover from empty/confusing surfaces without leaving the product context
+- launch criteria are explicit enough to guide seeding and release decisions
 
-### Horizon D (Post-Phase-4): Platform, Deployment, and Operability Baseline
+### Horizon D (Post-R1): Agent Substrate Foundation
 
 Focus:
-- containerized runtime baseline with reverse-proxy and compression posture
-- observability baseline (metrics/traces/log correlation + alerts)
-- performance and concurrency budgets with repeatable harnesses
-- production data/runtime posture decisions (DB provider migration strategy, caching strategy)
-- disaster-recovery and staged rollout operational readiness
+- add `AgentProfile`, `AgentRun`, and `AgentRunEvent` as first-class runtime primitives
+- add a tool registry abstraction and policy evaluator
+- add inspectable run traces and a first bounded agent template
+- expose agent mode views only after the substrate is real
 
 Exit Criteria:
-- environment bring-up and rollout paths are documented, test-backed, and repeatable
-- core SRE signals exist for errors, latency, backlog, worker health, and cost drift
-- release governance includes provenance/compliance artifacts (SBOM and documented rollback)
+- runs are first-class and inspectable
+- agent behavior remains proposal-first and trace-first by default
+- no opaque or silent autonomy is introduced
 
-### Horizon E (Post-Phase-4): Collaboration, Integrations, and Product Maturity
+### Horizon E (Post-R2): Knowledge and Integrations Surface
 
 Focus:
-- realtime collaboration and notification ecosystem
-- integrations/webhooks/connectors foundation (initial webhook integration security model delivered in `#76`)
-- analytics and planning surfaces
-- compliance/security expansion (SSO/MFA, data portability, dependency-security policy)
-- UX maturity (accessibility, search, onboarding, offline readiness)
+- add local-first knowledge documents/notes and SQLite FTS-backed search
+- add note/transcript/clip-style intake paths that feed capture or knowledge flows
+- add integrations registry/management view so imports and webhooks have a coherent home
+- keep connector behavior capture-first and review-safe by default
 
 Exit Criteria:
-- collaboration and integration foundations are production-safe and test-backed
-- growth-oriented UX and analytics features remain consistent with security and operability controls
+- durable searchable context exists without external vector infrastructure
+- integrations surface is coherent and discoverable without bypassing review-first rules
+- knowledge and connector work builds on the same board/capture/proposal substrate
 
-### Horizon F (Realignment Track): Capture Inbox MVP and Trust Guardrails
+### Horizon F (Concurrent Foundation Streams)
 
-Focus:
-- inbox-first capture flow for low-friction thought/task ingestion
-- deterministic triage pipeline that feeds proposal-first automation (never direct auto-apply)
-- provenance visibility from capture artifact to proposal and resulting cards
-- capture-specific security/performance hardening (rate limiting, logging redaction, long-list responsiveness)
+These continue in parallel where they protect trust, performance, or operator posture, but they should not outrun Horizon A through C product legibility work:
 
-Exit Criteria:
-- capture create/list/detail/triage loop is shipped with policy-correct API behavior
-- proposal linkage/provenance is visible in UI and audit-safe
-- end-to-end capture -> triage -> review -> apply regression is stable
-- canonical docs and manual verification steps reflect the new workflow
+- managed-key LLM control plane and abuse controls: `#235`, `#237`, `#238`, `#239`, `#240`
+- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`)
+- long-list responsiveness and related UX scale follow-through: `#213`
+- platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
+- deferred outreach CRM expansion: `#262` to `#268`
 
-Non-goals for this horizon:
-- no full-autonomy agent mode for destructive operations
-- no requirement to ship voice/transcription sources before typed/paste capture loop retention is proven
-- no bypass of Priority I security/policy ordering rules
+## Release Framing
 
-### Horizon G (Frontend Premium UI Foundations Track)
-
-Focus:
-- establish frontend design-system foundations (semantic tokens, theme/density/motion contracts)
-- build a shared primitives layer for shell/board/inbox surfaces
-- execute focused premium reskin passes for AppShell, Board, and Inbox without behavior regression
-- harden board interaction quality (drag/drop responsiveness + keyboard alternatives)
-- integrate premium UX performance instrumentation and keep existing quality gates explicit
-
-Execution tracker and seeded issues:
-- `#242` UI-00 tracker
-- `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
-- optional Priority IV add-on: `#251`
-- reused dependencies (no duplicate wave issue): `#154`, `#88`, `#92`, `#213`
-
-Exit Criteria:
-- token + primitive foundations are in place and reused by multiple major surfaces
-- AppShell/Board/Inbox premium passes are shipped with regression coverage
-- accessibility/keyboard and reduced-motion contracts are explicit and test-backed
-- visual/performance gates are reconciled with ongoing frontend CI/test operations
-
-### Horizon H (Testing Harness and Guardrails Track)
-
-Focus:
-- eliminate deterministic flake vectors in automated suites (`Thread.Sleep`, ad-hoc polling loops)
-- strengthen high-signal regression coverage for drag/drop persistence and API error-contract completeness
-- add harness-level contract guardrails (OpenAPI generation + parse validation artifacts)
-- codify golden principles and enforce a minimal mechanical subset
-- add non-blocking nightly quality telemetry (coverage artifacts + dependency/security signal collection)
-
-Execution tracker and seeded issues:
-- `#254` TST-15 tracker
-- `#255`, `#256`, `#257`, `#258`, `#259`, `#260`
-- explicit reuse (no duplicate wave issue): existing WIP limit, sandbox gate, and starter-pack idempotency coverage already implemented
-
-Recent progress (2026-02-24):
-- `#260` adds a dedicated non-blocking nightly-quality workflow (`.github/workflows/nightly-quality.yml`) for scheduled/manual coverage and dependency/security signal collection
-- nightly-quality artifacts now provide reporting-first telemetry (coverage outputs + vulnerability/audit command results) without changing required PR gate behavior
-- `#259` adds `docs/GOLDEN_PRINCIPLES.md` and a lightweight mechanical enforcement script (`scripts/check-golden-principles.mjs`) in the reusable docs-governance lane
-- docs-governance now also requires/index-checks `docs/GOLDEN_PRINCIPLES.md` and validates a date-stamp line to keep principle governance deterministic
-- `#258` adds a reusable OpenAPI generation/parse-validation lane with artifact upload wired into `ci-extended` and `ci-nightly`
-- OpenAPI drift snapshot/diff hard-gating is intentionally deferred; current lane enforces generation + parse-contract validity and publishes inspection artifacts
-- `#257` now centralizes representative API error-contract assertions for `400/401/403/404/409` in `ApiErrorContractApiTests`
-- representative error-path coverage now includes `X-Request-Id` response echo assertions where middleware applies
-
-Exit Criteria:
-- deterministic flake vectors identified in the wave are removed from current suites
-- drag/drop persistence and representative error-contract classes are regression-locked
-- OpenAPI artifact generation/parse validation is visible in CI
-- golden principles are documented and mechanically enforced for a stable subset
-- nightly quality workflow runs with actionable artifacts without blocking PR-required gates
-
-### Horizon I (Outreach CRM Deferred Expansion Track)
-
-Focus:
-- define an outreach CRM mode on top of existing board/starter-pack/proposal primitives
-- start with card-first contact modeling (YAML front matter + timeline append pattern) before structured entity migration
-- add deterministic cadence scheduling and draft-generation flows through proposal/chat infrastructure
-- keep runtime behavior execution-mode configurable (manual/draft-first by default, connector execution as a separately gated layer)
-- preserve low-priority sequencing so active foundation/security tracks remain ahead
-
-Execution tracker and seeded issues:
-- `#262` OUT-00 tracker
-- `#263`, `#264`, `#265`, `#266`, `#267`, `#268`
-- explicit reuse (no duplicate wave issue): `#75`, `#77`, `#175`, `#107`
-
-Exit Criteria:
-- outreach wave sequencing is documented and dependency-ordered in canonical planning docs
-- issue backlog captures card-first model, contact UX, cadence engine, dashboard, and draft-generation slices
-- overlapping import/analytics/starter-pack scope is reconciled through existing issues instead of duplicate seeds
+- `R1` novice-first beta:
+  - `Home`
+  - `Today`
+  - `Review`
+  - onboarding/help coherence
+  - readable proposals
+  - board-centered action rails
+  - no raw-ID requirements in common flows
+- `R2` agent foundation alpha:
+  - `AgentProfile`
+  - `AgentRun`
+  - `AgentRunEvent`
+  - tool registry and policy evaluator
+  - first bounded template
+  - inspectable run detail
+- `R3` knowledge/integrations alpha:
+  - `KnowledgeDocument` / `KnowledgeChunk`
+  - SQLite FTS search
+  - integrations registry
+  - at least two meaningful supervised inbound context/capture paths
 
 ## Active Backlog (Priority-Labeled)
 
@@ -572,6 +583,16 @@ Exit Criteria:
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered), `#142` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76` (delivered)
+- Seeded Wave P from the 2026-03-07 MVP expansion integration:
+  - `#318` tracker
+  - `#320` workspace modes + `Home` summary shell
+  - `#322` `Review`-first routing + empty/help states + board selectors
+  - `#324` `Today` agenda + onboarding path
+  - `#326` proposal readability + board-centered action flow
+  - `#96` onboarding/contextual help (reused, moved to `Priority II`)
+  - `#100` user guides/tutorials/FAQ (reused, moved to `Priority II`)
+  - `#328` first-run smoke + launch-criteria guardrail
+- Related but intentionally not folded into Wave P core execution: `#93`, `#216`, `#77`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
@@ -579,15 +600,32 @@ Exit Criteria:
 - Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212` (delivered), `#238`, `#239`, `#240`
 - Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
+- Seeded secondary MVP follow-through wave (lower priority than Wave P):
+  - `#329` tracker
+  - `#330` in-app demoability and live attention cues
+  - `#331` demo director reporting/assertions/presets/soak
+  - `#332` replay-from-trace and scenario-authoring follow-through
+- Seeded expanded-blueprint architecture wave (future agent/knowledge/release-gate follow-through):
+  - `#335` tracker
+  - `#336` agent profile/run/event foundation
+  - `#337` tool registry, policy evaluator, and first bounded template
+  - `#339` knowledge document + SQLite FTS foundation
+- Reuse-before-duplicate anchors for this later wave: `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, `#328`
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
 - Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
 - Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
-- UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`, `#96`
+- UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
+- Lower-priority secondary MVP follow-through continuation:
+  - `#333` saved views and productivity shortcuts
+  - `#334` note-style import and clip intake follow-through
+- Expanded-blueprint architecture continuation:
+  - `#338` agent mode surfaces and run-detail timeline
+  - `#340` integrations registry and supervised connector foundation
 - Optional premium UI documentation/component tooling: `#251`
-- Developer/user docs maturity: `#99`, `#100`, `#216`, `#217`
+- Developer/user docs maturity: `#99`, `#216`, `#217`
 - Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
 - Outreach CRM deferred expansion wave: `#262` to `#268`
 - Outreach CRM wave reused dependencies: `#75` (delivered import adapters), `#77` (analytics), `#175` (starter-pack catalog expansion)
@@ -596,6 +634,8 @@ Exit Criteria:
 ### Priority V (Meta/Historical)
 
 - Wave index and historical/closed tracking: `#107` and completed governance items.
+- Expanded-blueprint launch-gate/telemetry framing continuation:
+  - `#341` product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through
 
 ## Research Reconciliation (WIP PDFs, Feb 2026)
 
@@ -612,6 +652,7 @@ Strategic reconciliation applied:
 - Added frontend premium UI foundations wave from `docs/InReview` premium UI pack with deduplicated issue mapping (`#242` to `#251`, reusing `#154`, `#88`, `#92`, `#213`).
 - Added testing harness/guardrails wave from `docs/InReview` testing-harness pack with duplicate prevention for already-covered scenarios (`#254` to `#260`).
 - Added outreach CRM deferred wave from `docs/InReview/outreach-crm` with low-priority issue seeding (`#262` to `#268`) and explicit reuse of overlapping existing issues (`#75`, `#77`, `#175`).
+- Added 2026-03-07 MVP expansion integration from `docs/InReview/MVP_EXPANSION/`; near-horizon now prioritizes novice-first productization and board-centered review workflows before agent/knowledge surface breadth.
 
 ## Out-of-Code and Configuration Coverage Matrix
 
@@ -697,28 +738,28 @@ Demo-expansion migration wave seeding completed:
 - each batch issue now includes a suggested branch name and explicit file-scoped commit expectation
 
 Canonical references for this wave:
-- `docs/DEMO_EXPANSION_MIGRATION_SOT.md`
-- `docs/temp_description.txt`
+- `docs/archive/2026-03-07_docs-root-reorg/DEMO_EXPANSION_MIGRATION_SOT.md`
+- `docs/archive/2026-03-07_docs-root-reorg/temp_description.txt`
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 
 Batch A baseline delivery (`#298`) status:
 - baseline seeding command introduced (`npm run demo:seed`)
 - v0-first-run UX defaults applied (advanced surfaces default off, Automations default to Proposals, queue composer instruction-first guidance)
-- demo playbook promoted to active docs (`docs/DEMO_PLAYBOOK.md`)
+- demo playbook promoted to active docs (`docs/product/DEMO_PLAYBOOK.md`)
 
 Batch B harness/docs delivery (`#299`) status:
 - reusable demo harness layer added (`npm run demo:run`, `npm run demo:autopilot`, `scripts/demo-lib.mjs`, `scripts/scenarios/*`)
 - scenario modules added for engineering sprint, support triage, and content-calendar demo flows
 - API walkthrough asset added: `demo/http/taskdeck-demo.http` (updated for current API contracts)
 - stakeholder walkthrough recorder added as opt-in Playwright coverage (`tests/e2e/stakeholder-demo.spec.ts`, gated by `TASKDECK_RUN_DEMO=1`)
-- demo operations docs expanded and indexed (`docs/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `docs/DEMO_PLAYBOOK.md`, `docs/INDEX.md`)
+- demo operations docs expanded and indexed (`docs/product/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `docs/product/DEMO_PLAYBOOK.md`, `docs/INDEX.md`)
 
 Batch C JSON/capture harness (`#300`) status:
 - JSON scenario runner added with schema + sample scenarios (`scripts/scenario-json-runner.mjs`, `scripts/scenarios-json/*`)
 - `demo:run` now prefers JSON scenarios and supports `--list`, `--skip-llm`, and `--continue-on-error`
 - `demo:autopilot` now supports `--loop queue|capture|mixed` and capture controls (`--capture-prob`, `--leave-capture-untriaged-prob`, `--triage-timeout-ms`, `--capture-source`, `--capture-title-hint`)
 - capture helper functions added in `scripts/demo-lib.mjs` and consumed by JSON runner/autopilot (`create/get/ignore/cancel/triage/wait-for-outcome`)
-- scenario authoring/usage documentation added and indexed (`docs/SCENARIOS.md`, `docs/INDEX.md`, `docs/DEMO_PLAYBOOK.md`)
+- scenario authoring/usage documentation added and indexed (`docs/product/SCENARIOS.md`, `docs/INDEX.md`, `docs/product/DEMO_PLAYBOOK.md`)
 
 Batch D director/artifact orchestration (`#301`) status:
 - demo orchestration commands added (`npm run demo:director`, `npm run demo:snapshot`) with new scripts (`scripts/demo-director.mjs`, `scripts/demo-snapshot.mjs`)
@@ -742,14 +783,15 @@ Batch E integration hardening (`#302`) status:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
-3. Sequence remaining managed-key control-plane foundations in Priority II: `#235` tracker, then `#237` after delivered identity attribution baseline (`#236`).
-4. Sequence managed-key abuse/operations follow-through in Priority III: `#238`, `#239`, `#240`.
-5. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized.
-6. Sequence remaining capture-linked hardening by priority stage: `#213` in Priority IV.
-7. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
-8. Keep Outreach CRM expansion deferred in Priority IV and execute in dependency order when promoted: `#263`/`#264` -> `#265` -> `#266` -> (`#267`, `#268`), while reusing existing analytics/starter-pack tracks (`#77`, `#175`) and the delivered import-adapter foundation (`#75`).
-9. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311` instead of reopening the migration batches.
+2. Execute the seeded novice-first shell tranche in order: `#318` -> `#320` -> `#322`.
+3. Execute the seeded board-centered daily workflow tranche immediately after shell foundations: `#324` -> `#326`.
+4. Keep the docs/help/testing tranche synchronized with shipped behavior: `#96`, `#100`, then `#328`.
+5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
+6. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
+7. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
+8. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
+9. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+10. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311` instead of reopening the migration batches.
 
 ## Documentation Operating Model
 Active docs:
@@ -757,6 +799,11 @@ Active docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+
+Audience-first product docs:
+- `docs/START_HERE.md`
+- `docs/USER_MANUAL.md`
+- `docs/product/DEMO_PLAYBOOK.md`
 
 Archived docs:
 - all superseded detail packs and historical snapshots under `docs/archive/`

@@ -2,109 +2,93 @@
 
 This directory is the canonical documentation entrypoint for Taskdeck.
 
-## Active Authoritative Docs
+Root `docs/` is reserved for living documents that change regularly or are direct operator/contributor entrypoints.
+Stable reference material belongs in topical subfolders.
+
+## Root Living Docs
 
 - `STATUS.md`
-  - Single source of truth for shipped behavior, verified test totals, and known gaps.
+  - Current shipped reality, verified state, current focus, and active constraints.
 - `IMPLEMENTATION_MASTERPLAN.md`
-  - Single source of truth for forward execution sequencing and priorities.
-- `TESTING_GUIDE.md`
-  - Canonical automated test commands, coverage map, and CI gate mapping.
-- `MANUAL_TEST_CHECKLIST.md`
-  - Canonical manual validation script for UI/API/ops workflows.
+  - Forward execution roadmap, horizons, release framing, and priority-labeled backlog map.
 - `GOLDEN_PRINCIPLES.md`
-  - Stable repository invariants and lightweight mechanically enforced principles.
-
-## Active Operational Docs
-
-- `GITHUB_PROJECT_AUTOMATION.md`
-  - Canonical setup and automation rules for GitHub Project statuses/workflows.
-- `GITHUB_LABEL_TAXONOMY.md`
-  - Canonical descriptions and usage rules for repository labels (including `Priority I` to `Priority V`).
-- `TASKDECK_HUMAN_OPERATIONS.md`
-  - Human runbook for repository/project operations.
-- `TaskdeckNextWorkChecklist.md`
-  - Checklist-to-issue planning source for backlog seeding.
+  - Stable repository invariants and decision rules.
 - `ISSUE_EXECUTION_GUIDE.md`
-  - Execution order and operating protocol for agents tackling issue backlog.
-- `SESSION_START_CHECKLIST.md`
-  - Lightweight start-of-session runbook for branch hygiene, issue selection, and verification discipline.
-- `STARTER_PACK_MANIFEST_SCHEMA.md`
-  - PACK-01 manifest schema and validation contract for starter-pack foundations.
-- `DEPLOYMENT_CONTAINERS.md`
-  - Container deployment runbook for Docker images, compose baseline, reverse-proxy posture, and staging bootstrap.
-- `DEPLOYMENT_TERRAFORM_BASELINE.md`
-  - Terraform/IaC baseline for dev/staging/prod single-node AWS environments that host the existing Docker deployment layer.
-- `DEPLOYMENT_HARDENING_MATRIX.md`
-  - Deployment/container hardening verification matrix with pass/fail criteria and automation command (`#142`).
-- `LLM_PROVIDER_SETUP_GUIDE.md`
-  - Provider runtime posture and demo setup guide (`Mock`/`OpenAI`/`Gemini`), including Playwright full-demo auto-enable, suppression rules, and fresh-server behavior when live-provider overrides are injected.
-- `IMPORT_ADAPTERS_GUIDE.md`
-  - External import adapter runtime contract and CSV outreach-profile mapping/dedupe guide (`#75`).
-- `RATE_LIMITING_POLICY.md`
-  - API abuse-protection policy, throttle contract, and tuning guidance for rate-limited endpoints (`#81`, delivered).
-- `SECURITY_OWASP_BASELINE.md`
-  - OWASP baseline hardening record for API security headers and CSRF posture (`#80`, delivered).
-- `SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
-  - Dependency vulnerability scan policy, severity SLAs, exception rules, and CI/release signal workflow (`#106`).
-- `SECURITY_LOGGING_REDACTION.md`
-  - Logging redaction policy and implementation guidance for capture/auth-sensitive flows (`#212`, delivered).
-- `DEMO_PLAYBOOK.md`
-  - Demo-runbook for seeded first-run walkthrough, scenario harness (`demo:run`), autopilot, demo director smoke, and opt-in stakeholder recorder.
-  - Script entry points: `demo:seed`, `demo:run`, `demo:autopilot`, `demo:director`, `demo:snapshot`, `demo:director:smoke`.
-- `SCENARIOS.md`
-  - JSON scenario runner reference for deterministic demo/test setup, step contracts, and interpolation rules.
-- `DOGFOODING_GUIDE.md`
-  - Daily operating cadence for capture-triage-proposal execution and friction logging.
+  - Dependency-aware issue order and execution protocol.
+- `TaskdeckNextWorkChecklist.md`
+  - Lightweight promotion and wave-checklist companion to the masterplan/issue guide.
+- `TESTING_GUIDE.md`
+  - Automated verification commands, current totals, smoke posture, and release-gate guidance.
+- `MANUAL_TEST_CHECKLIST.md`
+  - Human verification checklist for product, security, and ops flows.
+- `START_HERE.md`
+  - Audience-first first-entry product guide.
 - `USER_MANUAL.md`
-  - End-user usage reference across Boards, Inbox, Automations, Ops, Activity, Notifications, and demo tooling.
-- `DEMO_EXPANSION_MIGRATION_SOT.md`
-  - Canonical staged migration map for importing `TaskdeckDemoExpansion` (`v0` through `v3`) into this repository.
-- `temp_description.txt`
-  - Curated summary of demo-expansion provenance and source-folder mapping; points to migration source-of-truth.
-
-## Active Tooling Docs
-
+  - Current shipped product reference.
+- `GITHUB_PROJECT_AUTOMATION.md`
+  - Canonical GitHub Project status/priority/workflow rules.
 - `MCP_TOOLING_GUIDE.md`
-  - MCP selection rules and safe operation patterns.
-- `MCP_OPERATIONS_RUNBOOK.md`
-  - MCP credential wiring, verification commands, and daily/weekly operator workflows.
-- `DEVTOOLS_OBSERVABILITY_ADDON.md`
-  - Debug workflow guidance for Playwright/DevTools/log signals.
-- `FUTURE_HARNESS_BACKLOG.md`
-  - Deferred tooling and harness upgrades.
+  - Canonical MCP selection/fallback rules for agents.
+- `LIVING_DOCUMENTS_GUIDE.md`
+  - Root-doc change map: what changes often, what to update, and in what order.
 
-## Working Notes (Non-authoritative)
+## Recommended Read Paths
 
+- New user / evaluator:
+  - `START_HERE.md` -> `USER_MANUAL.md` -> `product/DEMO_PLAYBOOK.md`
+- Maintainer / planner:
+  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
+- Contributor / agent:
+  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md`
+- Demo operator:
+  - `START_HERE.md` -> `product/DEMO_PLAYBOOK.md` -> `product/SCENARIOS.md` -> `product/DOGFOODING_GUIDE.md`
+
+## Topical Folders
+
+- `product/`
+  - Product-facing guides, demo playbook, scenario reference, and dogfooding cadence.
+- `manual/`
+  - Planned manual chapter map, split rules, and in-app help-to-manual mapping.
+- `ops/`
+  - Deployment, observability, human operator runbooks, and session-start checklists.
+- `platform/`
+  - Provider, import-adapter, and starter-pack platform/reference docs.
+- `security/`
+  - Active security and abuse-protection policies/baselines.
+- `tooling/`
+  - MCP operations, harness/tooling guidance, and deferred tooling backlog.
 - `analysis/`
-  - Dated repository analysis snapshots and follow-through mapping notes (non-authoritative unless promoted into active docs).
+  - Dated reconciliation notes, audits, and planning snapshots (non-authoritative unless promoted).
+  - includes `analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md` for ongoing promotion of `docs/InReview/MVP_EXPANSION/` into canonical docs and backlog guidance.
+  - includes `analysis/2026-03-07_mvp-expansion-gap-map.md` for the dated doc and issue reconciliation baseline.
+  - includes `analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` for the full file-by-file and snippet-by-snippet audit of what from `MVP_EXPANSION/` is promoted, deferred, or carried into later-wave issue scope.
+  - includes `analysis/2026-03-07_mvp-productization-seeding-plan.md` for the concrete GitHub issue-seeding and duplicate-resolution record for the seeded Wave P productization tranche.
   - includes `analysis/2026-02-23_testing-harness-synthesis.md` for testing-harness wave reconciliation (`#254` to `#260`).
   - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
 - `InReview/`
-  - Staging area for human briefs and currently active in-review materials before promotion into active docs (`STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, testing/checklists).
+  - Human/in-review source packs awaiting extraction into canonical docs or issue waves.
+- `archive/`
+  - Historical and superseded docs. Non-authoritative by default.
+- `WIP/`
+  - External or unpromoted working material that has not yet been reconciled.
 
-## Archive
+## Working Notes
 
-All superseded planning packs, snapshots, and historical notes live under:
-- `archive/README.md`
-- `archive/2026-02-13_phase4-doc-consolidation/`
-- `archive/2026-02-16_docs-curation/`
-- `archive/2026-02-25_docs-cleanup/`
-  - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) promoted/reconciled into canonical docs and issue wave execution.
-- `archive/2026-02-25_inreview-repo-pack/`
-  - Archived historical `REPO_PACK` planning/seeding bundle after promotion into canonical docs + issue tracker waves.
+- `analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`
+  - Canonical continuity log for the MVP expansion reconciliation.
+- `analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
+  - File-by-file and snippet-by-snippet audit for `docs/InReview/MVP_EXPANSION/`.
+- `analysis/2026-03-07_mvp-expansion-gap-map.md`
+  - Current Wave P / Q / R backlog mapping and reuse-anchor summary.
 
 ## Governance Rules
 
-- Do not add new top-level planning docs by default.
-- If a detail spec is no longer actively maintained, archive it.
-- Every meaningful behavior change should update:
+- Do not add new root docs by default.
+- If a document is stable reference material rather than a living source-of-truth, put it in a topical folder.
+- If a note is historical, archive it instead of leaving it at root.
+- Every meaningful behavior or workflow change should update:
   1. `STATUS.md`
   2. `IMPLEMENTATION_MASTERPLAN.md`
-  3. `TESTING_GUIDE.md` or `MANUAL_TEST_CHECKLIST.md` when verification flow changes.
-- Every root doc in `docs/` must be listed in this index as one of:
-  - Active authoritative
-  - Active operational/tooling
-  - Working notes (non-authoritative)
-  - Archived
-
+  3. `ISSUE_EXECUTION_GUIDE.md` when order/dependencies change
+  4. `TESTING_GUIDE.md` / `MANUAL_TEST_CHECKLIST.md` when verification changes
+- Keep root `docs/` readable at a glance; use `LIVING_DOCUMENTS_GUIDE.md` before promoting new recurring docs into root.
