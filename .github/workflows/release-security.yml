@@ -3,8 +3,8 @@ name: Release Security
 on:
   workflow_dispatch:
     inputs:
-      enforce-audit-failures:
-        description: Fail the run when dependency audit finds high severity vulnerabilities
+      enforce-dependency-failures:
+        description: Fail the run when the dependency security summary contains unresolved high/critical findings or scan failures
         required: false
         default: false
         type: boolean
@@ -65,29 +65,25 @@ jobs:
       - name: Run backend vulnerable package report
         id: backend_vulnerabilities
         continue-on-error: true
-        run: dotnet list backend/Taskdeck.sln package --vulnerable --include-transitive --format json > /tmp/release-security/backend-vulnerabilities.json
+        shell: bash
+        run: |
+          set +e
+          dotnet list backend/Taskdeck.sln package --vulnerable --include-transitive --format json > /tmp/release-security/backend-vulnerabilities.json 2> /tmp/release-security/backend-vulnerabilities.stderr
+          exit_code=$?
+          printf '%s' "$exit_code" > /tmp/release-security/backend-vulnerabilities.exitcode
+          exit "$exit_code"
 
       - name: Run frontend audit
         id: npm_audit
         continue-on-error: true
         working-directory: frontend/taskdeck-web
-        run: npm audit --omit=dev --audit-level=high --json > /tmp/release-security/frontend-audit.json
-
-      - name: Capture dependency scan exit codes
+        shell: bash
         run: |
-          backend_exit=0
-          frontend_exit=0
-
-          if [ "${{ steps.backend_vulnerabilities.outcome }}" != "success" ]; then
-            backend_exit=1
-          fi
-
-          if [ "${{ steps.npm_audit.outcome }}" != "success" ]; then
-            frontend_exit=1
-          fi
-
-          printf '%s' "$backend_exit" > /tmp/release-security/backend-vulnerabilities.exitcode
-          printf '%s' "$frontend_exit" > /tmp/release-security/frontend-audit.exitcode
+          set +e
+          npm audit --omit=dev --audit-level=high --json > /tmp/release-security/frontend-audit.json 2> /tmp/release-security/frontend-audit.stderr
+          exit_code=$?
+          printf '%s' "$exit_code" > /tmp/release-security/frontend-audit.exitcode
+          exit "$exit_code"
 
       - name: Summarize dependency security signals
         run: |
@@ -104,9 +100,9 @@ jobs:
           cat /tmp/release-security/dependency-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce dependency findings when requested
-        if: github.event_name == 'workflow_dispatch' && inputs.enforce-audit-failures
+        if: github.event_name == 'workflow_dispatch' && inputs.enforce-dependency-failures
         run: |
-          node -e "const fs = require('node:fs'); const summary = JSON.parse(fs.readFileSync('/tmp/release-security/dependency-summary.json', 'utf8')); if (summary.totals.parseFailures > 0 || summary.totals.hasActionableFindings) { console.error('Dependency security enforcement failed. Review release-security artifacts and the linked policy doc.'); process.exit(1); }"
+          node -e "const fs = require('node:fs'); const summary = JSON.parse(fs.readFileSync('/tmp/release-security/dependency-summary.json', 'utf8')); if (summary.totals.hasEnforcementFailures) { console.error('Dependency security enforcement failed. Review release-security artifacts and the linked policy doc.'); process.exit(1); }"
 
       - name: Write release security lane plan
         run: |
