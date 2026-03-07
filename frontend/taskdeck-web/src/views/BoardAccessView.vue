@@ -8,6 +8,7 @@ import { useToastStore } from '../store/toastStore'
 import type { BoardRole } from '../types/access'
 import type { Board } from '../types/board'
 import { normalizeBoardRole } from '../utils/roles'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 
 const props = defineProps<{ boardId?: string | null }>()
 
@@ -80,8 +81,8 @@ async function loadBoards() {
     if (!activeBoardId.value.trim() && availableBoards.value.length > 0) {
       activeBoardId.value = availableBoards.value[0]!.id
     }
-  } catch {
-    toast.error('Failed to load boards for access management.')
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to load boards for access management.').message)
   } finally {
     loadingBoards.value = false
   }

@@ -235,4 +235,31 @@ describe('AutomationChatView', () => {
       boardId: 'board-1',
     })
   })
+
+  it('stops session creation when reloading board options fails', async () => {
+    mocks.getBoards.mockResolvedValueOnce([
+      {
+        id: 'board-1',
+        name: 'Board One',
+        description: 'Primary workspace board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+    mocks.getBoards.mockRejectedValueOnce(new Error('network down'))
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+    mocks.errorToast.mockClear()
+
+    await wrapper.get('input[placeholder="Session title"]').setValue('Scoped session')
+    await wrapper.get('input[placeholder="Board context (optional)"]').setValue('Board One')
+    await findButtonByText(wrapper, 'Create Session').trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.errorToast).toHaveBeenCalledTimes(1)
+    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load boards')
+  })
 })

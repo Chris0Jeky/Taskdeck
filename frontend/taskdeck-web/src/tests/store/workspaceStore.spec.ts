@@ -4,6 +4,8 @@ import { workspaceApi } from '../../api/workspaceApi'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../../utils/storageKeys'
 
+const TEST_USER_ID = '00000000-0000-0000-0000-000000000001'
+
 const toastMocks = vi.hoisted(() => ({
   warning: vi.fn(),
 }))
@@ -78,7 +80,7 @@ describe('workspaceStore', () => {
   it('hydrates preferences and persists the server-backed mode', async () => {
     const store = useWorkspaceStore()
     vi.mocked(workspaceApi.getPreferences).mockResolvedValue({
-      userId: crypto.randomUUID(),
+      userId: TEST_USER_ID,
       workspaceMode: 'workbench',
       onboarding: buildOnboarding(),
       createdAt: new Date().toISOString(),
@@ -96,7 +98,7 @@ describe('workspaceStore', () => {
   it('updates mode through the API and persists it locally', async () => {
     const store = useWorkspaceStore()
     vi.mocked(workspaceApi.updatePreferences).mockResolvedValue({
-      userId: crypto.randomUUID(),
+      userId: TEST_USER_ID,
       workspaceMode: 'agent',
       onboarding: buildOnboarding({ visibility: 'dismissed', dismissedAt: new Date().toISOString() }),
       createdAt: new Date().toISOString(),
@@ -127,7 +129,7 @@ describe('workspaceStore', () => {
     expect(store.preferenceLoading).toBe(true)
 
     update.resolve({
-      userId: crypto.randomUUID(),
+      userId: TEST_USER_ID,
       workspaceMode: 'agent',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -138,7 +140,7 @@ describe('workspaceStore', () => {
     expect(store.preferenceLoading).toBe(true)
 
     hydration.resolve({
-      userId: crypto.randomUUID(),
+      userId: TEST_USER_ID,
       workspaceMode: 'guided',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
