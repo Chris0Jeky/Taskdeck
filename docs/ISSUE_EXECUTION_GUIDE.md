@@ -84,6 +84,7 @@ Implementation note from the full-source audit:
   - dismissible in-app help blocks and the `novice-first-first-run` smoke/scenario shape
 - treat the audit’s secondary demoability/harness/productivity follow-through as deferred, not dropped
 - that secondary follow-through is now seeded as `#329` to `#334`; execute it only after the Wave I core is underway or delivered, and do not mix it into `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, or `#328`
+- the remaining expanded-blueprint architecture is now seeded as `#335` to `#341`; execute it only after Wave Q is stable enough that agent/knowledge breadth will not compete with product legibility work
 
 ## Execution Order (Dependency-Aware)
 
@@ -282,6 +283,10 @@ Testing/UX/docs:
 35. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
 36. `#333` UX-19 saved views and post-Wave-I productivity shortcuts
 37. `#334` INT-05 note-style import and clip intake follow-through
+38. `#335` MVP-04 expanded blueprint architecture tracker
+39. `#336` AGT-01 agent profile/run/event foundation and manual-run API
+40. `#337` AGT-02 tool registry, policy evaluator, and bounded inbox-triage template
+41. `#339` KNOW-01 knowledge document and SQLite FTS search foundation
 
 Execution note (testing harness knowledge-transfer):
 - Existing Priority IV items were updated with pack-derived scope clarifications:
@@ -301,23 +306,34 @@ Execution note (testing harness knowledge-transfer):
   - `#98` later connector/integrations architecture
   - `#311` completed demo hardening baseline
   - `#75`, `#218`, `#219` note/import/capture-source overlap
+- Expanded-blueprint architecture wave explicitly reuses adjacent anchors instead of duplicating scope:
+  - `#75` import adapters baseline
+  - `#77` analytics/telemetry baseline
+  - `#98` connector framework
+  - `#100` manual/help-center restructuring
+  - `#216` thesis-aligned public/demo framing
+  - `#218`, `#219` transcript/voice capture overlap
+  - `#328` first-run smoke and launch-criteria baseline
 
 Maintainability hotspot refactor wave (analysis-driven):
-38. `#158` REF-11 decompose `AppShell.vue`
-39. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
-40. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
-41. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
-42. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
-43. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
-44. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
-45. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
-46. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
-47. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
+42. `#158` REF-11 decompose `AppShell.vue`
+43. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
+44. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
+45. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
+46. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
+47. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
+48. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
+49. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
+50. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
+51. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
 
 ### Stage 5: Priority V - Meta/Historical
 
 1. `#107` OPS-13 future expansion wave index
-2. Closed historical issues remain `Priority V` for archival consistency.
+2. `#338` AGT-03 agent mode surfaces and run-detail timeline
+3. `#340` INT-06 integrations registry and supervised inbound connector foundation
+4. `#341` TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through
+5. Closed historical issues remain `Priority V` for archival consistency.
 
 ## Per-Issue Delivery Checklist
 

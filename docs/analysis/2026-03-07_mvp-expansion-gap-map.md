@@ -1,7 +1,7 @@
 # MVP Expansion Gap Map
 
 Date: 2026-03-07
-Scope: Reconcile the 2026-03-06 MVP expansion review packages against the current GitHub backlog and identify what should be reused, what is missing, and how the next seeding wave should be ordered.
+Scope: Reconcile the 2026-03-06 MVP expansion review packages against the current GitHub backlog and identify what should be reused, what is missing, and how the next seeding waves should be ordered.
 
 ## Inputs Reviewed
 
@@ -21,194 +21,108 @@ GitHub backlog inputs:
 
 ## Bottom Line
 
-The current backlog is still weighted toward making the engine stronger.
-The MVP expansion package is mostly about making the product legible.
+The backlog had been stronger on engine and demo capability than on product legibility.
+That gap is now represented by three explicit waves instead of scattered future notes:
 
-That product-legibility wave is now seeded as one coherent execution wave on GitHub:
+- Wave P `#318` to `#328`
+  - novice-first productization: `Home`, `Review`, `Today`, onboarding/help, readable proposals, first-run smoke
+- Wave Q `#329` to `#334`
+  - lower-priority secondary follow-through: demoability, harness maturity, saved views, broader note/clip intake
+- Wave R `#335` to `#341`
+  - later architecture follow-through: agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
 
-- `#318` `UX-13` wave tracker
-- `#320` `UX-14` workspace mode foundation + `Home` summary shell
-- `#322` `UX-15` `Review`-first routing + empty/help states + board selectors
-- `#324` `UX-16` `Today` agenda + onboarding path
-- `#326` `UX-17` proposal readability + board-centered action flow
-- `#96` `UX-10` onboarding/contextual help (reused and reprioritized)
-- `#100` `DOC-04` user guides/tutorials/FAQ (reused and reprioritized)
-- `#328` `TST-20` first-run smoke + launch-criteria guardrail
+## Reuse Anchors
 
-Full-source audit companion:
+Real overlap that should be reused instead of duplicated:
 
-- `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
+- `#96` onboarding/contextual help
+- `#93` global search/actions
+- `#100` user guides/tutorials/FAQ
+- `#216` thesis-aligned demo/landing baseline
+- `#77` analytics/telemetry naming and dashboard work
+- `#75` import adapters foundation
+- `#97` plugin/extension RFC
+- `#98` connector framework
+- `#218` transcript capture source
+- `#219` voice capture/transcription
+- `#311` completed demo-epic hardening baseline
 
-Audit addendum:
-
-- the Wave I productization core is represented well enough to execute
-- the secondary second-order follow-through set is now seeded as a lower-priority wave:
-  - `#329` tracker
-  - `#330` in-app demoability/product evidence
-  - `#331` harness reporting/assertions/presets/soak
-  - `#332` replay-from-trace and scenario authoring
-  - `#333` saved views/productivity follow-through
-  - `#334` broader note-style import/clip intake follow-through
-- the expanded pack’s concrete agent and knowledge/integration issue shapes are still not seeded as numbered issues
-
-## What Already Overlaps
-
-### Reuse candidates with real overlap
-
-- `#96` UX-10 onboarding/contextual help
-  - reuse for onboarding checklist, guided help blocks, or replayable help-state work
-- `#93` UX-07 global search and quick actions
-  - reuse for broader command-palette search/navigation work once `Today`/`Review` land
-- `#100` DOC-04 user guides/tutorials/FAQ
-  - reuse for navigation-shaped manual and help-center restructuring
-- `#216` GTM-01 thesis-aligned demo/landing baseline
-  - reuse where public-facing pitch/demo framing intersects the new novice-first story
-- `#77` ANL-01 metrics dashboard
-  - reuse for telemetry naming and launch-criteria alignment rather than creating a second isolated metrics story
-- `#75` INT-01 import adapters foundation
-  - reuse for note/transcript import pathways and future inbound capture contracts
-- `#97` INT-03 plugin/extension RFC
-  - reuse only for later connector/platform design; do not let it outrun the near-horizon productization work
-- `#98` INT-04 connector framework
-  - reuse for later integrations registry/connector implementation
-- `#218` CAP-20 transcript capture source
-  - reuse for transcript-style intake
-- `#219` CAP-21 voice capture/transcription
-  - reuse for broader external capture-source work when promoted
-
-### Partial overlap that is not enough by itself
-
-- capture wave `#199` to `#211`
-  - already delivered the core loop, but not the novice-first shell around it
-- premium UI wave `#242` to `#250`
-  - improves quality of surfaces, but does not define `Home`, `Today`, or product-level navigation/teaching by itself
-- demo-expansion wave `#297` to `#302`
-  - solved demoability and seeded state well, but not self-serve product understanding
-
-## What Is Still Missing
+## Wave Mapping
 
 ### Batch A: novice-first shell and entry clarity
 
-Missing as a coherent wave:
+Now seeded in Wave P:
 
-- workspace mode preference (`guided`, `workbench`, `agent`)
-- `Home` route and summary endpoint
-- `Review` as the clear primary normal-user automation surface
-- action-oriented empty/help states across primary pages
-- board selectors/pickers instead of raw-ID happy paths
-
-Current issue coverage:
-
-- `#318` tracks the wave
-- `#320` owns workspace modes + `Home`
-- `#322` owns `Review`-first routing, empty/help states, and selector/raw-ID cleanup
-- `#96` now carries the richer onboarding/help follow-through for this tranche
-- `#93` remains a later reuse point for broader search/launcher behavior
+- `#320` workspace mode preference + `Home`
+- `#322` `Review`-first routing + empty/help states + board selectors
+- `#96` and `#93` remain reuse anchors for help/search breadth
 
 ### Batch B: board-centered daily workflow
 
-Missing as a coherent wave:
+Now seeded in Wave P:
 
-- `Today` route and agenda endpoint
-- first-run onboarding checklist and project wizard
-- proposal summary service and readable proposal cards
-- board action rail (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`)
-- stronger deep links and next-step shortcuts across inbox/review/notifications/board flow
-
-Current issue coverage:
-
-- `#318` tracks the wave
-- `#324` owns `Today` + first-run onboarding path
-- `#326` owns proposal readability, board action flow, and stronger context travel
-- delivered capture/proposal substrate from `#199` still underpins this batch
+- `#324` `Today` + first-run onboarding path
+- `#326` proposal readability + board-centered action flow
 
 ### Batch C: docs/help/testing coherence
 
-Missing or incomplete:
+Now seeded in Wave P:
 
-- dedicated first-run smoke for the real product story
-- in-app help-center/help-block direction
-- docs/manual organization around current and intended top-level navigation
-- explicit novice-beta and agent-alpha launch criteria
-
-Current issue coverage:
-
-- `#100` now carries the manual/docs/FAQ follow-through for this tranche
-- `#96` now carries the contextual help/onboarding follow-through
-- `#328` owns the first-run smoke and launch-criteria guardrail
-- `#77` remains a later reuse point for deeper analytics/telemetry naming beyond the first product smoke
+- `#100` user docs/help-center follow-through
+- `#96` in-app help/onboarding follow-through
+- `#328` first-run smoke + launch-criteria guardrail
 
 ### Batch D: agent substrate
 
-Effectively unseeded:
+Now seeded in Wave R:
 
-- `AgentProfile`
-- `AgentRun`
-- `AgentRunEvent`
-- tool registry
-- policy evaluator
-- first bounded agent template
-- agent views
-
-Current issue coverage:
-
-- horizon-only coverage in `docs/IMPLEMENTATION_MASTERPLAN.md` and `docs/TaskdeckNextWorkChecklist.md`
-- no meaningful current numbered issue coverage
+- `#335` tracker
+- `#336` agent profile/run/event foundation + manual-run API
+- `#337` tool registry, policy evaluator, first bounded template
+- `#338` agent mode surfaces and run-detail timeline
 
 ### Batch E: knowledge and integrations surface
 
-Mostly unseeded:
+Now seeded in Wave R:
 
-- knowledge documents/notes model
-- SQLite FTS-backed knowledge search
-- notes/transcript/clip intake tied to knowledge/capture
-- integrations registry/management page
+- `#339` knowledge documents + SQLite FTS
+- `#340` integrations registry + supervised connector foundation
 
-Current issue coverage:
+Shared intake overlap stays intentionally split across:
 
-- `#75`, `#98`, `#218`, `#219` are the main reuse anchors
-- no product-facing knowledge/integrations wave exists yet
+- `#334`
+- `#218`
+- `#219`
 
-### Secondary lower-priority follow-through wave
+### Secondary lower-priority follow-through
 
-This formerly deferred set is now seeded and intentionally kept below Wave I:
+Now seeded in Wave Q:
 
 - `#329` tracker
-- `#330` product evidence/demoability
+- `#330` in-app demoability/product evidence
 - `#331` harness reporting/assertions/presets/soak
 - `#332` replay-from-trace and scenario authoring
 - `#333` saved views/productivity follow-through
 - `#334` broader note-style import and clip intake follow-through
 
-## Recommended Seeding Order
+## Recommended Order
 
-### Priority II
+### Immediate
 
-Seed and execute first:
+1. Wave P
+2. Wave Q only after Wave P is underway or delivered
 
-1. Batch A novice-first shell and entry clarity
-2. Batch B board-centered daily workflow
-3. Batch C docs/help/testing coherence
+### Later architecture
 
-Reason:
-
-- this is the shortest path from "good demo infrastructure" to "self-explaining product"
-
-### Priority III and later lower-priority follow-through
-
-Seed only after the above is underway:
-
-4. Batch D agent substrate
-5. Batch E knowledge and integrations surface
+3. Wave R only after Wave Q is stable enough that agent/knowledge breadth will not compete with product-legibility work
 
 Reason:
 
-- the blueprint is explicit that agents, traces, and knowledge should formalize only after the human product is clear
-- the secondary follow-through wave is now separately seeded as `#329` to `#334`; keep it below Wave I while Batch D and Batch E remain broader unseeded architecture
+- the blueprint is explicit that agents, traces, knowledge, and connector breadth should formalize only after the human product is understandable
 
 ## Release Framing
 
-Recommended release framing from the expansion package:
+Recommended release framing from the expanded package:
 
 - `R1` novice-first beta
   - `Home`
@@ -222,8 +136,8 @@ Recommended release framing from the expansion package:
   - profiles
   - runs
   - run events
+  - tool registry and policy evaluator
   - first bounded template
-  - policies
 - `R3` knowledge/integrations alpha
   - searchable notes/docs
   - integrations page
@@ -232,8 +146,9 @@ Recommended release framing from the expansion package:
 ## Operational Seeding Rules
 
 - Keep the seeded productization wave indexed in `#107` before active execution begins.
-- Use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` as the audit ledger for anything that was promoted only partially or explicitly deferred.
-- Keep the seeded lower-priority secondary follow-through wave (`#329` to `#334`) below Wave I in urgency.
+- Use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` as the audit ledger for anything promoted only partially or carried into later waves.
+- Keep Wave Q (`#329` to `#334`) below Wave P in urgency.
+- Keep Wave R (`#335` to `#341`) below Wave Q in urgency.
 - Reuse the overlap issues above instead of cloning scope into disconnected new tickets.
 - Keep `MINIMAL` as the near-horizon filter when `EXPANDED` suggests broader future breadth.
 - Do not let plugin/connector/agent breadth outrun `Home` / `Today` / `Review` productization.

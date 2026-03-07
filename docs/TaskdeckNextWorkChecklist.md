@@ -62,19 +62,17 @@ Detailed reconciliation:
   - `#326`: application-layer proposal summaries + explicit board-aware action rail
   - `#96`: dismissible in-app help blocks/help-center direction
   - `#328`: `novice-first-first-run` scenario shape and launch-criteria sync
+- [ ] Expanded-blueprint architecture tracker: `#335`
 - [ ] Batch D agent substrate:
-  - still unseeded later-wave architecture
-  - profiles
-  - runs
-  - run events
-  - policies
-  - first narrow template
+  - `#336` agent profile/run/event foundation
+  - `#337` tool registry + policy evaluator + first bounded template
+  - `#338` agent mode surfaces and run detail
 - [ ] Batch E knowledge/integrations surface:
-  - still unseeded later-wave architecture
-  - knowledge documents
-  - SQLite FTS search
-  - deeper knowledge-safe transcript/clip intake architecture beyond the narrower follow-through in `#334`
-  - integrations registry page
+  - `#339` knowledge documents + SQLite FTS search
+  - `#340` integrations registry + supervised inbound connector foundation
+  - note/transcript/clip intake stays split between `#334`, `#218`, `#219`, and `#340`
+- [ ] Expanded testing/release framing follow-through:
+  - `#341` product telemetry taxonomy + `R1` / `R2` / `R3` launch gates
 
 Related reuse anchors that stay outside the immediate Wave I execution core:
 - [ ] `#93`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`

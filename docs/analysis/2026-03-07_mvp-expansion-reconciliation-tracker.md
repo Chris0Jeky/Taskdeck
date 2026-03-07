@@ -2,7 +2,7 @@
 
 Date: 2026-03-07
 Branch: `docs/mvp-expansion-reconciliation`
-Status: Coverage audit complete; lower-priority secondary follow-through seeded; broader architecture still unseeded
+Status: Coverage audit complete; Wave P/Q/R seeded; root-docs curation and path cleanup still in progress
 
 ## Purpose
 
@@ -150,7 +150,11 @@ The 2026-03-07 full-source audit found three buckets:
      - `#332` replay-from-trace and scenario authoring
      - `#333` saved views/productivity follow-through
      - `#334` broader note-style import/clip intake follow-through
-   - unseeded agent substrate and knowledge/integration epics
+   - a seeded expanded-blueprint architecture wave now captures:
+     - `#335` tracker
+     - `#336`, `#337`, `#338` for the agent substrate
+     - `#339`, `#340` for knowledge/integrations
+     - `#341` for telemetry and release-gate framing
 
 ### GitHub issue overlap
 
@@ -184,8 +188,14 @@ The 2026-03-07 full-source audit found three buckets:
   - `#332` replay-from-trace and scenario-authoring follow-through
   - `#333` saved views and post-Wave-I productivity shortcuts
   - `#334` note-style import and clip intake follow-through
-- Still intentionally not seeded yet:
-  - agent profile/run/knowledge foundation slice as described in the new blueprint
+- Seeded expanded-blueprint architecture wave after the later audit pass:
+  - `#335` tracker
+  - `#336` agent foundation entities and manual-run API
+  - `#337` tool registry, policies, and bounded first template
+  - `#338` agent mode surfaces and run-detail timeline
+  - `#339` knowledge documents and SQLite FTS foundation
+  - `#340` integrations registry and supervised connector foundation
+  - `#341` telemetry taxonomy and `R1` / `R2` / `R3` launch gates
 
 ## Commands Run
 
@@ -202,8 +212,12 @@ The 2026-03-07 full-source audit found three buckets:
   - `#93`, `#96`, `#100`, `#216`, `#311`, `#318`, `#320`, `#324`, `#326`, `#328`
 - updated Wave I issue bodies to preserve source-audit detail:
   - `#320`, `#324`, `#326`, `#96`, `#100`, `#328`
+- tightened existing issue bodies with expanded-blueprint detail on route/manual contracts:
+  - `#320`, `#322`, `#100`
 - seeded lower-priority secondary follow-through issues:
   - created `#329`, `#330`, `#331`, `#332`, `#333`, `#334`
+- seeded expanded-blueprint architecture issues:
+  - created `#335`, `#336`, `#337`, `#338`, `#339`, `#340`, `#341`
 - updated wave index issue:
   - `#107`
 - seeded GitHub productization issues:
@@ -212,6 +226,7 @@ The 2026-03-07 full-source audit found three buckets:
 - spot-checked GitHub Project v2 metadata via `gh api graphql`
   - confirmed new wave issues auto-added with `Status=Pending`
   - synchronized `Priority III` / `Priority IV` project-field values for `#329` to `#334` to match their labels
+  - synchronized `Priority IV` / `Priority V` project-field values for `#335` to `#341` to match their labels
   - confirmed new wave issues and updated `#96` / `#100` carry `Priority II`
   - confirmed `#107` remains `Priority V`
   - detected broader legacy `Priority`-field drift outside this new wave; treated as a separate follow-up concern rather than expanding this pass into a full historical cleanup
@@ -269,7 +284,8 @@ The 2026-03-07 full-source audit found three buckets:
 
 ## Next Actions
 
-1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`, `#318`, and `#107` synchronized if the Wave I slice map changes.
+1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`, and `#107` synchronized if the wave map changes.
 2. Keep `#329` to `#334` subordinated to Wave I so the secondary follow-through does not compete with the main productization tranche.
-3. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
-4. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.
+3. Keep `#335` to `#341` subordinated to Wave Q so the remaining expanded-blueprint architecture stays future-facing and bounded.
+4. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
+5. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.

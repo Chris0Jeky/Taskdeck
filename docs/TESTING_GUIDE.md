@@ -48,6 +48,15 @@ Planned high-signal additions when the productization wave ships:
 - board action rail coverage
 - first-run golden-path Playwright smoke
 
+Telemetry and release-gate follow-through from the expanded blueprint:
+
+- product telemetry/event taxonomy is now explicitly tracked in `#341` with reuse of `#77` and `#328`
+- keep event names privacy-safe and product-shaped (for example `home_loaded`, `today_loaded`, `capture_created`, `proposal_opened`, `proposal_approved`, `board_action_capture_here_clicked`, `workspace_mode_changed`, `agent_run_started`, `agent_run_completed`, `agent_run_failed`)
+- treat launch framing as evidence gates, not marketing labels:
+  - `R1` novice-first beta -> coherent `Home -> capture -> review -> execute -> board` path
+  - `R2` agent foundation alpha -> inspectable runs, policies, and bounded templates
+  - `R3` knowledge/integrations alpha -> durable searchable context plus supervised connector flows
+
 ## Backend Commands
 
 Run full backend verification (recommended):

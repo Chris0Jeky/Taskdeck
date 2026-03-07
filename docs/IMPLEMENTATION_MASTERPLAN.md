@@ -408,6 +408,14 @@ Operational planning rules from this pivot:
 4. Reuse existing backlog items where overlap is real (`#96`, `#93`, `#100`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`) instead of duplicating scope.
 5. Keep the seeded productization wave (`#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, `#328`) synchronized in `#107` before promoting more disconnected UX or future-breadth items.
 
+Decision rules promoted from the expanded blueprint:
+
+- If a feature makes demos better but makes the product harder to understand, it is not done.
+- If a normal happy path depends on raw internal IDs, it is not novice-ready.
+- If a page is empty and offers no next step, it is incomplete.
+- If an agent action cannot be traced to a run, policy posture, and proposal/artifact outcome, it is not ready.
+- Do not let chat-first or disconnected agent-database thinking replace the board/capture/review product core.
+
 Implementation carry-forward from the full source audit:
 
 - treat workspace mode as durable product state; do not let it collapse into local-only view toggles once server-backed preferences become practical
@@ -415,6 +423,7 @@ Implementation carry-forward from the full source audit:
 - keep proposal summary generation in the application layer instead of forcing the frontend to reverse-engineer meaning from low-level operations
 - keep board-aware action-rail behavior explicit (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) so board context actually travels
 - the secondary follow-through set from the audit is now seeded as `#329` to `#334`; keep it below Wave I and reuse anchors such as `#216`, `#77`, `#93`, `#98`, `#311`, `#75`, `#218`, and `#219` instead of duplicating their scope
+- the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`; keep it below Wave Q and reuse anchors such as `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, and `#328` instead of stretching Wave I issues beyond their productization purpose
 
 ## Roadmap by Horizon
 
@@ -501,6 +510,29 @@ These continue in parallel where they protect trust, performance, or operator po
 - platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
 - deferred outreach CRM expansion: `#262` to `#268`
 
+## Release Framing
+
+- `R1` novice-first beta:
+  - `Home`
+  - `Today`
+  - `Review`
+  - onboarding/help coherence
+  - readable proposals
+  - board-centered action rails
+  - no raw-ID requirements in common flows
+- `R2` agent foundation alpha:
+  - `AgentProfile`
+  - `AgentRun`
+  - `AgentRunEvent`
+  - tool registry and policy evaluator
+  - first bounded template
+  - inspectable run detail
+- `R3` knowledge/integrations alpha:
+  - `KnowledgeDocument` / `KnowledgeChunk`
+  - SQLite FTS search
+  - integrations registry
+  - at least two meaningful supervised inbound context/capture paths
+
 ## Active Backlog (Priority-Labeled)
 
 ### Priority I (Current Phase 4 Completion Path)
@@ -544,10 +576,12 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#330` in-app demoability and live attention cues
   - `#331` demo director reporting/assertions/presets/soak
   - `#332` replay-from-trace and scenario-authoring follow-through
-- Planned seeding from the 2026-03-07 MVP expansion integration (not yet created as numbered issues):
-  - agent workspace foundation (`AgentProfile`, `AgentRun`, `AgentRunEvent`, tool registry, policies, first agent template, agent views)
-  - broader local-first knowledge and integrations product surface (`KnowledgeDocument`, SQLite FTS search, deeper transcript/clip intake architecture, integrations registry page) beyond the narrower follow-through already captured in `#334`
-- Reuse-before-duplicate candidates for that later seeding pass: `#75`, `#97`, `#98`, `#218`, `#219`
+- Seeded expanded-blueprint architecture wave (future agent/knowledge/release-gate follow-through):
+  - `#335` tracker
+  - `#336` agent profile/run/event foundation
+  - `#337` tool registry, policy evaluator, and first bounded template
+  - `#339` knowledge document + SQLite FTS foundation
+- Reuse-before-duplicate anchors for this later wave: `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, `#328`
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
@@ -558,6 +592,9 @@ These continue in parallel where they protect trust, performance, or operator po
 - Lower-priority secondary MVP follow-through continuation:
   - `#333` saved views and productivity shortcuts
   - `#334` note-style import and clip intake follow-through
+- Expanded-blueprint architecture continuation:
+  - `#338` agent mode surfaces and run-detail timeline
+  - `#340` integrations registry and supervised connector foundation
 - Optional premium UI documentation/component tooling: `#251`
 - Developer/user docs maturity: `#99`, `#216`, `#217`
 - Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
@@ -568,6 +605,8 @@ These continue in parallel where they protect trust, performance, or operator po
 ### Priority V (Meta/Historical)
 
 - Wave index and historical/closed tracking: `#107` and completed governance items.
+- Expanded-blueprint launch-gate/telemetry framing continuation:
+  - `#341` product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through
 
 ## Research Reconciliation (WIP PDFs, Feb 2026)
 
