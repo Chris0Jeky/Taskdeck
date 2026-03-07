@@ -3,7 +3,6 @@ using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
-using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
@@ -19,7 +18,6 @@ public class WorkspaceServiceTests
     private readonly Mock<ICardRepository> _cardRepositoryMock = new();
     private readonly Mock<ILlmQueueRepository> _llmQueueRepositoryMock = new();
     private readonly Mock<IAutomationProposalRepository> _proposalRepositoryMock = new();
-    private readonly Mock<IAuthorizationService> _authorizationServiceMock = new();
     private readonly WorkspaceService _service;
 
     public WorkspaceServiceTests()
@@ -30,26 +28,37 @@ public class WorkspaceServiceTests
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.LlmQueue).Returns(_llmQueueRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.AutomationProposals).Returns(_proposalRepositoryMock.Object);
         _unitOfWorkMock.Setup(unitOfWork => unitOfWork.SaveChangesAsync(default)).ReturnsAsync(1);
+
         _userPreferenceRepositoryMock
             .Setup(repository => repository.AddAsync(It.IsAny<UserPreference>(), default))
             .ReturnsAsync((UserPreference preference, CancellationToken _) => preference);
+
         _proposalRepositoryMock
             .Setup(repository => repository.GetByUserIdAsync(It.IsAny<Guid>(), int.MaxValue, default))
             .ReturnsAsync([]);
+        _proposalRepositoryMock
+            .Setup(repository => repository.CountPendingReviewByUserIdAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync(0);
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasReviewedByUserIdAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync(false);
+
         _llmQueueRepositoryMock
             .Setup(repository => repository.GetByUserAsync(It.IsAny<Guid>(), default))
             .ReturnsAsync([]);
+
         _boardRepositoryMock
-            .Setup(repository => repository.SearchIdsAsync(null, false, default))
+            .Setup(repository => repository.CountReadableByUserIdAsync(It.IsAny<Guid>(), false, default))
+            .ReturnsAsync(0);
+        _boardRepositoryMock
+            .Setup(repository => repository.GetReadableByUserIdAsync(It.IsAny<Guid>(), false, default))
             .ReturnsAsync([]);
-        _authorizationServiceMock
-            .Setup(service => service.GetReadableBoardIdsAsync(It.IsAny<Guid>(), It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>()));
+
         _cardRepositoryMock
             .Setup(repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
             .ReturnsAsync([]);
 
-        _service = new WorkspaceService(_unitOfWorkMock.Object, _authorizationServiceMock.Object);
+        _service = new WorkspaceService(_unitOfWorkMock.Object);
     }
 
     [Fact]
@@ -71,6 +80,53 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetPreferencesAsync_ShouldUseLightweightOnboardingQueries()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+        _boardRepositoryMock
+            .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(1);
+
+        var result = await _service.GetPreferencesAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UserId.Should().Be(userId);
+        _proposalRepositoryMock.Verify(
+            repository => repository.GetByUserIdAsync(userId, int.MaxValue, default),
+            Times.Never);
+        _boardRepositoryMock.Verify(
+            repository => repository.GetReadableByUserIdAsync(userId, false, default),
+            Times.Never);
+        _cardRepositoryMock.Verify(
+            repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetPreferencesAsync_ShouldReturnPersistedPreference_WhenConcurrentCreateWins()
+    {
+        var userId = Guid.NewGuid();
+        var persistedPreference = new UserPreference(userId, WorkspaceMode.Guided);
+
+        _userPreferenceRepositoryMock
+            .SetupSequence(repository => repository.GetByUserIdAsync(userId, default))
+            .ReturnsAsync((UserPreference?)null)
+            .ReturnsAsync(persistedPreference);
+
+        var result = await _service.GetPreferencesAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UserId.Should().Be(userId);
+        result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Guided);
+        _userPreferenceRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, default), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task UpdatePreferencesAsync_ShouldReturnValidationError_WhenModeIsInvalid()
     {
         var result = await _service.UpdatePreferencesAsync(Guid.NewGuid(), new UpdateWorkspacePreferenceDto("unsupported"));
@@ -78,6 +134,33 @@ public class WorkspaceServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("guided, workbench, agent");
+    }
+
+    [Fact]
+    public async Task UpdatePreferencesAsync_ShouldUpdateModeWithoutLoadingFullWorkspaceAggregate()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+
+        var result = await _service.UpdatePreferencesAsync(
+            userId,
+            new UpdateWorkspacePreferenceDto(WorkspaceModeContract.Agent));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Agent);
+        _proposalRepositoryMock.Verify(
+            repository => repository.GetByUserIdAsync(userId, int.MaxValue, default),
+            Times.Never);
+        _boardRepositoryMock.Verify(
+            repository => repository.GetReadableByUserIdAsync(userId, false, default),
+            Times.Never);
+        _cardRepositoryMock.Verify(
+            repository => repository.GetByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default),
+            Times.Never);
     }
 
     [Fact]
@@ -95,47 +178,21 @@ public class WorkspaceServiceTests
         var failedCapture = CreateCaptureRequest(userId, RequestStatus.Failed);
         var proposalCreatedCapture = CreateCaptureRequest(userId, RequestStatus.Completed, Guid.NewGuid());
 
-        var pendingProposal = new AutomationProposal(
-            ProposalSourceType.Queue,
-            userId,
-            "Pending proposal",
-            RiskLevel.Low,
-            Guid.NewGuid().ToString("N"),
-            boardA.Id);
-        var approvedProposal = new AutomationProposal(
-            ProposalSourceType.Queue,
-            userId,
-            "Approved proposal",
-            RiskLevel.Low,
-            Guid.NewGuid().ToString("N"),
-            boardA.Id);
-        approvedProposal.Approve(userId);
-        var anotherPendingProposal = new AutomationProposal(
-            ProposalSourceType.Chat,
-            userId,
-            "Another pending proposal",
-            RiskLevel.Medium,
-            Guid.NewGuid().ToString("N"),
-            boardB.Id);
-
         _userPreferenceRepositoryMock
             .Setup(repository => repository.GetByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
         _boardRepositoryMock
-            .Setup(repository => repository.SearchIdsAsync(null, false, default))
-            .ReturnsAsync([boardA.Id, boardB.Id, Guid.NewGuid()]);
-        _authorizationServiceMock
-            .Setup(service => service.GetReadableBoardIdsAsync(userId, It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { boardA.Id, boardB.Id }));
-        _boardRepositoryMock
-            .Setup(repository => repository.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .Setup(repository => repository.GetReadableByUserIdAsync(userId, false, default))
             .ReturnsAsync([boardA, boardB]);
         _llmQueueRepositoryMock
             .Setup(repository => repository.GetByUserAsync(userId, default))
             .ReturnsAsync([pendingCapture, triagingCapture, triagedCapture, failedCapture, proposalCreatedCapture]);
         _proposalRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, int.MaxValue, default))
-            .ReturnsAsync([pendingProposal, approvedProposal, anotherPendingProposal]);
+            .Setup(repository => repository.CountPendingReviewByUserIdAsync(userId, default))
+            .ReturnsAsync(2);
+        _proposalRepositoryMock
+            .Setup(repository => repository.HasReviewedByUserIdAsync(userId, default))
+            .ReturnsAsync(true);
 
         var result = await _service.GetHomeAsync(userId);
 
@@ -185,13 +242,7 @@ public class WorkspaceServiceTests
             .Setup(repository => repository.GetByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
         _boardRepositoryMock
-            .Setup(repository => repository.SearchIdsAsync(null, false, default))
-            .ReturnsAsync([board.Id]);
-        _authorizationServiceMock
-            .Setup(service => service.GetReadableBoardIdsAsync(userId, It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { board.Id }));
-        _boardRepositoryMock
-            .Setup(repository => repository.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .Setup(repository => repository.GetReadableByUserIdAsync(userId, false, default))
             .ReturnsAsync([board]);
         _llmQueueRepositoryMock
             .Setup(repository => repository.GetByUserAsync(userId, default))

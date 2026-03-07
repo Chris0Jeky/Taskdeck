@@ -81,7 +81,7 @@ public class UnitOfWork : IUnitOfWork
         {
             return await _context.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException ex) when (TryResolveDuplicateNotificationDeduplicationConflicts(ex))
+        catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))
         {
             return await _context.SaveChangesAsync(cancellationToken);
         }
@@ -110,6 +110,14 @@ public class UnitOfWork : IUnitOfWork
             await _transaction.DisposeAsync();
             _transaction = null;
         }
+    }
+
+    private bool TryResolveRecoverableUniqueConflicts(DbUpdateException exception)
+    {
+        var resolvedNotificationConflict = TryResolveDuplicateNotificationDeduplicationConflicts(exception);
+        var resolvedUserPreferenceConflict = TryResolveDuplicateUserPreferenceConflicts(exception);
+
+        return resolvedNotificationConflict || resolvedUserPreferenceConflict;
     }
 
     private bool TryResolveDuplicateNotificationDeduplicationConflicts(DbUpdateException exception)
@@ -142,6 +150,33 @@ public class UnitOfWork : IUnitOfWork
         return duplicateNotificationFound;
     }
 
+    private bool TryResolveDuplicateUserPreferenceConflicts(DbUpdateException exception)
+    {
+        if (!IsUserPreferenceUniqueViolation(exception))
+            return false;
+
+        var duplicatePreferenceFound = false;
+        var pendingPreferences = _context.ChangeTracker
+            .Entries<UserPreference>()
+            .Where(entry => entry.State == EntityState.Added)
+            .ToList();
+
+        foreach (var pendingPreference in pendingPreferences)
+        {
+            var duplicateExists = _context.UserPreferences
+                .AsNoTracking()
+                .Any(preference => preference.UserId == pendingPreference.Entity.UserId);
+
+            if (!duplicateExists)
+                continue;
+
+            pendingPreference.State = EntityState.Detached;
+            duplicatePreferenceFound = true;
+        }
+
+        return duplicatePreferenceFound;
+    }
+
     private static bool IsNotificationDeduplicationUniqueViolation(DbUpdateException exception)
     {
         if (exception.InnerException is null)
@@ -152,6 +187,19 @@ public class UnitOfWork : IUnitOfWork
             StringComparison.OrdinalIgnoreCase)
             || exception.InnerException.Message.Contains(
                 "IX_Notifications_UserId_DeduplicationKey",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsUserPreferenceUniqueViolation(DbUpdateException exception)
+    {
+        if (exception.InnerException is null)
+            return false;
+
+        return exception.InnerException.Message.Contains(
+            "UserPreferences.UserId",
+            StringComparison.OrdinalIgnoreCase)
+            || exception.InnerException.Message.Contains(
+                "IX_UserPreferences_UserId",
                 StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -4,6 +4,17 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../types/automation'
 import ReviewView from '../../views/ReviewView.vue'
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+
+  return { promise, resolve, reject }
+}
+
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
   approveProposal: vi.fn(),
@@ -172,5 +183,62 @@ describe('ReviewView', () => {
     await mountAt('/workspace/review#proposal-proposal-42')
 
     expect(scrollSpy).toHaveBeenCalled()
+  })
+
+  it('keeps the newest diff response when requests resolve out of order', async () => {
+    const proposalA = buildProposal({ id: 'proposal-a', summary: 'Proposal A' })
+    const proposalB = buildProposal({ id: 'proposal-b', summary: 'Proposal B' })
+    const diffA = createDeferred<string>()
+    const diffB = createDeferred<string>()
+
+    mocks.getProposals.mockResolvedValue([proposalA, proposalB])
+    mocks.getProposalDiff.mockImplementation((proposalId: string) =>
+      proposalId === 'proposal-a' ? diffA.promise : diffB.promise)
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    await wrapper.get('#proposal-proposal-a').findAll('button')[0]!.trigger('click')
+    await wrapper.get('#proposal-proposal-b').findAll('button')[0]!.trigger('click')
+    expect(wrapper.find('.td-review-card__diff').exists()).toBe(false)
+
+    diffB.resolve('diff-b')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('#proposal-proposal-b').text()).toContain('diff-b')
+
+    diffA.resolve('diff-a')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('diff-b')
+    expect(wrapper.text()).not.toContain('diff-a')
+  })
+
+  it('ignores stale diff errors after a newer proposal is selected', async () => {
+    const proposalA = buildProposal({ id: 'proposal-a', summary: 'Proposal A' })
+    const proposalB = buildProposal({ id: 'proposal-b', summary: 'Proposal B' })
+    const diffA = createDeferred<string>()
+    const diffB = createDeferred<string>()
+
+    mocks.getProposals.mockResolvedValue([proposalA, proposalB])
+    mocks.getProposalDiff.mockImplementation((proposalId: string) =>
+      proposalId === 'proposal-a' ? diffA.promise : diffB.promise)
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    await wrapper.get('#proposal-proposal-a').findAll('button')[0]!.trigger('click')
+    await wrapper.get('#proposal-proposal-b').findAll('button')[0]!.trigger('click')
+
+    diffB.resolve('diff-b')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    diffA.reject(new Error('late failure'))
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('diff-b')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 })

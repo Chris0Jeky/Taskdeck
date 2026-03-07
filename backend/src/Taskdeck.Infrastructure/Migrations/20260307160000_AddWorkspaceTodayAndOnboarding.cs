@@ -29,7 +29,10 @@ namespace Taskdeck.Infrastructure.Migrations
                 type: "TEXT",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Active");
+
+            migrationBuilder.Sql(
+                "UPDATE UserPreferences SET OnboardingVisibility = 'Active' WHERE OnboardingVisibility IS NULL OR OnboardingVisibility = '';");
         }
 
         /// <inheritdoc />

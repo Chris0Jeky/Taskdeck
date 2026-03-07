@@ -92,6 +92,24 @@ public class ProposalHousekeepingWorkerTests
             return Task.FromResult<IEnumerable<AutomationProposal>>(_proposals.Take(limit).ToList());
         }
 
+        public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_proposals.Count(proposal =>
+                proposal.RequestedByUserId == userId &&
+                proposal.Status == ProposalStatus.PendingReview));
+        }
+
+        public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_proposals.Any(proposal =>
+                proposal.RequestedByUserId == userId &&
+                proposal.Status is ProposalStatus.Approved
+                    or ProposalStatus.Rejected
+                    or ProposalStatus.Applied
+                    or ProposalStatus.Failed
+                    or ProposalStatus.Expired));
+        }
+
         public Task<AutomationProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_proposals.SingleOrDefault(proposal => proposal.Id == id));

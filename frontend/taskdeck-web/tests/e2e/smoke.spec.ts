@@ -83,7 +83,9 @@ async function addColumn(page: Page, columnName: string) {
 async function addCard(page: Page, columnName: string, cardTitle: string) {
   const column = columnByName(page, columnName)
   await column.getByRole('button', { name: 'Add Card' }).click()
-  await column.getByPlaceholder('Enter card title...').fill(cardTitle)
+  const addCardInput = column.getByPlaceholder('Enter card title...')
+  await expect(addCardInput).toBeVisible()
+  await addCardInput.fill(cardTitle)
   await column.getByRole('button', { name: 'Add', exact: true }).click()
 }
 

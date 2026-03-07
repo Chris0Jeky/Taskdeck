@@ -26,6 +26,18 @@ const showGrantForm = ref(false)
 const granting = ref(false)
 
 const roles: BoardRole[] = ['Owner', 'Admin', 'Editor', 'Viewer']
+const accessBusy = computed(() => loadingBoards.value || permissions.loading)
+const refreshAccessLabel = computed(() => {
+  if (permissions.loading) {
+    return 'Refreshing...'
+  }
+
+  if (loadingBoards.value) {
+    return 'Loading boards...'
+  }
+
+  return 'Refresh Access'
+})
 
 const boardOptions = computed(() => {
   const options = [...availableBoards.value]
@@ -76,24 +88,23 @@ async function fetchAccessList() {
 
 onMounted(async () => {
   await loadBoards()
-  await fetchAccessList()
 })
 
 watch(
   () => props.boardId,
   (boardId) => {
-    if (!boardId) return
-    activeBoardId.value = boardId
-    fetchAccessList()
+    const normalizedBoardId = boardId?.trim()
+    if (!normalizedBoardId || normalizedBoardId === activeBoardId.value.trim()) return
+    activeBoardId.value = normalizedBoardId
   }
 )
 
 watch(
   () => route.query.boardId,
   (boardId) => {
-    if (typeof boardId !== 'string' || !boardId.trim()) return
-    activeBoardId.value = boardId.trim()
-    fetchAccessList()
+    const normalizedBoardId = typeof boardId === 'string' ? boardId.trim() : ''
+    if (!normalizedBoardId || normalizedBoardId === activeBoardId.value.trim()) return
+    activeBoardId.value = normalizedBoardId
   }
 )
 
@@ -104,7 +115,7 @@ watch(activeBoardId, (boardId, previousBoardId) => {
   }
 
   void fetchAccessList()
-})
+}, { immediate: true })
 
 async function handleGrant() {
   if (!activeBoardId.value.trim()) {
@@ -170,8 +181,8 @@ function openRoute(path: string) {
       </div>
 
       <div class="td-access__hero-actions">
-        <button class="td-btn td-btn--primary" :disabled="loadingBoards" @click="fetchAccessList">
-          {{ permissions.loading ? 'Refreshing...' : 'Refresh Access' }}
+        <button class="td-btn td-btn--primary" :disabled="accessBusy" @click="fetchAccessList">
+          {{ refreshAccessLabel }}
         </button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/boards')">Open Boards</button>
       </div>
