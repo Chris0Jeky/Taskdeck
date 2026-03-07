@@ -16,7 +16,7 @@ It replaces ad-hoc interpretation of long chat transcripts with:
 
 ## Canonical Inputs
 
-- Curated summary (current): `docs/temp_description.txt`
+- Curated summary (current): `docs/archive/2026-03-07_docs-root-reorg/temp_description.txt`
 - Curated summary snapshot: `docs/archive/temp_description_curated_2026-03-02.txt`
 - Expansion folders:
   - `C:\Users\jekyt\source\TaskdeckDemoExpansion\v0\Taskdeck-main`
@@ -63,7 +63,7 @@ Key capabilities:
 - scenario schema (`schema.v1.json`)
 - JSON scenarios for engineering/support/content
 - autopilot supports capture loop and mixed loop
-- scenario docs (`docs/SCENARIOS.md`)
+- scenario docs (`docs/product/SCENARIOS.md`)
 
 ## v3 (advanced v3)
 
@@ -83,7 +83,7 @@ Key capabilities:
 
 Added:
 - `demo/http/taskdeck-demo.http`
-- `docs/DOGFOODING_GUIDE.md`
+- `docs/product/DOGFOODING_GUIDE.md`
 - `docs/USER_MANUAL.md`
 - `frontend/taskdeck-web/scripts/demo-autopilot.mjs`
 - `frontend/taskdeck-web/scripts/demo-lib.mjs`
@@ -94,7 +94,7 @@ Added:
 - `frontend/taskdeck-web/tests/e2e/stakeholder-demo.spec.ts`
 
 Modified:
-- `docs/DEMO_PLAYBOOK.md`
+- `docs/product/DEMO_PLAYBOOK.md`
 - `docs/INDEX.md`
 - `frontend/taskdeck-web/package.json`
 - `frontend/taskdeck-web/scripts/demo-seed.mjs`
@@ -104,7 +104,7 @@ Modified:
 ## v1 -> v2 (confirmed diff)
 
 Added:
-- `docs/SCENARIOS.md`
+- `docs/product/SCENARIOS.md`
 - `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`
 - `frontend/taskdeck-web/scripts/scenarios-json/content-calendar.json`
 - `frontend/taskdeck-web/scripts/scenarios-json/engineering-sprint.json`
@@ -112,7 +112,7 @@ Added:
 - `frontend/taskdeck-web/scripts/scenarios-json/support-triage.json`
 
 Modified:
-- `docs/DEMO_PLAYBOOK.md`
+- `docs/product/DEMO_PLAYBOOK.md`
 - `frontend/taskdeck-web/scripts/demo-autopilot.mjs`
 - `frontend/taskdeck-web/scripts/demo-lib.mjs`
 - `frontend/taskdeck-web/scripts/demo-run.mjs`
@@ -127,7 +127,7 @@ Added:
 
 Modified:
 - `demo/http/taskdeck-demo.http`
-- `docs/DEMO_PLAYBOOK.md`
+- `docs/product/DEMO_PLAYBOOK.md`
 - `frontend/taskdeck-web/package.json`
 - `frontend/taskdeck-web/scripts/demo-autopilot.mjs`
 - `frontend/taskdeck-web/scripts/demo-lib.mjs`
@@ -142,7 +142,7 @@ Modified:
 
 These are foundational changes carried forward into later versions:
 
-- `docs/DEMO_PLAYBOOK.md` (introduced in v0)
+- `docs/product/DEMO_PLAYBOOK.md` (introduced in v0)
 - `frontend/taskdeck-web/scripts/demo-seed.mjs` (introduced in v0)
 - `frontend/taskdeck-web/package.json` (adds `demo:seed`)
 - `frontend/taskdeck-web/src/types/feature-flags.ts` (advanced surfaces default to `false`)

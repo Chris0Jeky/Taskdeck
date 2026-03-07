@@ -103,7 +103,7 @@ Current shipped runtime:
 - `OpenAI` and `Gemini` are supported behind explicit config gates.
 - managed-key abuse-control strategy wave is tracked in `#235` to `#240`.
 
-Use `docs/LLM_PROVIDER_SETUP_GUIDE.md` for:
+Use `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for:
 - current demo setup with OpenAI
 - provider-agnostic runtime plan (`OpenAI` + `Gemini`)
 - security/reliability constraints for live-provider usage
@@ -134,7 +134,7 @@ powershell -File ./scripts/deploy/Stop-TaskdeckStack.ps1
 Container entrypoint URL:
 - Reverse proxy: `http://localhost:8080`
 
-For TLS assumptions, forwarded-header posture, staging bootstrap steps, and artifact packaging, see `docs/DEPLOYMENT_CONTAINERS.md`.
+For TLS assumptions, forwarded-header posture, staging bootstrap steps, and artifact packaging, see `docs/ops/DEPLOYMENT_CONTAINERS.md`.
 
 ## Test Commands
 
