@@ -28,6 +28,7 @@ const proposalsLoading = ref(false)
 const proposalActionBusyId = ref<string | null>(null)
 const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
+let latestDiffRequestId = 0
 
 const summaryCards = computed<ReviewSummaryCard[]>(() => {
   const pendingReview = proposals.value.filter(
@@ -162,15 +163,29 @@ async function handleExecuteProposal(proposalId: string) {
 
 async function handleToggleDiff(proposalId: string) {
   if (selectedDiffProposalId.value === proposalId) {
+    latestDiffRequestId += 1
     selectedDiffProposalId.value = null
     selectedDiff.value = null
     return
   }
 
+  const requestId = ++latestDiffRequestId
+
   try {
     selectedDiffProposalId.value = proposalId
-    selectedDiff.value = await automationApi.getProposalDiff(proposalId)
+    selectedDiff.value = null
+
+    const diff = await automationApi.getProposalDiff(proposalId)
+    if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) {
+      return
+    }
+
+    selectedDiff.value = diff
   } catch (e: unknown) {
+    if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) {
+      return
+    }
+
     selectedDiffProposalId.value = null
     selectedDiff.value = null
     toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)

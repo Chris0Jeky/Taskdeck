@@ -1,7 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardAccessView from '../../views/BoardAccessView.vue'
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+
+  return { promise, resolve }
+}
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -88,6 +97,8 @@ function seedBoards() {
   ]
 }
 
+let mountedWrapper: ReturnType<typeof mount> | null = null
+
 describe('BoardAccessView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -104,11 +115,18 @@ describe('BoardAccessView', () => {
     boardsApiMocks.getBoards.mockResolvedValue(seedBoards())
   })
 
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
+  })
+
   it('defaults to the first board from the selector and avoids a raw board-id input', async () => {
     const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
     await waitForUi()
 
     expect(boardsApiMocks.getBoards).toHaveBeenCalledTimes(1)
+    expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledTimes(1)
     expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledWith('board-1')
     expect(wrapper.find('#board-selector').exists()).toBe(true)
     expect(wrapper.find('input[placeholder="Enter board ID"]').exists()).toBe(false)
@@ -117,6 +135,7 @@ describe('BoardAccessView', () => {
 
   it('fetches the selected board access list when the selector changes', async () => {
     const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
     await waitForUi()
 
     const selector = wrapper.get('#board-selector')
@@ -127,10 +146,62 @@ describe('BoardAccessView', () => {
     expect(wrapper.text()).toContain('user-2')
   })
 
+  it('fetches access once when the boardId prop changes', async () => {
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+    permissionsStore.fetchBoardAccess.mockClear()
+
+    await wrapper.setProps({ boardId: 'board-2' })
+    await waitForUi()
+
+    expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledTimes(1)
+    expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledWith('board-2')
+  })
+
+  it('fetches access once when the route query changes', async () => {
+    mountedWrapper = mount(BoardAccessView)
+    await waitForUi()
+    permissionsStore.fetchBoardAccess.mockClear()
+
+    routeMock.query = { boardId: 'board-2' }
+    await waitForUi()
+
+    expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledTimes(1)
+    expect(permissionsStore.fetchBoardAccess).toHaveBeenCalledWith('board-2')
+  })
+
+  it('disables refresh while access is already loading', async () => {
+    permissionsStore.loading = true
+
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    const refreshButton = wrapper.findAll('button').find((node) => node.text().includes('Refreshing...'))
+    expect(refreshButton?.attributes('disabled')).toBeDefined()
+  })
+
+  it('disables refresh while boards are loading', async () => {
+    const deferredBoards = createDeferred<ReturnType<typeof seedBoards>>()
+    boardsApiMocks.getBoards.mockReturnValueOnce(deferredBoards.promise)
+
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await Promise.resolve()
+
+    const refreshButton = wrapper.findAll('button').find((node) => node.text().includes('Loading boards...'))
+    expect(refreshButton?.attributes('disabled')).toBeDefined()
+
+    deferredBoards.resolve(seedBoards())
+    await waitForUi()
+  })
+
   it('shows the guided empty state when there are no boards to manage yet', async () => {
     boardsApiMocks.getBoards.mockResolvedValue([])
 
     const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
     await waitForUi()
 
     expect(wrapper.text()).toContain('No boards available yet')
