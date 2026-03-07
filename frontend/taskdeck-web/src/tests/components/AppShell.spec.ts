@@ -137,6 +137,16 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(mockWorkspace.updateMode).not.toHaveBeenCalled()
   })
 
+  it('keeps Review highlighted for the advanced queue route', async () => {
+    mockRoute.path = '/workspace/automations/queue'
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    const reviewLink = wrapper.findAll('a').find((link) => link.attributes('href') === '/workspace/review')
+    expect(reviewLink?.attributes('aria-current')).toBe('page')
+    expect(reviewLink?.classes()).toContain('td-nav-item--active')
+  })
+
   it('toggles command palette with Ctrl+K and closes with Escape', async () => {
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper

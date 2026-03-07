@@ -258,7 +258,9 @@ function isActiveRoute(path: string): boolean {
   }
 
   if (path === '/workspace/review') {
-    return route.path.startsWith('/workspace/review') || route.path.startsWith('/workspace/automations/proposals')
+    return route.path.startsWith('/workspace/review')
+      || route.path.startsWith('/workspace/automations/proposals')
+      || route.path.startsWith('/workspace/automations/queue')
   }
 
   if (path.startsWith('/workspace/automations')) {

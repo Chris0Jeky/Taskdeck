@@ -70,6 +70,12 @@ vi.mock('../../store/toastStore', () => ({
   }),
 }))
 
+vi.mock('../../composables/useErrorMapper', () => ({
+  getErrorDisplay: (error: unknown, fallback: string) => ({
+    message: `${fallback} ${error instanceof Error ? error.message : ''}`.trim(),
+  }),
+}))
+
 async function waitForUi() {
   await Promise.resolve()
   await Promise.resolve()
@@ -218,5 +224,15 @@ describe('BoardAccessView', () => {
     expect(wrapper.text()).toContain('No boards available yet')
     expect(wrapper.text()).toContain('Create a board first')
     expect(wrapper.findAll('button').some((node) => node.text() === 'Create or Open Boards')).toBe(true)
+  })
+
+  it('surfaces the mapped board-load error details', async () => {
+    boardsApiMocks.getBoards.mockRejectedValueOnce(new Error('boom'))
+
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to load boards for access management. boom')
   })
 })
