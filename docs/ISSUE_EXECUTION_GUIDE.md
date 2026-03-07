@@ -75,6 +75,15 @@ Project rule:
 - add the resulting wave to `#107` before active execution begins
 - do not promote agent/knowledge breadth ahead of the novice-first shell and board-centered workflow wave
 
+Implementation note from the full-source audit:
+
+- use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` when executing `#320`, `#324`, `#326`, `#96`, `#100`, and `#328`
+- preserve these carry-forwards explicitly during implementation:
+  - durable workspace-mode preference and aggregate workspace summary APIs
+  - application-layer proposal summary generation plus explicit board-aware action-rail behavior
+  - dismissible in-app help blocks and the `novice-first-first-run` smoke/scenario shape
+- treat the audit’s secondary demoability/harness/productivity follow-through as deferred, not dropped
+
 ## Execution Order (Dependency-Aware)
 
 ### Stage 0: Historical Baseline/Governance (Closed)

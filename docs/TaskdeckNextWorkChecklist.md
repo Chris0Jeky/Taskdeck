@@ -43,6 +43,7 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 
 Detailed reconciliation:
 - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
+- `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
 
 - [ ] Wave I tracker: `#318`
 - [ ] Batch A novice-first shell and entry clarity:
@@ -55,6 +56,12 @@ Detailed reconciliation:
   - `#96` onboarding/contextual help (reused, reprioritized to `Priority II`)
   - `#100` user guides/tutorials/FAQ (reused, reprioritized to `Priority II`)
   - `#328` first-run smoke + launch-criteria guardrail
+- [ ] Wave I implementation carry-forward:
+  - `#320`: durable workspace-mode preference + product-shaped summary endpoint direction
+  - `#324`: onboarding checklist plus first useful project/wizard flow
+  - `#326`: application-layer proposal summaries + explicit board-aware action rail
+  - `#96`: dismissible in-app help blocks/help-center direction
+  - `#328`: `novice-first-first-run` scenario shape and launch-criteria sync
 - [ ] Batch D agent substrate:
   - profiles
   - runs
@@ -69,6 +76,11 @@ Detailed reconciliation:
 
 Related reuse anchors that stay outside the immediate Wave I execution core:
 - [ ] `#93`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`
+
+Secondary deferred set preserved by the audit and still needing later disposition:
+- [ ] `Demo Tools`, guided narrative/demo tour, nav badges, hero-board quality
+- [ ] HTML report, snapshot/trace assertions, presets/soak, replay-from-trace, scenario composer
+- [ ] saved views and broader import-surface follow-through
 
 ## Out-of-Code and Configuration Actions Coverage
 

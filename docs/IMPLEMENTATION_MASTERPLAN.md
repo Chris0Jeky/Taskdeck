@@ -408,16 +408,25 @@ Operational planning rules from this pivot:
 4. Reuse existing backlog items where overlap is real (`#96`, `#93`, `#100`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`) instead of duplicating scope.
 5. Keep the seeded productization wave (`#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, `#328`) synchronized in `#107` before promoting more disconnected UX or future-breadth items.
 
+Implementation carry-forward from the full source audit:
+
+- treat workspace mode as durable product state; do not let it collapse into local-only view toggles once server-backed preferences become practical
+- prefer aggregated product-shaped APIs for `Home`, `Today`, `Review`, and board summary needs over client-side fetch fan-out
+- keep proposal summary generation in the application layer instead of forcing the frontend to reverse-engineer meaning from low-level operations
+- keep board-aware action-rail behavior explicit (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) so board context actually travels
+- preserve the secondary deferred set from the audit (`Demo Tools`, guided narrative/demo tour, nav badges, hero-board quality, HTML report, snapshot/trace assertions, presets/soak, replay-from-trace, scenario composer, saved views`) as later follow-through rather than letting it disappear
+
 ## Roadmap by Horizon
 
 ### Horizon A (Week 1 to 2): Novice-First Shell and Entry Clarity
 
 Focus:
-- add workspace mode preference (`guided`, `workbench`, `agent`) and persist it as product state
+- add workspace mode preference (`guided`, `workbench`, `agent`) and persist it as durable product state
 - add a true start surface (`Home`) instead of dropping every user into an implementation-shaped boards list
 - make `Review` the primary normal-user automation surface and keep queue explicitly advanced
 - replace dead-end empty states with action-oriented help blocks on primary pages
 - replace raw board-ID happy paths with selectors/pickers in common flows
+- prefer aggregate/product-shaped APIs for shell summaries instead of client-side stitching
 
 Exit Criteria:
 - a guided-mode user lands on a product-shaped entry surface
@@ -431,7 +440,7 @@ Focus:
 - add `Today` as a compact daily agenda surface
 - add first-run onboarding checklist and project creation wizard
 - add proposal summary service and readable proposal cards with plain-language summaries, risk, and deep links
-- add board action rails so capture/chat/review follow the current board context by default
+- add board action rails so capture/chat/review follow the current board context by default (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`)
 - strengthen deep links across inbox, review, notifications, activity, and resulting boards/cards
 
 Exit Criteria:
@@ -447,6 +456,7 @@ Focus:
 - reshape the manual and index around top-level navigation and user goals
 - add a required first-run golden-path smoke test
 - define product-shaped telemetry and launch criteria for novice beta and later agent alpha
+- treat the staged `novice-first-first-run` scenario shape as the acceptance target for the eventual first-run smoke path
 - keep demo tooling as evidence and acceptance support rather than the main onboarding path
 
 Exit Criteria:

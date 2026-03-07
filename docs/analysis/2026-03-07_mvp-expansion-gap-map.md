@@ -35,6 +35,26 @@ That product-legibility wave is now seeded as one coherent execution wave on Git
 - `#100` `DOC-04` user guides/tutorials/FAQ (reused and reprioritized)
 - `#328` `TST-20` first-run smoke + launch-criteria guardrail
 
+Full-source audit companion:
+
+- `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
+
+Audit addendum:
+
+- the Wave I productization core is represented well enough to execute
+- the full source corpus still contains a second-order deferred set that should not be treated as “handled” just because it is not in Wave I:
+  - `Demo Tools`
+  - guided narrative/demo-tour mode
+  - nav badges
+  - hero-board quality
+  - HTML report
+  - snapshot/trace assertions
+  - director presets and soak mode
+  - replay-from-trace
+  - internal scenario composer/editor
+  - saved views
+- the expanded pack’s concrete agent and knowledge/integration issue shapes are still not seeded as numbered issues
+
 ## What Already Overlaps
 
 ### Reuse candidates with real overlap
@@ -136,7 +156,8 @@ Effectively unseeded:
 
 Current issue coverage:
 
-- no meaningful current issue coverage
+- horizon-only coverage in `docs/IMPLEMENTATION_MASTERPLAN.md` and `docs/TaskdeckNextWorkChecklist.md`
+- no meaningful current numbered issue coverage
 
 ### Batch E: knowledge and integrations surface
 
@@ -151,6 +172,27 @@ Current issue coverage:
 
 - `#75`, `#98`, `#218`, `#219` are the main reuse anchors
 - no product-facing knowledge/integrations wave exists yet
+
+### Secondary deferred carry-forward from the full audit
+
+These are not Wave I blockers, but they were real recommendations in the source corpus and should remain visible until they are either seeded or intentionally discarded:
+
+- product evidence/demoability:
+  - in-app `Demo Tools`
+  - guided narrative/demo-tour mode
+  - nav badges
+  - hero-board quality
+- harness maturity:
+  - static HTML demo report
+  - snapshot assertions
+  - trace assertions
+  - director presets
+  - soak mode
+  - replay-from-trace
+  - scenario composer/editor
+- day-to-day productivity follow-through:
+  - saved views
+  - broader import surfaces beyond current anchors
 
 ## Recommended Seeding Order
 
@@ -203,6 +245,7 @@ Recommended release framing from the expansion package:
 ## Operational Seeding Rules
 
 - Keep the seeded productization wave indexed in `#107` before active execution begins.
+- Use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` as the audit ledger for anything that was promoted only partially or explicitly deferred.
 - Reuse the overlap issues above instead of cloning scope into disconnected new tickets.
 - Keep `MINIMAL` as the near-horizon filter when `EXPANDED` suggests broader future breadth.
 - Do not let plugin/connector/agent breadth outrun `Home` / `Today` / `Review` productization.

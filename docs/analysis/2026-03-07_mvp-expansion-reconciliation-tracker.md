@@ -2,7 +2,7 @@
 
 Date: 2026-03-07
 Branch: `docs/mvp-expansion-reconciliation`
-Status: Verification complete
+Status: Coverage audit complete; secondary carry-forward preserved
 
 ## Purpose
 
@@ -126,6 +126,29 @@ It needs a product-legibility correction that turns the current harness and capt
 - `docs/START_HERE.md` now bridges repo setup, product thesis, seeded demo flow, and the current golden path.
 - `USER_MANUAL.md`, `DOGFOODING_GUIDE.md`, and `DEMO_PLAYBOOK.md` now distinguish the normal capture/review/board path from advanced/operator surfaces.
 - `INDEX.md` now includes audience-first read paths.
+- Full-source coverage now has a dedicated audit ledger:
+  - `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
+
+### Coverage audit addendum
+
+The 2026-03-07 full-source audit found three buckets:
+
+1. Promoted well:
+   - the core `MINIMAL` diagnosis and the Wave I novice-first productization direction
+2. Promoted, but too implicitly:
+   - durable workspace-mode preference
+   - aggregated `Home` / `Today` / `Review` summary APIs
+   - application-layer proposal summary generation
+   - explicit board-aware action-rail behavior
+   - dismissible help-block and help-center shape
+   - first-run scenario shape for the eventual smoke path
+3. Preserved only as deferred/backlog context:
+   - `Demo Tools`
+   - guided narrative/demo-tour mode
+   - nav badges
+   - hero-board quality
+   - HTML report, snapshot/trace assertions, presets, soak, replay-from-trace, scenario composer
+   - unseeded agent substrate and knowledge/integration epics
 
 ### GitHub issue overlap
 
@@ -145,6 +168,13 @@ It needs a product-legibility correction that turns the current harness and capt
 - Updated existing overlap issues in the same pass:
   - `#96` reprioritized to `Priority II` and narrowed to onboarding/help follow-through for the productization wave
   - `#100` reprioritized to `Priority II` and narrowed to user-docs/FAQ follow-through for the productization wave
+- Tightened Wave I issue bodies after the full-source audit so the most useful source-derived details are now carried directly in GitHub:
+  - `#320` durable workspace-mode preference + product-shaped `Home` aggregation
+  - `#324` onboarding/project-wizard clarity
+  - `#326` application-layer proposal summaries + explicit board-aware action rail
+  - `#96` dismissible help blocks
+  - `#100` navigation-shaped docs/manual structure
+  - `#328` `novice-first-first-run` scenario contract
 - Still intentionally not seeded yet:
   - agent profile/run/knowledge foundation slice as described in the new blueprint
 
@@ -153,7 +183,16 @@ It needs a product-legibility correction that turns the current harness and capt
 - listed active docs and MVP expansion folders
 - read `STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, `GOLDEN_PRINCIPLES.md`, `ISSUE_EXECUTION_GUIDE.md`, `TESTING_GUIDE.md`, `MCP_TOOLING_GUIDE.md`, `GITHUB_PROJECT_AUTOMATION.md`
 - reviewed `MINIMAL` and `EXPANDED` master/index files plus key backlog/manual/testing/roadmap sections
+- audited every file under:
+  - `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/`
+  - `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/`
+  - `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/snippets/`
+- extracted headings and snippet payloads to verify no source file was being ignored
 - searched GitHub issues for overlap on onboarding, search, and new productization themes
+- re-read selected issue bodies for reuse-anchor and Wave I scope validation:
+  - `#93`, `#96`, `#100`, `#216`, `#311`, `#318`, `#320`, `#324`, `#326`, `#328`
+- updated Wave I issue bodies to preserve source-audit detail:
+  - `#320`, `#324`, `#326`, `#96`, `#100`, `#328`
 - seeded GitHub productization issues:
   - created `#318`, `#320`, `#322`, `#324`, `#326`, `#328`
   - updated `#96`, `#100`, and `#107`
@@ -216,6 +255,7 @@ It needs a product-legibility correction that turns the current harness and capt
 
 ## Next Actions
 
-1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `#318`, and `#107` synchronized if the Wave I slice map changes.
-2. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
-3. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.
+1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`, `#318`, and `#107` synchronized if the Wave I slice map changes.
+2. Decide whether the secondary deferred backlog from the audit (`Demo Tools`, guided narrative, nav badges, hero-board quality, HTML report, snapshot/trace assertions, presets, soak, replay-from-trace, scenario composer, saved views) should be seeded as a later focused follow-through wave.
+3. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
+4. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.
