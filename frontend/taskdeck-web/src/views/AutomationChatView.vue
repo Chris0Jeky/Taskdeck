@@ -73,7 +73,7 @@ function normalizeSelectedBoardId(rawValue: string): string | null {
 
   const normalized = trimmed.toLowerCase()
   const matchedBoard = availableBoards.value.find((board) => (
-    board.id === trimmed || board.name.trim().toLowerCase() === normalized
+    board.id.toLowerCase() === normalized || board.name.trim().toLowerCase() === normalized
   ))
   return matchedBoard ? matchedBoard.id : null
 }

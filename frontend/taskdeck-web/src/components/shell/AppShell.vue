@@ -351,7 +351,9 @@ function activateSelectedCommand() {
 
 function isTextEntryTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
 }
 
 function handleKeydown(event: KeyboardEvent) {
