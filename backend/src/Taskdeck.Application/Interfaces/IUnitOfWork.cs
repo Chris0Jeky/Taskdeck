@@ -18,6 +18,7 @@ public interface IUnitOfWork
     ICommandRunRepository CommandRuns { get; }
     INotificationRepository Notifications { get; }
     INotificationPreferenceRepository NotificationPreferences { get; }
+    IUserPreferenceRepository UserPreferences { get; }
     IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
     IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
 

@@ -29,6 +29,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<CommandRunLog> CommandRunLogs => Set<CommandRunLog>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<OutboundWebhookSubscription> OutboundWebhookSubscriptions => Set<OutboundWebhookSubscription>();
     public DbSet<OutboundWebhookDelivery> OutboundWebhookDeliveries => Set<OutboundWebhookDelivery>();
 

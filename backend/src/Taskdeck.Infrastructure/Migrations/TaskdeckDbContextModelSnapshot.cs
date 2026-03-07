@@ -905,6 +905,33 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("NotificationPreferences", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.UserPreference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Taskdeck.Domain.Enums.WorkspaceMode>("WorkspaceMode")
+                        .HasConversion<string>()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserPreferences", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.OutboundWebhookDelivery", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1310,6 +1337,17 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Board");
 
                     b.Navigation("CreatedByUser");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.UserPreference", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.AutomationProposal", b =>

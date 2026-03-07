@@ -29,6 +29,7 @@ public class UnitOfWork : IUnitOfWork
         ICommandRunRepository commandRuns,
         INotificationRepository notifications,
         INotificationPreferenceRepository notificationPreferences,
+        IUserPreferenceRepository userPreferences,
         IOutboundWebhookSubscriptionRepository outboundWebhookSubscriptions,
         IOutboundWebhookDeliveryRepository outboundWebhookDeliveries)
     {
@@ -49,6 +50,7 @@ public class UnitOfWork : IUnitOfWork
         CommandRuns = commandRuns;
         Notifications = notifications;
         NotificationPreferences = notificationPreferences;
+        UserPreferences = userPreferences;
         OutboundWebhookSubscriptions = outboundWebhookSubscriptions;
         OutboundWebhookDeliveries = outboundWebhookDeliveries;
     }
@@ -69,6 +71,7 @@ public class UnitOfWork : IUnitOfWork
     public ICommandRunRepository CommandRuns { get; }
     public INotificationRepository Notifications { get; }
     public INotificationPreferenceRepository NotificationPreferences { get; }
+    public IUserPreferenceRepository UserPreferences { get; }
     public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
     public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
 

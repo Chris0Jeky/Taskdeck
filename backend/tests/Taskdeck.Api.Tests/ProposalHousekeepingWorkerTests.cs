@@ -186,6 +186,7 @@ public class ProposalHousekeepingWorkerTests
         public ICommandRunRepository CommandRuns => null!;
         public INotificationRepository Notifications => null!;
         public INotificationPreferenceRepository NotificationPreferences => null!;
+        public IUserPreferenceRepository UserPreferences => null!;
         public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions => null!;
         public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries => null!;
 
