@@ -87,6 +87,7 @@ async function addCard(page: Page, columnName: string, cardTitle: string) {
   await expect(addCardInput).toBeVisible()
   await addCardInput.fill(cardTitle)
   await column.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(cardByTitle(page, cardTitle)).toBeVisible()
 }
 
 async function expectColumnOrder(page: Page, expectedOrder: string[]) {
