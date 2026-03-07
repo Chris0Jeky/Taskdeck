@@ -13,6 +13,21 @@ Track the reconciliation of the new MVP expansion review packs into the active T
 - `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/`
 - `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/`
 
+## Source Inputs
+
+Primary current-doc inputs:
+
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/GOLDEN_PRINCIPLES.md`
+- `docs/ISSUE_EXECUTION_GUIDE.md`
+- `docs/TESTING_GUIDE.md`
+- `docs/MCP_TOOLING_GUIDE.md`
+- `docs/GITHUB_PROJECT_AUTOMATION.md`
+- `docs/INDEX.md`
+- `docs/USER_MANUAL.md`
+- `README.md`
+
 ## Primary Goals
 
 1. Integrate the new novice-first MVP/productization direction into canonical docs.
@@ -26,6 +41,40 @@ Track the reconciliation of the new MVP expansion review packs into the active T
 - Treat the `EXPANDED` pack as the architectural and issue-seeding expansion layer.
 - Keep immediate productization work separate from later agent/knowledge/integration expansion.
 - Avoid rewriting `STATUS.md` as aspiration; put future-facing work in roadmap/backlog docs instead.
+
+## Working Synthesis
+
+### Core conclusion
+
+Taskdeck does not need another broad capability brainstorm before the next delivery cycle.
+It needs a product-legibility correction that turns the current harness and capture strengths into a product that teaches itself:
+
+- novice-first entry point
+- clearer golden path
+- board-centered context travel
+- readable review surface
+- stronger docs/help entry points
+
+### Planning posture adopted for integration
+
+1. Preserve the current product thesis:
+   - capture should stay near-zero friction
+   - automation remains proposal-first and review-first
+   - board execution remains the visible work surface
+2. Reframe the next major work as a staged productization track:
+   - Phase A: novice-first shell and self-explaining UX
+   - Phase B: board-centered daily workflow and review readability
+   - Phase C: only then expand into agent substrate and knowledge/integrations
+3. Keep advanced/operator surfaces visible in docs, but explicitly secondary to the core MVP loop.
+
+### Review-driven priorities promoted into active docs
+
+- Add a first-class `Home` / start-surface direction.
+- Add a `Today` / agenda direction after the start and review surfaces are coherent.
+- Replace raw board-ID happy paths with board pickers/search selectors.
+- Make proposals legible in plain language with stronger next-step links.
+- Require action-oriented empty/help states on main pages.
+- Keep agent/runs/knowledge/integrations as planned expansion, not the immediate MVP cycle.
 
 ## Batch Plan
 
@@ -67,7 +116,7 @@ Track the reconciliation of the new MVP expansion review packs into the active T
 - Consolidated the analysis record to:
   - `docs/analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`
   - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
-- Removed the duplicate interim tracker variant to avoid split continuity records.
+- Removed the duplicate interim tracker variant after preserving its high-signal decisions here.
 
 ## Current Findings
 
@@ -116,7 +165,43 @@ Track the reconciliation of the new MVP expansion review packs into the active T
 - `node scripts/check-docs-governance.mjs` -> passed
 - `node scripts/check-github-ops-governance.mjs` -> passed
 
+## Decision Log
+
+### 2026-03-07
+
+- Adopt `docs/START_HERE.md` as the preferred new bridge-doc entry point.
+- Treat the `MINIMAL` pack as the near-horizon execution filter when `EXPANDED` suggests larger future breadth.
+- Keep agent workspace and knowledge/integrations on the roadmap, but sequence them behind novice-first productization.
+- Use file-scoped or batch-scoped commits instead of one large documentation commit.
+- Add the resulting productization wave to `#107` before active execution begins; do not scatter the new scope across disconnected old issues.
+- Keep a single canonical tracker file and fold continuity-critical detail into it instead of maintaining parallel trackers.
+
+### 2026-03-08 deletion audit
+
+- Re-audited commit `849eaaf` to confirm the deletion of `docs/analysis/2026-03-07_mvp-expansion-integration-tracker.md` was intentional and happened in the original consolidation commit, not during context compaction.
+- Confirmed the surviving reconciliation tracker is the canonical continuity record and already preserves the high-signal synthesis, source inputs, decision log, and commit ledger that mattered operationally.
+- Residual risk from the consolidation was not data loss in Git history; it was future confusion about whether one or two tracker files should remain active. That risk is now treated as resolved: keep only this tracker live.
+- Chosen next seeding shape: one dedicated productization wave tracker plus a small set of focused child issues, while updating overlapping existing issues (`#96`, `#100`, `#107`) instead of cloning their scope into new duplicates.
+
+## Commit Ledger
+
+- `8f407bb` - Add MVP expansion reconciliation tracker
+- `0871cf0` - Add MVP expansion integration tracker
+- `9809cda` - Add MVP expansion gap map
+- `9622f07` - Integrate MVP expansion planning spine
+- `be5064d` - Add audience-first entry docs
+- `ba187e1` - Add start-here and reshape user docs
+- `71c43db` - Integrate MVP expansion planning wave
+- `b9b77a0` - Refine product guidance and testing docs
+- `849eaaf` - Consolidate MVP expansion analysis notes
+
+## Open Questions
+
+- Whether board selectors/raw-ID removal should stay inside the novice-first shell tranche or split into a smaller shared UX dependency issue.
+- Whether the public-story follow-through in `#216` should be reprioritized immediately with the internal productization wave, or stay linked but secondary until `Home` / `Review` / `Today` are partially shipped.
+
 ## Next Actions
 
-1. Review the seeded issue guidance when deciding whether to write back the next productization wave into GitHub.
-2. Use `docs/analysis/2026-03-07_mvp-expansion-gap-map.md` as the issue-seeding source for the next backlog pass.
+1. Use `docs/analysis/2026-03-07_mvp-expansion-gap-map.md` as the issue-seeding source for the next backlog pass.
+2. Seed one productization tracker plus the focused child issues needed for Batch A, Batch B, and the first Batch C testing slice.
+3. Update `#96`, `#100`, and `#107` in the same pass so the new wave is indexed and duplicate issue drift stays low.
