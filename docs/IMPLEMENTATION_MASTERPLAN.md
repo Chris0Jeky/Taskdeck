@@ -406,7 +406,7 @@ Operational planning rules from this pivot:
 2. Keep the board as the execution center and make board context travel across capture, review, chat, notifications, and follow-through actions.
 3. Treat `Review` as the main automation surface for normal users; keep queue and ops explicitly advanced.
 4. Reuse existing backlog items where overlap is real (`#96`, `#93`, `#100`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`) instead of duplicating scope.
-5. Seed a dedicated productization wave and add it to `#107` before promoting more disconnected UX or future-breadth items.
+5. Keep the seeded productization wave (`#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, `#328`) synchronized in `#107` before promoting more disconnected UX or future-breadth items.
 
 ## Roadmap by Horizon
 
@@ -512,11 +512,16 @@ These continue in parallel where they protect trust, performance, or operator po
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered), `#142` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76` (delivered)
-- Planned seeding from the 2026-03-07 MVP expansion integration (not yet created as numbered issues):
-  - novice-first shell and workspace modes (`guided/workbench/agent`, `Home`, `Review`, empty/help states, board selectors)
-  - board-centered daily workflow (`Today`, onboarding checklist/wizard, proposal summaries, board action rail, deep links)
-  - docs/help/test coherence (`START_HERE`, manual reshape, first-run smoke, contextual help direction)
-- Reuse-before-duplicate candidates for that seeding pass: `#96`, `#93`, `#100`, `#216`, `#77`
+- Seeded Wave I from the 2026-03-07 MVP expansion integration:
+  - `#318` tracker
+  - `#320` workspace modes + `Home` summary shell
+  - `#322` `Review`-first routing + empty/help states + board selectors
+  - `#324` `Today` agenda + onboarding path
+  - `#326` proposal readability + board-centered action flow
+  - `#96` onboarding/contextual help (reused, moved to `Priority II`)
+  - `#100` user guides/tutorials/FAQ (reused, moved to `Priority II`)
+  - `#328` first-run smoke + launch-criteria guardrail
+- Related but intentionally not folded into Wave I core execution: `#93`, `#216`, `#77`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
@@ -533,10 +538,10 @@ These continue in parallel where they protect trust, performance, or operator po
 
 - Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
 - Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
-- UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`, `#96`
+- UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
 - Optional premium UI documentation/component tooling: `#251`
-- Developer/user docs maturity: `#99`, `#100`, `#216`, `#217`
+- Developer/user docs maturity: `#99`, `#216`, `#217`
 - Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
 - Outreach CRM deferred expansion wave: `#262` to `#268`
 - Outreach CRM wave reused dependencies: `#75` (delivered import adapters), `#77` (analytics), `#175` (starter-pack catalog expansion)
@@ -692,23 +697,9 @@ Batch E integration hardening (`#302`) status:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Seed the dedicated novice-first productization wave and add it to `#107` before promoting more disconnected future-breadth UX work:
-   - workspace modes
-   - `Home`
-   - `Review` route/terminology
-   - action-oriented empty/help states
-   - board selectors instead of raw-ID happy paths
-3. Seed the board-centered daily workflow wave immediately after:
-   - `Today`
-   - onboarding checklist/wizard
-   - proposal summary service/cards
-   - board action rail
-   - deep links and next-step shortcuts across core surfaces
-4. Add the docs/help/testing coherence batch:
-   - `START_HERE`
-   - navigation-shaped manual and docs index updates
-   - first-run golden-path smoke
-   - launch criteria / telemetry naming doc
+2. Execute the seeded novice-first shell tranche in order: `#318` -> `#320` -> `#322`.
+3. Execute the seeded board-centered daily workflow tranche immediately after shell foundations: `#324` -> `#326`.
+4. Keep the docs/help/testing tranche synchronized with shipped behavior: `#96`, `#100`, then `#328`.
 5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
 6. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
 7. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.

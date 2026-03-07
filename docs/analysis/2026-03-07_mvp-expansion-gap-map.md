@@ -24,7 +24,16 @@ GitHub backlog inputs:
 The current backlog is still weighted toward making the engine stronger.
 The MVP expansion package is mostly about making the product legible.
 
-That product-legibility wave is not yet represented as one coherent execution wave on GitHub.
+That product-legibility wave is now seeded as one coherent execution wave on GitHub:
+
+- `#318` `UX-13` wave tracker
+- `#320` `UX-14` workspace mode foundation + `Home` summary shell
+- `#322` `UX-15` `Review`-first routing + empty/help states + board selectors
+- `#324` `UX-16` `Today` agenda + onboarding path
+- `#326` `UX-17` proposal readability + board-centered action flow
+- `#96` `UX-10` onboarding/contextual help (reused and reprioritized)
+- `#100` `DOC-04` user guides/tutorials/FAQ (reused and reprioritized)
+- `#328` `TST-20` first-run smoke + launch-criteria guardrail
 
 ## What Already Overlaps
 
@@ -74,9 +83,11 @@ Missing as a coherent wave:
 
 Current issue coverage:
 
-- no dedicated issue wave exists
-- `#96` helps for onboarding/help
-- `#93` helps for search/selectability
+- `#318` tracks the wave
+- `#320` owns workspace modes + `Home`
+- `#322` owns `Review`-first routing, empty/help states, and selector/raw-ID cleanup
+- `#96` now carries the richer onboarding/help follow-through for this tranche
+- `#93` remains a later reuse point for broader search/launcher behavior
 
 ### Batch B: board-centered daily workflow
 
@@ -90,8 +101,10 @@ Missing as a coherent wave:
 
 Current issue coverage:
 
-- partial overlap in delivered capture/proposal linking
-- no dedicated issue wave exists
+- `#318` tracks the wave
+- `#324` owns `Today` + first-run onboarding path
+- `#326` owns proposal readability, board action flow, and stronger context travel
+- delivered capture/proposal substrate from `#199` still underpins this batch
 
 ### Batch C: docs/help/testing coherence
 
@@ -104,9 +117,10 @@ Missing or incomplete:
 
 Current issue coverage:
 
-- `#100` is the best reuse point for manual/docs reshaping
-- `#96` is the best reuse point for contextual help
-- `#77` can anchor telemetry/launch-criteria alignment
+- `#100` now carries the manual/docs/FAQ follow-through for this tranche
+- `#96` now carries the contextual help/onboarding follow-through
+- `#328` owns the first-run smoke and launch-criteria guardrail
+- `#77` remains a later reuse point for deeper analytics/telemetry naming beyond the first product smoke
 
 ### Batch D: agent substrate
 
@@ -188,7 +202,7 @@ Recommended release framing from the expansion package:
 
 ## Operational Seeding Rules
 
-- Add the new productization wave to `#107` before active execution begins.
+- Keep the seeded productization wave indexed in `#107` before active execution begins.
 - Reuse the overlap issues above instead of cloning scope into disconnected new tickets.
 - Keep `MINIMAL` as the near-horizon filter when `EXPANDED` suggests broader future breadth.
 - Do not let plugin/connector/agent breadth outrun `Home` / `Today` / `Review` productization.

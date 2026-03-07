@@ -135,13 +135,17 @@ It needs a product-legibility correction that turns the current harness and capt
   - `#100` end-user guides/tutorials/FAQ
   - `#216` thesis-aligned demo and landing baseline
   - `#97` / `#98` for later integration/plugin breadth
-- No clear existing issue coverage found yet for:
-  - `Home` route / start surface
-  - `Today` route
-  - workspace presentation modes (`guided`, `workbench`, `agent`)
-  - queue board picker / raw-ID removal in common flows
-  - proposal summary/readability overhaul
-  - empty-state action guidance wave
+- Seeded in the new Wave I pass:
+  - `#318` tracker
+  - `#320` workspace modes + `Home`
+  - `#322` `Review`-first routing, empty/help states, and selectors
+  - `#324` `Today` + onboarding path
+  - `#326` proposal readability + board-centered action flow
+  - `#328` first-run smoke + launch-criteria guardrail
+- Updated existing overlap issues in the same pass:
+  - `#96` reprioritized to `Priority II` and narrowed to onboarding/help follow-through for the productization wave
+  - `#100` reprioritized to `Priority II` and narrowed to user-docs/FAQ follow-through for the productization wave
+- Still intentionally not seeded yet:
   - agent profile/run/knowledge foundation slice as described in the new blueprint
 
 ## Commands Run
@@ -150,6 +154,14 @@ It needs a product-legibility correction that turns the current harness and capt
 - read `STATUS.md`, `IMPLEMENTATION_MASTERPLAN.md`, `GOLDEN_PRINCIPLES.md`, `ISSUE_EXECUTION_GUIDE.md`, `TESTING_GUIDE.md`, `MCP_TOOLING_GUIDE.md`, `GITHUB_PROJECT_AUTOMATION.md`
 - reviewed `MINIMAL` and `EXPANDED` master/index files plus key backlog/manual/testing/roadmap sections
 - searched GitHub issues for overlap on onboarding, search, and new productization themes
+- seeded GitHub productization issues:
+  - created `#318`, `#320`, `#322`, `#324`, `#326`, `#328`
+  - updated `#96`, `#100`, and `#107`
+- spot-checked GitHub Project v2 metadata via `gh api graphql`
+  - confirmed new wave issues auto-added with `Status=Pending`
+  - confirmed new wave issues and updated `#96` / `#100` carry `Priority II`
+  - confirmed `#107` remains `Priority V`
+  - detected broader legacy `Priority`-field drift outside this new wave; treated as a separate follow-up concern rather than expanding this pass into a full historical cleanup
 - created and committed:
   - tracker baseline
   - dated MVP expansion gap map
@@ -164,6 +176,7 @@ It needs a product-legibility correction that turns the current harness and capt
 
 - `node scripts/check-docs-governance.mjs` -> passed
 - `node scripts/check-github-ops-governance.mjs` -> passed
+- GitHub Project v2 spot-check -> passed (`Status`/`Priority` fields aligned for `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, `#96`, `#100`, `#107`)
 
 ## Decision Log
 
@@ -182,6 +195,8 @@ It needs a product-legibility correction that turns the current harness and capt
 - Confirmed the surviving reconciliation tracker is the canonical continuity record and already preserves the high-signal synthesis, source inputs, decision log, and commit ledger that mattered operationally.
 - Residual risk from the consolidation was not data loss in Git history; it was future confusion about whether one or two tracker files should remain active. That risk is now treated as resolved: keep only this tracker live.
 - Chosen next seeding shape: one dedicated productization wave tracker plus a small set of focused child issues, while updating overlapping existing issues (`#96`, `#100`, `#107`) instead of cloning their scope into new duplicates.
+- Seeded the chosen Wave I shape as `#318`, `#320`, `#322`, `#324`, `#326`, and `#328`, with `#96` and `#100` updated into the same `Priority II` tranche.
+- Closed the competing parallel-created batch (`#317`, `#319`, `#321`, `#323`, `#325`, `#327`) as duplicates once the overlap was detected, keeping `#318` / `#320` / `#322` / `#324` / `#326` / `#328` as the canonical sequence.
 
 ## Commit Ledger
 
@@ -197,11 +212,10 @@ It needs a product-legibility correction that turns the current harness and capt
 
 ## Open Questions
 
-- Whether board selectors/raw-ID removal should stay inside the novice-first shell tranche or split into a smaller shared UX dependency issue.
 - Whether the public-story follow-through in `#216` should be reprioritized immediately with the internal productization wave, or stay linked but secondary until `Home` / `Review` / `Today` are partially shipped.
 
 ## Next Actions
 
-1. Use `docs/analysis/2026-03-07_mvp-expansion-gap-map.md` as the issue-seeding source for the next backlog pass.
-2. Seed one productization tracker plus the focused child issues needed for Batch A, Batch B, and the first Batch C testing slice.
-3. Update `#96`, `#100`, and `#107` in the same pass so the new wave is indexed and duplicate issue drift stays low.
+1. Keep `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`, `#318`, and `#107` synchronized if the Wave I slice map changes.
+2. Decide whether `#216` should stay secondary or move into the same immediate tranche once `Home` / `Review` / `Today` are partially shipped.
+3. Decide whether the broader historical GitHub Project `Priority`-field drift should be cleaned in a dedicated ops/backlog-maintenance pass.

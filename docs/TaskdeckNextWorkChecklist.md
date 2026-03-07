@@ -39,28 +39,22 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
 - [ ] Meta index maintenance: `#107` (`Priority V`)
 
-## MVP Expansion Productization (Pending Issue Seeding)
+## MVP Expansion Productization (Wave I Seeded)
 
 Detailed reconciliation:
 - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
 
+- [ ] Wave I tracker: `#318`
 - [ ] Batch A novice-first shell and entry clarity:
-  - workspace modes
-  - `Home`
-  - `Review` route/terminology
-  - empty/help states
-  - board selectors instead of raw-ID happy paths
+  - `#320` workspace modes + `Home` summary shell
+  - `#322` `Review`-first routing + empty/help states + board selectors
 - [ ] Batch B board-centered daily workflow:
-  - `Today`
-  - onboarding checklist/wizard
-  - proposal summaries
-  - board action rail
-  - deep links and next-step shortcuts
+  - `#324` `Today` agenda + onboarding path
+  - `#326` proposal readability + board-centered action flow
 - [ ] Batch C docs/help/testing coherence:
-  - `START_HERE`
-  - manual/docs index reshape
-  - first-run golden-path smoke
-  - contextual help direction
+  - `#96` onboarding/contextual help (reused, reprioritized to `Priority II`)
+  - `#100` user guides/tutorials/FAQ (reused, reprioritized to `Priority II`)
+  - `#328` first-run smoke + launch-criteria guardrail
 - [ ] Batch D agent substrate:
   - profiles
   - runs
@@ -73,8 +67,8 @@ Detailed reconciliation:
   - note/transcript/clip intake
   - integrations registry page
 
-Reuse instead of duplicate when seeding:
-- [ ] `#96`, `#93`, `#100`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`
+Related reuse anchors that stay outside the immediate Wave I execution core:
+- [ ] `#93`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`
 
 ## Out-of-Code and Configuration Actions Coverage
 

@@ -186,9 +186,15 @@ Provider runtime expansion (2026-02-23):
 38. `#236` SEC-16 managed-key identity attribution contract
 39. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails
 
-Pending seeding note (2026-03-07 MVP expansion integration):
-- before promoting more isolated Priority III/IV UX maturity items, seed the novice-first productization wave described above
-- minimum seed set should cover `Home`, `Review`, workspace modes, empty/help states, selectors, `Today`, onboarding, proposal summaries, board action rails, and the first-run smoke/manual/help work
+MVP productization wave seeded from the 2026-03-07 integration:
+40. `#318` `UX-13` MVP productization wave tracker
+41. `#320` `UX-14` workspace mode foundation + `Home` summary shell
+42. `#322` `UX-15` `Review`-first routing + empty/help states + board selectors
+43. `#324` `UX-16` `Today` agenda + first-run onboarding path
+44. `#326` `UX-17` proposal readability + board-centered action flow
+45. `#96` `UX-10` interactive onboarding/help (reused and reprioritized to `Priority II`)
+46. `#100` `DOC-04` user guides/tutorials/FAQ (reused and reprioritized to `Priority II`)
+47. `#328` `TST-20` product first-run smoke + launch-criteria guardrail
 
 ### Stage 3: Priority III - Expansion Wave
 
@@ -218,7 +224,7 @@ Pending seeding note (2026-03-07 MVP expansion integration):
 
 Execution note (premium UI wave):
 - Reused dependencies are intentionally not re-seeded as duplicates: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization).
-- Do not promote agent/knowledge/integrations breadth ahead of the unseeded productization wave from the 2026-03-07 MVP expansion integration.
+- Do not promote agent/knowledge/integrations breadth ahead of the seeded `Priority II` productization wave (`#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, `#328`).
 
 ### Stage 4: Priority IV - Maturity Wave
 
@@ -243,25 +249,23 @@ Testing/UX/docs:
 16. `#93` UX-07 global search/actions
 17. `#94` UX-08 calendar/timeline views
 18. `#95` UX-09 PWA/offline readiness
-19. `#96` UX-10 onboarding/help
-20. `#213` PERF-07 long-list virtualization
-21. `#97` INT-03 plugin architecture RFC
-22. `#98` INT-04 connector framework
-23. `#99` DOC-03 developer portal generation
-24. `#100` DOC-04 user guides/tutorials/FAQ
-25. `#216` GTM-01 thesis-aligned demo/landing baseline
-26. `#217` RES-01 user-research execution slice
-27. `#218` CAP-20 transcript capture source
-28. `#219` CAP-21 voice capture/transcription (opt-in)
-29. `#220` CAP-22 batch triage + suggestion editing
-30. `#251` UI-12 optional Storybook baseline for primitives
-31. `#262` OUT-00 outreach CRM deferred wave tracker
-32. `#263` OUT-01 JSON manifest import path for starter packs
-33. `#264` OUT-02 contact-card YAML parser/serializer contract
-34. `#265` OUT-03 structured contact detail + timeline logging UX
-35. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
-36. `#267` OUT-05 daily outreach dashboard (keyboard-first)
-37. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
+19. `#213` PERF-07 long-list virtualization
+20. `#97` INT-03 plugin architecture RFC
+21. `#98` INT-04 connector framework
+22. `#99` DOC-03 developer portal generation
+23. `#216` GTM-01 thesis-aligned demo/landing baseline
+24. `#217` RES-01 user-research execution slice
+25. `#218` CAP-20 transcript capture source
+26. `#219` CAP-21 voice capture/transcription (opt-in)
+27. `#220` CAP-22 batch triage + suggestion editing
+28. `#251` UI-12 optional Storybook baseline for primitives
+29. `#262` OUT-00 outreach CRM deferred wave tracker
+30. `#263` OUT-01 JSON manifest import path for starter packs
+31. `#264` OUT-02 contact-card YAML parser/serializer contract
+32. `#265` OUT-03 structured contact detail + timeline logging UX
+33. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
+34. `#267` OUT-05 daily outreach dashboard (keyboard-first)
+35. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
 
 Execution note (testing harness knowledge-transfer):
 - Existing Priority IV items were updated with pack-derived scope clarifications:

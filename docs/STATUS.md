@@ -242,7 +242,7 @@ Planning conclusion adopted into canonical docs:
 Backlog implication:
 
 - existing overlap is partial (`#96`, `#93`, `#100`, `#77`, `#75`, `#98`, `#218`, `#219`)
-- most of the novice-first productization wave is not yet seeded as numbered GitHub issues
+- the novice-first productization wave is now seeded as `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, with `#96` and `#100` updated into the same `Priority II` tranche
 - planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
   - `guided` / `workbench` / `agent` workspace modes
   - `Home` and `Today` product routes
