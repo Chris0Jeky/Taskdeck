@@ -6,12 +6,7 @@ import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../utils/storageKeys'
 import type { HomeSummary, WorkspaceMode, WorkspacePreference } from '../types/workspace'
-
-const workspaceModes = ['guided', 'workbench', 'agent'] as const
-
-function isWorkspaceMode(value: string | null | undefined): value is WorkspaceMode {
-  return workspaceModes.includes(value as WorkspaceMode)
-}
+import { isWorkspaceMode } from '../types/workspace'
 
 function getLocalWorkspaceMode(): WorkspaceMode {
   const savedMode = localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)

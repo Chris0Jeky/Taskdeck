@@ -131,4 +131,37 @@ public class WorkspaceServiceTests
         ]);
         _llmQueueRepositoryMock.Verify(repository => repository.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task GetHomeAsync_ShouldOnlyReturnBoardsThatMatchTheRecentCutoff()
+    {
+        var userId = Guid.NewGuid();
+        var recentBoard = new Board("Recent", "Recent board", userId);
+        var staleBoard = new Board("Stale", "Stale board", userId);
+        staleBoard.Update(description: "Still stale");
+
+        var staleUpdatedAt = DateTimeOffset.UtcNow.Subtract(TimeSpan.FromDays(30));
+        typeof(Board).GetProperty(nameof(Board.UpdatedAt))!
+            .SetValue(staleBoard, staleUpdatedAt);
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .ReturnsAsync(new UserPreference(userId, WorkspaceMode.Guided));
+        _boardRepositoryMock
+            .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(2);
+        _boardRepositoryMock
+            .Setup(repository => repository.CountReadableUpdatedSinceAsync(userId, It.IsAny<DateTimeOffset>(), false, default))
+            .ReturnsAsync(1);
+        _boardRepositoryMock
+            .Setup(repository => repository.GetRecentReadableByUserIdAsync(userId, 3, false, default))
+            .ReturnsAsync([recentBoard, staleBoard]);
+
+        var result = await _service.GetHomeAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Boards.RecentBoardsCount.Should().Be(1);
+        result.Value.Boards.RecentBoards.Should().ContainSingle(board => board.Name == "Recent");
+        result.Value.RecommendedActions.Should().Contain(action => action.ActionId == "resume-recent-board");
+    }
 }
