@@ -2,7 +2,7 @@
 
 Date: 2026-03-07
 Branch: `docs/mvp-expansion-reconciliation`
-Status: In progress
+Status: Verification complete
 
 ## Purpose
 
@@ -51,7 +51,7 @@ Track the reconciliation of the new MVP expansion review packs into the active T
 
 ### Batch 3
 
-- Complete except verification/commit finalization.
+- Complete.
 - Updated user-facing/product docs:
   - `README.md`
   - `docs/USER_MANUAL.md`
@@ -60,6 +60,14 @@ Track the reconciliation of the new MVP expansion review packs into the active T
   - `docs/SCENARIOS.md`
   - `docs/TESTING_GUIDE.md`
 - Added reconciliation notes for issue planning and future batch execution.
+
+### Batch 4
+
+- Complete.
+- Consolidated the analysis record to:
+  - `docs/analysis/2026-03-07_mvp-expansion-reconciliation-tracker.md`
+  - `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
+- Removed the duplicate interim tracker variant to avoid split continuity records.
 
 ## Current Findings
 
@@ -97,15 +105,18 @@ Track the reconciliation of the new MVP expansion review packs into the active T
   - tracker baseline
   - dated MVP expansion gap map
   - audience-first entry docs batch
-
-## Verification Log
-
-- pending:
+  - planning-wave integration batch
+  - product guidance/testing docs batch
+- verification:
   - `node scripts/check-docs-governance.mjs`
   - `node scripts/check-github-ops-governance.mjs`
 
+## Verification Log
+
+- `node scripts/check-docs-governance.mjs` -> passed
+- `node scripts/check-github-ops-governance.mjs` -> passed
+
 ## Next Actions
 
-1. Commit the planning-doc batch and the remaining guidance/testing-doc batch.
-2. Run docs governance checks.
-3. Record verification results and final branch status.
+1. Review the seeded issue guidance when deciding whether to write back the next productization wave into GitHub.
+2. Use `docs/analysis/2026-03-07_mvp-expansion-gap-map.md` as the issue-seeding source for the next backlog pass.

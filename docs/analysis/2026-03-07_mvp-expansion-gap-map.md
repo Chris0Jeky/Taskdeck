@@ -1,288 +1,194 @@
 # MVP Expansion Gap Map
 
 Date: 2026-03-07
-Source packs:
-- `docs/InReview/MVP_EXPANSION/MINIMAL/taskdeck_review_2026-03-06/`
-- `docs/InReview/MVP_EXPANSION/EXPANDED/taskdeck_expansion_blueprint_2026-03-06/`
+Scope: Reconcile the 2026-03-06 MVP expansion review packages against the current GitHub backlog and identify what should be reused, what is missing, and how the next seeding wave should be ordered.
 
-## Executive Summary
+## Inputs Reviewed
 
-The new MVP expansion material does not call for a domain rewrite.
-It calls for a product-legibility correction.
+Current planning/docs inputs:
 
-Current Taskdeck strengths are already real:
-- capture/inbox and proposal-first mutation exist
-- board execution is stable
-- demo/scenario/director tooling is unusually strong
-- trust surfaces already exist through audit, notifications, activity, and logs
+- `docs/STATUS.md`
+- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/ISSUE_EXECUTION_GUIDE.md`
+- `docs/TaskdeckNextWorkChecklist.md`
+- `docs/InReview/MVP_EXPANSION/MINIMAL/*`
+- `docs/InReview/MVP_EXPANSION/EXPANDED/*`
 
-Current Taskdeck weakness is presentation and entry clarity:
-- the current shell still feels workbench-first rather than novice-first
-- the app still spreads the main story across boards, inbox, proposals, queue, and chat
-- documentation is strong for maintainers but weaker for first-time evaluators and future end users
-- the backlog only partially reflects the sharper productization wave proposed in the new blueprint
+GitHub backlog inputs:
 
-## High-Confidence Product Direction
+- full open-issue list for `Chris0Jeky/Taskdeck`
+- targeted searches across onboarding/help, proposal/review, selectors/raw-ID removal, agents/runs/knowledge/integrations, and daily-use surfaces
 
-The source packs converge on this sequence:
+## Bottom Line
 
-1. keep one core product, not separate human and agent products
-2. make the current product teach itself before adding broader autonomy
-3. make board context travel everywhere
-4. make review/proposal UX legible enough that the trust model is obvious
-5. only then add agent, knowledge, and broader integration layers
+The current backlog is still weighted toward making the engine stronger.
+The MVP expansion package is mostly about making the product legible.
 
-## Current Docs Gap Map
+That product-legibility wave is not yet represented as one coherent execution wave on GitHub.
 
-### `README.md`
+## What Already Overlaps
 
-Already covered:
-- product thesis
-- repo layout
-- local setup
-- basic core loop
+### Reuse candidates with real overlap
 
-Missing or drifting:
-- no direct first-15-minutes entry path for evaluators
-- no link to a single `Start Here` bridge doc
-- shipped-provider state drift: README still says Gemini support is tracked and not shipped, while active docs record `OpenAI` and `Gemini` as shipped behind explicit config gates
+- `#96` UX-10 onboarding/contextual help
+  - reuse for onboarding checklist, guided help blocks, or replayable help-state work
+- `#93` UX-07 global search and quick actions
+  - reuse for broader command-palette search/navigation work once `Today`/`Review` land
+- `#100` DOC-04 user guides/tutorials/FAQ
+  - reuse for navigation-shaped manual and help-center restructuring
+- `#216` GTM-01 thesis-aligned demo/landing baseline
+  - reuse where public-facing pitch/demo framing intersects the new novice-first story
+- `#77` ANL-01 metrics dashboard
+  - reuse for telemetry naming and launch-criteria alignment rather than creating a second isolated metrics story
+- `#75` INT-01 import adapters foundation
+  - reuse for note/transcript import pathways and future inbound capture contracts
+- `#97` INT-03 plugin/extension RFC
+  - reuse only for later connector/platform design; do not let it outrun the near-horizon productization work
+- `#98` INT-04 connector framework
+  - reuse for later integrations registry/connector implementation
+- `#218` CAP-20 transcript capture source
+  - reuse for transcript-style intake
+- `#219` CAP-21 voice capture/transcription
+  - reuse for broader external capture-source work when promoted
 
-Recommendation:
-- keep README short
-- link to a new `docs/START_HERE.md`
-- keep README thesis-aligned and reality-correct
+### Partial overlap that is not enough by itself
 
-### `docs/STATUS.md`
-
-Already covered:
-- shipped behavior
-- current implementation snapshot
-- issue-wave history
-- known gaps and risks
-
-Missing:
-- explicit statement that current UX remains closer to a workbench shell than a novice-first product
-- explicit gap record for no dedicated `Home` / `Today` / workspace-mode product shell yet
-- explicit documentation of raw-ID friction still present in some advanced flows
-- reconciliation note that the new MVP expansion packs are now the active source for post-demo productization planning
-
-Recommendation:
-- keep `STATUS.md` factual
-- add the new product-legibility gaps only as current constraints/known gaps
-- do not describe future `Home`/`Today` surfaces as shipped
-
-### `docs/IMPLEMENTATION_MASTERPLAN.md`
-
-Already covered:
-- current hardening tracks
-- existing issue-wave ordering
-- priority-labeled backlog structure
-- capture and demo wave history
-
-Missing:
-- no dedicated novice-first productization track after the demo-expansion wave
-- no clean separation between immediate productization work and later agent/knowledge expansion
-- no issue-overlap note tying new blueprint work back to existing issues such as `#93`, `#96`, `#100`, `#216`, `#97`, and `#98`
-
-Recommendation:
-- add a 2026-03-07 planning update for MVP expansion reconciliation
-- add phased track language:
-  - novice-first shell and first-run productization
-  - review/proposal and board-centered daily workflow
-  - agent workspace foundation
-  - knowledge/integration layer
-  - testing/help/manual maturity
-- keep existing higher-priority security and control-plane work ahead of the new wave
-
-### `docs/INDEX.md`
-
-Already covered:
-- canonical active docs categories
-- governance rules
-- doc archive policy
-
-Missing:
-- no audience-first entry path for new users/evaluators
-- no bridge doc between README and the manual/demo/testing stack
-
-Recommendation:
-- add `docs/START_HERE.md`
-- add quick read paths by audience:
-  - new user/evaluator
-  - maintainer/planning
-  - demo operator
-
-### `docs/USER_MANUAL.md`
-
-Already covered:
-- current surface descriptions
-- quick current-loop orientation
-- advanced flow descriptions
-
-Missing:
-- no strong golden-path section near the top
-- no "When should I use X?" guidance
-- no clean separation between normal flows and advanced/operator flows
-- still normalizes `Board ID` entry in Queue as if that were a standard user path
-
-Recommendation:
-- restructure around:
-  - what Taskdeck is
-  - current golden path
-  - current normal surfaces
-  - advanced surfaces
-  - troubleshooting and constraints
-- explicitly say Queue/Ops are advanced
-- mention planned `Home`/`Today` surfaces as roadmap, not current UI
-
-### `docs/DOGFOODING_GUIDE.md`
-
-Already covered:
-- capture -> proposal -> board loop
-- daily routine
-- friction logging
-
-Missing:
-- still instructs users to provide raw `Board ID` in Queue guidance
-- does not clearly discourage Queue as the normal path strongly enough
-- does not frame dogfooding around the narrow "useful now" persona from the new review pack
-
-Recommendation:
-- reframe around the solo developer / builder persona
-- explicitly treat Queue as advanced/debug tooling
-- add useful-now success signals and unhealthy signals
-
-### `docs/SCENARIOS.md`
-
-Already covered:
-- current JSON scenario runner
-- current step types
-- deterministic CI posture
-
-Missing:
-- no explicit scenario matrix for persuasion vs regression vs stress
-- no roadmap note for next scenarios such as safe-AI intake, solo developer week, failure/recovery, and collaboration/conflict
-
-Recommendation:
-- add a short scenario-strategy section without claiming the new scenario packs exist yet
-
-### `docs/TESTING_GUIDE.md`
-
-Already covered:
-- verified totals
-- automated/manual commands
-- CI policy
-- capture-loop thesis validation
-
-Missing:
-- no explicit record that the next required smoke should become a novice-first first-run path after productization work ships
-- no mapping between current demo-strength testing and weaker current self-serve product testing
-
-Recommendation:
-- add a short productization testing note:
-  - current smoke remains director/capture centered
-  - future required smoke should cover first-run golden path once the supporting UI exists
-
-## GitHub Issue Overlap Map
-
-### Existing issues that should be reused, not duplicated
-
-- `#93` `UX-07`: global search and quick-action launcher
-  - maps to blueprint issue `B5`
-- `#96` `UX-10`: interactive onboarding tour and contextual help
-  - partially maps to blueprint issues `A4` and `E2`
-- `#100` `DOC-04`: end-user workflow guides, tutorials, and FAQ baseline
-  - partially maps to blueprint issue `E3`
-- `#216` `GTM-01`: thesis-aligned demo and landing baseline
-  - aligns with the blueprint's stronger product-story emphasis
-- `#97` `INT-03`: plugin/extension architecture RFC
-  - later than the current blueprint's integration-management view
-- `#98` `INT-04`: third-party connector framework
-  - later and broader than the blueprint's integrations-management concept
-
-### Existing issues that are adjacent but not sufficient
-
-- `#92` accessibility remediation
-  - useful dependency for productization work, but not a substitute for novice-first shell work
+- capture wave `#199` to `#211`
+  - already delivered the core loop, but not the novice-first shell around it
 - premium UI wave `#242` to `#250`
-  - useful for polish, but not a substitute for the `Home`/`Today`/workspace-mode/navigation shift
-- capture wave `#199` to `#213`
-  - already delivered the substrate the blueprint depends on
+  - improves quality of surfaces, but does not define `Home`, `Today`, or product-level navigation/teaching by itself
+- demo-expansion wave `#297` to `#302`
+  - solved demoability and seeded state well, but not self-serve product understanding
 
-### Missing issue groups implied by the new blueprint
+## What Is Still Missing
 
-These areas do not appear to have clean, explicit issue coverage yet:
+### Batch A: novice-first shell and entry clarity
 
-- workspace presentation modes (`guided`, `workbench`, `agent`)
-- `Home` route and workspace summary endpoint
-- `Today` route and aggregated agenda endpoint
-- blind-empty-state replacement across core pages
-- board picker/search selectors replacing raw board IDs in common flows
-- review alias and review-first primary automation navigation
-- proposal summary/readability overhaul
-- board action rail and board-centered deep-linking
-- agent profile/run/run-event foundation
-- knowledge documents and SQLite FTS search
-- integrations management view
-- first-run golden-path Playwright smoke
-- telemetry launch criteria for novice beta and agent alpha
+Missing as a coherent wave:
 
-## Recommended Execution Batches
+- workspace mode preference (`guided`, `workbench`, `agent`)
+- `Home` route and summary endpoint
+- `Review` as the clear primary normal-user automation surface
+- action-oriented empty/help states across primary pages
+- board selectors/pickers instead of raw-ID happy paths
 
-### Batch A — Novice-first shell
+Current issue coverage:
 
-- workspace mode
-- `Home`
-- `Today`
-- onboarding checklist/project wizard
-- action-oriented empty states
-- board picker/raw-ID removal
+- no dedicated issue wave exists
+- `#96` helps for onboarding/help
+- `#93` helps for search/selectability
 
-### Batch B — Review and board-centered workflow
+### Batch B: board-centered daily workflow
 
-- `/workspace/review` alias
-- readable proposal summaries/cards
-- board action rail
-- deep links across inbox/notifications/proposals
-- global search reuse of `#93`
+Missing as a coherent wave:
 
-### Batch C — Help, docs, and first-run regression
+- `Today` route and agenda endpoint
+- first-run onboarding checklist and project wizard
+- proposal summary service and readable proposal cards
+- board action rail (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`)
+- stronger deep links and next-step shortcuts across inbox/review/notifications/board flow
 
-- `Start Here` documentation bridge
-- manual restructuring
-- page-level help alignment and reuse of `#96` / `#100`
-- first-run golden-path Playwright smoke
+Current issue coverage:
 
-### Batch D — Agent foundation
+- partial overlap in delivered capture/proposal linking
+- no dedicated issue wave exists
 
-- agent profiles
-- agent runs
-- run events/traces
+### Batch C: docs/help/testing coherence
+
+Missing or incomplete:
+
+- dedicated first-run smoke for the real product story
+- in-app help-center/help-block direction
+- docs/manual organization around current and intended top-level navigation
+- explicit novice-beta and agent-alpha launch criteria
+
+Current issue coverage:
+
+- `#100` is the best reuse point for manual/docs reshaping
+- `#96` is the best reuse point for contextual help
+- `#77` can anchor telemetry/launch-criteria alignment
+
+### Batch D: agent substrate
+
+Effectively unseeded:
+
+- `AgentProfile`
+- `AgentRun`
+- `AgentRunEvent`
+- tool registry
 - policy evaluator
-- narrow inbox-triage assistant
+- first bounded agent template
+- agent views
 
-### Batch E — Knowledge and integrations
+Current issue coverage:
 
-- knowledge documents
-- SQLite FTS search
-- browser/web clip capture
-- note/transcript import profile expansion
-- integrations management view
-- later connector/plugin work via `#97` and `#98`
+- no meaningful current issue coverage
 
-## Decision Rules For Promotion Into Canonical Docs
+### Batch E: knowledge and integrations surface
 
-- `STATUS.md` only records current truth and current gaps.
-- `IMPLEMENTATION_MASTERPLAN.md` records the new phased direction and issue reuse decisions.
-- `INDEX.md`, `README.md`, and `USER_MANUAL.md` should become audience-first.
-- Advanced/operator flows must be labeled as advanced everywhere they appear.
-- Raw IDs may still exist as debug affordances, but docs should stop presenting them as the happy path.
+Mostly unseeded:
 
-## Short Conclusion
+- knowledge documents/notes model
+- SQLite FTS-backed knowledge search
+- notes/transcript/clip intake tied to knowledge/capture
+- integrations registry/management page
 
-The repo does not need another broad expansion brainstorm.
-It needs to promote this blueprint into the active docs as:
+Current issue coverage:
 
-- a novice-first productization correction
-- a backlog-reconciliation exercise that reuses existing issues where possible
-- a staged expansion path that keeps agent/knowledge ambitions after the product becomes self-explaining
+- `#75`, `#98`, `#218`, `#219` are the main reuse anchors
+- no product-facing knowledge/integrations wave exists yet
+
+## Recommended Seeding Order
+
+### Priority II
+
+Seed and execute first:
+
+1. Batch A novice-first shell and entry clarity
+2. Batch B board-centered daily workflow
+3. Batch C docs/help/testing coherence
+
+Reason:
+
+- this is the shortest path from "good demo infrastructure" to "self-explaining product"
+
+### Priority III
+
+Seed only after the above is underway:
+
+4. Batch D agent substrate
+5. Batch E knowledge and integrations surface
+
+Reason:
+
+- the blueprint is explicit that agents, traces, and knowledge should formalize only after the human product is clear
+
+## Release Framing
+
+Recommended release framing from the expansion package:
+
+- `R1` novice-first beta
+  - `Home`
+  - `Today`
+  - `Review`
+  - onboarding
+  - readable proposals
+  - board-centered actions
+  - no raw-ID requirement in common flows
+- `R2` agent foundation alpha
+  - profiles
+  - runs
+  - run events
+  - first bounded template
+  - policies
+- `R3` knowledge/integrations alpha
+  - searchable notes/docs
+  - integrations page
+  - at least two meaningful inbound context/capture paths
+
+## Operational Seeding Rules
+
+- Add the new productization wave to `#107` before active execution begins.
+- Reuse the overlap issues above instead of cloning scope into disconnected new tickets.
+- Keep `MINIMAL` as the near-horizon filter when `EXPANDED` suggests broader future breadth.
+- Do not let plugin/connector/agent breadth outrun `Home` / `Today` / `Review` productization.
