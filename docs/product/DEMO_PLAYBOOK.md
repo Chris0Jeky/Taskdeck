@@ -67,7 +67,7 @@ On reruns against the canonical demo account, it now reuses the seeded artifacts
 
 ## Scenario Harness
 
-Scenario reference: [docs/SCENARIOS.md](SCENARIOS.md)
+Scenario reference: [SCENARIOS.md](SCENARIOS.md)
 
 List scenarios:
 

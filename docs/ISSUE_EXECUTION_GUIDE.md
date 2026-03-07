@@ -80,8 +80,11 @@ Implementation note from the full-source audit:
 - use `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md` when executing `#320`, `#324`, `#326`, `#96`, `#100`, and `#328`
 - preserve these carry-forwards explicitly during implementation:
   - durable workspace-mode preference and aggregate workspace summary APIs
+  - guided/workbench/agent shell contract plus product-facing route aliases
   - application-layer proposal summary generation plus explicit board-aware action-rail behavior
+  - plain-language top boxes, action-state empty/help states, and no orphan surfaces across board/inbox/review/notification flows
   - dismissible in-app help blocks and the `novice-first-first-run` smoke/scenario shape
+  - manual/help work should stay aligned to `docs/manual/README.md` instead of drifting back to implementation-slice docs
 - treat the audit’s secondary demoability/harness/productivity follow-through as deferred, not dropped
 - that secondary follow-through is now seeded as `#329` to `#334`; execute it only after the Wave I core is underway or delivered, and do not mix it into `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, or `#328`
 - the remaining expanded-blueprint architecture is now seeded as `#335` to `#341`; execute it only after Wave Q is stable enough that agent/knowledge breadth will not compete with product legibility work

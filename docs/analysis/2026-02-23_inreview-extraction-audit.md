@@ -21,7 +21,7 @@ Purpose:
 | Source | Key signal | Target location(s) | Status |
 |---|---|---|---|
 | `docs/InReview/HUMAN/00_OVERVIEW.md` | overall direction framing | `README.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md` | promoted |
-| `docs/InReview/HUMAN/01_PRODUCT_THESIS.md` | maintenance-overhead thesis | `README.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/TaskdeckNextWorkChecklist.md`, `docs/SESSION_START_CHECKLIST.md` | promoted |
+| `docs/InReview/HUMAN/01_PRODUCT_THESIS.md` | maintenance-overhead thesis | `README.md`, `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/TaskdeckNextWorkChecklist.md`, `docs/ops/SESSION_START_CHECKLIST.md` | promoted |
 | `docs/InReview/HUMAN/02_MARKET_AND_VALUE.md` | value proposition and wedge | `README.md`, issue `#216` | promoted + seeded |
 | `docs/InReview/HUMAN/03_EXECUTION_ROADMAP.md` | phased execution model | `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, issues `#199` to `#213` | promoted + seeded |
 | `docs/InReview/HUMAN/04_GTM_AND_MARKETING.md` | demo/landing/beta ops | issue `#216`, wave index `#107` | seeded |
