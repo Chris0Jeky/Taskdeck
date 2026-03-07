@@ -35,11 +35,11 @@ Use this file when starting backlog work. It prevents out-of-order development a
 Rule:
 - Never start a lower-priority issue while an unblocked higher-priority issue is ready, unless explicitly directed.
 
-## 2026-03-07 Productization Seeding Rule
+## 2026-03-07 Productization Seeding Record and Execution Rule
 
-The next major seeding pass should create a dedicated product-legibility wave before promoting more disconnected future-breadth work.
+The 2026-03-07 seeding pass created Wave P, the dedicated product-legibility wave, before promoting more disconnected future-breadth work.
 
-Seed in this order:
+The seeded sequence is:
 
 1. novice-first shell:
    - workspace mode preference (`guided`, `workbench`, `agent`)
@@ -70,9 +70,9 @@ Reuse instead of duplicate when seeding:
 - `#77` metrics dashboard / telemetry alignment
 - `#75`, `#97`, `#98`, `#218`, `#219` for import/integration intake overlap
 
-Project rule:
+Execution rule:
 
-- add the resulting wave to `#107` before active execution begins
+- keep Wave P indexed in `#107`
 - do not promote agent/knowledge breadth ahead of the novice-first shell and board-centered workflow wave
 
 Implementation note from the full-source audit:
@@ -85,8 +85,8 @@ Implementation note from the full-source audit:
   - plain-language top boxes, action-state empty/help states, and no orphan surfaces across board/inbox/review/notification flows
   - dismissible in-app help blocks and the `novice-first-first-run` smoke/scenario shape
   - manual/help work should stay aligned to `docs/manual/README.md` instead of drifting back to implementation-slice docs
-- treat the audit’s secondary demoability/harness/productivity follow-through as deferred, not dropped
-- that secondary follow-through is now seeded as `#329` to `#334`; execute it only after the Wave I core is underway or delivered, and do not mix it into `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, or `#328`
+- treat the audit's secondary demoability/harness/productivity follow-through as deferred, not dropped
+- that secondary follow-through is now seeded as `#329` to `#334`; execute it only after the Wave P core is underway or delivered, and do not mix it into `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, or `#328`
 - the remaining expanded-blueprint architecture is now seeded as `#335` to `#341`; execute it only after Wave Q is stable enough that agent/knowledge breadth will not compete with product legibility work
 
 ## Execution Order (Dependency-Aware)
@@ -284,7 +284,7 @@ Testing/UX/docs:
 33. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
 34. `#267` OUT-05 daily outreach dashboard (keyboard-first)
 35. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
-36. `#333` UX-19 saved views and post-Wave-I productivity shortcuts
+36. `#333` UX-19 saved views and post-Wave-P productivity shortcuts
 37. `#334` INT-05 note-style import and clip intake follow-through
 38. `#335` MVP-04 expanded blueprint architecture tracker
 39. `#336` AGT-01 agent profile/run/event foundation and manual-run API

@@ -35,7 +35,8 @@ Canonical seeded wave:
 
 Wave index update:
 
-- `#107` now includes the seeded productization wave as `Wave I`
+- `#107` now includes the seeded productization wave as `Wave P`
+- source-pack naming note: the `MINIMAL` pack called this immediate tranche `Wave I`; canonical GitHub indexing uses `Wave P`
 
 Duplicate cleanup:
 
@@ -324,7 +325,7 @@ These remain later expansion surfaces unless a concrete productization slice pro
 ## Executed GitHub Write Sequence
 
 1. Created the productization wave tracker.
-2. Created the new Wave I child issues.
+2. Created the new Wave P child issues.
 3. Updated `#96` and `#100` to join the wave and raised them to `Priority II`.
 4. Updated `#107` with the new wave section and child checklist.
 5. Read back the created/updated issues and verified dependency text, labels, and priority consistency.

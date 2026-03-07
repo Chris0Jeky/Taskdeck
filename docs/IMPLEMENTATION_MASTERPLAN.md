@@ -431,13 +431,13 @@ Implementation carry-forward from the full source audit:
 - require action-state empty/help states and plain-language top boxes on advanced pages; no page should leave the user with no next step
 - avoid orphan surfaces: board, inbox item, proposal, notification, and later agent-run views should deep-link to the related next action or affected entity
 - hold the frontend to a minimum polish bar: visible keyboard focus, modal focus trap, listbox aria state, explicit destructive confirmations, and no hover-only critical affordances
-- keep first-class backend contracts explicit for Wave I and Wave R:
+- keep first-class backend contracts explicit for Wave P and Wave R:
   - `UserPreference` server state for workspace mode/onboarding/default board
   - aggregate DTOs such as `WorkspaceHomeDto`, `TodayAgendaDto`, `ReviewSummaryDto`, `BoardSummaryDto`
   - `IProposalSummaryService`
   - later `ITaskdeckTool`, `ITaskdeckToolRegistry`, and `IAgentPolicyEvaluator`
-- the secondary follow-through set from the audit is now seeded as `#329` to `#334`; keep it below Wave I and reuse anchors such as `#216`, `#77`, `#93`, `#98`, `#311`, `#75`, `#218`, and `#219` instead of duplicating their scope
-- the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`; keep it below Wave Q and reuse anchors such as `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, and `#328` instead of stretching Wave I issues beyond their productization purpose
+- the secondary follow-through set from the audit is now seeded as `#329` to `#334`; keep it below Wave P and reuse anchors such as `#216`, `#77`, `#93`, `#98`, `#311`, `#75`, `#218`, and `#219` instead of duplicating their scope
+- the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`; keep it below Wave Q and reuse anchors such as `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, and `#328` instead of stretching Wave P issues beyond their productization purpose
 
 ## Roadmap by Horizon
 
@@ -583,7 +583,7 @@ These continue in parallel where they protect trust, performance, or operator po
 - Real-time and observability baseline: `#67` (delivered), `#68` (delivered)
 - Container/deployment and performance harness baseline: `#69` (delivered), `#70` (delivered), `#142` (delivered)
 - Multi-tenancy strategy and collaboration/integration foundations: `#71` (delivered), `#72` (delivered), `#73`, `#74`, `#75`, `#76` (delivered)
-- Seeded Wave I from the 2026-03-07 MVP expansion integration:
+- Seeded Wave P from the 2026-03-07 MVP expansion integration:
   - `#318` tracker
   - `#320` workspace modes + `Home` summary shell
   - `#322` `Review`-first routing + empty/help states + board selectors
@@ -592,7 +592,7 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#96` onboarding/contextual help (reused, moved to `Priority II`)
   - `#100` user guides/tutorials/FAQ (reused, moved to `Priority II`)
   - `#328` first-run smoke + launch-criteria guardrail
-- Related but intentionally not folded into Wave I core execution: `#93`, `#216`, `#77`
+- Related but intentionally not folded into Wave P core execution: `#93`, `#216`, `#77`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
@@ -600,7 +600,7 @@ These continue in parallel where they protect trust, performance, or operator po
 - Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212` (delivered), `#238`, `#239`, `#240`
 - Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
-- Seeded secondary MVP follow-through wave (lower priority than Wave I):
+- Seeded secondary MVP follow-through wave (lower priority than Wave P):
   - `#329` tracker
   - `#330` in-app demoability and live attention cues
   - `#331` demo director reporting/assertions/presets/soak
