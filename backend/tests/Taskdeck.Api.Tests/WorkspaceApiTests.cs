@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,6 +60,30 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var persistedPreference = dbContext.UserPreferences.Single(preference => preference.UserId == user.UserId);
         persistedPreference.WorkspaceMode.Should().Be(WorkspaceMode.Agent);
+    }
+
+    [Fact]
+    public async Task WorkspaceEndpoints_ShouldHandleConcurrentFirstLoadPreferenceCreation()
+    {
+        using var seedClient = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(seedClient, "workspace-first-load");
+
+        using var homeClient = _factory.CreateClient();
+        using var preferenceClient = _factory.CreateClient();
+        homeClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);
+        preferenceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);
+
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 6).Select(index =>
+                index % 2 == 0
+                    ? homeClient.GetAsync("/api/workspace/home")
+                    : preferenceClient.GetAsync("/api/workspace/preferences")));
+
+        responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        dbContext.UserPreferences.Count(preference => preference.UserId == user.UserId).Should().Be(1);
     }
 
     [Fact]

@@ -20,6 +20,16 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
     }
 
+    public async Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .Where(proposal =>
+                proposal.RequestedByUserId == userId &&
+                proposal.Status == ProposalStatus.PendingReview)
+            .CountAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(

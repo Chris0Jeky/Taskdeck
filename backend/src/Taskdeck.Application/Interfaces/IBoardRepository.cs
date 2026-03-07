@@ -4,6 +4,17 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface IBoardRepository : IRepository<Board>
 {
+    Task<int> CountReadableByUserIdAsync(Guid userId, bool includeArchived, CancellationToken cancellationToken = default);
+    Task<int> CountReadableUpdatedSinceAsync(
+        Guid userId,
+        DateTimeOffset updatedSince,
+        bool includeArchived,
+        CancellationToken cancellationToken = default);
+    Task<IEnumerable<Board>> GetRecentReadableByUserIdAsync(
+        Guid userId,
+        int limit,
+        bool includeArchived,
+        CancellationToken cancellationToken = default);
     Task<IEnumerable<Board>> SearchAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default);
     Task<IEnumerable<Guid>> SearchIdsAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default);
     Task<IEnumerable<Board>> GetByIdsAsync(IEnumerable<Guid> boardIds, CancellationToken cancellationToken = default);
