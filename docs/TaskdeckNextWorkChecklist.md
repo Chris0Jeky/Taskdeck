@@ -1,6 +1,6 @@
 # Taskdeck Next Work Checklist
 
-Last Updated: 2026-02-23
+Last Updated: 2026-03-07
 Source of truth for issue-level execution is now:
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -38,6 +38,43 @@ This checklist is now a lightweight promotion checklist (not a duplicate issue c
 - [ ] Wave G testing harness guardrails: `#254` to `#260`
 - [ ] Wave H outreach CRM deferred expansion: `#262` to `#268` (`Priority IV`)
 - [ ] Meta index maintenance: `#107` (`Priority V`)
+
+## MVP Expansion Productization (Pending Issue Seeding)
+
+Detailed reconciliation:
+- `docs/analysis/2026-03-07_mvp-expansion-gap-map.md`
+
+- [ ] Batch A novice-first shell and entry clarity:
+  - workspace modes
+  - `Home`
+  - `Review` route/terminology
+  - empty/help states
+  - board selectors instead of raw-ID happy paths
+- [ ] Batch B board-centered daily workflow:
+  - `Today`
+  - onboarding checklist/wizard
+  - proposal summaries
+  - board action rail
+  - deep links and next-step shortcuts
+- [ ] Batch C docs/help/testing coherence:
+  - `START_HERE`
+  - manual/docs index reshape
+  - first-run golden-path smoke
+  - contextual help direction
+- [ ] Batch D agent substrate:
+  - profiles
+  - runs
+  - run events
+  - policies
+  - first narrow template
+- [ ] Batch E knowledge/integrations surface:
+  - knowledge documents
+  - SQLite FTS search
+  - note/transcript/clip intake
+  - integrations registry page
+
+Reuse instead of duplicate when seeding:
+- [ ] `#96`, `#93`, `#100`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`
 
 ## Out-of-Code and Configuration Actions Coverage
 

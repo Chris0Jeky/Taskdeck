@@ -585,6 +585,7 @@ UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
 - primary product gap is legibility rather than missing engine capability: the product still relies too much on docs/demo setup to explain first-run behavior
 - review/proposal flow is functional but still system-shaped; readable proposal summaries, stronger deep links, and board-centered return paths remain next-cycle work
+- `docs/START_HERE.md` now provides the documentation bridge for first-run understanding, but equivalent in-product `Home`/`Today`/help-state guidance is still not shipped
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)
@@ -685,6 +686,11 @@ Authoritative docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+
+Audience-first product docs:
+- `docs/START_HERE.md`
+- `docs/USER_MANUAL.md`
+- `docs/DEMO_PLAYBOOK.md`
 
 Historical/spec detail material:
 - `docs/archive/` (latest consolidation bundle: `docs/archive/2026-02-13_phase4-doc-consolidation/`)

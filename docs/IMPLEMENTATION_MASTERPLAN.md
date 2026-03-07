@@ -222,24 +222,6 @@ Delivered in the latest cycle:
 52. API-06 centralized exception/fallback error-contract hardening (`#153`):
    - added global unhandled-exception middleware in the API pipeline to return deterministic `ApiErrorResponse` payloads for unexpected server failures
    - standardized unknown-result fallback `500` mapping to `ApiErrorResponse` (`UnexpectedError`) instead of `ProblemDetails` to keep fallback payload shape contract-uniform
-
-## Current Planning Pivot (2026-03-07)
-
-The 2026-03-06 MVP expansion review packages change the next-cycle emphasis without invalidating the current architecture.
-
-Key conclusion:
-
-- Taskdeck's main near-horizon gap is product legibility, not missing backend capability
-- the demo/tooling layer is now strong enough that the next cycle should focus on making the product teach itself
-- one core system can support three presentation modes (`guided`, `workbench`, `agent`), but only the first two should drive near-horizon execution
-
-Operational planning rules from this pivot:
-
-1. Prioritize novice-first shell work before broader autonomy, knowledge, or connector breadth.
-2. Keep the board as the execution center and make board context travel across capture, review, chat, notifications, and follow-through actions.
-3. Treat `Review` as the main automation surface for normal users; keep queue and ops explicitly advanced.
-4. Reuse existing backlog items where overlap is real (`#96`, `#93`, `#100`, `#77`, `#75`, `#98`, `#218`, `#219`) instead of duplicating scope.
-5. Seed a dedicated productization wave and add it to `#107` before promoting more disconnected UX or future-breadth items.
    - added fault-injection API integration coverage validating unhandled-failure contract shape, non-leakage message behavior, and correlation-header continuity under `500` responses
 53. TST-14 architecture-guard expansion (`#157`):
    - expanded architecture tests beyond csproj references with source-layer purity invariants for Domain/Application forbidden namespace imports
@@ -408,6 +390,24 @@ Operational planning rules from this pivot:
    - published operator tuning guidance and safe defaults in `docs/RATE_LIMITING_POLICY.md` with regression coverage for burst, reset-window recovery, and cross-user boundary behavior
    - follow-through hardening now supports trusted forwarded-header processing via explicit proxy/network allowlists and configurable forwarded-hop depth (`ForwardedHeaders:ForwardLimit`), while preserving no-trust defaults when allowlists are unset and documenting emergency/rollback plus proxy-topology smoke checks
 
+## Current Planning Pivot (2026-03-07)
+
+The 2026-03-06 MVP expansion review packages change the next-cycle emphasis without invalidating the current architecture.
+
+Key conclusion:
+
+- Taskdeck's main near-horizon gap is product legibility, not missing backend capability.
+- The demo/tooling layer is now strong enough that the next cycle should focus on making the product teach itself.
+- One core system can support three presentation modes (`guided`, `workbench`, `agent`), but only the first two should drive near-horizon execution.
+
+Operational planning rules from this pivot:
+
+1. Prioritize novice-first shell work before broader autonomy, knowledge, or connector breadth.
+2. Keep the board as the execution center and make board context travel across capture, review, chat, notifications, and follow-through actions.
+3. Treat `Review` as the main automation surface for normal users; keep queue and ops explicitly advanced.
+4. Reuse existing backlog items where overlap is real (`#96`, `#93`, `#100`, `#216`, `#77`, `#75`, `#97`, `#98`, `#218`, `#219`) instead of duplicating scope.
+5. Seed a dedicated productization wave and add it to `#107` before promoting more disconnected UX or future-breadth items.
+
 ## Roadmap by Horizon
 
 ### Horizon A (Week 1 to 2): Novice-First Shell and Entry Clarity
@@ -516,7 +516,7 @@ These continue in parallel where they protect trust, performance, or operator po
   - novice-first shell and workspace modes (`guided/workbench/agent`, `Home`, `Review`, empty/help states, board selectors)
   - board-centered daily workflow (`Today`, onboarding checklist/wizard, proposal summaries, board action rail, deep links)
   - docs/help/test coherence (`START_HERE`, manual reshape, first-run smoke, contextual help direction)
-- Reuse-before-duplicate candidates for that seeding pass: `#96`, `#93`, `#100`, `#77`
+- Reuse-before-duplicate candidates for that seeding pass: `#96`, `#93`, `#100`, `#216`, `#77`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
@@ -527,6 +527,7 @@ These continue in parallel where they protect trust, performance, or operator po
 - Planned seeding from the 2026-03-07 MVP expansion integration (not yet created as numbered issues):
   - agent workspace foundation (`AgentProfile`, `AgentRun`, `AgentRunEvent`, tool registry, policies, first agent template, agent views)
   - local-first knowledge and integrations product surface (`KnowledgeDocument`, SQLite FTS search, notes/transcript/clip intake, integrations registry page)
+- Reuse-before-duplicate candidates for that later seeding pass: `#75`, `#97`, `#98`, `#218`, `#219`
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
@@ -721,6 +722,11 @@ Active docs:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
+
+Audience-first product docs:
+- `docs/START_HERE.md`
+- `docs/USER_MANUAL.md`
+- `docs/DEMO_PLAYBOOK.md`
 
 Archived docs:
 - all superseded detail packs and historical snapshots under `docs/archive/`

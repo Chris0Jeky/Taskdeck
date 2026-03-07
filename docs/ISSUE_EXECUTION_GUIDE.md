@@ -66,8 +66,9 @@ Reuse instead of duplicate when seeding:
 - `#96` onboarding/contextual help
 - `#93` global search and quick actions
 - `#100` user guides/tutorials/FAQ
+- `#216` thesis-aligned demo and landing baseline
 - `#77` metrics dashboard / telemetry alignment
-- `#75`, `#98`, `#218`, `#219` for import/integration intake overlap
+- `#75`, `#97`, `#98`, `#218`, `#219` for import/integration intake overlap
 
 Project rule:
 
