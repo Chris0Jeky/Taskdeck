@@ -182,6 +182,32 @@ describe('AutomationChatView', () => {
     })
   })
 
+  it('accepts board selection by board id regardless of GUID casing', async () => {
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890',
+        name: 'Board One',
+        description: 'Primary workspace board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await wrapper.get('input[placeholder="Session title"]').setValue('Scoped session')
+    await wrapper.get('input[placeholder="Board context (optional)"]').setValue('a1b2c3d4-e5f6-7890-abcd-ef1234567890')
+    await findButtonByText(wrapper, 'Create Session').trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.createSession).toHaveBeenCalledWith({
+      title: 'Scoped session',
+      boardId: 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890',
+    })
+  })
+
   it('does not show proposal review action for non proposal-reference messages', async () => {
     const session = buildSession('status')
     mocks.getMySessions.mockResolvedValue([session])
