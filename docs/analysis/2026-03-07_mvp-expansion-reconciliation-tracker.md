@@ -256,7 +256,7 @@ The 2026-03-07 full-source audit found three buckets:
 - Treat the `MINIMAL` pack as the near-horizon execution filter when `EXPANDED` suggests larger future breadth.
 - Keep agent workspace and knowledge/integrations on the roadmap, but sequence them behind novice-first productization.
 - Use file-scoped or batch-scoped commits instead of one large documentation commit.
-- Add the resulting productization wave to `#107` before active execution begins; do not scatter the new scope across disconnected old issues.
+- Keep the resulting productization wave indexed in `#107` throughout active execution; do not scatter the new scope across disconnected old issues.
 - Keep a single canonical tracker file and fold continuity-critical detail into it instead of maintaining parallel trackers.
 
 ### 2026-03-08 deletion audit
