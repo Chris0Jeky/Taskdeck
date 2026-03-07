@@ -470,14 +470,16 @@ test('filter state should persist while panel is toggled in-session', async ({ p
   const columnName = `To Do ${Date.now()}`
   const matchingCard = `Alpha ${Date.now()}`
   const hiddenCard = `Beta ${Date.now()}`
+  const filterHeading = page.getByRole('heading', { name: 'Filter Cards', exact: true })
 
   await createBoard(page, boardName)
   await addColumn(page, columnName)
   await addCard(page, columnName, matchingCard)
   await addCard(page, columnName, hiddenCard)
 
+  await page.locator('body').click()
   await page.keyboard.press('f')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).toBeVisible()
+  await expect(filterHeading).toBeVisible()
 
   const searchInput = page.getByPlaceholder('Search cards...')
   await searchInput.fill(matchingCard)
@@ -488,12 +490,12 @@ test('filter state should persist while panel is toggled in-session', async ({ p
 
   await page.locator('body').click()
   await page.keyboard.press('f')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
+  await expect(filterHeading).not.toBeVisible()
 
   await page.keyboard.press('f')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).toBeVisible()
+  await expect(filterHeading).toBeVisible()
   await expect(searchInput).toHaveValue(matchingCard)
 
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
+  await expect(filterHeading).not.toBeVisible()
 })
