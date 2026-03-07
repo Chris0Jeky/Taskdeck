@@ -10,6 +10,14 @@ Its main idea is simple:
 3. apply it explicitly
 4. work the resulting board/cards
 
+A fuller mental model is:
+
+- `Capture`: save messy input fast
+- `Structure`: triage it into proposals and board context
+- `Review`: inspect what would change before apply
+- `Execute`: work from boards/cards instead of from hidden automation
+- `Observe`: use notifications/activity when you need evidence and history
+
 ## What Taskdeck Is Good At Right Now
 
 Taskdeck is strongest today as:
@@ -20,6 +28,16 @@ Taskdeck is strongest today as:
 
 Taskdeck is not yet a polished novice-first product shell.
 The current shipped UI still starts from `Boards`, and the planned `Home` and `Today` surfaces are roadmap work, not current product routes.
+
+## Key Terms
+
+Use this vocabulary as the productization work lands:
+
+- `Project`: the product-facing name for the board context. Today the UI still says `Boards`.
+- `Inbox`: the low-friction intake surface for messy notes, bugs, and follow-ups.
+- `Review`: the product-facing review surface. Today it lives under `Automations -> Proposals`.
+- `Today`: the planned daily-agenda surface. It is not shipped yet.
+- `Agents`: the planned supervised assistant surfaces. They are not part of the normal shipped starting path yet.
 
 ## Fastest Path To First Value
 
@@ -73,7 +91,7 @@ Use this when:
 - you want to understand event-driven surfaces faster
 - you need a believable walkthrough state
 
-If you want the full seeded demo/operator path, then read [DEMO_PLAYBOOK.md](DEMO_PLAYBOOK.md).
+If you want the full seeded demo/operator path, then read [DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md).
 
 ## Page Map
 
@@ -137,6 +155,6 @@ Use Taskdeck like this:
 ## Next Docs
 
 - [USER_MANUAL.md](USER_MANUAL.md) for the current shipped product reference
-- [DOGFOODING_GUIDE.md](DOGFOODING_GUIDE.md) for daily internal use
-- [DEMO_PLAYBOOK.md](DEMO_PLAYBOOK.md) for seeded demos and stakeholder walkthroughs
+- [DOGFOODING_GUIDE.md](product/DOGFOODING_GUIDE.md) for daily internal use
+- [DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md) for seeded demos and stakeholder walkthroughs
 - [TESTING_GUIDE.md](TESTING_GUIDE.md) for verification commands and test policy

@@ -168,7 +168,7 @@ Delivered in the latest cycle:
    - stabilized default Docker gateway server set for Codex project config to avoid secret-gated startup failures while preserving optional integrations
    - documented setup/credential expectations in `docs/MCP_TOOLING_GUIDE.md`
 37. MCP operations workflow integration:
-   - added operator runbook (`docs/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
+   - added operator runbook (`docs/tooling/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
    - added helper scripts to wire credential-gated Docker MCP servers and verify baseline/optional MCP dry-run paths
    - integrated MCP operations checks into active testing guidance
 38. TST-07 MCP smoke/regression harness delivery:
@@ -334,7 +334,7 @@ Delivered in the latest cycle:
    - added provider-registry external import orchestration (`IExternalImportAdapter`, `IExternalImportService`) so new providers can be added without core import-service rewrite
    - shipped CSV adapter baseline with outreach-contact profile mapping and deterministic dedupe key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`)
    - added board-scoped authenticated import endpoint (`POST /api/boards/{boardId}/imports/external`) with dry-run/apply result contracts (`create/update/skip/conflicts`) and rollback-safe apply behavior
-   - added backend regression coverage for malformed CSV, duplicate input handling, deterministic upsert behavior, rollback safety, archived-board rejection behavior, and CSV payload/row guardrails, plus operator-facing mapping guidance in `docs/IMPORT_ADAPTERS_GUIDE.md`
+   - added backend regression coverage for malformed CSV, duplicate input handling, deterministic upsert behavior, rollback safety, archived-board rejection behavior, and CSV payload/row guardrails, plus operator-facing mapping guidance in `docs/platform/IMPORT_ADAPTERS_GUIDE.md`
 78. INT-02 webhook integration security model delivery (`#76`):
    - added board-scoped outbound webhook subscription and delivery contracts (`POST/GET/PATCH/DELETE /api/boards/{boardId}/webhooks`) with authz-safe ownership and revocation handling
    - added mutation-event queueing and signed webhook dispatch (`X-Taskdeck-Webhook-*` headers) with HTTPS/default host safety checks and localhost gating controls
@@ -347,7 +347,7 @@ Delivered in the latest cycle:
    - API integration coverage now verifies both default-origin allowance and development-configured alternate-origin allowance via deterministic in-memory config overrides
 80. OPS-16 deployment/container hardening verification matrix delivery (`#142`):
    - added deployment verification script (`scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1`) covering secret-enforcement validation, reverse-proxy header checks, unauthorized-path checks, and startup/restart/shutdown reliability checks for the compose baseline
-   - added explicit pass/fail matrix doc (`docs/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
+   - added explicit pass/fail matrix doc (`docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
    - expanded manual checklist coverage for non-automatable deployment controls (backend exposure posture, edge TLS termination posture, host restart rehearsal expectations)
 81. PACK-07 warning-first starter-pack apply UX delivery (`#176`):
    - starter-pack apply conflict contract now includes severity (`blocking`/`warning`) and controller conflict responses now hard-stop only on blocking conflicts
@@ -382,12 +382,12 @@ Delivered in the latest cycle:
    - added API security-header middleware with explicit baseline headers (`Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`)
    - added environment-aware HSTS behavior (enabled for HTTPS, disabled by default in development unless explicitly configured)
    - added API integration coverage for header presence on success and auth-failure paths, plus HTTPS HSTS emission behavior in non-development hosting
-   - published `docs/SECURITY_OWASP_BASELINE.md` with CSRF posture, OWASP checklist, and tracked follow-up security gaps
+   - published `docs/security/SECURITY_OWASP_BASELINE.md` with CSRF posture, OWASP checklist, and tracked follow-up security gaps
 88. SEC-06 API rate-limiting and abuse-protection hardening (`#81`, delivered):
    - added partitioned fixed-window rate limiter policies for auth (`AuthPerIp`), capture create/triage (`CaptureWritePerUser`), and hot/costly paths (`HotPathPerUser`)
    - applied endpoint-level rate-limit policies across auth, capture, chat, and llm-queue write/stream surfaces
    - standardized throttle response contract (`429` + `ApiErrorResponse`) with deterministic retry diagnostics headers (`Retry-After`, `X-RateLimit-Policy`)
-   - published operator tuning guidance and safe defaults in `docs/RATE_LIMITING_POLICY.md` with regression coverage for burst, reset-window recovery, and cross-user boundary behavior
+   - published operator tuning guidance and safe defaults in `docs/security/RATE_LIMITING_POLICY.md` with regression coverage for burst, reset-window recovery, and cross-user boundary behavior
    - follow-through hardening now supports trusted forwarded-header processing via explicit proxy/network allowlists and configurable forwarded-hop depth (`ForwardedHeaders:ForwardLimit`), while preserving no-trust defaults when allowlists are unset and documenting emergency/rollback plus proxy-topology smoke checks
 
 ## Current Planning Pivot (2026-03-07)
@@ -421,7 +421,21 @@ Implementation carry-forward from the full source audit:
 - treat workspace mode as durable product state; do not let it collapse into local-only view toggles once server-backed preferences become practical
 - prefer aggregated product-shaped APIs for `Home`, `Today`, `Review`, and board summary needs over client-side fetch fan-out
 - keep proposal summary generation in the application layer instead of forcing the frontend to reverse-engineer meaning from low-level operations
+- keep the one-core-three-surfaces navigation contract explicit:
+  - guided primary: `Home`, `Today`, `Inbox`, `Projects`, `Review`, `Settings`
+  - workbench primary: `Home`, `Projects`, `Inbox`, `Review`, `Automations`, `Activity`, `Notifications`, `Settings`
+  - agent primary: `Home`, `Agents`, `Runs`, `Knowledge`, `Inbox`, `Projects`, `Review`, `Integrations`, `Settings`
+- preserve product-facing route aliases such as `/workspace/home`, `/workspace/today`, `/workspace/projects`, and `/workspace/review` even when the old implementation-shaped routes remain valid
+- keep novice vocabulary explicit in guided surfaces: `Project`, `Review`, and `Inbox` should lead; queue and ops stay clearly advanced
 - keep board-aware action-rail behavior explicit (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) so board context actually travels
+- require action-state empty/help states and plain-language top boxes on advanced pages; no page should leave the user with no next step
+- avoid orphan surfaces: board, inbox item, proposal, notification, and later agent-run views should deep-link to the related next action or affected entity
+- hold the frontend to a minimum polish bar: visible keyboard focus, modal focus trap, listbox aria state, explicit destructive confirmations, and no hover-only critical affordances
+- keep first-class backend contracts explicit for Wave I and Wave R:
+  - `UserPreference` server state for workspace mode/onboarding/default board
+  - aggregate DTOs such as `WorkspaceHomeDto`, `TodayAgendaDto`, `ReviewSummaryDto`, `BoardSummaryDto`
+  - `IProposalSummaryService`
+  - later `ITaskdeckTool`, `ITaskdeckToolRegistry`, and `IAgentPolicyEvaluator`
 - the secondary follow-through set from the audit is now seeded as `#329` to `#334`; keep it below Wave I and reuse anchors such as `#216`, `#77`, `#93`, `#98`, `#311`, `#75`, `#218`, and `#219` instead of duplicating their scope
 - the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`; keep it below Wave Q and reuse anchors such as `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, and `#328` instead of stretching Wave I issues beyond their productization purpose
 
@@ -432,10 +446,17 @@ Implementation carry-forward from the full source audit:
 Focus:
 - add workspace mode preference (`guided`, `workbench`, `agent`) and persist it as durable product state
 - add a true start surface (`Home`) instead of dropping every user into an implementation-shaped boards list
+- make the guided shell contract concrete: `Home`, `Today`, `Inbox`, `Projects`, `Review`, `Settings`, with notifications/archive/help secondary and operator surfaces hidden by default
 - make `Review` the primary normal-user automation surface and keep queue explicitly advanced
 - replace dead-end empty states with action-oriented help blocks on primary pages
 - replace raw board-ID happy paths with selectors/pickers in common flows
 - prefer aggregate/product-shaped APIs for shell summaries instead of client-side stitching
+- make `Home` product-shaped rather than dashboard-shaped:
+  - thesis/welcome line
+  - start-here CTAs
+  - needs-attention counts
+  - continue-working/resume context
+  - learn-Taskdeck cards
 
 Exit Criteria:
 - a guided-mode user lands on a product-shaped entry surface
@@ -451,6 +472,13 @@ Focus:
 - add proposal summary service and readable proposal cards with plain-language summaries, risk, and deep links
 - add board action rails so capture/chat/review follow the current board context by default (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`)
 - strengthen deep links across inbox, review, notifications, activity, and resulting boards/cards
+- make `Today` carry actual daily utility:
+  - due today / overdue
+  - blocked
+  - recently touched
+  - proposals waiting review
+  - inbox needing triage
+  - resume point
 
 Exit Criteria:
 - the `capture -> review -> board` loop is visible and coherent inside the product
@@ -463,6 +491,7 @@ Exit Criteria:
 Focus:
 - add a bridge doc (`START_HERE`) for first-run product understanding
 - reshape the manual and index around top-level navigation and user goals
+- keep `START_HERE.md` and `USER_MANUAL.md` at `docs/` root, while future chapter splits and in-app help mapping live under `docs/manual/`
 - add a required first-run golden-path smoke test
 - define product-shaped telemetry and launch criteria for novice beta and later agent alpha
 - treat the staged `novice-first-first-run` scenario shape as the acceptance target for the eventual first-run smoke path
@@ -709,28 +738,28 @@ Demo-expansion migration wave seeding completed:
 - each batch issue now includes a suggested branch name and explicit file-scoped commit expectation
 
 Canonical references for this wave:
-- `docs/DEMO_EXPANSION_MIGRATION_SOT.md`
-- `docs/temp_description.txt`
+- `docs/archive/2026-03-07_docs-root-reorg/DEMO_EXPANSION_MIGRATION_SOT.md`
+- `docs/archive/2026-03-07_docs-root-reorg/temp_description.txt`
 - `docs/ISSUE_EXECUTION_GUIDE.md`
 
 Batch A baseline delivery (`#298`) status:
 - baseline seeding command introduced (`npm run demo:seed`)
 - v0-first-run UX defaults applied (advanced surfaces default off, Automations default to Proposals, queue composer instruction-first guidance)
-- demo playbook promoted to active docs (`docs/DEMO_PLAYBOOK.md`)
+- demo playbook promoted to active docs (`docs/product/DEMO_PLAYBOOK.md`)
 
 Batch B harness/docs delivery (`#299`) status:
 - reusable demo harness layer added (`npm run demo:run`, `npm run demo:autopilot`, `scripts/demo-lib.mjs`, `scripts/scenarios/*`)
 - scenario modules added for engineering sprint, support triage, and content-calendar demo flows
 - API walkthrough asset added: `demo/http/taskdeck-demo.http` (updated for current API contracts)
 - stakeholder walkthrough recorder added as opt-in Playwright coverage (`tests/e2e/stakeholder-demo.spec.ts`, gated by `TASKDECK_RUN_DEMO=1`)
-- demo operations docs expanded and indexed (`docs/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `docs/DEMO_PLAYBOOK.md`, `docs/INDEX.md`)
+- demo operations docs expanded and indexed (`docs/product/DOGFOODING_GUIDE.md`, `docs/USER_MANUAL.md`, `docs/product/DEMO_PLAYBOOK.md`, `docs/INDEX.md`)
 
 Batch C JSON/capture harness (`#300`) status:
 - JSON scenario runner added with schema + sample scenarios (`scripts/scenario-json-runner.mjs`, `scripts/scenarios-json/*`)
 - `demo:run` now prefers JSON scenarios and supports `--list`, `--skip-llm`, and `--continue-on-error`
 - `demo:autopilot` now supports `--loop queue|capture|mixed` and capture controls (`--capture-prob`, `--leave-capture-untriaged-prob`, `--triage-timeout-ms`, `--capture-source`, `--capture-title-hint`)
 - capture helper functions added in `scripts/demo-lib.mjs` and consumed by JSON runner/autopilot (`create/get/ignore/cancel/triage/wait-for-outcome`)
-- scenario authoring/usage documentation added and indexed (`docs/SCENARIOS.md`, `docs/INDEX.md`, `docs/DEMO_PLAYBOOK.md`)
+- scenario authoring/usage documentation added and indexed (`docs/product/SCENARIOS.md`, `docs/INDEX.md`, `docs/product/DEMO_PLAYBOOK.md`)
 
 Batch D director/artifact orchestration (`#301`) status:
 - demo orchestration commands added (`npm run demo:director`, `npm run demo:snapshot`) with new scripts (`scripts/demo-director.mjs`, `scripts/demo-snapshot.mjs`)
@@ -774,7 +803,7 @@ Active docs:
 Audience-first product docs:
 - `docs/START_HERE.md`
 - `docs/USER_MANUAL.md`
-- `docs/DEMO_PLAYBOOK.md`
+- `docs/product/DEMO_PLAYBOOK.md`
 
 Archived docs:
 - all superseded detail packs and historical snapshots under `docs/archive/`
