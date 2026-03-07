@@ -31,7 +31,7 @@ const mockFeatureFlags = {
 }
 
 const mockWorkspace = reactive({
-  mode: 'guided' as 'guided' | 'workbench' | 'agent',
+  mode: 'guided' as string,
   updateMode: vi.fn<(mode: 'guided' | 'workbench' | 'agent') => Promise<void>>(),
 })
 
@@ -123,6 +123,18 @@ describe('AppShell workspace navigation and command palette', () => {
     await wrapper.get('[aria-label="Workspace mode"]').setValue('agent')
 
     expect(mockWorkspace.updateMode).toHaveBeenCalledWith('agent')
+  })
+
+  it('ignores unsupported workspace mode values and falls back to guided copy', async () => {
+    mockWorkspace.mode = 'unsupported'
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    expect(wrapper.text()).toContain('Keep Home, Review, and board work front and center.')
+
+    await wrapper.get('[aria-label="Workspace mode"]').setValue('unsupported')
+
+    expect(mockWorkspace.updateMode).not.toHaveBeenCalled()
   })
 
   it('toggles command palette with Ctrl+K and closes with Escape', async () => {

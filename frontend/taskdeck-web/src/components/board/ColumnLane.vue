@@ -38,6 +38,10 @@ function handleModalClose() {
   selectedCard.value = null
 }
 
+function openCardForm() {
+  showCardForm.value = true
+}
+
 async function createCard() {
   if (!newCardTitle.value.trim()) return
 
@@ -206,7 +210,7 @@ function handleCardDragOver(event: DragEvent) {
 
       <button
         data-action="toggle-add-card"
-        @click="showCardForm = !showCardForm"
+        @click="openCardForm"
         class="w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-200 rounded transition-colors flex items-center justify-center gap-1"
       >
         <span>+</span>

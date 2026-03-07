@@ -4,6 +4,7 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface IAutomationProposalRepository : IRepository<AutomationProposal>
 {
+    Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, CancellationToken cancellationToken = default);

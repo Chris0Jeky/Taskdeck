@@ -19,7 +19,7 @@ describe('FilterPanel', () => {
   }
 
   describe('Rendering', () => {
-    it('should not render when isOpen is false', () => {
+    it('should stay mounted but hidden when isOpen is false', () => {
       const wrapper = mount(FilterPanel, {
         props: {
           isOpen: false,
@@ -28,7 +28,9 @@ describe('FilterPanel', () => {
         }
       })
 
-      expect(wrapper.find('.bg-white').exists()).toBe(false)
+      const panel = wrapper.find('.bg-white')
+      expect(panel.exists()).toBe(true)
+      expect(panel.attributes('style')).toContain('display: none;')
     })
 
     it('should render when isOpen is true', () => {
@@ -118,6 +120,27 @@ describe('FilterPanel', () => {
 
       const searchInput = wrapper.find('input[type="text"]') as any
       expect(searchInput.element.value).toBe('test search')
+    })
+
+    it('should preserve current search text while toggled closed in-session', async () => {
+      const wrapper = mount(FilterPanel, {
+        props: {
+          isOpen: true,
+          labels: mockLabels,
+          activeFilters: defaultFilters
+        }
+      })
+
+      const searchInput = wrapper.find('input[type="text"]')
+      await searchInput.setValue('bug fix')
+
+      await wrapper.setProps({ isOpen: false })
+      expect(searchInput.element.value).toBe('bug fix')
+      expect(wrapper.find('.bg-white').attributes('style')).toContain('display: none;')
+
+      await wrapper.setProps({ isOpen: true })
+      expect(searchInput.element.value).toBe('bug fix')
+      expect(wrapper.find('.bg-white').attributes('style') ?? '').not.toContain('display: none;')
     })
   })
 

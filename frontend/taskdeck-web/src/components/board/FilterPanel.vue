@@ -79,7 +79,7 @@ const hasActiveFilters = computed(() => {
 
 <template>
   <div
-    v-if="isOpen"
+    v-show="isOpen"
     class="bg-white border-b border-gray-200 shadow-sm"
   >
     <div class="max-w-full px-4 sm:px-6 lg:px-8 py-4">

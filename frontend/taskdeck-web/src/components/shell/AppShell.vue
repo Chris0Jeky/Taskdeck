@@ -59,6 +59,12 @@ const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: str
   },
 }
 
+const supportedWorkspaceModes = ['guided', 'workbench', 'agent'] as const
+
+function isWorkspaceMode(value: string): value is WorkspaceMode {
+  return supportedWorkspaceModes.includes(value as WorkspaceMode)
+}
+
 const navCatalog: NavItem[] = [
   {
     id: 'home',
@@ -183,11 +189,16 @@ const availableNavItems = computed(() => navCatalog.filter((item) => {
   return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
 }))
 
-const primaryNavItems = computed(() => availableNavItems.value.filter((item) => item.primaryModes.includes(workspace.mode)))
+const activeWorkspaceMode = computed<WorkspaceMode>(() =>
+  isWorkspaceMode(workspace.mode)
+    ? workspace.mode
+    : 'guided')
 
-const secondaryNavItems = computed(() => availableNavItems.value.filter((item) => item.secondaryModes?.includes(workspace.mode)))
+const primaryNavItems = computed(() => availableNavItems.value.filter((item) => item.primaryModes.includes(activeWorkspaceMode.value)))
 
-const currentModeMeta = computed(() => workspaceModeMeta[workspace.mode])
+const secondaryNavItems = computed(() => availableNavItems.value.filter((item) => item.secondaryModes?.includes(activeWorkspaceMode.value)))
+
+const currentModeMeta = computed(() => workspaceModeMeta[activeWorkspaceMode.value])
 
 function openCaptureModal() {
   showCaptureModal.value = true
@@ -276,7 +287,11 @@ function handleLogout() {
 }
 
 function handleWorkspaceModeChange(event: Event) {
-  const nextMode = (event.target as HTMLSelectElement).value as WorkspaceMode
+  const nextMode = (event.target as HTMLSelectElement | null)?.value
+  if (!nextMode || !isWorkspaceMode(nextMode)) {
+    return
+  }
+
   void workspace.updateMode(nextMode)
 }
 
@@ -467,7 +482,7 @@ onUnmounted(() => {
               <select
                 id="workspace-mode-select"
                 class="td-topbar__mode-select"
-                :value="workspace.mode"
+                :value="activeWorkspaceMode"
                 aria-label="Workspace mode"
                 @change="handleWorkspaceModeChange"
               >

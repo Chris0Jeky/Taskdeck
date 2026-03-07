@@ -13,14 +13,10 @@ public class WorkspaceService : IWorkspaceService
     private static readonly TimeSpan RecentBoardWindow = TimeSpan.FromDays(14);
 
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAuthorizationService _authorizationService;
 
-    public WorkspaceService(
-        IUnitOfWork unitOfWork,
-        IAuthorizationService authorizationService)
+    public WorkspaceService(IUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
-        _authorizationService = authorizationService;
     }
 
     public async Task<Result<WorkspaceHomeDto>> GetHomeAsync(
@@ -32,21 +28,22 @@ public class WorkspaceService : IWorkspaceService
 
         var preference = await EnsurePreferenceAsync(userId, cancellationToken);
         var captureStatuses = await GetCaptureStatusesAsync(userId, cancellationToken);
-        var proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(userId, int.MaxValue, cancellationToken);
-        var accessibleBoardsResult = await GetAccessibleBoardsAsync(userId, cancellationToken);
-        if (!accessibleBoardsResult.IsSuccess)
-            return Result.Failure<WorkspaceHomeDto>(accessibleBoardsResult.ErrorCode, accessibleBoardsResult.ErrorMessage);
-
-        var accessibleBoards = accessibleBoardsResult.Value
-            .OrderByDescending(board => board.UpdatedAt)
-            .ThenByDescending(board => board.CreatedAt)
-            .ToList();
         var recentCutoff = DateTimeOffset.UtcNow.Subtract(RecentBoardWindow);
         var capturesNeedingTriage = captureStatuses.Count(status => status is CaptureStatus.New or CaptureStatus.Failed);
         var capturesInProgress = captureStatuses.Count(status => status == CaptureStatus.Triaging);
         var capturesReadyForFollowUp = captureStatuses.Count(status => status == CaptureStatus.Triaged);
-        var proposalsPendingReview = proposals.Count(proposal => proposal.Status == ProposalStatus.PendingReview);
-        var recentBoards = accessibleBoards
+        var proposalsPendingReview = await _unitOfWork.AutomationProposals.CountPendingReviewByUserIdAsync(userId, cancellationToken);
+        var totalBoards = await _unitOfWork.Boards.CountReadableByUserIdAsync(userId, includeArchived: false, cancellationToken);
+        var recentBoardsCount = await _unitOfWork.Boards.CountReadableUpdatedSinceAsync(
+            userId,
+            recentCutoff,
+            includeArchived: false,
+            cancellationToken);
+        var recentBoards = (await _unitOfWork.Boards.GetRecentReadableByUserIdAsync(
+                userId,
+                RecentBoardLimit,
+                includeArchived: false,
+                cancellationToken))
             .Take(RecentBoardLimit)
             .Select(board => new WorkspaceRecentBoardDto(
                 board.Id,
@@ -54,10 +51,9 @@ public class WorkspaceService : IWorkspaceService
                 board.Description,
                 board.UpdatedAt))
             .ToList();
-        var recentBoardsCount = accessibleBoards.Count(board => board.UpdatedAt >= recentCutoff);
 
         var isFirstRun =
-            accessibleBoards.Count == 0 &&
+            totalBoards == 0 &&
             captureStatuses.Count == 0 &&
             proposalsPendingReview == 0;
 
@@ -70,7 +66,7 @@ public class WorkspaceService : IWorkspaceService
                 capturesReadyForFollowUp,
                 proposalsPendingReview),
             new WorkspaceBoardSummaryDto(
-                accessibleBoards.Count,
+                totalBoards,
                 recentBoardsCount,
                 recentBoards),
             BuildRecommendedActions(
@@ -128,42 +124,10 @@ public class WorkspaceService : IWorkspaceService
         if (preference is not null)
             return preference;
 
-        preference = UserPreference.CreateDefault(userId);
-        await _unitOfWork.UserPreferences.AddAsync(preference, cancellationToken);
+        var defaultPreference = UserPreference.CreateDefault(userId);
+        await _unitOfWork.UserPreferences.AddAsync(defaultPreference, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return preference;
-    }
-
-    private async Task<Result<IReadOnlyList<Board>>> GetAccessibleBoardsAsync(
-        Guid userId,
-        CancellationToken cancellationToken)
-    {
-        var candidateBoardIds = (await _unitOfWork.Boards.SearchIdsAsync(
-                searchText: null,
-                includeArchived: false,
-                cancellationToken))
-            .ToList();
-
-        if (candidateBoardIds.Count == 0)
-            return Result.Success<IReadOnlyList<Board>>(Array.Empty<Board>());
-
-        var readableBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
-            userId,
-            candidateBoardIds,
-            cancellationToken);
-        if (!readableBoardIdsResult.IsSuccess)
-        {
-            return Result.Failure<IReadOnlyList<Board>>(
-                readableBoardIdsResult.ErrorCode,
-                readableBoardIdsResult.ErrorMessage);
-        }
-
-        var readableBoardIds = readableBoardIdsResult.Value.ToList();
-        if (readableBoardIds.Count == 0)
-            return Result.Success<IReadOnlyList<Board>>(Array.Empty<Board>());
-
-        var boards = await _unitOfWork.Boards.GetByIdsAsync(readableBoardIds, cancellationToken);
-        return Result.Success<IReadOnlyList<Board>>(boards.ToList());
+        return await _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken) ?? defaultPreference;
     }
 
     private async Task<IReadOnlyList<CaptureStatus>> GetCaptureStatusesAsync(

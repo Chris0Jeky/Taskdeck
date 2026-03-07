@@ -11,6 +11,40 @@ public class BoardRepository : Repository<Board>, IBoardRepository
     {
     }
 
+    public async Task<int> CountReadableByUserIdAsync(
+        Guid userId,
+        bool includeArchived,
+        CancellationToken cancellationToken = default)
+    {
+        return await BuildReadableQuery(userId, includeArchived).CountAsync(cancellationToken);
+    }
+
+    public async Task<int> CountReadableUpdatedSinceAsync(
+        Guid userId,
+        DateTimeOffset updatedSince,
+        bool includeArchived,
+        CancellationToken cancellationToken = default)
+    {
+        var boards = await BuildReadableQuery(userId, includeArchived).ToListAsync(cancellationToken);
+        return boards.Count(board => board.UpdatedAt >= updatedSince);
+    }
+
+    public async Task<IEnumerable<Board>> GetRecentReadableByUserIdAsync(
+        Guid userId,
+        int limit,
+        bool includeArchived,
+        CancellationToken cancellationToken = default)
+    {
+        var boundedLimit = limit <= 0 ? 1 : limit;
+        var boards = await BuildReadableQuery(userId, includeArchived).ToListAsync(cancellationToken);
+
+        return boards
+            .OrderByDescending(board => board.UpdatedAt)
+            .ThenByDescending(board => board.CreatedAt)
+            .Take(boundedLimit)
+            .ToList();
+    }
+
     public async Task<IEnumerable<Board>> SearchAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
     {
         var query = BuildSearchQuery(searchText, includeArchived);
@@ -80,6 +114,22 @@ public class BoardRepository : Repository<Board>, IBoardRepository
             query = query.Where(board =>
                 board.Name.Contains(searchText) ||
                 (board.Description != null && board.Description.Contains(searchText)));
+        }
+
+        return query;
+    }
+
+    private IQueryable<Board> BuildReadableQuery(Guid userId, bool includeArchived)
+    {
+        var query = _dbSet
+            .AsNoTracking()
+            .Where(board =>
+                board.OwnerId == userId ||
+                board.BoardAccesses.Any(access => access.UserId == userId));
+
+        if (!includeArchived)
+        {
+            query = query.Where(board => !board.IsArchived);
         }
 
         return query;
