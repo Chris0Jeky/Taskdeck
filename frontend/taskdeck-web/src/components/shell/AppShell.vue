@@ -73,7 +73,7 @@ const navCatalog: NavItem[] = [
     id: 'review',
     label: 'Review',
     icon: 'R',
-    path: '/workspace/automations/proposals',
+    path: '/workspace/review',
     flag: 'newAutomation',
     primaryModes: ['guided', 'workbench', 'agent'],
     keywords: 'review proposals automations approve reject execute',
@@ -251,8 +251,12 @@ function isActiveRoute(path: string): boolean {
     return route.path === path
   }
 
+  if (path === '/workspace/review') {
+    return route.path.startsWith('/workspace/review') || route.path.startsWith('/workspace/automations/proposals')
+  }
+
   if (path.startsWith('/workspace/automations')) {
-    return route.path.startsWith('/workspace/automations')
+    return route.path.startsWith(path)
   }
 
   if (path === '/workspace/ops/cli') {

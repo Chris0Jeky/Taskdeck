@@ -58,7 +58,7 @@ function openRoute(route: string) {
 function resolveActionRoute(action: HomeRecommendedAction): string {
   switch (action.targetSurface) {
     case 'review':
-      return '/workspace/automations/proposals'
+      return '/workspace/review'
     case 'boards':
       return '/workspace/boards'
     case 'board':
@@ -107,7 +107,7 @@ onMounted(() => {
 
       <div class="td-home__hero-actions">
         <button class="td-btn td-btn--primary" @click="openRoute('/workspace/inbox')">Capture to Inbox</button>
-        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/automations/proposals')">Open Review</button>
+        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/review')">Open Review</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/boards')">Open Boards</button>
       </div>
     </header>

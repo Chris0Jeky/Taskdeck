@@ -105,7 +105,7 @@ describe('HomeView', () => {
     await wrapper.get('.td-home-action').trigger('click')
     await wrapper.get('.td-home-board').trigger('click')
 
-    expect(routerMocks.push).toHaveBeenCalledWith('/workspace/automations/proposals')
+    expect(routerMocks.push).toHaveBeenCalledWith('/workspace/review')
     expect(routerMocks.push).toHaveBeenCalledWith('/workspace/boards/board-1')
   })
 })
