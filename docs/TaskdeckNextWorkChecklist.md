@@ -58,10 +58,12 @@ Detailed reconciliation:
   - `#100` user guides/tutorials/FAQ (reused, reprioritized to `Priority II`)
   - `#328` first-run smoke + launch-criteria guardrail
 - [ ] Wave P implementation carry-forward:
-  - `#320`: durable workspace-mode preference + product-shaped summary endpoint direction
-  - `#324`: onboarding checklist plus first useful project/wizard flow
+  - `#320`: durable workspace-mode preference + guided/workbench/agent shell contract + product-shaped summary endpoint direction
+  - `#322`: `Review` alias + plain-language top boxes + action-state empty/help states + no orphan surfaces
+  - `#324`: onboarding checklist plus first useful project/wizard flow and `Today` agenda blocks
   - `#326`: application-layer proposal summaries + explicit board-aware action rail
   - `#96`: dismissible in-app help blocks/help-center direction
+  - `#100`: navigation-shaped manual structure and future chapter split under `docs/manual/`
   - `#328`: `novice-first-first-run` scenario shape and launch-criteria sync
 - [ ] Expanded-blueprint architecture tracker: `#335`
 - [ ] Batch D agent substrate:

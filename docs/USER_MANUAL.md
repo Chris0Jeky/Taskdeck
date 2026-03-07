@@ -9,10 +9,11 @@ Taskdeck is a capture-first execution workspace.
 Its main loop is:
 
 1. capture something quickly
-2. triage it into a proposal
+2. structure or triage it into a proposal
 3. review the proposal
 4. apply it explicitly
 5. work the resulting board/cards
+6. observe what happened when you need trust, provenance, or history
 
 Current product shape:
 - the shipped shell still starts from `Boards`
@@ -57,6 +58,73 @@ Rule of thumb:
 - if you are new, stay in `Boards`, `Inbox`, and `Automations -> Proposals`
 - treat `Queue` and `Ops` as advanced surfaces unless you explicitly need them
 
+## Planned Shell Direction (Not Yet Shipped)
+
+The expanded MVP blueprint now fixes the intended shell contract even though the current UI has not shipped it yet.
+
+Guided mode primary navigation:
+- `Home`
+- `Today`
+- `Inbox`
+- `Projects`
+- `Review`
+- `Settings`
+
+Guided mode secondary navigation:
+- `Notifications`
+- `Archive`
+- `Help`
+
+Workbench mode primary navigation:
+- `Home`
+- `Projects`
+- `Inbox`
+- `Review`
+- `Automations`
+- `Activity`
+- `Notifications`
+- `Settings`
+
+Workbench mode secondary navigation:
+- `Ops`
+- `Access`
+- `Archive`
+- `Integrations`
+
+Agent mode primary navigation:
+- `Home`
+- `Agents`
+- `Runs`
+- `Knowledge`
+- `Inbox`
+- `Projects`
+- `Review`
+- `Integrations`
+- `Settings`
+
+Agent mode secondary navigation:
+- `Activity`
+- `Ops`
+- `Archive`
+
+These modes are intended to be display/routing preferences, not security boundaries.
+
+Suggested vocabulary mapping:
+
+| Internal concept | Guided label | Workbench label | Agent label |
+|---|---|---|---|
+| Board | Project | Board / Project | Project |
+| Automation Proposal | Review item | Proposal | Proposal |
+| LLM Queue | Advanced intake | Queue | Queue |
+| Chat session | Assistant chat | Chat | Agent chat |
+| Command run | Diagnostics | Ops run | Tool run |
+| Capture item | Inbox item | Capture | Capture |
+
+## Manual Structure
+
+This file remains the single-file shipped-product reference.
+The planned chapter split and in-app help mapping now live in [manual/README.md](manual/README.md) so the root docs stay focused.
+
 ## Choose The Right Surface
 
 Use `Boards` when:
@@ -68,7 +136,7 @@ Use `Inbox` when:
 - you want to save it now and structure it later
 - you do not want to decide the board/card shape yet
 
-Use `Automations -> Proposals` when:
+Use `Review` (`Automations -> Proposals` today) when:
 - you need the review boundary
 - you want to inspect what Taskdeck is about to change
 
@@ -242,8 +310,8 @@ For direct API walkthroughs:
 - use `demo/http/taskdeck-demo.http` with the VS Code REST Client
 
 For the full demo/operator path:
-- see [DEMO_PLAYBOOK.md](DEMO_PLAYBOOK.md)
-- see [SCENARIOS.md](SCENARIOS.md)
+- see [DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md)
+- see [SCENARIOS.md](product/SCENARIOS.md)
 
 ## Troubleshooting
 

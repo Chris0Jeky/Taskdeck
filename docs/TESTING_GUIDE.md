@@ -246,7 +246,7 @@ powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8
 ```
 
 Hardening matrix pass/fail criteria:
-- `docs/DEPLOYMENT_HARDENING_MATRIX.md`
+- `docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`
 
 ## Terraform IaC Baseline Validation
 
@@ -360,7 +360,7 @@ Nightly quality workflow: `.github/workflows/nightly-quality.yml`
 - dependency/security signal artifacts:
   - `dotnet list package --vulnerable --include-transitive` output + exit code
   - `npm audit --audit-level=high --json` output + exit code
-  - normalized dependency-security summary (`summary.md`, `summary.json`) linked to `docs/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
+  - normalized dependency-security summary (`summary.md`, `summary.json`) linked to `docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md`
 
 Triage usage:
 - check workflow step summary first for signal exit codes
@@ -496,7 +496,7 @@ Planned quality expectations when implementation starts:
 ## Manual Verification
 
 Use `docs/MANUAL_TEST_CHECKLIST.md` for action-by-action manual validation.
-Use `docs/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
+Use `docs/ops/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
 
 ## Thesis Alignment Validation (Capture Realignment)
 

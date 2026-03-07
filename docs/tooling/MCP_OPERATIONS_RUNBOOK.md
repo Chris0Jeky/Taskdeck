@@ -174,7 +174,7 @@ Docker MCP gateway slow start:
 ## Related
 
 - `docs/MCP_TOOLING_GUIDE.md`
-- `docs/DEPLOYMENT_CONTAINERS.md`
+- `docs/ops/DEPLOYMENT_CONTAINERS.md`
 - `scripts/mcp/Set-MarketplaceMcpCredentials.ps1`
 - `scripts/mcp/Test-DockerMcpProfile.ps1`
 - Issue: `#140`

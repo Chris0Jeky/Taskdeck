@@ -2,7 +2,7 @@
 
 Date: 2026-03-07
 Branch: `docs/mvp-expansion-reconciliation`
-Status: Coverage audit complete; Wave P/Q/R seeded; docs-root curation intentionally split into follow-on work
+Status: Coverage audit complete; Wave P/Q/R seeded; root-docs curation, manual structure, and path cleanup complete
 
 ## Purpose
 
@@ -40,7 +40,6 @@ Primary current-doc inputs:
 - Treat the `MINIMAL` pack as the concise product diagnosis and prioritization source.
 - Treat the `EXPANDED` pack as the architectural and issue-seeding expansion layer.
 - Keep immediate productization work separate from later agent/knowledge/integration expansion.
-- Keep docs-root curation/path cleanup separate from this reconciliation branch so the backlog/doc-integration diff stays reviewable on its own.
 - Avoid rewriting `STATUS.md` as aspiration; put future-facing work in roadmap/backlog docs instead.
 
 ## Working Synthesis
@@ -105,9 +104,9 @@ It needs a product-legibility correction that turns the current harness and capt
 - Updated user-facing/product docs:
   - `README.md`
   - `docs/USER_MANUAL.md`
-  - `docs/DOGFOODING_GUIDE.md`
-  - `docs/DEMO_PLAYBOOK.md`
-  - `docs/SCENARIOS.md`
+  - `docs/product/DOGFOODING_GUIDE.md`
+  - `docs/product/DEMO_PLAYBOOK.md`
+  - `docs/product/SCENARIOS.md`
   - `docs/TESTING_GUIDE.md`
 - Added reconciliation notes for issue planning and future batch execution.
 
@@ -127,6 +126,8 @@ It needs a product-legibility correction that turns the current harness and capt
 - `docs/START_HERE.md` now bridges repo setup, product thesis, seeded demo flow, and the current golden path.
 - `USER_MANUAL.md`, `DOGFOODING_GUIDE.md`, and `DEMO_PLAYBOOK.md` now distinguish the normal capture/review/board path from advanced/operator surfaces.
 - `INDEX.md` now includes audience-first read paths.
+- root `docs/` is now restricted to the living-doc spine, while stable reference material is sorted under `product/`, `manual/`, `ops/`, `platform/`, `security/`, and `tooling/`.
+- `docs/manual/README.md` now preserves the manual chapter map and in-app help mapping without forcing the root docs to expand again.
 - Full-source coverage now has a dedicated audit ledger:
   - `docs/analysis/2026-03-07_mvp-expansion-source-coverage-audit.md`
 

@@ -329,7 +329,7 @@ For each test below, capture:
    - Expected: user can identify allowed templates without trial-and-error.
 4. Navigate to role-assignment/help path from ops surface (or linked settings/docs).
    - Expected: clear guidance exists for obtaining required role/permissions.
-   - Reference: `docs/TASKDECK_HUMAN_OPERATIONS.md` (`A5 Ops CLI role-assignment workflow`).
+   - Reference: `docs/ops/TASKDECK_HUMAN_OPERATIONS.md` (`A5 Ops CLI role-assignment workflow`).
 
 ## L. Post-Run Documentation Check
 
@@ -338,7 +338,7 @@ If behavior, commands, or known gaps changed, update:
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
-- `docs/OBSERVABILITY_BASELINE.md` (when telemetry/dashboard/alert contract changes)
+- `docs/ops/OBSERVABILITY_BASELINE.md` (when telemetry/dashboard/alert contract changes)
 
 ## M. Final Automated Smoke Before Merge
 

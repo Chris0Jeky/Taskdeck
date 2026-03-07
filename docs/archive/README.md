@@ -25,6 +25,8 @@ Time-scoped archive bundles:
   - Archived stale note artifacts (`personalNotes.txt`, `notesFromManualTesting.txt`) after canonical reconciliation.
 - `2026-02-25_inreview-repo-pack/`
   - Archived historical `REPO_PACK` bundle after issue seeding and canonical doc promotion.
+- `2026-03-07_docs-root-reorg/`
+  - Archived stale root-level demo-migration provenance notes during the docs-root taxonomy cleanup.
 
 ## Usage
 

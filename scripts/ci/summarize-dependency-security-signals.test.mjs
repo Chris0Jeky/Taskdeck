@@ -14,7 +14,7 @@ test('buildSummary aggregates backend and frontend vulnerability counts', async 
     const frontendReportPath = join(tempDir, 'frontend.json')
     const backendExitCodePath = join(tempDir, 'backend.exitcode')
     const frontendExitCodePath = join(tempDir, 'frontend.exitcode')
-    const policyDocPath = join(process.cwd(), 'docs', 'SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md')
+    const policyDocPath = join(process.cwd(), 'docs', 'security', 'SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md')
 
     await writeFile(backendReportPath, JSON.stringify({
       projects: [
