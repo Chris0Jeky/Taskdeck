@@ -264,15 +264,15 @@ Delivered in the latest cycle:
    - board access now uses a board picker, automation chat accepts selector-safe board context instead of raw-ID happy paths, and frontend unit + Playwright coverage now locks selector flow, route defaults, and representative empty-state branches
    - linked follow-through status is now split: `#212` delivered the logging/telemetry redaction policy and runtime guardrails, while `#213` remains the pending performance/responsiveness slice
    - updated existing SEC-06 rate-limiting issue (`#81`) and wave index (`#107`) to integrate capture-specific scope without duplicate issue creation
-62. InReview extraction coverage expansion (`#216` to `#220`):
+63. InReview extraction coverage expansion (`#216` to `#220`):
    - seeded go-to-market and user-research execution issues from HUMAN playbooks (`#216`, `#217`)
    - seeded deferred capture follow-ons from the original realignment pack (`#218`, `#219`, `#220`)
    - updated capture wave tracker (`#199`) and wave index (`#107`) to keep extraction coverage explicit
-63. CAP-01 capture model/domain contract delivery (`#200`):
+64. CAP-01 capture model/domain contract delivery (`#200`):
    - accepted queue-wrapper MVP model (`LlmRequest` + `inbox.capture.v1`) with explicit migration path to dedicated capture entities
    - added canonical capture source/status contracts plus transition policy mapping from queue lifecycle states
    - added capture payload schema/invariant enforcement (schema version, raw text bounds, actor-field rejection) and provenance linkage representation for capture item -> triage run -> proposal
-64. CAP-03 queue provenance fix delivery (`#202`):
+65. CAP-03 queue provenance fix delivery (`#202`):
    - extended planner contract to support explicit source metadata (`sourceType`, `sourceReferenceId`, `correlationId`) with manual-safe defaults
    - queue worker now stamps queue-origin proposals as `ProposalSourceType.Queue` instead of `Manual`
    - queue item id is now forwarded as source-reference and correlation metadata for deterministic provenance traceability
