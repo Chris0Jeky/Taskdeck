@@ -263,6 +263,27 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
   })
 
+  it('does not fire global shortcuts while the workspace mode select is focused', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+    const modeSelect = wrapper.get('[aria-label="Workspace mode"]')
+
+    modeSelect.element.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'C',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+    }))
+    modeSelect.element.dispatchEvent(new KeyboardEvent('keydown', {
+      key: '?',
+      bubbles: true,
+    }))
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+  })
+
   it('exposes listbox option accessibility state for keyboard selection', async () => {
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
