@@ -102,6 +102,19 @@ public class BoardRepository : Repository<Board>, IBoardRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<Board>> GetReadableByUserIdAsync(
+        Guid userId,
+        bool includeArchived,
+        CancellationToken cancellationToken = default)
+    {
+        var boards = await BuildReadableQuery(userId, includeArchived).ToListAsync(cancellationToken);
+
+        return boards
+            .OrderByDescending(board => board.UpdatedAt)
+            .ThenByDescending(board => board.CreatedAt)
+            .ToList();
+    }
+
     public async Task<IEnumerable<Board>> SearchAsync(string? searchText, bool includeArchived, CancellationToken cancellationToken = default)
     {
         var query = BuildSearchQuery(searchText, includeArchived);

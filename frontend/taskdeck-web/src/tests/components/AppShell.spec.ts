@@ -100,6 +100,7 @@ describe('AppShell workspace navigation and command palette', () => {
     const wrapper = mountedWrapper
 
     expect(wrapper.text()).toContain('Home')
+    expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Review')
     expect(wrapper.text()).toContain('Boards')
     expect(wrapper.text()).toContain('Workbench Tools')
@@ -112,6 +113,7 @@ describe('AppShell workspace navigation and command palette', () => {
     const wrapper = mountedWrapper
 
     expect(wrapper.text()).toContain('Home')
+    expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Activity')
     expect(wrapper.text()).not.toContain('Workbench Tools')
   })
@@ -174,6 +176,7 @@ describe('AppShell workspace navigation and command palette', () => {
     await waitForUi()
 
     const input = wrapper.get('.td-command-palette__input')
+    await input.trigger('keydown.down')
     await input.trigger('keydown.down')
     await input.trigger('keydown.down')
     await input.trigger('keydown.enter')

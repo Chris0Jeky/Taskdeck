@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
+import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
-import type { HomeRecommendedAction } from '../types/workspace'
+import type { HomeRecommendedAction, WorkspaceOnboarding } from '../types/workspace'
 
-const router = useRouter()
 const workspace = useWorkspaceStore()
 
 const summary = computed(() => workspace.homeSummary)
 const recentBoards = computed(() => summary.value?.boards.recentBoards ?? [])
 const recommendedActions = computed(() => summary.value?.recommendedActions ?? [])
+const onboarding = computed<WorkspaceOnboarding | null>(() => summary.value?.onboarding ?? workspace.onboarding)
 const workloadCards = computed(() => {
   if (!summary.value) {
     return []
@@ -43,16 +44,24 @@ const workloadCards = computed(() => {
   ]
 })
 
+const onboardingSummary = computed(() => {
+  if (!onboarding.value) {
+    return null
+  }
+
+  const completedSteps = onboarding.value.steps.filter((step) => step.isComplete).length
+  return {
+    completedSteps,
+    totalSteps: onboarding.value.steps.length,
+  }
+})
+
 async function loadHomeSummary() {
   try {
     await workspace.fetchHomeSummary()
   } catch {
     // The store keeps the error state for the view.
   }
-}
-
-function openRoute(route: string) {
-  void router.push(route)
 }
 
 function resolveActionRoute(action: HomeRecommendedAction): string {
@@ -82,7 +91,7 @@ function openRecommendedAction(action: HomeRecommendedAction) {
 }
 
 function openBoard(boardId: string) {
-  void router.push(`/workspace/boards/${boardId}`)
+  openRoute(`/workspace/boards/${boardId}`)
 }
 
 function refreshHomeSummary() {
@@ -92,6 +101,17 @@ function refreshHomeSummary() {
 
   void loadHomeSummary()
 }
+
+const {
+  showSetupModal,
+  openRoute,
+  openSetupModal,
+  closeSetupModal,
+  handleSetupCreated,
+  openOnboardingStep,
+  dismissOnboarding,
+  replayOnboarding,
+} = useWorkspaceOnboardingActions(refreshHomeSummary)
 
 onMounted(refreshHomeSummary)
 onActivated(refreshHomeSummary)
@@ -104,14 +124,14 @@ onActivated(refreshHomeSummary)
         <span class="td-home__eyebrow">Workspace</span>
         <h1 class="td-page-title">Home</h1>
         <p class="td-home__subtitle">
-          Start from one place, move through review with intent, and keep boards as the place where work lands.
+          Keep the loop clear: shape the day in Today, decide change in Review, and let boards stay where work lands.
         </p>
       </div>
 
       <div class="td-home__hero-actions">
-        <button class="td-btn td-btn--primary" @click="openRoute('/workspace/inbox')">Capture to Inbox</button>
+        <button class="td-btn td-btn--primary" @click="openRoute('/workspace/today')">Open Today</button>
+        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/inbox')">Capture to Inbox</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/review')">Open Review</button>
-        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/boards')">Open Boards</button>
       </div>
     </header>
 
@@ -124,18 +144,55 @@ onActivated(refreshHomeSummary)
     </div>
 
     <template v-else-if="summary">
-      <section v-if="summary.isFirstRun" class="td-panel td-home__start-here">
-        <div>
-          <h2 class="td-section-title">Start here</h2>
-          <p class="td-section-desc">
-            The first useful loop is simple: create a board, capture one item, then review the proposal before it touches your board.
-          </p>
+      <section v-if="onboarding" class="td-panel td-home__onboarding">
+        <div class="td-home__onboarding-header">
+          <div>
+            <h2 class="td-section-title">Setup loop</h2>
+            <p class="td-section-desc">
+              <template v-if="onboarding.visibility === 'dismissed'">
+                Setup is hidden right now. Replay it whenever you want the guided path back into capture, review, and boards.
+              </template>
+              <template v-else-if="onboarding.isComplete">
+                The setup loop is complete. You can still reopen it whenever you want a quick reset on the review-first path.
+              </template>
+              <template v-else>
+                Start from a useful board, capture one real item, then review before anything reaches a board.
+              </template>
+            </p>
+          </div>
+          <div v-if="onboardingSummary" class="td-home__onboarding-progress">
+            {{ onboardingSummary.completedSteps }}/{{ onboardingSummary.totalSteps }} steps
+          </div>
         </div>
-        <ol class="td-home__steps">
-          <li>Create your first board or starter layout.</li>
-          <li>Capture one task, note, or follow-up into Inbox.</li>
-          <li>Review the proposed change before you apply it.</li>
-        </ol>
+
+        <template v-if="onboarding.visibility === 'dismissed'">
+          <div class="td-home__onboarding-actions">
+            <button class="td-btn td-btn--primary" @click="replayOnboarding">Replay Setup</button>
+            <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/today')">Open Today</button>
+          </div>
+        </template>
+        <template v-else>
+          <div class="td-home__onboarding-steps">
+            <button
+              v-for="step in onboarding.steps"
+              :key="step.stepId"
+              :class="['td-home-step', step.isComplete ? 'td-home-step--complete' : '']"
+              @click="openOnboardingStep(step)"
+            >
+              <span class="td-home-step__status">{{ step.isComplete ? 'Done' : 'Next' }}</span>
+              <span class="td-home-step__title">{{ step.title }}</span>
+              <span class="td-home-step__description">{{ step.description }}</span>
+            </button>
+          </div>
+
+          <div class="td-home__onboarding-actions">
+            <button class="td-btn td-btn--primary" @click="openSetupModal">
+              {{ summary.isFirstRun ? 'Start Setup' : 'Resume Setup' }}
+            </button>
+            <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/today')">Open Today</button>
+            <button class="td-btn td-btn--ghost" @click="dismissOnboarding">Dismiss</button>
+          </div>
+        </template>
       </section>
 
       <section class="td-home__grid">
@@ -194,7 +251,7 @@ onActivated(refreshHomeSummary)
           </dl>
           <div v-if="recentBoards.length === 0" class="td-home-card__empty">
             <template v-if="summary.boards.totalBoards === 0">
-              No boards yet. Create one so captures and review can land somewhere useful.
+              No boards yet. Start setup from Home or Today so captures and review can land somewhere useful.
             </template>
             <template v-else>
               No recently active boards yet. Open Boards to pick up where you left off.
@@ -214,6 +271,14 @@ onActivated(refreshHomeSummary)
         </article>
       </section>
     </template>
+
+    <Teleport to="body">
+      <WorkspaceSetupModal
+        :is-open="showSetupModal"
+        @close="closeSetupModal"
+        @created="handleSetupCreated"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -263,19 +328,77 @@ onActivated(refreshHomeSummary)
   color: var(--td-text-secondary);
 }
 
-.td-home__start-here {
+.td-home__onboarding {
   display: flex;
   flex-direction: column;
   gap: var(--td-space-3);
 }
 
-.td-home__steps {
-  margin: 0;
-  padding-left: 1.25rem;
+.td-home__onboarding-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--td-space-3);
+  align-items: flex-start;
+}
+
+.td-home__onboarding-progress {
+  border-radius: var(--td-radius-pill, 999px);
+  background: var(--td-surface-secondary);
+  border: 1px solid var(--td-border-default);
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  padding: 0.25rem 0.625rem;
+  white-space: nowrap;
+}
+
+.td-home__onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--td-space-3);
+}
+
+.td-home-step {
   display: flex;
   flex-direction: column;
   gap: var(--td-space-2);
+  padding: var(--td-space-3);
+  border-radius: var(--td-radius-lg);
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.td-home-step--complete {
+  border-color: color-mix(in srgb, var(--td-color-success) 45%, var(--td-border-default));
+  background: color-mix(in srgb, var(--td-color-success) 8%, var(--td-surface-primary));
+}
+
+.td-home-step__status {
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--td-text-tertiary);
+}
+
+.td-home-step__title {
+  font-size: var(--td-font-base);
+  font-weight: 700;
+  color: var(--td-text-primary);
+}
+
+.td-home-step__description {
+  font-size: var(--td-font-sm);
   color: var(--td-text-secondary);
+  line-height: 1.5;
+}
+
+.td-home__onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-2);
 }
 
 .td-home__grid {
@@ -463,7 +586,8 @@ onActivated(refreshHomeSummary)
 }
 
 @media (max-width: 768px) {
-  .td-home__hero {
+  .td-home__hero,
+  .td-home__onboarding-header {
     flex-direction: column;
   }
 

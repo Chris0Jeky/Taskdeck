@@ -10,6 +10,10 @@ public interface IBoardRepository : IRepository<Board>
         DateTimeOffset updatedSince,
         bool includeArchived,
         CancellationToken cancellationToken = default);
+    Task<IEnumerable<Board>> GetReadableByUserIdAsync(
+        Guid userId,
+        bool includeArchived,
+        CancellationToken cancellationToken = default);
     Task<IEnumerable<Board>> GetRecentReadableByUserIdAsync(
         Guid userId,
         int limit,

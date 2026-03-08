@@ -8,6 +8,9 @@ public class UserPreference : Entity
 {
     public Guid UserId { get; private set; }
     public WorkspaceMode WorkspaceMode { get; private set; }
+    public WorkspaceOnboardingVisibility OnboardingVisibility { get; private set; }
+    public DateTimeOffset? OnboardingDismissedAt { get; private set; }
+    public DateTimeOffset? OnboardingCompletedAt { get; private set; }
 
     public User User { get; private set; } = null!;
 
@@ -15,7 +18,10 @@ public class UserPreference : Entity
     {
     }
 
-    public UserPreference(Guid userId, WorkspaceMode workspaceMode = WorkspaceMode.Guided)
+    public UserPreference(
+        Guid userId,
+        WorkspaceMode workspaceMode = WorkspaceMode.Guided,
+        WorkspaceOnboardingVisibility onboardingVisibility = WorkspaceOnboardingVisibility.Active)
         : base()
     {
         if (userId == Guid.Empty)
@@ -24,8 +30,12 @@ public class UserPreference : Entity
         if (!Enum.IsDefined(workspaceMode))
             throw new DomainException(ErrorCodes.ValidationError, "Workspace mode is invalid");
 
+        if (!Enum.IsDefined(onboardingVisibility))
+            throw new DomainException(ErrorCodes.ValidationError, "Workspace onboarding visibility is invalid");
+
         UserId = userId;
         WorkspaceMode = workspaceMode;
+        OnboardingVisibility = onboardingVisibility;
     }
 
     public static UserPreference CreateDefault(Guid userId)
@@ -39,6 +49,29 @@ public class UserPreference : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Workspace mode is invalid");
 
         WorkspaceMode = workspaceMode;
+        Touch();
+    }
+
+    public void DismissOnboarding()
+    {
+        OnboardingVisibility = WorkspaceOnboardingVisibility.Dismissed;
+        OnboardingDismissedAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
+
+    public void ReplayOnboarding()
+    {
+        OnboardingVisibility = WorkspaceOnboardingVisibility.Active;
+        OnboardingDismissedAt = null;
+        Touch();
+    }
+
+    public void RecordOnboardingCompletion()
+    {
+        if (OnboardingCompletedAt is not null)
+            return;
+
+        OnboardingCompletedAt = DateTimeOffset.UtcNow;
         Touch();
     }
 }

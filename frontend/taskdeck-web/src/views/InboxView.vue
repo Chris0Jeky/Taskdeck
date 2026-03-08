@@ -286,9 +286,10 @@ onMounted(() => {
           <div v-else-if="captureStore.listError" class="td-alert td-alert--error">{{ captureStore.listError }}</div>
           <div v-else-if="!captureStore.hasItems" class="td-placeholder td-placeholder--empty-state">
             <h3>No capture items yet</h3>
-            <p>Start from Home when you want to drop in fresh notes or transcripts. Review will light up once triage creates proposals.</p>
+            <p>Start from Home or Today when you want to drop in fresh notes or transcripts. Review will light up once triage creates proposals.</p>
             <div class="td-placeholder__actions">
               <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
+              <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/today')">Open Today</button>
               <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
             </div>
           </div>

@@ -85,14 +85,20 @@ Manual-only checks (non-automatable in generic local script):
 1. Register new user from `/register`.
    - Expected: redirected/authenticated into workspace.
 2. Login with valid credentials from `/login`.
-   - Expected: routed to `/workspace/boards`.
+   - Expected: routed to `/workspace/home`.
 3. Attempt workspace route while logged out.
    - Expected: redirected to `/login` with redirect query.
-4. Open command palette via `Ctrl+K`/`Cmd+K`, use arrow keys to select an item, and press `Enter`.
+4. Open `/workspace/today`.
+   - Expected: agenda shows review/triage/overdue/due-today/blocked summary cards and the onboarding loop block.
+5. Start `Start Useful Board` from `Home` or `Today`, pick a starter shape, and create a board.
+   - Expected: board opens immediately; when a starter pack applies successfully, the starter workflow is present, and when it fails, the board still opens with a warning.
+6. Dismiss onboarding from `Home` or `Today`, refresh, then replay it.
+   - Expected: dismiss/replay state persists and the guided setup path is recoverable without trapping experienced users.
+7. Open command palette via `Ctrl+K`/`Cmd+K`, use arrow keys to select an item, and press `Enter`.
    - Expected: command activates the selected item and closes the palette; `Escape` closes palette without navigation.
-5. Open shortcuts help via `?` and close with `Escape`.
+8. Open shortcuts help via `?` and close with `Escape`.
    - Expected: dialog toggles correctly.
-6. Logout from top bar.
+9. Logout from top bar.
    - Expected: token/session cleared, redirected to `/login`.
 
 ## B. Boards, Columns, Cards, Labels

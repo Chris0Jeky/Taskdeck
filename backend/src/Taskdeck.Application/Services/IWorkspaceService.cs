@@ -6,9 +6,14 @@ namespace Taskdeck.Application.Services;
 public interface IWorkspaceService
 {
     Task<Result<WorkspaceHomeDto>> GetHomeAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<Result<WorkspaceTodayDto>> GetTodayAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result<WorkspacePreferenceDto>> GetPreferencesAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result<WorkspacePreferenceDto>> UpdatePreferencesAsync(
         Guid userId,
         UpdateWorkspacePreferenceDto dto,
+        CancellationToken cancellationToken = default);
+    Task<Result<WorkspaceOnboardingDto>> UpdateOnboardingAsync(
+        Guid userId,
+        UpdateWorkspaceOnboardingDto dto,
         CancellationToken cancellationToken = default);
 }

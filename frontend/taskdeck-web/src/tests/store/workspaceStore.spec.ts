@@ -14,11 +14,39 @@ const sessionMock = vi.hoisted(() => ({
   isAuthenticated: true,
 }))
 
+function buildOnboarding(overrides?: Partial<ReturnType<typeof createOnboarding>>) {
+  return {
+    ...createOnboarding(),
+    ...overrides,
+  }
+}
+
+function createOnboarding() {
+  return {
+    visibility: 'active' as const,
+    isComplete: false,
+    currentStepId: 'create-first-board',
+    dismissedAt: null,
+    completedAt: null,
+    steps: [
+      {
+        stepId: 'create-first-board',
+        title: 'Create your first board',
+        description: 'Create a board.',
+        targetSurface: 'boards' as const,
+        isComplete: false,
+      },
+    ],
+  }
+}
+
 vi.mock('../../api/workspaceApi', () => ({
   workspaceApi: {
     getHomeSummary: vi.fn(),
+    getTodaySummary: vi.fn(),
     getPreferences: vi.fn(),
     updatePreferences: vi.fn(),
+    updateOnboarding: vi.fn(),
   },
 }))
 
@@ -54,6 +82,7 @@ describe('workspaceStore', () => {
     vi.mocked(workspaceApi.getPreferences).mockResolvedValue({
       userId: TEST_USER_ID,
       workspaceMode: 'workbench',
+      onboarding: buildOnboarding(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     })
@@ -61,6 +90,7 @@ describe('workspaceStore', () => {
     await store.hydratePreferences()
 
     expect(store.mode).toBe('workbench')
+    expect(store.onboarding?.currentStepId).toBe('create-first-board')
     expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
     expect(store.preferencesHydrated).toBe(true)
   })
@@ -70,6 +100,7 @@ describe('workspaceStore', () => {
     vi.mocked(workspaceApi.updatePreferences).mockResolvedValue({
       userId: TEST_USER_ID,
       workspaceMode: 'agent',
+      onboarding: buildOnboarding({ visibility: 'dismissed', dismissedAt: new Date().toISOString() }),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     })
@@ -77,6 +108,7 @@ describe('workspaceStore', () => {
     await store.updateMode('agent')
 
     expect(store.mode).toBe('agent')
+    expect(store.onboarding?.visibility).toBe('dismissed')
     expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
     expect(workspaceApi.updatePreferences).toHaveBeenCalledWith({ workspaceMode: 'agent' })
   })
@@ -131,11 +163,12 @@ describe('workspaceStore', () => {
     expect(toastMocks.warning).toHaveBeenCalledWith('save failed. Keeping the local selection for now.')
   })
 
-  it('loads home summary and syncs the mode from the payload', async () => {
+  it('loads home summary and syncs mode and onboarding from the payload', async () => {
     const store = useWorkspaceStore()
     vi.mocked(workspaceApi.getHomeSummary).mockResolvedValue({
       workspaceMode: 'guided',
       isFirstRun: false,
+      onboarding: buildOnboarding(),
       workload: {
         capturesNeedingTriage: 1,
         capturesInProgress: 2,
@@ -153,7 +186,81 @@ describe('workspaceStore', () => {
     await store.fetchHomeSummary()
 
     expect(store.homeSummary?.workload.proposalsPendingReview).toBe(2)
+    expect(store.onboarding?.currentStepId).toBe('create-first-board')
     expect(store.mode).toBe('guided')
+  })
+
+  it('loads today summary and syncs onboarding state', async () => {
+    const store = useWorkspaceStore()
+    vi.mocked(workspaceApi.getTodaySummary).mockResolvedValue({
+      workspaceMode: 'guided',
+      onboarding: buildOnboarding({ isComplete: true, currentStepId: null }),
+      summary: {
+        capturesNeedingTriage: 1,
+        proposalsPendingReview: 2,
+        overdueCards: 1,
+        dueTodayCards: 2,
+        blockedCards: 1,
+      },
+      overdueCards: [],
+      dueTodayCards: [],
+      blockedCards: [],
+      recommendedActions: [],
+    })
+
+    await store.fetchTodaySummary()
+
+    expect(store.todaySummary?.summary.dueTodayCards).toBe(2)
+    expect(store.onboarding?.isComplete).toBe(true)
+  })
+
+  it('updates onboarding and patches any loaded summaries', async () => {
+    const store = useWorkspaceStore()
+    store.homeSummary = {
+      workspaceMode: 'guided',
+      isFirstRun: true,
+      onboarding: buildOnboarding(),
+      workload: {
+        capturesNeedingTriage: 0,
+        capturesInProgress: 0,
+        capturesReadyForFollowUp: 0,
+        proposalsPendingReview: 0,
+      },
+      boards: {
+        totalBoards: 0,
+        recentBoardsCount: 0,
+        recentBoards: [],
+      },
+      recommendedActions: [],
+    }
+    store.todaySummary = {
+      workspaceMode: 'guided',
+      onboarding: buildOnboarding(),
+      summary: {
+        capturesNeedingTriage: 0,
+        proposalsPendingReview: 0,
+        overdueCards: 0,
+        dueTodayCards: 0,
+        blockedCards: 0,
+      },
+      overdueCards: [],
+      dueTodayCards: [],
+      blockedCards: [],
+      recommendedActions: [],
+    }
+
+    vi.mocked(workspaceApi.updateOnboarding).mockResolvedValue(
+      buildOnboarding({
+        visibility: 'dismissed',
+        dismissedAt: new Date().toISOString(),
+      }),
+    )
+
+    await store.updateOnboarding('dismiss')
+
+    expect(store.onboarding?.visibility).toBe('dismissed')
+    expect(store.homeSummary?.onboarding.visibility).toBe('dismissed')
+    expect(store.todaySummary?.onboarding.visibility).toBe('dismissed')
   })
 
   it('keeps only the local mode when unauthenticated', async () => {

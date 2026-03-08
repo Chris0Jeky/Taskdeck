@@ -71,6 +71,15 @@ const navCatalog: NavItem[] = [
     keywords: 'home start summary workspace',
   },
   {
+    id: 'today',
+    label: 'Today',
+    icon: 'T',
+    path: '/workspace/today',
+    flag: null,
+    primaryModes: ['guided', 'workbench', 'agent'],
+    keywords: 'today agenda daily focus overdue blocked',
+  },
+  {
     id: 'review',
     label: 'Review',
     icon: 'R',
@@ -120,7 +129,7 @@ const navCatalog: NavItem[] = [
   {
     id: 'activity',
     label: 'Activity',
-    icon: 'T',
+    icon: 'Y',
     path: '/workspace/activity',
     flag: 'newActivity',
     primaryModes: ['workbench'],
