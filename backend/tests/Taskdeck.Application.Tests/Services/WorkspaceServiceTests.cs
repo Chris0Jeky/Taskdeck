@@ -138,6 +138,29 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetPreferencesAsync_ShouldReuseDismissedOnboardingWithoutExtraQueries()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+        preference.DismissOnboarding();
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+
+        var result = await _service.GetPreferencesAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Onboarding.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Dismissed);
+        result.Value.Onboarding.IsComplete.Should().BeFalse();
+        result.Value.Onboarding.Steps.Should().BeEmpty();
+        _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task GetPreferencesAsync_ShouldReturnPersistedPreference_WhenConcurrentCreateWins()
     {
         var userId = Guid.NewGuid();
@@ -206,6 +229,30 @@ public class WorkspaceServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Onboarding.IsComplete.Should().BeTrue();
+        _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdatePreferencesAsync_ShouldReuseDismissedOnboardingWithoutExtraQueries()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+        preference.DismissOnboarding();
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+
+        var result = await _service.UpdatePreferencesAsync(
+            userId,
+            new UpdateWorkspacePreferenceDto(WorkspaceModeContract.Workbench));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Workbench);
+        result.Value.Onboarding.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Dismissed);
+        result.Value.Onboarding.Steps.Should().BeEmpty();
         _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
         _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
         _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);

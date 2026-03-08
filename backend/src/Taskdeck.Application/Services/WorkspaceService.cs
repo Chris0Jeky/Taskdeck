@@ -278,6 +278,11 @@ public class WorkspaceService : IWorkspaceService
                     hasBoard: true));
         }
 
+        if (preference.OnboardingVisibility == WorkspaceOnboardingVisibility.Dismissed)
+        {
+            return MapDeferredOnboarding(preference);
+        }
+
         var captureSummaryTask = _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
         var hasReviewedProposalTask = _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
         var boardCountTask = _unitOfWork.Boards.CountReadableByUserIdAsync(
@@ -353,6 +358,17 @@ public class WorkspaceService : IWorkspaceService
             preference.OnboardingDismissedAt,
             preference.OnboardingCompletedAt,
             steps);
+    }
+
+    private static WorkspaceOnboardingDto MapDeferredOnboarding(UserPreference preference)
+    {
+        return new WorkspaceOnboardingDto(
+            preference.OnboardingVisibility.ToContractValue(),
+            false,
+            null,
+            preference.OnboardingDismissedAt,
+            preference.OnboardingCompletedAt,
+            []);
     }
 
     private static WorkspacePreferenceDto MapPreference(
