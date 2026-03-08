@@ -480,14 +480,14 @@ test('filter state should persist while panel is toggled in-session', async ({ p
   const matchingCard = `Alpha ${Date.now()}`
   const hiddenCard = `Beta ${Date.now()}`
   const filterHeading = page.getByRole('heading', { name: 'Filter Cards', exact: true })
+  const filterToggle = page.getByTitle('Filter Cards (Press f)')
 
   await createBoard(page, boardName)
   await addColumn(page, columnName)
   await addCard(page, columnName, matchingCard)
   await addCard(page, columnName, hiddenCard)
 
-  await page.locator('body').click()
-  await page.keyboard.press('f')
+  await filterToggle.click()
   await expect(filterHeading).toBeVisible()
 
   const searchInput = page.getByPlaceholder('Search cards...')
@@ -497,11 +497,10 @@ test('filter state should persist while panel is toggled in-session', async ({ p
   await expect(page.locator('[data-card-id]').filter({ hasText: matchingCard })).toBeVisible()
   await expect(page.locator('[data-card-id]').filter({ hasText: hiddenCard })).toHaveCount(0)
 
-  await page.locator('body').click()
-  await page.keyboard.press('f')
+  await filterToggle.click()
   await expect(filterHeading).not.toBeVisible()
 
-  await page.keyboard.press('f')
+  await filterToggle.click()
   await expect(filterHeading).toBeVisible()
   await expect(searchInput).toHaveValue(matchingCard)
 
