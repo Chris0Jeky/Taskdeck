@@ -76,13 +76,7 @@ public class WorkspaceService : IWorkspaceService
                 capturesNeedingTriage,
                 capturesReadyForFollowUp,
                 proposalsPendingReview,
-                recentBoardCandidates
-                    .Select(board => new WorkspaceRecentBoardDto(
-                        board.Id,
-                        board.Name,
-                        board.Description,
-                        board.UpdatedAt))
-                    .FirstOrDefault())));
+                recentBoards.FirstOrDefault())));
     }
 
     public async Task<Result<WorkspacePreferenceDto>> GetPreferencesAsync(

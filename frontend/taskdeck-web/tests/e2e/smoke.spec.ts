@@ -92,7 +92,12 @@ async function addCard(
   const addCardInput = column.getByPlaceholder('Enter card title...')
   await expect(addCardInput).toBeVisible()
   await addCardInput.fill(cardTitle)
+  const createCardResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
+    && response.ok())
   await column.getByRole('button', { name: 'Add', exact: true }).click()
+  await createCardResponse
 
   if (expectVisible) {
     await expect(cardByTitle(page, cardTitle)).toBeVisible()
