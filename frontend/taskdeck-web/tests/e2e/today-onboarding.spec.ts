@@ -28,12 +28,22 @@ test('today onboarding should dismiss and replay persistently', async ({ page })
   await page.goto('/workspace/today')
   await expect(page.getByText('Onboarding loop')).toBeVisible()
 
+  const dismissResponse = page.waitForResponse((response) =>
+    response.request().method() === 'PUT'
+    && /\/api\/workspace\/onboarding$/i.test(response.url())
+    && response.ok())
   await page.getByRole('button', { name: 'Dismiss' }).click()
+  await dismissResponse
   await expect(page.getByText('Setup is dismissed.')).toBeVisible()
 
   await page.reload()
   await expect(page.getByRole('button', { name: 'Replay Setup' })).toBeVisible()
 
+  const replayResponse = page.waitForResponse((response) =>
+    response.request().method() === 'PUT'
+    && /\/api\/workspace\/onboarding$/i.test(response.url())
+    && response.ok())
   await page.getByRole('button', { name: 'Replay Setup' }).click()
-  await expect(page.getByText('Create your first board')).toBeVisible()
+  await replayResponse
+  await expect(page.locator('.td-today-step__title', { hasText: 'Create your first board' })).toBeVisible()
 })
