@@ -29,6 +29,14 @@ const proposalActionBusyId = ref<string | null>(null)
 const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
 let latestDiffRequestId = 0
+const activeBoardFilter = computed(() => {
+  const candidate = route.query.boardId
+  if (Array.isArray(candidate)) {
+    return typeof candidate[0] === 'string' ? candidate[0].trim() : ''
+  }
+
+  return typeof candidate === 'string' ? candidate.trim() : ''
+})
 
 const summaryCards = computed<ReviewSummaryCard[]>(() => {
   let pendingReview = 0
@@ -83,7 +91,10 @@ const summaryCards = computed<ReviewSummaryCard[]>(() => {
 async function loadProposals() {
   try {
     proposalsLoading.value = true
-    proposals.value = await automationApi.getProposals({ limit: 200 })
+    proposals.value = await automationApi.getProposals({
+      limit: 200,
+      boardId: activeBoardFilter.value || undefined,
+    })
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to load proposals').message)
   } finally {
@@ -219,8 +230,41 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString()
 }
 
+function readableSummary(proposal: ApiProposal): string {
+  return proposal.presentation?.plainSummary || proposal.summary
+}
+
+function impactSummary(proposal: ApiProposal): string {
+  return proposal.presentation?.impactSummary
+    || `${proposal.operations.length} planned change${proposal.operations.length === 1 ? '' : 's'}.`
+}
+
+function sourceCue(proposal: ApiProposal): string {
+  return proposal.presentation?.sourceCue || `Source: ${normalizeProposalSourceType(proposal.sourceType)}`
+}
+
+function riskCue(proposal: ApiProposal): string {
+  return proposal.presentation?.riskCue || `Risk: ${normalizeProposalRiskLevel(proposal.riskLevel)}`
+}
+
+function operationHeadlines(proposal: ApiProposal): string[] {
+  if (proposal.presentation?.operationHeadlines?.length) {
+    return proposal.presentation.operationHeadlines
+  }
+
+  return proposal.operations.map((operation) => `${operation.actionType} ${operation.targetType}`)
+}
+
+function affectedEntities(proposal: ApiProposal) {
+  return proposal.presentation?.affectedEntities ?? []
+}
+
 function openRoute(path: string) {
   void router.push(path)
+}
+
+function openBoard(boardId: string) {
+  void router.push(`/workspace/boards/${boardId}`)
 }
 
 function proposalHref(proposalId: string): string {
@@ -275,6 +319,13 @@ watch(
     void scrollToProposalFromHash()
   },
 )
+
+watch(
+  () => activeBoardFilter.value,
+  () => {
+    void loadProposals()
+  },
+)
 </script>
 
 <template>
@@ -286,6 +337,9 @@ watch(
         <p class="td-review__subtitle">
           Review proposed changes before anything touches a board. Queue and chat remain advanced surfaces when you
           need manual/operator control.
+        </p>
+        <p v-if="activeBoardFilter" class="td-review__board-filter">
+          Showing proposals for board {{ activeBoardFilter }}.
         </p>
       </div>
 
@@ -349,6 +403,15 @@ watch(
           </span>
         </div>
 
+        <div class="td-review-card__presentation">
+          <p class="td-review-card__summary">{{ readableSummary(proposal) }}</p>
+          <div class="td-review-card__cues">
+            <span class="td-review-cue">{{ impactSummary(proposal) }}</span>
+            <span class="td-review-cue">{{ riskCue(proposal) }}</span>
+            <span class="td-review-cue">{{ sourceCue(proposal) }}</span>
+          </div>
+        </div>
+
         <div v-if="hasProvenanceContext(proposal)" class="td-review-card__provenance">
           <span class="td-provenance-chip">Capture-linked</span>
           <router-link class="td-btn td-btn--secondary td-btn--sm" :to="captureHrefForProposal(proposal)">
@@ -357,9 +420,38 @@ watch(
           <router-link class="td-btn td-btn--secondary td-btn--sm" :to="proposalHref(proposal.id)">
             Review Link
           </router-link>
+          <button
+            v-if="proposal.boardId"
+            class="td-btn td-btn--secondary td-btn--sm"
+            @click="openBoard(proposal.boardId)"
+          >
+            Open Board
+          </button>
           <span v-if="proposal.correlationId.trim().length > 0" class="td-review-card__provenance-meta">
             Triage run: {{ proposal.correlationId }}
           </span>
+        </div>
+
+        <div v-if="affectedEntities(proposal).length > 0" class="td-review-card__entities">
+          <span class="td-review-card__section-label">Affected</span>
+          <div class="td-review-card__entity-list">
+            <span
+              v-for="entity in affectedEntities(proposal)"
+              :key="`${proposal.id}-${entity.entityType}-${entity.entityId ?? 'none'}`"
+              class="td-review-entity-chip"
+            >
+              {{ entity.label }} · {{ entity.changeCount }} change{{ entity.changeCount === 1 ? '' : 's' }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="operationHeadlines(proposal).length > 0" class="td-review-card__operations">
+          <span class="td-review-card__section-label">Planned changes</span>
+          <ul class="td-review-card__operation-list">
+            <li v-for="headline in operationHeadlines(proposal)" :key="`${proposal.id}-${headline}`">
+              {{ headline }}
+            </li>
+          </ul>
         </div>
 
         <div class="td-review-card__actions">
@@ -427,6 +519,13 @@ watch(
 .td-review__subtitle {
   color: var(--td-text-secondary);
   line-height: 1.6;
+}
+
+.td-review__board-filter {
+  margin: 0;
+  color: var(--td-color-primary);
+  font-size: var(--td-font-sm);
+  font-weight: 600;
 }
 
 .td-review__hero-actions {
@@ -517,6 +616,34 @@ watch(
   color: var(--td-text-secondary);
 }
 
+.td-review-card__presentation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+}
+
+.td-review-card__summary {
+  margin: 0;
+  color: var(--td-text-primary);
+  line-height: 1.6;
+}
+
+.td-review-card__cues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-2);
+}
+
+.td-review-cue {
+  border-radius: var(--td-radius-pill, 999px);
+  background: var(--td-surface-secondary);
+  border: 1px solid var(--td-border-default);
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  padding: 0.25rem 0.625rem;
+}
+
 .td-review-status {
   display: inline-flex;
   align-items: center;
@@ -571,6 +698,44 @@ watch(
 .td-review-card__provenance-meta {
   font-size: var(--td-font-xs);
   color: var(--td-text-secondary);
+}
+
+.td-review-card__entities,
+.td-review-card__operations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+}
+
+.td-review-card__section-label {
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--td-text-secondary);
+}
+
+.td-review-card__entity-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-2);
+}
+
+.td-review-entity-chip {
+  border-radius: var(--td-radius-pill, 999px);
+  background: var(--td-surface-tertiary);
+  border: 1px solid var(--td-border-default);
+  color: var(--td-text-primary);
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  padding: 0.25rem 0.625rem;
+}
+
+.td-review-card__operation-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--td-text-secondary);
+  line-height: 1.6;
 }
 
 .td-review-card__actions {

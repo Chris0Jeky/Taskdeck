@@ -17,6 +17,22 @@ export interface ProposalOperation {
   expectedVersion: string | null
 }
 
+export interface ProposalAffectedEntity {
+  entityType: string
+  entityId: string | null
+  label: string
+  changeCount: number
+}
+
+export interface ProposalPresentation {
+  plainSummary: string
+  impactSummary: string
+  riskCue: string
+  sourceCue: string
+  operationHeadlines: string[]
+  affectedEntities: ProposalAffectedEntity[]
+}
+
 export interface Proposal {
   id: string
   sourceType: ProposalSourceTypeValue
@@ -37,6 +53,7 @@ export interface Proposal {
   failureReason: string | null
   correlationId: string
   operations: ProposalOperation[]
+  presentation?: ProposalPresentation
 }
 
 export interface ProposalFilters {

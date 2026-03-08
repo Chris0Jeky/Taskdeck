@@ -22,7 +22,33 @@ public record ProposalDto(
     string? FailureReason,
     string CorrelationId,
     List<ProposalOperationDto> Operations
-);
+)
+{
+    public ProposalPresentationDto Presentation { get; init; } = ProposalPresentationDto.Empty;
+}
+
+public record ProposalPresentationDto(
+    string PlainSummary,
+    string ImpactSummary,
+    string RiskCue,
+    string SourceCue,
+    IReadOnlyList<string> OperationHeadlines,
+    IReadOnlyList<ProposalAffectedEntityDto> AffectedEntities)
+{
+    public static ProposalPresentationDto Empty { get; } = new(
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        Array.Empty<string>(),
+        Array.Empty<ProposalAffectedEntityDto>());
+}
+
+public record ProposalAffectedEntityDto(
+    string EntityType,
+    string? EntityId,
+    string Label,
+    int ChangeCount);
 
 public record ProposalOperationDto(
     Guid Id,

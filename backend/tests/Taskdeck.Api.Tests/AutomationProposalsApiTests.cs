@@ -57,6 +57,10 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         createdProposal.Status.Should().Be(ProposalStatus.PendingReview);
         createdProposal.RiskLevel.Should().Be(RiskLevel.Low);
         createdProposal.Operations.Should().HaveCount(1);
+        createdProposal.Presentation.PlainSummary.Should().Contain("This would");
+        createdProposal.Presentation.SourceCue.Should().Be("Created from an automation chat session.");
+        createdProposal.Presentation.OperationHeadlines.Should().ContainSingle()
+            .Which.Should().Contain("Create card");
 
         var getResponse = await _client.GetAsync($"/api/automation/proposals/{createdProposal.Id}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -65,6 +69,9 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         retrievedProposal.Should().NotBeNull();
         retrievedProposal!.Id.Should().Be(createdProposal.Id);
         retrievedProposal.Summary.Should().Be(createRequest.Summary);
+        retrievedProposal.Presentation.AffectedEntities.Should().ContainSingle(entity =>
+            entity.EntityType == "Card" &&
+            entity.ChangeCount == 1);
     }
 
     [Fact]

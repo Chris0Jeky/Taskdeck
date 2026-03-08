@@ -138,6 +138,54 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalByIdAsync_ShouldBuildReadablePresentation_WhenOperationsExist()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create the onboarding follow-up",
+            RiskLevel.High,
+            Guid.NewGuid().ToString(),
+            boardId,
+            sourceReferenceId: Guid.NewGuid().ToString());
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "card.create",
+            "Card",
+            "{\"title\":\"Draft follow-up\"}",
+            Guid.NewGuid().ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            1,
+            "board.rename",
+            "Board",
+            "{\"name\":\"Support follow-up\"}",
+            Guid.NewGuid().ToString(),
+            boardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Presentation.PlainSummary.Should().Contain("apply 2 planned changes");
+        result.Value.Presentation.SourceCue.Should().Be("Created from Inbox capture triage.");
+        result.Value.Presentation.RiskCue.Should().Contain("High risk");
+        result.Value.Presentation.OperationHeadlines.Should().ContainInOrder(
+            "Create card \"Draft follow-up\".",
+            $"Rename board \"Support follow-up\".");
+        result.Value.Presentation.AffectedEntities.Should().Contain(entity =>
+            entity.EntityType == "Board" &&
+            entity.EntityId == boardId.ToString() &&
+            entity.ChangeCount == 1);
+    }
+
+    [Fact]
     public async Task GetProposalByIdAsync_ShouldReturnNotFound_WhenDoesNotExist()
     {
         // Arrange
