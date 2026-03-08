@@ -128,14 +128,7 @@ public class WorkspaceService : IWorkspaceService
 
     private async Task<UserPreference> EnsurePreferenceAsync(Guid userId, CancellationToken cancellationToken)
     {
-        var preference = await _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken);
-        if (preference is not null)
-            return preference;
-
-        var defaultPreference = UserPreference.CreateDefault(userId);
-        await _unitOfWork.UserPreferences.AddAsync(defaultPreference, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return await _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken) ?? defaultPreference;
+        return await _unitOfWork.UserPreferences.GetOrCreateDefaultByUserIdAsync(userId, cancellationToken);
     }
 
     private static WorkspacePreferenceDto MapPreference(UserPreference preference)

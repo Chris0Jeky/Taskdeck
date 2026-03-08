@@ -26,9 +26,6 @@ public class WorkspaceServiceTests
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.LlmQueue).Returns(_llmQueueRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.AutomationProposals).Returns(_proposalRepositoryMock.Object);
         _unitOfWorkMock.Setup(unitOfWork => unitOfWork.SaveChangesAsync(default)).ReturnsAsync(1);
-        _userPreferenceRepositoryMock
-            .Setup(repository => repository.AddAsync(It.IsAny<UserPreference>(), default))
-            .ReturnsAsync((UserPreference preference, CancellationToken _) => preference);
 
         _service = new WorkspaceService(_unitOfWorkMock.Object);
     }
@@ -37,16 +34,19 @@ public class WorkspaceServiceTests
     public async Task GetPreferencesAsync_ShouldCreateDefaultGuidedPreference_WhenNoneExists()
     {
         var userId = Guid.NewGuid();
+        var defaultPreference = UserPreference.CreateDefault(userId);
+
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
-            .ReturnsAsync((UserPreference?)null);
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(defaultPreference);
 
         var result = await _service.GetPreferencesAsync(userId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Guided);
-        _userPreferenceRepositoryMock.Verify(repository => repository.AddAsync(It.IsAny<UserPreference>(), default), Times.Once);
-        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Once);
+        _userPreferenceRepositoryMock.Verify(
+            repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default),
+            Times.Once);
     }
 
     [Fact]
@@ -56,8 +56,7 @@ public class WorkspaceServiceTests
         var persistedPreference = new UserPreference(userId, WorkspaceMode.Guided);
 
         _userPreferenceRepositoryMock
-            .SetupSequence(repository => repository.GetByUserIdAsync(userId, default))
-            .ReturnsAsync((UserPreference?)null)
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(persistedPreference);
 
         var result = await _service.GetPreferencesAsync(userId);
@@ -65,7 +64,9 @@ public class WorkspaceServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.UserId.Should().Be(userId);
         result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Guided);
-        _userPreferenceRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, default), Times.Exactly(2));
+        _userPreferenceRepositoryMock.Verify(
+            repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default),
+            Times.Once);
     }
 
     [Fact]
@@ -89,7 +90,7 @@ public class WorkspaceServiceTests
         var preference = new UserPreference(userId, WorkspaceMode.Workbench);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
         _boardRepositoryMock
             .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
@@ -145,7 +146,7 @@ public class WorkspaceServiceTests
             .SetValue(staleBoard, staleUpdatedAt);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(new UserPreference(userId, WorkspaceMode.Guided));
         _boardRepositoryMock
             .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
