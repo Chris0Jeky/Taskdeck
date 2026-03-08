@@ -343,7 +343,9 @@ public class WorkspaceServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Boards.RecentBoardsCount.Should().Be(1);
         result.Value.Boards.RecentBoards.Should().ContainSingle(board => board.Name == "Recent");
-        result.Value.RecommendedActions.Should().Contain(action => action.ActionId == "resume-recent-board");
+        result.Value.RecommendedActions.Should().ContainSingle(action =>
+            action.ActionId == "resume-recent-board" &&
+            action.BoardId == recentBoard.Id);
     }
 
     [Fact]
