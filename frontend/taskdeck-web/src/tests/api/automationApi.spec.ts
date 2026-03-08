@@ -33,4 +33,12 @@ describe('automationApi', () => {
       { headers: { 'Idempotency-Key': 'req-1' } }
     )
   })
+
+  it('passes through null optional rejection reasons', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { id: 'p1' } })
+
+    await automationApi.rejectProposal('p1', null)
+
+    expect(http.post).toHaveBeenCalledWith('/automation/proposals/p1/reject', { reason: null })
+  })
 })

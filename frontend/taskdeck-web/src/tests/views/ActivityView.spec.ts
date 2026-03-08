@@ -68,6 +68,12 @@ async function waitForUi() {
   await Promise.resolve()
 }
 
+function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  const button = wrapper.findAll('button').find((node) => node.text().trim() === text)
+  expect(button).toBeTruthy()
+  return button!
+}
+
 function seedBoards() {
   mockBoardStore.boards = [
     {
@@ -146,7 +152,7 @@ describe('ActivityView selector discoverability', () => {
 
     const boardSelect = wrapper.get('#activity-board-select')
     await boardSelect.setValue('board-2')
-    await wrapper.get('button.td-btn--primary').trigger('click')
+    await findButtonByText(wrapper, 'Fetch').trigger('click')
     await waitForUi()
 
     expect(mockRouter.push).toHaveBeenLastCalledWith({
@@ -171,7 +177,7 @@ describe('ActivityView selector discoverability', () => {
     const entitySelect = wrapper.get('#activity-entity-select')
     await entitySelect.setValue('card-2')
 
-    await wrapper.get('button.td-btn--primary').trigger('click')
+    await findButtonByText(wrapper, 'Fetch').trigger('click')
     await waitForUi()
 
     expect(mockRouter.push).toHaveBeenLastCalledWith({
@@ -189,7 +195,7 @@ describe('ActivityView selector discoverability', () => {
     await waitForUi()
 
     await wrapper.get('#activity-view-mode').setValue('user')
-    await wrapper.get('button.td-btn--primary').trigger('click')
+    await findButtonByText(wrapper, 'Fetch').trigger('click')
     await waitForUi()
 
     expect(wrapper.text()).toContain('Current user:')

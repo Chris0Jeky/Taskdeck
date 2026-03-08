@@ -5,7 +5,14 @@ import { useSessionStore } from './sessionStore'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../utils/storageKeys'
-import type { HomeSummary, WorkspaceMode, WorkspacePreference } from '../types/workspace'
+import type {
+  HomeSummary,
+  TodaySummary,
+  WorkspaceMode,
+  WorkspaceOnboarding,
+  WorkspaceOnboardingAction,
+  WorkspacePreference,
+} from '../types/workspace'
 import { isWorkspaceMode } from '../types/workspace'
 
 function getLocalWorkspaceMode(): WorkspaceMode {
@@ -21,13 +28,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const preferenceLoading = ref(false)
   const preferenceError = ref<string | null>(null)
   const preferencesHydrated = ref(false)
+  const onboarding = ref<WorkspaceOnboarding | null>(null)
   const homeSummary = ref<HomeSummary | null>(null)
   const homeLoading = ref(false)
   const homeError = ref<string | null>(null)
+  const todaySummary = ref<TodaySummary | null>(null)
+  const todayLoading = ref(false)
+  const todayError = ref<string | null>(null)
   let preferenceRequestVersion = 0
   let pendingPreferenceRequests = 0
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
+  const hasTodaySummary = computed(() => todaySummary.value !== null)
 
   function persistLocalMode(nextMode: WorkspaceMode) {
     localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, nextMode)
@@ -38,15 +50,37 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     persistLocalMode(nextMode)
   }
 
-  function startPreferenceRequest(): number {
-    pendingPreferenceRequests += 1
-    preferenceLoading.value = true
-    return ++preferenceRequestVersion
+  function syncOnboarding(nextOnboarding: WorkspaceOnboarding | null) {
+    onboarding.value = nextOnboarding
+
+    if (homeSummary.value && nextOnboarding) {
+      homeSummary.value = {
+        ...homeSummary.value,
+        onboarding: nextOnboarding,
+      }
+    }
+
+    if (todaySummary.value && nextOnboarding) {
+      todaySummary.value = {
+        ...todaySummary.value,
+        onboarding: nextOnboarding,
+      }
+    }
   }
 
-  function finishPreferenceRequest() {
+  function beginPreferenceLoading() {
+    pendingPreferenceRequests += 1
+    preferenceLoading.value = true
+  }
+
+  function finishPreferenceLoading() {
     pendingPreferenceRequests = Math.max(0, pendingPreferenceRequests - 1)
     preferenceLoading.value = pendingPreferenceRequests > 0
+  }
+
+  function startVersionedPreferenceRequest(): number {
+    beginPreferenceLoading()
+    return ++preferenceRequestVersion
   }
 
   function isCurrentPreferenceRequest(version: number) {
@@ -59,7 +93,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return null
     }
 
-    const requestVersion = startPreferenceRequest()
+    const requestVersion = startVersionedPreferenceRequest()
 
     try {
       preferenceError.value = null
@@ -67,6 +101,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
       if (isCurrentPreferenceRequest(requestVersion)) {
         applyMode(preference.workspaceMode)
+        syncOnboarding(preference.onboarding)
         preferencesHydrated.value = true
       }
 
@@ -78,17 +113,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
       return null
     } finally {
-      finishPreferenceRequest()
+      finishPreferenceLoading()
     }
   }
 
   async function updateMode(nextMode: WorkspaceMode): Promise<void> {
-    const requestVersion = startPreferenceRequest()
+    const requestVersion = startVersionedPreferenceRequest()
     applyMode(nextMode)
 
     if (!session.isAuthenticated) {
       preferencesHydrated.value = false
-      finishPreferenceRequest()
+      finishPreferenceLoading()
       return
     }
 
@@ -98,6 +133,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
       if (isCurrentPreferenceRequest(requestVersion)) {
         applyMode(preference.workspaceMode)
+        syncOnboarding(preference.onboarding)
         preferencesHydrated.value = true
       }
     } catch (e: unknown) {
@@ -107,7 +143,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         toast.warning(`${preferenceError.value}. Keeping the local selection for now.`)
       }
     } finally {
-      finishPreferenceRequest()
+      finishPreferenceLoading()
     }
   }
 
@@ -118,6 +154,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const summary = await workspaceApi.getHomeSummary()
       homeSummary.value = summary
       applyMode(summary.workspaceMode)
+      syncOnboarding(summary.onboarding)
       return summary
     } catch (e: unknown) {
       homeError.value = getErrorMessage(e, 'Failed to load workspace summary')
@@ -127,15 +164,55 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  async function fetchTodaySummary(): Promise<TodaySummary> {
+    try {
+      todayLoading.value = true
+      todayError.value = null
+      const summary = await workspaceApi.getTodaySummary()
+      todaySummary.value = summary
+      applyMode(summary.workspaceMode)
+      syncOnboarding(summary.onboarding)
+      return summary
+    } catch (e: unknown) {
+      todayError.value = getErrorMessage(e, 'Failed to load today agenda')
+      throw e
+    } finally {
+      todayLoading.value = false
+    }
+  }
+
+  async function updateOnboarding(action: WorkspaceOnboardingAction): Promise<WorkspaceOnboarding> {
+    try {
+      beginPreferenceLoading()
+      preferenceError.value = null
+      const nextOnboarding = await workspaceApi.updateOnboarding({ action })
+      syncOnboarding(nextOnboarding)
+      return nextOnboarding
+    } catch (e: unknown) {
+      preferenceError.value = getErrorMessage(e, 'Failed to update onboarding state')
+      toast.warning(preferenceError.value)
+      throw e
+    } finally {
+      finishPreferenceLoading()
+    }
+  }
+
   function clearHomeSummary() {
     homeSummary.value = null
     homeError.value = null
   }
 
+  function clearTodaySummary() {
+    todaySummary.value = null
+    todayError.value = null
+  }
+
   function resetForLogout() {
     preferencesHydrated.value = false
     preferenceError.value = null
+    onboarding.value = null
     clearHomeSummary()
+    clearTodaySummary()
     applyMode(getLocalWorkspaceMode())
   }
 
@@ -144,14 +221,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     preferenceLoading,
     preferenceError,
     preferencesHydrated,
+    onboarding,
     homeSummary,
     homeLoading,
     homeError,
+    todaySummary,
+    todayLoading,
+    todayError,
     hasHomeSummary,
+    hasTodaySummary,
     hydratePreferences,
     updateMode,
     fetchHomeSummary,
+    fetchTodaySummary,
+    updateOnboarding,
     clearHomeSummary,
+    clearTodaySummary,
     resetForLogout,
   }
 })

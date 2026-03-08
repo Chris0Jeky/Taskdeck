@@ -104,7 +104,7 @@ describe('CardModal', () => {
 
     expect(wrapper.text()).toContain('Capture Origin')
     expect(wrapper.find('a[href="/workspace/inbox#capture-capture-7"]').exists()).toBe(true)
-    expect(wrapper.find('a[href="/workspace/automations/proposals#proposal-proposal-9"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/review#proposal-proposal-9"]').exists()).toBe(true)
   })
 
   it('should render when isOpen is true', () => {

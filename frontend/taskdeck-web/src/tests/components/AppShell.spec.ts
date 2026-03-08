@@ -100,6 +100,7 @@ describe('AppShell workspace navigation and command palette', () => {
     const wrapper = mountedWrapper
 
     expect(wrapper.text()).toContain('Home')
+    expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Review')
     expect(wrapper.text()).toContain('Boards')
     expect(wrapper.text()).toContain('Workbench Tools')
@@ -112,6 +113,7 @@ describe('AppShell workspace navigation and command palette', () => {
     const wrapper = mountedWrapper
 
     expect(wrapper.text()).toContain('Home')
+    expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Activity')
     expect(wrapper.text()).not.toContain('Workbench Tools')
   })
@@ -135,6 +137,16 @@ describe('AppShell workspace navigation and command palette', () => {
     await wrapper.get('[aria-label="Workspace mode"]').setValue('unsupported')
 
     expect(mockWorkspace.updateMode).not.toHaveBeenCalled()
+  })
+
+  it('keeps Review highlighted for the advanced queue route', async () => {
+    mockRoute.path = '/workspace/automations/queue'
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    const reviewLink = wrapper.findAll('a').find((link) => link.attributes('href') === '/workspace/review')
+    expect(reviewLink?.attributes('aria-current')).toBe('page')
+    expect(reviewLink?.classes()).toContain('td-nav-item--active')
   })
 
   it('toggles command palette with Ctrl+K and closes with Escape', async () => {
@@ -164,6 +176,7 @@ describe('AppShell workspace navigation and command palette', () => {
     await waitForUi()
 
     const input = wrapper.get('.td-command-palette__input')
+    await input.trigger('keydown.down')
     await input.trigger('keydown.down')
     await input.trigger('keydown.down')
     await input.trigger('keydown.enter')

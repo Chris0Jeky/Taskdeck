@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import OpsConsoleView from '../../views/OpsConsoleView.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,13 @@ const mocks = vi.hoisted(() => ({
   queryLogs: vi.fn(),
   getCorrelationLogs: vi.fn(),
   toastError: vi.fn(),
+  routerPush: vi.fn(),
 }))
+
+const mockRoute = reactive({
+  name: 'workspace-ops-cli',
+  path: '/workspace/ops/cli',
+})
 
 vi.mock('../../api/opsApi', () => ({
   opsApi: {
@@ -25,6 +32,13 @@ vi.mock('../../api/http', () => ({
   default: {
     request: vi.fn(),
   },
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => mockRoute,
+  useRouter: () => ({
+    push: mocks.routerPush,
+  }),
 }))
 
 vi.mock('../../store/sessionStore', () => ({
@@ -85,6 +99,8 @@ function buildTemplate(
 describe('OpsConsoleView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockRoute.name = 'workspace-ops-cli'
+    mockRoute.path = '/workspace/ops/cli'
     mocks.getRunLogs.mockResolvedValue([])
     mocks.queryLogs.mockResolvedValue([])
     mocks.getCorrelationLogs.mockResolvedValue([])
@@ -149,5 +165,52 @@ describe('OpsConsoleView', () => {
     expect(wrapper.text()).not.toContain('Role context: you are signed in as Editor')
     expect(wrapper.text()).not.toContain('Need elevated access? Open Workspace > Settings and follow the operator role-assignment guidance.')
     expect(mocks.toastError).toHaveBeenCalled()
+  })
+
+  it('respects the logs route as the initial active tab and loads logs immediately', async () => {
+    mockRoute.name = 'workspace-ops-logs'
+    mocks.getTemplates.mockResolvedValue([
+      buildTemplate('health.check', 'editor'),
+    ])
+
+    const wrapper = mount(OpsConsoleView, {
+      global: {
+        stubs: {
+          InputAssistField: true,
+        },
+      },
+    })
+
+    await waitForAsyncUi()
+
+    expect(mocks.queryLogs).toHaveBeenCalledWith({
+      level: undefined,
+      source: undefined,
+      limit: 200,
+    })
+    expect(wrapper.text()).toContain('No logs match the current filters')
+  })
+
+  it('navigates to the logs route when the logs tab is selected', async () => {
+    mocks.getTemplates.mockResolvedValue([
+      buildTemplate('health.check', 'editor'),
+    ])
+
+    const wrapper = mount(OpsConsoleView, {
+      global: {
+        stubs: {
+          InputAssistField: true,
+        },
+      },
+    })
+
+    await waitForAsyncUi()
+
+    const logsTab = wrapper.findAll('button').find((button) => button.text().trim() === 'Logs')
+    expect(logsTab).toBeTruthy()
+
+    await logsTab!.trigger('click')
+
+    expect(mocks.routerPush).toHaveBeenCalledWith('/workspace/ops/logs')
   })
 })

@@ -31,6 +31,16 @@ public class WorkspaceController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    [HttpGet("today")]
+    public async Task<IActionResult> GetToday(CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _workspaceService.GetTodayAsync(userId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     [HttpGet("preferences")]
     public async Task<IActionResult> GetPreferences(CancellationToken cancellationToken = default)
     {
@@ -50,6 +60,18 @@ public class WorkspaceController : AuthenticatedControllerBase
             return errorResult!;
 
         var result = await _workspaceService.UpdatePreferencesAsync(userId, dto, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    [HttpPut("onboarding")]
+    public async Task<IActionResult> UpdateOnboarding(
+        [FromBody] UpdateWorkspaceOnboardingDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _workspaceService.UpdateOnboardingAsync(userId, dto, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }

@@ -15,6 +15,8 @@ import NotificationInboxView from '../views/NotificationInboxView.vue'
 import NotificationPreferencesView from '../views/NotificationPreferencesView.vue'
 import InboxView from '../views/InboxView.vue'
 import HomeView from '../views/HomeView.vue'
+import TodayView from '../views/TodayView.vue'
+import ReviewView from '../views/ReviewView.vue'
 import { isTokenExpired } from '../utils/jwt'
 
 const router = createRouter({
@@ -57,6 +59,12 @@ const router = createRouter({
       path: '/workspace/home',
       name: 'workspace-home',
       component: HomeView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/today',
+      name: 'workspace-today',
+      component: TodayView,
       meta: { requiresShell: true },
     },
     {
@@ -105,16 +113,32 @@ const router = createRouter({
 
     // Automation routes
     {
+      path: '/workspace/automations',
+      redirect: (to) => ({
+        name: 'workspace-review',
+        hash: to.hash,
+        query: to.query,
+      }),
+    },
+    {
       path: '/workspace/automations/queue',
       name: 'workspace-automations-queue',
       component: AutomationQueueView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, automationSurface: 'queue' },
+    },
+    {
+      path: '/workspace/review',
+      name: 'workspace-review',
+      component: ReviewView,
+      meta: { requiresShell: true, automationSurface: 'review' },
     },
     {
       path: '/workspace/automations/proposals',
-      name: 'workspace-automations-proposals',
-      component: AutomationQueueView,
-      meta: { requiresShell: true },
+      redirect: (to) => ({
+        name: 'workspace-review',
+        hash: to.hash,
+        query: to.query,
+      }),
     },
     {
       path: '/workspace/automations/chat',

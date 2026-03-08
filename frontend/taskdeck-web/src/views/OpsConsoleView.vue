@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import http from '../api/http'
 import { opsApi } from '../api/opsApi'
 import { useSessionStore } from '../store/sessionStore'
@@ -11,6 +12,8 @@ import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
 import { normalizeBoardRole, toBoardRoleValue } from '../utils/roles'
 
+const route = useRoute()
+const router = useRouter()
 const toast = useToastStore()
 const session = useSessionStore()
 
@@ -81,6 +84,22 @@ const selectedTemplateIsRunnable = computed(() => {
   }
 
   return isTemplateRunnableForCurrentRole(selectedTemplateMeta.value)
+})
+
+const logEmptyTitle = computed(() => {
+  if (logCorrelationId.value.trim()) {
+    return 'No logs for this correlation ID'
+  }
+
+  return 'No logs match the current filters'
+})
+
+const logEmptyBody = computed(() => {
+  if (logCorrelationId.value.trim()) {
+    return 'Check the correlation ID, clear the filter, or refresh after the underlying job runs again.'
+  }
+
+  return 'Try a broader level or source filter, or head back to Review if you were tracing a proposal decision.'
 })
 
 function stopLogAutoRefresh() {
@@ -232,7 +251,52 @@ async function loadLogs() {
   }
 }
 
+function routeForTab(tab: 'cli' | 'endpoints' | 'logs'): string {
+  if (tab === 'endpoints') {
+    return '/workspace/ops/endpoints'
+  }
+
+  if (tab === 'logs') {
+    return '/workspace/ops/logs'
+  }
+
+  return '/workspace/ops/cli'
+}
+
+function syncActiveTabFromRoute() {
+  if (route.name === 'workspace-ops-endpoints') {
+    activeTab.value = 'endpoints'
+    return
+  }
+
+  if (route.name === 'workspace-ops-logs') {
+    activeTab.value = 'logs'
+    return
+  }
+
+  activeTab.value = 'cli'
+}
+
+function activateTab(tab: 'cli' | 'endpoints' | 'logs') {
+  if (activeTab.value !== tab) {
+    activeTab.value = tab
+  }
+
+  const nextPath = routeForTab(tab)
+  if (route.path !== nextPath) {
+    void router.push(nextPath)
+  }
+}
+
+function clearLogFilters() {
+  logLevel.value = 'all'
+  logSource.value = 'all'
+  logCorrelationId.value = ''
+  void loadLogs()
+}
+
 onMounted(() => {
+  syncActiveTabFromRoute()
   void loadTemplates()
 })
 
@@ -249,14 +313,41 @@ watch(activeTab, (tab) => {
   }
 })
 
+watch(
+  () => route.name,
+  () => {
+    syncActiveTabFromRoute()
+  },
+)
+
 onBeforeUnmount(() => {
   stopLogAutoRefresh()
 })
+
+function openRoute(path: string) {
+  void router.push(path)
+}
 </script>
 
 <template>
   <div class="td-ops">
-    <h1 class="td-page-title">Ops Console</h1>
+    <header class="td-ops__hero">
+      <div class="td-ops__hero-copy">
+        <span class="td-ops__eyebrow">Advanced</span>
+        <h1 class="td-page-title">Ops Console</h1>
+        <p class="td-ops__subtitle">
+          Ops Console is the operator surface for direct commands, endpoint probing, and low-level logs. Most users
+          should stay in Review, Inbox, and Boards unless they are diagnosing a system-level problem.
+        </p>
+      </div>
+
+      <div class="td-ops__hero-actions">
+        <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/settings/preferences')">
+          Open Settings
+        </button>
+      </div>
+    </header>
 
     <div class="td-role-context">
       <div class="td-role-context__title">Current role: {{ currentRoleLabel }}</div>
@@ -272,9 +363,9 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="td-tabs">
-      <button :class="['td-tab', { 'td-tab--active': activeTab === 'cli' }]" @click="activeTab = 'cli'">CLI Runner</button>
-      <button :class="['td-tab', { 'td-tab--active': activeTab === 'endpoints' }]" @click="activeTab = 'endpoints'">Endpoint Explorer</button>
-      <button :class="['td-tab', { 'td-tab--active': activeTab === 'logs' }]" @click="activeTab = 'logs'">Logs</button>
+      <button :class="['td-tab', { 'td-tab--active': activeTab === 'cli' }]" @click="activateTab('cli')">CLI Runner</button>
+      <button :class="['td-tab', { 'td-tab--active': activeTab === 'endpoints' }]" @click="activateTab('endpoints')">Endpoint Explorer</button>
+      <button :class="['td-tab', { 'td-tab--active': activeTab === 'logs' }]" @click="activateTab('logs')">Logs</button>
     </div>
 
     <div v-if="activeTab === 'cli'" class="td-ops-panel">
@@ -361,7 +452,15 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="logLoading" class="td-loading">Loading logs...</div>
-      <div v-else-if="logEntries.length === 0" class="td-empty">No logs found.</div>
+      <div v-else-if="logEntries.length === 0" class="td-empty td-empty--panel">
+        <h2 class="td-empty__title">{{ logEmptyTitle }}</h2>
+        <p class="td-empty__body">{{ logEmptyBody }}</p>
+        <div class="td-empty__actions">
+          <button class="td-btn td-btn--secondary td-btn--sm" @click="clearLogFilters">Clear Filters</button>
+          <button class="td-btn td-btn--secondary td-btn--sm" @click="loadLogs">Refresh Logs</button>
+          <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+        </div>
+      </div>
       <div v-else class="td-log-list">
         <div v-for="entry in logEntries" :key="entry.id" class="td-log-entry">
           <span class="td-log-time">{{ new Date(entry.timestamp).toLocaleString() }}</span>
@@ -377,7 +476,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .td-ops { max-width: 980px; }
-.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; margin-bottom: var(--td-space-6); color: var(--td-text-primary); }
+.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; color: var(--td-text-primary); }
+.td-ops__hero { display: flex; justify-content: space-between; gap: var(--td-space-6); align-items: flex-start; margin-bottom: var(--td-space-4); }
+.td-ops__hero-copy { display: flex; flex-direction: column; gap: var(--td-space-2); max-width: 720px; }
+.td-ops__eyebrow { font-size: var(--td-font-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--td-text-tertiary); }
+.td-ops__subtitle { color: var(--td-text-secondary); line-height: 1.6; }
+.td-ops__hero-actions,
+.td-empty__actions { display: flex; flex-wrap: wrap; gap: var(--td-space-2); }
 .td-role-context { margin-bottom: var(--td-space-4); padding: var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); background: var(--td-surface-secondary); }
 .td-role-context__title { font-size: var(--td-font-sm); font-weight: 600; color: var(--td-text-primary); }
 .td-role-context__body { margin-top: 2px; font-size: var(--td-font-xs); color: var(--td-text-secondary); }
@@ -420,6 +525,9 @@ onBeforeUnmount(() => {
 .td-logs-toolbar { display: flex; gap: var(--td-space-2); margin-bottom: var(--td-space-3); flex-wrap: wrap; }
 .td-autorefresh { display: inline-flex; align-items: center; gap: var(--td-space-1); font-size: var(--td-font-xs); color: var(--td-text-secondary); }
 .td-loading, .td-empty { text-align: center; padding: var(--td-space-6); color: var(--td-text-secondary); }
+.td-empty--panel { display: flex; flex-direction: column; gap: var(--td-space-2); align-items: center; justify-content: center; border: 1px dashed var(--td-border-default); border-radius: var(--td-radius-lg); background: var(--td-surface-secondary); }
+.td-empty__title { margin: 0; color: var(--td-text-primary); font-size: var(--td-font-lg); }
+.td-empty__body { margin: 0; max-width: 520px; line-height: 1.6; }
 .td-log-list { display: flex; flex-direction: column; gap: var(--td-space-1); }
 .td-log-entry { display: grid; grid-template-columns: 180px 90px 130px 1fr 220px; gap: var(--td-space-2); align-items: center; padding: var(--td-space-2); border-bottom: 1px solid var(--td-border-default); font-size: var(--td-font-xs); }
 .td-log-time { color: var(--td-text-tertiary); font-family: monospace; }
@@ -427,4 +535,10 @@ onBeforeUnmount(() => {
 .td-log-source { color: var(--td-text-secondary); }
 .td-log-message { color: var(--td-text-primary); }
 .td-log-correlation { color: var(--td-text-tertiary); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 900px) {
+  .td-ops__hero {
+    flex-direction: column;
+  }
+}
 </style>

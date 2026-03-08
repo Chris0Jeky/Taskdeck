@@ -7,6 +7,13 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class UserPreferenceRepository : Repository<UserPreference>, IUserPreferenceRepository
 {
+    private static readonly TimeSpan[] DuplicatePreferenceRetryDelays =
+    [
+        TimeSpan.Zero,
+        TimeSpan.FromMilliseconds(15),
+        TimeSpan.FromMilliseconds(30),
+    ];
+
     public UserPreferenceRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -43,9 +50,35 @@ public class UserPreferenceRepository : Repository<UserPreference>, IUserPrefere
             }
 
             _context.Entry(defaultPreference).State = EntityState.Detached;
+            var persistedPreference = await WaitForPersistedPreferenceAsync(userId, cancellationToken);
+            if (persistedPreference is not null)
+            {
+                return persistedPreference;
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<UserPreference?> WaitForPersistedPreferenceAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        foreach (var delay in DuplicatePreferenceRetryDelays)
+        {
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
+
+            var existingPreference = await GetByUserIdAsync(userId, cancellationToken);
+            if (existingPreference is not null)
+            {
+                return existingPreference;
+            }
         }
 
-        return await GetByUserIdAsync(userId, cancellationToken) ?? defaultPreference;
+        return null;
     }
 
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)

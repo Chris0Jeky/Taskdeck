@@ -31,7 +31,7 @@ Current constraints are mostly hardening and consistency:
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
-- cold first-run still depends too much on docs/scripts; guided `Home` and durable workspace modes are now shipped, but `Today`, board action rails, and broader action-oriented empty/help states are still planned follow-through
+- cold first-run still depends too much on docs/scripts; guided `Home`, durable workspace modes, review-first automation routing, and the recoverable `Today` onboarding path are now shipped, but board action rails and broader board-context continuity remain planned follow-through
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -83,19 +83,21 @@ Direction guardrails (explicit):
   - home
   - boards
   - activity
-  - automations (queue/proposals/chat)
+  - review
+  - automation queue/chat (advanced)
   - notifications (inbox + read-state actions)
   - ops (cli/endpoints/logs)
   - settings (profile/preferences/access/export-import)
   - archive
 - Current navigation is now partially product-shaped:
   - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
-  - `Today`, `Agents`, `Runs`, `Knowledge`, and `Integrations` routes are still planned but not shipped
+  - `Today` is now shipped as the daily agenda route, while `Agents`, `Runs`, `Knowledge`, and `Integrations` remain planned but not shipped
 - Feature slices integrated end to end:
   - workspace home summary shell with server-backed workspace mode persistence
-  - proposal review/approve/reject/execute and diff viewing
-  - chat session flow with proposal handoff
-  - ops template execution and log querying
+  - workspace `Today` agenda with persisted onboarding state, replay/dismiss controls, and first-use board setup shortcuts
+  - canonical review-first proposal routing/approve/reject/execute and diff viewing
+  - chat session flow with selector-safe board context and review handoff
+  - ops template execution and log querying with route-aware tab defaults
   - archive listing and restore operations
   - notification inbox and per-user notification preference controls
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
@@ -247,11 +249,13 @@ Backlog implication:
 - existing overlap and reuse anchors are partial (`#96`, `#93`, `#100`, `#77`, `#75`, `#98`, `#216`, `#218`, `#219`, `#311`)
 - the novice-first productization wave is now seeded as `#318`, `#320`, `#322`, `#324`, `#326`, `#328`, with `#96` and `#100` updated into the same `Priority II` tranche
 - `#320` is now shipped: durable `UserPreference` workspace mode persistence, `/api/workspace/home` + `/api/workspace/preferences`, `Home` default routing, and mode-aware shell navigation
+- `#322` is now shipped: `/workspace/review` is the canonical automation route, legacy proposals URLs redirect compatibly, queue/chat/ops/access are explicitly framed as advanced surfaces, board access/chat common flows prefer selectors over raw board IDs, and primary empty states now point users toward concrete next steps
+- `#324` is now shipped: `/workspace/today` aggregates review, triage, overdue, due-today, and blocked work into one agenda, while Home/Today share a persisted onboarding loop with setup replay/dismiss and first-use starter-board creation
 - the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave P, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
 - the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave P and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
 - planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
-  - `Today` product route plus onboarding/checklist recovery path
   - board action rails and proposal summary cards
+  - richer contextual help and help-center follow-through on top of the shipped `Home` / `Today` onboarding foundation
   - `Agents`, `Runs`, `Knowledge`, and `Integrations` product surfaces
   - `Demo Tools`, guided narrative/demo-tour flow, HTML report/assertions, and saved views
   - explicit release framing for `R1` novice-first beta, `R2` agent foundation alpha, and `R3` knowledge/integrations alpha
@@ -593,7 +597,7 @@ UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
 - primary product gap is legibility rather than missing engine capability: the product still relies too much on docs/demo setup to explain first-run behavior
 - review/proposal flow is functional but still system-shaped; readable proposal summaries, stronger deep links, and board-centered return paths remain next-cycle work
-- `docs/START_HERE.md` now provides the documentation bridge for first-run understanding, but equivalent in-product `Home`/`Today`/help-state guidance is still not shipped
+- `docs/START_HERE.md` now complements a shipped in-product `Home` / `Today` onboarding path, but richer contextual help, proposal legibility, and launch-criteria smoke coverage remain next-cycle work
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)

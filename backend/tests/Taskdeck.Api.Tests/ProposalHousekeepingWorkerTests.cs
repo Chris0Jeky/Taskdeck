@@ -99,6 +99,16 @@ public class ProposalHousekeepingWorkerTests
                 proposal.Status == ProposalStatus.PendingReview));
         }
 
+        public Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_proposals.Any(proposal =>
+                proposal.DecidedByUserId == userId &&
+                proposal.Status is ProposalStatus.Approved
+                    or ProposalStatus.Rejected
+                    or ProposalStatus.Applied
+                    or ProposalStatus.Failed));
+        }
+
         public Task<AutomationProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_proposals.SingleOrDefault(proposal => proposal.Id == id));
