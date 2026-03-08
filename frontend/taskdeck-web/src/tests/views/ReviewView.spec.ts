@@ -82,6 +82,15 @@ async function mountAt(path: string) {
     history: createMemoryHistory(),
     routes: [
       { path: '/workspace/review', name: 'workspace-review', component: ReviewView },
+      { path: '/workspace/inbox', name: 'workspace-inbox', component: { template: '<div />' } },
+      {
+        path: '/workspace/automations',
+        redirect: (to) => ({
+          name: 'workspace-review',
+          hash: to.hash,
+          query: to.query,
+        }),
+      },
       {
         path: '/workspace/automations/proposals',
         redirect: (to) => ({
@@ -173,6 +182,12 @@ describe('ReviewView', () => {
     const { router } = await mountAt('/workspace/automations/proposals#proposal-proposal-42')
 
     expect(router.currentRoute.value.fullPath).toBe('/workspace/review#proposal-proposal-42')
+  })
+
+  it('preserves query and hash when the automations alias redirects to review', async () => {
+    const { router } = await mountAt('/workspace/automations?boardId=board-7#proposal-proposal-42')
+
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7#proposal-proposal-42')
   })
 
   it('scrolls to the targeted proposal card when the hash matches a proposal id', async () => {

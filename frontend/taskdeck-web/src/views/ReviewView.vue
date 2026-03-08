@@ -339,8 +339,12 @@ watch(
 
         <div v-if="hasProvenanceContext(proposal)" class="td-review-card__provenance">
           <span class="td-provenance-chip">Capture-linked</span>
-          <a class="td-btn td-btn--secondary td-btn--sm" :href="captureHrefForProposal(proposal)">Open Capture</a>
-          <a class="td-btn td-btn--secondary td-btn--sm" :href="proposalHref(proposal.id)">Review Link</a>
+          <router-link class="td-btn td-btn--secondary td-btn--sm" :to="captureHrefForProposal(proposal)">
+            Open Capture
+          </router-link>
+          <router-link class="td-btn td-btn--secondary td-btn--sm" :to="proposalHref(proposal.id)">
+            Review Link
+          </router-link>
           <span v-if="proposal.correlationId.trim().length > 0" class="td-review-card__provenance-meta">
             Triage run: {{ proposal.correlationId }}
           </span>

@@ -12,7 +12,6 @@ namespace Taskdeck.Infrastructure.Repositories;
 public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 {
     private const string CaptureRequestTypeLike = "inbox.capture.%";
-    private const string ProposalIdPayloadMarker = "\"proposalId\":\"";
 
     public LlmQueueRepository(TaskdeckDbContext context) : base(context)
     {
@@ -59,11 +58,9 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
 
         var countsByStatus = statusCounts.ToDictionary(group => group.Status, group => group.Count);
-        var completedWithLinkedProposal = await captureQuery
-            .Where(request =>
-                request.Status == RequestStatus.Completed
-                && request.Payload.Contains(ProposalIdPayloadMarker))
-            .CountAsync(cancellationToken);
+        var completedWithLinkedProposal = await CountCompletedCapturesWithProposalAsync(
+            userId,
+            cancellationToken);
 
         countsByStatus.TryGetValue(RequestStatus.Completed, out var completedCount);
         countsByStatus.TryGetValue(RequestStatus.Pending, out var pendingCount);
@@ -76,6 +73,35 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             FailedCount: failedCount,
             TriagingCount: processingCount,
             TriagedCount: Math.Max(0, completedCount - completedWithLinkedProposal));
+    }
+
+    private async Task<int> CountCompletedCapturesWithProposalAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.Database
+                .SqlQuery<int>(
+                    $"""
+                    SELECT COUNT(*) AS Value
+                    FROM LlmRequests
+                    WHERE UserId = {userId}
+                      AND RequestType LIKE {CaptureRequestTypeLike}
+                      AND Status = {(int)RequestStatus.Completed}
+                      AND json_extract(Payload, '$.provenance.proposalId') IS NOT NULL
+                    """)
+                .SingleAsync(cancellationToken);
+        }
+
+        return await _context.LlmRequests
+            .AsNoTracking()
+            .Where(request =>
+                request.UserId == userId
+                && request.Status == RequestStatus.Completed
+                && EF.Functions.Like(request.RequestType, CaptureRequestTypeLike)
+                && request.Payload.Contains("\"proposalId\":\""))
+            .CountAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)

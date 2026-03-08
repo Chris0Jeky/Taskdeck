@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onActivated, onMounted } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
+import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
-import type { HomeRecommendedAction, WorkspaceOnboarding, WorkspaceOnboardingStep } from '../types/workspace'
+import type { HomeRecommendedAction, WorkspaceOnboarding } from '../types/workspace'
 
-const router = useRouter()
 const workspace = useWorkspaceStore()
-const showSetupModal = ref(false)
 
 const summary = computed(() => workspace.homeSummary)
 const recentBoards = computed(() => summary.value?.boards.recentBoards ?? [])
@@ -66,10 +64,6 @@ async function loadHomeSummary() {
   }
 }
 
-function openRoute(route: string) {
-  void router.push(route)
-}
-
 function resolveActionRoute(action: HomeRecommendedAction): string {
   switch (action.targetSurface) {
     case 'review':
@@ -97,44 +91,7 @@ function openRecommendedAction(action: HomeRecommendedAction) {
 }
 
 function openBoard(boardId: string) {
-  void router.push(`/workspace/boards/${boardId}`)
-}
-
-function openSetupModal() {
-  showSetupModal.value = true
-}
-
-function closeSetupModal() {
-  showSetupModal.value = false
-}
-
-function handleSetupCreated() {
-  void loadHomeSummary()
-}
-
-function openOnboardingStep(step: WorkspaceOnboardingStep) {
-  if (step.targetSurface === 'boards') {
-    openSetupModal()
-    return
-  }
-
-  openRoute(step.targetSurface === 'review' ? '/workspace/review' : '/workspace/inbox')
-}
-
-async function dismissOnboarding() {
-  try {
-    await workspace.updateOnboarding('dismiss')
-  } catch {
-    // The store retains the warning state.
-  }
-}
-
-async function replayOnboarding() {
-  try {
-    await workspace.updateOnboarding('replay')
-  } catch {
-    // The store retains the warning state.
-  }
+  openRoute(`/workspace/boards/${boardId}`)
 }
 
 function refreshHomeSummary() {
@@ -144,6 +101,17 @@ function refreshHomeSummary() {
 
   void loadHomeSummary()
 }
+
+const {
+  showSetupModal,
+  openRoute,
+  openSetupModal,
+  closeSetupModal,
+  handleSetupCreated,
+  openOnboardingStep,
+  dismissOnboarding,
+  replayOnboarding,
+} = useWorkspaceOnboardingActions(refreshHomeSummary)
 
 onMounted(refreshHomeSummary)
 onActivated(refreshHomeSummary)

@@ -260,14 +260,7 @@ public class WorkspaceService : IWorkspaceService
 
     private async Task<UserPreference> EnsurePreferenceAsync(Guid userId, CancellationToken cancellationToken)
     {
-        var preference = await _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken);
-        if (preference is not null)
-            return preference;
-
-        var defaultPreference = UserPreference.CreateDefault(userId);
-        await _unitOfWork.UserPreferences.AddAsync(defaultPreference, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return await _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken) ?? defaultPreference;
+        return await _unitOfWork.UserPreferences.GetOrCreateDefaultByUserIdAsync(userId, cancellationToken);
     }
 
     private async Task<WorkspaceOnboardingDto> GetOnboardingForPreferenceAsync(
@@ -275,15 +268,30 @@ public class WorkspaceService : IWorkspaceService
         UserPreference preference,
         CancellationToken cancellationToken)
     {
-        var captureSummary = await _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
-        var hasReviewedProposal = await _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
-        var hasBoard = await _unitOfWork.Boards.CountReadableByUserIdAsync(userId, includeArchived: false, cancellationToken) > 0;
+        if (preference.OnboardingCompletedAt is not null)
+        {
+            return MapOnboarding(
+                preference,
+                BuildOnboardingSteps(
+                    hasCapture: true,
+                    hasReviewedProposal: true,
+                    hasBoard: true));
+        }
+
+        var captureSummaryTask = _unitOfWork.LlmQueue.GetCaptureSummaryByUserAsync(userId, cancellationToken);
+        var hasReviewedProposalTask = _unitOfWork.AutomationProposals.HasReviewedByUserIdAsync(userId, cancellationToken);
+        var boardCountTask = _unitOfWork.Boards.CountReadableByUserIdAsync(
+            userId,
+            includeArchived: false,
+            cancellationToken);
+
+        await Task.WhenAll(captureSummaryTask, hasReviewedProposalTask, boardCountTask);
 
         return await BuildOnboardingAsync(
             preference,
-            hasCapture: captureSummary.TotalCaptures > 0,
-            hasReviewedProposal,
-            hasBoard,
+            hasCapture: captureSummaryTask.Result.TotalCaptures > 0,
+            hasReviewedProposal: hasReviewedProposalTask.Result,
+            hasBoard: boardCountTask.Result > 0,
             cancellationToken);
     }
 

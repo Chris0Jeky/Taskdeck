@@ -29,10 +29,6 @@ public class WorkspaceServiceTests
         _unitOfWorkMock.SetupGet(unitOfWork => unitOfWork.AutomationProposals).Returns(_proposalRepositoryMock.Object);
         _unitOfWorkMock.Setup(unitOfWork => unitOfWork.SaveChangesAsync(default)).ReturnsAsync(1);
 
-        _userPreferenceRepositoryMock
-            .Setup(repository => repository.AddAsync(It.IsAny<UserPreference>(), default))
-            .ReturnsAsync((UserPreference preference, CancellationToken _) => preference);
-
         _proposalRepositoryMock
             .Setup(repository => repository.GetByUserIdAsync(It.IsAny<Guid>(), int.MaxValue, default))
             .ReturnsAsync([]);
@@ -77,9 +73,11 @@ public class WorkspaceServiceTests
     public async Task GetPreferencesAsync_ShouldCreateDefaultGuidedPreference_WhenNoneExists()
     {
         var userId = Guid.NewGuid();
+        var defaultPreference = UserPreference.CreateDefault(userId);
+
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
-            .ReturnsAsync((UserPreference?)null);
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(defaultPreference);
 
         var result = await _service.GetPreferencesAsync(userId);
 
@@ -87,8 +85,9 @@ public class WorkspaceServiceTests
         result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Guided);
         result.Value.Onboarding.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Active);
         result.Value.Onboarding.IsComplete.Should().BeFalse();
-        _userPreferenceRepositoryMock.Verify(repository => repository.AddAsync(It.IsAny<UserPreference>(), default), Times.Once);
-        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Once);
+        _userPreferenceRepositoryMock.Verify(
+            repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default),
+            Times.Once);
     }
 
     [Fact]
@@ -98,7 +97,7 @@ public class WorkspaceServiceTests
         var preference = new UserPreference(userId, WorkspaceMode.Guided);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
         _boardRepositoryMock
             .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
@@ -118,14 +117,34 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetPreferencesAsync_ShouldReuseStoredCompletedOnboardingWithoutExtraQueries()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+        preference.RecordOnboardingCompletion();
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+
+        var result = await _service.GetPreferencesAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Onboarding.IsComplete.Should().BeTrue();
+        _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task GetPreferencesAsync_ShouldReturnPersistedPreference_WhenConcurrentCreateWins()
     {
         var userId = Guid.NewGuid();
         var persistedPreference = new UserPreference(userId, WorkspaceMode.Guided);
 
         _userPreferenceRepositoryMock
-            .SetupSequence(repository => repository.GetByUserIdAsync(userId, default))
-            .ReturnsAsync((UserPreference?)null)
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(persistedPreference);
 
         var result = await _service.GetPreferencesAsync(userId);
@@ -133,7 +152,9 @@ public class WorkspaceServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.UserId.Should().Be(userId);
         result.Value.WorkspaceMode.Should().Be(WorkspaceModeContract.Guided);
-        _userPreferenceRepositoryMock.Verify(repository => repository.GetByUserIdAsync(userId, default), Times.Exactly(2));
+        _userPreferenceRepositoryMock.Verify(
+            repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default),
+            Times.Once);
     }
 
     [Fact]
@@ -153,7 +174,7 @@ public class WorkspaceServiceTests
         var preference = new UserPreference(userId, WorkspaceMode.Guided);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
 
         var result = await _service.UpdatePreferencesAsync(
@@ -169,6 +190,28 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public async Task UpdatePreferencesAsync_ShouldReuseStoredCompletedOnboardingWithoutExtraQueries()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+        preference.RecordOnboardingCompletion();
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+
+        var result = await _service.UpdatePreferencesAsync(
+            userId,
+            new UpdateWorkspacePreferenceDto(WorkspaceModeContract.Workbench));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Onboarding.IsComplete.Should().BeTrue();
+        _llmQueueRepositoryMock.Verify(repository => repository.GetCaptureSummaryByUserAsync(userId, default), Times.Never);
+        _proposalRepositoryMock.Verify(repository => repository.HasReviewedByUserIdAsync(userId, default), Times.Never);
+        _boardRepositoryMock.Verify(repository => repository.CountReadableByUserIdAsync(userId, false, default), Times.Never);
+    }
+
+    [Fact]
     public async Task GetHomeAsync_ShouldReturnProductShapedSummary()
     {
         var userId = Guid.NewGuid();
@@ -179,7 +222,7 @@ public class WorkspaceServiceTests
         var preference = new UserPreference(userId, WorkspaceMode.Workbench);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
         _boardRepositoryMock
             .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
@@ -236,7 +279,7 @@ public class WorkspaceServiceTests
             .SetValue(staleBoard, staleUpdatedAt);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(new UserPreference(userId, WorkspaceMode.Guided));
         _boardRepositoryMock
             .Setup(repository => repository.CountReadableByUserIdAsync(userId, false, default))
@@ -270,7 +313,7 @@ public class WorkspaceServiceTests
         var preference = new UserPreference(userId, WorkspaceMode.Guided);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
         _boardRepositoryMock
             .Setup(repository => repository.GetReadableByUserIdAsync(userId, false, default))
@@ -320,7 +363,7 @@ public class WorkspaceServiceTests
             dueDate: new DateTimeOffset(localToday.Year, localToday.Month, localToday.Day, 0, 30, 0, offset));
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(new UserPreference(userId, WorkspaceMode.Guided));
         _boardRepositoryMock
             .Setup(repository => repository.GetReadableByUserIdAsync(userId, false, default))
@@ -347,7 +390,7 @@ public class WorkspaceServiceTests
         var preference = new UserPreference(userId, WorkspaceMode.Guided);
 
         _userPreferenceRepositoryMock
-            .Setup(repository => repository.GetByUserIdAsync(userId, default))
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
             .ReturnsAsync(preference);
 
         var dismissResult = await _service.UpdateOnboardingAsync(

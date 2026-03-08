@@ -1,18 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onActivated, onMounted } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
+import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type {
   HomeRecommendedAction,
   TodayAgendaCard,
   WorkspaceOnboarding,
-  WorkspaceOnboardingStep,
 } from '../types/workspace'
 
-const router = useRouter()
 const workspace = useWorkspaceStore()
-const showSetupModal = ref(false)
 
 const summary = computed(() => workspace.todaySummary)
 const onboarding = computed<WorkspaceOnboarding | null>(() => summary.value?.onboarding ?? workspace.onboarding)
@@ -125,12 +122,8 @@ async function loadTodaySummary() {
   }
 }
 
-function openRoute(route: string) {
-  void router.push(route)
-}
-
 function openBoard(boardId: string) {
-  void router.push(`/workspace/boards/${boardId}`)
+  openRoute(`/workspace/boards/${boardId}`)
 }
 
 function resolveActionRoute(action: HomeRecommendedAction): string {
@@ -159,50 +152,27 @@ function formatDueDate(value: string | null): string {
   return new Date(value).toLocaleString()
 }
 
-function openSetupModal() {
-  showSetupModal.value = true
-}
-
-function closeSetupModal() {
-  showSetupModal.value = false
-}
-
-function handleSetupCreated() {
-  void loadTodaySummary()
-}
-
-function openOnboardingStep(step: WorkspaceOnboardingStep) {
-  if (step.targetSurface === 'boards') {
-    openSetupModal()
-    return
-  }
-
-  openRoute(step.targetSurface === 'review' ? '/workspace/review' : '/workspace/inbox')
-}
-
-async function dismissOnboarding() {
-  try {
-    await workspace.updateOnboarding('dismiss')
-  } catch {
-    // The store retains the warning state.
-  }
-}
-
-async function replayOnboarding() {
-  try {
-    await workspace.updateOnboarding('replay')
-  } catch {
-    // The store retains the warning state.
-  }
-}
-
-onMounted(() => {
-  if (workspace.todayLoading || workspace.hasTodaySummary) {
+function refreshTodaySummary() {
+  if (workspace.todayLoading) {
     return
   }
 
   void loadTodaySummary()
-})
+}
+
+const {
+  showSetupModal,
+  openRoute,
+  openSetupModal,
+  closeSetupModal,
+  handleSetupCreated,
+  openOnboardingStep,
+  dismissOnboarding,
+  replayOnboarding,
+} = useWorkspaceOnboardingActions(refreshTodaySummary)
+
+onMounted(refreshTodaySummary)
+onActivated(refreshTodaySummary)
 </script>
 
 <template>

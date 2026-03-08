@@ -27,32 +27,34 @@ public class BoardRepository : Repository<Board>, IBoardRepository
     {
         if (_context.Database.IsSqlite())
         {
-            var readableBoards = includeArchived
-                ? _dbSet.FromSqlInterpolated(
-                    $"""
-                    SELECT DISTINCT b.*
-                    FROM Boards AS b
-                    LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
-                    WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
-                      AND b.UpdatedAt >= {updatedSince}
-                    """)
-                : _dbSet.FromSqlInterpolated(
-                    $"""
-                    SELECT DISTINCT b.*
-                    FROM Boards AS b
-                    LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
-                    WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
-                      AND b.IsArchived = 0
-                      AND b.UpdatedAt >= {updatedSince}
-                    """);
-
-            return await readableBoards
-                .AsNoTracking()
-                .CountAsync(cancellationToken);
+            return includeArchived
+                ? await _context.Database
+                    .SqlQuery<int>(
+                        $"""
+                        SELECT COUNT(DISTINCT b.Id) AS Value
+                        FROM Boards AS b
+                        LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
+                        WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
+                          AND b.UpdatedAt >= {updatedSince}
+                        """)
+                    .SingleAsync(cancellationToken)
+                : await _context.Database
+                    .SqlQuery<int>(
+                        $"""
+                        SELECT COUNT(DISTINCT b.Id) AS Value
+                        FROM Boards AS b
+                        LEFT JOIN BoardAccesses AS ba ON b.Id = ba.BoardId
+                        WHERE (b.OwnerId = {userId} OR ba.UserId = {userId})
+                          AND b.IsArchived = 0
+                          AND b.UpdatedAt >= {updatedSince}
+                        """)
+                    .SingleAsync(cancellationToken);
         }
 
         return await BuildReadableQuery(userId, includeArchived)
             .Where(board => board.UpdatedAt >= updatedSince)
+            .Select(board => board.Id)
+            .Distinct()
             .CountAsync(cancellationToken);
     }
 

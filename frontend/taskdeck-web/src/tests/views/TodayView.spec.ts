@@ -137,13 +137,13 @@ describe('TodayView', () => {
     expect(mockWorkspaceStore.fetchTodaySummary).toHaveBeenCalledTimes(1)
   })
 
-  it('does not refetch on mount when today summary is already cached', async () => {
+  it('refreshes today summary even when cached data already exists', async () => {
     mockWorkspaceStore.hasTodaySummary = true
 
     mount(TodayView)
     await waitForUi()
 
-    expect(mockWorkspaceStore.fetchTodaySummary).not.toHaveBeenCalled()
+    expect(mockWorkspaceStore.fetchTodaySummary).toHaveBeenCalledTimes(1)
   })
 
   it('renders onboarding, stats, and agenda sections', async () => {
