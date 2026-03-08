@@ -107,7 +107,11 @@ const router = createRouter({
     // Automation routes
     {
       path: '/workspace/automations',
-      redirect: '/workspace/review',
+      redirect: (to) => ({
+        name: 'workspace-review',
+        hash: to.hash,
+        query: to.query,
+      }),
     },
     {
       path: '/workspace/automations/queue',
