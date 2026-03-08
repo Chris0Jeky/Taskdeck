@@ -355,7 +355,12 @@ public class WorkspaceServiceTests
         var board = new Board("Alpha", "Alpha board", userId);
         var column = new Column(board.Id, "Backlog", 0);
         var overdueCard = new Card(board.Id, column.Id, "Overdue follow-up", dueDate: DateTimeOffset.UtcNow.AddDays(-1));
-        var dueTodayCard = new Card(board.Id, column.Id, "Due today", dueDate: DateTimeOffset.UtcNow.AddHours(4));
+        var localToday = DateTimeOffset.UtcNow.Date;
+        var dueTodayCard = new Card(
+            board.Id,
+            column.Id,
+            "Due today",
+            dueDate: new DateTimeOffset(localToday.Year, localToday.Month, localToday.Day, 12, 0, 0, TimeSpan.Zero));
         var blockedCard = new Card(board.Id, column.Id, "Blocked review");
         blockedCard.Block("Waiting on dependency");
 
