@@ -18,7 +18,7 @@ export const automationApi = {
     return data
   },
 
-  async rejectProposal(id: string, reason: string): Promise<Proposal> {
+  async rejectProposal(id: string, reason: string | null): Promise<Proposal> {
     const { data } = await http.post<Proposal>(`/automation/proposals/${encodeURIComponent(id)}/reject`, { reason })
     return data
   },

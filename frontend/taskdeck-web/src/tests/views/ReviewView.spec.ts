@@ -274,4 +274,17 @@ describe('ReviewView', () => {
     expect(mocks.rejectProposal).not.toHaveBeenCalled()
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
+
+  it('sends null when an optional rejection reason is left blank', async () => {
+    mocks.getProposals.mockResolvedValue([buildProposal()])
+    window.prompt = vi.fn(() => '   ')
+
+    const { wrapper } = await mountAt('/workspace/review')
+    const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button')[2]!
+
+    await rejectButton.trigger('click')
+    await Promise.resolve()
+
+    expect(mocks.rejectProposal).toHaveBeenCalledWith('proposal-1', null)
+  })
 })
