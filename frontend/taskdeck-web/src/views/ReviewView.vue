@@ -31,16 +31,26 @@ const selectedDiff = ref<string | null>(null)
 let latestDiffRequestId = 0
 
 const summaryCards = computed<ReviewSummaryCard[]>(() => {
-  const pendingReview = proposals.value.filter(
-    (proposal) => normalizeProposalStatus(proposal.status) === 'PendingReview',
-  ).length
-  const readyToExecute = proposals.value.filter(
-    (proposal) => normalizeProposalStatus(proposal.status) === 'Approved',
-  ).length
-  const captureLinked = proposals.value.filter((proposal) => hasProvenanceContext(proposal)).length
-  const appliedRecently = proposals.value.filter(
-    (proposal) => normalizeProposalStatus(proposal.status) === 'Applied',
-  ).length
+  let pendingReview = 0
+  let readyToExecute = 0
+  let captureLinked = 0
+  let appliedRecently = 0
+
+  for (const proposal of proposals.value) {
+    const normalizedStatus = normalizeProposalStatus(proposal.status)
+
+    if (normalizedStatus === 'PendingReview') {
+      pendingReview += 1
+    } else if (normalizedStatus === 'Approved') {
+      readyToExecute += 1
+    } else if (normalizedStatus === 'Applied') {
+      appliedRecently += 1
+    }
+
+    if (hasProvenanceContext(proposal)) {
+      captureLinked += 1
+    }
+  }
 
   return [
     {
@@ -134,14 +144,16 @@ async function handleRejectProposal(proposalId: string, riskLevel: ApiProposal['
   }
 
   const reason = promptedReason.trim()
-  if (requiresReason && !reason.trim()) {
+  if (requiresReason && !reason) {
     toast.error('Rejection reason is required for high and critical risk proposals')
     return
   }
 
+  const reasonOrNull = reason.length > 0 ? reason : null
+
   try {
     proposalActionBusyId.value = proposalId
-    const updated = await automationApi.rejectProposal(proposalId, reason)
+    const updated = await automationApi.rejectProposal(proposalId, reasonOrNull)
     proposals.value = proposals.value.map((proposal) => (proposal.id === proposalId ? updated : proposal))
     toast.success('Proposal rejected')
   } catch (e: unknown) {
