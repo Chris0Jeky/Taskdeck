@@ -93,6 +93,30 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task TodayAndPreferencesEndpoints_ShouldHandleConcurrentFirstLoadPreferenceCreation()
+    {
+        using var seedClient = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(seedClient, "workspace-today-first-load");
+
+        using var todayClient = _factory.CreateClient();
+        using var preferenceClient = _factory.CreateClient();
+        todayClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);
+        preferenceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);
+
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(index =>
+                index % 2 == 0
+                    ? todayClient.GetAsync("/api/workspace/today")
+                    : preferenceClient.GetAsync("/api/workspace/preferences")));
+
+        responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        dbContext.UserPreferences.Count(preference => preference.UserId == user.UserId).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Home_ShouldReturnCurrentUserSummaryOnly()
     {
         using var ownerClient = _factory.CreateClient();
