@@ -2,58 +2,100 @@
 
 This is the first doc to read if you are new to Taskdeck.
 
-Taskdeck is a local-first, capture-first execution workspace.
-Its main idea is simple:
+Taskdeck is a review-first execution workspace. The normal path is:
 
-1. capture something quickly
-2. turn it into a reviewed proposal
-3. apply it explicitly
-4. work the resulting board/cards
+1. start from `Home`
+2. decide what matters in `Today`
+3. capture rough input in `Inbox`
+4. inspect proposed changes in `Review`
+5. execute explicitly
+6. continue the real work on a board
 
-A fuller mental model is:
+## What Is Shipped Right Now
 
-- `Capture`: save messy input fast
-- `Structure`: triage it into proposals and board context
-- `Review`: inspect what would change before apply
-- `Execute`: work from boards/cards instead of from hidden automation
-- `Observe`: use notifications/activity when you need evidence and history
+The novice-first shell is now real:
 
-## What Taskdeck Is Good At Right Now
+- `Home` is the default landing surface.
+- `Today` shows the daily agenda across review, capture triage, and board work.
+- `Inbox` is the low-friction intake surface.
+- `Review` is the normal automation surface and trust gate.
+- `Boards` is still the shipped label for project workspaces.
 
-Taskdeck is strongest today as:
+Advanced or operator-facing surfaces also exist, but they are not the normal starting path:
 
-- a safe execution workspace for developers and builders
-- a place to capture rough work without losing it
-- a review-first board system where automation proposes changes instead of mutating silently
+- `Chat`
+- `Activity`
+- `Ops`
+- `Access`
+- `Archive`
 
-Taskdeck is not yet a polished novice-first product shell.
-The current shipped UI still starts from `Boards`, and the planned `Home` and `Today` surfaces are roadmap work, not current product routes.
+Planned but not shipped yet:
 
-## Key Terms
+- `Agents`
+- `Runs`
+- `Knowledge`
+- `Integrations`
 
-Use this vocabulary as the productization work lands:
-
-- `Project`: the product-facing name for the board context. Today the UI still says `Boards`.
-- `Inbox`: the low-friction intake surface for messy notes, bugs, and follow-ups.
-- `Review`: the product-facing review surface. Today it lives under `Automations -> Proposals`.
-- `Today`: the planned daily-agenda surface. It is not shipped yet.
-- `Agents`: the planned supervised assistant surfaces. They are not part of the normal shipped starting path yet.
-
-## Fastest Path To First Value
+## Two-Minute First Value Path
 
 If you want the shortest real workflow:
 
-1. start the backend and frontend
-2. create or open a board
-3. create one Inbox item or quick capture
-4. start triage
-5. open `Automations -> Proposals`
-6. review, approve, and execute
-7. return to the board and keep working there
+1. open `Home`
+2. create or resume a useful board from the setup loop
+3. drop one note, bug, or transcript into `Inbox`
+4. run `Start Triage`
+5. open `Review`
+6. approve and execute one proposal
+7. open the board and continue from the resulting card or board change
 
-That is the current golden path.
+## Pick The Right Surface
 
-## Quick Local Start
+Use `Home` when:
+
+- you do not want to guess where to start
+- you want the setup loop
+- you want recent-board context and a recommended next action
+
+Use `Today` when:
+
+- you want the daily agenda
+- you need one place to see review, triage, overdue, due-today, and blocked work
+
+Use `Inbox` when:
+
+- the input is messy
+- you want to save it now and shape it later
+- you do not want to jump straight into board edits
+
+Use `Review` when:
+
+- you want to inspect changes before they touch a board
+- you need the proposal summary, risk, provenance, and approve-or-reject step
+
+Use `Boards` when:
+
+- the work is already clear enough to live on a board
+- you need cards, comments, due dates, labels, or board-specific actions
+
+## Common First-Run Questions
+
+Why does the doc talk about projects when the UI says boards?
+
+- Product language is moving toward "projects" for normal users, but the shipped route label is still `Boards`. Treat them as the same workspace today.
+
+Why do I need `Review` before a board changes?
+
+- That is the trust model. Taskdeck proposes changes first and waits for an explicit decision before it writes to a board.
+
+What if every page looks empty?
+
+- Start the setup loop from `Home`, create one useful board, then add one Inbox item and run the loop once. If you want a fuller workspace immediately, seed the demo workspace with `npm run demo:seed`.
+
+Do I need `Queue` or `Ops`?
+
+- No for normal first-run use. Stay in `Home`, `Today`, `Inbox`, `Review`, and `Boards` unless you are doing operator or debugging work.
+
+## Local Start
 
 Backend:
 
@@ -76,9 +118,9 @@ Default URLs:
 - Swagger: `http://localhost:5000/swagger`
 - Frontend: `http://localhost:5173`
 
-## If You Want A Better First Run
+## Want A Richer First Run?
 
-Seed the demo workspace so the app starts populated instead of mostly empty:
+Seed a believable workspace so `Home`, `Today`, `Inbox`, and `Review` are already populated:
 
 ```bash
 cd frontend/taskdeck-web
@@ -88,73 +130,14 @@ npm run demo:seed
 Use this when:
 
 - you are evaluating the product
-- you want to understand event-driven surfaces faster
-- you need a believable walkthrough state
-
-If you want the full seeded demo/operator path, then read [DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md).
-
-## Page Map
-
-Core surfaces:
-
-- `Boards`
-- `Inbox`
-- `Automations -> Proposals`
-- quick capture
-- starter packs
-- `Chat` when you want conversational board-scoped help
-
-Trust surfaces:
-
-- `Notifications`
-- `Activity`
-- comments and mentions
-
-Advanced/operator surfaces:
-
-- `Queue`
-- `Ops`
-- `Access`
-- `Archive`
-
-Rule of thumb:
-
-- if you are unsure where to begin, stay in `Boards`, `Inbox`, and `Automations -> Proposals`
-- treat `Queue` and `Ops` as advanced tools, not the normal first-run path
-
-## What To Click First
-
-If the app is empty:
-
-1. create a board
-2. optionally apply a starter pack
-3. create one capture or Inbox item
-4. run triage
-5. open the proposal
-6. execute it
-
-If the app is seeded:
-
-1. open the demo board
-2. open `Inbox`
-3. follow a capture item into a proposal
-4. execute the proposal
-5. go back to the board and inspect the result
-
-## If You Only Remember One Thing
-
-Do not overthink the taxonomy on day one.
-
-Use Taskdeck like this:
-
-- capture now
-- triage later
-- review before apply
-- work from the board
+- you want realistic examples instead of empty states
+- you need a walkthrough state for demos or training
 
 ## Next Docs
 
-- [USER_MANUAL.md](USER_MANUAL.md) for the current shipped product reference
-- [DOGFOODING_GUIDE.md](product/DOGFOODING_GUIDE.md) for daily internal use
-- [DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md) for seeded demos and stakeholder walkthroughs
-- [TESTING_GUIDE.md](TESTING_GUIDE.md) for verification commands and test policy
+- [USER_MANUAL.md](USER_MANUAL.md) for the manual index and chapter map
+- [manual/01_start_here.md](manual/01_start_here.md) for the product mental model and glossary
+- [manual/02_home_and_today.md](manual/02_home_and_today.md) for the day-to-day shell
+- [manual/04_inbox_and_review.md](manual/04_inbox_and_review.md) for the capture and review loop
+- [manual/09_troubleshooting.md](manual/09_troubleshooting.md) for common confusion points and empty-state recovery
+- [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md) for seeded demos and stakeholder walkthroughs
