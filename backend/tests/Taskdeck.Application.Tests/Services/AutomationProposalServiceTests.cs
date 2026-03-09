@@ -186,6 +186,35 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalByIdAsync_ShouldPreserveNamedTargetCasing_InSingleOperationSummary()
+    {
+        var proposalId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create the follow-up card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "card.create",
+            "Card",
+            "{\"title\":\"Draft Follow-Up\"}",
+            Guid.NewGuid().ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Presentation.PlainSummary.Should().Be(
+            "Create the follow-up card This would create card \"Draft Follow-Up\".");
+    }
+
+    [Fact]
     public async Task GetProposalByIdAsync_ShouldReturnNotFound_WhenDoesNotExist()
     {
         // Arrange

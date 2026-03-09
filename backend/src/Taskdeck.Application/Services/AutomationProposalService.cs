@@ -9,6 +9,27 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationProposalService : IAutomationProposalService
 {
+    private static readonly HashSet<string> KnownActionVerbs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "add",
+        "apply",
+        "archive",
+        "assign",
+        "attach",
+        "block",
+        "create",
+        "delete",
+        "move",
+        "remove",
+        "rename",
+        "reorder",
+        "restore",
+        "set",
+        "unarchive",
+        "unblock",
+        "update"
+    };
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notificationService;
 
@@ -375,7 +396,7 @@ public class AutomationProposalService : IAutomationProposalService
 
         if (orderedOperations.Count == 1)
         {
-            return $"{summary} This would {DescribeOperation(orderedOperations[0]).ToLowerInvariant()}";
+            return $"{summary} This would {LowercaseSentenceLead(DescribeOperation(orderedOperations[0]))}";
         }
 
         var entitySummary = affectedEntities.Count switch
@@ -475,27 +496,6 @@ public class AutomationProposalService : IAutomationProposalService
 
     private static string HumanizeActionVerb(string actionType)
     {
-        var knownVerbs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "add",
-            "apply",
-            "archive",
-            "assign",
-            "attach",
-            "block",
-            "create",
-            "delete",
-            "move",
-            "remove",
-            "rename",
-            "reorder",
-            "restore",
-            "set",
-            "unarchive",
-            "unblock",
-            "update"
-        };
-
         var normalized = actionType
             .Replace('.', ' ')
             .Replace('_', ' ')
@@ -510,8 +510,8 @@ public class AutomationProposalService : IAutomationProposalService
         var tokens = SplitPascalCase(normalized)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var preferredVerb = tokens.FirstOrDefault(token => knownVerbs.Contains(token))
-            ?? tokens.LastOrDefault(token => knownVerbs.Contains(token))
+        var preferredVerb = tokens.FirstOrDefault(token => KnownActionVerbs.Contains(token))
+            ?? tokens.LastOrDefault(token => KnownActionVerbs.Contains(token))
             ?? tokens.FirstOrDefault(token => token.All(char.IsLetter))
             ?? tokens.First();
         return char.ToUpperInvariant(preferredVerb[0]) + preferredVerb[1..].ToLowerInvariant();
@@ -537,6 +537,16 @@ public class AutomationProposalService : IAutomationProposalService
         return humanized.Length == 0
             ? "Item"
             : char.ToUpperInvariant(humanized[0]) + humanized[1..];
+    }
+
+    private static string LowercaseSentenceLead(string sentence)
+    {
+        if (string.IsNullOrWhiteSpace(sentence))
+        {
+            return sentence;
+        }
+
+        return char.ToLowerInvariant(sentence[0]) + sentence[1..];
     }
 
     private static string BuildAffectedEntityLabel(string entityType, string? entityId)
