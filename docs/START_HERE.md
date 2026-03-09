@@ -135,9 +135,6 @@ Use this when:
 
 ## Next Docs
 
-- [USER_MANUAL.md](USER_MANUAL.md) for the manual index and chapter map
-- [manual/01_start_here.md](manual/01_start_here.md) for the product mental model and glossary
-- [manual/02_home_and_today.md](manual/02_home_and_today.md) for the day-to-day shell
-- [manual/04_inbox_and_review.md](manual/04_inbox_and_review.md) for the capture and review loop
-- [manual/09_troubleshooting.md](manual/09_troubleshooting.md) for common confusion points and empty-state recovery
+- [USER_MANUAL.md](USER_MANUAL.md) for the full manual, workflow guide, FAQ, and troubleshooting baseline
+- [manual/README.md](manual/README.md) for the manual structure, in-app help mapping, and future chapter layout
 - [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md) for seeded demos and stakeholder walkthroughs
