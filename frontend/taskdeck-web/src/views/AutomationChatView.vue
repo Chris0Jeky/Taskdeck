@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
@@ -10,8 +10,11 @@ import { normalizeChatRole } from '../utils/chat'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
+import type { InputAssistOption } from '../utils/inputAssist'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToastStore()
 
 const sessions = ref<ChatSession[]>([])
@@ -25,6 +28,7 @@ let boardOptionsRequest: Promise<boolean> | null = null
 
 const newSessionTitle = ref('')
 const newSessionBoardId = ref('')
+const selectedNewSessionBoardId = ref<string | null>(null)
 const messageContent = ref('')
 const requestProposal = ref(false)
 
@@ -43,6 +47,10 @@ const boardOptions = computed(() =>
 
 const boardNameById = computed(() => (
   new Map(availableBoards.value.map((board) => [board.id, board.name]))
+))
+
+const boardById = computed(() => (
+  new Map(availableBoards.value.map((board) => [board.id, board]))
 ))
 
 const sortedMessages = computed(() => {
@@ -65,17 +73,90 @@ const selectedSessionBoardName = computed(() => {
   return boardNameById.value.get(boardId) ?? 'Linked board context'
 })
 
+const pendingSessionBoardContextLabel = computed(() => {
+  const selectedBoard = selectedNewSessionBoardId.value
+    ? boardById.value.get(selectedNewSessionBoardId.value)
+    : null
+  if (selectedBoard) {
+    return selectedBoard.name
+  }
+
+  if (newSessionBoardId.value.trim()) {
+    return newSessionBoardId.value.trim()
+  }
+
+  return boardNameById.value.get(queryBoardId.value) ?? queryBoardId.value
+})
+
+const queryBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+
 function normalizeSelectedBoardId(rawValue: string): string | null {
   const trimmed = rawValue.trim()
   if (!trimmed) {
     return null
   }
 
+  const selectedBoard = selectedNewSessionBoardId.value
+    ? boardById.value.get(selectedNewSessionBoardId.value)
+    : null
+  if (selectedBoard) {
+    const normalizedSelectedId = selectedBoard.id.trim().toLowerCase()
+    const normalizedSelectedName = selectedBoard.name.trim().toLowerCase()
+    const normalizedInput = trimmed.toLowerCase()
+    if (normalizedInput === normalizedSelectedId || normalizedInput === normalizedSelectedName) {
+      return selectedBoard.id
+    }
+  }
+
   const normalized = trimmed.toLowerCase()
-  const matchedBoard = availableBoards.value.find((board) => (
-    board.id.toLowerCase() === normalized || board.name.trim().toLowerCase() === normalized
-  ))
-  return matchedBoard ? matchedBoard.id : null
+  const byId = availableBoards.value.find((board) => board.id.toLowerCase() === normalized)
+  if (byId) {
+    return byId.id
+  }
+
+  const nameMatches = availableBoards.value.filter((board) => board.name.trim().toLowerCase() === normalized)
+  return nameMatches.length === 1 ? nameMatches[0]!.id : null
+}
+
+function updateNewSessionBoardValue(value: string) {
+  newSessionBoardId.value = value
+
+  const selectedBoard = selectedNewSessionBoardId.value
+    ? boardById.value.get(selectedNewSessionBoardId.value)
+    : null
+  if (!selectedBoard) {
+    selectedNewSessionBoardId.value = null
+    return
+  }
+
+  const normalizedValue = value.trim().toLowerCase()
+  if (!normalizedValue) {
+    selectedNewSessionBoardId.value = null
+    return
+  }
+
+  const matchesSelectedBoard = normalizedValue === selectedBoard.id.trim().toLowerCase() ||
+    normalizedValue === selectedBoard.name.trim().toLowerCase()
+  if (!matchesSelectedBoard) {
+    selectedNewSessionBoardId.value = null
+  }
+}
+
+function handleNewSessionBoardSelect(option: InputAssistOption) {
+  selectedNewSessionBoardId.value = option.value
+  updateNewSessionBoardValue(option.label)
+}
+
+function applyRouteBoardContext() {
+  if (!queryBoardId.value) {
+    return
+  }
+
+  const matchedBoard = availableBoards.value.find((board) => board.id === queryBoardId.value)
+  if (matchedBoard) {
+    newSessionBoardId.value = matchedBoard.name
+    selectedNewSessionBoardId.value = matchedBoard.id
+  }
 }
 
 async function loadSessions() {
@@ -127,6 +208,7 @@ async function handleCreateSession() {
     })
     newSessionTitle.value = ''
     newSessionBoardId.value = ''
+    selectedNewSessionBoardId.value = null
     await loadSessions()
     await loadSession(created.id)
   } catch (e: unknown) {
@@ -194,14 +276,26 @@ function openRoute(path: string) {
 function openProposalReview(proposalId: string) {
   void router.push({
     name: 'workspace-review',
+    query: selectedSession.value?.boardId
+      ? { boardId: selectedSession.value.boardId }
+      : undefined,
     hash: `#proposal-${encodeURIComponent(proposalId)}`,
   })
 }
 
 onMounted(() => {
   void loadSessions()
-  void loadBoardOptions()
+  void loadBoardOptions().then(() => {
+    applyRouteBoardContext()
+  })
 })
+
+watch(
+  () => [queryBoardId.value, availableBoards.value.length],
+  () => {
+    applyRouteBoardContext()
+  },
+)
 </script>
 
 <template>
@@ -247,7 +341,12 @@ onMounted(() => {
             aria-label="Board context"
             placeholder="Board context (optional)"
             no-results-text="No matching boards."
+            @update:model-value="updateNewSessionBoardValue"
+            @select="handleNewSessionBoardSelect"
           />
+          <p v-if="queryBoardId" class="td-chat-board-context">
+            Board context will stay anchored to {{ pendingSessionBoardContextLabel }}.
+          </p>
           <button class="td-btn td-btn--primary td-btn--sm" @click="handleCreateSession" :disabled="creatingSession">
             {{ creatingSession ? 'Creating...' : 'Create Session' }}
           </button>
@@ -428,6 +527,13 @@ onMounted(() => {
   font-size: var(--td-font-sm);
   color: var(--td-text-secondary);
   line-height: 1.5;
+}
+
+.td-chat-board-context {
+  margin: 0;
+  font-size: var(--td-font-xs);
+  color: var(--td-color-primary);
+  font-weight: 600;
 }
 
 .td-form-group {

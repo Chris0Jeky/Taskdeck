@@ -18,3 +18,13 @@ export function isAuthRoutePath(pathname: string): boolean {
   const normalized = normalizePathname(pathname)
   return normalized === '/login' || normalized === '/register'
 }
+
+export function normalizeBoardIdQueryParam(
+  candidate: string | null | undefined | ReadonlyArray<string | null | undefined>,
+): string {
+  if (Array.isArray(candidate)) {
+    return normalizeBoardIdQueryParam(candidate[0])
+  }
+
+  return typeof candidate === 'string' ? candidate.trim() : ''
+}

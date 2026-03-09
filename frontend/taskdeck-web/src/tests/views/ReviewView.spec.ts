@@ -73,6 +73,21 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
     failureReason: null,
     correlationId: 'triage-run-1',
     operations: [],
+    presentation: {
+      plainSummary: 'Queue proposal This would create card "Queue proposal".',
+      impactSummary: '1 planned change touching 1 target surface.',
+      riskCue: 'Low risk. Usually safe to review quickly.',
+      sourceCue: 'Created from Inbox capture triage.',
+      operationHeadlines: ['Create card "Queue proposal".'],
+      affectedEntities: [
+        {
+          entityType: 'Card',
+          entityId: 'card-1',
+          label: 'Card card-1',
+          changeCount: 1,
+        },
+      ],
+    },
     ...overrides,
   }
 }
@@ -83,6 +98,7 @@ async function mountAt(path: string) {
     routes: [
       { path: '/workspace/review', name: 'workspace-review', component: ReviewView },
       { path: '/workspace/inbox', name: 'workspace-inbox', component: { template: '<div />' } },
+      { path: '/workspace/boards/:id', name: 'workspace-board', component: { template: '<div />' } },
       {
         path: '/workspace/automations',
         redirect: (to) => ({
@@ -175,7 +191,97 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Capture-linked')
     expect(wrapper.text()).toContain('Triage run: triage-run-99')
     expect(wrapper.find('a[href="/workspace/inbox#capture-capture-99"]').exists()).toBe(true)
-    expect(wrapper.find('a[href="/workspace/review#proposal-proposal-99"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/review?boardId=board-1#proposal-proposal-99"]').exists()).toBe(true)
+  })
+
+  it('requests board-scoped proposals when the review route carries a board query', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        boardId: 'board-7',
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
+
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
+    expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+  })
+
+  it('keeps the newest proposal load when board-scoped requests resolve out of order', async () => {
+    const initialLoad = createDeferred<Proposal[]>()
+    const boardScopedLoad = createDeferred<Proposal[]>()
+
+    mocks.getProposals.mockImplementation((query?: { boardId?: string }) => {
+      if (query?.boardId === 'board-7') {
+        return boardScopedLoad.promise
+      }
+
+      return initialLoad.promise
+    })
+
+    const { wrapper, router } = await mountAt('/workspace/review')
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200 })
+
+    await router.push('/workspace/review?boardId=board-7')
+    await router.isReady()
+
+    expect(mocks.getProposals).toHaveBeenLastCalledWith({ limit: 200, boardId: 'board-7' })
+
+    boardScopedLoad.resolve([
+      buildProposal({
+        id: 'proposal-board-7',
+        boardId: 'board-7',
+        summary: 'Board 7 proposal',
+      }),
+    ])
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Board 7 proposal')
+    expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+
+    initialLoad.resolve([
+      buildProposal({
+        id: 'proposal-stale',
+        boardId: 'board-1',
+        summary: 'Stale workspace proposal',
+      }),
+    ])
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Board 7 proposal')
+    expect(wrapper.text()).not.toContain('Stale workspace proposal')
+  })
+
+  it('renders readable presentation cues and board follow-through actions', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        boardId: 'board-12',
+        presentation: {
+          plainSummary: 'Rename the support board and create a follow-up card.',
+          impactSummary: '2 changes touching 2 target surfaces.',
+          riskCue: 'Medium risk. Check the affected items before approving.',
+          sourceCue: 'Created from an automation chat session.',
+          operationHeadlines: [
+            'Rename board "Support".',
+            'Create card "Send update".',
+          ],
+          affectedEntities: [
+            { entityType: 'Board', entityId: 'board-12', label: 'Board board-12', changeCount: 1 },
+            { entityType: 'Card', entityId: 'card-12', label: 'Card card-12', changeCount: 1 },
+          ],
+        },
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    expect(wrapper.text()).toContain('Rename the support board and create a follow-up card.')
+    expect(wrapper.text()).toContain('Created from an automation chat session.')
+    expect(wrapper.text()).toContain('Board board-12 · 1 change')
+    expect(wrapper.text()).toContain('Rename board "Support".')
+    expect(wrapper.text()).toContain('Open Board')
   })
 
   it('redirects legacy proposal routes to the canonical review route', async () => {
@@ -216,8 +322,8 @@ describe('ReviewView', () => {
 
     const { wrapper } = await mountAt('/workspace/review')
 
-    await wrapper.get('#proposal-proposal-a').findAll('button')[0]!.trigger('click')
-    await wrapper.get('#proposal-proposal-b').findAll('button')[0]!.trigger('click')
+    await wrapper.get('#proposal-proposal-a').findAll('button').find((node) => node.text() === 'View Diff')!.trigger('click')
+    await wrapper.get('#proposal-proposal-b').findAll('button').find((node) => node.text() === 'View Diff')!.trigger('click')
     expect(wrapper.find('.td-review-card__diff').exists()).toBe(false)
 
     diffB.resolve('diff-b')
@@ -243,11 +349,12 @@ describe('ReviewView', () => {
     mocks.getProposals.mockResolvedValue([proposalA, proposalB])
     mocks.getProposalDiff.mockImplementation((proposalId: string) =>
       proposalId === 'proposal-a' ? diffA.promise : diffB.promise)
+    void diffA.promise.catch(() => {})
 
     const { wrapper } = await mountAt('/workspace/review')
 
-    await wrapper.get('#proposal-proposal-a').findAll('button')[0]!.trigger('click')
-    await wrapper.get('#proposal-proposal-b').findAll('button')[0]!.trigger('click')
+    await wrapper.get('#proposal-proposal-a').findAll('button').find((node) => node.text() === 'View Diff')!.trigger('click')
+    await wrapper.get('#proposal-proposal-b').findAll('button').find((node) => node.text() === 'View Diff')!.trigger('click')
 
     diffB.resolve('diff-b')
     await Promise.resolve()
@@ -280,7 +387,7 @@ describe('ReviewView', () => {
     window.prompt = vi.fn(() => '   ')
 
     const { wrapper } = await mountAt('/workspace/review')
-    const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button')[2]!
+    const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button').find((node) => node.text() === 'Reject')!
 
     await rejectButton.trigger('click')
     await Promise.resolve()

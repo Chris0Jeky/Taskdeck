@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import AutomationChatView from '../../views/AutomationChatView.vue'
 
 function createDeferred<T>() {
@@ -13,6 +14,10 @@ function createDeferred<T>() {
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
+}))
+
+const routeMock = vi.hoisted(() => ({
+  query: {} as Record<string, unknown>,
 }))
 
 const mocks = vi.hoisted(() => ({
@@ -29,6 +34,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({
     push: routerMocks.push,
   }),
+  useRoute: () => routeMock,
 }))
 
 vi.mock('../../api/chatApi', () => ({
@@ -92,18 +98,46 @@ function mountView() {
   return mount(AutomationChatView, {
     global: {
       stubs: {
-        InputAssistField: {
-          props: ['modelValue', 'placeholder'],
-          emits: ['update:modelValue'],
+        InputAssistField: defineComponent({
+          props: {
+            modelValue: { type: String, required: true },
+            placeholder: { type: String, default: '' },
+            options: { type: Array, default: () => [] },
+          },
+          emits: ['update:modelValue', 'select'],
+          methods: {
+            emitInput(event: Event) {
+              const target = event.target as HTMLInputElement
+              this.$emit('update:modelValue', target.value)
+            },
+            selectFirstOption() {
+              const firstOption = (this.options as Array<{ value: string }>)[0]
+              if (!firstOption) {
+                return
+              }
+
+              this.$emit('update:modelValue', firstOption.value)
+              this.$emit('select', firstOption)
+            },
+          },
           template: `
-            <input
-              class="td-input-assist-stub"
-              :placeholder="placeholder"
-              :value="modelValue"
-              @input="$emit('update:modelValue', $event.target.value)"
-            />
+            <div>
+              <input
+                class="td-input-assist-stub"
+                :placeholder="placeholder"
+                :value="modelValue"
+                @input="emitInput"
+              />
+              <button
+                type="button"
+                class="td-input-assist-select-first"
+                @click="selectFirstOption"
+              >
+                Select first option
+              </button>
+            </div>
           `,
-        },
+        }),
       },
     },
   })
@@ -118,6 +152,7 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
 describe('AutomationChatView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    routeMock.query = {}
     const session = buildSession()
     mocks.getMySessions.mockResolvedValue([session])
     mocks.getSession.mockResolvedValue(session)
@@ -150,8 +185,54 @@ describe('AutomationChatView', () => {
 
     expect(routerMocks.push).toHaveBeenCalledWith({
       name: 'workspace-review',
+      query: { boardId: 'board-1' },
       hash: '#proposal-proposal-1',
     })
+  })
+
+  it('prefills the create-session board context from the route boardId query', async () => {
+    routeMock.query = { boardId: 'board-1' }
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.get('input[placeholder="Board context (optional)"]').element.value).toBe('Board One')
+    expect(wrapper.text()).toContain('Board context will stay anchored to Board One.')
+  })
+
+  it('keeps the deep-linked board id when duplicate board names exist', async () => {
+    routeMock.query = { boardId: 'board-2' }
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-1',
+        name: 'Shared Board',
+        description: 'First board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'board-2',
+        name: 'Shared Board',
+        description: 'Second board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await wrapper.get('input[placeholder="Session title"]').setValue('Scoped session')
+    await findButtonByText(wrapper, 'Create Session').trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.createSession).toHaveBeenCalledWith({
+      title: 'Scoped session',
+      boardId: 'board-2',
+    })
+    expect(wrapper.text()).toContain('Board context will stay anchored to Shared Board.')
   })
 
   it('rejects unknown board context values when creating a session', async () => {
@@ -180,6 +261,16 @@ describe('AutomationChatView', () => {
       title: 'Scoped session',
       boardId: 'board-1',
     })
+  })
+
+  it('keeps the selected board label visible after choosing from the assist list', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await wrapper.get('.td-input-assist-select-first').trigger('click')
+    await waitForAsyncUi()
+
+    expect(wrapper.get('input[placeholder="Board context (optional)"]').element.value).toBe('Board One')
   })
 
   it('accepts board selection by board id regardless of GUID casing', async () => {

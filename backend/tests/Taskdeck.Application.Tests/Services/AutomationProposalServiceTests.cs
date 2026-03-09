@@ -117,13 +117,13 @@ public class AutomationProposalServiceTests
     public async Task GetProposalByIdAsync_ShouldReturnProposal_WhenExists()
     {
         // Arrange
-        var proposalId = Guid.NewGuid();
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
             Guid.NewGuid(),
             "Test proposal",
             RiskLevel.Low,
             Guid.NewGuid().ToString());
+        var proposalId = proposal.Id;
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
@@ -135,6 +135,83 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Id.Should().Be(proposal.Id);
         result.Value.Summary.Should().Be("Test proposal");
+    }
+
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldBuildReadablePresentation_WhenOperationsExist()
+    {
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create the onboarding follow-up",
+            RiskLevel.High,
+            Guid.NewGuid().ToString(),
+            boardId,
+            sourceReferenceId: Guid.NewGuid().ToString());
+        var proposalId = proposal.Id;
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "card.create",
+            "Card",
+            "{\"title\":\"Draft follow-up\"}",
+            Guid.NewGuid().ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            1,
+            "board.rename",
+            "Board",
+            "{\"name\":\"Support follow-up\"}",
+            Guid.NewGuid().ToString(),
+            boardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Presentation.PlainSummary.Should().Contain("apply 2 planned changes");
+        result.Value.Presentation.SourceCue.Should().Be("Created from Inbox capture triage.");
+        result.Value.Presentation.RiskCue.Should().Contain("High risk");
+        result.Value.Presentation.OperationHeadlines.Should().ContainInOrder(
+            "Create card \"Draft follow-up\".",
+            $"Rename board \"Support follow-up\".");
+        result.Value.Presentation.AffectedEntities.Should().Contain(entity =>
+            entity.EntityType == "Board" &&
+            entity.EntityId == boardId.ToString() &&
+            entity.ChangeCount == 1);
+    }
+
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldPreserveNamedTargetCasing_InSingleOperationSummary()
+    {
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create the follow-up card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        var proposalId = proposal.Id;
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "card.create",
+            "Card",
+            "{\"title\":\"Draft Follow-Up\"}",
+            Guid.NewGuid().ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Presentation.PlainSummary.Should().Be(
+            "Create the follow-up card This would create card \"Draft Follow-Up\".");
     }
 
     [Fact]

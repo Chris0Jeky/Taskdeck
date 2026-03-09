@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useNotificationStore } from '../store/notificationStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
+import type { NotificationItem } from '../types/notifications'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const notifications = useNotificationStore()
+const route = useRoute()
+const router = useRouter()
 const unreadOnly = ref(false)
 const inlineError = ref<string | null>(null)
 
 const items = computed(() => notifications.notifications)
 const unreadCount = computed(() => items.value.filter((item) => !item.isRead).length)
+const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
 function formatType(value: number | string): string {
   const normalized = String(value)
@@ -25,10 +31,18 @@ function formatCadence(value: number | string): string {
   return normalized
 }
 
+function normalizeSourceEntityType(value: string | null): string {
+  return value?.trim().toLowerCase() ?? ''
+}
+
 async function loadNotifications() {
   inlineError.value = null
   try {
-    await notifications.fetchNotifications({ unreadOnly: unreadOnly.value, limit: 200 })
+    await notifications.fetchNotifications({
+      unreadOnly: unreadOnly.value,
+      ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
+      limit: 200,
+    })
   } catch (e: unknown) {
     inlineError.value = getErrorDisplay(e, notifications.error || 'Failed to load notifications').message
   }
@@ -43,11 +57,41 @@ async function markAsRead(notificationId: string) {
   }
 }
 
+function destinationLabel(item: NotificationItem): string | null {
+  if (normalizeSourceEntityType(item.sourceEntityType) === 'proposal' && item.sourceEntityId) {
+    return 'Open Proposal'
+  }
+
+  if (item.boardId ?? activeBoardId.value) {
+    return 'Open Board'
+  }
+
+  return null
+}
+
+function openNotificationDestination(item: NotificationItem) {
+  if (normalizeSourceEntityType(item.sourceEntityType) === 'proposal' && item.sourceEntityId) {
+    void router.push({
+      name: 'workspace-review',
+      query: item.boardId
+        ? { boardId: item.boardId }
+        : (activeBoardId.value ? { boardId: activeBoardId.value } : undefined),
+      hash: `#proposal-${encodeURIComponent(item.sourceEntityId)}`,
+    })
+    return
+  }
+
+  const destinationBoardId = item.boardId || activeBoardId.value
+  if (destinationBoardId) {
+    void router.push(`/workspace/boards/${destinationBoardId}`)
+  }
+}
+
 onMounted(() => {
   void loadNotifications()
 })
 
-watch(unreadOnly, () => {
+watch([unreadOnly, activeBoardId], () => {
   void loadNotifications()
 })
 </script>
@@ -59,6 +103,9 @@ watch(unreadOnly, () => {
         <h1 class="td-page-title">Notifications</h1>
         <p class="td-notifications__subtitle">
           {{ unreadCount }} unread
+        </p>
+        <p v-if="activeBoardId" class="td-notifications__board-context">
+          Showing notifications linked to board {{ activeBoardId }}.
         </p>
       </div>
       <button class="td-btn td-btn--secondary" @click="loadNotifications">
@@ -90,18 +137,28 @@ watch(unreadOnly, () => {
           <div class="td-notification-row__title">{{ item.title }}</div>
           <div class="td-notification-row__message">{{ item.message }}</div>
           <div class="td-notification-row__meta">
+            <span v-if="item.boardId">Board-linked</span>
             <span>{{ formatType(item.type) }}</span>
             <span>{{ formatCadence(item.cadence) }}</span>
             <span>{{ new Date(item.createdAt).toLocaleString() }}</span>
           </div>
         </div>
-        <button
-          v-if="!item.isRead"
-          class="td-btn td-btn--primary"
-          @click="markAsRead(item.id)"
-        >
-          Mark read
-        </button>
+        <div class="td-notification-row__actions">
+          <button
+            v-if="destinationLabel(item)"
+            class="td-btn td-btn--secondary"
+            @click="openNotificationDestination(item)"
+          >
+            {{ destinationLabel(item) }}
+          </button>
+          <button
+            v-if="!item.isRead"
+            class="td-btn td-btn--primary"
+            @click="markAsRead(item.id)"
+          >
+            Mark read
+          </button>
+        </div>
       </li>
     </ul>
   </div>
@@ -123,6 +180,13 @@ watch(unreadOnly, () => {
 .td-notifications__subtitle {
   margin-top: var(--td-space-1);
   color: var(--td-text-secondary);
+}
+
+.td-notifications__board-context {
+  margin-top: var(--td-space-2);
+  color: var(--td-color-primary);
+  font-size: var(--td-font-sm);
+  font-weight: 600;
 }
 
 .td-notifications__controls {
@@ -197,6 +261,13 @@ watch(unreadOnly, () => {
   gap: var(--td-space-3);
   font-size: var(--td-font-sm);
   color: var(--td-text-tertiary);
+}
+
+.td-notification-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--td-space-2);
 }
 
 .td-btn {

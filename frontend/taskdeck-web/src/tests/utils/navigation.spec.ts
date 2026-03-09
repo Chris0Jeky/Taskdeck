@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isAuthRoutePath, normalizePathname, sanitizeInternalRedirect } from '../../utils/navigation'
+import {
+  isAuthRoutePath,
+  normalizeBoardIdQueryParam,
+  normalizePathname,
+  sanitizeInternalRedirect,
+} from '../../utils/navigation'
 
 describe('navigation utils', () => {
   it('allows internal absolute paths', () => {
@@ -33,5 +38,11 @@ describe('navigation utils', () => {
     expect(isAuthRoutePath('/register')).toBe(true)
     expect(isAuthRoutePath('/login/')).toBe(true)
     expect(isAuthRoutePath('/workspace/boards')).toBe(false)
+  })
+
+  it('normalizes board id query params from strings or arrays', () => {
+    expect(normalizeBoardIdQueryParam(' board-7 ')).toBe('board-7')
+    expect(normalizeBoardIdQueryParam([' board-8 ', 'board-9'])).toBe('board-8')
+    expect(normalizeBoardIdQueryParam(undefined)).toBe('')
   })
 })

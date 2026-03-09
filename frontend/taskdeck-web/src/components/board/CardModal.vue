@@ -108,7 +108,7 @@ function captureHref(captureItemId: string): string {
 }
 
 function proposalHref(proposalId: string): string {
-  return `/workspace/review#proposal-${encodeURIComponent(proposalId)}`
+  return `/workspace/review?boardId=${encodeURIComponent(props.card.boardId)}#proposal-${encodeURIComponent(proposalId)}`
 }
 
 function proposalStatusLabel(status: CardCaptureProvenance['proposalStatus']): string {

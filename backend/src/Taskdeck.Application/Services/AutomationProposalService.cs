@@ -3,11 +3,33 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
+using System.Text.Json;
 
 namespace Taskdeck.Application.Services;
 
 public class AutomationProposalService : IAutomationProposalService
 {
+    private static readonly HashSet<string> KnownActionVerbs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "add",
+        "apply",
+        "archive",
+        "assign",
+        "attach",
+        "block",
+        "create",
+        "delete",
+        "move",
+        "remove",
+        "rename",
+        "reorder",
+        "restore",
+        "set",
+        "unarchive",
+        "unblock",
+        "update"
+    };
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationService _notificationService;
 
@@ -286,7 +308,10 @@ public class AutomationProposalService : IAutomationProposalService
             proposal.FailureReason,
             proposal.CorrelationId,
             proposal.Operations.Select(MapOperationToDto).ToList()
-        );
+        )
+        {
+            Presentation = BuildPresentation(proposal)
+        };
     }
 
     private static ProposalOperationDto MapOperationToDto(AutomationProposalOperation operation)
@@ -326,4 +351,231 @@ public class AutomationProposalService : IAutomationProposalService
 
         return Result.Success();
     }
+
+    private static ProposalPresentationDto BuildPresentation(AutomationProposal proposal)
+    {
+        var orderedOperations = proposal.Operations
+            .OrderBy(operation => operation.Sequence)
+            .ToList();
+
+        var affectedEntities = orderedOperations
+            .GroupBy(operation => new
+            {
+                EntityType = HumanizeTargetType(operation.TargetType),
+                operation.TargetId
+            })
+            .Select(group => new ProposalAffectedEntityDto(
+                group.Key.EntityType,
+                group.Key.TargetId,
+                BuildAffectedEntityLabel(group.Key.EntityType, group.Key.TargetId),
+                group.Count()))
+            .ToList();
+
+        var operationHeadlines = orderedOperations
+            .Select(DescribeOperation)
+            .ToList();
+
+        return new ProposalPresentationDto(
+            BuildPlainSummary(proposal.Summary, orderedOperations, affectedEntities),
+            BuildImpactSummary(orderedOperations.Count, affectedEntities),
+            BuildRiskCue(proposal.RiskLevel),
+            BuildSourceCue(proposal.SourceType),
+            operationHeadlines,
+            affectedEntities);
+    }
+
+    private static string BuildPlainSummary(
+        string summary,
+        IReadOnlyList<AutomationProposalOperation> orderedOperations,
+        IReadOnlyList<ProposalAffectedEntityDto> affectedEntities)
+    {
+        if (orderedOperations.Count == 0)
+        {
+            return summary;
+        }
+
+        if (orderedOperations.Count == 1)
+        {
+            return $"{summary} This would {LowercaseSentenceLead(DescribeOperation(orderedOperations[0]))}";
+        }
+
+        var entitySummary = affectedEntities.Count switch
+        {
+            0 => "this workspace",
+            1 => affectedEntities[0].Label.ToLowerInvariant(),
+            _ => string.Join(", ", affectedEntities.Take(2).Select(entity => entity.EntityType.ToLowerInvariant()))
+        };
+
+        return $"{summary} This would apply {orderedOperations.Count} planned changes across {entitySummary}.";
+    }
+
+    private static string BuildImpactSummary(int operationCount, IReadOnlyList<ProposalAffectedEntityDto> affectedEntities)
+    {
+        if (operationCount == 0)
+        {
+            return "No concrete board operations were attached to this proposal.";
+        }
+
+        if (affectedEntities.Count == 0)
+        {
+            return $"{operationCount} change{Pluralize(operationCount)} planned.";
+        }
+
+        return $"{operationCount} change{Pluralize(operationCount)} touching {affectedEntities.Count} target surface{Pluralize(affectedEntities.Count)}.";
+    }
+
+    private static string BuildRiskCue(RiskLevel riskLevel)
+    {
+        return riskLevel switch
+        {
+            RiskLevel.Low => "Low risk. Usually safe to review quickly.",
+            RiskLevel.Medium => "Medium risk. Check the affected items before approving.",
+            RiskLevel.High => "High risk. Review the affected items and execution order carefully.",
+            RiskLevel.Critical => "Critical risk. Treat this as a high-trust change and verify every step.",
+            _ => "Review the proposed changes before approving."
+        };
+    }
+
+    private static string BuildSourceCue(ProposalSourceType sourceType)
+    {
+        return sourceType switch
+        {
+            ProposalSourceType.Queue => "Created from Inbox capture triage.",
+            ProposalSourceType.Chat => "Created from an automation chat session.",
+            ProposalSourceType.Manual => "Created manually from an operator-driven proposal flow.",
+            _ => "Created from a review-first automation flow."
+        };
+    }
+
+    private static string DescribeOperation(AutomationProposalOperation operation)
+    {
+        var verb = HumanizeActionVerb(operation.ActionType);
+        var target = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
+        var namedTarget = ExtractNamedTarget(operation.Parameters);
+
+        return namedTarget is null
+            ? $"{verb} {target}."
+            : $"{verb} {target} \"{namedTarget}\".";
+    }
+
+    private static string? ExtractNamedTarget(string parameters)
+    {
+        if (string.IsNullOrWhiteSpace(parameters))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(parameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            foreach (var propertyName in new[] { "title", "name", "boardName", "columnName", "labelName" })
+            {
+                if (document.RootElement.TryGetProperty(propertyName, out var propertyValue) &&
+                    propertyValue.ValueKind == JsonValueKind.String)
+                {
+                    var value = propertyValue.GetString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        return value;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string HumanizeActionVerb(string actionType)
+    {
+        var normalized = actionType
+            .Replace('.', ' ')
+            .Replace('_', ' ')
+            .Replace('-', ' ')
+            .Trim();
+
+        if (normalized.Length == 0)
+        {
+            return "Update";
+        }
+
+        var tokens = SplitPascalCase(normalized)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var preferredVerb = tokens.FirstOrDefault(token => KnownActionVerbs.Contains(token))
+            ?? tokens.LastOrDefault(token => KnownActionVerbs.Contains(token))
+            ?? tokens.FirstOrDefault(token => token.All(char.IsLetter))
+            ?? tokens.First();
+        return char.ToUpperInvariant(preferredVerb[0]) + preferredVerb[1..].ToLowerInvariant();
+    }
+
+    private static string HumanizeTargetType(string targetType)
+    {
+        if (string.IsNullOrWhiteSpace(targetType))
+        {
+            return "Item";
+        }
+
+        var normalized = targetType
+            .Replace('.', ' ')
+            .Replace('_', ' ')
+            .Replace('-', ' ')
+            .Trim();
+
+        var humanized = SplitPascalCase(normalized)
+            .Replace("  ", " ")
+            .Trim();
+
+        return humanized.Length == 0
+            ? "Item"
+            : char.ToUpperInvariant(humanized[0]) + humanized[1..];
+    }
+
+    private static string LowercaseSentenceLead(string sentence)
+    {
+        if (string.IsNullOrWhiteSpace(sentence))
+        {
+            return sentence;
+        }
+
+        return char.ToLowerInvariant(sentence[0]) + sentence[1..];
+    }
+
+    private static string BuildAffectedEntityLabel(string entityType, string? entityId)
+    {
+        if (string.IsNullOrWhiteSpace(entityId))
+        {
+            return entityType;
+        }
+
+        return $"{entityType} {entityId}";
+    }
+
+    private static string SplitPascalCase(string value)
+    {
+        var buffer = new System.Text.StringBuilder(value.Length * 2);
+
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (index > 0 && char.IsUpper(current) && !char.IsWhiteSpace(value[index - 1]))
+            {
+                buffer.Append(' ');
+            }
+
+            buffer.Append(current);
+        }
+
+        return buffer.ToString();
+    }
+
+    private static string Pluralize(int count) => count == 1 ? string.Empty : "s";
 }

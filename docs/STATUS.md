@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-07  
+Last Updated: 2026-03-09  
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -31,7 +31,7 @@ Current constraints are mostly hardening and consistency:
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
-- cold first-run still depends too much on docs/scripts; guided `Home`, durable workspace modes, review-first automation routing, and the recoverable `Today` onboarding path are now shipped, but board action rails and broader board-context continuity remain planned follow-through
+- cold first-run still depends too much on docs/scripts; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, and board-centered review/capture handoff are now shipped, but broader contextual help and first-run proofing still remain
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -95,7 +95,8 @@ Direction guardrails (explicit):
 - Feature slices integrated end to end:
   - workspace home summary shell with server-backed workspace mode persistence
   - workspace `Today` agenda with persisted onboarding state, replay/dismiss controls, and first-use board setup shortcuts
-  - canonical review-first proposal routing/approve/reject/execute and diff viewing
+  - canonical review-first proposal routing/approve/reject/execute and diff viewing with readable proposal presentation cards
+  - board-centered action rail and board-aware deep links across board, inbox, review, chat, notifications, and capture provenance flows
   - chat session flow with selector-safe board context and review handoff
   - ops template execution and log querying with route-aware tab defaults
   - archive listing and restore operations
@@ -251,10 +252,10 @@ Backlog implication:
 - `#320` is now shipped: durable `UserPreference` workspace mode persistence, `/api/workspace/home` + `/api/workspace/preferences`, `Home` default routing, and mode-aware shell navigation
 - `#322` is now shipped: `/workspace/review` is the canonical automation route, legacy proposals URLs redirect compatibly, queue/chat/ops/access are explicitly framed as advanced surfaces, board access/chat common flows prefer selectors over raw board IDs, and primary empty states now point users toward concrete next steps
 - `#324` is now shipped: `/workspace/today` aggregates review, triage, overdue, due-today, and blocked work into one agenda, while Home/Today share a persisted onboarding loop with setup replay/dismiss and first-use starter-board creation
+- `#326` is now shipped: proposal cards expose plain-language summaries, impact/risk/source cues, and affected-entity headlines from an application-layer presentation contract, while board pages now expose a board action rail (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) and board context now travels across inbox/review/chat/notifications/provenance links
 - the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave P, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
 - the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave P and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
 - planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
-  - board action rails and proposal summary cards
   - richer contextual help and help-center follow-through on top of the shipped `Home` / `Today` onboarding foundation
   - `Agents`, `Runs`, `Knowledge`, and `Integrations` product surfaces
   - `Demo Tools`, guided narrative/demo-tour flow, HTML report/assertions, and saved views
