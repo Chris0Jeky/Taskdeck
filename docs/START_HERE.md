@@ -2,125 +2,130 @@
 
 This is the first doc to read if you are new to Taskdeck.
 
-Taskdeck is a review-first execution workspace. The normal path is:
+Taskdeck is a local-first execution workspace built around one simple loop:
 
-1. start from `Home`
-2. decide what matters in `Today`
-3. capture rough input in `Inbox`
-4. inspect proposed changes in `Review`
-5. execute explicitly
-6. continue the real work on a board
+1. capture something quickly
+2. review the proposed change
+3. apply it explicitly
+4. continue the work on a board
 
-## What Is Shipped Right Now
+The shipped product now teaches that loop from inside the workspace:
 
-The novice-first shell is now real:
+- `Home` is the default landing page
+- `Today` keeps the daily agenda and first-run setup visible
+- `Review` is the normal place to approve, reject, and execute proposed changes
+- `Boards` remains the place where work lands and moves forward
+- `Inbox` is where messy input becomes reviewable work
 
-- `Home` is the default landing surface.
-- `Today` shows the daily agenda across review, capture triage, and board work.
-- `Inbox` is the low-friction intake surface.
-- `Review` is the normal automation surface and trust gate.
-- `Boards` is still the shipped label for project workspaces.
+## What Taskdeck Is Good At Right Now
 
-Advanced or operator-facing surfaces also exist, but they are not the normal starting path:
+Taskdeck is strongest today as:
 
-- `Chat`
-- `Activity`
-- `Ops`
-- `Access`
-- `Archive`
+- a safe execution workspace for developers, operators, and small teams
+- a place to capture rough work without losing it
+- a review-first board system where automation proposes changes instead of mutating silently
 
-Planned but not shipped yet:
+Taskdeck is not yet:
 
-- `Agents`
-- `Runs`
-- `Knowledge`
-- `Integrations`
+- a broad autonomous project manager
+- a finished `Agents` or `Integrations` workspace
+- a replacement for human review
 
-## Two-Minute First Value Path
+## Core Vocabulary
 
-If you want the shortest real workflow:
+- `Home`: reset point for the product loop and the fastest place to see what needs attention
+- `Today`: daily agenda for overdue work, blocked work, and review follow-through
+- `Inbox`: low-friction intake for messy notes, bugs, and follow-ups
+- `Review`: trust gate where proposed changes stop before they touch a board
+- `Boards`: current shipped board surface. In product language, think of these as projects
+- `Workbench tools`: advanced surfaces such as `Chat`, `Activity`, `Ops`, `Access`, and `Archive`
 
-1. open `Home`
-2. create or resume a useful board from the setup loop
-3. drop one note, bug, or transcript into `Inbox`
-4. run `Start Triage`
-5. open `Review`
-6. approve and execute one proposal
-7. open the board and continue from the resulting card or board change
+## Pick A Workspace Mode
 
-## Pick The Right Surface
+All three workspace modes keep the same review-first trust model. They change how prominent the advanced tools are.
+
+- `Guided`
+  - best for normal daily use
+  - keeps `Home`, `Today`, `Review`, `Boards`, and `Inbox` front and center
+- `Workbench`
+  - best for power users and operators
+  - keeps every shipped surface visible in the main navigation
+- `Agent`
+  - preserves the same shipped product loop today
+  - reserves the mental model for later `Agents` / `Runs` / `Knowledge` work without claiming those pages already exist
+
+## First 10 Minutes
+
+If you want the shortest path to first value:
+
+1. Sign in and land on `Home`.
+2. If you do not have a board yet, start setup from `Home` or `Today`.
+3. Create a blank board or use a starter workflow such as `Engineering sprint`, `Support triage`, or `Content calendar`.
+4. Drop one messy note into quick capture or `Inbox`.
+5. Start triage, then open `Review`.
+6. Approve and execute the proposal only after it looks right.
+7. Continue the resulting work in the board.
+
+That is the current golden path:
+
+`Home -> Inbox/capture -> Review -> Board`
+
+`Today` sits beside that path as the daily reset surface when you already have work underway.
+
+## Which Page Should I Use?
 
 Use `Home` when:
 
-- you do not want to guess where to start
-- you want the setup loop
-- you want recent-board context and a recommended next action
+- you are unsure where to begin
+- you want a quick summary of captures, pending review, and recent boards
+- you want to restart setup or replay the guided onboarding steps
 
 Use `Today` when:
 
-- you want the daily agenda
-- you need one place to see review, triage, overdue, due-today, and blocked work
+- you want to shape the day
+- you need to see overdue, due-today, or blocked work
+- you want the next recommended action without route-hunting
 
 Use `Inbox` when:
 
 - the input is messy
-- you want to save it now and shape it later
-- you do not want to jump straight into board edits
+- you want to save it now and structure it later
+- you are not ready to decide the board or card shape yet
 
 Use `Review` when:
 
-- you want to inspect changes before they touch a board
-- you need the proposal summary, risk, provenance, and approve-or-reject step
+- you need to inspect a proposed change before it touches a board
+- you want the normal approval or rejection path
 
 Use `Boards` when:
 
-- the work is already clear enough to live on a board
-- you need cards, comments, due dates, labels, or board-specific actions
+- you are doing the actual work
+- you need to move cards, update details, or collaborate in comments
 
-## Common First-Run Questions
+## If A Page Looks Empty
 
-Why does the doc talk about projects when the UI says boards?
+- `Home`: create the first board or replay setup
+- `Today`: finish or replay the onboarding path so the loop has real work to show
+- `Inbox`: add a capture or quick note
+- `Review`: triage something first so a proposal exists to review
+- `Boards`: create a board or use a starter pack
 
-- Product language is moving toward "projects" for normal users, but the shipped route label is still `Boards`. Treat them as the same workspace today.
+## Advanced Surfaces
 
-Why do I need `Review` before a board changes?
+The following are shipped, but they are not the normal first-run path:
 
-- That is the trust model. Taskdeck proposes changes first and waits for an explicit decision before it writes to a board.
+- `Chat`
+- `Activity`
+- `Notifications`
+- `Ops`
+- `Access`
+- `Archive`
 
-What if every page looks empty?
+If you are evaluating Taskdeck for the first time, stay in `Home`, `Today`, `Inbox`, `Review`, and `Boards` until the loop makes sense.
 
-- Start the setup loop from `Home`, create one useful board, then add one Inbox item and run the loop once. If you want a fuller workspace immediately, seed the demo workspace with `npm run demo:seed`.
+## Seeded Evaluation Path
 
-Do I need `Queue` or `Ops`?
-
-- No for normal first-run use. Stay in `Home`, `Today`, `Inbox`, `Review`, and `Boards` unless you are doing operator or debugging work.
-
-## Local Start
-
-Backend:
-
-```bash
-dotnet restore backend/Taskdeck.sln
-dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
-```
-
-Frontend:
-
-```bash
-cd frontend/taskdeck-web
-npm install
-npm run dev
-```
-
-Default URLs:
-
-- API: `http://localhost:5000`
-- Swagger: `http://localhost:5000/swagger`
-- Frontend: `http://localhost:5173`
-
-## Want A Richer First Run?
-
-Seed a believable workspace so `Home`, `Today`, `Inbox`, and `Review` are already populated:
+If you want a populated workspace instead of starting mostly empty:
 
 ```bash
 cd frontend/taskdeck-web
@@ -129,12 +134,16 @@ npm run demo:seed
 
 Use this when:
 
-- you are evaluating the product
-- you want realistic examples instead of empty states
-- you need a walkthrough state for demos or training
+- you are evaluating the product quickly
+- you want event-driven pages such as notifications or activity to have realistic content
+- you need a repeatable walkthrough state
+
+For seeded demos and stakeholder walkthroughs, use [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md).
 
 ## Next Docs
 
-- [USER_MANUAL.md](USER_MANUAL.md) for the full manual, workflow guide, FAQ, and troubleshooting baseline
-- [manual/README.md](manual/README.md) for the manual structure, in-app help mapping, and future chapter layout
+- [USER_MANUAL.md](USER_MANUAL.md) for the full shipped-product reference
+- [product/FIRST_RUN_WORKFLOWS.md](product/FIRST_RUN_WORKFLOWS.md) for step-by-step user journeys
+- [product/HELP_AND_FAQ.md](product/HELP_AND_FAQ.md) for page-level help and common confusion points
+- [product/DOGFOODING_GUIDE.md](product/DOGFOODING_GUIDE.md) for daily internal use
 - [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md) for seeded demos and stakeholder walkthroughs

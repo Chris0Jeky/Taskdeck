@@ -1,21 +1,271 @@
 # Taskdeck User Manual
 
 If you are new to Taskdeck, read [START_HERE.md](START_HERE.md) first.
-This manual is the reference for the shipped product shell.
+This manual is the reference for the current shipped product shape.
 
-## Product Shape
+## What Taskdeck Is
 
-Taskdeck is a review-first workspace for turning rough input into visible board work.
-
-The main loop is:
+Taskdeck is a capture-first, review-first execution workspace.
+Its main loop is:
 
 1. capture something quickly
-2. shape it into a proposal
+2. shape it into a proposed change
 3. review the proposal
 4. apply it explicitly
 5. continue the work on a board
+6. inspect history or notifications only when you need evidence
 
-The shipped top-level normal-user shell is:
+Current product shape:
+
+- the default route is now `Home`
+- `Today` is the daily agenda surface
+- `Review` is the normal automation surface
+- `Boards` remains the visible work surface
+- advanced or operator tools are shipped, but they are not the normal first-run path
+
+## Current Golden Path
+
+The fastest current path to value is:
+
+1. land on `Home`
+2. create a board from setup if you do not have one yet
+3. capture rough input into quick capture or `Inbox`
+4. start triage
+5. open `Review`
+6. review, approve, and execute the proposal
+7. return to the board and work the cards
+
+That is the current product loop.
+
+`Today` supports the same loop by making the next daily action visible when you already have work underway.
+
+## Navigation By Workspace Mode
+
+Workspace modes are display preferences, not permission boundaries.
+
+Guided mode keeps the normal loop prominent:
+
+- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`
+- secondary: `Notifications`, `Chat`, `Activity`, `Ops`, `Settings`, `Preferences`, `Access`, `Archive`
+
+Workbench mode keeps all shipped tools visible in the main nav:
+
+- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`, `Notifications`, `Chat`, `Activity`, `Ops`, `Settings`, `Preferences`, `Access`, `Archive`
+
+Agent mode currently ships the same pages as guided mode plus the same secondary workbench tools:
+
+- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`
+- secondary: `Notifications`, `Chat`, `Activity`, `Ops`, `Settings`, `Preferences`, `Access`, `Archive`
+
+Important truth:
+
+- `Agent` mode exists as a workspace preference today
+- dedicated `Agents`, `Runs`, `Knowledge`, and `Integrations` routes do not ship yet
+
+## Surface Reference
+
+### Home
+
+What it is for:
+
+- resetting the loop
+- seeing the current workload clearly
+- replaying onboarding or setup when the path is unclear
+
+Use it when:
+
+- you first sign in
+- you are not sure where to begin
+- you want recent boards and recommended actions in one place
+
+### Today
+
+What it is for:
+
+- deciding the next daily action
+- reviewing proposals before diving into board work
+- surfacing overdue, due-today, and blocked cards
+
+Use it when:
+
+- you already have work in motion
+- you want the daily agenda instead of the broad reset view
+
+### Boards
+
+What it is for:
+
+- visible execution
+- editing cards and columns
+- comments, labels, due dates, and blockers
+
+Use it when:
+
+- work is ready to be acted on
+- you need to move cards forward or collaborate on details
+
+Product-language note:
+
+- the route label is still `Boards`
+- the docs use `project` as the higher-level mental model when helpful
+
+### Inbox
+
+What it is for:
+
+- messy intake
+- storing work before it is structured enough for the board
+- turning captures into reviewable proposals
+
+Use it when:
+
+- the input is rough
+- you need to save context now and decide shape later
+
+### Review
+
+What it is for:
+
+- approving or rejecting proposed changes
+- keeping automation review-first and explicit
+
+Use it when:
+
+- triage has produced a proposal
+- `Home` or `Today` says review work is waiting
+
+Compatibility note:
+
+- `Review` is the current user-facing path for the older proposals route
+- legacy automation paths still redirect for compatibility
+
+### Notifications
+
+What it is for:
+
+- mentions
+- proposal outcomes
+- follow-up signals that matter to a user directly
+
+### Settings And Preferences
+
+Settings covers:
+
+- profile details
+- notification preferences
+- feature-flagged advanced surfaces
+
+Use preferences when:
+
+- you need to tune notification behavior or workspace posture
+
+### Access
+
+Use `Access` when:
+
+- you are managing board membership and roles
+
+This is an advanced management surface, not part of the normal capture path.
+
+### Archive
+
+Use `Archive` when:
+
+- you need to restore or inspect archived boards
+
+### Chat
+
+Use `Chat` when:
+
+- you want board-scoped conversational help
+- you intentionally want a more manual operator-style automation flow
+
+### Activity
+
+Use `Activity` when:
+
+- you need history, provenance, or audit-style context
+
+### Ops
+
+Use `Ops` when:
+
+- you are diagnosing the system
+- you need logs, endpoint exploration, or CLI tooling
+
+## Boards, Cards, And Starter Packs
+
+Boards:
+
+- contain columns, cards, labels, comments, and board settings
+- can be archived and restored
+- are where work should feel visible and actionable
+
+Cards support:
+
+- title and description
+- due date
+- labels
+- blocked state and blocked reason
+- threaded comments and mentions
+
+Starter packs:
+
+- scaffold columns, labels, and optional seed cards
+- are safe to reapply because apply behavior is idempotent and conflict-aware
+- currently support fast-start shapes such as `Engineering sprint`, `Support triage`, and `Content calendar`
+
+## Inbox, Triage, And Review
+
+Use `Inbox` for:
+
+- notes
+- bugs
+- follow-ups
+- rough plans
+- ideas you do not want to lose
+
+Inbox actions:
+
+- `Ignore` for noise or duplicates
+- `Start Triage` to request a reviewed proposal
+
+Proposal review:
+
+- happens in `Review`
+- is the primary trust boundary for board mutation
+- should answer what changes, where, and why
+
+Current review model:
+
+1. proposal is generated
+2. user reviews operations and summary
+3. user approves or rejects
+4. user executes explicitly
+
+## Daily Rhythm
+
+Morning:
+
+- open `Home`
+- open `Today`
+- review pending proposals before diving into card work
+
+During work:
+
+- capture follow-ups immediately instead of holding them in your head
+- use comments to preserve reasoning on cards
+- return to the board when proposals create or update work
+
+End of day:
+
+- move cards forward honestly
+- capture loose ends into `Inbox`
+- avoid leaving important context only in local notes or memory
+
+## Normal User Surfaces vs Advanced Surfaces
+
+Normal user surfaces:
 
 - `Home`
 - `Today`
@@ -23,318 +273,103 @@ The shipped top-level normal-user shell is:
 - `Review`
 - `Boards`
 
-The current route label is still `Boards`, even when some product copy uses "project" to describe the same work context.
+Advanced or operator surfaces:
 
-## Workspace Modes
+- `Chat`
+- `Activity`
+- `Notifications`
+- `Ops`
+- `Access`
+- `Archive`
 
-Taskdeck supports three workspace modes:
+Rule of thumb:
 
-- `Guided`
-  - emphasizes `Home`, `Today`, `Inbox`, `Review`, and `Boards`
-- `Workbench`
-  - keeps more tools visible for hands-on and diagnostic workflows
-- `Agent`
-  - preserves the same review-first path while later agent breadth is still future work
+- if you are new, stay in the normal user surfaces until the loop is clear
+- only drop into advanced surfaces when you specifically need diagnostics, evidence, or manual control
 
-Workspace modes change how navigation is presented. They do not grant extra permissions.
+## Workflow Guides And Help
 
-## First-Run Guide
+Use these docs together:
 
-Use this path if you want the fastest clean introduction to the product:
-
-1. Stay in `Guided` mode.
-2. Open `Home`.
-3. Create one capture with quick capture or by going to `Inbox`.
-4. In `Inbox`, choose `Start Triage`.
-5. Open `Review`.
-6. Inspect the proposal, approve it, and execute it.
-7. Open `Boards` to continue the work on the resulting cards.
-
-If there are no boards yet:
-
-1. open `Boards`
-2. create a board
-3. optionally apply a starter pack
-4. return to `Home` or `Today`
-5. continue the same loop
-
-## Page Guide
-
-### Home
-
-When should I use this page?
-
-Use `Home` when you want the quickest summary of what needs attention and where to go next.
-
-`Home` is best for:
-- re-entering the product after a break
-- checking whether setup is complete
-- jumping into `Today`, `Inbox`, `Review`, or `Boards` without route-hunting
-
-What you should expect:
-- workspace summary cards
-- recommended next actions
-- replayable setup guidance
-- recent board context
-
-Common mistakes:
-- treating `Home` like a passive dashboard instead of a routing surface
-- staying on `Home` when you already know you need `Inbox`, `Review`, or `Boards`
-
-### Today
-
-When should I use this page?
-
-Use `Today` when you want a daily agenda instead of a broad summary.
-
-`Today` is best for:
-- deciding whether proposals need review first
-- seeing due-today, overdue, and blocked work
-- returning to the onboarding path if you need the guided loop again
-
-What you should expect:
-- agenda groups for `Review`, `Inbox`, and board work
-- setup replay and dismiss controls
-- next-step shortcuts back into the main loop
-
-Common mistakes:
-- using `Today` as a substitute for board detail work
-- skipping `Review` when there are pending proposals waiting
-
-### Inbox
-
-When should I use this page?
-
-Use `Inbox` when the input is still rough.
-
-Examples:
-- notes
-- bugs
-- pasted plans
-- follow-ups
-- ideas you do not want to lose
-
-Recommended flow:
-
-1. capture first
-2. open the item
-3. choose `Start Triage`
-4. move to `Review` once a proposal exists
-
-Common mistakes:
-- trying to fully structure the work before capturing it
-- using `Queue` instead of `Inbox` when you do not need the advanced manual path
-
-### Review
-
-When should I use this page?
-
-Use `Review` whenever Taskdeck has prepared a change and you need to decide whether it should touch a board.
-
-`Review` is the normal-user trust gate:
-- it shows proposed operations before apply
-- it keeps approval and rejection explicit
-- it keeps board follow-through visible
-
-Recommended flow:
-
-1. open a pending proposal
-2. read the summary and affected board context
-3. approve or reject
-4. execute approved work explicitly
-5. continue on the linked board
-
-Common mistakes:
-- treating `Queue` as the main proposal surface
-- assuming a proposal will apply itself without an explicit execution step
-
-### Boards
-
-When should I use this page?
-
-Use `Boards` for the work itself.
-
-Boards are where:
-- approved changes land
-- cards move across columns
-- due dates, labels, and blocked states stay visible
-- comments and mentions preserve collaboration context
-
-Starter packs help when you want a board to feel useful immediately.
-
-Common mistakes:
-- trying to keep important context only in local notes instead of on cards
-- bypassing `Review` when a proposal-driven change would be safer and clearer
-
-### Notifications
-
-When should I use this page?
-
-Use `Notifications` when you need user-targeted updates such as mentions or proposal outcomes.
-
-Common mistakes:
-- expecting `Notifications` to replace the board workflow
-- assuming an empty inbox means something is broken when no triggering events have happened yet
-
-## Step-by-Step Workflows
-
-### Workflow: Capture Something And Turn It Into Board Work
-
-1. Create a capture from quick capture or `Inbox`.
-2. Open the new Inbox item.
-3. Choose `Start Triage`.
-4. Wait for the proposal to appear in `Review`.
-5. Open the proposal and inspect the summary.
-6. Approve it if the change is correct.
-7. Execute it.
-8. Open the linked board and continue the work there.
-
-### Workflow: Reset The Day
-
-1. Open `Home`.
-2. Switch to `Today`.
-3. Handle pending proposals in `Review` first.
-4. Triage fresh captures from `Inbox`.
-5. Return to `Boards` for active work.
-6. Use `Notifications` if you need event follow-up.
-
-### Workflow: Start A New Board Cleanly
-
-1. Open `Boards`.
-2. Create a board.
-3. Apply a starter pack if you want default columns or labels.
-4. Return to `Home` or `Today`.
-5. Capture or triage work into that board through the normal loop.
-
-## Advanced And Operator Surfaces
-
-These pages are real, but they are not the recommended first-run path.
-
-### Chat
-
-Use `Chat` when you want a conversational, board-scoped workflow and you intentionally need the more manual automation path.
-
-### Activity
-
-Use `Activity` to inspect what already happened across boards, entities, or users.
-It is a trust and history surface, not the main starting point.
-
-### Ops
-
-Use `Ops` for diagnostics:
-- CLI runs
-- endpoint exploration
-- logs
-
-This is an operator surface, not an everyday capture surface.
-
-### Access
-
-Use `Access` to manage board membership and role assignment.
-
-### Archive
-
-Use `Archive` to review, restore, or reveal archived boards.
-
-## FAQ
-
-### Where should I start if I am new?
-
-Start with `Home`, then `Inbox`, then `Review`, then `Boards`.
-That path teaches the product without requiring you to learn the advanced surfaces first.
-
-### What is the difference between Inbox and Review?
-
-- `Inbox` stores raw input
-- `Review` stores proposed changes waiting for a decision
-
-### What is the difference between Boards and Projects?
-
-The shipped navigation label is `Boards`.
-"Project" is product-facing language for the same board-centered work context.
-
-### Do proposals apply automatically?
-
-No.
-Taskdeck is intentionally review-first. A proposal must be reviewed, approved, and then executed explicitly.
-
-### When should I use Queue?
-
-Only when you intentionally want the more manual instruction path.
-For ordinary use, prefer `Inbox` and `Review`.
-
-### When should I use Chat?
-
-Use `Chat` when you specifically want a conversational board-scoped workflow.
-It is a secondary path, not the default first-run route.
-
-### Why are some pages missing from my main navigation?
-
-In `Guided` mode, advanced tools are intentionally de-emphasized.
-Switch to `Workbench` mode if you want more surfaces visible at once.
-
-### Does Agent mode mean agents are fully shipped?
-
-No.
-`Agent` is a navigation posture that keeps the future surface area visible in a limited way without pretending the full later-wave architecture is already delivered.
-
-## Troubleshooting
-
-### Home feels empty
-
-You probably do not have a board yet.
-Create one in `Boards`, optionally apply a starter pack, and return.
-
-### Inbox is empty
-
-Create one capture first.
-The page is expected to be quiet until something has been captured.
-
-### Review is empty
-
-That usually means no proposal has been generated yet.
-Go back to `Inbox`, start triage on an item, then return to `Review`.
-
-### Boards feels too blank to start
-
-Create a board and apply a starter pack.
-Then use the normal capture-to-review path so work lands there quickly.
-
-### I expected Queue or Chat to be the main entry path
-
-They are not.
-The intended normal-user path is `Home -> Inbox -> Review -> Boards`, with `Today` acting as the daily agenda surface.
-
-### Why do I need review before apply?
-
-Because Taskdeck is designed to keep automation inspectable.
-Review is the boundary that keeps board changes explicit and trust-preserving.
-
-### Why do in-app help callouts keep appearing?
-
-The main product pages include replayable, dismissible help blocks.
-Dismiss them when you no longer need them, and replay setup from `Home` or `Today` when the loop becomes unclear again.
-
-## Demo And Seeded Workspace
-
-If you want a richer first run with believable sample data:
-
-```bash
-cd frontend/taskdeck-web
-npm run demo:seed
-```
-
-Use the seeded workspace when:
-- you are evaluating the product quickly
-- you want to follow the workflow without creating everything from scratch
-- you need sample boards, captures, and proposals
-
-For full seeded walkthroughs and scripted demos, see [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md).
-
-## See Also
-
-- [START_HERE.md](START_HERE.md)
+- [product/FIRST_RUN_WORKFLOWS.md](product/FIRST_RUN_WORKFLOWS.md)
+  - concise step-by-step guides for first-run and daily flows
+- [product/HELP_AND_FAQ.md](product/HELP_AND_FAQ.md)
+  - page-level help, empty-state recovery, and common confusion points
 - [manual/README.md](manual/README.md)
-- [product/DOGFOODING_GUIDE.md](product/DOGFOODING_GUIDE.md)
-- [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md)
-- [product/SCENARIOS.md](product/SCENARIOS.md)
+  - manual structure and in-app help mapping
+
+## Manual Chapters
+
+This user manual is chaptered under `docs/manual`. The primary chapters are:
+
+- [manual/01_start_here.md](manual/01_start_here.md)
+  - product framing, first-value path, and glossary
+- [manual/02_home_and_today.md](manual/02_home_and_today.md)
+  - `Home`, `Today`, and the daily rhythm
+- [manual/03_projects_and_cards.md](manual/03_projects_and_cards.md)
+  - boards, cards, starter packs, and execution flow
+- [manual/04_inbox_and_review.md](manual/04_inbox_and_review.md)
+  - capture, triage, review, and trust model guidance
+- [manual/05_advanced_automation.md](manual/05_advanced_automation.md)
+  - advanced/operator surfaces such as `Chat`, `Queue`, `Ops`, and `Archive`
+- [manual/06_agents.md](manual/06_agents.md)
+  - future `Agents` and `Runs` placeholder guidance
+- [manual/07_integrations_and_knowledge.md](manual/07_integrations_and_knowledge.md)
+  - future `Integrations` and `Knowledge` placeholder guidance
+- [manual/08_recipes.md](manual/08_recipes.md)
+  - short repeatable workflows
+- [manual/09_troubleshooting.md](manual/09_troubleshooting.md)
+  - common questions, empty states, and recovery paths
+
+## Demo And Testing Workflows
+
+From `frontend/taskdeck-web`:
+
+- `npm run demo:seed` seeds a reusable baseline workspace
+- `npm run demo:run -- --list` lists scenarios
+- `npm run demo:run -- engineering-sprint` runs one scenario
+- `npm run demo:autopilot -- --turns 5 --brain heuristic` simulates activity
+- `npm run demo:director:smoke` runs the deterministic smoke or demo regression path
+
+For direct API walkthroughs:
+
+- use `demo/http/taskdeck-demo.http` with the VS Code REST Client
+
+For the full demo or operator path:
+
+- see [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md)
+- see [product/SCENARIOS.md](product/SCENARIOS.md)
+
+## Troubleshooting Basics
+
+If you do not know where to start:
+
+- go back to `Home`
+- replay setup if needed
+- use `Today` for the next daily action
+- use `Inbox` if the work is still a note
+- use `Review` if the work is waiting for approval
+
+If `Review` is empty:
+
+- triage something from `Inbox` first
+
+If `Boards` is empty:
+
+- create a board or use the setup flow from `Home` or `Today`
+
+If `Notifications` or `Activity` is empty:
+
+- those surfaces usually need real work history before they become useful
+
+If `Queue` or `Ops` feels too technical:
+
+- that is expected for ordinary daily use
+- return to `Inbox`, `Review`, or the board
+
+## Current Constraints
+
+- `Agent` mode exists, but dedicated `Agents`, `Runs`, `Knowledge`, and `Integrations` routes are still future work
+- some advanced flows still expose more system detail than a novice-ready product should
+- automation parsing remains pattern-based and board-centric
+- review-first behavior is intentional; destructive autonomy is out of scope
