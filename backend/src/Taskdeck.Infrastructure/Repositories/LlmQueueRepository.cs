@@ -38,6 +38,72 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<(int TotalCaptures, int NewCount, int FailedCount, int TriagingCount, int TriagedCount)> GetCaptureSummaryByUserAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var captureQuery = _context.LlmRequests
+            .AsNoTracking()
+            .Where(request =>
+                request.UserId == userId
+                && EF.Functions.Like(request.RequestType, CaptureRequestTypeLike));
+
+        var statusCounts = await captureQuery
+            .GroupBy(request => request.Status)
+            .Select(group => new
+            {
+                Status = group.Key,
+                Count = group.Count(),
+            })
+            .ToListAsync(cancellationToken);
+
+        var countsByStatus = statusCounts.ToDictionary(group => group.Status, group => group.Count);
+        var completedWithLinkedProposal = await CountCompletedCapturesWithProposalAsync(
+            userId,
+            cancellationToken);
+
+        countsByStatus.TryGetValue(RequestStatus.Completed, out var completedCount);
+        countsByStatus.TryGetValue(RequestStatus.Pending, out var pendingCount);
+        countsByStatus.TryGetValue(RequestStatus.Failed, out var failedCount);
+        countsByStatus.TryGetValue(RequestStatus.Processing, out var processingCount);
+
+        return (
+            TotalCaptures: countsByStatus.Values.Sum(),
+            NewCount: pendingCount,
+            FailedCount: failedCount,
+            TriagingCount: processingCount,
+            TriagedCount: Math.Max(0, completedCount - completedWithLinkedProposal));
+    }
+
+    private async Task<int> CountCompletedCapturesWithProposalAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.Database
+                .SqlQuery<int>(
+                    $"""
+                    SELECT COUNT(*) AS Value
+                    FROM LlmRequests
+                    WHERE UserId = {userId}
+                      AND RequestType LIKE {CaptureRequestTypeLike}
+                      AND Status = {(int)RequestStatus.Completed}
+                      AND json_extract(Payload, '$.provenance.proposalId') IS NOT NULL
+                    """)
+                .SingleAsync(cancellationToken);
+        }
+
+        return await _context.LlmRequests
+            .AsNoTracking()
+            .Where(request =>
+                request.UserId == userId
+                && request.Status == RequestStatus.Completed
+                && EF.Functions.Like(request.RequestType, CaptureRequestTypeLike)
+                && request.Payload.Contains("\"proposalId\":\""))
+            .CountAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         if (_context.Database.IsSqlite())

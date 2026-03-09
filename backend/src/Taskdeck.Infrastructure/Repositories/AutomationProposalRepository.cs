@@ -8,6 +8,13 @@ namespace Taskdeck.Infrastructure.Repositories;
 public class AutomationProposalRepository : Repository<AutomationProposal>, IAutomationProposalRepository
 {
     private const int DefaultLimit = 100;
+    private static readonly ProposalStatus[] ReviewedStatuses =
+    [
+        ProposalStatus.Approved,
+        ProposalStatus.Rejected,
+        ProposalStatus.Applied,
+        ProposalStatus.Failed,
+    ];
 
     public AutomationProposalRepository(TaskdeckDbContext context) : base(context)
     {
@@ -18,6 +25,25 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return await _dbSet
             .Include(p => p.Operations)
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+    }
+
+    public async Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .Where(proposal =>
+                proposal.RequestedByUserId == userId &&
+                proposal.Status == ProposalStatus.PendingReview)
+            .CountAsync(cancellationToken);
+    }
+
+    public async Task<bool> HasReviewedByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .AsNoTracking()
+            .AnyAsync(
+                proposal => proposal.DecidedByUserId == userId && ReviewedStatuses.Contains(proposal.Status),
+                cancellationToken);
     }
 
     public async Task<IEnumerable<AutomationProposal>> GetByStatusAsync(ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)

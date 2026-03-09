@@ -11,6 +11,29 @@ test.beforeEach(async ({ page, request }) => {
   await registerAndAttachSession(page, request, 'smoke')
 })
 
+test('home landing and workspace mode preference should persist across navigation and reload', async ({ page }) => {
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/workspace\/home$/)
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
+
+  const workspaceModeSelect = page.getByLabel('Workspace mode')
+  const savePreferenceResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/workspace/preferences') &&
+    response.request().method() === 'PUT' &&
+    response.ok())
+
+  await workspaceModeSelect.selectOption('workbench')
+  await savePreferenceResponse
+  await expect(workspaceModeSelect).toHaveValue('workbench')
+
+  await page.goto('/workspace/boards')
+  await expect(page).toHaveURL(/\/workspace\/boards$/)
+  await expect(page.getByLabel('Workspace mode')).toHaveValue('workbench')
+
+  await page.reload()
+  await expect(page.getByLabel('Workspace mode')).toHaveValue('workbench')
+})
+
 async function createBoard(page: Page, boardName: string) {
   await gotoBoardsWorkspace(page)
   await page.getByRole('button', { name: '+ New Board' }).click()
@@ -57,11 +80,32 @@ async function addColumn(page: Page, columnName: string) {
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 }
 
-async function addCard(page: Page, columnName: string, cardTitle: string) {
+async function addCard(
+  page: Page,
+  columnName: string,
+  cardTitle: string,
+  options: { expectVisible?: boolean } = {}
+) {
+  const { expectVisible = true } = options
   const column = columnByName(page, columnName)
   await column.getByRole('button', { name: 'Add Card' }).click()
-  await column.getByPlaceholder('Enter card title...').fill(cardTitle)
+  const addCardInput = column.getByPlaceholder('Enter card title...')
+  await expect(addCardInput).toBeVisible()
+  await addCardInput.fill(cardTitle)
+  const createCardResponse = expectVisible
+    ? page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
+      && response.ok())
+    : null
   await column.getByRole('button', { name: 'Add', exact: true }).click()
+  if (createCardResponse) {
+    await createCardResponse
+  }
+
+  if (expectVisible) {
+    await expect(cardByTitle(page, cardTitle)).toBeVisible()
+  }
 }
 
 async function expectColumnOrder(page: Page, expectedOrder: string[]) {
@@ -248,7 +292,7 @@ test('column WIP limit should reject additional cards', async ({ page }) => {
   await addCard(page, columnName, firstCard)
   await expect(page.locator('[data-card-id]').filter({ hasText: firstCard }).first()).toBeVisible()
 
-  await addCard(page, columnName, secondCard)
+  await addCard(page, columnName, secondCard, { expectVisible: false })
   await expect(page.locator('[data-card-id]').filter({ hasText: secondCard })).toHaveCount(0)
   await expect(page.locator('text=has reached its WIP limit').first()).toBeVisible()
 })
@@ -435,14 +479,16 @@ test('filter state should persist while panel is toggled in-session', async ({ p
   const columnName = `To Do ${Date.now()}`
   const matchingCard = `Alpha ${Date.now()}`
   const hiddenCard = `Beta ${Date.now()}`
+  const filterHeading = page.getByRole('heading', { name: 'Filter Cards', exact: true })
+  const filterToggle = page.getByTitle('Filter Cards (Press f)')
 
   await createBoard(page, boardName)
   await addColumn(page, columnName)
   await addCard(page, columnName, matchingCard)
   await addCard(page, columnName, hiddenCard)
 
-  await page.keyboard.press('f')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).toBeVisible()
+  await filterToggle.click()
+  await expect(filterHeading).toBeVisible()
 
   const searchInput = page.getByPlaceholder('Search cards...')
   await searchInput.fill(matchingCard)
@@ -451,14 +497,13 @@ test('filter state should persist while panel is toggled in-session', async ({ p
   await expect(page.locator('[data-card-id]').filter({ hasText: matchingCard })).toBeVisible()
   await expect(page.locator('[data-card-id]').filter({ hasText: hiddenCard })).toHaveCount(0)
 
-  await page.locator('body').click()
-  await page.keyboard.press('f')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
+  await filterToggle.click()
+  await expect(filterHeading).not.toBeVisible()
 
-  await page.keyboard.press('f')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).toBeVisible()
+  await filterToggle.click()
+  await expect(filterHeading).toBeVisible()
   await expect(searchInput).toHaveValue(matchingCard)
 
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('heading', { name: 'Filter Cards' })).not.toBeVisible()
+  await expect(filterHeading).not.toBeVisible()
 })

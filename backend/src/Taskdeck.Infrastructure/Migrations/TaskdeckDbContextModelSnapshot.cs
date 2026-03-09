@@ -1067,6 +1067,44 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.UserPreference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("OnboardingCompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("OnboardingDismissedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OnboardingVisibility")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkspaceMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserPreferences", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.AuditLog", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", "User")
@@ -1310,6 +1348,17 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Board");
 
                     b.Navigation("CreatedByUser");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.UserPreference", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.AutomationProposal", b =>

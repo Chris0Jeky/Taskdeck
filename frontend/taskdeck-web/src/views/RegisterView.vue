@@ -34,7 +34,7 @@ async function handleSubmit() {
       email: email.value.trim(),
       password: password.value,
     })
-    router.push('/workspace/boards')
+    router.push('/workspace/home')
   } catch {
     formError.value = session.error || 'Registration failed. Please try again.'
   } finally {

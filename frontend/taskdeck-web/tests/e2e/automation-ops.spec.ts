@@ -86,11 +86,13 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
 
   await page.goto('/workspace/automations/chat')
   await page.getByPlaceholder('Session title').fill(`Proposal Session ${seed}`)
-  await page.getByPlaceholder('Board ID (optional)').fill(boardId)
+  await page.getByPlaceholder('Board context (optional)').fill(boardId)
   await page.getByRole('button', { name: 'Create Session' }).click()
 
-  const sessionMetaText = await page.locator('.td-chat-meta').first().innerText()
-  const sessionId = sessionMetaText.replace('Session ', '').trim()
+  const sessionId = await page.locator('.td-chat-meta').first().getAttribute('data-session-id')
+  if (!sessionId) {
+    throw new Error('Expected chat session header to expose data-session-id')
+  }
 
   await page.getByPlaceholder('Describe an automation instruction...').fill(`create card "${uniqueCardTitle}"`)
   const requestProposalCheckbox = page.getByRole('checkbox', { name: 'Request proposal generation' })
@@ -107,10 +109,10 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
   await assertOk(proposalResponse, `fetch proposal ${proposalId}`)
   const proposal = await proposalResponse.json() as ProposalDto
 
-  await page.goto('/workspace/automations/proposals')
-  await expect(page.getByRole('heading', { name: 'Automations' })).toBeVisible()
+  await page.goto('/workspace/review')
+  await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible()
 
-  const proposalCard = page.locator('.td-proposal-card').filter({ hasText: proposal.summary }).first()
+  const proposalCard = page.locator('.td-review-card').filter({ hasText: proposal.summary }).first()
   await expect(proposalCard).toBeVisible()
 
   await proposalCard.getByRole('button', { name: 'Approve' }).click()

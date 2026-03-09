@@ -22,7 +22,7 @@ async function handleSubmit() {
   try {
     submitting.value = true
     await session.login({ usernameOrEmail: username.value.trim(), password: password.value })
-    const redirectRaw = (route.query.redirect as string) || '/workspace/boards'
+    const redirectRaw = (route.query.redirect as string) || '/workspace/home'
     const redirect = sanitizeInternalRedirect(redirectRaw)
     router.push(redirect)
   } catch {

@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ToastContainer from './components/common/ToastContainer.vue'
 import AppShell from './components/shell/AppShell.vue'
 import { useSessionStore } from './store/sessionStore'
 import { useFeatureFlagStore } from './store/featureFlagStore'
+import { useWorkspaceStore } from './store/workspaceStore'
 
 const route = useRoute()
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
+const workspace = useWorkspaceStore()
 
 const showShell = computed(() => {
   return route.meta.requiresShell === true
@@ -18,6 +20,19 @@ onMounted(() => {
   session.restoreSession()
   featureFlags.restore()
 })
+
+watch(
+  () => session.isAuthenticated,
+  (isAuthenticated) => {
+    if (!isAuthenticated) {
+      workspace.resetForLogout()
+      return
+    }
+
+    void workspace.hydratePreferences()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>

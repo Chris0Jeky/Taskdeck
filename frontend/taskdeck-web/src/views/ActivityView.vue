@@ -135,6 +135,30 @@ const selectedIdLabel = computed(() => {
   return 'User ID'
 })
 
+const emptyStateTitle = computed(() => {
+  if (viewMode.value === 'board') {
+    return 'No board activity yet'
+  }
+
+  if (viewMode.value === 'entity') {
+    return 'No entity activity yet'
+  }
+
+  return 'No user activity yet'
+})
+
+const emptyStateBody = computed(() => {
+  if (viewMode.value === 'board') {
+    return 'Choose another board or open Review if you expected a pending change to appear here.'
+  }
+
+  if (viewMode.value === 'entity') {
+    return 'Pick another entity or switch back to board history for a broader audit trail.'
+  }
+
+  return 'Activity will appear after you create, review, or update work in this workspace.'
+})
+
 function formatTimestamp(ts: string): string {
   return new Date(ts).toLocaleString()
 }
@@ -358,6 +382,10 @@ async function copySelectedId() {
   }
 }
 
+function openRoute(path: string) {
+  void router.push(path)
+}
+
 watch(viewMode, async (mode) => {
   if (mode === 'board') {
     selectedEntityType.value = ''
@@ -461,7 +489,21 @@ watch(
 
 <template>
   <div class="td-activity">
-    <h1 class="td-page-title">Activity</h1>
+    <header class="td-activity__hero">
+      <div class="td-activity__hero-copy">
+        <span class="td-activity__eyebrow">Advanced</span>
+        <h1 class="td-page-title">Activity</h1>
+        <p class="td-activity__subtitle">
+          Use activity to inspect what already happened. Review is where pending proposals get decided, and Boards is
+          where most day-to-day work continues.
+        </p>
+      </div>
+
+      <div class="td-activity__hero-actions">
+        <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+        <button class="td-btn td-btn--ghost td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
+      </div>
+    </header>
 
     <div class="td-activity__controls">
       <div class="td-form-row">
@@ -541,7 +583,8 @@ watch(
         v-else-if="viewMode === 'entity' && selectedEntityType && entityOptions.length === 0"
         class="td-helper"
       >
-        No entities found for current selection.
+        No entities match this selection yet. Try another board context or switch back to board history for a broader
+        view.
       </div>
 
       <div v-if="selectedIdForCopy" class="td-id-affordance">
@@ -552,7 +595,7 @@ watch(
           :aria-label="`Copy ${selectedIdLabel} to clipboard`"
           @click="copySelectedId"
         >
-          Copy ID
+          Copy Raw ID
         </button>
       </div>
     </div>
@@ -560,7 +603,14 @@ watch(
     <div v-if="audit.loading" class="td-loading">Loading activity...</div>
 
     <div v-else class="td-timeline">
-      <div v-if="audit.entries.length === 0" class="td-empty">No activity entries found.</div>
+      <div v-if="audit.entries.length === 0" class="td-empty td-empty--panel">
+        <h2 class="td-empty__title">{{ emptyStateTitle }}</h2>
+        <p class="td-empty__body">{{ emptyStateBody }}</p>
+        <div class="td-empty__actions">
+          <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+          <button class="td-btn td-btn--ghost td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
+        </div>
+      </div>
       <div v-for="entry in audit.entries" :key="entry.id" class="td-timeline__entry">
         <div class="td-timeline__dot"></div>
         <div class="td-timeline__content">
@@ -581,7 +631,13 @@ watch(
 
 <style scoped>
 .td-activity { max-width: 860px; }
-.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; margin-bottom: var(--td-space-6); color: var(--td-text-primary); }
+.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; color: var(--td-text-primary); }
+.td-activity__hero { display: flex; justify-content: space-between; gap: var(--td-space-6); align-items: flex-start; margin-bottom: var(--td-space-4); }
+.td-activity__hero-copy { display: flex; flex-direction: column; gap: var(--td-space-2); max-width: 720px; }
+.td-activity__eyebrow { font-size: var(--td-font-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--td-text-tertiary); }
+.td-activity__subtitle { color: var(--td-text-secondary); line-height: 1.6; }
+.td-activity__hero-actions,
+.td-empty__actions { display: flex; flex-wrap: wrap; gap: var(--td-space-2); }
 .td-activity__controls { background: var(--td-surface-primary); border-radius: var(--td-radius-lg); padding: var(--td-space-4); margin-bottom: var(--td-space-4); border: 1px solid var(--td-border-default); }
 .td-form-row { display: flex; gap: var(--td-space-2); flex-wrap: wrap; align-items: center; }
 .td-input { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); min-width: 180px; }
@@ -601,6 +657,9 @@ watch(
 .td-btn--ghost:hover { background: var(--td-surface-tertiary); }
 .td-loading { text-align: center; padding: var(--td-space-8); color: var(--td-text-secondary); }
 .td-empty { text-align: center; padding: var(--td-space-8); color: var(--td-text-tertiary); }
+.td-empty--panel { display: flex; flex-direction: column; gap: var(--td-space-2); align-items: center; justify-content: center; border: 1px dashed var(--td-border-default); border-radius: var(--td-radius-lg); background: var(--td-surface-primary); }
+.td-empty__title { margin: 0; color: var(--td-text-primary); font-size: var(--td-font-lg); }
+.td-empty__body { margin: 0; max-width: 500px; line-height: 1.6; }
 .td-timeline { display: flex; flex-direction: column; gap: 0; }
 .td-timeline__entry { display: flex; gap: var(--td-space-4); padding: var(--td-space-4) 0; border-left: 2px solid var(--td-border-default); margin-left: var(--td-space-3); padding-left: var(--td-space-4); position: relative; }
 .td-timeline__dot { position: absolute; left: -6px; top: var(--td-space-5); width: 10px; height: 10px; background: var(--td-color-primary); border-radius: 50%; border: 2px solid var(--td-surface-secondary); }
@@ -611,4 +670,10 @@ watch(
 .td-timeline__details { font-size: var(--td-font-xs); color: var(--td-text-secondary); display: flex; gap: var(--td-space-2); }
 .td-timeline__entity { font-family: monospace; }
 .td-timeline__message { font-size: var(--td-font-sm); color: var(--td-text-secondary); margin-top: var(--td-space-2); padding-top: var(--td-space-2); border-top: 1px solid var(--td-border-default); }
+
+@media (max-width: 900px) {
+  .td-activity__hero {
+    flex-direction: column;
+  }
+}
 </style>

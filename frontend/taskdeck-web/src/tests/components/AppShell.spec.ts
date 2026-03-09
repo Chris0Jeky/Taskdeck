@@ -8,7 +8,7 @@ const mockRouter = {
 }
 
 const mockRoute = reactive({
-  path: '/workspace/boards',
+  path: '/workspace/home',
 })
 
 const mockSession = {
@@ -30,6 +30,11 @@ const mockFeatureFlags = {
   isEnabled: vi.fn(() => true),
 }
 
+const mockWorkspace = reactive({
+  mode: 'guided' as string,
+  updateMode: vi.fn<(mode: 'guided' | 'workbench' | 'agent') => Promise<void>>(),
+})
+
 vi.mock('vue-router', () => ({
   useRouter: () => mockRouter,
   useRoute: () => mockRoute,
@@ -41,6 +46,10 @@ vi.mock('../../store/sessionStore', () => ({
 
 vi.mock('../../store/featureFlagStore', () => ({
   useFeatureFlagStore: () => mockFeatureFlags,
+}))
+
+vi.mock('../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => mockWorkspace,
 }))
 
 function mountShell() {
@@ -71,17 +80,73 @@ async function waitForUi() {
   await Promise.resolve()
 }
 
-describe('AppShell command palette keyboard model', () => {
+describe('AppShell workspace navigation and command palette', () => {
   let mountedWrapper: ReturnType<typeof mountShell> | null = null
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRoute.path = '/workspace/boards'
+    mockRoute.path = '/workspace/home'
+    mockWorkspace.mode = 'guided'
+    mockWorkspace.updateMode.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
     mountedWrapper?.unmount()
     mountedWrapper = null
+  })
+
+  it('shows guided navigation with workbench tools separated', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    expect(wrapper.text()).toContain('Home')
+    expect(wrapper.text()).toContain('Today')
+    expect(wrapper.text()).toContain('Review')
+    expect(wrapper.text()).toContain('Boards')
+    expect(wrapper.text()).toContain('Workbench Tools')
+    expect(wrapper.text()).toContain('Activity')
+  })
+
+  it('shows expanded flat navigation in workbench mode', async () => {
+    mockWorkspace.mode = 'workbench'
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    expect(wrapper.text()).toContain('Home')
+    expect(wrapper.text()).toContain('Today')
+    expect(wrapper.text()).toContain('Activity')
+    expect(wrapper.text()).not.toContain('Workbench Tools')
+  })
+
+  it('updates workspace mode from the selector', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    await wrapper.get('[aria-label="Workspace mode"]').setValue('agent')
+
+    expect(mockWorkspace.updateMode).toHaveBeenCalledWith('agent')
+  })
+
+  it('ignores unsupported workspace mode values and falls back to guided copy', async () => {
+    mockWorkspace.mode = 'unsupported'
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    expect(wrapper.text()).toContain('Keep Home, Review, and board work front and center.')
+
+    await wrapper.get('[aria-label="Workspace mode"]').setValue('unsupported')
+
+    expect(mockWorkspace.updateMode).not.toHaveBeenCalled()
+  })
+
+  it('keeps Review highlighted for the advanced queue route', async () => {
+    mockRoute.path = '/workspace/automations/queue'
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    const reviewLink = wrapper.findAll('a').find((link) => link.attributes('href') === '/workspace/review')
+    expect(reviewLink?.attributes('aria-current')).toBe('page')
+    expect(reviewLink?.classes()).toContain('td-nav-item--active')
   })
 
   it('toggles command palette with Ctrl+K and closes with Escape', async () => {
@@ -113,10 +178,11 @@ describe('AppShell command palette keyboard model', () => {
     const input = wrapper.get('.td-command-palette__input')
     await input.trigger('keydown.down')
     await input.trigger('keydown.down')
+    await input.trigger('keydown.down')
     await input.trigger('keydown.enter')
     await waitForUi()
 
-    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/activity')
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/boards')
     expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
   })
 
@@ -176,7 +242,7 @@ describe('AppShell command palette keyboard model', () => {
     await waitForUi()
 
     const input = wrapper.get('.td-command-palette__input')
-    await input.setValue('capture')
+    await input.setValue('new capture')
     await waitForUi()
     await input.trigger('keydown.enter')
     await waitForUi()
@@ -198,6 +264,27 @@ describe('AppShell command palette keyboard model', () => {
     await waitForUi()
 
     expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
+  })
+
+  it('does not fire global shortcuts while the workspace mode select is focused', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+    const modeSelect = wrapper.get('[aria-label="Workspace mode"]')
+
+    modeSelect.element.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'C',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+    }))
+    modeSelect.element.dispatchEvent(new KeyboardEvent('keydown', {
+      key: '?',
+      bubbles: true,
+    }))
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
   })
 
   it('exposes listbox option accessibility state for keyboard selection', async () => {

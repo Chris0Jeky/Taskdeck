@@ -88,6 +88,7 @@ builder.Services.AddScoped<IOpsCliService, OpsCliService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<ILogQueryService, LogQueryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
 builder.Services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
 builder.Services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
 builder.Services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
