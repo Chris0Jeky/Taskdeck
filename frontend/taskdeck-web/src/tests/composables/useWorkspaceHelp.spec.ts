@@ -1,13 +1,25 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, reactive } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { useWorkspaceHelp } from '../../composables/useWorkspaceHelp'
 import { WORKSPACE_HELP_DISMISSALS_STORAGE_KEY } from '../../utils/storageKeys'
 
+const sessionStore = reactive({
+  userId: 'user-1' as string | null,
+})
+
+vi.mock('../../store/sessionStore', () => ({
+  useSessionStore: () => sessionStore,
+}))
+
 describe('useWorkspaceHelp', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     localStorage.clear()
+    sessionStore.userId = 'user-1'
   })
 
-  it('persists dismiss and replay state per help topic', () => {
+  it('persists dismiss and replay state per help topic and current user', () => {
     const help = useWorkspaceHelp('review')
 
     expect(help.isVisible.value).toBe(true)
@@ -16,7 +28,7 @@ describe('useWorkspaceHelp', () => {
 
     expect(help.isDismissed.value).toBe(true)
     expect(help.isVisible.value).toBe(false)
-    expect(localStorage.getItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)).toBe(JSON.stringify({ review: true }))
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`)).toBe(JSON.stringify({ review: true }))
 
     const replayedHelp = useWorkspaceHelp('review')
     expect(replayedHelp.isVisible.value).toBe(false)
@@ -24,11 +36,11 @@ describe('useWorkspaceHelp', () => {
     replayedHelp.replay()
 
     expect(replayedHelp.isVisible.value).toBe(true)
-    expect(localStorage.getItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`)).toBeNull()
   })
 
   it('ignores malformed persisted state', () => {
-    localStorage.setItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY, '{not-json')
+    localStorage.setItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`, '{not-json')
 
     const help = useWorkspaceHelp('home')
 
@@ -36,6 +48,30 @@ describe('useWorkspaceHelp', () => {
 
     help.dismiss()
 
-    expect(localStorage.getItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)).toBe(JSON.stringify({ home: true }))
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`)).toBe(JSON.stringify({ home: true }))
+  })
+
+  it('keeps dismissal state scoped when the current user changes', async () => {
+    const help = useWorkspaceHelp('selectors')
+
+    help.dismiss()
+    expect(help.isVisible.value).toBe(false)
+
+    sessionStore.userId = 'user-2'
+    await nextTick()
+
+    expect(help.isVisible.value).toBe(true)
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`)).toBe(JSON.stringify({ selectors: true }))
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-2`)).toBeNull()
+  })
+
+  it('migrates legacy dismissal storage into the current user scope', () => {
+    localStorage.setItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY, JSON.stringify({ today: true }))
+
+    const help = useWorkspaceHelp('today')
+
+    expect(help.isVisible.value).toBe(false)
+    expect(localStorage.getItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`)).toBe(JSON.stringify({ today: true }))
   })
 })

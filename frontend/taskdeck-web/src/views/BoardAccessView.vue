@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { boardsApi } from '../api/boardsApi'
+import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { usePermissionsStore } from '../store/permissionsStore'
 import { useSessionStore } from '../store/sessionStore'
 import { useToastStore } from '../store/toastStore'
@@ -189,6 +190,17 @@ function openRoute(path: string) {
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/boards')">Open Boards</button>
       </div>
     </header>
+
+    <WorkspaceHelpCallout
+      topic="selectors"
+      title="Why use the board selector here?"
+      description="Choose the board from the selector instead of memorizing IDs. Access is an advanced sharing surface, while normal capture, review, and board work should still happen in Home, Inbox, Review, and Boards."
+    >
+      <template #actions>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+      </template>
+    </WorkspaceHelpCallout>
 
     <section class="td-panel td-access__panel">
       <div class="td-access__header">

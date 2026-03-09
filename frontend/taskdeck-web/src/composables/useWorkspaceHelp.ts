@@ -1,5 +1,6 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { WORKSPACE_HELP_DISMISSALS_STORAGE_KEY } from '../utils/storageKeys'
+import { useSessionStore } from '../store/sessionStore'
 
 export const workspaceHelpTopics = ['home', 'today', 'review', 'inbox', 'board', 'selectors'] as const
 
@@ -7,8 +8,14 @@ export type WorkspaceHelpTopic = typeof workspaceHelpTopics[number]
 
 type WorkspaceHelpDismissals = Partial<Record<WorkspaceHelpTopic, true>>
 
-function readDismissals(): WorkspaceHelpDismissals {
-  const raw = localStorage.getItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)
+function storageKeyForUser(userId: string | null | undefined): string {
+  return userId?.trim()
+    ? `${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:${userId.trim()}`
+    : WORKSPACE_HELP_DISMISSALS_STORAGE_KEY
+}
+
+function readDismissalsFromKey(storageKey: string): WorkspaceHelpDismissals {
+  const raw = localStorage.getItem(storageKey)
   if (!raw) {
     return {}
   }
@@ -29,31 +36,61 @@ function readDismissals(): WorkspaceHelpDismissals {
   }
 }
 
-function writeDismissals(dismissals: WorkspaceHelpDismissals) {
+function writeDismissals(storageKey: string, dismissals: WorkspaceHelpDismissals) {
   if (Object.keys(dismissals).length === 0) {
-    localStorage.removeItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)
+    localStorage.removeItem(storageKey)
     return
   }
 
-  localStorage.setItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY, JSON.stringify(dismissals))
+  localStorage.setItem(storageKey, JSON.stringify(dismissals))
+}
+
+function readDismissals(userId: string | null | undefined): WorkspaceHelpDismissals {
+  const scopedStorageKey = storageKeyForUser(userId)
+  const scopedDismissals = readDismissalsFromKey(scopedStorageKey)
+  if (Object.keys(scopedDismissals).length > 0 || !userId?.trim()) {
+    return scopedDismissals
+  }
+
+  const legacyDismissals = readDismissalsFromKey(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)
+  if (Object.keys(legacyDismissals).length === 0) {
+    return scopedDismissals
+  }
+
+  writeDismissals(scopedStorageKey, legacyDismissals)
+  localStorage.removeItem(WORKSPACE_HELP_DISMISSALS_STORAGE_KEY)
+  return legacyDismissals
 }
 
 export function useWorkspaceHelp(topic: WorkspaceHelpTopic) {
-  const isDismissed = ref(readDismissals()[topic] === true)
+  const session = useSessionStore()
+  const dismissals = ref<WorkspaceHelpDismissals>(readDismissals(session.userId))
+  const isDismissed = computed(() => dismissals.value[topic] === true)
   const isVisible = computed(() => !isDismissed.value)
 
+  watch(
+    () => session.userId,
+    (nextUserId) => {
+      dismissals.value = readDismissals(nextUserId)
+    },
+  )
+
   function dismiss() {
-    const nextDismissals = readDismissals()
-    nextDismissals[topic] = true
-    writeDismissals(nextDismissals)
-    isDismissed.value = true
+    const nextDismissals = {
+      ...dismissals.value,
+      [topic]: true,
+    }
+    writeDismissals(storageKeyForUser(session.userId), nextDismissals)
+    dismissals.value = nextDismissals
   }
 
   function replay() {
-    const nextDismissals = readDismissals()
+    const nextDismissals = {
+      ...dismissals.value,
+    }
     delete nextDismissals[topic]
-    writeDismissals(nextDismissals)
-    isDismissed.value = false
+    writeDismissals(storageKeyForUser(session.userId), nextDismissals)
+    dismissals.value = nextDismissals
   }
 
   return {
