@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import AutomationChatView from '../../views/AutomationChatView.vue'
 
 function createDeferred<T>() {
@@ -97,18 +98,46 @@ function mountView() {
   return mount(AutomationChatView, {
     global: {
       stubs: {
-        InputAssistField: {
-          props: ['modelValue', 'placeholder'],
-          emits: ['update:modelValue'],
+        InputAssistField: defineComponent({
+          props: {
+            modelValue: { type: String, required: true },
+            placeholder: { type: String, default: '' },
+            options: { type: Array, default: () => [] },
+          },
+          emits: ['update:modelValue', 'select'],
+          methods: {
+            emitInput(event: Event) {
+              const target = event.target as HTMLInputElement
+              this.$emit('update:modelValue', target.value)
+            },
+            selectFirstOption() {
+              const firstOption = (this.options as Array<{ value: string }>)[0]
+              if (!firstOption) {
+                return
+              }
+
+              this.$emit('update:modelValue', firstOption.value)
+              this.$emit('select', firstOption)
+            },
+          },
           template: `
-            <input
-              class="td-input-assist-stub"
-              :placeholder="placeholder"
-              :value="modelValue"
-              @input="$emit('update:modelValue', $event.target.value)"
-            />
+            <div>
+              <input
+                class="td-input-assist-stub"
+                :placeholder="placeholder"
+                :value="modelValue"
+                @input="emitInput"
+              />
+              <button
+                type="button"
+                class="td-input-assist-select-first"
+                @click="selectFirstOption"
+              >
+                Select first option
+              </button>
+            </div>
           `,
-        },
+        }),
       },
     },
   })
@@ -232,6 +261,16 @@ describe('AutomationChatView', () => {
       title: 'Scoped session',
       boardId: 'board-1',
     })
+  })
+
+  it('keeps the selected board label visible after choosing from the assist list', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await wrapper.get('.td-input-assist-select-first').trigger('click')
+    await waitForAsyncUi()
+
+    expect(wrapper.get('input[placeholder="Board context (optional)"]').element.value).toBe('Board One')
   })
 
   it('accepts board selection by board id regardless of GUID casing', async () => {

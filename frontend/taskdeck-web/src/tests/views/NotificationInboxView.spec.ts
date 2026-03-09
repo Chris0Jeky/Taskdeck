@@ -91,6 +91,8 @@ describe('NotificationInboxView', () => {
     expect(wrapper.text()).toContain('Mentioned')
     expect(wrapper.text()).toContain('Mark read')
     expect(wrapper.text()).toContain('Open Proposal')
+    expect(wrapper.text()).toContain('Board-linked')
+    expect(wrapper.text()).not.toContain('board board-1')
   })
 
   it('marks notification as read when action is clicked', async () => {

@@ -144,6 +144,7 @@ function updateNewSessionBoardValue(value: string) {
 
 function handleNewSessionBoardSelect(option: InputAssistOption) {
   selectedNewSessionBoardId.value = option.value
+  updateNewSessionBoardValue(option.label)
 }
 
 function applyRouteBoardContext() {

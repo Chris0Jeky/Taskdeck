@@ -137,7 +137,7 @@ watch([unreadOnly, activeBoardId], () => {
           <div class="td-notification-row__title">{{ item.title }}</div>
           <div class="td-notification-row__message">{{ item.message }}</div>
           <div class="td-notification-row__meta">
-            <span v-if="item.boardId">board {{ item.boardId }}</span>
+            <span v-if="item.boardId">Board-linked</span>
             <span>{{ formatType(item.type) }}</span>
             <span>{{ formatCadence(item.cadence) }}</span>
             <span>{{ new Date(item.createdAt).toLocaleString() }}</span>
