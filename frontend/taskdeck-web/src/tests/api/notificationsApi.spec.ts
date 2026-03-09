@@ -23,6 +23,14 @@ describe('notificationsApi', () => {
     expect(http.get).toHaveBeenCalledWith('/notifications?unreadOnly=true&limit=25')
   })
 
+  it('queries notifications with board scope and filters together', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+
+    await notificationsApi.getNotifications({ boardId: 'board-7', unreadOnly: true, limit: 25 })
+
+    expect(http.get).toHaveBeenCalledWith('/notifications?boardId=board-7&unreadOnly=true&limit=25')
+  })
+
   it('marks notification as read', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'n1' } })
 

@@ -3,24 +3,44 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import NotificationInboxView from '../../views/NotificationInboxView.vue'
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+}))
+
+const routeMock = vi.hoisted(() => ({
+  query: {} as Record<string, unknown>,
+}))
+
 const mockNotificationStore = reactive({
   notifications: [] as Array<{
     id: string
     title: string
     message: string
+    boardId: string | null
     type: number | string
     cadence: number | string
+    sourceEntityType: string | null
+    sourceEntityId: string | null
     isRead: boolean
+    readAt: string | null
     createdAt: string
+    updatedAt: string
   }>,
-  loading: false,
+  loading: false as boolean,
   error: null as string | null,
-  fetchNotifications: vi.fn<(query?: { unreadOnly?: boolean; limit?: number }) => Promise<void>>(),
+  fetchNotifications: vi.fn<(query?: { unreadOnly?: boolean; boardId?: string; limit?: number }) => Promise<void>>(),
   markAsRead: vi.fn<(notificationId: string) => Promise<void>>(),
 })
 
 vi.mock('../../store/notificationStore', () => ({
   useNotificationStore: () => mockNotificationStore,
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: routerMocks.push,
+  }),
+  useRoute: () => routeMock,
 }))
 
 vi.mock('../../composables/useErrorMapper', () => ({
@@ -40,6 +60,8 @@ describe('NotificationInboxView', () => {
     mockNotificationStore.error = null
     mockNotificationStore.fetchNotifications.mockResolvedValue(undefined)
     mockNotificationStore.markAsRead.mockResolvedValue(undefined)
+    routerMocks.push.mockReset()
+    routeMock.query = {}
   })
 
   it('loads notifications on mount and renders items', async () => {
@@ -49,10 +71,15 @@ describe('NotificationInboxView', () => {
           id: 'n1',
           title: 'Mentioned',
           message: 'You were mentioned.',
+          boardId: 'board-1',
           type: 0,
           cadence: 0,
+          sourceEntityType: 'proposal',
+          sourceEntityId: 'proposal-1',
           isRead: false,
+          readAt: null,
           createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         },
       ]
     })
@@ -63,6 +90,7 @@ describe('NotificationInboxView', () => {
     expect(mockNotificationStore.fetchNotifications).toHaveBeenCalledWith({ unreadOnly: false, limit: 200 })
     expect(wrapper.text()).toContain('Mentioned')
     expect(wrapper.text()).toContain('Mark read')
+    expect(wrapper.text()).toContain('Open Proposal')
   })
 
   it('marks notification as read when action is clicked', async () => {
@@ -71,10 +99,15 @@ describe('NotificationInboxView', () => {
         id: 'n1',
         title: 'Mentioned',
         message: 'You were mentioned.',
+        boardId: null,
         type: 0,
         cadence: 0,
+        sourceEntityType: null,
+        sourceEntityId: null,
         isRead: false,
+        readAt: null,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ]
 
@@ -85,5 +118,50 @@ describe('NotificationInboxView', () => {
     await action.trigger('click')
 
     expect(mockNotificationStore.markAsRead).toHaveBeenCalledWith('n1')
+  })
+
+  it('filters notifications by boardId from the route query', async () => {
+    routeMock.query = { boardId: 'board-7' }
+
+    const wrapper = mount(NotificationInboxView)
+    await waitForUi()
+
+    expect(mockNotificationStore.fetchNotifications).toHaveBeenCalledWith({
+      unreadOnly: false,
+      boardId: 'board-7',
+      limit: 200,
+    })
+    expect(wrapper.text()).toContain('Showing notifications linked to board board-7.')
+  })
+
+  it('opens proposal notifications in review with preserved board context', async () => {
+    mockNotificationStore.notifications = [
+      {
+        id: 'n1',
+        title: 'Proposal ready',
+        message: 'Review the scoped proposal.',
+        boardId: 'board-7',
+        type: 2,
+        cadence: 0,
+        sourceEntityType: 'Proposal',
+        sourceEntityId: 'proposal-42',
+        isRead: true,
+        readAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]
+
+    const wrapper = mount(NotificationInboxView)
+    await waitForUi()
+
+    const action = wrapper.findAll('button').find((node) => node.text() === 'Open Proposal')
+    await action?.trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-7' },
+      hash: '#proposal-proposal-42',
+    })
   })
 })

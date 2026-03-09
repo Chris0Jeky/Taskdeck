@@ -10,6 +10,7 @@ import LabelManagerModal from '../components/board/LabelManagerModal.vue'
 import StarterPackCatalogModal from '../components/board/StarterPackCatalogModal.vue'
 import KeyboardShortcutsHelp from '../components/KeyboardShortcutsHelp.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
+import CaptureModal from '../components/common/CaptureModal.vue'
 import type { Column, Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
@@ -25,6 +26,7 @@ const showLabelManager = ref(false)
 const showStarterPackCatalog = ref(false)
 const showKeyboardHelp = ref(false)
 const showFilterPanel = ref(false)
+const showBoardCaptureModal = ref(false)
 const draggedColumn = ref<Column | null>(null)
 const dragOverColumnId = ref<string | null>(null)
 const draggedCard = ref<Card | null>(null)
@@ -337,6 +339,37 @@ function toggleFilterPanel() {
   showFilterPanel.value = !showFilterPanel.value
 }
 
+function openBoardCaptureModal() {
+  showBoardCaptureModal.value = true
+}
+
+function closeBoardCaptureModal() {
+  showBoardCaptureModal.value = false
+}
+
+function openBoardReview() {
+  void router.push({
+    name: 'workspace-review',
+    query: { boardId: boardId.value },
+  })
+}
+
+function openBoardChat() {
+  void router.push({
+    name: 'workspace-automations-chat',
+    query: { boardId: boardId.value },
+  })
+}
+
+function openBoardCardComposer() {
+  if (sortedColumns.value.length === 0) {
+    showColumnForm.value = true
+    return
+  }
+
+  createCardInSelectedColumn()
+}
+
 function handleFiltersUpdate(newFilters: CardFilters) {
   boardStore.updateFilters(newFilters)
 }
@@ -519,6 +552,41 @@ useKeyboardShortcuts([
           </div>
         </div>
 
+        <div
+          v-if="boardStore.currentBoard"
+          class="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
+          data-board-action-rail
+        >
+          <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Board Actions</span>
+          <button
+            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            @click="openBoardCaptureModal"
+          >
+            Capture here
+          </button>
+          <button
+            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            @click="openBoardChat"
+          >
+            Ask assistant
+          </button>
+          <button
+            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            @click="openBoardReview"
+          >
+            Review proposals
+          </button>
+          <button
+            class="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            @click="openBoardCardComposer"
+          >
+            Add card
+          </button>
+          <p class="text-sm text-gray-600">
+            Keep captures, proposals, and quick actions anchored to {{ boardStore.currentBoard.name }}.
+          </p>
+        </div>
+
         <!-- Create Column Form -->
         <div v-if="showColumnForm" class="mt-4 bg-gray-50 rounded-lg p-4">
           <form @submit.prevent="createColumn" class="flex gap-3">
@@ -652,6 +720,14 @@ useKeyboardShortcuts([
     <KeyboardShortcutsHelp
       :is-open="showKeyboardHelp"
       @close="showKeyboardHelp = false"
+    />
+
+    <CaptureModal
+      v-if="showBoardCaptureModal && boardStore.currentBoard"
+      :board-id="boardId"
+      :board-name="boardStore.currentBoard.name"
+      @close="closeBoardCaptureModal"
+      @created="closeBoardCaptureModal"
     />
   </div>
 </template>
