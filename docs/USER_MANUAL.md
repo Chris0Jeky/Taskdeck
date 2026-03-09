@@ -300,11 +300,27 @@ Use these docs together:
 
 ## Manual Chapters
 
-This user manual is chaptered under `docs/manual`. The primary chapters are the
-`0x_*.md` files in that directory.
+This user manual is chaptered under `docs/manual`. The primary chapters are:
 
-- [`manual/`](manual/)
-  - browse the `0x_*.md` chapter files that make up the full manual
+- [manual/01_start_here.md](manual/01_start_here.md)
+  - product framing, first-value path, and glossary
+- [manual/02_home_and_today.md](manual/02_home_and_today.md)
+  - `Home`, `Today`, and the daily rhythm
+- [manual/03_projects_and_cards.md](manual/03_projects_and_cards.md)
+  - boards, cards, starter packs, and execution flow
+- [manual/04_inbox_and_review.md](manual/04_inbox_and_review.md)
+  - capture, triage, review, and trust model guidance
+- [manual/05_advanced_automation.md](manual/05_advanced_automation.md)
+  - advanced/operator surfaces such as `Chat`, `Queue`, `Ops`, and `Archive`
+- [manual/06_agents.md](manual/06_agents.md)
+  - future `Agents` and `Runs` placeholder guidance
+- [manual/07_integrations_and_knowledge.md](manual/07_integrations_and_knowledge.md)
+  - future `Integrations` and `Knowledge` placeholder guidance
+- [manual/08_recipes.md](manual/08_recipes.md)
+  - short repeatable workflows
+- [manual/09_troubleshooting.md](manual/09_troubleshooting.md)
+  - common questions, empty states, and recovery paths
+
 ## Demo And Testing Workflows
 
 From `frontend/taskdeck-web`:
