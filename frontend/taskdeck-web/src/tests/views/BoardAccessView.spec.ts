@@ -108,6 +108,7 @@ let mountedWrapper: ReturnType<typeof mount> | null = null
 describe('BoardAccessView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     routeMock.query = {}
     permissionsStore.loading = false
     permissionsStore.boardAccess = new Map([
@@ -137,6 +138,7 @@ describe('BoardAccessView', () => {
     expect(wrapper.find('#board-selector').exists()).toBe(true)
     expect(wrapper.find('input[placeholder="Enter board ID"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Normal flows should not depend on memorized board IDs')
+    expect(wrapper.text()).toContain('Why use the board selector here?')
   })
 
   it('fetches the selected board access list when the selector changes', async () => {

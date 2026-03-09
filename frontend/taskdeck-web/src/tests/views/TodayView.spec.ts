@@ -70,6 +70,7 @@ async function waitForUi() {
 describe('TodayView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mockWorkspaceStore.onboarding = buildOnboarding()
     mockWorkspaceStore.todayLoading = false
     mockWorkspaceStore.todayError = null
@@ -150,6 +151,7 @@ describe('TodayView', () => {
     const wrapper = mount(TodayView)
     await waitForUi()
 
+    expect(wrapper.text()).toContain('What is Today for?')
     expect(wrapper.text()).toContain('Onboarding loop')
     expect(wrapper.text()).toContain('Pending review')
     expect(wrapper.text()).toContain('Overdue cards')

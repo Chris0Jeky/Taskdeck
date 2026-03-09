@@ -342,7 +342,7 @@ test.describe('Stakeholder demo recorder', () => {
 
     const firstCard = page.locator('[data-card-id]').first()
     await expect(firstCard, `Scenario board "${scenarioBoardName}" should contain at least one seeded card.`).toBeVisible()
-    await firstCard.click()
+    await firstCard.getByRole('heading').click()
     const cardEditorHeading = page.getByRole('heading', { name: 'Edit Card' })
     await expect(cardEditorHeading).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('03-card-modal.png'), fullPage: true })

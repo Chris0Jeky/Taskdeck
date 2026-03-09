@@ -70,6 +70,7 @@ async function waitForUi() {
 describe('HomeView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mockWorkspaceStore.onboarding = buildOnboarding()
     mockWorkspaceStore.homeLoading = false
     mockWorkspaceStore.homeError = null
@@ -130,6 +131,7 @@ describe('HomeView', () => {
     const wrapper = mount(HomeView)
     await waitForUi()
 
+    expect(wrapper.text()).toContain('What is Home for?')
     expect(wrapper.text()).toContain('Setup loop')
     expect(wrapper.text()).toContain('Create your first board')
     expect(wrapper.text()).toContain('Needs triage')

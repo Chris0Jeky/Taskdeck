@@ -98,6 +98,7 @@ function seedBoards() {
 describe('ActivityView selector discoverability', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
 
     mockRoute.name = 'workspace-activity'
     mockRoute.fullPath = '/workspace/activity'
@@ -147,6 +148,7 @@ describe('ActivityView selector discoverability', () => {
     const wrapper = mount(ActivityView)
     await waitForUi()
 
+    expect(wrapper.text()).toContain('Why do these selectors matter?')
     expect(mockBoardStore.fetchBoards).toHaveBeenCalledWith(undefined, true)
     expect(wrapper.find('input[placeholder="Board ID"]').exists()).toBe(false)
 

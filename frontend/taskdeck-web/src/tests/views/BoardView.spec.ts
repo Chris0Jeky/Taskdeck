@@ -120,6 +120,7 @@ function mountView() {
 describe('BoardView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     routeMock.params.id = 'board-1'
     mockBoardStore.currentBoard = {
       id: 'board-1',
@@ -149,6 +150,7 @@ describe('BoardView', () => {
     const wrapper = mountView()
     await waitForUi()
 
+    expect(wrapper.text()).toContain('What should happen on a board?')
     expect(wrapper.get('[data-board-action-rail]').text()).toContain('Capture here')
     expect(wrapper.get('[data-board-action-rail]').text()).toContain('Ask assistant')
     expect(wrapper.get('[data-board-action-rail]').text()).toContain('Review proposals')

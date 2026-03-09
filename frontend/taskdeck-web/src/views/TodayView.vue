@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
+import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type {
@@ -192,6 +193,17 @@ onActivated(refreshTodaySummary)
         <button class="td-btn td-btn--secondary" @click="openSetupModal">Start Useful Board</button>
       </div>
     </header>
+
+    <WorkspaceHelpCallout
+      topic="today"
+      title="What is Today for?"
+      description="Today keeps the daily path legible: decide proposals first, shape fresh captures second, and only then dive back into board work that is overdue, due now, or blocked."
+    >
+      <template #actions>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/inbox')">Open Inbox</button>
+      </template>
+    </WorkspaceHelpCallout>
 
     <div v-if="workspace.todayLoading" class="td-panel td-today__placeholder" aria-live="polite">
       Loading today's agenda...

@@ -110,7 +110,7 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
   const proposal = await proposalResponse.json() as ProposalDto
 
   await page.goto('/workspace/review')
-  await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
 
   const proposalCard = page.locator('.td-review-card').filter({ hasText: proposal.summary }).first()
   await expect(proposalCard).toBeVisible()

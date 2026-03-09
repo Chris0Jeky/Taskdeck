@@ -27,6 +27,10 @@ function cardByTitle(page: Page, cardTitle: string) {
   return page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
 }
 
+function cardTitleByText(page: Page, cardTitle: string) {
+  return cardByTitle(page, cardTitle).getByRole('heading', { name: cardTitle, exact: true })
+}
+
 async function addColumn(page: Page, columnName: string) {
   await page.getByRole('button', { name: '+ Add Column' }).click()
   await page.getByPlaceholder('Column name').fill(columnName)
@@ -64,11 +68,11 @@ test('concurrent stale card edit should return conflict hint and preserve latest
     await expect(secondaryPage.getByRole('heading', { name: boardName })).toBeVisible()
     await expect(cardByTitle(secondaryPage, initialTitle)).toBeVisible()
 
-    await cardByTitle(page, initialTitle).click()
+    await cardTitleByText(page, initialTitle).click()
     await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
     await page.locator('#card-title').fill(staleTitle)
 
-    await cardByTitle(secondaryPage, initialTitle).click()
+    await cardTitleByText(secondaryPage, initialTitle).click()
     await expect(secondaryPage.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
     await secondaryPage.locator('#card-title').fill(secondaryTitle)
     await secondaryPage.getByRole('button', { name: 'Save Changes' }).click()

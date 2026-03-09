@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
+import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
 import {
@@ -370,6 +371,17 @@ watch(
         </button>
       </div>
     </header>
+
+    <WorkspaceHelpCallout
+      topic="review"
+      title="What is Review for?"
+      description="Review is the trust gate. Proposed changes stop here before they touch a board, while queue and chat remain advanced/operator surfaces when you need to drive the workflow manually."
+    >
+      <template #actions>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/inbox')">Open Inbox</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
+      </template>
+    </WorkspaceHelpCallout>
 
     <section class="td-review__summary">
       <article v-for="card in summaryCards" :key="card.id" class="td-panel td-review-summary-card">

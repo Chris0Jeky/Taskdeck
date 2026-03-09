@@ -166,7 +166,7 @@ test('capture triage should create proposal and apply card with provenance links
   await page.goto(`/workspace/boards/${boardId}`)
   const card = page.locator('[data-card-id]').filter({ hasText: createdCard.title }).first()
   await expect(card).toBeVisible()
-  await card.click()
+  await card.getByRole('heading', { name: createdCard.title, exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
   await expect(page.getByText('Capture Origin')).toBeVisible()
