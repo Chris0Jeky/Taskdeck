@@ -601,7 +601,7 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#322` `Review`-first routing + empty/help states + board selectors (delivered)
   - `#324` `Today` agenda + onboarding path (delivered)
   - `#326` proposal readability + board-centered action flow (delivered)
-  - `#96` onboarding/contextual help (reused, moved to `Priority II`)
+  - `#96` onboarding/contextual help (delivered)
   - `#100` user guides/tutorials/FAQ (reused, moved to `Priority II`)
   - `#328` first-run smoke + launch-criteria guardrail
 - Related but intentionally not folded into Wave P core execution: `#93`, `#216`, `#77`
@@ -796,7 +796,7 @@ Batch E integration hardening (`#302`) status:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
-3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`): `#96`, `#100`, then `#328`.
+3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`): `#100`, then `#328`.
 4. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
 5. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
 6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
