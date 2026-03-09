@@ -108,6 +108,7 @@ let mountedWrapper: ReturnType<typeof mount> | null = null
 describe('BoardAccessView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     routeMock.query = {}
     permissionsStore.loading = false
     permissionsStore.boardAccess = new Map([

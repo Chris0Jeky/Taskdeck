@@ -2,7 +2,15 @@ import { computed, ref, watch } from 'vue'
 import { WORKSPACE_HELP_DISMISSALS_STORAGE_KEY } from '../utils/storageKeys'
 import { useSessionStore } from '../store/sessionStore'
 
-export const workspaceHelpTopics = ['home', 'today', 'review', 'inbox', 'board', 'selectors'] as const
+export const workspaceHelpTopics = [
+  'home',
+  'today',
+  'review',
+  'inbox',
+  'board',
+  'activity-selectors',
+  'board-access-selectors',
+] as const
 
 export type WorkspaceHelpTopic = typeof workspaceHelpTopics[number]
 

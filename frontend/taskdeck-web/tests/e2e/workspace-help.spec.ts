@@ -28,5 +28,11 @@ test('workspace help should dismiss and replay across home, today, review, inbox
   await expect(page.locator('[data-help-topic="inbox"]')).toContainText('What is Inbox for?')
 
   await page.goto('/workspace/activity')
-  await expect(page.locator('[data-help-topic="selectors"]')).toContainText('Why do these selectors matter?')
+  const activityHelp = page.locator('[data-help-topic="activity-selectors"]')
+  await expect(activityHelp).toContainText('Why do these selectors matter?')
+  await activityHelp.getByRole('button', { name: 'Hide this guide' }).click()
+  await expect(activityHelp).toContainText('This page guide is hidden.')
+
+  await page.goto('/workspace/settings/access')
+  await expect(page.locator('[data-help-topic="board-access-selectors"]')).toContainText('Why use the board selector here?')
 })

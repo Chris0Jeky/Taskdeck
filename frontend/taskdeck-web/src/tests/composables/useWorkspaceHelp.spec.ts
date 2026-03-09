@@ -52,7 +52,7 @@ describe('useWorkspaceHelp', () => {
   })
 
   it('keeps dismissal state scoped when the current user changes', async () => {
-    const help = useWorkspaceHelp('selectors')
+    const help = useWorkspaceHelp('activity-selectors')
 
     help.dismiss()
     expect(help.isVisible.value).toBe(false)
@@ -61,8 +61,21 @@ describe('useWorkspaceHelp', () => {
     await nextTick()
 
     expect(help.isVisible.value).toBe(true)
-    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`)).toBe(JSON.stringify({ selectors: true }))
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`)).toBe(JSON.stringify({ 'activity-selectors': true }))
     expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-2`)).toBeNull()
+  })
+
+  it('tracks selector guidance independently per surface', () => {
+    const activityHelp = useWorkspaceHelp('activity-selectors')
+
+    activityHelp.dismiss()
+
+    const accessHelp = useWorkspaceHelp('board-access-selectors')
+
+    expect(activityHelp.isVisible.value).toBe(false)
+    expect(accessHelp.isVisible.value).toBe(true)
+    expect(localStorage.getItem(`${WORKSPACE_HELP_DISMISSALS_STORAGE_KEY}:user-1`))
+      .toBe(JSON.stringify({ 'activity-selectors': true }))
   })
 
   it('migrates legacy dismissal storage into the current user scope', () => {

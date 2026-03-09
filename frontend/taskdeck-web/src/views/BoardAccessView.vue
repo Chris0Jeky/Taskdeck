@@ -192,7 +192,7 @@ function openRoute(path: string) {
     </header>
 
     <WorkspaceHelpCallout
-      topic="selectors"
+      topic="board-access-selectors"
       title="Why use the board selector here?"
       description="Choose the board from the selector instead of memorizing IDs. Access is an advanced sharing surface, while normal capture, review, and board work should still happen in Home, Inbox, Review, and Boards."
     >
