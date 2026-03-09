@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useNotificationStore } from '../store/notificationStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import type { NotificationItem } from '../types/notifications'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const notifications = useNotificationStore()
 const route = useRoute()
@@ -13,14 +14,7 @@ const inlineError = ref<string | null>(null)
 
 const items = computed(() => notifications.notifications)
 const unreadCount = computed(() => items.value.filter((item) => !item.isRead).length)
-const activeBoardId = computed(() => {
-  const candidate = route.query.boardId
-  if (Array.isArray(candidate)) {
-    return typeof candidate[0] === 'string' ? candidate[0].trim() : ''
-  }
-
-  return typeof candidate === 'string' ? candidate.trim() : ''
-})
+const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
 function formatType(value: number | string): string {
   const normalized = String(value)

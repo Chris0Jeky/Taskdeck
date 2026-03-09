@@ -171,6 +171,41 @@ describe('AutomationChatView', () => {
     expect(wrapper.text()).toContain('Board context will stay anchored to Board One.')
   })
 
+  it('keeps the deep-linked board id when duplicate board names exist', async () => {
+    routeMock.query = { boardId: 'board-2' }
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-1',
+        name: 'Shared Board',
+        description: 'First board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'board-2',
+        name: 'Shared Board',
+        description: 'Second board',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await wrapper.get('input[placeholder="Session title"]').setValue('Scoped session')
+    await findButtonByText(wrapper, 'Create Session').trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.createSession).toHaveBeenCalledWith({
+      title: 'Scoped session',
+      boardId: 'board-2',
+    })
+    expect(wrapper.text()).toContain('Board context will stay anchored to Shared Board.')
+  })
+
   it('rejects unknown board context values when creating a session', async () => {
     const wrapper = mountView()
     await waitForAsyncUi()

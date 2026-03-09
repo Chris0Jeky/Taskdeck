@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
 import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const captureStore = useCaptureStore()
 const router = useRouter()
@@ -27,14 +28,7 @@ const selectedItem = computed(() => {
 
   return captureStore.detailById[selectedItemId.value] ?? null
 })
-const activeBoardId = computed(() => {
-  const candidate = route.query.boardId
-  if (Array.isArray(candidate)) {
-    return typeof candidate[0] === 'string' ? candidate[0].trim() : ''
-  }
-
-  return typeof candidate === 'string' ? candidate.trim() : ''
-})
+const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
 function statusLabel(status: CaptureStatusValue): string {
   if (status === 0 || status === 'New') return 'New'

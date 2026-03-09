@@ -9,6 +9,7 @@ import {
   normalizeProposalSourceType,
   normalizeProposalStatus,
 } from '../utils/automation'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
@@ -29,14 +30,7 @@ const proposalActionBusyId = ref<string | null>(null)
 const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
 let latestDiffRequestId = 0
-const activeBoardFilter = computed(() => {
-  const candidate = route.query.boardId
-  if (Array.isArray(candidate)) {
-    return typeof candidate[0] === 'string' ? candidate[0].trim() : ''
-  }
-
-  return typeof candidate === 'string' ? candidate.trim() : ''
-})
+const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
 const summaryCards = computed<ReviewSummaryCard[]>(() => {
   let pendingReview = 0

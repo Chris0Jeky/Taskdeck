@@ -8,6 +8,7 @@ import { useToastStore } from '../store/toastStore'
 import type { BoardRole } from '../types/access'
 import type { Board } from '../types/board'
 import { normalizeBoardRole } from '../utils/roles'
+import { normalizeBoardIdQueryParam } from '../utils/navigation'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
 const props = defineProps<{ boardId?: string | null }>()
@@ -18,17 +19,7 @@ const permissions = usePermissionsStore()
 const session = useSessionStore()
 const toast = useToastStore()
 
-function normalizeBoardIdCandidate(
-  boardId: string | null | undefined | ReadonlyArray<string | null | undefined>,
-): string {
-  if (Array.isArray(boardId)) {
-    return normalizeBoardIdCandidate(boardId[0])
-  }
-
-  return typeof boardId === 'string' ? boardId.trim() : ''
-}
-
-const activeBoardId = ref<string>(normalizeBoardIdCandidate(props.boardId ?? route.query.boardId))
+const activeBoardId = ref<string>(normalizeBoardIdQueryParam(props.boardId ?? route.query.boardId))
 const availableBoards = ref<Board[]>([])
 const loadingBoards = ref(false)
 const newUserId = ref('')
@@ -104,7 +95,7 @@ onMounted(async () => {
 watch(
   () => props.boardId,
   (boardId) => {
-    const normalizedBoardId = normalizeBoardIdCandidate(boardId)
+    const normalizedBoardId = normalizeBoardIdQueryParam(boardId)
     if (!normalizedBoardId || normalizedBoardId === activeBoardId.value.trim()) return
     activeBoardId.value = normalizedBoardId
   }
@@ -113,7 +104,7 @@ watch(
 watch(
   () => route.query.boardId,
   (boardId) => {
-    const normalizedBoardId = normalizeBoardIdCandidate(boardId)
+    const normalizedBoardId = normalizeBoardIdQueryParam(boardId)
     if (!normalizedBoardId || normalizedBoardId === activeBoardId.value.trim()) return
     activeBoardId.value = normalizedBoardId
   }
