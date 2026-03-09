@@ -148,7 +148,7 @@ test('capture triage should create proposal and apply card with provenance links
   await expect(openProposalButton).toBeVisible()
   await openProposalButton.click()
 
-  await expect(page).toHaveURL(new RegExp(`/workspace/review#proposal-${proposalId}`))
+  await expect(page).toHaveURL(new RegExp(`/workspace/review\\?boardId=${boardId}#proposal-${proposalId}`))
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
 
@@ -173,7 +173,7 @@ test('capture triage should create proposal and apply card with provenance links
   await expect(page.getByRole('link', { name: 'Open Capture' })).toHaveAttribute('href', `/workspace/inbox#capture-${captureId}`)
   await expect(page.getByRole('link', { name: 'Open Proposal' })).toHaveAttribute(
     'href',
-    `/workspace/review#proposal-${proposalId}`,
+    `/workspace/review?boardId=${boardId}#proposal-${proposalId}`,
   )
 
   if (triageRunId) {
