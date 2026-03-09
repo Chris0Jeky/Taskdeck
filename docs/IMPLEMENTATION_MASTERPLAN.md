@@ -59,136 +59,140 @@ Delivered in the latest cycle:
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
-9. Stage 0 governance follow-through:
+9. Wave P docs/help follow-through delivered:
+   - `docs/START_HERE.md` now matches the shipped `Home` / `Today` / `Inbox` / `Review` / `Boards` shell
+   - `docs/USER_MANUAL.md` now carries the novice-first workflow, FAQ, and troubleshooting baseline for the shipped product
+   - `docs/manual/README.md` and `docs/INDEX.md` now make the manual/help-center spine explicit without pretending later `Agents` / `Integrations` breadth is already shipped
+10. Stage 0 governance follow-through:
    - active docs cross-link/date-stamp freeze completed for canonical docs
    - project safety view standardized as `No Status` (`no:status`)
    - weekly backlog seeding cadence and RC hard-gate policy documented in active ops docs
-10. Security convergence progress:
+11. Security convergence progress:
    - `[Authorize]` enforced across remaining legacy controller families
    - claims-first identity retrofit delivered for columns/cards/labels/export/queue/board-access
    - caller-supplied actor query/body IDs removed from those controller families
    - API integration suite expanded for legacy unauthorized/forbidden/cross-user regression checks
    - API integration suite expanded for legacy unauthorized-path regression checks
-11. Frontend runtime alignment:
+12. Frontend runtime alignment:
    - CI and local developer baseline pinned to Node 24.13.1 (LTS) to match Vite 7 engine constraints
-12. Security convergence completion for remaining legacy families:
+13. Security convergence completion for remaining legacy families:
    - audit controller now derives actor identity from claims for user-history and board-history access checks
    - users controller now enforces self-scope for read/update/activate/deactivate profile actions
    - audit frontend flow moved from user-id route calls to `/audit/users/me`
-13. SEC-03 regression matrix delivery:
+14. SEC-03 regression matrix delivery:
    - added explicit API integration matrix assertions for protected legacy + advanced routes
    - expanded policy coverage for `401` unauthenticated, `403` cross-user unauthorized, and `404` true missing resources
-14. SEC-04 API error-contract assertions delivery:
+15. SEC-04 API error-contract assertions delivery:
    - middleware-level JWT challenge/forbidden responses now emit stable `ApiErrorResponse` payloads
    - API integration assertions now explicitly enforce auth and validation error-contract shape stability
-15. UX-01 archive lifecycle coherence delivery:
+16. UX-01 archive lifecycle coherence delivery:
    - board settings archive action now reflects soft-delete semantics (reversible archive, not permanent deletion)
    - archive workspace now surfaces archived boards and supports restore via board lifecycle API flow
    - API integration roundtrip coverage added for archive-to-restore board lifecycle behavior
-16. UX-02 drag/edit interaction safety guardrails delivery:
+17. UX-02 drag/edit interaction safety guardrails delivery:
    - card and column drag now requires explicit drag handles
    - non-handle drag gestures are ignored to prevent accidental movement during adjacent edit interactions
    - frontend unit + E2E coverage added for handle-only drag behavior and conflict paths
-17. UX-03 command palette keyboard model delivery:
+18. UX-03 command palette keyboard model delivery:
    - command palette now supports keyboard-first filtering, item selection, and activation
    - shell interactions preserve deterministic close behavior (`Escape`) and focus handling
    - frontend unit + E2E coverage added for command palette keyboard navigation and activation
-18. UX-04 activity selector discoverability delivery:
+19. UX-04 activity selector discoverability delivery:
    - activity workflows now prioritize selector-first board/entity/user discovery instead of raw ID-first entry
    - board/entity selection now includes discoverable context and ID reveal/copy affordance
    - frontend unit + E2E coverage added for selector-based activity navigation and fetch flows
-19. UX-04 shared input-assist scaffolding delivery:
+20. UX-04 shared input-assist scaffolding delivery:
    - shared input-assist combobox/listbox component added for reusable suggestion and keyboard-selection behavior
    - ops CLI template selection now uses input-assist with discoverable template metadata
    - automation chat board targeting now uses input-assist board suggestions with keyboard-first interactions
-20. UX-05 escape behavior contract delivery:
+21. UX-05 escape behavior contract delivery:
    - workspace and board escape handling now follows a top-surface-first contract via shared escape-stack handling
    - board routes now exit to `/workspace/boards` when no transient surface is open
    - unit + E2E regression coverage validates escape ordering and board-exit behavior
-21. AUTO-01 real-provider strategy delivery:
+22. AUTO-01 real-provider strategy delivery:
    - `ILlmProvider` selection now follows deterministic environment-aware policy evaluation (`Mock` vs `OpenAI`)
    - live provider usage is explicitly gated by config (`EnableLiveProviders`, provider mode, development override guard)
    - OpenAI provider path and policy constraints are test-backed while preserving proposal-first chat flow semantics
-22. AUTO-02 planner/executor hardening delivery:
+23. AUTO-02 planner/executor hardening delivery:
    - planner instruction coverage now includes deterministic board/column intents (rename/archive/unarchive/reorder) with explicit board/position validation
    - executor operation parameter parsing now fails with deterministic validation errors instead of exception-driven fallbacks
    - partial-failure behavior is test-backed as transactional rollback + proposal failure status update with actionable operation-sequenced reasoning and improved audit entity attribution
-23. MVP-01 chat-to-project bootstrap delivery:
+24. MVP-01 chat-to-project bootstrap delivery:
    - chat now supports canonical Markdown checklist ingestion and proposal-first bootstrap operation generation for board-scoped sessions
    - proposal review remains mandatory, with chat exposing one-click approve + execute action for generated checklist bootstrap proposals
    - backend + API + frontend tests cover canonical happy path and key checklist parse/validation failures
-24. PACK-01 starter-pack manifest foundation delivery:
+25. PACK-01 starter-pack manifest foundation delivery:
    - added a versioned starter-pack manifest contract (`schemaVersion` `1.0`) for labels, columns, templates, and seed cards
    - added deterministic backend parsing/validation service with explicit compatibility and cross-reference constraints
    - added dedicated application tests covering canonical success + key parse/validation failure paths
-25. PACK-01 null-collection hardening follow-up:
+26. PACK-01 null-collection hardening follow-up:
    - manifest validation now handles explicit JSON `null` collections deterministically (array-shape errors instead of null-reference exceptions)
    - nested collection paths (`compatibility.requiredFeatures`, template checklists, seed-card labels) are now null-safe and regression-tested
-26. PACK-02 starter-pack apply backend delivery:
+27. PACK-02 starter-pack apply backend delivery:
    - added authenticated board-scoped apply endpoint: `POST /api/boards/{boardId}/starter-packs/apply`
    - delivered idempotent apply semantics with dry-run actionable conflict reporting for labels/columns/seed-card references
    - added API integration coverage for apply success, re-apply idempotency, dry-run conflict report, and non-dry-run conflict response
-27. PACK-03 starter-pack frontend catalog delivery:
+28. PACK-03 starter-pack frontend catalog delivery:
    - added board-level starter pack catalog UI with search/filter and manifest preview details
    - integrated dry-run preview and one-click apply flow against the backend apply endpoint
    - added frontend API + component interaction tests for preview/apply/conflict/empty states
-28. PACK-04 first-party starter packs v1 delivery:
+29. PACK-04 first-party starter packs v1 delivery:
    - added API-backed first-party starter-pack catalog endpoint: `GET /api/boards/{boardId}/starter-packs/catalog`
    - shipped first-party pack coverage for common labels, common column flow, and 3 board blueprints
    - added backend/frontend tests for catalog availability, pack-category coverage, and manifest validity
-29. PACK-05 deterministic fixture packs delivery:
+30. PACK-05 deterministic fixture packs delivery:
    - added Playwright starter-pack fixture bootstrap helper flow for manifest-backed deterministic board-state setup
    - shipped deterministic fixture manifests for `small`, `medium`, and `edge` scenarios
    - added dedicated E2E coverage for fixture bootstrap success and conflict dry-run paths
-30. DEBT-01 nullability reduction delivery:
+31. DEBT-01 nullability reduction delivery:
    - eliminated current domain `CS8618` warnings by applying EF-safe non-null default initialization patterns
    - validated no behavior regressions via full backend solution test pass
-31. DEBT-02 log-query scalability pass delivery:
+32. DEBT-02 log-query scalability pass delivery:
    - replaced broad in-memory log composition with repository-filtered query paths
    - removed command-run log query N+1 pattern by introducing direct filtered log querying with run correlation/user projection
    - validated logs API contract behavior and full backend regression suite pass
-32. DEBT-03 database export/import delivery:
+33. DEBT-03 database export/import delivery:
    - added authenticated database export/import API routes (`GET /api/export/database`, `POST /api/import/database`)
    - implemented minimal-safe SQLite file export/import with Development-sandbox gating, payload signature/size validation, and backup-restore fallback on file replacement failure
    - added application and API integration coverage for auth, sandbox gating, and import validation paths
-33. COL-01 realtime board updates delivery:
+34. COL-01 realtime board updates delivery:
    - added SignalR `BoardsHub` with claims-derived board subscription authz checks and board-scoped group subscriptions
    - added application-layer board mutation notifications for board/card/column/label writes and wired hub fan-out notifier in API composition root
    - integrated frontend board realtime lifecycle (join/switch/leave/reconnect) with websocket-unavailable polling fallback and expanded API/unit/E2E regression coverage
-34. OBS-01 observability baseline delivery:
+35. OBS-01 observability baseline delivery:
    - added OpenTelemetry startup wiring for ASP.NET + HttpClient instrumentation with Taskdeck custom activity source and meter registration
    - added worker/queue/heartbeat telemetry emission with stable metric names and dimension keys
    - added correlation ID propagation into trace tags plus a versioned observability baseline runbook with dashboard/alert/smoke-verification guidance
-35. OPS-07 containerized deployment baseline delivery:
+36. OPS-07 containerized deployment baseline delivery:
    - added production-oriented backend/frontend Dockerfiles and compose profile with reverse-proxy entrypoint
    - added proxy compression + forwarded-header/security-header posture and staging/local deployment runbook
    - added CI container image build/export artifacts with reproducible compose render checksums
-36. Developer MCP tooling posture expansion:
+37. Developer MCP tooling posture expansion:
    - enabled a broader Docker Marketplace MCP server bundle (SQLite, JetBrains, Postman candidate, OpenAPI, filesystem, terraform, time, etc.)
    - stabilized default Docker gateway server set for Codex project config to avoid secret-gated startup failures while preserving optional integrations
    - documented setup/credential expectations in `docs/MCP_TOOLING_GUIDE.md`
-37. MCP operations workflow integration:
+38. MCP operations workflow integration:
    - added operator runbook (`docs/tooling/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
    - added helper scripts to wire credential-gated Docker MCP servers and verify baseline/optional MCP dry-run paths
    - integrated MCP operations checks into active testing guidance
-38. TST-07 MCP smoke/regression harness delivery:
+39. TST-07 MCP smoke/regression harness delivery:
    - enhanced MCP profile validation script with optional-server prerequisite diagnostics (missing secret/config classification)
    - codified strict/warning/skip behavior for optional integrations and documented CI-friendly command patterns
    - added deterministic CI status output contract (`PASS`, `PASS_WITH_WARNINGS`, `FAIL`) for MCP profile validation flows
-39. OPS-19 CI topology first-pass delivery:
+40. OPS-19 CI topology first-pass delivery:
    - migrated required CI entrypoint from `.github/workflows/ci.yml` to `.github/workflows/ci-required.yml` with equivalent gate behavior
    - extracted docs governance lane into reusable workflow `.github/workflows/reusable-docs-governance.yml` as baseline for incremental workflow decomposition
-40. OPS-19 CI topology second-pass delivery:
+41. OPS-19 CI topology second-pass delivery:
    - extracted backend architecture lane into reusable workflow `.github/workflows/reusable-backend-architecture.yml` and routed `ci-required.yml` through it
    - extracted frontend unit lane into reusable workflow `.github/workflows/reusable-frontend-unit.yml` (preserving Ubuntu/Windows matrix behavior) and routed `ci-required.yml` through it
-41. OPS-19 CI topology API-integration extraction delivery:
+42. OPS-19 CI topology API-integration extraction delivery:
    - extracted API integration lane into reusable workflow `.github/workflows/reusable-api-integration.yml` and routed `ci-required.yml` through it (preserving Ubuntu/Windows matrix behavior)
-42. OPS-19 CI topology third-pass delivery:
+43. OPS-19 CI topology third-pass delivery:
    - added `merge_group` trigger parity to `.github/workflows/ci-required.yml` to align merge-queue required-check execution with PR/push paths
-43. OPS-19 CI topology fourth-pass delivery:
+44. OPS-19 CI topology fourth-pass delivery:
    - extracted backend unit lane into reusable workflow `.github/workflows/reusable-backend-unit.yml` (preserving Ubuntu/Windows matrix behavior and domain/application/CLI split coverage)
    - routed `.github/workflows/ci-required.yml` through the reusable backend unit lane
-44. OPS-19 CI topology fifth-pass delivery:
+45. OPS-19 CI topology fifth-pass delivery:
    - extracted container image lane into reusable workflow `.github/workflows/reusable-container-images.yml` and routed `ci-required.yml` through it
    - extracted E2E smoke lane into reusable workflow `.github/workflows/reusable-e2e-smoke.yml` and routed `ci-required.yml` through it while preserving required-gate dependency ordering and artifact upload behavior
 45. SEC-11 cross-user convergence progress (`#152`):
@@ -602,7 +606,7 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#324` `Today` agenda + onboarding path (delivered)
   - `#326` proposal readability + board-centered action flow (delivered)
   - `#96` onboarding/contextual help (delivered)
-  - `#100` user guides/tutorials/FAQ (reused, moved to `Priority II`)
+  - `#100` user guides/tutorials/FAQ (delivered)
   - `#328` first-run smoke + launch-criteria guardrail
 - Related but intentionally not folded into Wave P core execution: `#93`, `#216`, `#77`
 
@@ -796,7 +800,7 @@ Batch E integration hardening (`#302`) status:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
-3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`): `#100`, then `#328`.
+3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): finish `#328`.
 4. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
 5. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
 6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
