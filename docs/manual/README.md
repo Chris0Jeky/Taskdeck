@@ -44,7 +44,7 @@ Shipped behavior still belongs in `docs/STATUS.md`, `docs/START_HERE.md`, `docs/
    - capture sources
    - triage
    - proposal review
-   - risk and provenance or trust model
+   - risk, provenance, and trust model
 5. `05_advanced_automation.md`
    - `Chat`
    - `Queue`
