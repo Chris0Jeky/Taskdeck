@@ -74,7 +74,7 @@ Keep in-app help blocks mapped back to the manual structure:
 |---|---|
 | `Home` | `02_home_and_today.md` |
 | `Today` | `02_home_and_today.md` |
-| board view help | `03_projects_and_cards.md` |
+| `board` | `03_projects_and_cards.md` |
 | `Inbox` | `04_inbox_and_review.md` |
 | `Review` | `04_inbox_and_review.md` |
 | `activity-selectors` | `05_advanced_automation.md` |
