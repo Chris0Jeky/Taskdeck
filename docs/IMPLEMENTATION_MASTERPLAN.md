@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-07  
+Last Updated: 2026-03-09  
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -483,15 +483,20 @@ Focus:
   - inbox needing triage
   - resume point
 - remaining follow-through for this horizon:
-  - readable proposal summary cards
-  - board action rails
-  - stronger board-aware deep links across inbox/review/notifications/boards
+  - richer contextual help and in-product teaching on top of the shipped board-centered loop
+  - broader launch-criteria proofing for first-run/product-smoke coverage
 
 Exit Criteria:
 - the `capture -> review -> board` loop is visible and coherent inside the product
 - board context travels without manual re-entry across primary surfaces
 - a first-time user can create first value without wandering through operator pages
 - proposal review feels like a product surface, not just a diff viewer
+
+Current status:
+- `#326` is now delivered:
+  - application-layer proposal presentation now feeds readable review cards with plain-language summaries, impact/risk/source cues, and affected-entity headlines
+  - board pages now expose an explicit action rail (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`)
+  - board context now travels through inbox, review, chat, notifications, and provenance/deep-link follow-through
 
 ### Horizon C (Week 6 to 8): Docs, Help, and Verification Coherence
 
@@ -595,7 +600,7 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#320` workspace modes + `Home` summary shell (delivered)
   - `#322` `Review`-first routing + empty/help states + board selectors (delivered)
   - `#324` `Today` agenda + onboarding path (delivered)
-  - `#326` proposal readability + board-centered action flow
+  - `#326` proposal readability + board-centered action flow (delivered)
   - `#96` onboarding/contextual help (reused, moved to `Priority II`)
   - `#100` user guides/tutorials/FAQ (reused, moved to `Priority II`)
   - `#328` first-run smoke + launch-criteria guardrail
@@ -791,14 +796,13 @@ Batch E integration hardening (`#302`) status:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
-3. Continue the remaining board-centered daily workflow tranche after shipped `#324`: `#326`.
-4. Keep the docs/help/testing tranche synchronized with shipped behavior: `#96`, `#100`, then `#328`.
-5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
-6. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
-7. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
-8. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
-9. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
-10. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311` instead of reopening the migration batches.
+3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`): `#96`, `#100`, then `#328`.
+4. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
+5. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
+6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
+7. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
+8. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+9. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311` instead of reopening the migration batches.
 
 ## Documentation Operating Model
 Active docs:

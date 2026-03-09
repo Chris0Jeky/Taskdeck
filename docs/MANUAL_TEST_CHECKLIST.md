@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-02-25
+Last Updated: 2026-03-09
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -111,26 +111,32 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: archived board hidden from default boards list; unarchived board reappears.
 4. Use `Archive Board` action in Board Settings.
    - Expected: redirected to `/workspace/boards`, archived board absent from default list (soft-delete behavior).
+5. Use the board action rail on a populated board.
+   - Expected:
+     - `Capture here` opens a capture modal scoped to the current board.
+     - `Ask assistant` opens `/workspace/automations/chat?boardId={boardId}`.
+     - `Review proposals` opens `/workspace/review?boardId={boardId}`.
+     - `Add card` opens the inline add-card affordance for the active column, or the add-column form when the board is empty.
 
-5. Create two columns, then reorder columns by drag/drop using the `Drag Column` handle.
+6. Create two columns, then reorder columns by drag/drop using the `Drag Column` handle.
    - Expected: visual order changes and persists on refresh.
-6. Set WIP limit on a column.
+7. Set WIP limit on a column.
    - Expected: `count/limit` indicator visible.
-7. Attempt to exceed WIP by adding/moving cards.
+8. Attempt to exceed WIP by adding/moving cards.
    - Expected: operation blocked with visible error feedback.
 
-8. Create card inline.
+9. Create card inline.
    - Expected: card appears in target column.
-9. Open card modal (`Enter` on selected card or click).
+10. Open card modal (`Enter` on selected card or click).
    - Expected: modal opens with current values.
-10. Edit title/description, set due date, block with reason, assign labels.
+11. Edit title/description, set due date, block with reason, assign labels.
     - Expected: updates persist and render in lane.
-11. Move card to another column via drag/drop using the `Drag Card` handle.
+12. Move card to another column via drag/drop using the `Drag Card` handle.
     - Expected: card relocates and counts update.
-12. Delete card from modal.
+13. Delete card from modal.
     - Expected: card removed.
 
-13. Open label manager and perform create/update/delete.
+14. Open label manager and perform create/update/delete.
     - Expected: label list and card chips reflect changes.
 
 ## C. Filters and Keyboard Workflow
@@ -161,15 +167,28 @@ Manual-only checks (non-automatable in generic local script):
 3. Create board-scoped chat session and send actionable instruction with `Request proposal generation` enabled.
    - Expected: assistant response includes proposal reference.
 4. Open `/workspace/review` and locate proposal.
-   - Expected: review card visible with status/actions, and legacy `/workspace/automations/proposals` links redirect here.
-5. Approve proposal.
+   - Expected: review card visible with status/actions, readable summary/risk/source/affected-entity cues, and legacy `/workspace/automations/proposals` links redirect here.
+5. Open proposal, inbox, notification, and card provenance links that target the same board-scoped proposal.
+   - Expected: all land on `/workspace/review?boardId={boardId}#proposal-{proposalId}` or the equivalent routed location with board context preserved.
+6. Approve proposal.
    - Expected: status transitions to `Approved`.
-6. Execute proposal with confirmation.
+7. Execute proposal with confirmation.
    - Expected: status transitions to `Applied`.
-7. View diff for proposal.
-   - Expected: diff payload displays.
+8. View diff for proposal.
+    - Expected: diff payload displays.
 
-## E. Ops Console and Logs
+## E. Inbox and Notifications Continuity
+
+1. Open `/workspace/inbox?boardId={boardId}` after creating a board-scoped capture.
+   - Expected: inbox header shows the board context banner and list fetch stays scoped to that board.
+2. Open a capture detail with proposal provenance from the board-scoped inbox.
+   - Expected: `Open Proposal` keeps the same `boardId` query when routing into Review.
+3. Open `/workspace/notifications?boardId={boardId}`.
+   - Expected: notifications header shows the board context banner and refresh/unread filtering stays scoped to that board.
+4. Open a proposal notification and a board-only notification.
+   - Expected: proposal notifications route to board-scoped Review, while board-only items route back to the related board.
+
+## F. Ops Console and Logs
 
 1. Open `/workspace/ops/cli`.
    - Expected: templates load.
@@ -180,7 +199,7 @@ Manual-only checks (non-automatable in generic local script):
 4. Fetch logs by correlation ID for a recent run.
    - Expected: run-correlated entries returned.
 
-## F. Archive and Recovery
+## G. Archive and Recovery
 
 1. Open `/workspace/archive` and refresh.
    - Expected: items load without error.
@@ -191,7 +210,7 @@ Manual-only checks (non-automatable in generic local script):
 4. Validate board archive/unarchive coherence against archive view.
    - Expected: archived boards are visible in `/workspace/archive` and can be restored there; restored boards return to default boards list.
 
-## G. Activity View
+## H. Activity View
 
 1. Open `/workspace/activity`.
    - Expected: view loads and allows mode selection (`board`, `entity`, `user`).
@@ -202,7 +221,7 @@ Manual-only checks (non-automatable in generic local script):
 4. Fetch user history in `user` mode.
    - Expected: current-user timeline entries display.
 
-## H. API Spot Checks
+## I. API Spot Checks
 
 Assume API at `http://localhost:5000`.
 
@@ -229,7 +248,7 @@ Assume API at `http://localhost:5000`.
    - `GET /api/export/database` and `POST /api/import/database` with bearer token while sandbox is disabled.
    - Expected: `403` with JSON body containing `errorCode` and `message`.
 
-## I. Observability Smoke (OBS-01)
+## J. Observability Smoke (OBS-01)
 
 1. In `backend/src/Taskdeck.Api/appsettings.Development.json`, set:
    - `"Observability": { "EnableConsoleExporter": true }`
@@ -243,7 +262,7 @@ Assume API at `http://localhost:5000`.
    - request spans include `taskdeck.correlation_id`
 5. Revert `EnableConsoleExporter` to `false` after smoke validation.
 
-## J. Known-Gap Triage (From Product Notes)
+## K. Known-Gap Triage (From Product Notes)
 
 Run these checks even if they currently fail; log outcome explicitly.
 
@@ -257,7 +276,7 @@ Run these checks even if they currently fail; log outcome explicitly.
    - Repro: test on shorter and taller viewports.
    - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 
-## K. Manual Findings Regression Pack (MAN-2026-02-21)
+## L. Manual Findings Regression Pack (MAN-2026-02-21)
 
 Use this section to retest the exact findings captured in `docs/archive/2026-02-25_docs-cleanup/notesFromManualTesting.txt`.
 Issue wave:
@@ -337,7 +356,7 @@ For each test below, capture:
    - Expected: clear guidance exists for obtaining required role/permissions.
    - Reference: `docs/ops/TASKDECK_HUMAN_OPERATIONS.md` (`A5 Ops CLI role-assignment workflow`).
 
-## L. Post-Run Documentation Check
+## M. Post-Run Documentation Check
 
 If behavior, commands, or known gaps changed, update:
 - `docs/STATUS.md`
