@@ -207,6 +207,53 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Showing proposals for board board-7.')
   })
 
+  it('keeps the newest proposal load when board-scoped requests resolve out of order', async () => {
+    const initialLoad = createDeferred<Proposal[]>()
+    const boardScopedLoad = createDeferred<Proposal[]>()
+
+    mocks.getProposals.mockImplementation((query?: { boardId?: string }) => {
+      if (query?.boardId === 'board-7') {
+        return boardScopedLoad.promise
+      }
+
+      return initialLoad.promise
+    })
+
+    const { wrapper, router } = await mountAt('/workspace/review')
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200 })
+
+    await router.push('/workspace/review?boardId=board-7')
+    await router.isReady()
+
+    expect(mocks.getProposals).toHaveBeenLastCalledWith({ limit: 200, boardId: 'board-7' })
+
+    boardScopedLoad.resolve([
+      buildProposal({
+        id: 'proposal-board-7',
+        boardId: 'board-7',
+        summary: 'Board 7 proposal',
+      }),
+    ])
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Board 7 proposal')
+    expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+
+    initialLoad.resolve([
+      buildProposal({
+        id: 'proposal-stale',
+        boardId: 'board-1',
+        summary: 'Stale workspace proposal',
+      }),
+    ])
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Board 7 proposal')
+    expect(wrapper.text()).not.toContain('Stale workspace proposal')
+  })
+
   it('renders readable presentation cues and board follow-through actions', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({

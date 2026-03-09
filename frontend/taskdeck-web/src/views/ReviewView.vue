@@ -29,6 +29,7 @@ const proposalsLoading = ref(false)
 const proposalActionBusyId = ref<string | null>(null)
 const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
+let latestProposalLoadRequestId = 0
 let latestDiffRequestId = 0
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
@@ -83,19 +84,34 @@ const summaryCards = computed<ReviewSummaryCard[]>(() => {
 })
 
 async function loadProposals() {
+  const requestId = ++latestProposalLoadRequestId
+
   try {
     proposalsLoading.value = true
-    proposals.value = await automationApi.getProposals({
+    const loadedProposals = await automationApi.getProposals({
       limit: 200,
       boardId: activeBoardFilter.value || undefined,
     })
+    if (requestId !== latestProposalLoadRequestId) {
+      return
+    }
+
+    proposals.value = loadedProposals
   } catch (e: unknown) {
+    if (requestId !== latestProposalLoadRequestId) {
+      return
+    }
+
     toast.error(getErrorDisplay(e, 'Failed to load proposals').message)
   } finally {
-    proposalsLoading.value = false
+    if (requestId === latestProposalLoadRequestId) {
+      proposalsLoading.value = false
+    }
   }
 
-  await scrollToProposalFromHash()
+  if (requestId === latestProposalLoadRequestId) {
+    await scrollToProposalFromHash()
+  }
 }
 
 function getProposalIdFromHash(hash: string): string | null {
@@ -446,7 +462,10 @@ watch(
         <div v-if="operationHeadlines(proposal).length > 0" class="td-review-card__operations">
           <span class="td-review-card__section-label">Planned changes</span>
           <ul class="td-review-card__operation-list">
-            <li v-for="headline in operationHeadlines(proposal)" :key="`${proposal.id}-${headline}`">
+            <li
+              v-for="(headline, headlineIndex) in operationHeadlines(proposal)"
+              :key="`${proposal.id}-${headlineIndex}-${headline}`"
+            >
               {{ headline }}
             </li>
           </ul>
