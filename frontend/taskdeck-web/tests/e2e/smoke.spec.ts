@@ -14,7 +14,7 @@ test.beforeEach(async ({ page, request }) => {
 test('home landing and workspace mode preference should persist across navigation and reload', async ({ page }) => {
   await page.goto('/')
   await expect(page).toHaveURL(/\/workspace\/home$/)
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
   const workspaceModeSelect = page.getByLabel('Workspace mode')
   const savePreferenceResponse = page.waitForResponse((response) =>
