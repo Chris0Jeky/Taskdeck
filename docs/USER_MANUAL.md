@@ -298,6 +298,13 @@ Use these docs together:
 - [manual/README.md](manual/README.md)
   - manual structure and in-app help mapping
 
+## Manual Chapters
+
+This user manual is chaptered under `docs/manual`. The primary chapters are the
+`0x_*.md` files in that directory.
+
+- [`manual/`](manual/)
+  - browse the `0x_*.md` chapter files that make up the full manual
 ## Demo And Testing Workflows
 
 From `frontend/taskdeck-web`:
