@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
 import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 
 const captureStore = useCaptureStore()
 const router = useRouter()
+const route = useRoute()
 const selectedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
@@ -25,6 +26,14 @@ const selectedItem = computed(() => {
   }
 
   return captureStore.detailById[selectedItemId.value] ?? null
+})
+const activeBoardId = computed(() => {
+  const candidate = route.query.boardId
+  if (Array.isArray(candidate)) {
+    return typeof candidate[0] === 'string' ? candidate[0].trim() : ''
+  }
+
+  return typeof candidate === 'string' ? candidate.trim() : ''
 })
 
 function statusLabel(status: CaptureStatusValue): string {
@@ -50,7 +59,10 @@ function sourceLabel(source: CaptureSourceValue): string {
 
 async function loadInbox() {
   try {
-    await captureStore.fetchItems({ limit: 200 })
+    await captureStore.fetchItems({
+      limit: 200,
+      ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
+    })
   } catch {
     // Store handles toast + error state.
   }
@@ -214,6 +226,9 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
 function openProposal(proposalId: string): void {
   void router.push({
     name: 'workspace-review',
+    query: selectedItem.value?.boardId
+      ? { boardId: selectedItem.value.boardId }
+      : (activeBoardId.value ? { boardId: activeBoardId.value } : undefined),
     hash: `#proposal-${encodeURIComponent(proposalId)}`,
   })
 }
@@ -238,6 +253,12 @@ watch(activeItemIndex, async () => {
   scrollActiveItemIntoView()
 })
 
+watch(activeBoardId, () => {
+  selectedItemId.value = null
+  activeItemIndex.value = 0
+  void loadInbox()
+})
+
 watch(selectedItemId, (itemId, _, onCleanup) => {
   if (!itemId) {
     return
@@ -260,6 +281,9 @@ onMounted(() => {
       <div>
         <h1 class="td-page-title">Inbox</h1>
         <p class="td-inbox__subtitle">Capture artifacts and triage-ready context.</p>
+        <p v-if="activeBoardId" class="td-inbox__board-context">
+          Showing capture items linked to board {{ activeBoardId }}.
+        </p>
       </div>
       <button class="td-btn td-btn--secondary" @click="loadInbox" :disabled="captureStore.loadingList">
         {{ captureStore.loadingList ? 'Refreshing...' : 'Refresh' }}
@@ -414,6 +438,13 @@ onMounted(() => {
 .td-inbox__subtitle {
   margin-top: var(--td-space-1);
   color: var(--td-text-secondary);
+}
+
+.td-inbox__board-context {
+  margin-top: var(--td-space-2);
+  color: var(--td-color-primary);
+  font-size: var(--td-font-sm);
+  font-weight: 600;
 }
 
 .td-inbox__layout {

@@ -15,6 +15,10 @@ const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
 }))
 
+const routeMock = vi.hoisted(() => ({
+  query: {} as Record<string, unknown>,
+}))
+
 const mocks = vi.hoisted(() => ({
   getMySessions: vi.fn(),
   getSession: vi.fn(),
@@ -29,6 +33,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({
     push: routerMocks.push,
   }),
+  useRoute: () => routeMock,
 }))
 
 vi.mock('../../api/chatApi', () => ({
@@ -118,6 +123,7 @@ function findButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
 describe('AutomationChatView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    routeMock.query = {}
     const session = buildSession()
     mocks.getMySessions.mockResolvedValue([session])
     mocks.getSession.mockResolvedValue(session)
@@ -150,8 +156,19 @@ describe('AutomationChatView', () => {
 
     expect(routerMocks.push).toHaveBeenCalledWith({
       name: 'workspace-review',
+      query: { boardId: 'board-1' },
       hash: '#proposal-proposal-1',
     })
+  })
+
+  it('prefills the create-session board context from the route boardId query', async () => {
+    routeMock.query = { boardId: 'board-1' }
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.get('input[placeholder="Board context (optional)"]').element.value).toBe('Board One')
+    expect(wrapper.text()).toContain('Board context will stay anchored to Board One.')
   })
 
   it('rejects unknown board context values when creating a session', async () => {

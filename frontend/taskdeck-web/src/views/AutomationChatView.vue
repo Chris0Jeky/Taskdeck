@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
@@ -12,6 +12,7 @@ import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToastStore()
 
 const sessions = ref<ChatSession[]>([])
@@ -65,6 +66,15 @@ const selectedSessionBoardName = computed(() => {
   return boardNameById.value.get(boardId) ?? 'Linked board context'
 })
 
+const queryBoardId = computed(() => {
+  const candidate = route.query.boardId
+  if (Array.isArray(candidate)) {
+    return typeof candidate[0] === 'string' ? candidate[0].trim() : ''
+  }
+
+  return typeof candidate === 'string' ? candidate.trim() : ''
+})
+
 function normalizeSelectedBoardId(rawValue: string): string | null {
   const trimmed = rawValue.trim()
   if (!trimmed) {
@@ -76,6 +86,17 @@ function normalizeSelectedBoardId(rawValue: string): string | null {
     board.id.toLowerCase() === normalized || board.name.trim().toLowerCase() === normalized
   ))
   return matchedBoard ? matchedBoard.id : null
+}
+
+function applyRouteBoardContext() {
+  if (!queryBoardId.value) {
+    return
+  }
+
+  const matchedBoard = availableBoards.value.find((board) => board.id === queryBoardId.value)
+  if (matchedBoard) {
+    newSessionBoardId.value = matchedBoard.name
+  }
 }
 
 async function loadSessions() {
@@ -194,14 +215,26 @@ function openRoute(path: string) {
 function openProposalReview(proposalId: string) {
   void router.push({
     name: 'workspace-review',
+    query: selectedSession.value?.boardId
+      ? { boardId: selectedSession.value.boardId }
+      : undefined,
     hash: `#proposal-${encodeURIComponent(proposalId)}`,
   })
 }
 
 onMounted(() => {
   void loadSessions()
-  void loadBoardOptions()
+  void loadBoardOptions().then(() => {
+    applyRouteBoardContext()
+  })
 })
+
+watch(
+  () => [queryBoardId.value, availableBoards.value.length],
+  () => {
+    applyRouteBoardContext()
+  },
+)
 </script>
 
 <template>
@@ -248,6 +281,9 @@ onMounted(() => {
             placeholder="Board context (optional)"
             no-results-text="No matching boards."
           />
+          <p v-if="queryBoardId" class="td-chat-board-context">
+            Board context will stay anchored to {{ newSessionBoardId || queryBoardId }}.
+          </p>
           <button class="td-btn td-btn--primary td-btn--sm" @click="handleCreateSession" :disabled="creatingSession">
             {{ creatingSession ? 'Creating...' : 'Create Session' }}
           </button>
@@ -428,6 +464,13 @@ onMounted(() => {
   font-size: var(--td-font-sm);
   color: var(--td-text-secondary);
   line-height: 1.5;
+}
+
+.td-chat-board-context {
+  margin: 0;
+  font-size: var(--td-font-xs);
+  color: var(--td-color-primary);
+  font-weight: 600;
 }
 
 .td-form-group {

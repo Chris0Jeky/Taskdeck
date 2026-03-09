@@ -267,8 +267,12 @@ function openBoard(boardId: string) {
   void router.push(`/workspace/boards/${boardId}`)
 }
 
-function proposalHref(proposalId: string): string {
-  return `/workspace/review#proposal-${encodeURIComponent(proposalId)}`
+function proposalHref(proposal: ApiProposal): string {
+  const query = proposal.boardId ?? activeBoardFilter.value
+  const encodedProposalId = encodeURIComponent(proposal.id)
+  return query
+    ? `/workspace/review?boardId=${encodeURIComponent(query)}#proposal-${encodedProposalId}`
+    : `/workspace/review#proposal-${encodedProposalId}`
 }
 
 function captureHref(captureItemId: string): string {
@@ -417,7 +421,7 @@ watch(
           <router-link class="td-btn td-btn--secondary td-btn--sm" :to="captureHrefForProposal(proposal)">
             Open Capture
           </router-link>
-          <router-link class="td-btn td-btn--secondary td-btn--sm" :to="proposalHref(proposal.id)">
+          <router-link class="td-btn td-btn--secondary td-btn--sm" :to="proposalHref(proposal)">
             Review Link
           </router-link>
           <button

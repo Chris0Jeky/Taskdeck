@@ -129,4 +129,24 @@ describe('CaptureModal', () => {
 
     expect(unregisterEscapeHandlerMock).toHaveBeenCalledTimes(1)
   })
+
+  it('scopes captures to the provided board and surfaces the board hint', async () => {
+    const wrapper = mount(CaptureModal, {
+      props: {
+        boardId: 'board-7',
+        boardName: 'Support Board',
+      },
+    })
+
+    await wrapper.get('textarea').setValue('Capture this for support')
+    await wrapper.get('button.td-btn--primary').trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: 'board-7',
+      text: 'Capture this for support',
+      source: 'Typed',
+    })
+    expect(wrapper.text()).toContain('This capture will stay linked to Support Board.')
+  })
 })

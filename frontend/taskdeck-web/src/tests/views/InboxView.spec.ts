@@ -7,6 +7,10 @@ const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
 }))
 
+const routeMock = vi.hoisted(() => ({
+  query: {} as Record<string, unknown>,
+}))
+
 const escapeHandlers: Array<() => void> = []
 
 const mockCaptureStore = reactive({
@@ -60,6 +64,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({
     push: routerMocks.push,
   }),
+  useRoute: () => routeMock,
 }))
 
 vi.mock('../../composables/useEscapeStack', () => ({
@@ -138,6 +143,7 @@ describe('InboxView', () => {
     mockCaptureStore.cancelItem.mockResolvedValue(undefined)
     mockCaptureStore.triageItem.mockResolvedValue(undefined)
     routerMocks.push.mockReset()
+    routeMock.query = {}
     seedItems()
   })
 
@@ -146,6 +152,16 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
+  })
+
+  it('loads board-scoped inbox summaries when the route includes a boardId query', async () => {
+    routeMock.query = { boardId: 'board-7' }
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
+    expect(wrapper.text()).toContain('Showing capture items linked to board board-7.')
   })
 
   it('swallows fetchItems errors on mount', async () => {
@@ -335,6 +351,7 @@ describe('InboxView', () => {
 
     expect(routerMocks.push).toHaveBeenCalledWith({
       name: 'workspace-review',
+      query: { boardId: 'board-1' },
       hash: '#proposal-proposal-42',
     })
   })

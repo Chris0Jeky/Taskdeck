@@ -191,7 +191,7 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Capture-linked')
     expect(wrapper.text()).toContain('Triage run: triage-run-99')
     expect(wrapper.find('a[href="/workspace/inbox#capture-capture-99"]').exists()).toBe(true)
-    expect(wrapper.find('a[href="/workspace/review#proposal-proposal-99"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/review?boardId=board-1#proposal-proposal-99"]').exists()).toBe(true)
   })
 
   it('requests board-scoped proposals when the review route carries a board query', async () => {

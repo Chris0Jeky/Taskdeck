@@ -3,6 +3,11 @@ import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useCaptureStore } from '../../store/captureStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 
+const props = defineProps<{
+  boardId?: string | null
+  boardName?: string | null
+}>()
+
 const emit = defineEmits<{
   close: []
   created: [itemId: string]
@@ -46,7 +51,7 @@ async function submit() {
     saving.value = true
     inlineError.value = null
     const created = await captureStore.createItem({
-      boardId: null,
+      boardId: props.boardId ?? null,
       text: normalizedText,
       source: 'Typed',
     })
@@ -82,7 +87,10 @@ onUnmounted(() => {
         </button>
       </header>
 
-      <p class="td-capture-modal__hint">Write or paste anything. Press Ctrl/Cmd+Enter to save.</p>
+      <p class="td-capture-modal__hint">
+        Write or paste anything. Press Ctrl/Cmd+Enter to save.
+        <span v-if="props.boardName">This capture will stay linked to {{ props.boardName }}.</span>
+      </p>
 
       <textarea
         ref="textInput"
