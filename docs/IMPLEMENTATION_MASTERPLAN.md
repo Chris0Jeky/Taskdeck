@@ -61,8 +61,9 @@ Delivered in the latest cycle:
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
 9. Wave P docs/help follow-through delivered:
    - `docs/START_HERE.md` now matches the shipped `Home` / `Today` / `Inbox` / `Review` / `Boards` shell
-   - `docs/USER_MANUAL.md` now carries the novice-first workflow, FAQ, and troubleshooting baseline for the shipped product
-   - `docs/manual/README.md` and `docs/INDEX.md` now make the manual/help-center spine explicit without pretending later `Agents` / `Integrations` breadth is already shipped
+   - `docs/USER_MANUAL.md` now acts as the shipped-product manual index for the novice-first shell
+   - `docs/manual/README.md`, `docs/manual/*`, and the new product help guides now carry the chaptered workflow, FAQ, troubleshooting, and help-center follow-through without pretending later `Agents` / `Integrations` breadth is already shipped
+   - `docs/INDEX.md` and `docs/product/README.md` now make the root-doc, manual-chapter, and product-help split explicit
 10. Stage 0 governance follow-through:
    - active docs cross-link/date-stamp freeze completed for canonical docs
    - project safety view standardized as `No Status` (`no:status`)
@@ -507,7 +508,7 @@ Current status:
 Focus:
 - add a bridge doc (`START_HERE`) for first-run product understanding
 - reshape the manual and index around top-level navigation and user goals
-- keep `START_HERE.md` and `USER_MANUAL.md` at `docs/` root, while future chapter splits and in-app help mapping live under `docs/manual/`
+- keep `START_HERE.md` and `USER_MANUAL.md` at `docs/` root, while chaptered manual guidance lives under `docs/manual/` and reusable workflow/help-center guides live under `docs/product/`
 - add a required first-run golden-path smoke test
 - define product-shaped telemetry and launch criteria for novice beta and later agent alpha
 - treat the staged `novice-first-first-run` scenario shape as the acceptance target for the eventual first-run smoke path

@@ -31,7 +31,7 @@ Current constraints are mostly hardening and consistency:
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
-- cold first-run still needs launch-criteria proofing more than new route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center baseline are now shipped, while the remaining first-run gap is the dedicated smoke and launch-criteria guardrail
+- cold first-run still needs launch-criteria proofing more than new route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, while the remaining first-run gap is the dedicated smoke and launch-criteria guardrail
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -98,7 +98,7 @@ Direction guardrails (explicit):
   - canonical review-first proposal routing/approve/reject/execute and diff viewing with readable proposal presentation cards
   - board-centered action rail and board-aware deep links across board, inbox, review, chat, notifications, and capture provenance flows
   - dismissible contextual help callouts across `Home`, `Today`, `Review`, `Inbox`, board action flow, and selector-heavy activity guidance, with per-surface replay/dismiss persistence
-  - audience-first docs/help-center baseline aligned to the shipped `Home` / `Today` / `Inbox` / `Review` / `Boards` shell, with workflow, FAQ, and troubleshooting guidance
+  - audience-first docs/help-center stack aligned to the shipped `Home` / `Today` / `Inbox` / `Review` / `Boards` shell, with root entry docs, chaptered manual guidance, workflow recipes, FAQ coverage, and troubleshooting guidance
   - chat session flow with selector-safe board context and review handoff
   - ops template execution and log querying with route-aware tab defaults
   - archive listing and restore operations
@@ -601,7 +601,7 @@ UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
 - primary product gap is now first-run proof rather than missing route teaching: the product legibility wave has shipped the main shell, route guidance, and docs baseline, but still needs its dedicated smoke and launch criteria
 - review/proposal flow is functional but still system-shaped; readable proposal summaries, stronger deep links, and board-centered return paths remain next-cycle work
-- `docs/START_HERE.md` and `docs/USER_MANUAL.md` now complement the shipped `Home` / `Today` onboarding path and key-route contextual help with a navigation-shaped help-center baseline; the remaining follow-through is launch-criteria smoke coverage in `#328`
+- `docs/START_HERE.md`, `docs/USER_MANUAL.md`, `docs/manual/*`, and the new product help guides now complement the shipped `Home` / `Today` onboarding path and key-route contextual help with a navigation-shaped help-center stack; the remaining follow-through is launch-criteria smoke coverage in `#328`
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)
