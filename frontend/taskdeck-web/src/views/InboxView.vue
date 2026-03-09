@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useCaptureStore } from '../store/captureStore'
 import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
@@ -283,6 +284,17 @@ onMounted(() => {
         {{ captureStore.loadingList ? 'Refreshing...' : 'Refresh' }}
       </button>
     </header>
+
+    <WorkspaceHelpCallout
+      topic="inbox"
+      title="What is Inbox for?"
+      description="Inbox is where notes, pasted text, and follow-ups get shaped into reviewable proposals. Use triage here when you want help preparing a change, then switch to Review before anything reaches a board."
+    >
+      <template #actions>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+      </template>
+    </WorkspaceHelpCallout>
 
     <div class="td-inbox__layout">
       <section class="td-inbox__list-panel">

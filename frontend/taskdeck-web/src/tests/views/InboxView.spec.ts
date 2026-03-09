@@ -115,6 +115,7 @@ function seedItems() {
 describe('InboxView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     escapeHandlers.splice(0, escapeHandlers.length)
     mockCaptureStore.detailById = {}
     mockCaptureStore.loadingList = false
@@ -152,6 +153,14 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
+  })
+
+  it('renders inbox guidance for the capture to review loop', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('What is Inbox for?')
+    expect(wrapper.text()).toContain('Open Review')
   })
 
   it('loads board-scoped inbox summaries when the route includes a boardId query', async () => {

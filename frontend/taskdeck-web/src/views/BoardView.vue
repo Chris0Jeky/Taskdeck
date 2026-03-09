@@ -11,6 +11,7 @@ import StarterPackCatalogModal from '../components/board/StarterPackCatalogModal
 import KeyboardShortcutsHelp from '../components/KeyboardShortcutsHelp.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
 import CaptureModal from '../components/common/CaptureModal.vue'
+import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import type { Column, Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
@@ -586,6 +587,19 @@ useKeyboardShortcuts([
             Keep captures, proposals, and quick actions anchored to {{ boardStore.currentBoard.name }}.
           </p>
         </div>
+
+        <WorkspaceHelpCallout
+          v-if="boardStore.currentBoard"
+          topic="board"
+          class="mt-4"
+          title="What should happen on a board?"
+          description="Boards are where approved work lands. Capture here when new input belongs to this board, review proposals before applying changes, and use the board action rail to keep work anchored instead of bouncing between disconnected screens."
+        >
+          <template #actions>
+            <button class="td-btn td-btn--secondary td-btn--sm" @click="openBoardCaptureModal">Capture here</button>
+            <button class="td-btn td-btn--secondary td-btn--sm" @click="openBoardReview">Review proposals</button>
+          </template>
+        </WorkspaceHelpCallout>
 
         <!-- Create Column Form -->
         <div v-if="showColumnForm" class="mt-4 bg-gray-50 rounded-lg p-4">

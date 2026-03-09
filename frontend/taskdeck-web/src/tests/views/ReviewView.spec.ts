@@ -143,6 +143,7 @@ let originalPrompt: typeof window.prompt
 describe('ReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     originalScrollIntoView = HTMLElement.prototype.scrollIntoView
     originalPrompt = window.prompt
     mocks.getProposals.mockResolvedValue([])
@@ -169,6 +170,7 @@ describe('ReviewView', () => {
   it('shows guided empty-state actions when there are no proposals', async () => {
     const { wrapper } = await mountAt('/workspace/review')
 
+    expect(wrapper.text()).toContain('What is Review for?')
     expect(wrapper.text()).toContain('No proposals need review yet')
     expect(wrapper.text()).toContain('Go to Inbox')
     expect(wrapper.text()).toContain('Open Boards')

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useAuditStore } from '../store/auditStore'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
@@ -504,6 +505,17 @@ watch(
         <button class="td-btn td-btn--ghost td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
       </div>
     </header>
+
+    <WorkspaceHelpCallout
+      topic="selectors"
+      title="Why do these selectors matter?"
+      description="Use selectors here instead of memorizing raw IDs. Start broad with board history, narrow down to entity history only when you already know the board context, and keep Review as the place for pending changes."
+    >
+      <template #actions>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
+      </template>
+    </WorkspaceHelpCallout>
 
     <div class="td-activity__controls">
       <div class="td-form-row">

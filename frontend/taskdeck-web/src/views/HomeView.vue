@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
+import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { HomeRecommendedAction, WorkspaceOnboarding } from '../types/workspace'
@@ -134,6 +135,17 @@ onActivated(refreshHomeSummary)
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/review')">Open Review</button>
       </div>
     </header>
+
+    <WorkspaceHelpCallout
+      topic="home"
+      title="What is Home for?"
+      description="Home is the reset surface for the product loop: see what needs attention, restart setup when the loop feels unclear, and jump into Today, Inbox, or Review without guessing where to begin."
+    >
+      <template #actions>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/today')">Open Today</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+      </template>
+    </WorkspaceHelpCallout>
 
     <div v-if="workspace.homeLoading" class="td-panel td-home__placeholder" aria-live="polite">
       Loading your workspace summary...
