@@ -117,13 +117,13 @@ public class AutomationProposalServiceTests
     public async Task GetProposalByIdAsync_ShouldReturnProposal_WhenExists()
     {
         // Arrange
-        var proposalId = Guid.NewGuid();
         var proposal = new AutomationProposal(
             ProposalSourceType.Chat,
             Guid.NewGuid(),
             "Test proposal",
             RiskLevel.Low,
             Guid.NewGuid().ToString());
+        var proposalId = proposal.Id;
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
@@ -140,7 +140,6 @@ public class AutomationProposalServiceTests
     [Fact]
     public async Task GetProposalByIdAsync_ShouldBuildReadablePresentation_WhenOperationsExist()
     {
-        var proposalId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var proposal = new AutomationProposal(
             ProposalSourceType.Queue,
@@ -150,6 +149,7 @@ public class AutomationProposalServiceTests
             Guid.NewGuid().ToString(),
             boardId,
             sourceReferenceId: Guid.NewGuid().ToString());
+        var proposalId = proposal.Id;
 
         proposal.AddOperation(new AutomationProposalOperation(
             proposal.Id,
@@ -188,13 +188,13 @@ public class AutomationProposalServiceTests
     [Fact]
     public async Task GetProposalByIdAsync_ShouldPreserveNamedTargetCasing_InSingleOperationSummary()
     {
-        var proposalId = Guid.NewGuid();
         var proposal = new AutomationProposal(
             ProposalSourceType.Queue,
             Guid.NewGuid(),
             "Create the follow-up card",
             RiskLevel.Low,
             Guid.NewGuid().ToString());
+        var proposalId = proposal.Id;
 
         proposal.AddOperation(new AutomationProposalOperation(
             proposal.Id,
