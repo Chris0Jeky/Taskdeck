@@ -70,17 +70,17 @@ Shipped behavior still belongs in `docs/STATUS.md`, `docs/START_HERE.md`, `docs/
 
 Keep in-app help blocks mapped back to the manual structure:
 
-| Product surface or help topic | Manual target |
+| Help topic ID or future surface | Manual target |
 |---|---|
-| `Home` | `02_home_and_today.md` |
-| `Today` | `02_home_and_today.md` |
+| `home` | `02_home_and_today.md` |
+| `today` | `02_home_and_today.md` |
 | `board` | `03_projects_and_cards.md` |
-| `Inbox` | `04_inbox_and_review.md` |
-| `Review` | `04_inbox_and_review.md` |
+| `inbox` | `04_inbox_and_review.md` |
+| `review` | `04_inbox_and_review.md` |
 | `activity-selectors` | `05_advanced_automation.md` |
 | `board-access-selectors` | `05_advanced_automation.md` |
-| future `Agents` or `Runs` | `06_agents.md` |
-| future `Integrations` or `Knowledge` | `07_integrations_and_knowledge.md` |
+| future `agents` or `runs` | `06_agents.md` |
+| future `integrations` or `knowledge` | `07_integrations_and_knowledge.md` |
 
 ## Writing Rules
 
