@@ -343,13 +343,14 @@ Maintainability hotspot refactor wave (analysis-driven):
 1. Branch from latest `main`.
    - If issue body includes `Suggested Branch Name`, use it directly.
 2. Keep change scope limited to issue acceptance criteria.
-   - Prefer file-scoped commits for incremental reviewability.
+   - Prefer incremental, file-scoped commits for incremental reviewability.
 3. Add/update tests for behavior changes.
 4. Run required verification commands.
 5. Update docs (`STATUS`/`IMPLEMENTATION_MASTERPLAN`/test docs) if reality changed.
 6. Open PR with linked issue and risk notes.
-7. Move project item to `Review`.
-8. After merge, move item to `Done` and post final verification summary.
+7. Perform a deliberate reviewer-style self-review of the PR diff after opening it; capture findings, fixes, or explicit no-finding conclusion before handoff.
+8. Move project item to `Review`.
+9. After merge, move item to `Done` and post final verification summary.
 
 ## WIP Discipline
 

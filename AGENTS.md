@@ -45,6 +45,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 ## Work protocol (required)
 - Before edits: write a short plan (files, approach, risks, tests).
 - Keep diffs small and scoped; avoid large mixed refactors.
+- Prefer incremental execution with incremental, file-scoped commits when the work spans multiple files or concerns.
 - After edits: run required checks and report results.
 - If you cannot run checks, state exactly why and what you would run.
 - In this Windows PowerShell environment, do not chain commands with `&&`; use `;` and check `$LASTEXITCODE` when failure handling matters.
@@ -105,13 +106,14 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ## Commit & Pull Request Guidelines
 - Commits: Use clear, present-tense messages (e.g., `Add booking validation to application layer`).
-  Default to small focused commits, often one commit per changed file with a short file-specific description.
+  Default to small focused incremental commits, often one commit per changed file with a short file-specific description.
   Keep commits small and focused; avoid large mixed-topic commits.
   If a single logical change must touch multiple files, keep the smallest practical commit set and explain why.
   Exception: for pure file move/rename batches (no content changes), one grouped commit is acceptable and preferred.
 - Pull requests: Provide a short summary, key implementation notes, and testing evidence
   (commands run, screenshots for UI changes). Link related issues/tasks where applicable.
 - Keep PRs focused and small when possible; prefer follow-up PRs for refactors or additional cleanup.
+- For issue execution unless the user explicitly says otherwise: open the PR after verification is complete, then perform a deliberate reviewer-style pass on the PR diff/comments before handoff.
 
 ## Output expectations (after work)
 Provide:
