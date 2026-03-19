@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-07
+Last Updated: 2026-03-19
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -35,22 +35,22 @@ Testing priorities have shifted from "does the harness exist?" toward "does the 
 Near-horizon priorities:
 
 - protect the current golden path: capture -> triage -> review -> execute -> board
-- evolve required product smoke toward `Home -> capture -> review -> execute -> board` once `Home` ships
+- keep the deterministic first-run Playwright guardrail aligned to the shipped `Home -> capture -> review -> execute -> board` loop (`#328`, delivered)
 - add explicit coverage for action-oriented empty states and board-centered context travel as those surfaces land
 - keep stakeholder/demo recording opt-in; it supports product evidence, but it is not the primary product smoke
 
-Planned high-signal additions when the productization wave ships:
+High-signal additions and delivered guardrails:
 
 - `Home` view state coverage
 - `Today` view state coverage
 - workspace mode navigation rendering
 - proposal summary card coverage
 - board action rail coverage
-- first-run golden-path Playwright smoke
+- first-run golden-path Playwright smoke coverage, now delivered as the required regression guardrail in `#328`
 
 Telemetry and release-gate follow-through from the expanded blueprint:
 
-- product telemetry/event taxonomy is now explicitly tracked in `#341` with reuse of `#77` and `#328`
+- product telemetry/event taxonomy remains tracked in `#341` with reuse of `#77`, while `#328` now provides the delivered first-run guardrail baseline
 - keep event names privacy-safe and product-shaped (for example `home_loaded`, `today_loaded`, `capture_created`, `proposal_opened`, `proposal_approved`, `board_action_capture_here_clicked`, `workspace_mode_changed`, `agent_run_started`, `agent_run_completed`, `agent_run_failed`)
 - treat launch framing as evidence gates, not marketing labels:
   - `R1` novice-first beta -> coherent `Home -> capture -> review -> execute -> board` path

@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-09  
+Last Updated: 2026-03-19
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:
@@ -31,7 +31,7 @@ Current constraints are mostly hardening and consistency:
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
-- cold first-run still needs launch-criteria proofing more than new route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, while the remaining first-run gap is the dedicated smoke and launch-criteria guardrail
+- cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -250,7 +250,7 @@ Planning conclusion adopted into canonical docs:
 Backlog implication:
 
 - existing overlap and reuse anchors are partial (`#96`, `#93`, `#77`, `#75`, `#98`, `#216`, `#218`, `#219`, `#311`)
-- the novice-first productization wave is now shipped through docs/help follow-through for `#318`, `#320`, `#322`, `#324`, `#326`, `#96`, and `#100`; the remaining Wave P delivery item is the first-run smoke and launch-criteria guardrail in `#328`
+- the novice-first productization wave is now shipped through docs/help follow-through for `#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, and `#328`; the first-run smoke and launch-criteria guardrail now lives as a deterministic Playwright contract on the shipped `Home -> capture -> review -> execute -> board` loop
 - `#320` is now shipped: durable `UserPreference` workspace mode persistence, `/api/workspace/home` + `/api/workspace/preferences`, `Home` default routing, and mode-aware shell navigation
 - `#322` is now shipped: `/workspace/review` is the canonical automation route, legacy proposals URLs redirect compatibly, queue/chat/ops/access are explicitly framed as advanced surfaces, board access/chat common flows prefer selectors over raw board IDs, and primary empty states now point users toward concrete next steps
 - `#324` is now shipped: `/workspace/today` aggregates review, triage, overdue, due-today, and blocked work into one agenda, while Home/Today share a persisted onboarding loop with setup replay/dismiss and first-use starter-board creation
@@ -259,7 +259,7 @@ Backlog implication:
 - the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave P, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
 - the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave P and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing
 - planned-but-not-shipped concepts now explicitly tracked in roadmap docs include:
-  - launch-criteria proofing and first-run smoke follow-through on top of the shipped key-route guidance and docs/help-center baseline
+  - broader telemetry and release-gate follow-through remain tracked in `#341`
   - `Agents`, `Runs`, `Knowledge`, and `Integrations` product surfaces
   - `Demo Tools`, guided narrative/demo-tour flow, HTML report/assertions, and saved views
   - explicit release framing for `R1` novice-first beta, `R2` agent foundation alpha, and `R3` knowledge/integrations alpha
@@ -599,9 +599,9 @@ Observability and scalability:
 
 UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
-- primary product gap is now first-run proof rather than missing route teaching: the product legibility wave has shipped the main shell, route guidance, and docs baseline, but still needs its dedicated smoke and launch criteria
+- primary product gap is now telemetry and release-gate follow-through rather than missing route teaching: the product legibility wave has shipped the main shell, route guidance, docs baseline, and the first-run smoke guardrail, while `#341` carries the remaining telemetry/release-gate framing
 - review/proposal flow is functional but still system-shaped; readable proposal summaries, stronger deep links, and board-centered return paths remain next-cycle work
-- `docs/START_HERE.md`, `docs/USER_MANUAL.md`, `docs/manual/*`, and the new product help guides now complement the shipped `Home` / `Today` onboarding path and key-route contextual help with a navigation-shaped help-center stack; the remaining follow-through is launch-criteria smoke coverage in `#328`
+- `docs/START_HERE.md`, `docs/USER_MANUAL.md`, `docs/manual/*`, and the new product help guides now complement the shipped `Home` / `Today` onboarding path and key-route contextual help with a navigation-shaped help-center stack; the first-run smoke and launch-criteria guardrail is now delivered in `#328`, while broader telemetry and release-gate follow-through stays tracked in `#341`
 
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)

@@ -5,7 +5,7 @@ Use it to seed boards, cards, captures, queue requests, and proposals without ma
 
 Productization note:
 - prefer scenarios that tell one causal story (`capture -> triage -> proposal -> board`) instead of broad page-tour coverage
-- the MVP expansion blueprint stages a future `novice-first-first-run` scenario; treat that shape as the target for first-run acceptance work when it is promoted
+- the MVP expansion blueprint stages the `novice-first-first-run` scenario shape; treat that shape as the acceptance contract for the shipped first-run smoke path
 
 Runner files:
 
