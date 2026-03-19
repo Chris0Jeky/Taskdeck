@@ -9,6 +9,7 @@ const routerMocks = vi.hoisted(() => ({
 
 const routeMock = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
+  hash: '',
 }))
 
 const escapeHandlers: Array<() => void> = []
@@ -145,6 +146,7 @@ describe('InboxView', () => {
     mockCaptureStore.triageItem.mockResolvedValue(undefined)
     routerMocks.push.mockReset()
     routeMock.query = {}
+    routeMock.hash = ''
     seedItems()
   })
 
@@ -171,6 +173,17 @@ describe('InboxView', () => {
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
     expect(wrapper.text()).toContain('Showing capture items linked to board board-7.')
+  })
+
+  it('auto-opens capture detail when the route hash points at a capture', async () => {
+    routeMock.hash = '#capture-capture-2'
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
+    expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
   it('swallows fetchItems errors on mount', async () => {

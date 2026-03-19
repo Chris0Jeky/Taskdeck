@@ -45,15 +45,13 @@ test('first-run path should guide home to capture to review to execute to board'
     page.getByText('No boards yet. Start setup from Home or Today so captures and review can land somewhere useful.')
   ).toBeVisible()
 
-  await page.locator('.td-home__hero-actions').getByRole('button', { name: 'Open Review' }).click()
-  await expect(page).toHaveURL(/\/workspace\/review$/)
-  await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
-  await expect(page.getByText('No proposals need review yet')).toBeVisible()
+  await page.locator('.td-home__hero-actions').getByRole('button', { name: 'Capture to Inbox' }).click()
+  await expect(page).toHaveURL(/\/workspace\/inbox$/)
+  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
+  await expect(page.getByText('What is Inbox for?')).toBeVisible()
+  await expect(page.getByText('No capture items yet')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Back to Home' }).click()
-  await expect(page).toHaveURL(/\/workspace\/home$/)
-
-  await page.locator('.td-home__hero-actions').getByRole('button', { name: 'Open Today' }).click()
+  await page.locator('.td-placeholder__actions').getByRole('button', { name: 'Open Today' }).click()
   await expect(page).toHaveURL(/\/workspace\/today$/)
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(page.getByText('What is Today for?')).toBeVisible()
@@ -146,7 +144,8 @@ test('first-run path should guide home to capture to review to execute to board'
 
   await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
   await expect(page.getByText('Capture Origin')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Open Capture' })).toHaveAttribute('href', `/workspace/inbox#capture-${captureId}`)
+  const openCaptureLink = page.getByRole('link', { name: 'Open Capture' })
+  await expect(openCaptureLink).toHaveAttribute('href', `/workspace/inbox#capture-${captureId}`)
   await expect(page.getByRole('link', { name: 'Open Proposal' })).toHaveAttribute(
     'href',
     `/workspace/review?boardId=${boardId}#proposal-${proposalId}`,
@@ -155,6 +154,12 @@ test('first-run path should guide home to capture to review to execute to board'
   if (triageRunId) {
     await expect(page.getByText(`Triage run: ${triageRunId}`)).toBeVisible()
   }
+
+  await openCaptureLink.click()
+  await expect(page).toHaveURL(new RegExp(`/workspace/inbox#capture-${captureId}$`))
+  await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
+  await expect(page.locator('.td-inbox-row').filter({ hasText: cardTitle })).toHaveClass(/td-inbox-row--selected/)
+  await expect(page.locator('.td-inbox-detail__text')).toContainText(captureText)
 })
 
 test('home should recover from loading and error states on first-run summary refresh', async ({ page }) => {

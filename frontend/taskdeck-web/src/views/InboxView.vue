@@ -31,6 +31,23 @@ const selectedItem = computed(() => {
 })
 const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
+function getCaptureIdFromHash(hash: string): string | null {
+  if (!hash.startsWith('#capture-')) {
+    return null
+  }
+
+  const rawId = hash.slice('#capture-'.length).trim()
+  if (!rawId) {
+    return null
+  }
+
+  try {
+    return decodeURIComponent(rawId)
+  } catch {
+    return null
+  }
+}
+
 function statusLabel(status: CaptureStatusValue): string {
   if (status === 0 || status === 'New') return 'New'
   if (status === 1 || status === 'Triaging') return 'Triaging'
@@ -58,6 +75,7 @@ async function loadInbox() {
       limit: 200,
       ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
     })
+    await openItemFromHash()
   } catch {
     // Store handles toast + error state.
   }
@@ -80,6 +98,35 @@ async function openItem(item: CaptureItemSummary) {
 async function openItemFromList(item: CaptureItemSummary, index: number) {
   setActiveIndex(index)
   await openItem(item)
+}
+
+async function openItemById(itemId: string) {
+  const matchingIndex = items.value.findIndex((item) => item.id === itemId)
+  if (matchingIndex >= 0) {
+    setActiveIndex(matchingIndex)
+  }
+
+  selectedItemId.value = itemId
+  try {
+    await captureStore.fetchDetail(itemId)
+  } catch {
+    if (selectedItemId.value === itemId) {
+      selectedItemId.value = null
+    }
+  }
+}
+
+async function openItemFromHash() {
+  const captureId = getCaptureIdFromHash(route.hash)
+  if (!captureId) {
+    return
+  }
+
+  if (selectedItemId.value === captureId && selectedItem.value) {
+    return
+  }
+
+  await openItemById(captureId)
 }
 
 function closeDetail() {
@@ -238,6 +285,14 @@ watch(items, (nextItems) => {
     return
   }
 
+  if (selectedItemId.value) {
+    const selectedIndex = nextItems.findIndex((item) => item.id === selectedItemId.value)
+    if (selectedIndex >= 0) {
+      activeItemIndex.value = selectedIndex
+      return
+    }
+  }
+
   if (activeItemIndex.value >= nextItems.length) {
     activeItemIndex.value = nextItems.length - 1
   }
@@ -253,6 +308,13 @@ watch(activeBoardId, () => {
   activeItemIndex.value = 0
   void loadInbox()
 })
+
+watch(
+  () => route.hash,
+  () => {
+    void openItemFromHash()
+  },
+)
 
 watch(selectedItemId, (itemId, _, onCleanup) => {
   if (!itemId) {
