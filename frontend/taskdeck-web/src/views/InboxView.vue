@@ -112,6 +112,12 @@ async function openItemFromHash() {
     return
   }
 
+  if (activeBoardId.value && !items.value.some((item) => item.id === captureId)) {
+    selectedItemId.value = null
+    await clearCaptureHash()
+    return
+  }
+
   if (selectedItemId.value === captureId && selectedItem.value) {
     return
   }

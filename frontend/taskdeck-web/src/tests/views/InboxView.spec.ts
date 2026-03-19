@@ -206,6 +206,34 @@ describe('InboxView', () => {
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
+  it('rejects a hash deep link that is outside the active board-scoped inbox', async () => {
+    routeMock.query = { boardId: 'board-7' }
+    routeMock.hash = '#capture-capture-999'
+    mockCaptureStore.items = [
+      {
+        id: 'capture-1',
+        userId: 'user-1',
+        boardId: 'board-7',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Board scoped excerpt',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ]
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
+    expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Select an item to inspect the captured text')
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      name: 'workspace-inbox',
+      query: { boardId: 'board-7' },
+    })
+  })
+
   it('clears the capture hash when a hash-opened detail is closed', async () => {
     routeMock.query = { boardId: 'board-7' }
     routeMock.hash = '#capture-capture-2'
