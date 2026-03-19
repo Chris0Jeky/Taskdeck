@@ -278,6 +278,17 @@ function openBoard(boardId: string) {
   void router.push(`/workspace/boards/${boardId}`)
 }
 
+function inboxPath(boardId?: string | null, captureItemId?: string): string {
+  const encodedBoardId = boardId ? encodeURIComponent(boardId) : null
+  const query = encodedBoardId ? `?boardId=${encodedBoardId}` : ''
+  const hash = captureItemId ? `#capture-${encodeURIComponent(captureItemId)}` : ''
+  return `/workspace/inbox${query}${hash}`
+}
+
+function openInbox() {
+  void router.push(inboxPath(activeBoardFilter.value))
+}
+
 function proposalHref(proposal: ApiProposal): string {
   const query = proposal.boardId ?? activeBoardFilter.value
   const encodedProposalId = encodeURIComponent(proposal.id)
@@ -286,8 +297,8 @@ function proposalHref(proposal: ApiProposal): string {
     : `/workspace/review#proposal-${encodedProposalId}`
 }
 
-function captureHref(captureItemId: string): string {
-  return `/workspace/inbox#capture-${encodeURIComponent(captureItemId)}`
+function captureHref(captureItemId: string, boardId?: string | null): string {
+  return inboxPath(boardId, captureItemId)
 }
 
 function captureSourceReference(proposal: ApiProposal): string | null {
@@ -309,7 +320,9 @@ function hasProvenanceContext(proposal: ApiProposal): boolean {
 
 function captureHrefForProposal(proposal: ApiProposal): string {
   const sourceReference = captureSourceReference(proposal)
-  return sourceReference ? captureHref(sourceReference) : '/workspace/inbox'
+  return sourceReference
+    ? captureHref(sourceReference, proposal.boardId ?? activeBoardFilter.value)
+    : inboxPath(activeBoardFilter.value)
 }
 
 function reviewStatusClass(status: ApiProposal['status']): string {
@@ -362,7 +375,7 @@ watch(
         <button class="td-btn td-btn--primary" :disabled="proposalsLoading" @click="loadProposals">
           {{ proposalsLoading ? 'Refreshing...' : 'Refresh Review' }}
         </button>
-        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/inbox')">Open Inbox</button>
+        <button class="td-btn td-btn--secondary" @click="openInbox">Open Inbox</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/automations/queue')">
           Open Queue (Advanced)
         </button>
@@ -378,7 +391,7 @@ watch(
       description="Review is the trust gate. Proposed changes stop here before they touch a board, while queue and chat remain advanced/operator surfaces when you need to drive the workflow manually."
     >
       <template #actions>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/inbox')">Open Inbox</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openInbox">Open Inbox</button>
         <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
       </template>
     </WorkspaceHelpCallout>
@@ -402,7 +415,7 @@ watch(
         with the work that already landed.
       </p>
       <div class="td-review-empty__actions">
-        <button class="td-btn td-btn--primary" @click="openRoute('/workspace/inbox')">Go to Inbox</button>
+        <button class="td-btn td-btn--primary" @click="openInbox">Go to Inbox</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/boards')">Open Boards</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/home')">Back to Home</button>
       </div>

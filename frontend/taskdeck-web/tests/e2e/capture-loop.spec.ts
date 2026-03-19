@@ -70,7 +70,10 @@ test('capture triage should create proposal and apply card with provenance links
 
   await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
   await expect(page.getByText('Capture Origin')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Open Capture' })).toHaveAttribute('href', `/workspace/inbox#capture-${captureId}`)
+  await expect(page.getByRole('link', { name: 'Open Capture' })).toHaveAttribute(
+    'href',
+    `/workspace/inbox?boardId=${boardId}#capture-${captureId}`,
+  )
   await expect(page.getByRole('link', { name: 'Open Proposal' })).toHaveAttribute(
     'href',
     `/workspace/review?boardId=${boardId}#proposal-${proposalId}`,

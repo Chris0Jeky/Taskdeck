@@ -81,29 +81,19 @@ async function loadInbox() {
   }
 }
 
-async function openItem(item: CaptureItemSummary) {
-  const openingId = item.id
-  selectedItemId.value = openingId
-  try {
-    await captureStore.fetchDetail(openingId)
-  } catch {
-    // Keep detail state coherent when open fails, but avoid clearing
-    // a newer selection if this request becomes stale.
-    if (selectedItemId.value === openingId) {
-      selectedItemId.value = null
-    }
-  }
-}
-
 async function openItemFromList(item: CaptureItemSummary, index: number) {
-  setActiveIndex(index)
-  await openItem(item)
+  await clearCaptureHash()
+  await selectItemById(item.id, index)
 }
 
-async function openItemById(itemId: string) {
-  const matchingIndex = items.value.findIndex((item) => item.id === itemId)
-  if (matchingIndex >= 0) {
-    setActiveIndex(matchingIndex)
+async function selectItemById(itemId: string, preferredIndex?: number) {
+  if (preferredIndex !== undefined) {
+    setActiveIndex(preferredIndex)
+  } else {
+    const matchingIndex = items.value.findIndex((item) => item.id === itemId)
+    if (matchingIndex >= 0) {
+      setActiveIndex(matchingIndex)
+    }
   }
 
   selectedItemId.value = itemId
@@ -126,11 +116,23 @@ async function openItemFromHash() {
     return
   }
 
-  await openItemById(captureId)
+  await selectItemById(captureId)
 }
 
-function closeDetail() {
+async function clearCaptureHash() {
+  if (!getCaptureIdFromHash(route.hash)) {
+    return
+  }
+
+  await router.replace({
+    name: 'workspace-inbox',
+    query: route.query,
+  })
+}
+
+async function closeDetail() {
   selectedItemId.value = null
+  await clearCaptureHash()
 }
 
 function setActiveIndex(index: number) {
@@ -157,7 +159,7 @@ async function openActiveItem() {
     return
   }
 
-  await openItem(target)
+  await openItemFromList(target, activeItemIndex.value)
 }
 
 async function handleKeydown(event: KeyboardEvent) {
@@ -265,14 +267,21 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
   return 'Start Triage'
 }
 
-function openProposal(proposalId: string): void {
-  void router.push({
+function reviewRoute(proposalId?: string, boardId?: string | null) {
+  const effectiveBoardId = boardId ?? activeBoardId.value
+  return {
     name: 'workspace-review',
-    query: selectedItem.value?.boardId
-      ? { boardId: selectedItem.value.boardId }
-      : (activeBoardId.value ? { boardId: activeBoardId.value } : undefined),
-    hash: `#proposal-${encodeURIComponent(proposalId)}`,
-  })
+    query: effectiveBoardId ? { boardId: effectiveBoardId } : undefined,
+    hash: proposalId ? `#proposal-${encodeURIComponent(proposalId)}` : undefined,
+  }
+}
+
+function openProposal(proposalId: string): void {
+  void router.push(reviewRoute(proposalId, selectedItem.value?.boardId ?? null))
+}
+
+function openReview(): void {
+  void router.push(reviewRoute())
 }
 
 function openRoute(path: string): void {
@@ -354,7 +363,7 @@ onMounted(() => {
     >
       <template #actions>
         <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openReview">Open Review</button>
       </template>
     </WorkspaceHelpCallout>
 
@@ -382,7 +391,7 @@ onMounted(() => {
             <div class="td-placeholder__actions">
               <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
               <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/today')">Open Today</button>
-              <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+              <button class="td-btn td-btn--secondary td-btn--sm" @click="openReview">Open Review</button>
             </div>
           </div>
 

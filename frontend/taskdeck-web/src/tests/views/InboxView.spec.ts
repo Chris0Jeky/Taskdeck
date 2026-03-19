@@ -5,6 +5,7 @@ import InboxView from '../../views/InboxView.vue'
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
+  replace: vi.fn(),
 }))
 
 const routeMock = vi.hoisted(() => ({
@@ -64,6 +65,7 @@ vi.mock('../../store/captureStore', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({
     push: routerMocks.push,
+    replace: routerMocks.replace,
   }),
   useRoute: () => routeMock,
 }))
@@ -145,6 +147,8 @@ describe('InboxView', () => {
     mockCaptureStore.cancelItem.mockResolvedValue(undefined)
     mockCaptureStore.triageItem.mockResolvedValue(undefined)
     routerMocks.push.mockReset()
+    routerMocks.replace.mockReset()
+    routerMocks.replace.mockResolvedValue(undefined)
     routeMock.query = {}
     routeMock.hash = ''
     seedItems()
@@ -163,6 +167,22 @@ describe('InboxView', () => {
 
     expect(wrapper.text()).toContain('What is Inbox for?')
     expect(wrapper.text()).toContain('Open Review')
+  })
+
+  it('preserves board context when the help callout opens review', async () => {
+    routeMock.query = { boardId: 'board-7' }
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const openReviewButton = wrapper.findAll('button').find((node) => node.text() === 'Open Review')
+    await openReviewButton?.trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-7' },
+      hash: undefined,
+    })
   })
 
   it('loads board-scoped inbox summaries when the route includes a boardId query', async () => {
@@ -184,6 +204,24 @@ describe('InboxView', () => {
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
     expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
     expect(wrapper.text()).toContain('Full text for capture-2')
+  })
+
+  it('clears the capture hash when a hash-opened detail is closed', async () => {
+    routeMock.query = { boardId: 'board-7' }
+    routeMock.hash = '#capture-capture-2'
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const closeButton = wrapper.findAll('button').find((node) => node.text() === 'Close (Esc)')
+    await closeButton?.trigger('click')
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Select an item to inspect the captured text')
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      name: 'workspace-inbox',
+      query: { boardId: 'board-7' },
+    })
   })
 
   it('swallows fetchItems errors on mount', async () => {
@@ -292,6 +330,24 @@ describe('InboxView', () => {
     expect(wrapper.find('button').text()).toContain('Refresh')
     expect(wrapper.findAll('button').some((node) => node.text() === 'Open Home')).toBe(true)
     expect(wrapper.findAll('button').some((node) => node.text() === 'Open Review')).toBe(true)
+  })
+
+  it('preserves board context when the empty-state review action is used', async () => {
+    routeMock.query = { boardId: 'board-7' }
+    mockCaptureStore.items = []
+    mockCaptureStore.hasItems = false
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const openReviewButtons = wrapper.findAll('button').filter((node) => node.text() === 'Open Review')
+    await openReviewButtons[openReviewButtons.length - 1]?.trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-7' },
+      hash: undefined,
+    })
   })
 
   it('disables ignore and cancel for non-cancellable statuses', async () => {

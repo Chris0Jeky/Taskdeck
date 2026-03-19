@@ -103,7 +103,7 @@ describe('CardModal', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Capture Origin')
-    expect(wrapper.find('a[href="/workspace/inbox#capture-capture-7"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/inbox?boardId=board-1#capture-capture-7"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/workspace/review?boardId=board-1#proposal-proposal-9"]').exists()).toBe(true)
   })
 

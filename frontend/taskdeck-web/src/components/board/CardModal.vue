@@ -104,7 +104,7 @@ const isFormValid = computed(() => {
 })
 
 function captureHref(captureItemId: string): string {
-  return `/workspace/inbox#capture-${encodeURIComponent(captureItemId)}`
+  return `/workspace/inbox?boardId=${encodeURIComponent(props.card.boardId)}#capture-${encodeURIComponent(captureItemId)}`
 }
 
 function proposalHref(proposalId: string): string {

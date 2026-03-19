@@ -192,8 +192,22 @@ describe('ReviewView', () => {
     expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200 })
     expect(wrapper.text()).toContain('Capture-linked')
     expect(wrapper.text()).toContain('Triage run: triage-run-99')
-    expect(wrapper.find('a[href="/workspace/inbox#capture-capture-99"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/inbox?boardId=board-1#capture-capture-99"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/workspace/review?boardId=board-1#proposal-proposal-99"]').exists()).toBe(true)
+  })
+
+  it('keeps board context on capture provenance links when review is board-scoped', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-99',
+        boardId: null,
+        sourceReferenceId: 'capture-99',
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
+
+    expect(wrapper.find('a[href="/workspace/inbox?boardId=board-7#capture-capture-99"]').exists()).toBe(true)
   })
 
   it('requests board-scoped proposals when the review route carries a board query', async () => {
@@ -207,6 +221,17 @@ describe('ReviewView', () => {
 
     expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
     expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+  })
+
+  it('preserves board context when opening inbox from a board-scoped review route', async () => {
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7')
+    const pushSpy = vi.spyOn(router, 'push')
+
+    const openInboxButton = wrapper.find('.td-review__hero-actions').findAll('button').find((node) => node.text() === 'Open Inbox')
+    await openInboxButton?.trigger('click')
+    await Promise.resolve()
+
+    expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-7')
   })
 
   it('keeps the newest proposal load when board-scoped requests resolve out of order', async () => {

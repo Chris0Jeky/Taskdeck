@@ -145,7 +145,7 @@ test('first-run path should guide home to capture to review to execute to board'
   await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
   await expect(page.getByText('Capture Origin')).toBeVisible()
   const openCaptureLink = page.getByRole('link', { name: 'Open Capture' })
-  await expect(openCaptureLink).toHaveAttribute('href', `/workspace/inbox#capture-${captureId}`)
+  await expect(openCaptureLink).toHaveAttribute('href', `/workspace/inbox?boardId=${boardId}#capture-${captureId}`)
   await expect(page.getByRole('link', { name: 'Open Proposal' })).toHaveAttribute(
     'href',
     `/workspace/review?boardId=${boardId}#proposal-${proposalId}`,
@@ -156,8 +156,10 @@ test('first-run path should guide home to capture to review to execute to board'
   }
 
   await openCaptureLink.click()
-  await expect(page).toHaveURL(new RegExp(`/workspace/inbox#capture-${captureId}$`))
+  await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}#capture-${captureId}$`))
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
+  await expect(page.getByText(`Showing capture items linked to board ${boardId}.`)).toBeVisible()
+  await expect(page.locator('.td-inbox-row').filter({ hasText: controlCardTitle })).toHaveCount(0)
   await expect(page.locator('.td-inbox-row').filter({ hasText: cardTitle })).toHaveClass(/td-inbox-row--selected/)
   await expect(page.locator('.td-inbox-detail__text')).toContainText(captureText)
 })
