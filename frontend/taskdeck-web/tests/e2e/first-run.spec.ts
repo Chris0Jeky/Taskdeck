@@ -28,6 +28,8 @@ test.beforeEach(async ({ page, request }) => {
 })
 
 test('first-run path should guide home to capture to review to execute to board', async ({ page, request }) => {
+  test.setTimeout(90_000)
+
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
   const boardName = `First Run ${seed}`
   const cardTitle = `First-run card ${seed}`
@@ -82,7 +84,8 @@ test('first-run path should guide home to capture to review to execute to board'
   const captureId = await parseCreatedCaptureId(await createCaptureResponse)
   await expect(captureModal).toHaveCount(0)
 
-  await page.goto(`/workspace/inbox?boardId=${boardId}`)
+  await boardActionRail.getByRole('button', { name: 'Open Inbox' }).click()
+  await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
   await expect(page.getByText(`Showing capture items linked to board ${boardId}.`)).toBeVisible()
   await expect(page.getByText('What is Inbox for?')).toBeVisible()

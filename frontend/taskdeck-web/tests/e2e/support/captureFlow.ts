@@ -1,5 +1,4 @@
 import type { APIRequestContext } from '@playwright/test'
-import { expect } from '@playwright/test'
 import { API_BASE_URL, type AuthResult } from './authSession'
 import { assertOk } from './httpAsserts'
 import { pollUntil } from './polling'
@@ -100,6 +99,9 @@ export async function waitForCardWithTitle(
   )
 
   const matchingCard = cards.find((card) => card.title === expectedTitle)
-  expect(matchingCard).toBeTruthy()
-  return matchingCard!
+  if (!matchingCard) {
+    throw new Error(`Expected card '${expectedTitle}' to appear on board ${boardId}, but it was not present after polling`)
+  }
+
+  return matchingCard
 }
