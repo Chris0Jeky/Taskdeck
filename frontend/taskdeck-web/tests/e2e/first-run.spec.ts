@@ -1,7 +1,8 @@
 import type { APIResponse } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { waitForCardWithTitle, waitForProposalCreated } from './support/captureFlow'
+import { createBoardWithColumn } from './support/boardHelpers'
+import { createCaptureItem, triageCaptureItem, waitForCardWithTitle, waitForProposalCreated } from './support/captureFlow'
 
 function extractBoardIdFromBoardUrl(url: string): string {
   const match = /\/workspace\/boards\/([a-f0-9-]+)$/i.exec(url)
@@ -34,6 +35,8 @@ test('first-run path should guide home to capture to review to execute to board'
   const boardName = `First Run ${seed}`
   const cardTitle = `First-run card ${seed}`
   const captureText = `- [ ] ${cardTitle}`
+  const controlCardTitle = `Control card ${seed}`
+  const controlCaptureText = `- [ ] ${controlCardTitle}`
 
   await page.goto('/workspace/home')
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
@@ -84,11 +87,23 @@ test('first-run path should guide home to capture to review to execute to board'
   const captureId = await parseCreatedCaptureId(await createCaptureResponse)
   await expect(captureModal).toHaveCount(0)
 
+  const controlBoardId = await createBoardWithColumn(request, auth, `${seed}-control`, {
+    boardNamePrefix: 'First Run Control',
+    description: 'control board for first-run smoke filter assertions',
+    columnNamePrefix: 'Inbox',
+  })
+  const controlCapture = await createCaptureItem(request, auth, controlBoardId, controlCaptureText)
+  await triageCaptureItem(request, auth, controlCapture.id)
+  const controlTriagedCapture = await waitForProposalCreated(request, auth, controlCapture.id)
+  const controlProposalId = controlTriagedCapture.provenance?.proposalId
+  expect(controlProposalId).toBeTruthy()
+
   await boardActionRail.getByRole('button', { name: 'Open Inbox' }).click()
   await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
   await expect(page.getByText(`Showing capture items linked to board ${boardId}.`)).toBeVisible()
   await expect(page.getByText('What is Inbox for?')).toBeVisible()
+  await expect(page.locator('.td-inbox-row').filter({ hasText: controlCardTitle })).toHaveCount(0)
 
   const captureRow = page.locator('.td-inbox-row').filter({ hasText: cardTitle }).first()
   await expect(captureRow).toBeVisible()
@@ -110,6 +125,7 @@ test('first-run path should guide home to capture to review to execute to board'
 
   await expect(page).toHaveURL(new RegExp(`/workspace/review\\?boardId=${boardId}#proposal-${proposalId}`))
   await expect(page.getByText(`Showing proposals for board ${boardId}.`)).toBeVisible()
+  await expect(page.locator(`#proposal-${controlProposalId}`)).toHaveCount(0)
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
 

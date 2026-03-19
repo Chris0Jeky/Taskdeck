@@ -71,6 +71,17 @@ export async function waitForProposalCreated(
   })
 }
 
+export async function triageCaptureItem(
+  request: APIRequestContext,
+  auth: AuthResult,
+  captureId: string,
+): Promise<void> {
+  const response = await request.post(`${API_BASE_URL}/capture/items/${encodeURIComponent(captureId)}/triage`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+  })
+  await assertOk(response, `Start triage for capture item ${captureId}`)
+}
+
 export async function listBoardCards(
   request: APIRequestContext,
   auth: AuthResult,

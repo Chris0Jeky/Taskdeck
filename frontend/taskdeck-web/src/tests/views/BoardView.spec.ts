@@ -151,14 +151,15 @@ describe('BoardView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('What should happen on a board?')
-    expect(wrapper.get('[data-board-action-rail]').text()).toContain('Capture here')
-    expect(wrapper.get('[data-board-action-rail]').text()).toContain('Ask assistant')
-    expect(wrapper.get('[data-board-action-rail]').text()).toContain('Review proposals')
-    expect(wrapper.get('[data-board-action-rail]').text()).toContain('Open Inbox')
+    const actionRail = wrapper.get('[data-board-action-rail]')
+    expect(actionRail.text()).toContain('Capture here')
+    expect(actionRail.text()).toContain('Ask assistant')
+    expect(actionRail.text()).toContain('Review proposals')
+    expect(actionRail.text()).toContain('Open Inbox')
 
-    const askAssistant = wrapper.findAll('button').find((node) => node.text().trim() === 'Ask assistant')
-    const openInbox = wrapper.findAll('button').find((node) => node.text().trim() === 'Open Inbox')
-    const reviewProposals = wrapper.findAll('button').find((node) => node.text().trim() === 'Review proposals')
+    const askAssistant = actionRail.findAll('button').find((node) => node.text().trim() === 'Ask assistant')
+    const openInbox = actionRail.findAll('button').find((node) => node.text().trim() === 'Open Inbox')
+    const reviewProposals = actionRail.findAll('button').find((node) => node.text().trim() === 'Review proposals')
 
     await askAssistant?.trigger('click')
     await openInbox?.trigger('click')

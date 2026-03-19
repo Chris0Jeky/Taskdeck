@@ -1,6 +1,7 @@
 # Taskdeck Status (Source of Truth)
 
 Last Updated: 2026-03-19
+<br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
 Companion Active Docs:

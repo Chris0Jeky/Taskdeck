@@ -1,6 +1,7 @@
 # Taskdeck Implementation Masterplan
 
 Last Updated: 2026-03-19
+<br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
