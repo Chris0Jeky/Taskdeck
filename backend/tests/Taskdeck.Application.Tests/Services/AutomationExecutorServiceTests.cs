@@ -355,7 +355,7 @@ public class AutomationExecutorServiceTests
     }
 
     [Fact]
-    public async Task ExecuteProposal_ShouldBackfillLinkedCaptureConversion_WhenProposalIsAlreadyApplied()
+    public async Task ExecuteProposal_ShouldBackfillLinkedCaptureConversionAndBoard_WhenProposalIsAlreadyApplied()
     {
         var proposalId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -372,8 +372,7 @@ public class AutomationExecutorServiceTests
                         "capture payload"),
                     captureItemId: Guid.NewGuid(),
                     triageRunId: Guid.NewGuid(),
-                    proposalId: proposalId)),
-            boardId);
+                    proposalId: proposalId)));
         captureItem.MarkAsProcessing();
         captureItem.MarkAsCompleted();
 
@@ -397,7 +396,9 @@ public class AutomationExecutorServiceTests
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
         payload.Value.Provenance!.ProposalId.Should().Be(proposalId);
+        payload.Value.Provenance.BoardId.Should().Be(boardId);
         payload.Value.Provenance.ConvertedAt.Should().BeCloseTo(new DateTimeOffset(DateTime.SpecifyKind(appliedAt, DateTimeKind.Utc)), TimeSpan.FromSeconds(1));
+        captureItem.BoardId.Should().Be(boardId);
     }
 
     [Fact]

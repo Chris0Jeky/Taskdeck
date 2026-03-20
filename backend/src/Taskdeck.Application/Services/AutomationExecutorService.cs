@@ -655,16 +655,22 @@ public class AutomationExecutorService : IAutomationExecutorService
             return Result.Success();
         }
 
+        var resolvedBoardId = captureItem.BoardId ?? proposal.BoardId;
         var convertedAt = provenance?.ConvertedAt ?? ResolveConvertedAt(proposal.AppliedAt);
         var updatedPayload = CaptureRequestContract.WithProvenance(
             payloadResult.Value,
             captureItem.Id,
             proposalId: proposal.Id,
-            boardId: captureItem.BoardId ?? proposal.BoardId,
+            boardId: resolvedBoardId,
             convertedAt: convertedAt);
 
         try
         {
+            if (!captureItem.BoardId.HasValue && resolvedBoardId.HasValue)
+            {
+                captureItem.BackfillBoard(resolvedBoardId.Value);
+            }
+
             captureItem.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result.Success();
