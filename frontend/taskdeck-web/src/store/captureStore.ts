@@ -193,20 +193,21 @@ export const useCaptureStore = defineStore('capture', () => {
       const triageResult = await captureApi.enqueueTriage(itemId)
 
       const existingDetail = detailById.value[itemId]
+      const existingSummary = items.value.find((item) => item.id === itemId)
       if (existingDetail) {
         detailById.value[itemId] = {
           ...existingDetail,
           status: triageResult.status,
         }
+      }
+
+      if (existingSummary) {
+        upsertSummary({
+          ...existingSummary,
+          status: triageResult.status,
+        })
+      } else if (existingDetail) {
         upsertSummary(toSummary(detailById.value[itemId]))
-      } else {
-        const existingSummary = items.value.find((item) => item.id === itemId)
-        if (existingSummary) {
-          upsertSummary({
-            ...existingSummary,
-            status: triageResult.status,
-          })
-        }
       }
 
       await fetchDetail(itemId, { forceRefresh: true, showToast: false })

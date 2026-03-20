@@ -342,7 +342,7 @@ describe('captureStore', () => {
     expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued')
   })
 
-  it('optimistically updates cached detail and summary status when triage starts from an open item', async () => {
+  it('optimistically updates cached detail status without overwriting a fresher summary when triage starts from an open item', async () => {
     const store = useCaptureStore()
     const createdAt = new Date().toISOString()
     let resolveDetailRefresh: ((value: Awaited<ReturnType<typeof captureApi.getItem>>) => void) | null = null
@@ -392,7 +392,8 @@ describe('captureStore', () => {
     expect(store.items[0]).toMatchObject({
       id: 'c7-detail',
       status: 'Triaging',
-      textExcerpt: 'detail excerpt',
+      textExcerpt: 'summary excerpt',
+      processedAt: null,
     })
 
     resolveDetailRefresh?.({
@@ -418,6 +419,59 @@ describe('captureStore', () => {
       id: 'c7-detail',
       status: 'Triaging',
       textExcerpt: 'refreshed detail excerpt',
+      processedAt: createdAt,
+    })
+  })
+
+  it('keeps the fresher summary visible when triage refresh fails after starting from stale cached detail', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    store.items = [
+      {
+        id: 'c7-stale',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'ProposalCreated',
+        source: 'Typed',
+        textExcerpt: 'fresh summary excerpt',
+        createdAt,
+        processedAt: createdAt,
+      },
+    ]
+    store.detailById['c7-stale'] = {
+      id: 'c7-stale',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'stale detail excerpt',
+      rawText: 'stale detail text',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
+
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c7-stale',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
+
+    await expect(store.triageItem('c7-stale')).rejects.toBeInstanceOf(Error)
+
+    expect(store.detailById['c7-stale']).toMatchObject({
+      status: 'Triaging',
+      textExcerpt: 'stale detail excerpt',
+      rawText: 'stale detail text',
+    })
+    expect(store.items[0]).toMatchObject({
+      id: 'c7-stale',
+      status: 'Triaging',
+      textExcerpt: 'fresh summary excerpt',
+      processedAt: createdAt,
     })
   })
 
