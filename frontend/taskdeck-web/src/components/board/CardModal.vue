@@ -34,6 +34,7 @@ const replyDraftByParent = ref<Record<string, string>>({})
 const editingCommentId = ref<string | null>(null)
 const editingCommentContent = ref('')
 const captureProvenance = ref<CardCaptureProvenance | null>(null)
+const captureProvenanceError = ref<string | null>(null)
 const loadingCaptureProvenance = ref(false)
 const loadedCaptureProvenanceCardId = ref<string | null>(null)
 
@@ -52,6 +53,7 @@ watch(() => props.card, (newCard) => {
     blockReason.value = newCard.blockReason || ''
     selectedLabelIds.value = newCard.labels.map(l => l.id)
     captureProvenance.value = null
+    captureProvenanceError.value = null
     loadedCaptureProvenanceCardId.value = null
 
     if (props.isOpen) {
@@ -76,6 +78,7 @@ watch(
     editingCommentId.value = null
     editingCommentContent.value = ''
     captureProvenance.value = null
+    captureProvenanceError.value = null
     loadingCaptureProvenance.value = false
     loadedCaptureProvenanceCardId.value = null
 
@@ -121,11 +124,13 @@ async function loadCaptureProvenance() {
   }
 
   loadingCaptureProvenance.value = true
+  captureProvenanceError.value = null
   try {
     captureProvenance.value = await boardStore.fetchCardProvenance(props.card.boardId, props.card.id)
     loadedCaptureProvenanceCardId.value = props.card.id
   } catch {
     captureProvenance.value = null
+    captureProvenanceError.value = 'Unable to load capture provenance.'
     loadedCaptureProvenanceCardId.value = props.card.id
   } finally {
     loadingCaptureProvenance.value = false
@@ -263,6 +268,7 @@ onBeforeUnmount(() => {
   editingCommentId.value = null
   editingCommentContent.value = ''
   captureProvenance.value = null
+  captureProvenanceError.value = null
   loadingCaptureProvenance.value = false
   loadedCaptureProvenanceCardId.value = null
 })
@@ -550,6 +556,9 @@ onBeforeUnmount(() => {
             <div class="mt-3 space-y-2">
               <div v-if="loadingCaptureProvenance" class="text-xs text-gray-500">
                 Loading capture provenance...
+              </div>
+              <div v-else-if="captureProvenanceError" class="text-xs text-red-600" role="alert">
+                {{ captureProvenanceError }}
               </div>
               <div v-else-if="captureProvenance" class="space-y-2">
                 <div class="flex flex-wrap items-center gap-2 text-xs">

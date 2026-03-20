@@ -17,6 +17,7 @@ function createDeferred<T>() {
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
+  getProposal: vi.fn(),
   approveProposal: vi.fn(),
   rejectProposal: vi.fn(),
   executeProposal: vi.fn(),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../api/automationApi', () => ({
   automationApi: {
     getProposals: mocks.getProposals,
+    getProposal: mocks.getProposal,
     approveProposal: mocks.approveProposal,
     rejectProposal: mocks.rejectProposal,
     executeProposal: mocks.executeProposal,
@@ -223,6 +225,109 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Showing proposals for board board-7.')
   })
 
+  it('hydrates board-scoped proposal hashes that fall outside the first page', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-1',
+        boardId: 'board-7',
+        summary: 'Newest board proposal',
+      }),
+      buildProposal({
+        id: 'proposal-2',
+        boardId: 'board-7',
+        summary: 'Second board proposal',
+      }),
+    ])
+    mocks.getProposal.mockResolvedValue(
+      buildProposal({
+        id: 'proposal-older',
+        boardId: 'board-7',
+        summary: 'Older board proposal',
+      }),
+    )
+
+    const { wrapper } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
+    expect(wrapper.text()).toContain('Older board proposal')
+    expect(wrapper.find('#proposal-proposal-older').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+  })
+
+  it('clears stale proposal hashes when the fetched proposal belongs to a different board', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-1',
+        boardId: 'board-7',
+        summary: 'Scoped board proposal',
+      }),
+    ])
+    mocks.getProposal.mockResolvedValue(
+      buildProposal({
+        id: 'proposal-older',
+        boardId: 'board-99',
+        summary: 'Wrong board proposal',
+      }),
+    )
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Wrong board proposal')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+  })
+
+  it('clears stale proposal hashes when the target proposal cannot be fetched', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-1',
+        boardId: 'board-7',
+        summary: 'Scoped board proposal',
+      }),
+    ])
+    mocks.getProposal.mockRejectedValue({
+      response: {
+        status: 404,
+      },
+    })
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+  })
+
+  it('keeps the proposal hash and surfaces an error when proposal hydration fails unexpectedly', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-1',
+        boardId: 'board-7',
+        summary: 'Scoped board proposal',
+      }),
+    ])
+    mocks.getProposal.mockRejectedValue({
+      response: {
+        status: 500,
+      },
+    })
+
+    const { router } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7#proposal-proposal-older')
+    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load proposal')
+  })
+
   it('preserves board context when opening inbox from a board-scoped review route', async () => {
     const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7')
     const pushSpy = vi.spyOn(router, 'push')
@@ -312,12 +417,25 @@ describe('ReviewView', () => {
   })
 
   it('redirects legacy proposal routes to the canonical review route', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-42',
+      }),
+    ])
+
     const { router } = await mountAt('/workspace/automations/proposals#proposal-proposal-42')
 
     expect(router.currentRoute.value.fullPath).toBe('/workspace/review#proposal-proposal-42')
   })
 
   it('preserves query and hash when the automations alias redirects to review', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-42',
+        boardId: 'board-7',
+      }),
+    ])
+
     const { router } = await mountAt('/workspace/automations?boardId=board-7#proposal-proposal-42')
 
     expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7#proposal-proposal-42')

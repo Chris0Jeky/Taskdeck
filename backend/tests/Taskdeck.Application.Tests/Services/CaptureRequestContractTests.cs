@@ -288,6 +288,28 @@ public class CaptureRequestContractTests
     }
 
     [Fact]
+    public void WithProvenance_ShouldPersistConvertedAt_WhenCaptureIsApplied()
+    {
+        var captureId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var convertedAt = DateTimeOffset.UtcNow;
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "capture text");
+
+        var converted = CaptureRequestContract.WithProvenance(
+            payload,
+            captureId,
+            proposalId: proposalId,
+            convertedAt: convertedAt);
+
+        converted.Provenance.Should().NotBeNull();
+        converted.Provenance!.ProposalId.Should().Be(proposalId);
+        converted.Provenance.ConvertedAt.Should().Be(convertedAt);
+    }
+
+    [Fact]
     public void ParsePayload_ShouldFail_WhenProvenanceProviderExceedsMaxLength()
     {
         var payload = $$"""

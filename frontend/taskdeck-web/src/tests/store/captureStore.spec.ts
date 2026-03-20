@@ -117,6 +117,70 @@ describe('captureStore', () => {
     expect(store.detailById.c2?.rawText).toBe('cached detail')
   })
 
+  it('can force-refresh a detail peek without mutating the current list summary', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    store.items = [
+      {
+        id: 'c2',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: 'fresh summary excerpt',
+        createdAt,
+        processedAt: createdAt,
+      },
+    ]
+    store.detailById.c2 = {
+      id: 'c2',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'stale cached excerpt',
+      rawText: 'cached detail',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+    }
+    vi.mocked(captureApi.getItem).mockResolvedValue({
+      id: 'c2',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'ProposalCreated',
+      source: 'Typed',
+      textExcerpt: 'fresh detail excerpt',
+      rawText: 'fresh detail',
+      createdAt,
+      processedAt: createdAt,
+      retryCount: 0,
+    })
+
+    const detail = await store.peekDetail('c2', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
+
+    expect(captureApi.getItem).toHaveBeenCalledWith('c2')
+    expect(detail).toMatchObject({
+      id: 'c2',
+      status: 'ProposalCreated',
+      rawText: 'fresh detail',
+    })
+    expect(store.detailById.c2).toMatchObject({
+      status: 'New',
+      rawText: 'cached detail',
+    })
+    expect(store.items[0]).toMatchObject({
+      status: 'Triaging',
+      textExcerpt: 'fresh summary excerpt',
+      processedAt: createdAt,
+    })
+  })
+
   it('creates capture items and prepends summary', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.createItem).mockResolvedValue({
@@ -195,6 +259,21 @@ describe('captureStore', () => {
     expect(store.actionError).toBe('Failed to cancel capture item')
     expect(store.listError).toBeNull()
     expect(store.detailError).toBeNull()
+  })
+
+  it('can silently force-refresh a detail peek without recording view error state', async () => {
+    const store = useCaptureStore()
+    store.detailError = 'existing detail error'
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-network'))
+
+    await expect(store.peekDetail('c10', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })).rejects.toBeInstanceOf(Error)
+
+    expect(store.detailError).toBe('existing detail error')
+    expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
   it('enqueues triage and refreshes detail state', async () => {

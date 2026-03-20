@@ -6,6 +6,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Tests.TestUtilities;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -24,6 +25,7 @@ public class AutomationExecutorServiceTests
     private readonly Mock<IBoardRepository> _boardRepoMock;
     private readonly Mock<IColumnRepository> _columnRepoMock;
     private readonly Mock<ICardRepository> _cardRepoMock;
+    private readonly Mock<ILlmQueueRepository> _llmQueueRepoMock;
     private readonly AutomationExecutorService _service;
 
     public AutomationExecutorServiceTests()
@@ -36,12 +38,14 @@ public class AutomationExecutorServiceTests
         _boardRepoMock = new Mock<IBoardRepository>();
         _columnRepoMock = new Mock<IColumnRepository>();
         _cardRepoMock = new Mock<ICardRepository>();
+        _llmQueueRepoMock = new Mock<ILlmQueueRepository>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.LlmQueue).Returns(_llmQueueRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
@@ -286,6 +290,114 @@ public class AutomationExecutorServiceTests
         _auditLogRepoMock.Verify(r => r.AddAsync(
             It.Is<AuditLog>(a => a.EntityType == "board" && a.EntityId == board.Id),
             default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldMarkLinkedCaptureAsConverted_WhenCaptureBackedProposalIsApplied()
+    {
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>
+        {
+            new(
+                Guid.NewGuid(),
+                proposalId,
+                0,
+                "update",
+                "board",
+                null,
+                $$"""{"boardId":"{{board.Id}}","name":"Renamed Board"}""",
+                "key1",
+                null)
+        };
+
+        var captureItem = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "capture payload"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: proposalId)),
+            board.Id);
+        captureItem.MarkAsProcessing();
+        captureItem.MarkAsCompleted();
+
+        var proposal = CreateApprovedProposal(proposalId, userId, board.Id, operations) with
+        {
+            SourceType = ProposalSourceType.Queue,
+            SourceReferenceId = captureItem.Id.ToString()
+        };
+        var proposalEntity = CreateApprovedProposalEntity(userId, board.Id);
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+            .ReturnsAsync(Result.Success());
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
+        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(captureItem.Id, default)).ReturnsAsync(captureItem);
+
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        var payload = CaptureRequestContract.ParsePayload(captureItem.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.ProposalId.Should().Be(proposalId);
+        payload.Value.Provenance.ConvertedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldBackfillLinkedCaptureConversion_WhenProposalIsAlreadyApplied()
+    {
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var appliedAt = DateTime.UtcNow.AddMinutes(-2);
+        var captureItem = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "capture payload"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: proposalId)),
+            boardId);
+        captureItem.MarkAsProcessing();
+        captureItem.MarkAsCompleted();
+
+        var proposal = CreateApprovedProposal(proposalId, userId, boardId, new List<ProposalOperationDto>()) with
+        {
+            SourceType = ProposalSourceType.Queue,
+            SourceReferenceId = captureItem.Id.ToString(),
+            Status = ProposalStatus.Applied,
+            AppliedAt = appliedAt
+        };
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(captureItem.Id, default)).ReturnsAsync(captureItem);
+
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Never);
+        var payload = CaptureRequestContract.ParsePayload(captureItem.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.ProposalId.Should().Be(proposalId);
+        payload.Value.Provenance.ConvertedAt.Should().BeCloseTo(new DateTimeOffset(DateTime.SpecifyKind(appliedAt, DateTimeKind.Utc)), TimeSpan.FromSeconds(1));
     }
 
     [Fact]

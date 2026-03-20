@@ -218,6 +218,37 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldReturnConvertedStatus_WhenCaptureHasPersistedConversionProvenance()
+    {
+        var userId = Guid.NewGuid();
+        var captureRequest = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "captured text"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: Guid.NewGuid(),
+                    convertedAt: DateTimeOffset.UtcNow)));
+        captureRequest.MarkAsProcessing();
+        captureRequest.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(new[] { captureRequest });
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle();
+        result.Value[0].Status.Should().Be(CaptureStatus.Converted);
+    }
+
+    [Fact]
     public async Task ListAsync_ShouldReturnValidationError_WhenLimitIsNegative()
     {
         var userId = Guid.NewGuid();
@@ -376,6 +407,38 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Conflict);
         result.ErrorMessage.Should().Contain("cannot transition");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnConflict_WhenItemIsConverted()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "capture payload"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: Guid.NewGuid(),
+                    convertedAt: DateTimeOffset.UtcNow)));
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain(CaptureStatus.Converted.ToString());
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 }

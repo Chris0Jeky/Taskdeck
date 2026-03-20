@@ -86,7 +86,7 @@ async function openItemFromList(item: CaptureItemSummary, index: number) {
   await selectItemById(item.id, index)
 }
 
-async function selectItemById(itemId: string, preferredIndex?: number) {
+async function selectItemById(itemId: string, preferredIndex?: number): Promise<boolean> {
   if (preferredIndex !== undefined) {
     setActiveIndex(preferredIndex)
   } else {
@@ -99,10 +99,13 @@ async function selectItemById(itemId: string, preferredIndex?: number) {
   selectedItemId.value = itemId
   try {
     await captureStore.fetchDetail(itemId)
+    return true
   } catch {
     if (selectedItemId.value === itemId) {
       selectedItemId.value = null
     }
+
+    return false
   }
 }
 
@@ -118,7 +121,11 @@ async function openItemFromHash() {
 
   if (activeBoardId.value) {
     try {
-      const detail = await captureStore.peekDetail(captureId)
+      const detail = await captureStore.peekDetail(captureId, {
+        forceRefresh: true,
+        recordError: false,
+        showToast: false,
+      })
       if (normalizeBoardIdQueryParam(detail.boardId) !== activeBoardId.value) {
         selectedItemId.value = null
         await clearCaptureHash()
@@ -133,7 +140,10 @@ async function openItemFromHash() {
     }
   }
 
-  await selectItemById(captureId)
+  const opened = await selectItemById(captureId)
+  if (!opened) {
+    await clearCaptureHash()
+  }
 }
 
 async function clearCaptureHash() {
@@ -244,7 +254,7 @@ async function refreshSelectedDetail() {
   }
 
   try {
-    await captureStore.fetchDetail(selectedItemId.value, true)
+    await captureStore.fetchDetail(selectedItemId.value, { forceRefresh: true })
   } catch {
     // Store handles toast + error state.
   }

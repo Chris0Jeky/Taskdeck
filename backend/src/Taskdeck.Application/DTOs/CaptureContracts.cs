@@ -26,7 +26,8 @@ public record CaptureProvenanceV1(
     string? CorrelationId = null,
     string? SourceSurface = null,
     Guid? BoardId = null,
-    Guid? SessionId = null);
+    Guid? SessionId = null,
+    DateTimeOffset? ConvertedAt = null);
 
 public static class CaptureRequestContract
 {
@@ -248,7 +249,8 @@ public static class CaptureRequestContract
         string? correlationId = null,
         string? sourceSurface = null,
         Guid? boardId = null,
-        Guid? sessionId = null)
+        Guid? sessionId = null,
+        DateTimeOffset? convertedAt = null)
     {
         if (captureItemId == Guid.Empty)
         {
@@ -270,7 +272,8 @@ public static class CaptureRequestContract
                 correlationId ?? existingProvenance?.CorrelationId,
                 sourceSurface ?? existingProvenance?.SourceSurface,
                 boardId ?? existingProvenance?.BoardId,
-                sessionId ?? existingProvenance?.SessionId)
+                sessionId ?? existingProvenance?.SessionId,
+                convertedAt ?? existingProvenance?.ConvertedAt)
         };
     }
 
@@ -388,7 +391,8 @@ public static class CaptureRequestContract
                 "correlationId",
                 "sourceSurface",
                 "boardId",
-                "sessionId"
+                "sessionId",
+                "convertedAt"
             };
 
             foreach (var rootProperty in root.EnumerateObject())

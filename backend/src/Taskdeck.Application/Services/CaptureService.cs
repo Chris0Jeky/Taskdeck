@@ -166,7 +166,7 @@ public class CaptureService : ICaptureService
         if (item.UserId != userId)
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
-        var currentStatus = CaptureStatusPolicy.MapFromQueueStatus(item.Status);
+        var currentStatus = ResolveCaptureStatus(item, ParsePayload(item));
         if (currentStatus == CaptureStatus.Triaging)
         {
             return Result.Success(new CaptureTriageEnqueueResultDto(
@@ -308,7 +308,8 @@ public class CaptureService : ICaptureService
     {
         var hasLinkedProposal = payload.Provenance?.ProposalId is { } proposalId &&
                                 proposalId != Guid.Empty;
-        return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal);
+        var isConverted = payload.Provenance?.ConvertedAt is not null;
+        return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal, isConverted);
     }
 
     private static string BuildExcerpt(string rawText)

@@ -111,7 +111,7 @@ async function loadProposals() {
   }
 
   if (requestId === latestProposalLoadRequestId) {
-    await scrollToProposalFromHash()
+    await openProposalFromHash()
   }
 }
 
@@ -141,6 +141,80 @@ async function scrollToProposalFromHash() {
   await nextTick()
   const element = document.getElementById(`proposal-${proposalId}`)
   element?.scrollIntoView({ block: 'nearest' })
+}
+
+function upsertProposal(proposal: ApiProposal) {
+  const existingIndex = proposals.value.findIndex((current) => current.id === proposal.id)
+  if (existingIndex >= 0) {
+    proposals.value[existingIndex] = proposal
+    return
+  }
+
+  const proposalCreatedAt = new Date(proposal.createdAt).getTime()
+  const insertIndex = proposals.value.findIndex((current) => new Date(current.createdAt).getTime() < proposalCreatedAt)
+
+  if (insertIndex >= 0) {
+    proposals.value.splice(insertIndex, 0, proposal)
+    return
+  }
+
+  proposals.value.push(proposal)
+}
+
+function isHttpNotFound(error: unknown): boolean {
+  const candidate = error as { response?: { status?: number } } | null
+  return candidate?.response?.status === 404
+}
+
+async function openProposalFromHash() {
+  if (proposalsLoading.value) {
+    return
+  }
+
+  const proposalId = getProposalIdFromHash(route.hash)
+  if (!proposalId) {
+    return
+  }
+
+  const currentProposal = proposals.value.find((proposal) => proposal.id === proposalId)
+  if (currentProposal) {
+    await scrollToProposalFromHash()
+    return
+  }
+
+  try {
+    const fetchedProposal = await automationApi.getProposal(proposalId)
+    if (getProposalIdFromHash(route.hash) !== proposalId) {
+      return
+    }
+
+    if (activeBoardFilter.value && normalizeBoardIdQueryParam(fetchedProposal.boardId) !== activeBoardFilter.value) {
+      await router.replace({
+        name: 'workspace-review',
+        query: route.query,
+      })
+      return
+    }
+
+    upsertProposal(fetchedProposal)
+    await nextTick()
+    await scrollToProposalFromHash()
+  } catch (e: unknown) {
+    if (getProposalIdFromHash(route.hash) !== proposalId) {
+      return
+    }
+
+    if (isHttpNotFound(e)) {
+      await router.replace({
+        name: 'workspace-review',
+        query: route.query,
+      })
+
+      return
+    }
+
+    toast.error(getErrorDisplay(e, 'Failed to load proposal').message)
+  }
 }
 
 async function handleApproveProposal(proposalId: string) {
@@ -340,11 +414,7 @@ onMounted(() => {
 watch(
   () => route.hash,
   () => {
-    if (proposals.value.length === 0) {
-      return
-    }
-
-    void scrollToProposalFromHash()
+    void openProposalFromHash()
   },
 )
 

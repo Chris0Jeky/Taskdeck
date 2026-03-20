@@ -70,8 +70,18 @@ const mockCaptureStore = reactive({
     } | null
   }, syncSummary?: boolean) => void>(),
   fetchItems: vi.fn<(...args: unknown[]) => Promise<void>>(),
-  fetchDetail: vi.fn<(itemId: string, forceRefresh?: boolean) => Promise<void>>(),
-  peekDetail: vi.fn<(itemId: string, showToast?: boolean) => Promise<{
+  fetchDetail: vi.fn<(itemId: string, options?: {
+    forceRefresh?: boolean
+    recordError?: boolean
+    showToast?: boolean
+    syncSummary?: boolean
+  }) => Promise<void>>(),
+  peekDetail: vi.fn<(itemId: string, options?: {
+    forceRefresh?: boolean
+    recordError?: boolean
+    showToast?: boolean
+    syncSummary?: boolean
+  }) => Promise<{
     id: string
     userId: string
     boardId: string | null
@@ -164,7 +174,8 @@ describe('InboxView', () => {
     mockCaptureStore.detailError = null
     mockCaptureStore.actionError = null
     mockCaptureStore.fetchItems.mockResolvedValue(undefined)
-    mockCaptureStore.fetchDetail.mockImplementation(async (itemId: string, forceRefresh = false) => {
+    mockCaptureStore.fetchDetail.mockImplementation(async (itemId: string, options) => {
+      const forceRefresh = options?.forceRefresh ?? false
       if (!forceRefresh && mockCaptureStore.detailById[itemId]) {
         return
       }
@@ -198,8 +209,12 @@ describe('InboxView', () => {
         provenance: null,
       }
     ))
-    mockCaptureStore.cacheDetail.mockImplementation((detail) => {
+    mockCaptureStore.cacheDetail.mockImplementation((detail, syncSummary = true) => {
       mockCaptureStore.detailById[detail.id] = detail
+      if (!syncSummary) {
+        return
+      }
+
       const existingIndex = mockCaptureStore.items.findIndex((item) => item.id === detail.id)
       const summary = {
         id: detail.id,
@@ -303,7 +318,11 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
-    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-999')
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-999', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
     expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
     expect(mockCaptureStore.cacheDetail).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Select an item to inspect the captured text')
@@ -345,9 +364,17 @@ describe('InboxView', () => {
     const wrapper = mount(InboxView)
     await waitForUi()
 
-    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-999')
-    expect(mockCaptureStore.cacheDetail).toHaveBeenCalled()
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-999', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
+    expect(mockCaptureStore.cacheDetail).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'capture-999',
+      boardId: 'board-7',
+    }))
     expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-999')
+    expect(wrapper.text()).toContain('Older board capture')
     expect(wrapper.text()).toContain('Older board capture detail')
     expect(routerMocks.replace).not.toHaveBeenCalled()
   })
@@ -361,7 +388,11 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
-    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-999')
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-999', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
     expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
     expect(mockCaptureStore.cacheDetail).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Select an item to inspect the captured text')
@@ -369,6 +400,69 @@ describe('InboxView', () => {
       name: 'workspace-inbox',
       query: { boardId: 'board-7' },
     })
+  })
+
+  it('opens board-scoped hash targets with a fresh detail snapshot and refreshes the visible row summary', async () => {
+    const createdAt = new Date().toISOString()
+    routeMock.query = { boardId: 'board-7' }
+    routeMock.hash = '#capture-capture-2'
+    mockCaptureStore.items = [
+      {
+        id: 'capture-2',
+        userId: 'user-1',
+        boardId: 'board-7',
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: 'Fresh row excerpt',
+        createdAt,
+        processedAt: createdAt,
+      },
+    ]
+    mockCaptureStore.detailById['capture-2'] = {
+      id: 'capture-2',
+      userId: 'user-1',
+      boardId: 'board-7',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'Stale cached excerpt',
+      rawText: 'Stale cached detail',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
+    mockCaptureStore.peekDetail.mockResolvedValueOnce({
+      id: 'capture-2',
+      userId: 'user-1',
+      boardId: 'board-7',
+      status: 'ProposalCreated',
+      source: 'Typed',
+      textExcerpt: 'Fresh detail excerpt',
+      rawText: 'Fresh detail text',
+      createdAt,
+      processedAt: createdAt,
+      retryCount: 0,
+      provenance: null,
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-2', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
+    expect(mockCaptureStore.cacheDetail).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'capture-2',
+      status: 'ProposalCreated',
+      textExcerpt: 'Fresh detail excerpt',
+    }))
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
+    expect(wrapper.text()).not.toContain('Fresh row excerpt')
+    expect(wrapper.text()).not.toContain('Stale cached excerpt')
+    expect(wrapper.text()).toContain('Fresh detail excerpt')
+    expect(wrapper.text()).toContain('Fresh detail text')
   })
 
   it('clears the capture hash when a hash-opened detail is closed', async () => {
@@ -386,6 +480,22 @@ describe('InboxView', () => {
     expect(routerMocks.replace).toHaveBeenCalledWith({
       name: 'workspace-inbox',
       query: { boardId: 'board-7' },
+    })
+  })
+
+  it('clears stale unscoped capture hashes when detail loading fails', async () => {
+    routeMock.query = {}
+    routeMock.hash = '#capture-missing-capture'
+    mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('missing'))
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('missing-capture')
+    expect(wrapper.text()).toContain('Select an item to inspect the captured text')
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      name: 'workspace-inbox',
+      query: {},
     })
   })
 
@@ -677,7 +787,7 @@ describe('InboxView', () => {
     await refreshButton?.trigger('click')
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1', true)
+    expect(mockCaptureStore.fetchDetail).toHaveBeenLastCalledWith('capture-1', { forceRefresh: true })
     expect(wrapper.text()).toContain('Capture Detail')
   })
 })
