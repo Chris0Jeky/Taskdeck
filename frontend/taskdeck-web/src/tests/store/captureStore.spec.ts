@@ -76,6 +76,47 @@ describe('captureStore', () => {
     expect(store.detailById.c2?.rawText).toBe('full text')
   })
 
+  it('does not overwrite fresher list summaries when a cached detail is reopened', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    store.items = [
+      {
+        id: 'c2',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: 'fresh summary excerpt',
+        createdAt,
+        processedAt: createdAt,
+      },
+    ]
+    store.detailById.c2 = {
+      id: 'c2',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'stale cached excerpt',
+      rawText: 'cached detail',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+    }
+
+    await store.fetchDetail('c2')
+
+    expect(captureApi.getItem).not.toHaveBeenCalled()
+    expect(store.items[0]).toMatchObject({
+      id: 'c2',
+      status: 'Triaging',
+      textExcerpt: 'fresh summary excerpt',
+      processedAt: createdAt,
+    })
+    expect(store.detailById.c2?.rawText).toBe('cached detail')
+  })
+
   it('creates capture items and prepends summary', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.createItem).mockResolvedValue({

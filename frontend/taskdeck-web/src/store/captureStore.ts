@@ -42,6 +42,13 @@ export const useCaptureStore = defineStore('capture', () => {
     items.value.unshift(summary)
   }
 
+  function cacheDetail(detail: CaptureItem, syncSummary = true) {
+    detailById.value[detail.id] = detail
+    if (syncSummary) {
+      upsertSummary(toSummary(detail))
+    }
+  }
+
   async function fetchItems(query?: CaptureListQuery) {
     try {
       loadingList.value = true
@@ -66,9 +73,29 @@ export const useCaptureStore = defineStore('capture', () => {
       loadingDetail.value = true
       detailError.value = null
       const detail = await captureApi.getItem(itemId)
-      detailById.value[itemId] = detail
-      upsertSummary(toSummary(detail))
+      cacheDetail(detail)
       return detail
+    } catch (e: unknown) {
+      const message = getErrorDisplay(e, 'Failed to load inbox item').message
+      detailError.value = message
+      if (showToast) {
+        toast.error(message)
+      }
+      throw e
+    } finally {
+      loadingDetail.value = false
+    }
+  }
+
+  async function peekDetail(itemId: string, showToast = true) {
+    if (detailById.value[itemId]) {
+      return detailById.value[itemId]
+    }
+
+    try {
+      loadingDetail.value = true
+      detailError.value = null
+      return await captureApi.getItem(itemId)
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox item').message
       detailError.value = message
@@ -177,8 +204,10 @@ export const useCaptureStore = defineStore('capture', () => {
     detailError,
     actionError,
     hasItems,
+    cacheDetail,
     fetchItems,
     fetchDetail,
+    peekDetail,
     createItem,
     ignoreItem,
     cancelItem,

@@ -112,14 +112,25 @@ async function openItemFromHash() {
     return
   }
 
-  if (activeBoardId.value && !items.value.some((item) => item.id === captureId)) {
-    selectedItemId.value = null
-    await clearCaptureHash()
+  if (selectedItemId.value === captureId && selectedItem.value) {
     return
   }
 
-  if (selectedItemId.value === captureId && selectedItem.value) {
-    return
+  if (activeBoardId.value) {
+    try {
+      const detail = await captureStore.peekDetail(captureId)
+      if (normalizeBoardIdQueryParam(detail.boardId) !== activeBoardId.value) {
+        selectedItemId.value = null
+        await clearCaptureHash()
+        return
+      }
+
+      captureStore.cacheDetail(detail)
+    } catch {
+      selectedItemId.value = null
+      await clearCaptureHash()
+      return
+    }
   }
 
   await selectItemById(captureId)
