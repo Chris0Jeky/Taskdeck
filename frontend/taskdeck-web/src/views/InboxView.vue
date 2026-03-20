@@ -137,6 +137,8 @@ async function selectItemById(itemId: string, options: SelectItemOptions = {}): 
 }
 
 async function openBoardScopedHashItem(captureId: string): Promise<void> {
+  primeSelection(captureId)
+
   try {
     const detail = await captureStore.peekDetail(captureId, {
       forceRefresh: true,
@@ -165,41 +167,6 @@ async function openBoardScopedHashItem(captureId: string): Promise<void> {
 
     if (isHttpNotFound(error)) {
       selectedItemId.value = null
-      await clearCaptureHash()
-      return
-    }
-  }
-
-  primeSelection(captureId)
-
-  try {
-    const detail = await captureStore.peekDetail(captureId, {
-      forceRefresh: true,
-    })
-    if (getCaptureIdFromHash(route.hash) !== captureId) {
-      return
-    }
-
-    if (normalizeBoardIdQueryParam(detail.boardId) !== activeBoardId.value) {
-      if (selectedItemId.value === captureId) {
-        selectedItemId.value = null
-      }
-
-      await clearCaptureHash()
-      return
-    }
-
-    captureStore.cacheDetail(detail, false)
-  } catch (error) {
-    if (getCaptureIdFromHash(route.hash) !== captureId) {
-      return
-    }
-
-    if (isHttpNotFound(error)) {
-      if (selectedItemId.value === captureId) {
-        selectedItemId.value = null
-      }
-
       await clearCaptureHash()
     }
   }

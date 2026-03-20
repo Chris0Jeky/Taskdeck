@@ -511,20 +511,16 @@ describe('InboxView', () => {
   it('preserves board-scoped hashes when detail loading fails transiently', async () => {
     routeMock.query = { boardId: 'board-7' }
     routeMock.hash = '#capture-capture-2'
-    mockCaptureStore.peekDetail
-      .mockRejectedValueOnce(new Error('transient lookup failure'))
-      .mockRejectedValueOnce(new Error('transient detail failure'))
+    mockCaptureStore.peekDetail.mockRejectedValueOnce(new Error('transient lookup failure'))
 
     const wrapper = mount(InboxView)
     await waitForUi()
 
-    expect(mockCaptureStore.peekDetail).toHaveBeenNthCalledWith(1, 'capture-2', {
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(1)
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('capture-2', {
       forceRefresh: true,
       recordError: false,
       showToast: false,
-    })
-    expect(mockCaptureStore.peekDetail).toHaveBeenNthCalledWith(2, 'capture-2', {
-      forceRefresh: true,
     })
     expect(mockCaptureStore.cacheDetail).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Unable to load capture detail.')

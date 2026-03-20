@@ -402,6 +402,89 @@ public class AutomationExecutorServiceTests
     }
 
     [Fact]
+    public async Task ExecuteProposal_ShouldSkipCaptureConversionSync_WhenLinkedCaptureBelongsToDifferentUser()
+    {
+        var proposalId = Guid.NewGuid();
+        var proposalUserId = Guid.NewGuid();
+        var captureOwnerId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureItem = new LlmRequest(
+            captureOwnerId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "capture payload"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: proposalId)));
+        captureItem.MarkAsProcessing();
+        captureItem.MarkAsCompleted();
+
+        var proposal = CreateApprovedProposal(proposalId, proposalUserId, boardId, new List<ProposalOperationDto>()) with
+        {
+            SourceType = ProposalSourceType.Queue,
+            SourceReferenceId = captureItem.Id.ToString(),
+            Status = ProposalStatus.Applied,
+            AppliedAt = DateTime.UtcNow.AddMinutes(-1)
+        };
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(captureItem.Id, default)).ReturnsAsync(captureItem);
+
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        var payload = CaptureRequestContract.ParsePayload(captureItem.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.ProposalId.Should().Be(proposalId);
+        payload.Value.Provenance.ConvertedAt.Should().BeNull();
+        captureItem.BoardId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldSkipCaptureConversionSync_WhenLinkedCaptureIsNotAlreadyAttributedToProposal()
+    {
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureItem = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "capture payload")));
+        captureItem.MarkAsProcessing();
+        captureItem.MarkAsCompleted();
+
+        var proposal = CreateApprovedProposal(proposalId, userId, boardId, new List<ProposalOperationDto>()) with
+        {
+            SourceType = ProposalSourceType.Queue,
+            SourceReferenceId = captureItem.Id.ToString(),
+            Status = ProposalStatus.Applied,
+            AppliedAt = DateTime.UtcNow.AddMinutes(-1)
+        };
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _llmQueueRepoMock.Setup(r => r.GetByIdAsync(captureItem.Id, default)).ReturnsAsync(captureItem);
+
+        var result = await _service.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        var payload = CaptureRequestContract.ParsePayload(captureItem.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().BeNull();
+        captureItem.BoardId.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ShouldRollbackAndMarkFailed_WhenLaterOperationFails()
     {
         // Arrange

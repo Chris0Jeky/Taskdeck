@@ -638,9 +638,25 @@ public class AutomationExecutorService : IAutomationExecutorService
         }
 
         var provenance = payloadResult.Value.Provenance;
-        if (provenance?.ProposalId is { } linkedProposalId &&
-            linkedProposalId != Guid.Empty &&
-            linkedProposalId != proposal.Id)
+        if (captureItem.UserId != proposal.RequestedByUserId)
+        {
+            _logger?.LogWarning(
+                "Automation proposal {ProposalId} skipped capture conversion sync because linked capture item {CaptureItemId} belongs to a different user",
+                proposal.Id,
+                captureItem.Id);
+            return Result.Success();
+        }
+
+        if (provenance?.ProposalId is not { } linkedProposalId || linkedProposalId == Guid.Empty)
+        {
+            _logger?.LogWarning(
+                "Automation proposal {ProposalId} skipped capture conversion sync because linked capture item {CaptureItemId} is not already attributed to this proposal",
+                proposal.Id,
+                captureItem.Id);
+            return Result.Success();
+        }
+
+        if (linkedProposalId != proposal.Id)
         {
             _logger?.LogWarning(
                 "Automation proposal {ProposalId} skipped capture conversion sync because linked capture item {CaptureItemId} already points at proposal {LinkedProposalId}",

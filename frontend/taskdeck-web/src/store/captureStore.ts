@@ -194,11 +194,13 @@ export const useCaptureStore = defineStore('capture', () => {
 
       const existingDetail = detailById.value[itemId]
       const existingSummary = items.value.find((item) => item.id === itemId)
+      let optimisticDetail: CaptureItem | null = null
       if (existingDetail) {
-        detailById.value[itemId] = {
+        optimisticDetail = {
           ...existingDetail,
           status: triageResult.status,
         }
+        detailById.value[itemId] = optimisticDetail
       }
 
       if (existingSummary) {
@@ -206,8 +208,8 @@ export const useCaptureStore = defineStore('capture', () => {
           ...existingSummary,
           status: triageResult.status,
         })
-      } else if (existingDetail) {
-        upsertSummary(toSummary(detailById.value[itemId]))
+      } else if (optimisticDetail) {
+        upsertSummary(toSummary(optimisticDetail))
       }
 
       await fetchDetail(itemId, { forceRefresh: true, showToast: false })
