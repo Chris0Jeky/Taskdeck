@@ -328,6 +328,36 @@ describe('ReviewView', () => {
     expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load proposal')
   })
 
+  it('clears cached proposal hashes that no longer match the active board filter', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-1',
+        boardId: 'board-7',
+        summary: 'Newest board proposal',
+      }),
+    ])
+    mocks.getProposal.mockResolvedValue(
+      buildProposal({
+        id: 'proposal-older',
+        boardId: 'board-7',
+        summary: 'Older board proposal',
+      }),
+    )
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    mocks.getProposals.mockRejectedValueOnce(new Error('board list failed'))
+    await router.push('/workspace/review?boardId=board-9#proposal-proposal-older')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-9')
+    expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Older board proposal')
+  })
+
   it('preserves board context when opening inbox from a board-scoped review route', async () => {
     const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7')
     const pushSpy = vi.spyOn(router, 'push')

@@ -34,13 +34,24 @@ let latestProposalLoadRequestId = 0
 let latestDiffRequestId = 0
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
+function matchesActiveBoardFilter(boardId: string | null | undefined): boolean {
+  if (!activeBoardFilter.value) {
+    return true
+  }
+
+  const normalizedBoardId = normalizeBoardIdQueryParam(boardId)
+  return !normalizedBoardId || normalizedBoardId === activeBoardFilter.value
+}
+
+const visibleProposals = computed(() => proposals.value.filter((proposal) => matchesActiveBoardFilter(proposal.boardId)))
+
 const summaryCards = computed<ReviewSummaryCard[]>(() => {
   let pendingReview = 0
   let readyToExecute = 0
   let captureLinked = 0
   let appliedRecently = 0
 
-  for (const proposal of proposals.value) {
+  for (const proposal of visibleProposals.value) {
     const normalizedStatus = normalizeProposalStatus(proposal.status)
 
     if (normalizedStatus === 'PendingReview') {
@@ -178,6 +189,14 @@ async function openProposalFromHash() {
 
   const currentProposal = proposals.value.find((proposal) => proposal.id === proposalId)
   if (currentProposal) {
+    if (!matchesActiveBoardFilter(currentProposal.boardId)) {
+      await router.replace({
+        name: 'workspace-review',
+        query: route.query,
+      })
+      return
+    }
+
     await scrollToProposalFromHash()
     return
   }
@@ -188,7 +207,7 @@ async function openProposalFromHash() {
       return
     }
 
-    if (activeBoardFilter.value && normalizeBoardIdQueryParam(fetchedProposal.boardId) !== activeBoardFilter.value) {
+    if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
       await router.replace({
         name: 'workspace-review',
         query: route.query,
@@ -478,7 +497,7 @@ watch(
       Loading proposals to review...
     </div>
 
-    <section v-else-if="proposals.length === 0" class="td-panel td-review-empty">
+    <section v-else-if="visibleProposals.length === 0" class="td-panel td-review-empty">
       <h2 class="td-section-title">No proposals need review yet</h2>
       <p class="td-section-desc">
         Start from Inbox when you want Taskdeck to propose a change, or open Boards if you want to continue directly
@@ -493,7 +512,7 @@ watch(
 
     <section v-else class="td-review__list">
       <article
-        v-for="proposal in proposals"
+        v-for="proposal in visibleProposals"
         :id="`proposal-${proposal.id}`"
         :key="proposal.id"
         class="td-panel td-review-card"

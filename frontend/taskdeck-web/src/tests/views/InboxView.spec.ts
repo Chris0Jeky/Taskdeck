@@ -511,6 +511,19 @@ describe('InboxView', () => {
   it('preserves board-scoped hashes when detail loading fails transiently', async () => {
     routeMock.query = { boardId: 'board-7' }
     routeMock.hash = '#capture-capture-2'
+    mockCaptureStore.detailById['capture-2'] = {
+      id: 'capture-2',
+      userId: 'user-1',
+      boardId: 'board-99',
+      status: 'ProposalCreated',
+      source: 'Typed',
+      textExcerpt: 'Stale cached excerpt',
+      rawText: 'Stale cached detail from another board',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
     mockCaptureStore.peekDetail.mockRejectedValueOnce(new Error('transient lookup failure'))
 
     const wrapper = mount(InboxView)
@@ -524,6 +537,7 @@ describe('InboxView', () => {
     })
     expect(mockCaptureStore.cacheDetail).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Unable to load capture detail.')
+    expect(wrapper.text()).not.toContain('Stale cached detail from another board')
     expect(routerMocks.replace).not.toHaveBeenCalled()
   })
 

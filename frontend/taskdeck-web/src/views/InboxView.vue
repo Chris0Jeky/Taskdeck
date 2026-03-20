@@ -11,6 +11,7 @@ const captureStore = useCaptureStore()
 const router = useRouter()
 const route = useRoute()
 const selectedItemId = ref<string | null>(null)
+const hashLoadFailedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
 
@@ -83,6 +84,7 @@ async function loadInbox() {
 }
 
 async function openItemFromList(item: CaptureItemSummary, index: number) {
+  hashLoadFailedItemId.value = null
   await clearCaptureHash()
   await selectItemById(item.id, { preferredIndex: index })
 }
@@ -119,6 +121,7 @@ async function selectItemById(itemId: string, options: SelectItemOptions = {}): 
   } = options
 
   primeSelection(itemId, preferredIndex)
+  hashLoadFailedItemId.value = null
   try {
     if (preloadedDetail) {
       captureStore.cacheDetail(preloadedDetail, cacheSummary)
@@ -137,9 +140,8 @@ async function selectItemById(itemId: string, options: SelectItemOptions = {}): 
 }
 
 async function openBoardScopedHashItem(captureId: string): Promise<void> {
-  primeSelection(captureId)
-
   try {
+    hashLoadFailedItemId.value = null
     const detail = await captureStore.peekDetail(captureId, {
       forceRefresh: true,
       recordError: false,
@@ -167,19 +169,28 @@ async function openBoardScopedHashItem(captureId: string): Promise<void> {
 
     if (isHttpNotFound(error)) {
       selectedItemId.value = null
+      hashLoadFailedItemId.value = null
       await clearCaptureHash()
+      return
     }
+
+    selectedItemId.value = null
+    hashLoadFailedItemId.value = captureId
   }
 }
 
 async function openItemFromHash() {
   const captureId = getCaptureIdFromHash(route.hash)
   if (!captureId) {
+    hashLoadFailedItemId.value = null
     return
   }
 
   if (selectedItemId.value === captureId && selectedItem.value) {
-    return
+    if (!activeBoardId.value || normalizeBoardIdQueryParam(selectedItem.value.boardId) === activeBoardId.value) {
+      hashLoadFailedItemId.value = null
+      return
+    }
   }
 
   if (activeBoardId.value) {
@@ -198,6 +209,7 @@ async function clearCaptureHash() {
     return
   }
 
+  hashLoadFailedItemId.value = null
   await router.replace({
     name: 'workspace-inbox',
     query: route.query,
@@ -206,6 +218,7 @@ async function clearCaptureHash() {
 
 async function closeDetail() {
   selectedItemId.value = null
+  hashLoadFailedItemId.value = null
   await clearCaptureHash()
 }
 
@@ -495,7 +508,10 @@ onMounted(() => {
       </section>
 
       <section class="td-inbox__detail-panel">
-        <div v-if="!selectedItemId" class="td-placeholder td-placeholder--detail">
+        <div v-if="hashLoadFailedItemId && !selectedItemId" class="td-placeholder td-placeholder--detail">
+          Unable to load capture detail.
+        </div>
+        <div v-else-if="!selectedItemId" class="td-placeholder td-placeholder--detail">
           Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it.
         </div>
         <div
