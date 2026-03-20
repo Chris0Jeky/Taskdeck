@@ -672,7 +672,7 @@ public class AutomationExecutorService : IAutomationExecutorService
         }
 
         var resolvedBoardId = captureItem.BoardId ?? proposal.BoardId;
-        var convertedAt = provenance?.ConvertedAt ?? ResolveConvertedAt(proposal.AppliedAt);
+        var convertedAt = provenance?.ConvertedAt ?? CaptureConversionTimestamp.ResolveConvertedAt(proposal.AppliedAt);
         var updatedPayload = CaptureRequestContract.WithProvenance(
             payloadResult.Value,
             captureItem.Id,
@@ -699,23 +699,6 @@ public class AutomationExecutorService : IAutomationExecutorService
         {
             return Result.Failure(ErrorCodes.UnexpectedError, ex.Message);
         }
-    }
-
-    private static DateTimeOffset ResolveConvertedAt(DateTime? appliedAt)
-    {
-        if (!appliedAt.HasValue)
-        {
-            return DateTimeOffset.UtcNow;
-        }
-
-        var normalized = appliedAt.Value.Kind switch
-        {
-            DateTimeKind.Unspecified => DateTime.SpecifyKind(appliedAt.Value, DateTimeKind.Utc),
-            DateTimeKind.Local => appliedAt.Value.ToUniversalTime(),
-            _ => appliedAt.Value
-        };
-
-        return new DateTimeOffset(normalized);
     }
 
     private async Task<Result> UpdateProposalStatusAsync(Guid proposalId, ProposalStatus status, string? failureReason, CancellationToken cancellationToken)

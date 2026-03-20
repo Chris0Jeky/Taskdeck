@@ -299,12 +299,13 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().ContainSingle();
         result.Value[0].Status.Should().Be(CaptureStatus.Converted);
-        captureRequest.BoardId.Should().Be(boardId);
+        result.Value[0].BoardId.Should().Be(boardId);
+        captureRequest.BoardId.Should().BeNull();
         var payload = CaptureRequestContract.ParsePayload(captureRequest.Payload, allowServerAttributionFields: true);
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
-        payload.Value.Provenance!.ConvertedAt.Should().NotBeNull();
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        payload.Value.Provenance!.ConvertedAt.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]

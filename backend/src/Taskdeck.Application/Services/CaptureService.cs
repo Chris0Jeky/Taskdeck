@@ -105,19 +105,26 @@ public class CaptureService : ICaptureService
             .ToList();
 
         var summaries = new List<CaptureItemSummaryDto>(limit);
-        var shouldPersistBackfill = false;
         foreach (var item in captureItems)
         {
-            var payload = ParsePayload(item);
-            var effectivePayload = await BackfillAppliedConversionProvenanceAsync(item, payload, cancellationToken);
-            shouldPersistBackfill |= !ReferenceEquals(effectivePayload, payload);
-
-            if (filter.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
+            if (filter.BoardId.HasValue && item.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
             {
                 continue;
             }
 
-            var summary = MapToSummaryDto(item, effectivePayload);
+            var payload = ParsePayload(item);
+            var (effectivePayload, effectiveBoardId, _) = await ResolveAppliedConversionProvenanceAsync(
+                item,
+                payload,
+                persistChanges: false,
+                cancellationToken);
+
+            if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
+            {
+                continue;
+            }
+
+            var summary = MapToSummaryDto(item, effectivePayload, effectiveBoardId);
             if (filter.Status.HasValue && summary.Status != filter.Status.Value)
             {
                 continue;
@@ -128,11 +135,6 @@ public class CaptureService : ICaptureService
             {
                 break;
             }
-        }
-
-        if (shouldPersistBackfill)
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
         return Result.Success<IReadOnlyList<CaptureItemSummaryDto>>(summaries);
@@ -154,13 +156,17 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have permission to access this capture item");
 
         var payload = ParsePayload(item);
-        var effectivePayload = await BackfillAppliedConversionProvenanceAsync(item, payload, cancellationToken);
-        if (!ReferenceEquals(effectivePayload, payload))
+        var (effectivePayload, effectiveBoardId, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
+            item,
+            payload,
+            persistChanges: true,
+            cancellationToken);
+        if (persistedBackfill)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
-        return Result.Success(MapToDetailDto(item, effectivePayload));
+        return Result.Success(MapToDetailDto(item, effectivePayload, effectiveBoardId));
     }
 
     public Task<Result> IgnoreAsync(
@@ -195,8 +201,12 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
         var payload = ParsePayload(item);
-        var effectivePayload = await BackfillAppliedConversionProvenanceAsync(item, payload, cancellationToken);
-        if (!ReferenceEquals(effectivePayload, payload))
+        var (effectivePayload, _, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
+            item,
+            payload,
+            persistChanges: true,
+            cancellationToken);
+        if (persistedBackfill)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
@@ -290,7 +300,7 @@ public class CaptureService : ICaptureService
         return Result.Failure<CaptureSource>(ErrorCodes.ValidationError, "Invalid capture source value");
     }
 
-    private static CaptureItemSummaryDto MapToSummaryDto(LlmRequest item, CapturePayloadV1 payload)
+    private static CaptureItemSummaryDto MapToSummaryDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)
     {
         var excerpt = BuildExcerpt(payload.Text);
         var status = ResolveCaptureStatus(item, payload);
@@ -298,7 +308,7 @@ public class CaptureService : ICaptureService
         return new CaptureItemSummaryDto(
             item.Id,
             item.UserId,
-            item.BoardId,
+            effectiveBoardId ?? item.BoardId,
             status,
             payload.Source,
             excerpt,
@@ -306,7 +316,7 @@ public class CaptureService : ICaptureService
             item.ProcessedAt);
     }
 
-    private static CaptureItemDto MapToDetailDto(LlmRequest item, CapturePayloadV1 payload)
+    private static CaptureItemDto MapToDetailDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)
     {
         var excerpt = BuildExcerpt(payload.Text);
         var status = ResolveCaptureStatus(item, payload);
@@ -314,7 +324,7 @@ public class CaptureService : ICaptureService
         return new CaptureItemDto(
             item.Id,
             item.UserId,
-            item.BoardId,
+            effectiveBoardId ?? item.BoardId,
             status,
             payload.Source,
             payload.Text,
@@ -325,9 +335,10 @@ public class CaptureService : ICaptureService
             payload.Provenance);
     }
 
-    private async Task<CapturePayloadV1> BackfillAppliedConversionProvenanceAsync(
+    private async Task<(CapturePayloadV1 Payload, Guid? EffectiveBoardId, bool PersistedBackfill)> ResolveAppliedConversionProvenanceAsync(
         LlmRequest item,
         CapturePayloadV1 payload,
+        bool persistChanges,
         CancellationToken cancellationToken)
     {
         var proposalId = payload.Provenance?.ProposalId;
@@ -335,7 +346,7 @@ public class CaptureService : ICaptureService
             proposalId.Value == Guid.Empty ||
             payload.Provenance?.ConvertedAt is not null)
         {
-            return payload;
+            return (payload, item.BoardId, false);
         }
 
         var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId.Value, cancellationToken);
@@ -345,7 +356,7 @@ public class CaptureService : ICaptureService
             !string.Equals(proposal.SourceReferenceId, item.Id.ToString(), StringComparison.OrdinalIgnoreCase) ||
             proposal.RequestedByUserId != item.UserId)
         {
-            return payload;
+            return (payload, item.BoardId, false);
         }
 
         var resolvedBoardId = item.BoardId ?? proposal.BoardId;
@@ -354,7 +365,12 @@ public class CaptureService : ICaptureService
             item.Id,
             proposalId: proposal.Id,
             boardId: resolvedBoardId,
-            convertedAt: ResolveConvertedAt(proposal.AppliedAt));
+            convertedAt: CaptureConversionTimestamp.ResolveConvertedAt(proposal.AppliedAt));
+
+        if (!persistChanges)
+        {
+            return (convertedPayload, resolvedBoardId, false);
+        }
 
         if (!item.BoardId.HasValue && resolvedBoardId.HasValue)
         {
@@ -362,7 +378,7 @@ public class CaptureService : ICaptureService
         }
 
         item.UpdatePayload(CaptureRequestContract.SerializePayload(convertedPayload));
-        return convertedPayload;
+        return (convertedPayload, item.BoardId, true);
     }
 
     private static CapturePayloadV1 ParsePayload(LlmRequest item)
@@ -383,23 +399,6 @@ public class CaptureService : ICaptureService
                                 proposalId != Guid.Empty;
         var isConverted = payload.Provenance?.ConvertedAt is not null;
         return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal, isConverted);
-    }
-
-    private static DateTimeOffset ResolveConvertedAt(DateTime? appliedAt)
-    {
-        if (!appliedAt.HasValue)
-        {
-            return DateTimeOffset.UtcNow;
-        }
-
-        var normalized = appliedAt.Value.Kind switch
-        {
-            DateTimeKind.Unspecified => DateTime.SpecifyKind(appliedAt.Value, DateTimeKind.Utc),
-            DateTimeKind.Local => appliedAt.Value.ToUniversalTime(),
-            _ => appliedAt.Value
-        };
-
-        return new DateTimeOffset(normalized);
     }
 
     private static string BuildExcerpt(string rawText)
