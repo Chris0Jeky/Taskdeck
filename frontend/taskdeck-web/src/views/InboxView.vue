@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useCaptureStore } from '../store/captureStore'
-import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
+import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
@@ -75,18 +75,30 @@ async function loadInbox() {
       limit: 200,
       ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
     })
-    await openItemFromHash()
   } catch {
     // Store handles toast + error state.
   }
+
+  await openItemFromHash()
 }
 
 async function openItemFromList(item: CaptureItemSummary, index: number) {
   await clearCaptureHash()
-  await selectItemById(item.id, index)
+  await selectItemById(item.id, { preferredIndex: index })
 }
 
-async function selectItemById(itemId: string, preferredIndex?: number): Promise<boolean> {
+type SelectItemOptions = {
+  preferredIndex?: number
+  preloadedDetail?: CaptureItem
+  cacheSummary?: boolean
+}
+
+function isHttpNotFound(error: unknown): boolean {
+  const candidate = error as { response?: { status?: number; data?: { errorCode?: string } } } | null
+  return candidate?.response?.status === 404 || candidate?.response?.data?.errorCode === 'NotFound'
+}
+
+function primeSelection(itemId: string, preferredIndex?: number) {
   if (preferredIndex !== undefined) {
     setActiveIndex(preferredIndex)
   } else {
@@ -97,7 +109,22 @@ async function selectItemById(itemId: string, preferredIndex?: number): Promise<
   }
 
   selectedItemId.value = itemId
+}
+
+async function selectItemById(itemId: string, options: SelectItemOptions = {}): Promise<boolean> {
+  const {
+    preferredIndex,
+    preloadedDetail,
+    cacheSummary = true,
+  } = options
+
+  primeSelection(itemId, preferredIndex)
   try {
+    if (preloadedDetail) {
+      captureStore.cacheDetail(preloadedDetail, cacheSummary)
+      return true
+    }
+
     await captureStore.fetchDetail(itemId)
     return true
   } catch {
@@ -106,6 +133,75 @@ async function selectItemById(itemId: string, preferredIndex?: number): Promise<
     }
 
     return false
+  }
+}
+
+async function openBoardScopedHashItem(captureId: string): Promise<void> {
+  try {
+    const detail = await captureStore.peekDetail(captureId, {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
+    if (getCaptureIdFromHash(route.hash) !== captureId) {
+      return
+    }
+
+    if (normalizeBoardIdQueryParam(detail.boardId) !== activeBoardId.value) {
+      selectedItemId.value = null
+      await clearCaptureHash()
+      return
+    }
+
+    await selectItemById(captureId, {
+      preloadedDetail: detail,
+      cacheSummary: false,
+    })
+    return
+  } catch (error) {
+    if (getCaptureIdFromHash(route.hash) !== captureId) {
+      return
+    }
+
+    if (isHttpNotFound(error)) {
+      selectedItemId.value = null
+      await clearCaptureHash()
+      return
+    }
+  }
+
+  primeSelection(captureId)
+
+  try {
+    const detail = await captureStore.peekDetail(captureId, {
+      forceRefresh: true,
+    })
+    if (getCaptureIdFromHash(route.hash) !== captureId) {
+      return
+    }
+
+    if (normalizeBoardIdQueryParam(detail.boardId) !== activeBoardId.value) {
+      if (selectedItemId.value === captureId) {
+        selectedItemId.value = null
+      }
+
+      await clearCaptureHash()
+      return
+    }
+
+    captureStore.cacheDetail(detail, false)
+  } catch (error) {
+    if (getCaptureIdFromHash(route.hash) !== captureId) {
+      return
+    }
+
+    if (isHttpNotFound(error)) {
+      if (selectedItemId.value === captureId) {
+        selectedItemId.value = null
+      }
+
+      await clearCaptureHash()
+    }
   }
 }
 
@@ -120,24 +216,8 @@ async function openItemFromHash() {
   }
 
   if (activeBoardId.value) {
-    try {
-      const detail = await captureStore.peekDetail(captureId, {
-        forceRefresh: true,
-        recordError: false,
-        showToast: false,
-      })
-      if (normalizeBoardIdQueryParam(detail.boardId) !== activeBoardId.value) {
-        selectedItemId.value = null
-        await clearCaptureHash()
-        return
-      }
-
-      captureStore.cacheDetail(detail)
-    } catch {
-      selectedItemId.value = null
-      await clearCaptureHash()
-      return
-    }
+    await openBoardScopedHashItem(captureId)
+    return
   }
 
   const opened = await selectItemById(captureId)
