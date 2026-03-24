@@ -280,6 +280,12 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var initialDb = initialScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var initialPersistedCapture = await initialDb.LlmRequests.FindAsync(createdCapture!.Id);
         initialPersistedCapture.Should().NotBeNull();
+        var initialStatus = initialPersistedCapture!.Status;
+        var initialErrorMessage = initialPersistedCapture.ErrorMessage;
+        var initialProcessedAt = initialPersistedCapture.ProcessedAt;
+        var initialRetryCount = initialPersistedCapture.RetryCount;
+        var initialUpdatedAt = initialPersistedCapture.UpdatedAt;
+        var initialPayloadRaw = initialPersistedCapture.Payload;
         var initialPayload = CaptureRequestContract.ParsePayload(initialPersistedCapture!.Payload, allowServerAttributionFields: true);
         initialPayload.IsSuccess.Should().BeTrue();
         initialPayload.Value.Provenance.Should().NotBeNull();
@@ -323,6 +329,12 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         persistedCapture.Should().NotBeNull();
         persistedCapture!.UserId.Should().Be(captureOwner.UserId);
         persistedCapture.BoardId.Should().Be(captureBoard.Id);
+        persistedCapture.Status.Should().Be(initialStatus);
+        persistedCapture.ErrorMessage.Should().Be(initialErrorMessage);
+        persistedCapture.ProcessedAt.Should().Be(initialProcessedAt);
+        persistedCapture.RetryCount.Should().Be(initialRetryCount);
+        persistedCapture.UpdatedAt.Should().Be(initialUpdatedAt);
+        persistedCapture.Payload.Should().Be(initialPayloadRaw);
         var payload = CaptureRequestContract.ParsePayload(persistedCapture.Payload, allowServerAttributionFields: true);
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
