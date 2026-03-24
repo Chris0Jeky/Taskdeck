@@ -92,6 +92,13 @@ public class ProposalHousekeepingWorkerTests
             return Task.FromResult<IEnumerable<AutomationProposal>>(_proposals.Take(limit).ToList());
         }
 
+        public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            var requestedIds = ids.ToHashSet();
+            return Task.FromResult<IReadOnlyList<AutomationProposal>>(
+                _proposals.Where(proposal => requestedIds.Contains(proposal.Id)).ToList());
+        }
+
         public Task<int> CountPendingReviewByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_proposals.Count(proposal =>

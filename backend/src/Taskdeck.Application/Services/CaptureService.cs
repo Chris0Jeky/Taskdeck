@@ -102,22 +102,25 @@ public class CaptureService : ICaptureService
         var captureItems = items
             .Where(item => CaptureRequestContract.IsCaptureRequestType(item.RequestType))
             .OrderByDescending(item => item.CreatedAt)
+            .Select(item => (Item: item, Payload: ParsePayload(item)))
             .ToList();
+        var appliedProposalLookup = await LoadAppliedProposalLookupAsync(captureItems, cancellationToken);
 
         var summaries = new List<CaptureItemSummaryDto>(limit);
-        foreach (var item in captureItems)
+        foreach (var candidate in captureItems)
         {
+            var item = candidate.Item;
             if (filter.BoardId.HasValue && item.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
             {
                 continue;
             }
 
-            var payload = ParsePayload(item);
             var (effectivePayload, effectiveBoardId, _) = await ResolveAppliedConversionProvenanceAsync(
                 item,
-                payload,
+                candidate.Payload,
                 persistChanges: false,
-                cancellationToken);
+                cancellationToken,
+                GetAppliedProposal(appliedProposalLookup, candidate.Payload));
 
             if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
             {
@@ -335,11 +338,52 @@ public class CaptureService : ICaptureService
             payload.Provenance);
     }
 
+    private async Task<IReadOnlyDictionary<Guid, AutomationProposal>> LoadAppliedProposalLookupAsync(
+        IReadOnlyList<(LlmRequest Item, CapturePayloadV1 Payload)> captureItems,
+        CancellationToken cancellationToken)
+    {
+        var proposalIds = captureItems
+            .Select(candidate => candidate.Payload.Provenance?.ProposalId)
+            .Where(proposalId => proposalId.HasValue && proposalId.Value != Guid.Empty)
+            .Select(proposalId => proposalId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (proposalIds.Count == 0)
+        {
+            return new Dictionary<Guid, AutomationProposal>();
+        }
+
+        var proposals = await _unitOfWork.AutomationProposals.GetByIdsAsync(proposalIds, cancellationToken);
+        if (proposals == null)
+        {
+            return new Dictionary<Guid, AutomationProposal>();
+        }
+
+        return proposals.ToDictionary(proposal => proposal.Id);
+    }
+
+    private static AutomationProposal? GetAppliedProposal(
+        IReadOnlyDictionary<Guid, AutomationProposal> proposalLookup,
+        CapturePayloadV1 payload)
+    {
+        var proposalId = payload.Provenance?.ProposalId;
+        if (!proposalId.HasValue || proposalId.Value == Guid.Empty)
+        {
+            return null;
+        }
+
+        return proposalLookup.TryGetValue(proposalId.Value, out var proposal)
+            ? proposal
+            : null;
+    }
+
     private async Task<(CapturePayloadV1 Payload, Guid? EffectiveBoardId, bool PersistedBackfill)> ResolveAppliedConversionProvenanceAsync(
         LlmRequest item,
         CapturePayloadV1 payload,
         bool persistChanges,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AutomationProposal? preloadedProposal = null)
     {
         var proposalId = payload.Provenance?.ProposalId;
         if (!proposalId.HasValue ||
@@ -349,7 +393,12 @@ public class CaptureService : ICaptureService
             return (payload, item.BoardId, false);
         }
 
-        var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId.Value, cancellationToken);
+        var proposal = preloadedProposal;
+        if (proposal == null || proposal.Id != proposalId.Value)
+        {
+            proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId.Value, cancellationToken);
+        }
+
         if (proposal == null ||
             proposal.Status != ProposalStatus.Applied ||
             proposal.SourceType != ProposalSourceType.Queue ||

@@ -40,7 +40,7 @@ function matchesActiveBoardFilter(boardId: string | null | undefined): boolean {
   }
 
   const normalizedBoardId = normalizeBoardIdQueryParam(boardId)
-  return !normalizedBoardId || normalizedBoardId === activeBoardFilter.value
+  return normalizedBoardId === activeBoardFilter.value
 }
 
 const visibleProposals = computed(() => proposals.value.filter((proposal) => matchesActiveBoardFilter(proposal.boardId)))

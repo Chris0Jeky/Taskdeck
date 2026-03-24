@@ -291,8 +291,10 @@ public class CaptureServiceTests
             .Setup(r => r.GetByUserAsync(userId, default))
             .ReturnsAsync(new[] { captureRequest });
         _automationProposalRepositoryMock
-            .Setup(r => r.GetByIdAsync(proposal.Id, default))
-            .ReturnsAsync(proposal);
+            .Setup(r => r.GetByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.SequenceEqual(new[] { proposal.Id })),
+                default))
+            .ReturnsAsync(new[] { proposal });
 
         var result = await _service.ListAsync(userId, new CaptureListFilterDto());
 
@@ -305,6 +307,7 @@ public class CaptureServiceTests
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
         payload.Value.Provenance!.ConvertedAt.Should().BeNull();
+        _automationProposalRepositoryMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 

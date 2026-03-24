@@ -537,6 +537,7 @@ describe('InboxView', () => {
     })
     expect(mockCaptureStore.cacheDetail).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Unable to load capture detail.')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Unable to load capture detail.')
     expect(wrapper.text()).not.toContain('Stale cached detail from another board')
     expect(routerMocks.replace).not.toHaveBeenCalled()
   })

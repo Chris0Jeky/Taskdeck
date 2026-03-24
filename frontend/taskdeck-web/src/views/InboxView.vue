@@ -508,7 +508,12 @@ onMounted(() => {
       </section>
 
       <section class="td-inbox__detail-panel">
-        <div v-if="hashLoadFailedItemId && !selectedItemId" class="td-placeholder td-placeholder--detail">
+        <div
+          v-if="hashLoadFailedItemId && !selectedItemId"
+          class="td-placeholder td-placeholder--detail"
+          role="alert"
+          aria-live="assertive"
+        >
           Unable to load capture detail.
         </div>
         <div v-else-if="!selectedItemId" class="td-placeholder td-placeholder--detail">

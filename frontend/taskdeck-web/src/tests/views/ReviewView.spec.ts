@@ -202,7 +202,7 @@ describe('ReviewView', () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-99',
-        boardId: null,
+        boardId: 'board-7',
         sourceReferenceId: 'capture-99',
       }),
     ])
@@ -210,6 +210,33 @@ describe('ReviewView', () => {
     const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
 
     expect(wrapper.find('a[href="/workspace/inbox?boardId=board-7#capture-capture-99"]').exists()).toBe(true)
+  })
+
+  it('clears boardless proposal hashes on board-scoped review routes', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-1',
+        boardId: 'board-7',
+        summary: 'Scoped board proposal',
+      }),
+    ])
+    mocks.getProposal.mockResolvedValue(
+      buildProposal({
+        id: 'proposal-boardless',
+        boardId: null,
+        summary: 'Boardless proposal',
+      }),
+    )
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-boardless')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('proposal-boardless')
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(wrapper.find('#proposal-proposal-boardless').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Boardless proposal')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
   it('requests board-scoped proposals when the review route carries a board query', async () => {
