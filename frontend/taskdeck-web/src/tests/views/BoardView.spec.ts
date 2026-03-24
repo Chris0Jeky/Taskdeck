@@ -146,23 +146,31 @@ describe('BoardView', () => {
     addCardToggleMock.mockReset()
   })
 
-  it('renders the board action rail and preserves board context for review and chat routes', async () => {
+  it('renders the board action rail and preserves board context for review, inbox, and chat routes', async () => {
     const wrapper = mountView()
     await waitForUi()
 
     expect(wrapper.text()).toContain('What should happen on a board?')
-    expect(wrapper.get('[data-board-action-rail]').text()).toContain('Capture here')
-    expect(wrapper.get('[data-board-action-rail]').text()).toContain('Ask assistant')
-    expect(wrapper.get('[data-board-action-rail]').text()).toContain('Review proposals')
+    const actionRail = wrapper.get('[data-board-action-rail]')
+    expect(actionRail.text()).toContain('Capture here')
+    expect(actionRail.text()).toContain('Ask assistant')
+    expect(actionRail.text()).toContain('Review proposals')
+    expect(actionRail.text()).toContain('Open Inbox')
 
-    const askAssistant = wrapper.findAll('button').find((node) => node.text().trim() === 'Ask assistant')
-    const reviewProposals = wrapper.findAll('button').find((node) => node.text().trim() === 'Review proposals')
+    const askAssistant = actionRail.findAll('button').find((node) => node.text().trim() === 'Ask assistant')
+    const openInbox = actionRail.findAll('button').find((node) => node.text().trim() === 'Open Inbox')
+    const reviewProposals = actionRail.findAll('button').find((node) => node.text().trim() === 'Review proposals')
 
     await askAssistant?.trigger('click')
+    await openInbox?.trigger('click')
     await reviewProposals?.trigger('click')
 
     expect(routerMock.push).toHaveBeenCalledWith({
       name: 'workspace-automations-chat',
+      query: { boardId: 'board-1' },
+    })
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'workspace-inbox',
       query: { boardId: 'board-1' },
     })
     expect(routerMock.push).toHaveBeenCalledWith({

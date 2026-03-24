@@ -82,6 +82,16 @@ public class AutomationExecutorService : IAutomationExecutorService
         // Idempotent behavior across requests/processes: already-applied proposals are treated as success.
         if (proposal.Status == ProposalStatus.Applied)
         {
+            var syncResult = await SyncLinkedCaptureConversionAsync(proposal, cancellationToken);
+            if (!syncResult.IsSuccess)
+            {
+                _logger?.LogWarning(
+                    "Already-applied proposal {ProposalId} could not sync linked capture conversion: {ErrorCode} {ErrorMessage}",
+                    proposalId,
+                    syncResult.ErrorCode,
+                    syncResult.ErrorMessage);
+            }
+
             _logger?.LogInformation(
                 "Automation proposal execution skipped for already-applied proposal {ProposalId} after {DurationMs}ms",
                 proposalId,
@@ -176,10 +186,26 @@ public class AutomationExecutorService : IAutomationExecutorService
 
             // Mark proposal as applied
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
-            
+
             var markResult = await UpdateProposalStatusAsync(proposalId, ProposalStatus.Applied, null, cancellationToken);
             if (!markResult.IsSuccess)
                 return Result.Failure(markResult.ErrorCode, markResult.ErrorMessage);
+
+            var captureSyncResult = await SyncLinkedCaptureConversionAsync(
+                proposal with
+                {
+                    Status = ProposalStatus.Applied,
+                    AppliedAt = DateTime.UtcNow
+                },
+                cancellationToken);
+            if (!captureSyncResult.IsSuccess)
+            {
+                _logger?.LogWarning(
+                    "Applied proposal {ProposalId} could not sync linked capture conversion: {ErrorCode} {ErrorMessage}",
+                    proposalId,
+                    captureSyncResult.ErrorCode,
+                    captureSyncResult.ErrorMessage);
+            }
 
             _logger?.LogInformation(
                 "Automation proposal execution completed for proposal {ProposalId} in {DurationMs}ms with {OperationCount} operation(s)",
@@ -582,6 +608,97 @@ public class AutomationExecutorService : IAutomationExecutorService
 
         var raw = property.GetString();
         return Guid.TryParse(raw, out value);
+    }
+
+    private async Task<Result> SyncLinkedCaptureConversionAsync(ProposalDto proposal, CancellationToken cancellationToken)
+    {
+        if (proposal.SourceType != ProposalSourceType.Queue ||
+            string.IsNullOrWhiteSpace(proposal.SourceReferenceId) ||
+            !Guid.TryParse(proposal.SourceReferenceId, out var sourceRequestId))
+        {
+            return Result.Success();
+        }
+
+        var captureItem = await _unitOfWork.LlmQueue.GetByIdAsync(sourceRequestId, cancellationToken);
+        if (captureItem == null || !CaptureRequestContract.IsCaptureRequestType(captureItem.RequestType))
+        {
+            return Result.Success();
+        }
+
+        var payloadResult = CaptureRequestContract.ParsePayload(captureItem.Payload, allowServerAttributionFields: true);
+        if (!payloadResult.IsSuccess)
+        {
+            _logger?.LogWarning(
+                "Automation proposal {ProposalId} applied but linked capture item {CaptureItemId} payload could not be parsed for conversion sync: {ErrorCode} {ErrorMessage}",
+                proposal.Id,
+                captureItem.Id,
+                payloadResult.ErrorCode,
+                payloadResult.ErrorMessage);
+            return Result.Success();
+        }
+
+        var provenance = payloadResult.Value.Provenance;
+        if (captureItem.UserId != proposal.RequestedByUserId)
+        {
+            _logger?.LogWarning(
+                "Automation proposal {ProposalId} skipped capture conversion sync because linked capture item {CaptureItemId} belongs to a different user",
+                proposal.Id,
+                captureItem.Id);
+            return Result.Success();
+        }
+
+        if (provenance?.ProposalId is not { } linkedProposalId || linkedProposalId == Guid.Empty)
+        {
+            _logger?.LogWarning(
+                "Automation proposal {ProposalId} skipped capture conversion sync because linked capture item {CaptureItemId} is not already attributed to this proposal",
+                proposal.Id,
+                captureItem.Id);
+            return Result.Success();
+        }
+
+        if (linkedProposalId != proposal.Id)
+        {
+            _logger?.LogWarning(
+                "Automation proposal {ProposalId} skipped capture conversion sync because linked capture item {CaptureItemId} already points at proposal {LinkedProposalId}",
+                proposal.Id,
+                captureItem.Id,
+                linkedProposalId);
+            return Result.Success();
+        }
+
+        if (provenance?.ConvertedAt is not null)
+        {
+            return Result.Success();
+        }
+
+        var resolvedBoardId = captureItem.BoardId ?? proposal.BoardId;
+        var convertedAt = provenance?.ConvertedAt ?? CaptureConversionTimestamp.ResolveConvertedAt(proposal.AppliedAt);
+        var updatedPayload = CaptureRequestContract.WithProvenance(
+            payloadResult.Value,
+            captureItem.Id,
+            proposalId: proposal.Id,
+            boardId: resolvedBoardId,
+            convertedAt: convertedAt);
+
+        try
+        {
+            if (!captureItem.BoardId.HasValue && resolvedBoardId.HasValue)
+            {
+                captureItem.BackfillBoard(resolvedBoardId.Value);
+            }
+
+            captureItem.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure(ex.ErrorCode, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure(ErrorCodes.UnexpectedError, ex.Message);
+        }
     }
 
     private async Task<Result> UpdateProposalStatusAsync(Guid proposalId, ProposalStatus status, string? failureReason, CancellationToken cancellationToken)

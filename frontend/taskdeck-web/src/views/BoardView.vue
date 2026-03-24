@@ -355,6 +355,13 @@ function openBoardReview() {
   })
 }
 
+function openBoardInbox() {
+  void router.push({
+    name: 'workspace-inbox',
+    query: { boardId: boardId.value },
+  })
+}
+
 function openBoardChat() {
   void router.push({
     name: 'workspace-automations-chat',
@@ -576,6 +583,12 @@ useKeyboardShortcuts([
             @click="openBoardReview"
           >
             Review proposals
+          </button>
+          <button
+            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            @click="openBoardInbox"
+          >
+            Open Inbox
           </button>
           <button
             class="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"

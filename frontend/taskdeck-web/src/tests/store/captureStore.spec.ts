@@ -76,6 +76,137 @@ describe('captureStore', () => {
     expect(store.detailById.c2?.rawText).toBe('full text')
   })
 
+  it('does not overwrite fresher list summaries when a cached detail is reopened', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    store.items = [
+      {
+        id: 'c2',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: 'fresh summary excerpt',
+        createdAt,
+        processedAt: createdAt,
+      },
+    ]
+    store.detailById.c2 = {
+      id: 'c2',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'stale cached excerpt',
+      rawText: 'cached detail',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+    }
+
+    await store.fetchDetail('c2')
+
+    expect(captureApi.getItem).not.toHaveBeenCalled()
+    expect(store.items[0]).toMatchObject({
+      id: 'c2',
+      status: 'Triaging',
+      textExcerpt: 'fresh summary excerpt',
+      processedAt: createdAt,
+    })
+    expect(store.detailById.c2?.rawText).toBe('cached detail')
+  })
+
+  it('can force-refresh a detail peek without mutating the current list summary', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    store.items = [
+      {
+        id: 'c2',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: 'fresh summary excerpt',
+        createdAt,
+        processedAt: createdAt,
+      },
+    ]
+    store.detailById.c2 = {
+      id: 'c2',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'stale cached excerpt',
+      rawText: 'cached detail',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+    }
+    vi.mocked(captureApi.getItem).mockResolvedValue({
+      id: 'c2',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'ProposalCreated',
+      source: 'Typed',
+      textExcerpt: 'fresh detail excerpt',
+      rawText: 'fresh detail',
+      createdAt,
+      processedAt: createdAt,
+      retryCount: 0,
+    })
+
+    const detail = await store.peekDetail('c2', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
+
+    expect(captureApi.getItem).toHaveBeenCalledWith('c2')
+    expect(detail).toMatchObject({
+      id: 'c2',
+      status: 'ProposalCreated',
+      rawText: 'fresh detail',
+    })
+    expect(store.detailById.c2).toMatchObject({
+      status: 'New',
+      rawText: 'cached detail',
+    })
+    expect(store.items[0]).toMatchObject({
+      status: 'Triaging',
+      textExcerpt: 'fresh summary excerpt',
+      processedAt: createdAt,
+    })
+  })
+
+  it('returns cached detail from peekDetail without reloading the API', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    store.detailById.c2 = {
+      id: 'c2',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'cached detail excerpt',
+      rawText: 'cached detail text',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+    }
+
+    const detail = await store.peekDetail('c2')
+
+    expect(detail).toMatchObject({
+      id: 'c2',
+      rawText: 'cached detail text',
+    })
+    expect(captureApi.getItem).not.toHaveBeenCalled()
+  })
+
   it('creates capture items and prepends summary', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.createItem).mockResolvedValue({
@@ -156,6 +287,32 @@ describe('captureStore', () => {
     expect(store.detailError).toBeNull()
   })
 
+  it('can silently force-refresh a detail peek without recording view error state', async () => {
+    const store = useCaptureStore()
+    store.detailError = 'existing detail error'
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-network'))
+
+    await expect(store.peekDetail('c10', {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })).rejects.toBeInstanceOf(Error)
+
+    expect(store.detailError).toBe('existing detail error')
+    expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('records detail errors and shows a toast when a default peekDetail request fails', async () => {
+    const store = useCaptureStore()
+    store.detailError = 'old detail error'
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-network'))
+
+    await expect(store.peekDetail('c11')).rejects.toBeInstanceOf(Error)
+
+    expect(store.detailError).toBe('Failed to load inbox item')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to load inbox item')
+  })
+
   it('enqueues triage and refreshes detail state', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
@@ -183,6 +340,202 @@ describe('captureStore', () => {
     expect(captureApi.getItem).toHaveBeenCalledWith('c7')
     expect(store.detailById.c7?.status).toBe('Triaging')
     expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued')
+  })
+
+  it('optimistically updates cached detail status without overwriting a fresher summary when triage starts from an open item', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+    let resolveDetailRefresh: ((value: Awaited<ReturnType<typeof captureApi.getItem>>) => void) | null = null
+
+    store.items = [
+      {
+        id: 'c7-detail',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'summary excerpt',
+        createdAt,
+        processedAt: null,
+      },
+    ]
+    store.detailById['c7-detail'] = {
+      id: 'c7-detail',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'detail excerpt',
+      rawText: 'detail text',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
+
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c7-detail',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveDetailRefresh = resolve
+    }))
+
+    const triagePromise = store.triageItem('c7-detail')
+    await Promise.resolve()
+
+    expect(store.detailById['c7-detail']).toMatchObject({
+      status: 'Triaging',
+      rawText: 'detail text',
+    })
+    expect(store.items[0]).toMatchObject({
+      id: 'c7-detail',
+      status: 'Triaging',
+      textExcerpt: 'summary excerpt',
+      processedAt: null,
+    })
+
+    resolveDetailRefresh?.({
+      id: 'c7-detail',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'Triaging',
+      source: 'Typed',
+      textExcerpt: 'refreshed detail excerpt',
+      rawText: 'refreshed detail text',
+      createdAt,
+      processedAt: createdAt,
+      retryCount: 1,
+      provenance: null,
+    })
+    await triagePromise
+
+    expect(store.detailById['c7-detail']).toMatchObject({
+      status: 'Triaging',
+      rawText: 'refreshed detail text',
+    })
+    expect(store.items[0]).toMatchObject({
+      id: 'c7-detail',
+      status: 'Triaging',
+      textExcerpt: 'refreshed detail excerpt',
+      processedAt: createdAt,
+    })
+  })
+
+  it('keeps the fresher summary visible when triage refresh fails after starting from stale cached detail', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    store.items = [
+      {
+        id: 'c7-stale',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'ProposalCreated',
+        source: 'Typed',
+        textExcerpt: 'fresh summary excerpt',
+        createdAt,
+        processedAt: createdAt,
+      },
+    ]
+    store.detailById['c7-stale'] = {
+      id: 'c7-stale',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'stale detail excerpt',
+      rawText: 'stale detail text',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
+
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c7-stale',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
+
+    await expect(store.triageItem('c7-stale')).rejects.toBeInstanceOf(Error)
+
+    expect(store.detailById['c7-stale']).toMatchObject({
+      status: 'Triaging',
+      textExcerpt: 'stale detail excerpt',
+      rawText: 'stale detail text',
+    })
+    expect(store.items[0]).toMatchObject({
+      id: 'c7-stale',
+      status: 'Triaging',
+      textExcerpt: 'fresh summary excerpt',
+      processedAt: createdAt,
+    })
+  })
+
+  it('optimistically updates summary status when triage starts without cached detail', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+    let resolveDetailRefresh: ((value: Awaited<ReturnType<typeof captureApi.getItem>>) => void) | null = null
+
+    store.items = [
+      {
+        id: 'c7-summary',
+        userId: 'u1',
+        boardId: 'b1',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'summary excerpt',
+        createdAt,
+        processedAt: null,
+      },
+    ]
+
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c7-summary',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveDetailRefresh = resolve
+    }))
+
+    const triagePromise = store.triageItem('c7-summary')
+    await Promise.resolve()
+
+    expect(store.detailById['c7-summary']).toBeUndefined()
+    expect(store.items[0]).toMatchObject({
+      id: 'c7-summary',
+      status: 'Triaging',
+      textExcerpt: 'summary excerpt',
+    })
+
+    resolveDetailRefresh?.({
+      id: 'c7-summary',
+      userId: 'u1',
+      boardId: 'b1',
+      status: 'Triaging',
+      source: 'Typed',
+      textExcerpt: 'refreshed summary excerpt',
+      rawText: 'refreshed detail text',
+      createdAt,
+      processedAt: createdAt,
+      retryCount: 1,
+      provenance: null,
+    })
+    await triagePromise
+
+    expect(store.detailById['c7-summary']).toMatchObject({
+      status: 'Triaging',
+      rawText: 'refreshed detail text',
+    })
+    expect(store.items[0]).toMatchObject({
+      id: 'c7-summary',
+      status: 'Triaging',
+      textExcerpt: 'refreshed summary excerpt',
+    })
   })
 
   it('stores action error when triage enqueue fails', async () => {

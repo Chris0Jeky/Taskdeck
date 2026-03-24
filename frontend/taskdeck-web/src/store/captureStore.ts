@@ -18,6 +18,13 @@ function toSummary(item: CaptureItem): CaptureItemSummary {
   }
 }
 
+type DetailLoadOptions = {
+  forceRefresh?: boolean
+  recordError?: boolean
+  showToast?: boolean
+  syncSummary?: boolean
+}
+
 export const useCaptureStore = defineStore('capture', () => {
   const toast = useToastStore()
 
@@ -42,6 +49,13 @@ export const useCaptureStore = defineStore('capture', () => {
     items.value.unshift(summary)
   }
 
+  function cacheDetail(detail: CaptureItem, syncSummary = true) {
+    detailById.value[detail.id] = detail
+    if (syncSummary) {
+      upsertSummary(toSummary(detail))
+    }
+  }
+
   async function fetchItems(query?: CaptureListQuery) {
     try {
       loadingList.value = true
@@ -57,21 +71,62 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  async function fetchDetail(itemId: string, forceRefresh = false, showToast = true) {
+  async function fetchDetail(itemId: string, options: DetailLoadOptions = {}) {
+    const {
+      forceRefresh = false,
+      recordError = true,
+      showToast = true,
+      syncSummary = true,
+    } = options
+
     if (!forceRefresh && detailById.value[itemId]) {
       return detailById.value[itemId]
     }
 
     try {
       loadingDetail.value = true
-      detailError.value = null
+      if (recordError) {
+        detailError.value = null
+      }
       const detail = await captureApi.getItem(itemId)
-      detailById.value[itemId] = detail
-      upsertSummary(toSummary(detail))
+      cacheDetail(detail, syncSummary)
       return detail
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox item').message
-      detailError.value = message
+      if (recordError) {
+        detailError.value = message
+      }
+      if (showToast) {
+        toast.error(message)
+      }
+      throw e
+    } finally {
+      loadingDetail.value = false
+    }
+  }
+
+  async function peekDetail(itemId: string, options: DetailLoadOptions = {}) {
+    const {
+      forceRefresh = false,
+      recordError = true,
+      showToast = true,
+    } = options
+
+    if (!forceRefresh && detailById.value[itemId]) {
+      return detailById.value[itemId]
+    }
+
+    try {
+      loadingDetail.value = true
+      if (recordError) {
+        detailError.value = null
+      }
+      return await captureApi.getItem(itemId)
+    } catch (e: unknown) {
+      const message = getErrorDisplay(e, 'Failed to load inbox item').message
+      if (recordError) {
+        detailError.value = message
+      }
       if (showToast) {
         toast.error(message)
       }
@@ -102,7 +157,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       await captureApi.ignoreItem(itemId)
-      await fetchDetail(itemId, true)
+      await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item ignored')
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to ignore capture item').message
@@ -119,7 +174,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       await captureApi.cancelItem(itemId)
-      await fetchDetail(itemId, true)
+      await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item cancelled')
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to cancel capture item').message
@@ -138,23 +193,26 @@ export const useCaptureStore = defineStore('capture', () => {
       const triageResult = await captureApi.enqueueTriage(itemId)
 
       const existingDetail = detailById.value[itemId]
+      const existingSummary = items.value.find((item) => item.id === itemId)
+      let optimisticDetail: CaptureItem | null = null
       if (existingDetail) {
-        detailById.value[itemId] = {
+        optimisticDetail = {
           ...existingDetail,
           status: triageResult.status,
         }
-        upsertSummary(toSummary(detailById.value[itemId]))
-      } else {
-        const existingSummary = items.value.find((item) => item.id === itemId)
-        if (existingSummary) {
-          upsertSummary({
-            ...existingSummary,
-            status: triageResult.status,
-          })
-        }
+        detailById.value[itemId] = optimisticDetail
       }
 
-      await fetchDetail(itemId, true, false)
+      if (existingSummary) {
+        upsertSummary({
+          ...existingSummary,
+          status: triageResult.status,
+        })
+      } else if (optimisticDetail) {
+        upsertSummary(toSummary(optimisticDetail))
+      }
+
+      await fetchDetail(itemId, { forceRefresh: true, showToast: false })
       toast.success(triageResult.alreadyTriaging ? 'Capture item is already triaging' : 'Capture item triage queued')
       return triageResult
     } catch (e: unknown) {
@@ -177,8 +235,10 @@ export const useCaptureStore = defineStore('capture', () => {
     detailError,
     actionError,
     hasItems,
+    cacheDetail,
     fetchItems,
     fetchDetail,
+    peekDetail,
     createItem,
     ignoreItem,
     cancelItem,

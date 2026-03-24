@@ -103,7 +103,7 @@ describe('CardModal', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Capture Origin')
-    expect(wrapper.find('a[href="/workspace/inbox#capture-capture-7"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/workspace/inbox?boardId=board-1#capture-capture-7"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/workspace/review?boardId=board-1#proposal-proposal-9"]').exists()).toBe(true)
   })
 
@@ -395,5 +395,25 @@ describe('CardModal', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('No capture provenance available.')
+  })
+
+  it('should render a provenance error message when capture provenance fetch fails', async () => {
+    mockStore.fetchCardProvenance.mockRejectedValue(new Error('provenance unavailable'))
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(wrapper.text()).toContain('Unable to load capture provenance.')
+    expect(wrapper.text()).not.toContain('No capture provenance available.')
   })
 })

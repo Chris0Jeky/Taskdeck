@@ -34,13 +34,24 @@ let latestProposalLoadRequestId = 0
 let latestDiffRequestId = 0
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
+function matchesActiveBoardFilter(boardId: string | null | undefined): boolean {
+  if (!activeBoardFilter.value) {
+    return true
+  }
+
+  const normalizedBoardId = normalizeBoardIdQueryParam(boardId)
+  return normalizedBoardId === activeBoardFilter.value
+}
+
+const visibleProposals = computed(() => proposals.value.filter((proposal) => matchesActiveBoardFilter(proposal.boardId)))
+
 const summaryCards = computed<ReviewSummaryCard[]>(() => {
   let pendingReview = 0
   let readyToExecute = 0
   let captureLinked = 0
   let appliedRecently = 0
 
-  for (const proposal of proposals.value) {
+  for (const proposal of visibleProposals.value) {
     const normalizedStatus = normalizeProposalStatus(proposal.status)
 
     if (normalizedStatus === 'PendingReview') {
@@ -111,7 +122,7 @@ async function loadProposals() {
   }
 
   if (requestId === latestProposalLoadRequestId) {
-    await scrollToProposalFromHash()
+    await openProposalFromHash()
   }
 }
 
@@ -141,6 +152,88 @@ async function scrollToProposalFromHash() {
   await nextTick()
   const element = document.getElementById(`proposal-${proposalId}`)
   element?.scrollIntoView({ block: 'nearest' })
+}
+
+function upsertProposal(proposal: ApiProposal) {
+  const existingIndex = proposals.value.findIndex((current) => current.id === proposal.id)
+  if (existingIndex >= 0) {
+    proposals.value[existingIndex] = proposal
+    return
+  }
+
+  const proposalCreatedAt = new Date(proposal.createdAt).getTime()
+  const insertIndex = proposals.value.findIndex((current) => new Date(current.createdAt).getTime() < proposalCreatedAt)
+
+  if (insertIndex >= 0) {
+    proposals.value.splice(insertIndex, 0, proposal)
+    return
+  }
+
+  proposals.value.push(proposal)
+}
+
+function isHttpNotFound(error: unknown): boolean {
+  const candidate = error as { response?: { status?: number } } | null
+  return candidate?.response?.status === 404
+}
+
+async function openProposalFromHash() {
+  if (proposalsLoading.value) {
+    return
+  }
+
+  const proposalId = getProposalIdFromHash(route.hash)
+  if (!proposalId) {
+    return
+  }
+
+  const currentProposal = proposals.value.find((proposal) => proposal.id === proposalId)
+  if (currentProposal) {
+    if (!matchesActiveBoardFilter(currentProposal.boardId)) {
+      await router.replace({
+        name: 'workspace-review',
+        query: route.query,
+      })
+      return
+    }
+
+    await scrollToProposalFromHash()
+    return
+  }
+
+  try {
+    const fetchedProposal = await automationApi.getProposal(proposalId)
+    if (getProposalIdFromHash(route.hash) !== proposalId) {
+      return
+    }
+
+    if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
+      await router.replace({
+        name: 'workspace-review',
+        query: route.query,
+      })
+      return
+    }
+
+    upsertProposal(fetchedProposal)
+    await nextTick()
+    await scrollToProposalFromHash()
+  } catch (e: unknown) {
+    if (getProposalIdFromHash(route.hash) !== proposalId) {
+      return
+    }
+
+    if (isHttpNotFound(e)) {
+      await router.replace({
+        name: 'workspace-review',
+        query: route.query,
+      })
+
+      return
+    }
+
+    toast.error(getErrorDisplay(e, 'Failed to load proposal').message)
+  }
 }
 
 async function handleApproveProposal(proposalId: string) {
@@ -278,6 +371,17 @@ function openBoard(boardId: string) {
   void router.push(`/workspace/boards/${boardId}`)
 }
 
+function inboxPath(boardId?: string | null, captureItemId?: string): string {
+  const encodedBoardId = boardId ? encodeURIComponent(boardId) : null
+  const query = encodedBoardId ? `?boardId=${encodedBoardId}` : ''
+  const hash = captureItemId ? `#capture-${encodeURIComponent(captureItemId)}` : ''
+  return `/workspace/inbox${query}${hash}`
+}
+
+function openInbox() {
+  void router.push(inboxPath(activeBoardFilter.value))
+}
+
 function proposalHref(proposal: ApiProposal): string {
   const query = proposal.boardId ?? activeBoardFilter.value
   const encodedProposalId = encodeURIComponent(proposal.id)
@@ -286,8 +390,8 @@ function proposalHref(proposal: ApiProposal): string {
     : `/workspace/review#proposal-${encodedProposalId}`
 }
 
-function captureHref(captureItemId: string): string {
-  return `/workspace/inbox#capture-${encodeURIComponent(captureItemId)}`
+function captureHref(captureItemId: string, boardId?: string | null): string {
+  return inboxPath(boardId, captureItemId)
 }
 
 function captureSourceReference(proposal: ApiProposal): string | null {
@@ -309,7 +413,9 @@ function hasProvenanceContext(proposal: ApiProposal): boolean {
 
 function captureHrefForProposal(proposal: ApiProposal): string {
   const sourceReference = captureSourceReference(proposal)
-  return sourceReference ? captureHref(sourceReference) : '/workspace/inbox'
+  return sourceReference
+    ? captureHref(sourceReference, proposal.boardId ?? activeBoardFilter.value)
+    : inboxPath(activeBoardFilter.value)
 }
 
 function reviewStatusClass(status: ApiProposal['status']): string {
@@ -327,11 +433,7 @@ onMounted(() => {
 watch(
   () => route.hash,
   () => {
-    if (proposals.value.length === 0) {
-      return
-    }
-
-    void scrollToProposalFromHash()
+    void openProposalFromHash()
   },
 )
 
@@ -362,7 +464,7 @@ watch(
         <button class="td-btn td-btn--primary" :disabled="proposalsLoading" @click="loadProposals">
           {{ proposalsLoading ? 'Refreshing...' : 'Refresh Review' }}
         </button>
-        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/inbox')">Open Inbox</button>
+        <button class="td-btn td-btn--secondary" @click="openInbox">Open Inbox</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/automations/queue')">
           Open Queue (Advanced)
         </button>
@@ -378,7 +480,7 @@ watch(
       description="Review is the trust gate. Proposed changes stop here before they touch a board, while queue and chat remain advanced/operator surfaces when you need to drive the workflow manually."
     >
       <template #actions>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/inbox')">Open Inbox</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openInbox">Open Inbox</button>
         <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
       </template>
     </WorkspaceHelpCallout>
@@ -395,14 +497,14 @@ watch(
       Loading proposals to review...
     </div>
 
-    <section v-else-if="proposals.length === 0" class="td-panel td-review-empty">
+    <section v-else-if="visibleProposals.length === 0" class="td-panel td-review-empty">
       <h2 class="td-section-title">No proposals need review yet</h2>
       <p class="td-section-desc">
         Start from Inbox when you want Taskdeck to propose a change, or open Boards if you want to continue directly
         with the work that already landed.
       </p>
       <div class="td-review-empty__actions">
-        <button class="td-btn td-btn--primary" @click="openRoute('/workspace/inbox')">Go to Inbox</button>
+        <button class="td-btn td-btn--primary" @click="openInbox">Go to Inbox</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/boards')">Open Boards</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/home')">Back to Home</button>
       </div>
@@ -410,7 +512,7 @@ watch(
 
     <section v-else class="td-review__list">
       <article
-        v-for="proposal in proposals"
+        v-for="proposal in visibleProposals"
         :id="`proposal-${proposal.id}`"
         :key="proposal.id"
         class="td-panel td-review-card"

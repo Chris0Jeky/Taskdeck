@@ -54,6 +54,24 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        var uniqueIds = ids
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (uniqueIds.Count == 0)
+        {
+            return Array.Empty<AutomationProposal>();
+        }
+
+        return await _dbSet
+            .AsNoTracking()
+            .Where(proposal => uniqueIds.Contains(proposal.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(

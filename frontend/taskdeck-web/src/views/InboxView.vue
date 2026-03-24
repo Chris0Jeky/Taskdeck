@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useCaptureStore } from '../store/captureStore'
-import type { CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
+import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
@@ -11,6 +11,7 @@ const captureStore = useCaptureStore()
 const router = useRouter()
 const route = useRoute()
 const selectedItemId = ref<string | null>(null)
+const hashLoadFailedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
 
@@ -30,6 +31,23 @@ const selectedItem = computed(() => {
   return captureStore.detailById[selectedItemId.value] ?? null
 })
 const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+
+function getCaptureIdFromHash(hash: string): string | null {
+  if (!hash.startsWith('#capture-')) {
+    return null
+  }
+
+  const rawId = hash.slice('#capture-'.length).trim()
+  if (!rawId) {
+    return null
+  }
+
+  try {
+    return decodeURIComponent(rawId)
+  } catch {
+    return null
+  }
+}
 
 function statusLabel(status: CaptureStatusValue): string {
   if (status === 0 || status === 'New') return 'New'
@@ -61,29 +79,147 @@ async function loadInbox() {
   } catch {
     // Store handles toast + error state.
   }
-}
 
-async function openItem(item: CaptureItemSummary) {
-  const openingId = item.id
-  selectedItemId.value = openingId
-  try {
-    await captureStore.fetchDetail(openingId)
-  } catch {
-    // Keep detail state coherent when open fails, but avoid clearing
-    // a newer selection if this request becomes stale.
-    if (selectedItemId.value === openingId) {
-      selectedItemId.value = null
-    }
-  }
+  await openItemFromHash()
 }
 
 async function openItemFromList(item: CaptureItemSummary, index: number) {
-  setActiveIndex(index)
-  await openItem(item)
+  hashLoadFailedItemId.value = null
+  await clearCaptureHash()
+  await selectItemById(item.id, { preferredIndex: index })
 }
 
-function closeDetail() {
+type SelectItemOptions = {
+  preferredIndex?: number
+  preloadedDetail?: CaptureItem
+  cacheSummary?: boolean
+}
+
+function isHttpNotFound(error: unknown): boolean {
+  const candidate = error as { response?: { status?: number; data?: { errorCode?: string } } } | null
+  return candidate?.response?.status === 404 || candidate?.response?.data?.errorCode === 'NotFound'
+}
+
+function primeSelection(itemId: string, preferredIndex?: number) {
+  if (preferredIndex !== undefined) {
+    setActiveIndex(preferredIndex)
+  } else {
+    const matchingIndex = items.value.findIndex((item) => item.id === itemId)
+    if (matchingIndex >= 0) {
+      setActiveIndex(matchingIndex)
+    }
+  }
+
+  selectedItemId.value = itemId
+}
+
+async function selectItemById(itemId: string, options: SelectItemOptions = {}): Promise<boolean> {
+  const {
+    preferredIndex,
+    preloadedDetail,
+    cacheSummary = true,
+  } = options
+
+  primeSelection(itemId, preferredIndex)
+  hashLoadFailedItemId.value = null
+  try {
+    if (preloadedDetail) {
+      captureStore.cacheDetail(preloadedDetail, cacheSummary)
+      return true
+    }
+
+    await captureStore.fetchDetail(itemId)
+    return true
+  } catch {
+    if (selectedItemId.value === itemId) {
+      selectedItemId.value = null
+    }
+
+    return false
+  }
+}
+
+async function openBoardScopedHashItem(captureId: string): Promise<void> {
+  try {
+    hashLoadFailedItemId.value = null
+    const detail = await captureStore.peekDetail(captureId, {
+      forceRefresh: true,
+      recordError: false,
+      showToast: false,
+    })
+    if (getCaptureIdFromHash(route.hash) !== captureId) {
+      return
+    }
+
+    if (normalizeBoardIdQueryParam(detail.boardId) !== activeBoardId.value) {
+      selectedItemId.value = null
+      await clearCaptureHash()
+      return
+    }
+
+    await selectItemById(captureId, {
+      preloadedDetail: detail,
+      cacheSummary: false,
+    })
+    return
+  } catch (error) {
+    if (getCaptureIdFromHash(route.hash) !== captureId) {
+      return
+    }
+
+    if (isHttpNotFound(error)) {
+      selectedItemId.value = null
+      hashLoadFailedItemId.value = null
+      await clearCaptureHash()
+      return
+    }
+
+    selectedItemId.value = null
+    hashLoadFailedItemId.value = captureId
+  }
+}
+
+async function openItemFromHash() {
+  const captureId = getCaptureIdFromHash(route.hash)
+  if (!captureId) {
+    hashLoadFailedItemId.value = null
+    return
+  }
+
+  if (selectedItemId.value === captureId && selectedItem.value) {
+    if (!activeBoardId.value || normalizeBoardIdQueryParam(selectedItem.value.boardId) === activeBoardId.value) {
+      hashLoadFailedItemId.value = null
+      return
+    }
+  }
+
+  if (activeBoardId.value) {
+    await openBoardScopedHashItem(captureId)
+    return
+  }
+
+  const opened = await selectItemById(captureId)
+  if (!opened) {
+    await clearCaptureHash()
+  }
+}
+
+async function clearCaptureHash() {
+  if (!getCaptureIdFromHash(route.hash)) {
+    return
+  }
+
+  hashLoadFailedItemId.value = null
+  await router.replace({
+    name: 'workspace-inbox',
+    query: route.query,
+  })
+}
+
+async function closeDetail() {
   selectedItemId.value = null
+  hashLoadFailedItemId.value = null
+  await clearCaptureHash()
 }
 
 function setActiveIndex(index: number) {
@@ -110,7 +246,7 @@ async function openActiveItem() {
     return
   }
 
-  await openItem(target)
+  await openItemFromList(target, activeItemIndex.value)
 }
 
 async function handleKeydown(event: KeyboardEvent) {
@@ -178,7 +314,7 @@ async function refreshSelectedDetail() {
   }
 
   try {
-    await captureStore.fetchDetail(selectedItemId.value, true)
+    await captureStore.fetchDetail(selectedItemId.value, { forceRefresh: true })
   } catch {
     // Store handles toast + error state.
   }
@@ -218,14 +354,21 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
   return 'Start Triage'
 }
 
-function openProposal(proposalId: string): void {
-  void router.push({
+function reviewRoute(proposalId?: string, boardId?: string | null) {
+  const effectiveBoardId = boardId ?? activeBoardId.value
+  return {
     name: 'workspace-review',
-    query: selectedItem.value?.boardId
-      ? { boardId: selectedItem.value.boardId }
-      : (activeBoardId.value ? { boardId: activeBoardId.value } : undefined),
-    hash: `#proposal-${encodeURIComponent(proposalId)}`,
-  })
+    query: effectiveBoardId ? { boardId: effectiveBoardId } : undefined,
+    hash: proposalId ? `#proposal-${encodeURIComponent(proposalId)}` : undefined,
+  }
+}
+
+function openProposal(proposalId: string): void {
+  void router.push(reviewRoute(proposalId, selectedItem.value?.boardId ?? null))
+}
+
+function openReview(): void {
+  void router.push(reviewRoute())
 }
 
 function openRoute(path: string): void {
@@ -236,6 +379,14 @@ watch(items, (nextItems) => {
   if (nextItems.length === 0) {
     activeItemIndex.value = 0
     return
+  }
+
+  if (selectedItemId.value) {
+    const selectedIndex = nextItems.findIndex((item) => item.id === selectedItemId.value)
+    if (selectedIndex >= 0) {
+      activeItemIndex.value = selectedIndex
+      return
+    }
   }
 
   if (activeItemIndex.value >= nextItems.length) {
@@ -253,6 +404,13 @@ watch(activeBoardId, () => {
   activeItemIndex.value = 0
   void loadInbox()
 })
+
+watch(
+  () => route.hash,
+  () => {
+    void openItemFromHash()
+  },
+)
 
 watch(selectedItemId, (itemId, _, onCleanup) => {
   if (!itemId) {
@@ -292,7 +450,7 @@ onMounted(() => {
     >
       <template #actions>
         <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+        <button class="td-btn td-btn--secondary td-btn--sm" @click="openReview">Open Review</button>
       </template>
     </WorkspaceHelpCallout>
 
@@ -320,7 +478,7 @@ onMounted(() => {
             <div class="td-placeholder__actions">
               <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
               <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/today')">Open Today</button>
-              <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+              <button class="td-btn td-btn--secondary td-btn--sm" @click="openReview">Open Review</button>
             </div>
           </div>
 
@@ -350,7 +508,15 @@ onMounted(() => {
       </section>
 
       <section class="td-inbox__detail-panel">
-        <div v-if="!selectedItemId" class="td-placeholder td-placeholder--detail">
+        <div
+          v-if="hashLoadFailedItemId && !selectedItemId"
+          class="td-placeholder td-placeholder--detail"
+          role="alert"
+          aria-live="assertive"
+        >
+          Unable to load capture detail.
+        </div>
+        <div v-else-if="!selectedItemId" class="td-placeholder td-placeholder--detail">
           Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it.
         </div>
         <div

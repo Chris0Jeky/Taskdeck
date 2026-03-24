@@ -134,4 +134,21 @@ public class LlmRequest : Entity
         Payload = payload;
         Touch();
     }
+
+    public void BackfillBoard(Guid boardId)
+    {
+        if (boardId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Board ID cannot be empty");
+
+        if (BoardId.HasValue)
+        {
+            if (BoardId.Value != boardId)
+                throw new DomainException(ErrorCodes.ValidationError, "Cannot reassign request to a different board");
+
+            return;
+        }
+
+        BoardId = boardId;
+        Touch();
+    }
 }

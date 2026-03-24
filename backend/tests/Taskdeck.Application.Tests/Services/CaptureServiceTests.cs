@@ -16,6 +16,7 @@ public class CaptureServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<IAuthorizationService> _authorizationServiceMock;
     private readonly Mock<ILlmQueueRepository> _llmQueueRepositoryMock;
+    private readonly Mock<IAutomationProposalRepository> _automationProposalRepositoryMock;
     private readonly Mock<IUserRepository> _userRepositoryMock;
     private readonly CaptureService _service;
 
@@ -24,9 +25,11 @@ public class CaptureServiceTests
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _authorizationServiceMock = new Mock<IAuthorizationService>();
         _llmQueueRepositoryMock = new Mock<ILlmQueueRepository>();
+        _automationProposalRepositoryMock = new Mock<IAutomationProposalRepository>();
         _userRepositoryMock = new Mock<IUserRepository>();
 
         _unitOfWorkMock.SetupGet(u => u.LlmQueue).Returns(_llmQueueRepositoryMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.AutomationProposals).Returns(_automationProposalRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(u => u.Users).Returns(_userRepositoryMock.Object);
 
         _service = new CaptureService(_unitOfWorkMock.Object, _authorizationServiceMock.Object);
@@ -218,6 +221,201 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldReturnConvertedStatus_WhenCaptureHasPersistedConversionProvenance()
+    {
+        var userId = Guid.NewGuid();
+        var captureRequest = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "captured text"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: Guid.NewGuid(),
+                    convertedAt: DateTimeOffset.UtcNow)));
+        captureRequest.MarkAsProcessing();
+        captureRequest.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(new[] { captureRequest });
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle();
+        result.Value[0].Status.Should().Be(CaptureStatus.Converted);
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldBackfillConvertedStatus_WhenLinkedProposalIsAlreadyApplied()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureRequest = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "captured text")));
+        captureRequest.MarkAsProcessing();
+        captureRequest.MarkAsCompleted();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Applied capture proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            captureRequest.Id.ToString());
+        proposal.Approve(userId);
+        proposal.MarkAsApplied();
+        captureRequest.UpdatePayload(CaptureRequestContract.SerializePayload(
+            CaptureRequestContract.WithProvenance(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "captured text"),
+                captureItemId: Guid.NewGuid(),
+                triageRunId: Guid.NewGuid(),
+                proposalId: proposal.Id)));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(new[] { captureRequest });
+        _automationProposalRepositoryMock
+            .Setup(r => r.GetByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.SequenceEqual(new[] { proposal.Id })),
+                default))
+            .ReturnsAsync(new[] { proposal });
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle();
+        result.Value[0].Status.Should().Be(CaptureStatus.Converted);
+        result.Value[0].BoardId.Should().Be(boardId);
+        captureRequest.BoardId.Should().BeNull();
+        var payload = CaptureRequestContract.ParsePayload(captureRequest.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.ConvertedAt.Should().BeNull();
+        _automationProposalRepositoryMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldOnlyBatchProposalLookupsForItemsScannedBeforeTheLimitIsReached()
+    {
+        var userId = Guid.NewGuid();
+        var laterProposalId = Guid.NewGuid();
+        var firstProposalId = Guid.NewGuid();
+
+        var laterCapture = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "later capture"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: laterProposalId)));
+        laterCapture.MarkAsProcessing();
+        laterCapture.MarkAsCompleted();
+
+        var firstCapture = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "first capture"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: firstProposalId)));
+        firstCapture.MarkAsProcessing();
+        firstCapture.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(new[] { laterCapture, firstCapture });
+        _automationProposalRepositoryMock
+            .Setup(r => r.GetByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.SequenceEqual(new[] { firstProposalId })),
+                default))
+            .ReturnsAsync(Array.Empty<AutomationProposal>());
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto(Limit: 1));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle();
+        result.Value[0].Id.Should().Be(firstCapture.Id);
+        _automationProposalRepositoryMock.Verify(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _automationProposalRepositoryMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldRejectAlreadyAppliedCapture_WhenConvertedProvenanceIsBackfilledLazily()
+    {
+        var userId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "captured text"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: proposalId)));
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Applied capture proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            null,
+            item.Id.ToString());
+        proposal.Approve(userId);
+        proposal.MarkAsApplied();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _automationProposalRepositoryMock
+            .Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain(CaptureStatus.Converted.ToString());
+        var payload = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.ConvertedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task ListAsync_ShouldReturnValidationError_WhenLimitIsNegative()
     {
         var userId = Guid.NewGuid();
@@ -268,6 +466,59 @@ public class CaptureServiceTests
         result.Value.Provenance.PromptVersion.Should().Be("triage.v1");
         result.Value.Provenance.Provider.Should().Be("OpenAI");
         result.Value.Provenance.Model.Should().Be("gpt-4o-mini");
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ShouldBackfillConvertedProvenance_WhenLinkedProposalIsAlreadyApplied()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "capture payload")));
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Applied capture proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            item.Id.ToString());
+        proposal.Approve(userId);
+        proposal.MarkAsApplied();
+        item.UpdatePayload(CaptureRequestContract.SerializePayload(
+            CaptureRequestContract.WithProvenance(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "capture payload"),
+                captureItemId: Guid.NewGuid(),
+                triageRunId: Guid.NewGuid(),
+                proposalId: proposal.Id)));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _automationProposalRepositoryMock
+            .Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetByIdAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Converted);
+        result.Value.BoardId.Should().Be(boardId);
+        result.Value.Provenance.Should().NotBeNull();
+        result.Value.Provenance!.ConvertedAt.Should().NotBeNull();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
     [Fact]
@@ -376,6 +627,38 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Conflict);
         result.ErrorMessage.Should().Contain("cannot transition");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnConflict_WhenItemIsConverted()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "capture payload"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: Guid.NewGuid(),
+                    convertedAt: DateTimeOffset.UtcNow)));
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain(CaptureStatus.Converted.ToString());
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 }

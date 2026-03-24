@@ -1,6 +1,7 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-09  
+Last Updated: 2026-03-19
+<br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -489,7 +490,7 @@ Focus:
   - resume point
 - remaining follow-through for this horizon:
   - richer contextual help and in-product teaching on top of the shipped board-centered loop
-  - broader launch-criteria proofing for first-run/product-smoke coverage
+  - broader telemetry and release-gate follow-through beyond the shipped first-run guardrail
 
 Exit Criteria:
 - the `capture -> review -> board` loop is visible and coherent inside the product
@@ -509,14 +510,14 @@ Focus:
 - add a bridge doc (`START_HERE`) for first-run product understanding
 - reshape the manual and index around top-level navigation and user goals
 - keep `START_HERE.md` and `USER_MANUAL.md` at `docs/` root, while chaptered manual guidance lives under `docs/manual/` and reusable workflow/help-center guides live under `docs/product/`
-- add a required first-run golden-path smoke test
+- required first-run golden-path smoke test, expressed as a deterministic Playwright guardrail
 - define product-shaped telemetry and launch criteria for novice beta and later agent alpha
-- treat the staged `novice-first-first-run` scenario shape as the acceptance target for the eventual first-run smoke path
+- treat the staged `novice-first-first-run` scenario shape as the acceptance contract for the shipped first-run smoke path
 - keep demo tooling as evidence and acceptance support rather than the main onboarding path
 
 Exit Criteria:
 - docs entry points match the product's intended top-level navigation
-- the first-run smoke path covers `Home -> capture -> review -> execute -> board`
+- the first-run smoke path is `Home -> capture -> review -> execute -> board`
 - novice users can recover from empty/confusing surfaces without leaving the product context
 - launch criteria are explicit enough to guide seeding and release decisions
 
@@ -608,7 +609,7 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#326` proposal readability + board-centered action flow (delivered)
   - `#96` onboarding/contextual help (delivered)
   - `#100` user guides/tutorials/FAQ (delivered)
-  - `#328` first-run smoke + launch-criteria guardrail
+  - `#328` first-run smoke + launch-criteria guardrail (delivered)
 - Related but intentionally not folded into Wave P core execution: `#93`, `#216`, `#77`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
@@ -801,7 +802,7 @@ Batch E integration hardening (`#302`) status:
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
-3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): finish `#328`.
+3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): keep the now-delivered `#328` smoke contract aligned to the shipped first-run loop, and route broader telemetry/release-gate follow-through to `#341`.
 4. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
 5. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
 6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.

@@ -353,6 +353,57 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ExecuteCaptureBackedProposal_ShouldMarkCaptureAsConverted_AndRemainIdempotent()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, "capture-execute-converted");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-execute-converted-board");
+        var createColumnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Inbox", null, null));
+        createColumnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(
+                board.Id,
+                """
+                - [ ] Verify capture converts after apply
+                """));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var triageResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var proposalCreatedItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.ProposalCreated);
+        proposalCreatedItem.Provenance.Should().NotBeNull();
+        proposalCreatedItem.Provenance!.ProposalId.Should().NotBeNull();
+        var proposalId = proposalCreatedItem.Provenance.ProposalId!.Value;
+
+        var approveResponse = await _client.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await ExecuteProposalAsync(_client, proposalId);
+        await ExecuteProposalAsync(_client, proposalId);
+
+        var convertedItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.Converted);
+        convertedItem.Status.Should().Be(CaptureStatus.Converted);
+        convertedItem.Provenance.Should().NotBeNull();
+        convertedItem.Provenance!.ProposalId.Should().Be(proposalId);
+        convertedItem.Provenance.ConvertedAt.Should().NotBeNull();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+        var payload = CaptureRequestContract.ParsePayload(persistedItem.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.ProposalId.Should().Be(proposalId);
+        payload.Value.Provenance.ConvertedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task Triage_ShouldFailDeterministically_WhenCaptureHasNoBoard()
     {
         await AuthenticateAsAsync("capture-triage-fail");
@@ -487,6 +538,15 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
             diagnostics: item => item is null
                 ? "item=null"
                 : $"status={item.Status}, proposalId={item.Provenance?.ProposalId?.ToString() ?? "null"}, triageRunId={item.Provenance?.TriageRunId?.ToString() ?? "null"}");
+    }
+
+    private static async Task ExecuteProposalAsync(HttpClient client, Guid proposalId)
+    {
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposalId}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static async Task<CaptureItemDto> WaitForCaptureStatusAsync(HttpClient client, Guid itemId, CaptureStatus expectedStatus)
