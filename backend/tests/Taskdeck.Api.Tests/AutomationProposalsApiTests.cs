@@ -3,10 +3,12 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -254,6 +256,95 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         executedProposal.Should().NotBeNull();
         executedProposal!.Status.Should().Be(ProposalStatus.Applied);
         executedProposal.AppliedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldNotMutateUnrelatedCapture_WhenQueueSourceReferenceIsCallerSupplied()
+    {
+        var proposalClient = _factory.CreateClient();
+        var captureOwnerClient = _factory.CreateClient();
+
+        var proposalUser = await ApiTestHarness.AuthenticateAsync(proposalClient, "automation-queue-source-proposal");
+        var captureOwner = await ApiTestHarness.AuthenticateAsync(captureOwnerClient, "automation-queue-source-capture");
+        var proposalBoard = await ApiTestHarness.CreateBoardAsync(proposalClient, "automation-queue-source-board");
+        var captureBoard = await ApiTestHarness.CreateBoardAsync(captureOwnerClient, "automation-queue-source-capture-board");
+
+        var createCaptureResponse = await captureOwnerClient.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(captureBoard.Id, "capture payload that should stay unattached"));
+        createCaptureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdCapture = await createCaptureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        createdCapture.Should().NotBeNull();
+
+        using var initialScope = _factory.Services.CreateScope();
+        var initialDb = initialScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var initialPersistedCapture = await initialDb.LlmRequests.FindAsync(createdCapture!.Id);
+        initialPersistedCapture.Should().NotBeNull();
+        var initialStatus = initialPersistedCapture!.Status;
+        var initialErrorMessage = initialPersistedCapture.ErrorMessage;
+        var initialProcessedAt = initialPersistedCapture.ProcessedAt;
+        var initialRetryCount = initialPersistedCapture.RetryCount;
+        var initialUpdatedAt = initialPersistedCapture.UpdatedAt;
+        var initialPayloadRaw = initialPersistedCapture.Payload;
+        var initialPayload = CaptureRequestContract.ParsePayload(initialPersistedCapture!.Payload, allowServerAttributionFields: true);
+        initialPayload.IsSuccess.Should().BeTrue();
+        initialPayload.Value.Provenance.Should().NotBeNull();
+        var initialProvenance = initialPayload.Value.Provenance!;
+
+        var createProposalResponse = await proposalClient.PostAsJsonAsync(
+            "/api/automation/proposals",
+            new CreateProposalDto(
+                SourceType: ProposalSourceType.Queue,
+                RequestedByUserId: proposalUser.UserId,
+                Summary: "Caller supplied queue reference",
+                RiskLevel: RiskLevel.Low,
+                CorrelationId: Guid.NewGuid().ToString(),
+                BoardId: proposalBoard.Id,
+                SourceReferenceId: createdCapture!.Id.ToString(),
+                Operations: new List<CreateProposalOperationDto>
+                {
+                    new(
+                        Sequence: 1,
+                        ActionType: "update",
+                        TargetType: "board",
+                        Parameters: $"{{\"boardId\":\"{proposalBoard.Id}\",\"name\":\"Queue source guardrail {Guid.NewGuid():N}\"}}",
+                        IdempotencyKey: Guid.NewGuid().ToString(),
+                        TargetId: proposalBoard.Id.ToString())
+                }));
+        createProposalResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdProposal = await createProposalResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        createdProposal.Should().NotBeNull();
+
+        var approveResponse = await proposalClient.PostAsync($"/api/automation/proposals/{createdProposal!.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{createdProposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await proposalClient.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedCapture = await db.LlmRequests.FindAsync(createdCapture.Id);
+        persistedCapture.Should().NotBeNull();
+        persistedCapture!.UserId.Should().Be(captureOwner.UserId);
+        persistedCapture.BoardId.Should().Be(captureBoard.Id);
+        persistedCapture.Status.Should().Be(initialStatus);
+        persistedCapture.ErrorMessage.Should().Be(initialErrorMessage);
+        persistedCapture.ProcessedAt.Should().Be(initialProcessedAt);
+        persistedCapture.RetryCount.Should().Be(initialRetryCount);
+        persistedCapture.UpdatedAt.Should().Be(initialUpdatedAt);
+        persistedCapture.Payload.Should().Be(initialPayloadRaw);
+        var payload = CaptureRequestContract.ParsePayload(persistedCapture.Payload, allowServerAttributionFields: true);
+        payload.IsSuccess.Should().BeTrue();
+        payload.Value.Provenance.Should().NotBeNull();
+        payload.Value.Provenance!.CaptureItemId.Should().Be(initialProvenance.CaptureItemId);
+        payload.Value.Provenance.RequestedByUserId.Should().Be(initialProvenance.RequestedByUserId);
+        payload.Value.Provenance.CorrelationId.Should().Be(initialProvenance.CorrelationId);
+        payload.Value.Provenance.SourceSurface.Should().Be(initialProvenance.SourceSurface);
+        payload.Value.Provenance.BoardId.Should().Be(initialProvenance.BoardId);
+        payload.Value.Provenance.ProposalId.Should().BeNull();
+        payload.Value.Provenance.ConvertedAt.Should().BeNull();
     }
 
     [Fact]
