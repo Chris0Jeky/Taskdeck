@@ -102,41 +102,59 @@ public class CaptureService : ICaptureService
         var captureItems = items
             .Where(item => CaptureRequestContract.IsCaptureRequestType(item.RequestType))
             .OrderByDescending(item => item.CreatedAt)
-            .Select(item => (Item: item, Payload: ParsePayload(item)))
             .ToList();
-        var appliedProposalLookup = await LoadAppliedProposalLookupAsync(captureItems, cancellationToken);
 
         var summaries = new List<CaptureItemSummaryDto>(limit);
-        foreach (var candidate in captureItems)
+        for (var startIndex = 0; startIndex < captureItems.Count && summaries.Count < limit;)
         {
-            var item = candidate.Item;
-            if (filter.BoardId.HasValue && item.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
+            var remaining = limit - summaries.Count;
+            var batchSize = Math.Max(remaining, 1);
+            var batch = new List<(LlmRequest Item, CapturePayloadV1 Payload)>(batchSize);
+
+            while (startIndex < captureItems.Count && batch.Count < batchSize)
+            {
+                var item = captureItems[startIndex++];
+                if (filter.BoardId.HasValue && item.BoardId.HasValue && item.BoardId != filter.BoardId.Value)
+                {
+                    continue;
+                }
+
+                batch.Add((item, ParsePayload(item)));
+            }
+
+            if (batch.Count == 0)
             {
                 continue;
             }
 
-            var (effectivePayload, effectiveBoardId, _) = await ResolveAppliedConversionProvenanceAsync(
-                item,
-                candidate.Payload,
-                persistChanges: false,
-                cancellationToken,
-                GetAppliedProposal(appliedProposalLookup, candidate.Payload));
-
-            if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
+            var appliedProposalLookup = await LoadAppliedProposalLookupAsync(batch, cancellationToken);
+            foreach (var candidate in batch)
             {
-                continue;
-            }
+                var item = candidate.Item;
+                var (effectivePayload, effectiveBoardId, _) = await ResolveAppliedConversionProvenanceAsync(
+                    item,
+                    candidate.Payload,
+                    persistChanges: false,
+                    cancellationToken,
+                    GetAppliedProposal(appliedProposalLookup, candidate.Payload),
+                    allowFallbackLookup: false);
 
-            var summary = MapToSummaryDto(item, effectivePayload, effectiveBoardId);
-            if (filter.Status.HasValue && summary.Status != filter.Status.Value)
-            {
-                continue;
-            }
+                if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
+                {
+                    continue;
+                }
 
-            summaries.Add(summary);
-            if (summaries.Count >= limit)
-            {
-                break;
+                var summary = MapToSummaryDto(item, effectivePayload, effectiveBoardId);
+                if (filter.Status.HasValue && summary.Status != filter.Status.Value)
+                {
+                    continue;
+                }
+
+                summaries.Add(summary);
+                if (summaries.Count >= limit)
+                {
+                    break;
+                }
             }
         }
 
@@ -383,7 +401,8 @@ public class CaptureService : ICaptureService
         CapturePayloadV1 payload,
         bool persistChanges,
         CancellationToken cancellationToken,
-        AutomationProposal? preloadedProposal = null)
+        AutomationProposal? preloadedProposal = null,
+        bool allowFallbackLookup = true)
     {
         var proposalId = payload.Provenance?.ProposalId;
         if (!proposalId.HasValue ||
@@ -394,7 +413,7 @@ public class CaptureService : ICaptureService
         }
 
         var proposal = preloadedProposal;
-        if (proposal == null || proposal.Id != proposalId.Value)
+        if ((proposal == null || proposal.Id != proposalId.Value) && allowFallbackLookup)
         {
             proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId.Value, cancellationToken);
         }

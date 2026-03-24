@@ -312,6 +312,61 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldOnlyBatchProposalLookupsForItemsScannedBeforeTheLimitIsReached()
+    {
+        var userId = Guid.NewGuid();
+        var laterProposalId = Guid.NewGuid();
+        var firstProposalId = Guid.NewGuid();
+
+        var laterCapture = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "later capture"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: laterProposalId)));
+        laterCapture.MarkAsProcessing();
+        laterCapture.MarkAsCompleted();
+
+        var firstCapture = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "first capture"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: firstProposalId)));
+        firstCapture.MarkAsProcessing();
+        firstCapture.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByUserAsync(userId, default))
+            .ReturnsAsync(new[] { laterCapture, firstCapture });
+        _automationProposalRepositoryMock
+            .Setup(r => r.GetByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.SequenceEqual(new[] { firstProposalId })),
+                default))
+            .ReturnsAsync(Array.Empty<AutomationProposal>());
+
+        var result = await _service.ListAsync(userId, new CaptureListFilterDto(Limit: 1));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle();
+        result.Value[0].Id.Should().Be(firstCapture.Id);
+        _automationProposalRepositoryMock.Verify(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _automationProposalRepositoryMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task EnqueueTriageAsync_ShouldRejectAlreadyAppliedCapture_WhenConvertedProvenanceIsBackfilledLazily()
     {
         var userId = Guid.NewGuid();
