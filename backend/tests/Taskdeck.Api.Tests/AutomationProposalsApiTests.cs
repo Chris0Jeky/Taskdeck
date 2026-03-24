@@ -259,7 +259,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
-    public async Task ExecuteProposal_ShouldNotMutateUnattributedCapture_WhenQueueSourceReferenceIsCallerSupplied()
+    public async Task ExecuteProposal_ShouldNotMutateUnrelatedCapture_WhenQueueSourceReferenceIsCallerSupplied()
     {
         var proposalClient = _factory.CreateClient();
         var captureOwnerClient = _factory.CreateClient();
@@ -275,6 +275,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         createCaptureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createdCapture = await createCaptureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
         createdCapture.Should().NotBeNull();
+
+        using var initialScope = _factory.Services.CreateScope();
+        var initialDb = initialScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var initialPersistedCapture = await initialDb.LlmRequests.FindAsync(createdCapture!.Id);
+        initialPersistedCapture.Should().NotBeNull();
+        var initialPayload = CaptureRequestContract.ParsePayload(initialPersistedCapture!.Payload, allowServerAttributionFields: true);
+        initialPayload.IsSuccess.Should().BeTrue();
+        initialPayload.Value.Provenance.Should().NotBeNull();
+        var initialProvenance = initialPayload.Value.Provenance!;
 
         var createProposalResponse = await proposalClient.PostAsJsonAsync(
             "/api/automation/proposals",
@@ -317,7 +326,11 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var payload = CaptureRequestContract.ParsePayload(persistedCapture.Payload, allowServerAttributionFields: true);
         payload.IsSuccess.Should().BeTrue();
         payload.Value.Provenance.Should().NotBeNull();
-        payload.Value.Provenance!.RequestedByUserId.Should().Be(captureOwner.UserId);
+        payload.Value.Provenance!.CaptureItemId.Should().Be(initialProvenance.CaptureItemId);
+        payload.Value.Provenance.RequestedByUserId.Should().Be(initialProvenance.RequestedByUserId);
+        payload.Value.Provenance.CorrelationId.Should().Be(initialProvenance.CorrelationId);
+        payload.Value.Provenance.SourceSurface.Should().Be(initialProvenance.SourceSurface);
+        payload.Value.Provenance.BoardId.Should().Be(initialProvenance.BoardId);
         payload.Value.Provenance.ProposalId.Should().BeNull();
         payload.Value.Provenance.ConvertedAt.Should().BeNull();
     }
