@@ -40,19 +40,19 @@ describe('demo seed rerun planning', () => {
     const plan = planDemoSeedRerunState({
       boardId: 'board-1',
       captureSummaries: [
-        { id: 'capture-ignored', boardId: 'board-1', textExcerpt: 'This item is ignored (demo).' },
+        { id: 'capture-ignored', boardId: 'board-1', textExcerpt: 'Duplicate onboarding note from a prior client thread (demo).' },
         {
           id: 'capture-applied',
           boardId: 'board-1',
-          textExcerpt: '- [ ] Draft a 5-minute stakeholder demo script',
+          textExcerpt: 'New client onboarding - ACME Ltd',
         },
         {
           id: 'capture-pending',
           boardId: 'board-1',
-          textExcerpt: '- [ ] Follow up: connect Activity view to real audit queries',
+          textExcerpt: 'Client onboarding follow-up - Northwind Ltd',
         },
       ],
-      boardCards: [{ id: 'card-1', title: 'From queue: demo seeded item' }],
+      boardCards: [{ id: 'card-1', title: 'From queue: confirm onboarding status update' }],
       queueRequests: [{ id: 'queue-1', boardId: 'board-1', status: 'Failed', errorMessage: 'nope' }],
       chatSessions: [
         {
@@ -62,7 +62,7 @@ describe('demo seed rerun planning', () => {
           recentMessages: [
             {
               id: 'msg-1',
-              content: 'rename board to "DEMO: Capture Loop (Chat)"',
+              content: 'rename board to "DEMO: Client Onboarding Demo (Chat)"',
               proposalId: 'proposal-1',
             },
           ],
@@ -106,13 +106,13 @@ describe('demo seed rerun planning', () => {
         {
           id: 'capture-old',
           boardId: 'board-1',
-          textExcerpt: '- [ ] Follow up: connect Activity view to real audit queries',
+          textExcerpt: 'Client onboarding follow-up - Northwind Ltd',
           createdAt: '2026-03-06T18:00:00.000Z',
         },
         {
           id: 'capture-new',
           boardId: 'board-1',
-          textExcerpt: '- [ ] Follow up: connect Activity view to real audit queries',
+          textExcerpt: 'Client onboarding follow-up - Northwind Ltd',
           createdAt: '2026-03-06T19:00:00.000Z',
         },
       ],
@@ -138,7 +138,7 @@ describe('demo seed rerun planning', () => {
             proposalId: 'proposal-1',
           },
         ],
-        'rename board to "DEMO: Capture Loop (Chat)"',
+        'rename board to "DEMO: Client Onboarding Demo (Chat)"',
       ),
     ).toBe(false)
   })
@@ -146,12 +146,12 @@ describe('demo seed rerun planning', () => {
   it('collects only seeded rename proposal ids so reruns do not apply unrelated chat proposals', () => {
     expect(
       collectSeededChatProposalIds([
-        { id: 'msg-1', content: 'rename board to "DEMO: Capture Loop (Chat)"', proposalId: 'proposal-1' },
-        { id: 'msg-2', content: 'rename board to "DEMO: Capture Loop (Chat)"', proposalId: 'proposal-1' },
+        { id: 'msg-1', content: 'rename board to "DEMO: Client Onboarding Demo (Chat)"', proposalId: 'proposal-1' },
+        { id: 'msg-2', content: 'rename board to "DEMO: Client Onboarding Demo (Chat)"', proposalId: 'proposal-1' },
         { id: 'msg-3', content: 'create another card', proposalId: 'proposal-2' },
         { id: 'msg-4', proposalId: '' },
       ],
-      'rename board to "DEMO: Capture Loop (Chat)"'),
+      'rename board to "DEMO: Client Onboarding Demo (Chat)"'),
     ).toEqual(['proposal-1'])
   })
 

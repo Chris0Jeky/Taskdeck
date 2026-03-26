@@ -6,11 +6,12 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const SCENARIO_DIR = path.join(__dirname, 'scenarios-json')
 const LEGACY_SCENARIO_DEFAULT_BOARD_NAMES = {
+  'client-onboarding': 'DEMO: Client Onboarding Demo',
   'engineering-sprint': 'DEMO: Engineering Sprint',
   'support-triage': 'DEMO: Support Triage',
   'content-calendar': 'DEMO: Content Calendar Scenario',
 }
-const FALLBACK_SCENARIO_ID = 'engineering-sprint'
+const FALLBACK_SCENARIO_ID = 'client-onboarding'
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)

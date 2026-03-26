@@ -57,7 +57,7 @@ function parseOptionalNonNegativeInteger(value: string | undefined, fallback: nu
 
 function computeStakeholderDemoTimeoutMs(): number {
   const setupTimeoutMs = parseSetupTimeoutMs(process.env.TASKDECK_DEMO_SETUP_TIMEOUT_MS)
-  const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
+  const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'client-onboarding').trim()
   const skipSeed = parseTrueishEnv(process.env.TASKDECK_DEMO_SKIP_SEED)
   const autopilotTurns = parseOptionalPositiveInteger(process.env.TASKDECK_DEMO_AUTOPILOT_TURNS, 0)
   const snapshotPath = (process.env.TASKDECK_DEMO_SNAPSHOT_PATH || '').trim()
@@ -223,7 +223,7 @@ test.describe('Stakeholder demo recorder', () => {
     const artifactDir = (process.env.TASKDECK_DEMO_ARTIFACT_DIR || '').trim() || null
     const logsDir = artifactDir ? path.join(artifactDir, 'logs') : null
 
-    const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
+    const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'client-onboarding').trim()
     const skipSeed = parseTrueishEnv(process.env.TASKDECK_DEMO_SKIP_SEED)
     const skipLlm = parseTrueishEnv(process.env.TASKDECK_DEMO_SKIP_LLM)
 
@@ -310,7 +310,7 @@ test.describe('Stakeholder demo recorder', () => {
     const apiBaseUrl = process.env.TASKDECK_E2E_API_BASE_URL || 'http://localhost:5000/api'
     const demoUsername = process.env.TASKDECK_DEMO_USERNAME || 'demo'
     const demoPassword = process.env.TASKDECK_DEMO_PASSWORD || 'demo123'
-    const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'engineering-sprint').trim()
+    const scenarioId = (process.env.TASKDECK_DEMO_SCENARIO || 'client-onboarding').trim()
     const scenarioBoardName = await resolveScenarioSelectedBoardName({
       scenarioIdOrPath: scenarioId,
       explicitBoardName:

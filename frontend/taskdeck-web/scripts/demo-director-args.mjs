@@ -14,7 +14,7 @@ export function parseDemoDirectorArgs(argv) {
     e2eDb: null,
     resetE2EDb: false,
     freshServers: false,
-    scenario: 'engineering-sprint',
+    scenario: 'client-onboarding',
     skipSeed: false,
     skipLlm: false,
     turns: 12,
