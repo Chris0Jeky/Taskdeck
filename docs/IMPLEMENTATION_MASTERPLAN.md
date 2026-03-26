@@ -613,8 +613,11 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#328` first-run smoke + launch-criteria guardrail (delivered)
 - Seeded Saul-facing demo alignment wave:
   - `#356` tracker
-  - `#354` client-onboarding starter pack + deterministic hero scenario
-  - `#355` rehearsal contract + acceptance checklist
+  - `#354` client-onboarding starter pack + deterministic hero scenario (active PR: `#357`)
+  - demo-critical `#326` trust-first readability hardening (active PR: `#358`)
+  - demo-critical `#330` hero-path/demo-board cue hardening (active PR: `#359`)
+  - `#355` rehearsal contract + acceptance checklist (current active implementation)
+  - `#216` broader reusable demo script/public framing (after `#355`)
 - Reuse-before-duplicate anchors for this wave:
   - `#326` proposal readability and trust cues
   - `#330` in-app demoability and hero-board quality
@@ -819,10 +822,13 @@ Execution conclusion:
 - the hard substrate is already shipped: capture triage, review-first gating, provenance, board-centered follow-through, and deterministic demo tooling are all present
 - the remaining pre-recording gap is business-legible packaging, not missing architecture
 - the work should stay pinned to one stakeholder story: `Home -> Inbox/Capture -> Review -> Board`
+- execution status now reflects stacked delivery in progress: `#354` plus demo-critical follow-through from `#326` and `#330` are already in PR review, and `#355` is the current blocker before `#216`
 
 Seeded issues:
-- `#354` `PACK-08`: add a Saul-facing client-onboarding starter pack and deterministic demo scenario
-- `#355` `TST-24`: add the rehearsal contract, acceptance checklist, and artifact expectations for the exact stakeholder path
+- `#354` `PACK-08`: add a Saul-facing client-onboarding starter pack and deterministic demo scenario (active PR: `#357`)
+- demo-critical `#326`: trust-first review legibility hardening (active PR: `#358`)
+- demo-critical `#330`: in-app hero-path/demo-board cues (active PR: `#359`)
+- `#355` `TST-24`: add the rehearsal contract, acceptance checklist, and artifact expectations for the exact stakeholder path (active implementation)
 - `#356` `DEMO-00`: track the narrow demo-alignment wave
 
 Reused existing anchors:
@@ -834,7 +840,7 @@ Reused existing anchors:
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Run the Saul-facing demo alignment wave as the next narrow product-facing slice: `#354` first, then legibility/demoability follow-through through `#326` and `#330`, then lock the recording contract in `#355` and `#216`.
+2. Finish the Saul-facing demo alignment wave already in motion: land `#355` rehearsal contract next on top of stacked PRs (`#357` -> `#358` -> `#359`), then execute `#216` once the product path is stable enough to script truthfully.
 3. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
 4. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): keep the now-delivered `#328` smoke contract aligned to the shipped first-run loop, and route broader telemetry/release-gate follow-through to `#341`.
 5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
