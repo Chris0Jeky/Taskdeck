@@ -1,3 +1,5 @@
+import { parseTrueishEnv } from './scripts/demo-shared.mjs'
+
 type DemoProvider = 'OpenAI' | 'Gemini'
 
 const deterministicMockLlmEnv: Record<string, string> = {
@@ -62,7 +64,8 @@ export function resolveDemoBackendLlmEnv(env: NodeJS.ProcessEnv): Record<string,
 
 function shouldEnableLiveDemoLlm(env: NodeJS.ProcessEnv): boolean {
   const isDemoRun = parseTrueishEnv(env.TASKDECK_RUN_DEMO) || parseTrueishEnv(env.TASKDECK_DEMO_DIRECTOR)
-  if (!isDemoRun) {
+  const isLiveLlmTestRun = parseTrueishEnv(env.TASKDECK_RUN_LIVE_LLM_TESTS)
+  if (!isDemoRun && !isLiveLlmTestRun) {
     return false
   }
 
@@ -151,7 +154,3 @@ function firstNonEmpty(...values: Array<string | undefined>): string | null {
   return null
 }
 
-function parseTrueishEnv(value: string | undefined): boolean {
-  const normalized = value?.trim().toLowerCase()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-}

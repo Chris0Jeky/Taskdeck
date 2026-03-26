@@ -23,6 +23,7 @@ const routeMock = vi.hoisted(() => ({
 const mocks = vi.hoisted(() => ({
   getMySessions: vi.fn(),
   getSession: vi.fn(),
+  getHealth: vi.fn(),
   sendMessage: vi.fn(),
   createSession: vi.fn(),
   getBoards: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('../../api/chatApi', () => ({
   chatApi: {
     getMySessions: mocks.getMySessions,
     getSession: mocks.getSession,
+    getHealth: mocks.getHealth,
     sendMessage: mocks.sendMessage,
     createSession: mocks.createSession,
   },
@@ -60,7 +62,16 @@ vi.mock('../../store/toastStore', () => ({
 }))
 
 vi.mock('../../composables/useErrorMapper', () => ({
-  getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
+  getErrorDisplay: (error: unknown, fallback: string) => {
+    if (typeof error === 'object' && error !== null) {
+      const typed = error as { message?: unknown }
+      if (typeof typed.message === 'string' && typed.message.trim().length > 0) {
+        return { message: typed.message, code: null }
+      }
+    }
+
+    return { message: fallback, code: null }
+  },
 }))
 
 function buildSession(messageType = 'proposal-reference') {
@@ -156,6 +167,13 @@ describe('AutomationChatView', () => {
     const session = buildSession()
     mocks.getMySessions.mockResolvedValue([session])
     mocks.getSession.mockResolvedValue(session)
+    mocks.getHealth.mockResolvedValue({
+      isAvailable: true,
+      providerName: 'Mock',
+      errorMessage: null,
+      model: 'mock-default',
+      isMock: true,
+    })
     mocks.getBoards.mockResolvedValue([
       {
         id: 'board-1',
@@ -188,6 +206,32 @@ describe('AutomationChatView', () => {
       query: { boardId: 'board-1' },
       hash: '#proposal-proposal-1',
     })
+  })
+
+  it('shows an explicit mock-provider warning when live llm is not active', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('Live LLM not active')
+    expect(wrapper.text()).toContain('Mock provider')
+    expect(wrapper.get('[data-llm-health-state="mock"]').exists()).toBe(true)
+  })
+
+  it('shows a ready banner when a live provider is available', async () => {
+    mocks.getHealth.mockResolvedValue({
+      isAvailable: true,
+      providerName: 'Gemini',
+      errorMessage: null,
+      model: 'gemini-2.5-flash',
+      isMock: false,
+    })
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('Live LLM ready')
+    expect(wrapper.text()).toContain('Gemini (gemini-2.5-flash)')
+    expect(wrapper.get('[data-llm-health-state="live"]').exists()).toBe(true)
   })
 
   it('prefills the create-session board context from the route boardId query', async () => {
@@ -377,6 +421,17 @@ describe('AutomationChatView', () => {
 
     expect(mocks.createSession).not.toHaveBeenCalled()
     expect(mocks.errorToast).toHaveBeenCalledTimes(1)
-    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load boards')
+    expect(mocks.errorToast).toHaveBeenCalledWith('network down')
+  })
+
+  it('surfaces provider-health loading failures explicitly', async () => {
+    mocks.getHealth.mockRejectedValueOnce(new Error('health down'))
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('LLM status unavailable')
+    expect(wrapper.text()).toContain('health down')
+    expect(mocks.errorToast).toHaveBeenCalledWith('health down')
   })
 })

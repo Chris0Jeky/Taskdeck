@@ -32,4 +32,12 @@ describe('chatApi', () => {
       requestProposal: true,
     })
   })
+
+  it('loads provider health', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { providerName: 'Mock' } })
+
+    await chatApi.getHealth()
+
+    expect(http.get).toHaveBeenCalledWith('/llm/chat/health')
+  })
 })

@@ -26,6 +26,14 @@ export interface ChatSession {
   recentMessages: ChatMessage[]
 }
 
+export interface ChatProviderHealth {
+  isAvailable: boolean
+  providerName: string
+  errorMessage: string | null
+  model: string | null
+  isMock: boolean
+}
+
 export interface CreateChatSessionRequest {
   title: string
   boardId?: string | null

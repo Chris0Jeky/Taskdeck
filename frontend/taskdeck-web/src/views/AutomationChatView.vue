@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
-import type { ChatSession } from '../types/chat'
+import type { ChatProviderHealth, ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
 import { normalizeChatRole } from '../utils/chat'
 import { getErrorDisplay } from '../composables/useErrorMapper'
@@ -22,9 +22,12 @@ const availableBoards = ref<Board[]>([])
 const selectedSession = ref<ChatSession | null>(null)
 const loadingSessions = ref(false)
 const loadingBoards = ref(false)
+const loadingHealth = ref(false)
 const creatingSession = ref(false)
 const sendingMessage = ref(false)
 let boardOptionsRequest: Promise<boolean> | null = null
+const chatHealth = ref<ChatProviderHealth | null>(null)
+const chatHealthLoadError = ref<string | null>(null)
 
 const newSessionTitle = ref('')
 const newSessionBoardId = ref('')
@@ -89,6 +92,87 @@ const pendingSessionBoardContextLabel = computed(() => {
 })
 
 const queryBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+
+const llmHealthState = computed(() => {
+  if (loadingHealth.value) {
+    return 'loading'
+  }
+
+  if (chatHealthLoadError.value) {
+    return 'error'
+  }
+
+  if (!chatHealth.value) {
+    return 'unknown'
+  }
+
+  if (chatHealth.value.isAvailable && !chatHealth.value.isMock) {
+    return 'live'
+  }
+
+  if (chatHealth.value.isMock) {
+    return 'mock'
+  }
+
+  return 'unavailable'
+})
+
+const llmStatusTitle = computed(() => {
+  switch (llmHealthState.value) {
+    case 'loading':
+      return 'Checking LLM status'
+    case 'live':
+      return 'Live LLM ready'
+    case 'mock':
+      return 'Live LLM not active'
+    case 'unavailable':
+      return 'Live LLM unavailable'
+    case 'error':
+      return 'LLM status unavailable'
+    default:
+      return 'LLM status unknown'
+  }
+})
+
+const llmStatusCopy = computed(() => {
+  if (llmHealthState.value === 'loading') {
+    return 'Resolving the current provider before manual chat work starts.'
+  }
+
+  if (llmHealthState.value === 'error') {
+    return chatHealthLoadError.value ?? 'Taskdeck could not resolve provider status for this chat surface.'
+  }
+
+  if (!chatHealth.value) {
+    return 'Taskdeck has not reported provider health yet.'
+  }
+
+  const providerLabel = chatHealth.value.model
+    ? `${chatHealth.value.providerName} (${chatHealth.value.model})`
+    : chatHealth.value.providerName
+
+  if (llmHealthState.value === 'live') {
+    return `Manual chat is currently backed by ${providerLabel}.`
+  }
+
+  if (llmHealthState.value === 'mock') {
+    return `Taskdeck is currently using the Mock provider. Responses stay deterministic and do not prove a live LLM hookup.`
+  }
+
+  return chatHealth.value.errorMessage
+    ? `${providerLabel} is not ready: ${chatHealth.value.errorMessage}`
+    : `${providerLabel} is not ready for live requests.`
+})
+
+const llmStatusMeta = computed(() => {
+  if (!chatHealth.value || llmHealthState.value === 'loading' || llmHealthState.value === 'error') {
+    return null
+  }
+
+  return chatHealth.value.model
+    ? `${chatHealth.value.providerName} | ${chatHealth.value.model}`
+    : chatHealth.value.providerName
+})
 
 function normalizeSelectedBoardId(rawValue: string): string | null {
   const trimmed = rawValue.trim()
@@ -178,6 +262,19 @@ async function loadSession(sessionId: string) {
     selectedSession.value = await chatApi.getSession(sessionId)
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to load chat session').message)
+  }
+}
+
+async function loadProviderHealth() {
+  try {
+    loadingHealth.value = true
+    chatHealthLoadError.value = null
+    chatHealth.value = await chatApi.getHealth()
+  } catch (e: unknown) {
+    chatHealthLoadError.value = getErrorDisplay(e, 'Failed to load LLM status').message
+    toast.error(chatHealthLoadError.value)
+  } finally {
+    loadingHealth.value = false
   }
 }
 
@@ -285,6 +382,7 @@ function openProposalReview(proposalId: string) {
 
 onMounted(() => {
   void loadSessions()
+  void loadProviderHealth()
   void loadBoardOptions().then(() => {
     applyRouteBoardContext()
   })
@@ -311,12 +409,27 @@ watch(
       </div>
 
       <div class="td-chat__hero-actions">
+        <button class="td-btn td-btn--secondary" :disabled="loadingHealth" @click="loadProviderHealth">
+          {{ loadingHealth ? 'Checking provider...' : 'Refresh LLM Status' }}
+        </button>
         <button class="td-btn td-btn--primary" @click="openRoute('/workspace/review')">Back to Review</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/automations/queue')">
           Open Queue (Advanced)
         </button>
       </div>
     </header>
+
+    <section
+      class="td-chat-status"
+      :class="`td-chat-status--${llmHealthState}`"
+      :data-llm-health-state="llmHealthState"
+    >
+      <div>
+        <h2 class="td-chat-status__title">{{ llmStatusTitle }}</h2>
+        <p class="td-chat-status__copy">{{ llmStatusCopy }}</p>
+      </div>
+      <span v-if="llmStatusMeta" class="td-chat-status__meta">{{ llmStatusMeta }}</span>
+    </section>
 
     <div class="td-chat-layout">
       <aside class="td-chat-sessions">
@@ -499,6 +612,48 @@ watch(
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: var(--td-space-4);
+}
+
+.td-chat-status {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--td-space-3);
+  align-items: flex-start;
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  padding: var(--td-space-3) var(--td-space-4);
+  background: var(--td-surface-primary);
+}
+
+.td-chat-status--live {
+  border-color: var(--td-color-success, #2f855a);
+  background: color-mix(in srgb, var(--td-surface-primary) 85%, #dff5e7 15%);
+}
+
+.td-chat-status--mock,
+.td-chat-status--unavailable,
+.td-chat-status--error {
+  border-color: var(--td-color-warning, #b7791f);
+  background: color-mix(in srgb, var(--td-surface-primary) 86%, #fff4d6 14%);
+}
+
+.td-chat-status__title {
+  margin: 0 0 var(--td-space-1);
+  font-size: var(--td-font-sm);
+  font-weight: 700;
+}
+
+.td-chat-status__copy {
+  margin: 0;
+  color: var(--td-text-secondary);
+  line-height: 1.5;
+}
+
+.td-chat-status__meta {
+  font-size: var(--td-font-xs);
+  color: var(--td-text-tertiary);
+  font-family: monospace;
+  white-space: nowrap;
 }
 
 .td-chat-sessions,
@@ -741,7 +896,8 @@ watch(
 
 @media (max-width: 900px) {
   .td-chat__hero,
-  .td-chat-section-head {
+  .td-chat-section-head,
+  .td-chat-status {
     flex-direction: column;
   }
 
