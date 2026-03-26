@@ -107,7 +107,7 @@ const llmHealthState = computed(() => {
   }
 
   if (chatHealth.value.isAvailable && !chatHealth.value.isMock) {
-    return 'live'
+    return 'configured'
   }
 
   if (chatHealth.value.isMock) {
@@ -121,8 +121,8 @@ const llmStatusTitle = computed(() => {
   switch (llmHealthState.value) {
     case 'loading':
       return 'Checking LLM status'
-    case 'live':
-      return 'Live LLM ready'
+    case 'configured':
+      return 'Live LLM configured'
     case 'mock':
       return 'Live LLM not active'
     case 'unavailable':
@@ -151,8 +151,8 @@ const llmStatusCopy = computed(() => {
     ? `${chatHealth.value.providerName} (${chatHealth.value.model})`
     : chatHealth.value.providerName
 
-  if (llmHealthState.value === 'live') {
-    return `Manual chat is currently backed by ${providerLabel}.`
+  if (llmHealthState.value === 'configured') {
+    return `Taskdeck is configured to use ${providerLabel}, but this health check does not prove the upstream provider accepted a live request yet. Send a probe message before trusting manual chat output.`
   }
 
   if (llmHealthState.value === 'mock') {
@@ -642,6 +642,11 @@ watch(
 }
 
 .td-chat-status--live {
+  border-color: var(--td-color-success, #2f855a);
+  background: color-mix(in srgb, var(--td-surface-primary) 85%, #dff5e7 15%);
+}
+
+.td-chat-status--configured {
   border-color: var(--td-color-success, #2f855a);
   background: color-mix(in srgb, var(--td-surface-primary) 85%, #dff5e7 15%);
 }

@@ -55,8 +55,8 @@ test('chat session should create and return assistant response', async ({ page }
   const expectLiveProvider = parseTrueishEnv(process.env.TASKDECK_RUN_LIVE_LLM_TESTS)
 
   if (expectLiveProvider) {
-    await expect(page.locator('[data-llm-health-state="live"]')).toBeVisible()
-    await expect(page.getByText('Live LLM ready')).toBeVisible()
+    await expect(page.locator('[data-llm-health-state="configured"]')).toBeVisible()
+    await expect(page.getByText('Live LLM configured')).toBeVisible()
   } else {
     await expect(page.locator('[data-llm-health-state="mock"]')).toBeVisible()
     await expect(page.getByText('Live LLM not active')).toBeVisible()

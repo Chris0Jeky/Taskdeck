@@ -12,8 +12,8 @@ test.describe('live llm chat', () => {
     await registerAndAttachSession(page, request, 'live-llm')
 
     await page.goto('/workspace/automations/chat')
-    await expect(page.locator('[data-llm-health-state="live"]')).toBeVisible()
-    await expect(page.getByText('Live LLM ready')).toBeVisible()
+    await expect(page.locator('[data-llm-health-state="configured"]')).toBeVisible()
+    await expect(page.getByText('Live LLM configured')).toBeVisible()
 
     const probeToken = `LIVE_LLM_PROBE_${Date.now()}`
 

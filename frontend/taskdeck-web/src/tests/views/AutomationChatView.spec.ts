@@ -268,9 +268,10 @@ describe('AutomationChatView', () => {
     const wrapper = mountView()
     await waitForAsyncUi()
 
-    expect(wrapper.text()).toContain('Live LLM ready')
+    expect(wrapper.text()).toContain('Live LLM configured')
     expect(wrapper.text()).toContain('Gemini (gemini-2.5-flash)')
-    expect(wrapper.get('[data-llm-health-state="live"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('does not prove the upstream provider accepted a live request yet')
+    expect(wrapper.get('[data-llm-health-state="configured"]').exists()).toBe(true)
   })
 
   it('prefills the create-session board context from the route boardId query', async () => {
