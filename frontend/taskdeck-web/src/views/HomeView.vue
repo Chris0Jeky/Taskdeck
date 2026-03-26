@@ -12,6 +12,7 @@ const summary = computed(() => workspace.homeSummary)
 const recentBoards = computed(() => summary.value?.boards.recentBoards ?? [])
 const recommendedActions = computed(() => summary.value?.recommendedActions ?? [])
 const onboarding = computed<WorkspaceOnboarding | null>(() => summary.value?.onboarding ?? workspace.onboarding)
+const hasReviewRequired = computed(() => (summary.value?.workload.proposalsPendingReview ?? 0) > 0)
 const workloadCards = computed(() => {
   if (!summary.value) {
     return []
@@ -95,6 +96,10 @@ function openBoard(boardId: string) {
   openRoute(`/workspace/boards/${boardId}`)
 }
 
+function isDemoBoardName(boardName: string): boolean {
+  return boardName.trim().toLowerCase().includes('client onboarding demo')
+}
+
 function refreshHomeSummary() {
   if (workspace.homeLoading) {
     return
@@ -125,14 +130,14 @@ onActivated(refreshHomeSummary)
         <span class="td-home__eyebrow">Workspace</span>
         <h1 class="td-page-title">Home</h1>
         <p class="td-home__subtitle">
-          Keep the loop clear: shape the day in Today, decide change in Review, and let boards stay where work lands.
+          Start with a note in Inbox, approve proposed changes in Review, then manage the work on a board.
         </p>
       </div>
 
       <div class="td-home__hero-actions">
         <button class="td-btn td-btn--primary" @click="openRoute('/workspace/today')">Open Today</button>
-        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/inbox')">Capture to Inbox</button>
-        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/review')">Open Review</button>
+        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/inbox')">Capture a note</button>
+        <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/review')">Review proposed changes</button>
       </div>
     </header>
 
@@ -224,8 +229,8 @@ onActivated(refreshHomeSummary)
 
         <article class="td-panel td-home-card">
           <div class="td-home-card__header">
-            <h2 class="td-section-title">Next step</h2>
-            <span class="td-home-card__badge">Review-first</span>
+            <h2 class="td-section-title">{{ hasReviewRequired ? 'Review required' : 'Next step' }}</h2>
+            <span class="td-home-card__badge">{{ hasReviewRequired ? 'Approval needed' : 'Review-first' }}</span>
           </div>
           <div class="td-home-card__actions">
             <button
@@ -276,7 +281,10 @@ onActivated(refreshHomeSummary)
               class="td-home-board"
               @click="openBoard(board.id)"
             >
-              <span class="td-home-board__name">{{ board.name }}</span>
+              <span class="td-home-board__name">
+                {{ board.name }}
+                <span v-if="isDemoBoardName(board.name)" class="td-home-board__badge">Demo board</span>
+              </span>
               <span class="td-home-board__description">{{ board.description || 'No description yet.' }}</span>
             </button>
           </div>
@@ -589,12 +597,25 @@ onActivated(refreshHomeSummary)
   font-size: var(--td-font-sm);
   font-weight: 700;
   color: var(--td-text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--td-space-2);
 }
 
 .td-home-board__description {
   font-size: var(--td-font-xs);
   color: var(--td-text-secondary);
   line-height: 1.5;
+}
+
+.td-home-board__badge {
+  border-radius: var(--td-radius-pill, 999px);
+  background: color-mix(in srgb, var(--td-color-primary) 14%, var(--td-surface-primary));
+  border: 1px solid color-mix(in srgb, var(--td-color-primary) 32%, var(--td-border-default));
+  color: var(--td-color-primary);
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  padding: 0.125rem 0.5rem;
 }
 
 @media (max-width: 768px) {
