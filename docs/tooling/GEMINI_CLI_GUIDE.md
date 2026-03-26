@@ -9,13 +9,13 @@ Gemini's standout feature for complex engineering work is **Plan Mode**.
 - Nontrivial work should **always start in `/plan`**.
 - Let Gemini read the context, ask clarifying questions, and map dependencies and risks first.
 - Only switch to edit mode once the plan is solid, relying on checkpointing before broad refactors. 
-- *Note: Our `.gemini/settings.json` enforces `defaultApprovalMode: "plan"` by default.*
+- *Note: Our [`settings.json`](../../../.gemini/settings.json) enforces `defaultApprovalMode: "plan"` by default.*
 
 ## 2. The Context Fallacy: Keep GEMINI.md Thin
 `GEMINI.md` is always part of the active context hierarchy. Putting heavy procedures into this file makes it noisy and burns context window space.
 Instead, we maintain a strict split:
-- **`AGENTS.md` and `GEMINI.md`**: Reserved for repo conventions, guardrails, branch strategy, testing policies, and definitions of done. (We've configured settings to read both, allowing seamless transition from Codex conventions).
-- **Commands (`.gemini/commands/`)**: Shortcuts for high-frequency workflows (e.g., `/review-pr`, `/ship-check`, `/write-tests-for`). Use commands for "same prompt shape, different input".
+- **[`AGENTS.md`](../../../AGENTS.md) and [`GEMINI.md`](../../../GEMINI.md)**: Reserved for repo conventions, guardrails, branch strategy, testing policies, and definitions of done. (We've configured settings to read both).
+- **Commands (`.gemini/commands/`)**: Shortcuts for high-frequency workflows (e.g., `/review-pr`, `/write-tests-for`). Use commands for "same prompt shape, different input".
 - **Skills (`.gemini/skills/`)**: Deep, on-demand procedures (e.g., PR reviews, migration planners). These are only loaded when explicitly needed.
 
 ## 3. Automation and Headless Mode
@@ -42,6 +42,6 @@ Our baseline relies on:
 - **Folder Trust (`folderTrust`)**: Enabled.
 - **Checkpointing**: Enabled.
 - **Plan Mode**: Default.
-- **Policies (`.gemini/policies/`)**: Restrictive blocking/allowing of tools and modes based on repository needs.
+- **Policies ([`.gemini/policies/`](../../../.gemini/policies/))**: Restrictive blocking/allowing of tools and modes based on repository needs.
 
 By adhering to this structure, Gemini CLI provides high-leverage assistance without "turning into configuration soup."
