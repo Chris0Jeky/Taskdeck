@@ -90,6 +90,7 @@ jobs:
           K6_DURATION: ${{ inputs.k6-duration }}
           K6_USER_POOL: ${{ inputs.k6-user-pool }}
           ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://127.0.0.1:5000
           ConnectionStrings__DefaultConnection: Data Source=frontend/taskdeck-web/taskdeck.load.k6.ci.db
         run: |
           set -euo pipefail
