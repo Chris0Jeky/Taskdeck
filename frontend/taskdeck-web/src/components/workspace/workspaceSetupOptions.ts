@@ -22,6 +22,13 @@ export const workspaceSetupOptions: WorkspaceSetupOption[] = [
     starterPackId: 'board-blueprint-engineering-sprint',
   },
   {
+    id: 'client-onboarding',
+    title: 'Client onboarding',
+    summary: 'New intake through completion with clear client follow-up checkpoints.',
+    helper: 'A business-facing flow for onboarding and document-collection work.',
+    starterPackId: 'board-blueprint-client-onboarding',
+  },
+  {
     id: 'support-triage',
     title: 'Support triage',
     summary: 'Inbox, triage, in-progress, and resolved with SLA-aware cues.',
