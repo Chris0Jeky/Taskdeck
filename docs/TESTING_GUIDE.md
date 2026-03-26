@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-19
+Last Updated: 2026-03-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -201,6 +201,31 @@ Policy notes:
 - `npm run demo:seed` is expected to be rerun-safe on the canonical demo account: seeded captures, queue examples, chat evidence, comments, and Ops logs should be reused when present instead of multiplying on every local/manual regression run.
 - `demo:director` validates its own options before Playwright passthrough; keep director flags before `--` and pass raw Playwright arguments only after `--`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
+
+## Saul-Facing Rehearsal Contract
+
+Canonical operator contract:
+- `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
+
+Deterministic bootstrap for the Saul-facing story:
+
+```bash
+cd frontend/taskdeck-web
+npm run demo:seed
+npm run demo:run -- --clean --skip-llm client-onboarding
+```
+
+Deterministic artifact rehearsal bundle:
+
+```bash
+cd frontend/taskdeck-web
+npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+```
+
+Acceptance focus for this rehearsal:
+- prove `Home -> Inbox/Capture -> Review -> Board`
+- prove review-first trust language is visible without narration
+- prove ACME onboarding capture becomes clean board work after explicit approval
 
 ## Load Harness (k6 + Playwright Concurrency)
 
