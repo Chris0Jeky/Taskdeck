@@ -256,7 +256,9 @@ describe('InboxView', () => {
     const wrapper = mount(InboxView)
     await waitForUi()
 
+    expect(wrapper.text()).toContain('Capture rough notes and turn them into reviewable proposed work.')
     expect(wrapper.text()).toContain('What is Inbox for?')
+    expect(wrapper.text()).toContain('then sends it to Review before anything reaches a board')
     expect(wrapper.text()).toContain('Open Review')
   })
 
@@ -774,7 +776,9 @@ describe('InboxView', () => {
     await wrapper.get('[role="option"]').trigger('click')
     await waitForUi()
 
-    const proposalButton = wrapper.findAll('button').find((node) => node.text() === 'Open Proposal')
+    expect(wrapper.text()).toContain('A proposed board update is ready for approval.')
+    expect(wrapper.text()).toContain('Ready for review')
+    const proposalButton = wrapper.findAll('button').find((node) => node.text() === 'Open in Review')
     expect(proposalButton?.exists()).toBe(true)
 
     await proposalButton?.trigger('click')

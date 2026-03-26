@@ -1,4 +1,4 @@
-import type { APIResponse } from '@playwright/test'
+import type { APIResponse, Response } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
@@ -13,7 +13,7 @@ function extractBoardIdFromBoardUrl(url: string): string {
   return match[1]
 }
 
-async function parseCreatedCaptureId(response: APIResponse): Promise<string> {
+async function parseCreatedCaptureId(response: APIResponse | Response): Promise<string> {
   const payload = await response.json() as { id?: string }
   if (!payload.id) {
     throw new Error('Capture creation response did not contain an id')
@@ -45,7 +45,7 @@ test('first-run path should guide home to capture to review to execute to board'
     page.getByText('No boards yet. Start setup from Home or Today so captures and review can land somewhere useful.')
   ).toBeVisible()
 
-  await page.locator('.td-home__hero-actions').getByRole('button', { name: 'Capture to Inbox' }).click()
+  await page.locator('.td-home__hero-actions').getByRole('button', { name: 'Capture a note' }).click()
   await expect(page).toHaveURL(/\/workspace\/inbox$/)
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
   await expect(page.getByText('What is Inbox for?')).toBeVisible()
@@ -117,7 +117,7 @@ test('first-run path should guide home to capture to review to execute to board'
   expect(proposalId).toBeTruthy()
 
   await page.getByRole('button', { name: 'Refresh Detail' }).click()
-  const openProposalButton = page.getByRole('button', { name: 'Open Proposal' })
+  const openProposalButton = page.getByRole('button', { name: 'Open in Review' })
   await expect(openProposalButton).toBeVisible()
   await openProposalButton.click()
 
@@ -127,11 +127,11 @@ test('first-run path should guide home to capture to review to execute to board'
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
 
-  await proposalCard.getByRole('button', { name: 'Approve' }).click()
+  await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Execute' }).click()
+  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
   await expect(proposalCard.getByText('Applied')).toBeVisible()
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
