@@ -1,0 +1,5 @@
+interface:
+  display_name: "Taskdeck Frontend Workspace"
+  short_description: "Guide Taskdeck shell and workspace UX"
+  default_prompt: "Use $taskdeck-frontend-workspace-slice to make this Taskdeck frontend change fit the shipped workspace loop and verification flow."
+
