@@ -25,7 +25,11 @@ test.describe('live llm chat', () => {
     )
     await page.getByRole('button', { name: 'Send Message' }).click()
 
-    const assistantContent = page.locator('.td-message-content').last()
+    const assistantMessage = page
+      .locator('.td-message')
+      .filter({ has: page.locator('.td-message-role', { hasText: 'Assistant' }) })
+      .last()
+    const assistantContent = assistantMessage.locator('.td-message-content')
     await expect(assistantContent).toContainText(probeToken, { timeout: 30_000 })
     await expect(assistantContent).toContainText('Tuesday')
     await expect(assistantContent).not.toContainText('Live provider request failed.')
