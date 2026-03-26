@@ -1,0 +1,4 @@
+# Default policies for Gemini CLI
+# Defines hard guardrails on specific tools or behaviors.
+[policies]
+# (Placeholder for specific tool allowances based on future requirements)
