@@ -5,6 +5,7 @@ import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.v
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { HomeRecommendedAction, WorkspaceOnboarding } from '../types/workspace'
+import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 
 const workspace = useWorkspaceStore()
 
@@ -94,10 +95,6 @@ function openRecommendedAction(action: HomeRecommendedAction) {
 
 function openBoard(boardId: string) {
   openRoute(`/workspace/boards/${boardId}`)
-}
-
-function isDemoBoardName(boardName: string): boolean {
-  return boardName.trim().toLowerCase().includes('client onboarding demo')
 }
 
 function refreshHomeSummary() {
@@ -283,7 +280,7 @@ onActivated(refreshHomeSummary)
             >
               <span class="td-home-board__name">
                 {{ board.name }}
-                <span v-if="isDemoBoardName(board.name)" class="td-home-board__badge">Demo board</span>
+                <span v-if="isClientOnboardingDemoBoardName(board.name)" class="td-home-board__badge">Demo board</span>
               </span>
               <span class="td-home-board__description">{{ board.description || 'No description yet.' }}</span>
             </button>

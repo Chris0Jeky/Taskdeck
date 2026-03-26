@@ -15,6 +15,7 @@ import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.v
 import type { Column, Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
+import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 
 const route = useRoute()
 const router = useRouter()
@@ -57,9 +58,7 @@ const sortedColumns = computed(() => {
   if (!boardStore.currentBoard) return []
   return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
 })
-const isDemoBoard = computed(() =>
-  Boolean(boardStore.currentBoard?.name?.trim().toLowerCase().includes('client onboarding demo')),
-)
+const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(boardStore.currentBoard?.name))
 
 onMounted(async () => {
   try {
