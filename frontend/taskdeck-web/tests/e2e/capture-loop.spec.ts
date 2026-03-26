@@ -74,7 +74,7 @@ test('capture triage should create proposal and apply card with provenance links
     'href',
     `/workspace/inbox?boardId=${boardId}#capture-${captureId}`,
   )
-  await expect(page.getByRole('link', { name: 'Open in Review' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Open Proposal' })).toHaveAttribute(
     'href',
     `/workspace/review?boardId=${boardId}#proposal-${proposalId}`,
   )
