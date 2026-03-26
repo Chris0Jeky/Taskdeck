@@ -75,7 +75,7 @@ function computeStakeholderDemoTimeoutMs(): number {
 
 async function ensureWalkthroughFeatureFlagsEnabled(page: Page) {
   await page.goto('/workspace/settings/profile')
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
 
   for (const flagLabel of REQUIRED_WALKTHROUGH_FEATURE_FLAGS) {
     const flagToggle = page.getByLabel(flagLabel)
@@ -331,13 +331,13 @@ test.describe('Stakeholder demo recorder', () => {
     await ensureWalkthroughFeatureFlagsEnabled(page)
 
     await page.goto('/workspace/boards')
-    await expect(page.getByRole('heading', { name: /^(My Boards|Boards)$/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^(My Boards|Boards)$/, level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('01-boards.png'), fullPage: true })
 
     const scenarioBoardCard = page.locator('div.cursor-pointer').filter({ hasText: scenarioBoardName }).first()
     await expect(scenarioBoardCard).toBeVisible()
     await scenarioBoardCard.click()
-    await expect(page.getByRole('heading', { name: scenarioBoardName })).toBeVisible()
+    await expect(page.getByRole('heading', { name: scenarioBoardName, level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('02-capture-board.png'), fullPage: true })
 
     const firstCard = page.locator('[data-card-id]').first()
@@ -349,15 +349,15 @@ test.describe('Stakeholder demo recorder', () => {
     await page.keyboard.press('Escape')
 
     await page.getByRole('link', { name: 'Inbox' }).click()
-    await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('04-inbox.png'), fullPage: true })
 
     await page.getByRole('link', { name: 'Review' }).click()
-    await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Review', exact: true, level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('05-automations-proposals.png'), fullPage: true })
 
     await page.getByRole('button', { name: 'Open Queue (Advanced)' }).click()
-    await expect(page.getByRole('heading', { name: 'Automation Queue', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Automation Queue', exact: true, level: 1 })).toBeVisible()
     await expect(page.getByRole('button', { name: /New Request/ })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('06-automations-queue.png'), fullPage: true })
 
@@ -372,15 +372,15 @@ test.describe('Stakeholder demo recorder', () => {
     await page.screenshot({ path: testInfo.outputPath('07-queue-submitted.png'), fullPage: true })
 
     await page.getByRole('link', { name: 'Ops' }).click()
-    await expect(page.getByRole('heading', { name: 'Ops Console' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Ops Console', level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('08-ops.png'), fullPage: true })
 
     await page.getByRole('link', { name: 'Activity' }).click()
-    await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Activity', level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('09-activity.png'), fullPage: true })
 
     await page.getByRole('link', { name: 'Notifications' }).click()
-    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Notifications', level: 1 })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('10-notifications.png'), fullPage: true })
   })
 })
