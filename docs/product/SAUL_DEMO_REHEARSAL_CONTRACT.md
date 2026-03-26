@@ -80,7 +80,7 @@ Required files:
 | --- | --- | --- |
 | Home | Open `/workspace/home`. | Hero and next-step cues make `Inbox -> Review -> Board` explicit; `DEMO: Client Onboarding Demo` is visible as the intentional demo board. |
 | Inbox/Capture | Open `/workspace/inbox`. | ACME capture lineage is visible and proposal handoff is legible (`Open in Review` / ready-for-review wording). |
-| Review | Open `/workspace/review`. | Trust-first cue is visible (`changes stay in review until you approve`); proposal language is business-legible (task-card creation from captured note); actions are explicit (`Approve for board`, `Apply to board`). |
+| Review | Open `/workspace/review`. | Trust-first cue is visible (`Changes stay in review until you approve them.`); proposal language is business-legible (task-card creation from captured note); actions are explicit (`Approve for board`, `Apply to board`). |
 | Board | Open `DEMO: Client Onboarding Demo`. | `Demo board` cue is visible; onboarding tasks are present with clean titles; board state reads as intentional operational work, not test noise. |
 
 ## Proposal/Board Acceptance Detail
