@@ -12,8 +12,8 @@ test.describe('live llm chat', () => {
     await registerAndAttachSession(page, request, 'live-llm')
 
     await page.goto('/workspace/automations/chat')
-    await expect(page.locator('[data-llm-health-state="live"]')).toBeVisible()
-    await expect(page.getByText('Live LLM ready')).toBeVisible()
+    await expect(page.locator('[data-llm-health-state="configured"]')).toBeVisible()
+    await expect(page.getByText('Live LLM configured')).toBeVisible()
 
     const probeToken = `LIVE_LLM_PROBE_${Date.now()}`
 
@@ -31,7 +31,7 @@ test.describe('live llm chat', () => {
       .last()
     const assistantContent = assistantMessage.locator('.td-message-content')
     await expect(assistantContent).toContainText(probeToken, { timeout: 30_000 })
-    await expect(assistantContent).toContainText('Tuesday')
+    await expect(assistantContent).toContainText('Tuesday', { timeout: 30_000 })
     await expect(assistantContent).not.toContainText('Live provider request failed.')
     await expect(assistantContent).not.toContainText('Live provider configuration is invalid.')
     await expect(assistantContent).not.toContainText('Live provider request errored.')

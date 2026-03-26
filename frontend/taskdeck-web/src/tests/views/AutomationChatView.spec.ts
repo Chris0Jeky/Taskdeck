@@ -74,7 +74,17 @@ vi.mock('../../composables/useErrorMapper', () => ({
   },
 }))
 
-function buildSession(messageType = 'proposal-reference') {
+function buildSession(
+  messageType = 'proposal-reference',
+  overrides: Partial<ReturnType<typeof buildSessionBase>> = {},
+) {
+  return {
+    ...buildSessionBase(messageType),
+    ...overrides,
+  }
+}
+
+function buildSessionBase(messageType = 'proposal-reference') {
   const now = new Date().toISOString()
   return {
     id: 'session-1',
@@ -96,7 +106,7 @@ function buildSession(messageType = 'proposal-reference') {
         createdAt: now,
       },
     ],
-  }
+  } as const
 }
 
 async function waitForAsyncUi() {
@@ -208,6 +218,35 @@ describe('AutomationChatView', () => {
     })
   })
 
+  it('keeps the selected session board scope when returning to Review', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await findButtonByText(wrapper, 'Back to Review').trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-1' },
+    })
+  })
+
+  it('falls back to the deep-linked board scope when the selected session has no board context', async () => {
+    routeMock.query = { boardId: 'board-2' }
+    const sessionWithoutBoard = buildSession('proposal-reference', { boardId: null })
+    mocks.getMySessions.mockResolvedValue([sessionWithoutBoard])
+    mocks.getSession.mockResolvedValue(sessionWithoutBoard)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await findButtonByText(wrapper, 'Back to Review').trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-2' },
+    })
+  })
+
   it('shows an explicit mock-provider warning when live llm is not active', async () => {
     const wrapper = mountView()
     await waitForAsyncUi()
@@ -217,7 +256,7 @@ describe('AutomationChatView', () => {
     expect(wrapper.get('[data-llm-health-state="mock"]').exists()).toBe(true)
   })
 
-  it('shows a ready banner when a live provider is available', async () => {
+  it('shows a configured banner when a live provider is available', async () => {
     mocks.getHealth.mockResolvedValue({
       isAvailable: true,
       providerName: 'Gemini',
@@ -229,9 +268,10 @@ describe('AutomationChatView', () => {
     const wrapper = mountView()
     await waitForAsyncUi()
 
-    expect(wrapper.text()).toContain('Live LLM ready')
+    expect(wrapper.text()).toContain('Live LLM configured')
     expect(wrapper.text()).toContain('Gemini (gemini-2.5-flash)')
-    expect(wrapper.get('[data-llm-health-state="live"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('does not prove the upstream provider accepted a live request yet')
+    expect(wrapper.get('[data-llm-health-state="configured"]').exists()).toBe(true)
   })
 
   it('prefills the create-session board context from the route boardId query', async () => {

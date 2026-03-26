@@ -107,7 +107,7 @@ const llmHealthState = computed(() => {
   }
 
   if (chatHealth.value.isAvailable && !chatHealth.value.isMock) {
-    return 'live'
+    return 'configured'
   }
 
   if (chatHealth.value.isMock) {
@@ -121,8 +121,8 @@ const llmStatusTitle = computed(() => {
   switch (llmHealthState.value) {
     case 'loading':
       return 'Checking LLM status'
-    case 'live':
-      return 'Live LLM ready'
+    case 'configured':
+      return 'Live LLM configured'
     case 'mock':
       return 'Live LLM not active'
     case 'unavailable':
@@ -151,8 +151,8 @@ const llmStatusCopy = computed(() => {
     ? `${chatHealth.value.providerName} (${chatHealth.value.model})`
     : chatHealth.value.providerName
 
-  if (llmHealthState.value === 'live') {
-    return `Manual chat is currently backed by ${providerLabel}.`
+  if (llmHealthState.value === 'configured') {
+    return `Taskdeck is configured to use ${providerLabel}, but this health check does not prove the upstream provider accepted a live request yet. Send a probe message before trusting manual chat output.`
   }
 
   if (llmHealthState.value === 'mock') {
@@ -370,14 +370,30 @@ function openRoute(path: string) {
   void router.push(path)
 }
 
-function openProposalReview(proposalId: string) {
+function resolveReviewBoardId(): string | null {
+  const sessionBoardId = selectedSession.value?.boardId?.trim()
+  if (sessionBoardId) {
+    return sessionBoardId
+  }
+
+  return queryBoardId.value
+}
+
+function pushToReview(hash?: string) {
+  const boardId = resolveReviewBoardId()
   void router.push({
     name: 'workspace-review',
-    query: selectedSession.value?.boardId
-      ? { boardId: selectedSession.value.boardId }
-      : undefined,
-    hash: `#proposal-${encodeURIComponent(proposalId)}`,
+    query: boardId ? { boardId } : undefined,
+    hash,
   })
+}
+
+function openReviewRoute() {
+  pushToReview()
+}
+
+function openProposalReview(proposalId: string) {
+  pushToReview(`#proposal-${encodeURIComponent(proposalId)}`)
 }
 
 onMounted(() => {
@@ -412,7 +428,7 @@ watch(
         <button class="td-btn td-btn--secondary" :disabled="loadingHealth" @click="loadProviderHealth">
           {{ loadingHealth ? 'Checking provider...' : 'Refresh LLM Status' }}
         </button>
-        <button class="td-btn td-btn--primary" @click="openRoute('/workspace/review')">Back to Review</button>
+        <button class="td-btn td-btn--primary" @click="openReviewRoute">Back to Review</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/automations/queue')">
           Open Queue (Advanced)
         </button>
@@ -473,7 +489,7 @@ watch(
             operator conversation.
           </p>
           <div class="td-empty__actions">
-            <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">
+            <button class="td-btn td-btn--primary td-btn--sm" @click="openReviewRoute">
               Open Review
             </button>
           </div>
@@ -497,7 +513,7 @@ watch(
             need to inspect the conversation itself.
           </p>
           <div class="td-empty__actions">
-            <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">
+            <button class="td-btn td-btn--primary td-btn--sm" @click="openReviewRoute">
               Open Review
             </button>
           </div>
@@ -625,7 +641,7 @@ watch(
   background: var(--td-surface-primary);
 }
 
-.td-chat-status--live {
+.td-chat-status--configured {
   border-color: var(--td-color-success, #2f855a);
   background: color-mix(in srgb, var(--td-surface-primary) 85%, #dff5e7 15%);
 }

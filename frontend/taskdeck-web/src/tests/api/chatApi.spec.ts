@@ -34,9 +34,16 @@ describe('chatApi', () => {
   })
 
   it('loads provider health', async () => {
-    vi.mocked(http.get).mockResolvedValue({ data: { providerName: 'Mock' } })
+    const healthPayload = {
+      isAvailable: true,
+      providerName: 'Mock',
+      errorMessage: null,
+      model: 'mock-default',
+      isMock: true,
+    }
+    vi.mocked(http.get).mockResolvedValue({ data: healthPayload })
 
-    await chatApi.getHealth()
+    await expect(chatApi.getHealth()).resolves.toEqual(healthPayload)
 
     expect(http.get).toHaveBeenCalledWith('/llm/chat/health')
   })
