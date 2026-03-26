@@ -115,6 +115,11 @@ Automation Chat now exposes provider-health state explicitly through:
 - `GET /api/llm/chat/health`
 - the in-app provider-status banner in `Automation Chat`
 
+Note:
+- `GET /api/llm/chat/health` is protected by the standard app auth on `ChatController`
+- callers must use an authenticated session or a valid Bearer token
+- unauthenticated requests return `401 Unauthorized`, so a direct browser or `curl` call without auth can fail even when the provider is healthy
+
 Current operator-visible states:
 - live provider ready
 - mock provider active
