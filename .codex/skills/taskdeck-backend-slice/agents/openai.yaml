@@ -1,0 +1,5 @@
+interface:
+  display_name: "Taskdeck Backend Slice"
+  short_description: "Implement Taskdeck backend changes safely"
+  default_prompt: "Use $taskdeck-backend-slice to implement this Taskdeck backend change with clean layering, explicit contracts, and the right tests."
+
