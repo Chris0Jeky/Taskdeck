@@ -613,7 +613,7 @@ function renderInboxView() {
                     </div>
                     <span class="td-inbox-row__title">${escapeHtml(capture.title)}</span>
                     <span class="td-inbox-row__excerpt">${escapeHtml(capture.excerpt)}</span>
-                    <span class="td-inbox-row__meta">${escapeHtml(capture.createdAt)} · ${escapeHtml(capture.boardName)}</span>
+                    <span class="td-inbox-row__meta">${escapeHtml(capture.createdAt)} | ${escapeHtml(capture.boardName)}</span>
                   </button>
                 `,
               )
@@ -630,7 +630,7 @@ function renderInboxView() {
                   <div class="td-card__header">
                     <div>
                       <h2 class="td-section-title">Capture Detail</h2>
-                      <p class="td-section-desc">${escapeHtml(selectedCapture.status)} · ${escapeHtml(selectedCapture.source)} · ${escapeHtml(selectedCapture.createdAt)}</p>
+                      <p class="td-section-desc">${escapeHtml(selectedCapture.status)} | ${escapeHtml(selectedCapture.source)} | ${escapeHtml(selectedCapture.createdAt)}</p>
                     </div>
                   </div>
                   <pre class="td-detail-text">${escapeHtml(selectedCapture.rawText)}</pre>
