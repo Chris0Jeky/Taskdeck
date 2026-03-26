@@ -399,6 +399,11 @@ public class AutomationProposalService : IAutomationProposalService
             return $"{summary} This would {LowercaseSentenceLead(DescribeOperation(orderedOperations[0]))}";
         }
 
+        if (IsCaptureTaskBatch(summary, orderedOperations))
+        {
+            return $"Create {orderedOperations.Count} task card{Pluralize(orderedOperations.Count)} from the captured note.";
+        }
+
         var entitySummary = affectedEntities.Count switch
         {
             0 => "this workspace",
@@ -414,6 +419,13 @@ public class AutomationProposalService : IAutomationProposalService
         if (operationCount == 0)
         {
             return "No concrete board operations were attached to this proposal.";
+        }
+
+        if (affectedEntities.Count == 1 &&
+            string.Equals(affectedEntities[0].EntityType, "Card", StringComparison.OrdinalIgnoreCase) &&
+            affectedEntities[0].ChangeCount == operationCount)
+        {
+            return $"{operationCount} task card change{Pluralize(operationCount)} ready for approval.";
         }
 
         if (affectedEntities.Count == 0)
@@ -575,6 +587,23 @@ public class AutomationProposalService : IAutomationProposalService
         }
 
         return buffer.ToString();
+    }
+
+    private static bool IsCaptureTaskBatch(string summary, IReadOnlyList<AutomationProposalOperation> orderedOperations)
+    {
+        if (orderedOperations.Count < 2)
+        {
+            return false;
+        }
+
+        if (!string.Equals(summary.Trim(), "Capture triage", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return orderedOperations.All(operation =>
+            string.Equals(operation.ActionType, "card.create", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(operation.TargetType, "Card", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string Pluralize(int count) => count == 1 ? string.Empty : "s";
