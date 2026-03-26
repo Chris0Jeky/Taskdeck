@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-03-07
+Last Updated: 2026-03-26
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -209,6 +209,20 @@ MVP productization wave seeded from the 2026-03-07 integration:
 45. `#96` `UX-10` interactive onboarding/help (reused and reprioritized to `Priority II`)
 46. `#100` `DOC-04` user guides/tutorials/FAQ (reused and reprioritized to `Priority II`)
 47. `#328` `TST-20` product first-run smoke + launch-criteria guardrail
+
+Saul-facing demo alignment wave seeded from the 2026-03-26 reconciliation:
+48. `#356` `DEMO-00` Saul-facing demo alignment tracker
+49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario
+50. `#326` `UX-17` proposal readability and trust-cue hardening (reused existing anchor)
+51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (reused existing anchor)
+52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide
+53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (reused existing anchor)
+
+Execution note (Saul-facing demo wave):
+- use `docs/WIP/Taskdeck_Demo_Capability_Specification.md` together with `docs/analysis/2026-03-26_saul-demo-capability-reconciliation.md`
+- keep the hero path pinned to `Home -> Inbox/Capture -> Review -> Board`
+- do not reopen broad architecture, agent breadth, or generic pack expansion during this slice
+- keep `#175` as the broader starter-pack expansion anchor; `#354` is the narrow pre-recording business-demo slice
 
 ### Stage 3: Priority III - Expansion Wave
 

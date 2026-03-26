@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-19
+Last Updated: 2026-03-26
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -33,6 +33,7 @@ Current constraints are mostly hardening and consistency:
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
 - cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
+- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is already shipped, and the remaining pre-recording gap is business-legible packaging (client-onboarding hero scenario, trust-first wording hardening, and rehearsal discipline) rather than new architecture; targeted follow-through is now tracked in `#354` to `#356`
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -228,6 +229,26 @@ Implementation delivery (shipped in this context):
 - `#300` Batch C (`v2`): JSON scenario runner + schema/sample scenarios, `demo:run` JSON-first flags (`--list`, `--skip-llm`, `--continue-on-error`), capture-aware autopilot loop modes (`queue|capture|mixed`), capture helper library additions, and scenario authoring docs (`docs/product/SCENARIOS.md`)
 - `#301` Batch D (`v3`): demo director + snapshot scripts (`demo:director`, `demo:snapshot`), trace-aware scenario/autopilot/runtime events, `runOps` scenario step support, and director-mode stakeholder recorder bootstrap with artifact logs/snapshots
 - `#302` Batch E: integration hardening delivered with explicit demo CI policy (`TASKDECK_RUN_DEMO=0` in default Playwright lanes), opt-in `demo-director-smoke` workflow wiring in `ci-extended.yml`, deterministic smoke command (`npm run demo:director:smoke`) with isolated smoke DB reset + forced fresh servers, automatic free-port fallback for local API startup, actionable explicit-port remediation hints, and docs/index/runtime-precondition consolidation for the migrated demo tooling
+
+## Saul-Facing Demo Reconciliation (2026-03-26)
+
+`docs/WIP/Taskdeck_Demo_Capability_Specification.md` was reconciled against shipped code, canonical docs, and the active GitHub backlog in `docs/analysis/2026-03-26_saul-demo-capability-reconciliation.md`.
+
+Current state:
+- already shipped: capture triage, review-first proposal gating, board-centered follow-through, provenance links, and deterministic seed/director/scenario tooling
+- only partially demo-shaped today: proposal wording, hero-board curation, and business-facing starter-pack/setup language
+- still missing before recording: one dedicated client-onboarding hero blueprint/scenario, one exact ACME-style seeded capture story, and one committed rehearsal contract for the stakeholder path
+
+Targeted follow-through seeded:
+- `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario
+- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide
+- `#356` `DEMO-00`: Saul-facing demo alignment tracker
+
+Existing reused anchors:
+- `#175` for broader starter-pack expansion beyond the pre-demo slice
+- `#216` for broader demo script / public framing
+- `#326` for proposal readability and trust-cue hardening
+- `#330` for in-app demoability and hero-board presentation quality
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
 
 ## MVP Expansion Planning Integration (2026-03-07)

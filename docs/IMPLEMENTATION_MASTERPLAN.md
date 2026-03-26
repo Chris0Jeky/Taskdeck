@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-19
+Last Updated: 2026-03-26
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -20,6 +20,7 @@ Update this file at the end of each meaningful delivery cycle.
 - `docs/STATUS.md` is authoritative for current shipped reality.
 - Product north star: make capture nearly free and keep automation safe through review-first proposals.
 - Product legibility is now the immediate product focus: the app should explain its core loop from inside the UI, not mainly through docs and demo scripts.
+- For near-horizon demo work, prefer packaging the shipped capture/review/board substrate into stakeholder-legible business workflows instead of reopening broad architecture.
 - Prefer finishing cross-cutting consistency work before adding new surface area.
 - Security and identity convergence remains the highest-priority engineering track.
 - Cross-user existence policy is fixed: return `403` for authenticated-but-unauthorized access and `404` for true missing resources.
@@ -610,6 +611,15 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#96` onboarding/contextual help (delivered)
   - `#100` user guides/tutorials/FAQ (delivered)
   - `#328` first-run smoke + launch-criteria guardrail (delivered)
+- Seeded Saul-facing demo alignment wave:
+  - `#356` tracker
+  - `#354` client-onboarding starter pack + deterministic hero scenario
+  - `#355` rehearsal contract + acceptance checklist
+- Reuse-before-duplicate anchors for this wave:
+  - `#326` proposal readability and trust cues
+  - `#330` in-app demoability and hero-board quality
+  - `#216` demo script / public framing
+  - `#175` broader starter-pack expansion after the narrow pre-demo slice
 - Related but intentionally not folded into Wave P core execution: `#93`, `#216`, `#77`
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
@@ -798,17 +808,41 @@ Batch E integration hardening (`#302`) status:
 - post-epic audit hardening under `#310` now keeps `demo:seed` rerun-bounded for canonical evidence generation, validates director CLI flags before Playwright passthrough, and keeps recorder board targeting aligned with explicit autopilot-board overrides
 - post-epic audit hardening now continues under `#311` so demo runtime/test follow-through stays scoped outside the original migration batches
 
+## Saul-Facing Demo Alignment Wave (2026-03-26)
+
+The new capability spec in `docs/WIP/Taskdeck_Demo_Capability_Specification.md` was reconciled into a narrow delivery wave rather than a broad roadmap reset.
+
+Canonical reconciliation record:
+- `docs/analysis/2026-03-26_saul-demo-capability-reconciliation.md`
+
+Execution conclusion:
+- the hard substrate is already shipped: capture triage, review-first gating, provenance, board-centered follow-through, and deterministic demo tooling are all present
+- the remaining pre-recording gap is business-legible packaging, not missing architecture
+- the work should stay pinned to one stakeholder story: `Home -> Inbox/Capture -> Review -> Board`
+
+Seeded issues:
+- `#354` `PACK-08`: add a Saul-facing client-onboarding starter pack and deterministic demo scenario
+- `#355` `TST-24`: add the rehearsal contract, acceptance checklist, and artifact expectations for the exact stakeholder path
+- `#356` `DEMO-00`: track the narrow demo-alignment wave
+
+Reused existing anchors:
+- `#326` for proposal readability and trust-cue hardening
+- `#330` for in-app demoability and hero-board presentation quality
+- `#216` for the broader demo script and public-facing narrative
+- `#175` for broader starter-pack expansion after the narrow pre-demo slice
+
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
-3. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): keep the now-delivered `#328` smoke contract aligned to the shipped first-run loop, and route broader telemetry/release-gate follow-through to `#341`.
-4. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
-5. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
-6. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
-7. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
-8. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
-9. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311` instead of reopening the migration batches.
+2. Run the Saul-facing demo alignment wave as the next narrow product-facing slice: `#354` first, then legibility/demoability follow-through through `#326` and `#330`, then lock the recording contract in `#355` and `#216`.
+3. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
+4. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): keep the now-delivered `#328` smoke contract aligned to the shipped first-run loop, and route broader telemetry/release-gate follow-through to `#341`.
+5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
+6. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
+7. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
+8. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
+9. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+10. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, and `#355` instead of reopening the migration batches.
 
 ## Documentation Operating Model
 Active docs:
