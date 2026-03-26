@@ -831,18 +831,45 @@ Reused existing anchors:
 - `#216` for the broader demo script and public-facing narrative
 - `#175` for broader starter-pack expansion after the narrow pre-demo slice
 
+## Manual Product Audit Follow-through Wave (2026-03-26)
+
+The runtime audit in `docs/analysis/2026-03-26_manual-product-audit.md` was reconciled into a focused execution wave rather than left as a read-only artifact.
+
+Canonical reconciliation record:
+- `docs/analysis/2026-03-26_manual-product-audit-followthrough.md`
+
+Execution conclusion:
+- the golden path is real, but several runtime-coherence gaps still need explicit ownership
+- the highest-value follow-through is not broad new feature work; it is truthfulness and trust around realtime health, triage freshness, provider visibility, and docs/runtime alignment
+- raw-ID-heavy review readability remains intentionally routed through existing issue `#326` rather than duplicated here
+
+Seeded issues:
+- `#363` `ANL-2026-03-26`: tracker
+- `#364` `COL-05`: realtime hub CORS/SignalR health
+- `#365` `CAP-23`: Inbox triage freshness
+- `#366` `UX-20`: Workbench/nav/docs truth alignment
+- `#367` `UX-21`: board-history semantic alignment
+- `#368` `AUTO-04`: chat live-provider status and first-turn fidelity
+- `#369` `TST-25`: headed manual-audit Playwright pack (`Priority IV`)
+
+Immediate hardening landed in this context:
+- `GET /api/llm/chat/health` plus explicit Automation Chat provider-state rendering (`live` / `mock` / degraded)
+- opt-in live-provider Playwright probe (`tests/e2e/live-llm.spec.ts`)
+- headed local audit shortcuts (`npm run test:e2e:audit:headed`, `npm run test:e2e:live-llm:headed`)
+
 ## Next Best Steps (Immediate)
 
 1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
-2. Run the Saul-facing demo alignment wave as the next narrow product-facing slice: `#354` first, then legibility/demoability follow-through through `#326` and `#330`, then lock the recording contract in `#355` and `#216`.
-3. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
-4. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): keep the now-delivered `#328` smoke contract aligned to the shipped first-run loop, and route broader telemetry/release-gate follow-through to `#341`.
-5. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
-6. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
-7. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
-8. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
-9. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
-10. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, and `#355` instead of reopening the migration batches.
+2. Run the manual-audit follow-through wave in trust-first order: `#364` -> `#365` -> `#368`, then align product truthfulness through `#366` and `#367`, while routing review-readability detail through `#326`; keep `#369` explicitly lower priority.
+3. Run the Saul-facing demo alignment wave as the next narrow product-facing slice: `#354` first, then legibility/demoability follow-through through `#326` and `#330`, then lock the recording contract in `#355` and `#216`.
+4. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
+5. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): keep the now-delivered `#328` smoke contract aligned to the shipped first-run loop, and route broader telemetry/release-gate follow-through to `#341`.
+6. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
+7. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
+8. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
+9. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
+10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
+11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 
 ## Documentation Operating Model
 Active docs:

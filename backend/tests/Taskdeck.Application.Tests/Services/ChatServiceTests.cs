@@ -467,6 +467,37 @@ public class ChatServiceTests
         capturedRequest.Attribution.CorrelationId.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldSurfaceProviderStatus()
+    {
+        _llmProviderMock
+            .Setup(p => p.GetHealthAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(false, "OpenAI", "ApiKey is required.", "gpt-4o-mini"));
+
+        var result = await _service.GetProviderHealthAsync(default);
+
+        result.IsAvailable.Should().BeFalse();
+        result.ProviderName.Should().Be("OpenAI");
+        result.ErrorMessage.Should().Be("ApiKey is required.");
+        result.Model.Should().Be("gpt-4o-mini");
+        result.IsMock.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldRespectProviderReportedMockFlag()
+    {
+        _llmProviderMock
+            .Setup(p => p.GetHealthAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(true, "DeterministicStub", Model: "stub-model", IsMock: true));
+
+        var result = await _service.GetProviderHealthAsync(default);
+
+        result.IsAvailable.Should().BeTrue();
+        result.ProviderName.Should().Be("DeterministicStub");
+        result.Model.Should().Be("stub-model");
+        result.IsMock.Should().BeTrue();
+    }
+
     private static async IAsyncEnumerable<LlmTokenEvent> StreamEvents()
     {
         yield return new LlmTokenEvent("token", true);
