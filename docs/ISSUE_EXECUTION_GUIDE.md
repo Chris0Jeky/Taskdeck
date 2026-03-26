@@ -212,10 +212,10 @@ MVP productization wave seeded from the 2026-03-07 integration:
 
 Saul-facing demo alignment wave seeded from the 2026-03-26 reconciliation:
 48. `#356` `DEMO-00` Saul-facing demo alignment tracker
-49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario (active PR: `#357`)
-50. `#326` `UX-17` proposal readability and trust-cue hardening (demo-critical subset active PR: `#358`)
-51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (demo-critical subset active PR: `#359`)
-52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current active step)
+49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario
+50. `#326` `UX-17` proposal readability and trust-cue hardening (demo-critical Saul-facing subset)
+51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (demo-critical Saul-facing subset)
+52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current execution step)
 53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (run only after `#355` lands)
 
 Execution note (Saul-facing demo wave):
