@@ -88,7 +88,7 @@ public class ChatService : IChatService
             health.ProviderName,
             health.ErrorMessage,
             health.Model,
-            string.Equals(health.ProviderName, "Mock", StringComparison.OrdinalIgnoreCase));
+            health.IsMock);
     }
 
     public async Task<Result<ChatMessageDto>> SendMessageAsync(Guid sessionId, Guid userId, SendChatMessageDto dto, CancellationToken ct = default)

@@ -62,7 +62,16 @@ vi.mock('../../store/toastStore', () => ({
 }))
 
 vi.mock('../../composables/useErrorMapper', () => ({
-  getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
+  getErrorDisplay: (error: unknown, fallback: string) => {
+    if (typeof error === 'object' && error !== null) {
+      const typed = error as { message?: unknown }
+      if (typeof typed.message === 'string' && typed.message.trim().length > 0) {
+        return { message: typed.message, code: null }
+      }
+    }
+
+    return { message: fallback, code: null }
+  },
 }))
 
 function buildSession(messageType = 'proposal-reference') {
@@ -412,7 +421,7 @@ describe('AutomationChatView', () => {
 
     expect(mocks.createSession).not.toHaveBeenCalled()
     expect(mocks.errorToast).toHaveBeenCalledTimes(1)
-    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load boards')
+    expect(mocks.errorToast).toHaveBeenCalledWith('network down')
   })
 
   it('surfaces provider-health loading failures explicitly', async () => {
@@ -422,6 +431,7 @@ describe('AutomationChatView', () => {
     await waitForAsyncUi()
 
     expect(wrapper.text()).toContain('LLM status unavailable')
-    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load LLM status')
+    expect(wrapper.text()).toContain('health down')
+    expect(mocks.errorToast).toHaveBeenCalledWith('health down')
   })
 })

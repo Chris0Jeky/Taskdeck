@@ -1,10 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { parseTrueishEnv } from '../../scripts/demo-shared.mjs'
 import { registerAndAttachSession } from './support/authSession'
-
-function parseTrueishEnv(value: string | undefined): boolean {
-  const normalized = value?.trim().toLowerCase()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-}
 
 test.describe('live llm chat', () => {
   test.skip(

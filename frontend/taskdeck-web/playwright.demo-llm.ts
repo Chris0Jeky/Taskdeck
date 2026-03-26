@@ -1,3 +1,5 @@
+import { parseTrueishEnv } from './scripts/demo-shared.mjs'
+
 type DemoProvider = 'OpenAI' | 'Gemini'
 
 const deterministicMockLlmEnv: Record<string, string> = {
@@ -152,7 +154,3 @@ function firstNonEmpty(...values: Array<string | undefined>): string | null {
   return null
 }
 
-function parseTrueishEnv(value: string | undefined): boolean {
-  const normalized = value?.trim().toLowerCase()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-}
