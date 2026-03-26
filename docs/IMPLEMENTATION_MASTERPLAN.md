@@ -77,6 +77,7 @@ Delivered in the latest cycle:
    - API integration suite expanded for legacy unauthorized/forbidden/cross-user regression checks
    - API integration suite expanded for legacy unauthorized-path regression checks
 12. Frontend runtime alignment:
+   - added a lightweight static UI mock at `frontend/taskdeck-web/public/mock/` so the current product shell and key surfaces can be previewed from local example data without backend/runtime setup and published easily on GitHub Pages-style hosting
    - CI and local developer baseline pinned to Node 24.13.1 (LTS) to match Vite 7 engine constraints
 13. Security convergence completion for remaining legacy families:
    - audit controller now derives actor identity from claims for user-history and board-history access checks
