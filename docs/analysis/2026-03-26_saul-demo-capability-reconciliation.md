@@ -22,10 +22,10 @@ The repo already ships the hard substrate needed for the stakeholder demo:
 - proposal/card provenance is already visible
 - deterministic demo seed/director/scenario tooling already exists
 
-The main remaining gap is packaging:
-- current hero boards/scenarios are still engineering/support/content facing
-- proposal and success copy are improved, but not yet unmistakably Saul-facing
-- the repo lacks a committed rehearsal contract for the exact stakeholder demo path
+Execution status now:
+- business-facing hero board/scenario and exact ACME capture story are implemented (active PR `#357`)
+- demo-critical trust-copy and in-app cue hardening are implemented (active PRs `#358` and `#359`)
+- the remaining pre-recording blocker is a committed rehearsal contract for the exact stakeholder path (`#355`), followed by broader script framing in `#216`
 
 ## Capability Map
 
@@ -35,11 +35,11 @@ The main remaining gap is packaging:
 | Review-first trust gate | Shipped | `ReviewView.vue`, automation proposal lifecycle, canonical docs | Existing `#326` |
 | Deterministic capture triage for checklist input | Shipped | `CaptureTriageService.cs`, capture schema/contracts, capture loop tests | Delivered capture wave |
 | Capture/proposal/card provenance | Shipped | `ReviewView.vue`, `InboxView.vue`, `CardModal.vue`, capture/card provenance APIs | Delivered capture wave |
-| Proposal readability baseline | Partially shipped | proposal presentation DTO/service + `ReviewView.vue` rendering | Existing `#326` |
-| In-app demoability / hero-board attention cues | Partially shipped | `Home`, `Today`, seeded/demo tooling, recent boards/recommended actions | Existing `#330` |
+| Proposal readability baseline | Demo-critical slice implemented (in PR review) | `AutomationProposalService`, `ReviewView.vue`, `ReviewView` tests | `#326` (demo-critical subset via PR `#358`) |
+| In-app demoability / hero-board attention cues | Demo-critical slice implemented (in PR review) | `HomeView.vue`, `InboxView.vue`, `BoardView.vue`, view tests | `#330` (demo-critical subset via PR `#359`) |
 | Deterministic demo reset and orchestration | Shipped | `demo:seed`, `demo:director`, `demo:director:smoke`, JSON scenarios | Delivered demo migration wave |
-| Business-facing starter pack / hero blueprint | Missing | current first-party packs are engineering/support/content only | New `#354`; broader pack wave remains `#175` |
-| Saul-facing business scenario and exact ACME capture story | Missing | no accounting/client-onboarding scenario is shipped today | New `#354` |
+| Business-facing starter pack / hero blueprint | Implemented (in PR review) | client-onboarding starter pack catalog + setup option + seed/default retargeting | `#354` via PR `#357`; broader pack wave remains `#175` |
+| Saul-facing business scenario and exact ACME capture story | Implemented (in PR review) | `scripts/scenarios-json/client-onboarding.json`, demo seed/defaults, triage tests | `#354` via PR `#357` |
 | Explicit rehearsal contract for recording | Missing | no committed pass/fail prep guide for this exact stakeholder path | New `#355` |
 | Demo script / narrative framing | Partially planned | broader thesis/demo framing already tracked | Existing `#216` |
 
@@ -67,16 +67,13 @@ Not previously explicit enough:
 
 ### Partially Present
 
-- Proposal summaries are more readable than raw operations, but still not consistently business-legible on first glance.
-- Home/Today already support the core path, but they are not yet curated around a single business demo board.
-- Starter-pack/setup UX exists, but the available packs still frame the product around engineering/support/content examples.
+- `#326` and `#330` now have demo-critical slices implemented in stacked PRs, but are not merged yet.
+- broader non-demo scope in `#326`/`#330` remains intentionally out of this narrow wave.
 
 ### Missing
 
-- one dedicated Saul-facing board blueprint and deterministic scenario
-- one exact seeded ACME-style onboarding capture story
-- stronger review/success wording that makes the trust model impossible to miss
-- one committed rehearsal contract that defines reset command, route order, proof points, and artifacts
+- one committed rehearsal contract that defines reset command, route order, proof points, and artifacts (`#355`)
+- broader reusable demo script/public framing after the product path is stable enough to script truthfully (`#216`)
 
 ## Delivery Strategy
 
@@ -88,8 +85,8 @@ Land the minimum story that changes the whole demo:
 - exact seeded checklist capture input
 - clean board reveal after execution
 
-Primary owner:
-- `#354`
+Status:
+- implemented on stacked PR `#357` (pending merge)
 
 ### Phase B: Trust And Legibility Hardening
 
@@ -98,9 +95,8 @@ Use existing productization anchors instead of duplicating them:
 - review-first hero path clarity
 - in-app demoability and hero-board quality
 
-Primary owners:
-- `#326`
-- `#330`
+Status:
+- implemented for the demo-critical subset on stacked PRs `#358` and `#359` (pending merge)
 
 ### Phase C: Rehearsal Contract
 
@@ -117,23 +113,23 @@ Primary owners:
 ## New Issue Wave
 
 Seeded on 2026-03-26:
-- `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario
-- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide
+- `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario (active PR `#357`)
+- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current active step)
 - `#356` `DEMO-00`: Saul-facing demo alignment tracker
 
 Reused existing anchors:
 - `#175` for broader starter-pack expansion after the pre-demo slice
 - `#216` for broader demo script/public framing
-- `#326` for proposal readability and trust-cue hardening
-- `#330` for in-app demoability and hero-board quality
+- `#326` for proposal readability and trust-cue hardening (demo-critical subset active PR `#358`)
+- `#330` for in-app demoability and hero-board quality (demo-critical subset active PR `#359`)
 
 ## Recommended Execution Order
 
-1. `#354`
-2. `#326`
-3. `#330`
-4. `#355`
-5. `#216`
+1. `#354` (implemented, active PR `#357`)
+2. demo-critical subset of `#326` (implemented, active PR `#358`)
+3. demo-critical subset of `#330` (implemented, active PR `#359`)
+4. `#355` (current)
+5. `#216` (after `#355`)
 
 Execution rule:
 - keep the work pinned to the single stakeholder story
@@ -152,7 +148,6 @@ Do not spend this wave on:
 ## Bottom Line
 
 Taskdeck already proves the thesis technically.
-The remaining work is to make that proof instantly legible to Saul:
-- one business story
-- one clean trust-first path
-- one repeatable rehearsal contract
+The remaining work is now narrow:
+- land the rehearsal contract (`#355`)
+- then codify the broader reusable script framing (`#216`)

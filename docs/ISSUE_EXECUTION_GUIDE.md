@@ -212,17 +212,18 @@ MVP productization wave seeded from the 2026-03-07 integration:
 
 Saul-facing demo alignment wave seeded from the 2026-03-26 reconciliation:
 48. `#356` `DEMO-00` Saul-facing demo alignment tracker
-49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario
-50. `#326` `UX-17` proposal readability and trust-cue hardening (reused existing anchor)
-51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (reused existing anchor)
-52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide
-53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (reused existing anchor)
+49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario (active PR: `#357`)
+50. `#326` `UX-17` proposal readability and trust-cue hardening (demo-critical subset active PR: `#358`)
+51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (demo-critical subset active PR: `#359`)
+52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current active step)
+53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (run only after `#355` lands)
 
 Execution note (Saul-facing demo wave):
 - use `docs/WIP/Taskdeck_Demo_Capability_Specification.md` together with `docs/analysis/2026-03-26_saul-demo-capability-reconciliation.md`
 - keep the hero path pinned to `Home -> Inbox/Capture -> Review -> Board`
 - do not reopen broad architecture, agent breadth, or generic pack expansion during this slice
 - keep `#175` as the broader starter-pack expansion anchor; `#354` is the narrow pre-recording business-demo slice
+- current execution order remains strict: `#354` -> demo-critical `#326` -> demo-critical `#330` -> `#355` -> `#216`
 
 ### Stage 3: Priority III - Expansion Wave
 

@@ -33,7 +33,7 @@ Current constraints are mostly hardening and consistency:
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
 - cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
-- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is already shipped, and the remaining pre-recording gap is business-legible packaging (client-onboarding hero scenario, trust-first wording hardening, and rehearsal discipline) rather than new architecture; targeted follow-through is now tracked in `#354` to `#356`
+- Saul-facing demo reconciliation is now explicit and actively executing on stacked PRs: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`, and the remaining pre-recording blocker is locking the rehearsal contract in `#355` before broader script framing in `#216`
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -236,19 +236,19 @@ Implementation delivery (shipped in this context):
 
 Current state:
 - already shipped: capture triage, review-first proposal gating, board-centered follow-through, provenance links, and deterministic seed/director/scenario tooling
-- only partially demo-shaped today: proposal wording, hero-board curation, and business-facing starter-pack/setup language
-- still missing before recording: one dedicated client-onboarding hero blueprint/scenario, one exact ACME-style seeded capture story, and one committed rehearsal contract for the stakeholder path
+- delivered on stacked PRs for the demo wave: dedicated client-onboarding starter pack/scenario (`#354`), trust-first review wording hardening (demo-critical `#326` subset), and in-app hero-path/demo-board cues (demo-critical `#330` subset)
+- still missing before recording: one committed rehearsal contract (`#355`) and then the broader reusable demo script/public framing follow-through (`#216`)
 
 Targeted follow-through seeded:
-- `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario
-- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide
+- `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario (active PR: `#357`)
+- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current branch focus)
 - `#356` `DEMO-00`: Saul-facing demo alignment tracker
 
 Existing reused anchors:
 - `#175` for broader starter-pack expansion beyond the pre-demo slice
 - `#216` for broader demo script / public framing
-- `#326` for proposal readability and trust-cue hardening
-- `#330` for in-app demoability and hero-board presentation quality
+- `#326` for proposal readability and trust-cue hardening (demo-critical subset active PR: `#358`)
+- `#330` for in-app demoability and hero-board presentation quality (demo-critical subset active PR: `#359`)
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
 
 ## MVP Expansion Planning Integration (2026-03-07)

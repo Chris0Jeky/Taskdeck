@@ -146,7 +146,7 @@ test('first-run path should guide home to capture to review to execute to board'
   await expect(page.getByText('Capture Origin')).toBeVisible()
   const openCaptureLink = page.getByRole('link', { name: 'Open Capture' })
   await expect(openCaptureLink).toHaveAttribute('href', `/workspace/inbox?boardId=${boardId}#capture-${captureId}`)
-  await expect(page.getByRole('link', { name: 'Open in Review' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Open Proposal' })).toHaveAttribute(
     'href',
     `/workspace/review?boardId=${boardId}#proposal-${proposalId}`,
   )
