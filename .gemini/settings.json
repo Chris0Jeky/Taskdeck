@@ -1,6 +1,9 @@
 {
   "context": {
-    "fileName": ["AGENTS.md", "GEMINI.md"]
+    "fileName": [
+      "AGENTS.md",
+      "GEMINI.md"
+    ]
   },
   "general": {
     "defaultApprovalMode": "plan",
@@ -11,6 +14,57 @@
   "security": {
     "folderTrust": {
       "enabled": true
+    }
+  },
+  "mcp": {
+    "servers": {
+      "github": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ]
+      },
+      "context7": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@upstash/context7-mcp"
+        ]
+      },
+      "ripgrep": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-ripgrep@latest"
+        ]
+      },
+      "playwright": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@executeautomation/playwright-mcp-server"
+        ]
+      },
+      "chromeDevTools": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "chrome-devtools-mcp@latest"
+        ]
+      },
+      "docker": {
+        "command": "docker",
+        "args": [
+          "mcp",
+          "gateway",
+          "run",
+          "--servers",
+          "docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform",
+          "--transport",
+          "stdio"
+        ]
+      }
     }
   }
 }
