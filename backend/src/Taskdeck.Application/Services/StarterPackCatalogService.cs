@@ -19,6 +19,7 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
             BuildCommonColumnFlowPack(),
             BuildEngineeringSprintBlueprint(),
             BuildSupportTriageBlueprint(),
+            BuildClientOnboardingBlueprint(),
             BuildContentCalendarBlueprint()
         ];
 
@@ -74,9 +75,9 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
 
         var boardBlueprintCount = catalog.Count(entry =>
             string.Equals(entry.Category, StarterPackCatalogCategories.BoardBlueprint, StringComparison.Ordinal));
-        if (boardBlueprintCount != 3)
+        if (boardBlueprintCount != 4)
         {
-            errors.Add($"First-party catalog must include exactly 3 board-blueprint entries. Found {boardBlueprintCount}.");
+            errors.Add($"First-party catalog must include exactly 4 board-blueprint entries. Found {boardBlueprintCount}.");
         }
 
         if (errors.Count > 0)
@@ -341,6 +342,76 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
                         ColumnName = "Ideas",
                         TemplateId = "content-brief",
                         Labels = ["publish-week"]
+                    }
+                ]
+            });
+    }
+
+    private static StarterPackCatalogEntryDto BuildClientOnboardingBlueprint()
+    {
+        return new StarterPackCatalogEntryDto(
+            Id: "board-blueprint-client-onboarding",
+            Category: StarterPackCatalogCategories.BoardBlueprint,
+            Title: "Board Blueprint - Client Onboarding",
+            Summary: "Client-onboarding workflow with clear intake, follow-up, and completion lanes.",
+            Highlights:
+            [
+                "Business-facing onboarding lane model",
+                "Client follow-up and internal review labels",
+                "Two seeded kickoff cards for immediate demo readiness"
+            ],
+            Manifest: new StarterPackManifestDto
+            {
+                SchemaVersion = "1.0",
+                PackId = "board-blueprint-client-onboarding",
+                DisplayName = "Board Blueprint - Client Onboarding",
+                Description = "Starter blueprint for accounting and business-operations client onboarding workflows.",
+                Compatibility = new StarterPackCompatibilityDto
+                {
+                    MinTaskdeckVersion = "1.0.0",
+                    RequiredFeatures = ["boards", "labels", "cards"]
+                },
+                Tags = ["starter", "blueprint", "operations", "onboarding"],
+                Labels =
+                [
+                    new StarterPackLabelDto { Name = "client-action", Color = "#2563EB", Description = "Action required from the client" },
+                    new StarterPackLabelDto { Name = "internal-review", Color = "#B45309", Description = "Needs internal team review" },
+                    new StarterPackLabelDto { Name = "waiting-on-client", Color = "#0D9488", Description = "Blocked pending client response" }
+                ],
+                Columns =
+                [
+                    new StarterPackColumnDto { Name = "New Intake", Position = 0 },
+                    new StarterPackColumnDto { Name = "Waiting on Client", Position = 1, WipLimit = 8 },
+                    new StarterPackColumnDto { Name = "Ready for Review", Position = 2, WipLimit = 6 },
+                    new StarterPackColumnDto { Name = "In Progress", Position = 3, WipLimit = 6 },
+                    new StarterPackColumnDto { Name = "Completed", Position = 4 }
+                ],
+                Templates =
+                [
+                    new StarterPackCardTemplateDto
+                    {
+                        TemplateId = "client-onboarding-task",
+                        Title = "Client Onboarding Task",
+                        Description = "Template for a client onboarding action with explicit evidence requirements.",
+                        Checklist = ["Owner assigned", "Due date confirmed", "Evidence linked"]
+                    }
+                ],
+                SeedCards =
+                [
+                    new StarterPackSeedCardDto
+                    {
+                        Title = "Review new onboarding intake",
+                        Description = "Confirm scope, timeline, and ownership before requesting documents.",
+                        ColumnName = "New Intake",
+                        TemplateId = "client-onboarding-task",
+                        Labels = ["internal-review"]
+                    },
+                    new StarterPackSeedCardDto
+                    {
+                        Title = "Confirm onboarding owner and due date",
+                        Description = "Assign accountable owner and target kickoff date for this client.",
+                        ColumnName = "Ready for Review",
+                        Labels = ["internal-review"]
                     }
                 ]
             });
