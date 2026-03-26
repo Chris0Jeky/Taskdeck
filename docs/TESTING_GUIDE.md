@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-19
+Last Updated: 2026-03-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -27,6 +27,11 @@ Verification note:
 - frontend unit/build totals were re-verified on 2026-03-06 via `npm run lint`, `npx vitest --run`, `npm run typecheck`, and `npm run build`
 - frontend E2E totals were re-verified on 2026-03-06 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`24/24` passing; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default)
 - demo director smoke was re-verified on 2026-03-06 via `npm run demo:director:smoke` against the isolated `taskdeck.demo.ci.db` path
+
+2026-03-26 audit note:
+- the published 2026-03-06 API integration and Playwright totals are now known stale relative to the headed manual audit
+- the audit observed `322` API integration tests passing and a full Playwright run of `29 passed`, `1 failed`, `1 skipped` before the new opt-in `live-llm.spec.ts` landed in this branch
+- refresh the top-line totals on the next deliberate full-suite recertification rather than continuing to treat the 2026-03-06 counts as current
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -177,6 +182,23 @@ cd frontend/taskdeck-web
 npm run test:e2e:concurrency
 ```
 
+Opt-in live-provider check (headed-friendly):
+
+PowerShell:
+
+```powershell
+cd frontend/taskdeck-web
+$env:TASKDECK_RUN_LIVE_LLM_TESTS='1'
+npx playwright test tests/e2e/live-llm.spec.ts --headed --reporter=line
+```
+
+Headed manual-audit pack:
+
+```powershell
+cd frontend/taskdeck-web
+npm run test:e2e:audit:headed
+```
+
 ## Demo Tooling Policy
 
 Default CI posture:
@@ -201,6 +223,7 @@ Policy notes:
 - `npm run demo:seed` is expected to be rerun-safe on the canonical demo account: seeded captures, queue examples, chat evidence, comments, and Ops logs should be reused when present instead of multiplying on every local/manual regression run.
 - `demo:director` validates its own options before Playwright passthrough; keep director flags before `--` and pass raw Playwright arguments only after `--`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
+- opt-in live-provider chat verification is now separate from demo mode: use `TASKDECK_RUN_LIVE_LLM_TESTS=1` when you want a real-provider probe without running the full stakeholder demo flow.
 
 ## Load Harness (k6 + Playwright Concurrency)
 
