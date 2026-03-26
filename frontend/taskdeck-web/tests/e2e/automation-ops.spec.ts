@@ -51,6 +51,8 @@ test.beforeEach(async ({ page, request }) => {
 
 test('chat session should create and return assistant response', async ({ page }) => {
   await page.goto('/workspace/automations/chat')
+  await expect(page.locator('[data-llm-health-state="mock"]')).toBeVisible()
+  await expect(page.getByText('Live LLM not active')).toBeVisible()
 
   await page.getByPlaceholder('Session title').fill(`Session ${Date.now()}`)
   await page.getByRole('button', { name: 'Create Session' }).click()

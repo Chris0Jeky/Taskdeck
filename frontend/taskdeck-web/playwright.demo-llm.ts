@@ -62,7 +62,8 @@ export function resolveDemoBackendLlmEnv(env: NodeJS.ProcessEnv): Record<string,
 
 function shouldEnableLiveDemoLlm(env: NodeJS.ProcessEnv): boolean {
   const isDemoRun = parseTrueishEnv(env.TASKDECK_RUN_DEMO) || parseTrueishEnv(env.TASKDECK_DEMO_DIRECTOR)
-  if (!isDemoRun) {
+  const isLiveLlmTestRun = parseTrueishEnv(env.TASKDECK_RUN_LIVE_LLM_TESTS)
+  if (!isDemoRun && !isLiveLlmTestRun) {
     return false
   }
 

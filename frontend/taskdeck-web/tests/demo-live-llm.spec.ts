@@ -166,4 +166,18 @@ describe('playwright backend llm env resolution', () => {
       Llm__Gemini__ApiKey: 'gemini-key',
     })
   })
+
+  it('lets opt-in live llm e2e runs enable live Gemini settings outside demo mode', () => {
+    const env = resolvePlaywrightBackendLlmEnv({
+      TASKDECK_RUN_LIVE_LLM_TESTS: '1',
+      GEMINI_API_KEY: 'gemini-key',
+    })
+
+    expect(env).toEqual({
+      Llm__EnableLiveProviders: 'true',
+      Llm__AllowLiveProvidersInDevelopment: 'true',
+      Llm__Provider: 'Gemini',
+      Llm__Gemini__ApiKey: 'gemini-key',
+    })
+  })
 })
