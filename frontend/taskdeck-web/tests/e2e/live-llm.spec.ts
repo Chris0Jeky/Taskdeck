@@ -31,7 +31,7 @@ test.describe('live llm chat', () => {
       .last()
     const assistantContent = assistantMessage.locator('.td-message-content')
     await expect(assistantContent).toContainText(probeToken, { timeout: 30_000 })
-    await expect(assistantContent).toContainText('Tuesday')
+    await expect(assistantContent).toContainText('Tuesday', { timeout: 30_000 })
     await expect(assistantContent).not.toContainText('Live provider request failed.')
     await expect(assistantContent).not.toContainText('Live provider configuration is invalid.')
     await expect(assistantContent).not.toContainText('Live provider request errored.')

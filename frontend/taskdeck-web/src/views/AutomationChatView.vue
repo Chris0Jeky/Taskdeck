@@ -370,12 +370,28 @@ function openRoute(path: string) {
   void router.push(path)
 }
 
-function openProposalReview(proposalId: string) {
+function resolveReviewBoardId(): string | null {
+  const sessionBoardId = selectedSession.value?.boardId?.trim()
+  if (sessionBoardId) {
+    return sessionBoardId
+  }
+
+  return queryBoardId.value
+}
+
+function openReviewRoute() {
+  const boardId = resolveReviewBoardId()
   void router.push({
     name: 'workspace-review',
-    query: selectedSession.value?.boardId
-      ? { boardId: selectedSession.value.boardId }
-      : undefined,
+    query: boardId ? { boardId } : undefined,
+  })
+}
+
+function openProposalReview(proposalId: string) {
+  const boardId = resolveReviewBoardId()
+  void router.push({
+    name: 'workspace-review',
+    query: boardId ? { boardId } : undefined,
     hash: `#proposal-${encodeURIComponent(proposalId)}`,
   })
 }
@@ -412,7 +428,7 @@ watch(
         <button class="td-btn td-btn--secondary" :disabled="loadingHealth" @click="loadProviderHealth">
           {{ loadingHealth ? 'Checking provider...' : 'Refresh LLM Status' }}
         </button>
-        <button class="td-btn td-btn--primary" @click="openRoute('/workspace/review')">Back to Review</button>
+        <button class="td-btn td-btn--primary" @click="openReviewRoute">Back to Review</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/automations/queue')">
           Open Queue (Advanced)
         </button>
@@ -473,7 +489,7 @@ watch(
             operator conversation.
           </p>
           <div class="td-empty__actions">
-            <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">
+            <button class="td-btn td-btn--primary td-btn--sm" @click="openReviewRoute">
               Open Review
             </button>
           </div>
@@ -497,7 +513,7 @@ watch(
             need to inspect the conversation itself.
           </p>
           <div class="td-empty__actions">
-            <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">
+            <button class="td-btn td-btn--primary td-btn--sm" @click="openReviewRoute">
               Open Review
             </button>
           </div>

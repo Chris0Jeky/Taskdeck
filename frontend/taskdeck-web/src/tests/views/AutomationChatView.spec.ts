@@ -74,7 +74,17 @@ vi.mock('../../composables/useErrorMapper', () => ({
   },
 }))
 
-function buildSession(messageType = 'proposal-reference') {
+function buildSession(
+  messageType = 'proposal-reference',
+  overrides: Partial<ReturnType<typeof buildSessionBase>> = {},
+) {
+  return {
+    ...buildSessionBase(messageType),
+    ...overrides,
+  }
+}
+
+function buildSessionBase(messageType = 'proposal-reference') {
   const now = new Date().toISOString()
   return {
     id: 'session-1',
@@ -96,7 +106,7 @@ function buildSession(messageType = 'proposal-reference') {
         createdAt: now,
       },
     ],
-  }
+  } as const
 }
 
 async function waitForAsyncUi() {
@@ -205,6 +215,35 @@ describe('AutomationChatView', () => {
       name: 'workspace-review',
       query: { boardId: 'board-1' },
       hash: '#proposal-proposal-1',
+    })
+  })
+
+  it('keeps the selected session board scope when returning to Review', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await findButtonByText(wrapper, 'Back to Review').trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-1' },
+    })
+  })
+
+  it('falls back to the deep-linked board scope when the selected session has no board context', async () => {
+    routeMock.query = { boardId: 'board-2' }
+    const sessionWithoutBoard = buildSession('proposal-reference', { boardId: null })
+    mocks.getMySessions.mockResolvedValue([sessionWithoutBoard])
+    mocks.getSession.mockResolvedValue(sessionWithoutBoard)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    await findButtonByText(wrapper, 'Back to Review').trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-2' },
     })
   })
 
