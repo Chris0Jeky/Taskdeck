@@ -80,6 +80,17 @@ public class ChatService : IChatService
         return Result.Success(sessions.Select(MapSessionToDto));
     }
 
+    public async Task<ChatProviderHealthDto> GetProviderHealthAsync(CancellationToken ct = default)
+    {
+        var health = await _llmProvider.GetHealthAsync(ct);
+        return new ChatProviderHealthDto(
+            health.IsAvailable,
+            health.ProviderName,
+            health.ErrorMessage,
+            health.Model,
+            string.Equals(health.ProviderName, "Mock", StringComparison.OrdinalIgnoreCase));
+    }
+
     public async Task<Result<ChatMessageDto>> SendMessageAsync(Guid sessionId, Guid userId, SendChatMessageDto dto, CancellationToken ct = default)
     {
         try

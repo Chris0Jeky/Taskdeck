@@ -46,6 +46,15 @@ public class ChatController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    [HttpGet("health")]
+    public async Task<IActionResult> GetProviderHealth(CancellationToken ct = default)
+    {
+        if (!TryGetCurrentUserId(out _, out var errorResult))
+            return errorResult!;
+
+        return Ok(await _chatService.GetProviderHealthAsync(ct));
+    }
+
     [HttpGet("sessions/{id}")]
     public async Task<IActionResult> GetSession(Guid id, CancellationToken ct = default)
     {
