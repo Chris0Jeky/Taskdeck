@@ -1,0 +1,5 @@
+interface:
+  display_name: "Taskdeck Capture Review Loop"
+  short_description: "Protect the core trust loop"
+  default_prompt: "Use $taskdeck-capture-review-loop to make sure this Taskdeck change preserves low-friction capture, explicit review, and visible provenance."
+
