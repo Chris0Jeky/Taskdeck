@@ -379,21 +379,21 @@ function resolveReviewBoardId(): string | null {
   return queryBoardId.value
 }
 
-function openReviewRoute() {
+function pushToReview(hash?: string) {
   const boardId = resolveReviewBoardId()
   void router.push({
     name: 'workspace-review',
     query: boardId ? { boardId } : undefined,
+    hash,
   })
 }
 
+function openReviewRoute() {
+  pushToReview()
+}
+
 function openProposalReview(proposalId: string) {
-  const boardId = resolveReviewBoardId()
-  void router.push({
-    name: 'workspace-review',
-    query: boardId ? { boardId } : undefined,
-    hash: `#proposal-${encodeURIComponent(proposalId)}`,
-  })
+  pushToReview(`#proposal-${encodeURIComponent(proposalId)}`)
 }
 
 onMounted(() => {
@@ -639,11 +639,6 @@ watch(
   border-radius: var(--td-radius-lg);
   padding: var(--td-space-3) var(--td-space-4);
   background: var(--td-surface-primary);
-}
-
-.td-chat-status--live {
-  border-color: var(--td-color-success, #2f855a);
-  background: color-mix(in srgb, var(--td-surface-primary) 85%, #dff5e7 15%);
 }
 
 .td-chat-status--configured {

@@ -256,7 +256,7 @@ describe('AutomationChatView', () => {
     expect(wrapper.get('[data-llm-health-state="mock"]').exists()).toBe(true)
   })
 
-  it('shows a ready banner when a live provider is available', async () => {
+  it('shows a configured banner when a live provider is available', async () => {
     mocks.getHealth.mockResolvedValue({
       isAvailable: true,
       providerName: 'Gemini',
