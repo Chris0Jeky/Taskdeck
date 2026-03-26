@@ -95,7 +95,7 @@ Required files:
 If rehearsal fails, use this order:
 
 1. Rerun bootstrap commands exactly (`demo:seed` then `demo:run -- --clean --skip-llm client-onboarding`).
-2. Confirm backend auto-processing is enabled for local Development (`EnableAutoQueueProcessing=true`).
+2. Confirm backend auto-processing is enabled for local Development (`Workers:EnableAutoQueueProcessing=true`, or env `Workers__EnableAutoQueueProcessing=true`).
 3. Confirm API target is local and reachable (`http://localhost:5000/api` unless explicitly overridden).
 4. If using director artifacts, rerun with `--fresh-servers --reset-e2e-db` to clear stale server/db state.
 5. Treat any missing trust cue, missing ACME lineage, or unclear board reveal as fail-no-recording.
