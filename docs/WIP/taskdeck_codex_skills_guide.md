@@ -15,6 +15,17 @@ That means the missing layer is not more global rules. It is **situational playb
 
 Use `AGENTS.md` for repo laws. Use these skills for heavier workflows that should only load when relevant.
 
+## Review outcome
+
+The six-skill shape is right for Taskdeck, but the implementation should be a little tighter than the first draft:
+
+- make `taskdeck-repo-onramp` read `docs/ISSUE_EXECUTION_GUIDE.md` and `docs/MCP_TOOLING_GUIDE.md` as first-class inputs
+- keep `taskdeck-frontend-workspace-slice` focused on shell, navigation, and workspace coherence
+- keep `taskdeck-capture-review-loop` focused on capture, proposal review, provenance, execute flow, and board handoff semantics
+- add a short `do not use this skill when` rule to reduce double-loading
+- prefer the smallest evidence path first in demo/regression work
+- update `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` only when shipped reality or sequencing actually changed
+
 ---
 
 ## Recommended layout
@@ -47,7 +58,7 @@ Add a short section near the top-level work protocol so Codex knows these skills
 ## Local skill packs
 - Use `.codex/skills/taskdeck-repo-onramp` when starting work in an unfamiliar Taskdeck area or when the current roadmap/thesis needs to be reconciled before planning.
 - Use `.codex/skills/taskdeck-backend-slice` for backend/API/application/infrastructure changes.
-- Use `.codex/skills/taskdeck-frontend-workspace-slice` for frontend/product-shell/workspace UX changes.
+- Use `.codex/skills/taskdeck-frontend-workspace-slice` for frontend/product-shell/workspace UX changes outside the core capture/review semantics.
 - Use `.codex/skills/taskdeck-capture-review-loop` for any work touching capture, inbox, proposal review, execute flow, provenance, or board handoff.
 - Use `.codex/skills/taskdeck-demo-regression` when a task needs seeded demo evidence, Playwright validation, or stakeholder walkthrough proof.
 - Use `.codex/skills/taskdeck-verification-doc-sync` before handoff for final verification, canonical docs updates, and the required Taskdeck work summary.
@@ -72,11 +83,13 @@ Establish the current Taskdeck truth before editing anything.
 ## Read first
 1. `AGENTS.md`
 2. `docs/STATUS.md`
-3. `docs/START_HERE.md`
-4. `docs/IMPLEMENTATION_MASTERPLAN.md`
-5. `docs/GOLDEN_PRINCIPLES.md`
-6. `docs/TESTING_GUIDE.md`
-7. `README.md`
+3. `docs/IMPLEMENTATION_MASTERPLAN.md`
+4. `docs/GOLDEN_PRINCIPLES.md`
+5. `docs/ISSUE_EXECUTION_GUIDE.md`
+6. `docs/MCP_TOOLING_GUIDE.md`
+7. `docs/TESTING_GUIDE.md`
+
+Read `docs/START_HERE.md` when the task is product-facing or UX-facing.
 
 ## What to extract
 Produce a short working summary for yourself covering:
@@ -208,6 +221,8 @@ Prefer changes that reinforce the current shipped path:
 - `Today` as daily reset and action routing
 - advanced surfaces remain secondary unless the task explicitly targets them
 
+When the task changes capture, proposal review, provenance, or explicit board handoff semantics, pair this skill with the capture-review skill instead of letting the two blur together.
+
 ## Frontend guardrails
 - preserve board-centered continuity across routes
 - preserve review-first trust posture in UI copy and actions
@@ -319,6 +334,13 @@ Use Taskdeck’s existing seeded/demo tooling as evidence, not as a substitute f
 ## Key principle
 Demo tooling supports proof and repeatability. It does not replace the required product smoke path.
 
+## Evidence ladder
+Prefer the smallest path that proves the change:
+1. targeted unit/integration tests
+2. targeted Playwright coverage
+3. `npm run demo:director:smoke`
+4. full/manual seeded demo only when stakeholder-proof is actually needed
+
 ## Primary commands
 From `frontend/taskdeck-web`:
 - `npm run demo:seed`
@@ -385,6 +407,11 @@ Likely candidates:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - relevant product/manual docs
+
+Use a stricter rule for the two canonical planning docs:
+- update `docs/STATUS.md` only when shipped product or engineering reality changed
+- update `docs/IMPLEMENTATION_MASTERPLAN.md` only when the active roadmap or sequencing changed
+- for local tooling, skill-pack, or narrow workflow guidance changes, prefer `AGENTS.md` or the directly affected doc instead
 
 ## Required handoff shape
 Provide:
