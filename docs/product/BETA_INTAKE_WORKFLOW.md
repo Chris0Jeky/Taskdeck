@@ -8,7 +8,7 @@ Define the process for acquiring, onboarding, and retaining early beta users. Th
 
 ## Goals
 
-- Acquire 5-20 weekly active users (per GTM target in `04_GTM_AND_MARKETING.md`)
+- Acquire 5-20 weekly active users (per GTM target in [`04_GTM_AND_MARKETING.md`](../InReview/HUMAN/04_GTM_AND_MARKETING.md))
 - Collect structured feedback on the capture-to-board loop
 - Validate that time-to-first-value is under 5 minutes
 - Identify friction points before broader exposure
