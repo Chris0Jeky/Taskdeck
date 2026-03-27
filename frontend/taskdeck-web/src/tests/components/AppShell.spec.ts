@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import AppShell from '../../components/shell/AppShell.vue'
+import type { FeatureFlags } from '../../types/feature-flags'
 
 const mockRouter = {
   push: vi.fn(),
@@ -75,6 +76,10 @@ function mountShell() {
   })
 }
 
+function getRenderedNavHrefs(wrapper: ReturnType<typeof mountShell>) {
+  return wrapper.findAll('a').map((link) => link.attributes('href'))
+}
+
 async function waitForUi() {
   await Promise.resolve()
   await Promise.resolve()
@@ -88,6 +93,7 @@ describe('AppShell workspace navigation and command palette', () => {
     mockRoute.path = '/workspace/home'
     mockWorkspace.mode = 'guided'
     mockWorkspace.updateMode.mockResolvedValue(undefined)
+    mockFeatureFlags.isEnabled = vi.fn(() => true)
   })
 
   afterEach(() => {
@@ -116,6 +122,41 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Activity')
     expect(wrapper.text()).not.toContain('Workbench Tools')
+  })
+
+  it('shows all shipped advanced surfaces in workbench mode even when feature flags are off', async () => {
+    mockWorkspace.mode = 'workbench'
+    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+    const navHrefs = getRenderedNavHrefs(wrapper)
+
+    expect(navHrefs).toContain('/workspace/review')
+    expect(navHrefs).toContain('/workspace/automations/chat')
+    expect(navHrefs).toContain('/workspace/activity')
+    expect(navHrefs).toContain('/workspace/ops/cli')
+    expect(navHrefs).toContain('/workspace/settings/profile')
+    expect(navHrefs).toContain('/workspace/settings/access')
+    expect(navHrefs).toContain('/workspace/archive')
+  })
+
+  it('hides feature-flagged surfaces in guided mode when flags are off', async () => {
+    mockWorkspace.mode = 'guided'
+    const advancedFlagsOff = new Set<keyof FeatureFlags>(['newActivity', 'newOps', 'newAccess', 'newArchive'])
+    mockFeatureFlags.isEnabled = vi.fn((flag: keyof FeatureFlags) => !advancedFlagsOff.has(flag))
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+    const navHrefs = getRenderedNavHrefs(wrapper)
+    const text = wrapper.text()
+
+    expect(text).toContain('Home')
+    expect(text).toContain('Boards')
+    expect(text).toContain('Inbox')
+    expect(navHrefs).toContain('/workspace/review')
+    expect(navHrefs).not.toContain('/workspace/activity')
+    expect(navHrefs).not.toContain('/workspace/ops/cli')
+    expect(navHrefs).not.toContain('/workspace/settings/access')
+    expect(navHrefs).not.toContain('/workspace/archive')
   })
 
   it('updates workspace mode from the selector', async () => {

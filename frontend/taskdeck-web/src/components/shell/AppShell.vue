@@ -6,6 +6,7 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import CaptureModal from '../common/CaptureModal.vue'
+import type { FeatureFlags } from '../../types/feature-flags'
 import type { WorkspaceMode } from '../../types/workspace'
 import { isWorkspaceMode } from '../../types/workspace'
 
@@ -29,7 +30,8 @@ type NavItem = {
   label: string
   icon: string
   path: string
-  flag: string | null
+  flag: keyof FeatureFlags | null
+  workbenchBypassesFlag?: boolean
   primaryModes: WorkspaceMode[]
   secondaryModes?: WorkspaceMode[]
   keywords?: string
@@ -52,7 +54,7 @@ const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: str
   },
   workbench: {
     label: 'Workbench',
-    description: 'Keep the broader operator toolset close, while feature-flagged advanced surfaces remain opt-in.',
+    description: 'Show the full shipped workspace alongside the core loop, without hiding shipped surfaces behind feature flags.',
   },
   agent: {
     label: 'Agent',
@@ -85,6 +87,7 @@ const navCatalog: NavItem[] = [
     icon: 'R',
     path: '/workspace/review',
     flag: 'newAutomation',
+    workbenchBypassesFlag: true,
     primaryModes: ['guided', 'workbench', 'agent'],
     keywords: 'review proposals automations approve reject execute',
   },
@@ -122,6 +125,7 @@ const navCatalog: NavItem[] = [
     icon: 'C',
     path: '/workspace/automations/chat',
     flag: 'newAutomation',
+    workbenchBypassesFlag: true,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
     keywords: 'chat automation assistant board context',
@@ -132,6 +136,7 @@ const navCatalog: NavItem[] = [
     icon: 'Y',
     path: '/workspace/activity',
     flag: 'newActivity',
+    workbenchBypassesFlag: true,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
     keywords: 'activity audit history events',
@@ -142,6 +147,7 @@ const navCatalog: NavItem[] = [
     icon: 'O',
     path: '/workspace/ops/cli',
     flag: 'newOps',
+    workbenchBypassesFlag: true,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
     keywords: 'ops logs cli endpoints',
@@ -152,6 +158,7 @@ const navCatalog: NavItem[] = [
     icon: 'S',
     path: '/workspace/settings/profile',
     flag: 'newAuth',
+    workbenchBypassesFlag: true,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
     keywords: 'settings profile password account',
@@ -172,6 +179,7 @@ const navCatalog: NavItem[] = [
     icon: 'A',
     path: '/workspace/settings/access',
     flag: 'newAccess',
+    workbenchBypassesFlag: true,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
     keywords: 'access board sharing permissions',
@@ -182,6 +190,7 @@ const navCatalog: NavItem[] = [
     icon: 'Z',
     path: '/workspace/archive',
     flag: 'newArchive',
+    workbenchBypassesFlag: true,
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
     keywords: 'archive restore hidden boards',
@@ -190,7 +199,8 @@ const navCatalog: NavItem[] = [
 
 const availableNavItems = computed(() => navCatalog.filter((item) => {
   if (!item.flag) return true
-  return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
+  if (activeWorkspaceMode.value === 'workbench' && item.workbenchBypassesFlag) return true
+  return featureFlags.isEnabled(item.flag)
 }))
 
 const activeWorkspaceMode = computed<WorkspaceMode>(() =>
