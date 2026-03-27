@@ -38,7 +38,8 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
         catalog.Should().OnlyHaveUniqueItems(entry => entry.Id);
         catalog.Count(entry => entry.Category == StarterPackCatalogCategories.LabelPack).Should().BeGreaterThanOrEqualTo(1);
         catalog.Count(entry => entry.Category == StarterPackCatalogCategories.ColumnFlow).Should().BeGreaterThanOrEqualTo(1);
-        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.BoardBlueprint).Should().Be(3);
+        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.BoardBlueprint).Should().Be(4);
+        catalog.Should().ContainSingle(entry => entry.Id == "board-blueprint-client-onboarding");
     }
 
     [Fact]

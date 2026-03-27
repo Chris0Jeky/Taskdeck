@@ -225,6 +225,31 @@ Policy notes:
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 - opt-in live-provider chat verification is now separate from demo mode: use `TASKDECK_RUN_LIVE_LLM_TESTS=1` when you want a real-provider probe without running the full stakeholder demo flow.
 
+## Saul-Facing Rehearsal Contract
+
+Canonical operator contract:
+- `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
+
+Deterministic bootstrap for the Saul-facing story:
+
+```bash
+cd frontend/taskdeck-web
+npm run demo:seed
+npm run demo:run -- --clean --skip-llm client-onboarding
+```
+
+Deterministic artifact rehearsal bundle:
+
+```bash
+cd frontend/taskdeck-web
+npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+```
+
+Acceptance focus for this rehearsal:
+- prove `Home -> Inbox/Capture -> Review -> Board`
+- prove review-first trust language is visible without narration
+- prove ACME onboarding capture becomes clean board work after explicit approval
+
 ## Load Harness (k6 + Playwright Concurrency)
 
 Run local k6 board-heavy profile (backend API must be reachable at `K6_BASE_URL`):

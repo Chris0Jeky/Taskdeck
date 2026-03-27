@@ -151,6 +151,7 @@ describe('BoardView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('What should happen on a board?')
+    expect(wrapper.text()).toContain('Only approved changes land on this board.')
     const actionRail = wrapper.get('[data-board-action-rail]')
     expect(actionRail.text()).toContain('Capture here')
     expect(actionRail.text()).toContain('Ask assistant')
@@ -177,6 +178,17 @@ describe('BoardView', () => {
       name: 'workspace-review',
       query: { boardId: 'board-1' },
     })
+  })
+
+  it('shows a demo-board badge for the client onboarding demo board', async () => {
+    mockBoardStore.currentBoard = {
+      ...mockBoardStore.currentBoard,
+      name: 'DEMO: Client Onboarding Demo',
+    }
+    const wrapper = mountView()
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Demo board')
   })
 
   it('opens a board-scoped capture modal from the action rail', async () => {

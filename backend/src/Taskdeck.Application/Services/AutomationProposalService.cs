@@ -9,6 +9,9 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationProposalService : IAutomationProposalService
 {
+    private const string CaptureTriageActionType = "create";
+    private const string CaptureTriageTargetType = "card";
+
     private static readonly HashSet<string> KnownActionVerbs = new(StringComparer.OrdinalIgnoreCase)
     {
         "add",
@@ -375,9 +378,11 @@ public class AutomationProposalService : IAutomationProposalService
             .Select(DescribeOperation)
             .ToList();
 
+        var isCaptureTaskBatch = IsCaptureTaskBatch(proposal.SourceType, orderedOperations);
+
         return new ProposalPresentationDto(
-            BuildPlainSummary(proposal.Summary, orderedOperations, affectedEntities),
-            BuildImpactSummary(orderedOperations.Count, affectedEntities),
+            BuildPlainSummary(proposal.Summary, isCaptureTaskBatch, orderedOperations, affectedEntities),
+            BuildImpactSummary(orderedOperations.Count, affectedEntities, isCaptureTaskBatch),
             BuildRiskCue(proposal.RiskLevel),
             BuildSourceCue(proposal.SourceType),
             operationHeadlines,
@@ -386,6 +391,7 @@ public class AutomationProposalService : IAutomationProposalService
 
     private static string BuildPlainSummary(
         string summary,
+        bool isCaptureTaskBatch,
         IReadOnlyList<AutomationProposalOperation> orderedOperations,
         IReadOnlyList<ProposalAffectedEntityDto> affectedEntities)
     {
@@ -399,6 +405,11 @@ public class AutomationProposalService : IAutomationProposalService
             return $"{summary} This would {LowercaseSentenceLead(DescribeOperation(orderedOperations[0]))}";
         }
 
+        if (isCaptureTaskBatch)
+        {
+            return $"Create {orderedOperations.Count} task card{Pluralize(orderedOperations.Count)} from the captured note.";
+        }
+
         var entitySummary = affectedEntities.Count switch
         {
             0 => "this workspace",
@@ -409,11 +420,19 @@ public class AutomationProposalService : IAutomationProposalService
         return $"{summary} This would apply {orderedOperations.Count} planned changes across {entitySummary}.";
     }
 
-    private static string BuildImpactSummary(int operationCount, IReadOnlyList<ProposalAffectedEntityDto> affectedEntities)
+    private static string BuildImpactSummary(int operationCount, IReadOnlyList<ProposalAffectedEntityDto> affectedEntities, bool isCaptureTaskBatch)
     {
         if (operationCount == 0)
         {
             return "No concrete board operations were attached to this proposal.";
+        }
+
+        if (isCaptureTaskBatch &&
+            affectedEntities.Count == 1 &&
+            string.Equals(affectedEntities[0].EntityType, "Card", StringComparison.OrdinalIgnoreCase) &&
+            affectedEntities[0].ChangeCount == operationCount)
+        {
+            return $"{operationCount} task card change{Pluralize(operationCount)} ready for approval.";
         }
 
         if (affectedEntities.Count == 0)
@@ -575,6 +594,23 @@ public class AutomationProposalService : IAutomationProposalService
         }
 
         return buffer.ToString();
+    }
+
+    private static bool IsCaptureTaskBatch(ProposalSourceType sourceType, IReadOnlyList<AutomationProposalOperation> orderedOperations)
+    {
+        if (sourceType != ProposalSourceType.Queue)
+        {
+            return false;
+        }
+
+        if (orderedOperations.Count < 2)
+        {
+            return false;
+        }
+
+        return orderedOperations.All(operation =>
+            string.Equals(operation.ActionType, CaptureTriageActionType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(operation.TargetType, CaptureTriageTargetType, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string Pluralize(int count) => count == 1 ? string.Empty : "s";

@@ -173,6 +173,52 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldExtractAcmeOnboardingChecklistDeterministically()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Client Onboarding Demo", ownerId: userId);
+        var column = new Column(boardId, "New Intake", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            """
+            New client onboarding - ACME Ltd
+
+            - Request director ID documents
+            - Send engagement letter
+            - Ask for prior year accounts
+            - Request bookkeeping / software access
+            - Schedule onboarding call
+            - Confirm which records are still missing
+            - Prepare internal review once documents arrive
+            """);
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(7);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().HaveCount(7);
+        createdProposal.Operations![0].Parameters.Should().Contain("Request director ID documents");
+        createdProposal.Operations[1].Parameters.Should().Contain("Send engagement letter");
+        createdProposal.Operations[2].Parameters.Should().Contain("Ask for prior year accounts");
+        createdProposal.Operations[3].Parameters.Should().Contain("Request bookkeeping / software access");
+        createdProposal.Operations[4].Parameters.Should().Contain("Schedule onboarding call");
+        createdProposal.Operations[5].Parameters.Should().Contain("Confirm which records are still missing");
+        createdProposal.Operations[6].Parameters.Should().Contain("Prepare internal review once documents arrive");
+    }
+
+    [Fact]
     public async Task CreateProposalFromCaptureAsync_ShouldFallbackToSingleTask_WhenNoStructuredLinesExist()
     {
         var userId = Guid.NewGuid();

@@ -43,7 +43,7 @@ Stable reference material belongs in topical subfolders.
 - Contributor or agent:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md`
 - Demo operator:
-  - `START_HERE.md` -> `product/DEMO_PLAYBOOK.md` -> `product/SCENARIOS.md` -> `product/DOGFOODING_GUIDE.md`
+  - `START_HERE.md` -> `product/DEMO_PLAYBOOK.md` -> `product/SAUL_DEMO_REHEARSAL_CONTRACT.md` -> `product/SCENARIOS.md` -> `product/DOGFOODING_GUIDE.md`
 
 ## Topical Folders
 

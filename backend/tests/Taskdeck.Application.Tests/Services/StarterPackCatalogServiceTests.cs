@@ -21,7 +21,7 @@ public class StarterPackCatalogServiceTests
         catalog.Should().OnlyHaveUniqueItems(entry => entry.Id);
         catalog.Count(entry => entry.Category == StarterPackCatalogCategories.LabelPack).Should().BeGreaterThanOrEqualTo(1);
         catalog.Count(entry => entry.Category == StarterPackCatalogCategories.ColumnFlow).Should().BeGreaterThanOrEqualTo(1);
-        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.BoardBlueprint).Should().Be(3);
+        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.BoardBlueprint).Should().Be(4);
     }
 
     [Fact]
@@ -76,6 +76,30 @@ public class StarterPackCatalogServiceTests
         seedCard.Title.Should().Be("Plan weekly editorial slate");
         seedCard.ColumnName.Should().Be("Ideas");
         seedCard.Labels.Should().Equal("publish-week");
+    }
+
+    [Fact]
+    public void GetCatalog_ShouldKeepClientOnboardingBlueprintContractStable()
+    {
+        var service = new StarterPackCatalogService(_validator);
+
+        var catalog = service.GetCatalog();
+
+        var clientOnboardingPack = catalog.Single(entry => entry.Id == "board-blueprint-client-onboarding");
+        clientOnboardingPack.Manifest.Columns.Select(column => column.Name).Should().Equal(
+            "New Intake",
+            "Waiting on Client",
+            "Ready for Review",
+            "In Progress",
+            "Completed");
+        clientOnboardingPack.Manifest.Labels.Select(label => label.Name).Should().Equal(
+            "client-action",
+            "internal-review",
+            "waiting-on-client");
+        clientOnboardingPack.Manifest.SeedCards.Should().HaveCount(2);
+        clientOnboardingPack.Manifest.SeedCards.Select(card => card.Title).Should().Contain(
+            "Review new onboarding intake",
+            "Confirm onboarding owner and due date");
     }
 
     [Fact]
