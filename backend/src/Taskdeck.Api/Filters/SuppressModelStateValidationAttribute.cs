@@ -4,10 +4,9 @@ namespace Taskdeck.Api.Filters;
 
 /// <summary>
 /// Suppresses the automatic 400 response that <c>[ApiController]</c> triggers
-/// when model state is invalid. The action method is still invoked and can
-/// inspect <c>ModelState</c> or the bound parameter manually.
-/// Applied as an action filter that runs before the built-in
-/// <c>ModelStateInvalidFilter</c> (order -2000) and clears any validation errors.
+/// when model state is invalid. Clears validation errors so the action method
+/// is still invoked and can inspect the bound parameter directly.
+/// Runs before the built-in <c>ModelStateInvalidFilter</c> (order -2000).
 /// </summary>
 [AttributeUsage(AttributeTargets.Method)]
 public sealed class SuppressModelStateValidationAttribute : Attribute, IOrderedFilter, IActionFilter

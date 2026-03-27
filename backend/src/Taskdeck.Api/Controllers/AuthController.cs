@@ -34,10 +34,10 @@ public class AuthController : ControllerBase
         {
             return Unauthorized(new ApiErrorResponse(
                 ErrorCodes.AuthenticationFailed,
-                "Invalid username/email or password."));
+                "Invalid username/email or password"));
         }
 
-        var result = await _authService.LoginAsync(dto);
+        var result = await _authService.LoginAsync(dto!);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

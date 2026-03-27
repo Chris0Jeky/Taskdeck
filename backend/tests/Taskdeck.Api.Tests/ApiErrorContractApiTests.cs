@@ -57,7 +57,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Login_ShouldReturn401_WhenRequestBodyIsEmpty()
+    public async Task Login_ShouldReturn401_WhenRequestBodyIsEmptyJsonObject()
     {
         using var client = _factory.CreateClient();
 
@@ -69,7 +69,7 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Login_ShouldReturn401_WhenRequestBodyIsNull()
+    public async Task Login_ShouldReturn401_WhenRequestBodyIsJsonNull()
     {
         using var client = _factory.CreateClient();
 
