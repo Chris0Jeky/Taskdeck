@@ -168,7 +168,7 @@ test('home should recover from loading and error states on first-run summary ref
   let requestCount = 0
   await page.route('**/api/workspace/home', async (route) => {
     requestCount += 1
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
 
     if (requestCount === 1) {
       await route.fulfill({
