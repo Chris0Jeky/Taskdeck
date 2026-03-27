@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useCaptureStore } from '../store/captureStore'
@@ -14,6 +14,7 @@ const selectedItemId = ref<string | null>(null)
 const hashLoadFailedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
+let stopTriagePolling: (() => void) | null = null
 
 const items = computed(() => captureStore.items)
 const activeDescendantId = computed(() => {
@@ -303,6 +304,10 @@ async function triageSelected() {
 
   try {
     await captureStore.triageItem(selectedItemId.value)
+    if (stopTriagePolling) {
+      stopTriagePolling()
+    }
+    stopTriagePolling = captureStore.pollTriageCompletion(selectedItemId.value)
   } catch {
     // Store handles toast + error state.
   }
@@ -340,14 +345,16 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
 
   const label = statusLabel(status)
   if (label === 'Triaging') {
-    return 'Triaging...'
+    return captureStore.triagePollingItemId === selectedItemId.value
+      ? 'Triaging (checking...)'
+      : 'Triaging...'
   }
 
-  if (label === 'Triaged' || label === 'Proposal Created') {
+  if (label === 'Ready for review' || label === 'Triaged') {
     return 'Triage Complete'
   }
 
-  if (label === 'Converted') {
+  if (label === 'Applied to board' || label === 'Converted') {
     return 'Converted'
   }
 
@@ -413,6 +420,11 @@ watch(
 )
 
 watch(selectedItemId, (itemId, _, onCleanup) => {
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
+  }
+
   if (!itemId) {
     return
   }
@@ -425,6 +437,13 @@ watch(selectedItemId, (itemId, _, onCleanup) => {
 
 onMounted(() => {
   void loadInbox()
+})
+
+onUnmounted(() => {
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
+  }
 })
 </script>
 
