@@ -42,8 +42,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const hasHomeSummary = computed(() => homeSummary.value !== null)
   const hasTodaySummary = computed(() => todaySummary.value !== null)
-  const inboxBadgeCount = computed(() => homeSummary.value?.workload.capturesNeedingTriage ?? 0)
-  const reviewBadgeCount = computed(() => homeSummary.value?.workload.proposalsPendingReview ?? 0)
+  const inboxBadgeCount = computed(() => homeSummary.value?.workload?.capturesNeedingTriage ?? 0)
+  const reviewBadgeCount = computed(() => homeSummary.value?.workload?.proposalsPendingReview ?? 0)
 
   function persistLocalMode(nextMode: WorkspaceMode) {
     localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, nextMode)

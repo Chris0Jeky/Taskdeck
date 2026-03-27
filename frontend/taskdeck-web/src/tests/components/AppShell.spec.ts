@@ -411,4 +411,28 @@ describe('AppShell workspace navigation and command palette', () => {
 
     expect(wrapper.findAll('.td-nav-badge').length).toBe(0)
   })
+
+  it('fetches home summary on mount when authenticated and not already loaded', () => {
+    mockWorkspace.hasHomeSummary = false
+    mockWorkspace.homeLoading = false
+    mountedWrapper = mountShell()
+
+    expect(mockWorkspace.fetchHomeSummary).toHaveBeenCalledOnce()
+  })
+
+  it('skips home summary fetch when already loaded', () => {
+    mockWorkspace.hasHomeSummary = true
+    mockWorkspace.homeLoading = false
+    mountedWrapper = mountShell()
+
+    expect(mockWorkspace.fetchHomeSummary).not.toHaveBeenCalled()
+  })
+
+  it('skips home summary fetch when already loading', () => {
+    mockWorkspace.hasHomeSummary = false
+    mockWorkspace.homeLoading = true
+    mountedWrapper = mountShell()
+
+    expect(mockWorkspace.fetchHomeSummary).not.toHaveBeenCalled()
+  })
 })
