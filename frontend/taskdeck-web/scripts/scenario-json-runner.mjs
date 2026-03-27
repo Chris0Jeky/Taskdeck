@@ -822,7 +822,7 @@ async function executeStep(api, ctx, step) {
       if (!proposalId) {
         throw new Error(
           `executeProposal: "${proposalRef}" did not resolve to a proposal ID. ` +
-          `This usually means a prior waitForCaptureProposal step was skipped (e.g. --skip-llm). ` +
+          `This usually means a prior proposal-producing step (waitForCaptureProposal, queueInstruction) was skipped (e.g. --skip-llm). ` +
           `Mark this step with "requiresLlm": true to skip it automatically.`,
         )
       }
