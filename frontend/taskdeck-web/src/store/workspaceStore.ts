@@ -6,6 +6,7 @@ import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../utils/storageKeys'
 import { isDemoMode } from '../utils/demoMode'
+import { DEMO_ONBOARDING, buildDemoHomeSummary, buildDemoTodaySummary } from '../utils/demoData'
 import type {
   HomeSummary,
   TodaySummary,
@@ -15,59 +16,6 @@ import type {
   WorkspacePreference,
 } from '../types/workspace'
 import { isWorkspaceMode } from '../types/workspace'
-
-const DEMO_ONBOARDING: WorkspaceOnboarding = {
-  visibility: 'active',
-  isComplete: false,
-  currentStepId: 'capture',
-  dismissedAt: null,
-  completedAt: null,
-  steps: [
-    { stepId: 'board', title: 'Create a board', description: 'Set up a board to organise your work.', targetSurface: 'boards', isComplete: true },
-    { stepId: 'capture', title: 'Capture a note', description: 'Drop a quick thought into the inbox.', targetSurface: 'capture', isComplete: false },
-    { stepId: 'review', title: 'Review a proposal', description: 'Approve or reject a proposed change before it reaches a board.', targetSurface: 'review', isComplete: false },
-  ],
-}
-
-function buildDemoHomeSummary(): HomeSummary {
-  return {
-    workspaceMode: 'guided',
-    isFirstRun: false,
-    onboarding: DEMO_ONBOARDING,
-    workload: { capturesNeedingTriage: 3, capturesInProgress: 1, capturesReadyForFollowUp: 2, proposalsPendingReview: 1 },
-    boards: {
-      totalBoards: 2,
-      recentBoardsCount: 2,
-      recentBoards: [
-        { id: 'demo-board-1', name: 'Product Backlog', description: 'Feature requests and bug reports.', updatedAt: new Date().toISOString() },
-        { id: 'demo-board-2', name: 'Sprint 12', description: 'Current sprint work items.', updatedAt: new Date().toISOString() },
-      ],
-    },
-    recommendedActions: [
-      { actionId: 'review-proposals', title: 'Review proposals', description: 'One proposal is waiting for your decision.', targetSurface: 'review', attentionCount: 1 },
-      { actionId: 'triage-captures', title: 'Triage inbox', description: 'Three captures need sorting.', targetSurface: 'capture', attentionCount: 3 },
-    ],
-  }
-}
-
-function buildDemoTodaySummary(): TodaySummary {
-  return {
-    workspaceMode: 'guided',
-    onboarding: DEMO_ONBOARDING,
-    summary: { capturesNeedingTriage: 3, proposalsPendingReview: 1, overdueCards: 1, dueTodayCards: 2, blockedCards: 0 },
-    overdueCards: [
-      { boardId: 'demo-board-1', boardName: 'Product Backlog', cardId: 'demo-card-1', title: 'Fix login redirect loop', dueDate: '2026-03-25T00:00:00Z', blockReason: null, updatedAt: new Date().toISOString() },
-    ],
-    dueTodayCards: [
-      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-2', title: 'Add dark-mode toggle', dueDate: new Date().toISOString(), blockReason: null, updatedAt: new Date().toISOString() },
-      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-3', title: 'Write onboarding copy', dueDate: new Date().toISOString(), blockReason: null, updatedAt: new Date().toISOString() },
-    ],
-    blockedCards: [],
-    recommendedActions: [
-      { actionId: 'review-proposals', title: 'Review proposals', description: 'One proposal is waiting for your decision.', targetSurface: 'review', attentionCount: 1 },
-    ],
-  }
-}
 
 function getLocalWorkspaceMode(): WorkspaceMode {
   const savedMode = localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)
@@ -179,8 +127,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function updateMode(nextMode: WorkspaceMode): Promise<void> {
-    const requestVersion = startVersionedPreferenceRequest()
     applyMode(nextMode)
+
+    if (isDemoMode) {
+      preferencesHydrated.value = true
+      return
+    }
+
+    const requestVersion = startVersionedPreferenceRequest()
 
     if (!session.isAuthenticated) {
       preferencesHydrated.value = false
@@ -265,6 +219,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function updateOnboarding(action: WorkspaceOnboardingAction): Promise<WorkspaceOnboarding> {
+    if (isDemoMode) {
+      const next: WorkspaceOnboarding = {
+        ...DEMO_ONBOARDING,
+        visibility: action === 'dismiss' ? 'dismissed' : 'active',
+      }
+      syncOnboarding(next)
+      return next
+    }
+
     try {
       beginPreferenceLoading()
       preferenceError.value = null

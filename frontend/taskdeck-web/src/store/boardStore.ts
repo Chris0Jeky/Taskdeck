@@ -8,6 +8,7 @@ import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import { isDemoMode } from '../utils/demoMode'
+import { buildDemoBoardList, buildDemoBoardDetail } from '../utils/demoData'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { Board, BoardDetail, Card, CardCaptureProvenance, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '../types/comments'
@@ -38,6 +39,13 @@ export const useBoardStore = defineStore('board', () => {
     const message = getErrorMessage(err, fallback)
     error.value = message
     toast.error(message)
+  }
+
+  function guardDemoMutation(): never | void {
+    if (isDemoMode) {
+      toast.info('This action is view-only in demo mode.')
+      throw new Error('Demo mode: mutations are disabled.')
+    }
   }
 
   const isHttpNotFound = (err: unknown): boolean => {
@@ -160,11 +168,7 @@ export const useBoardStore = defineStore('board', () => {
     if (isDemoMode) {
       loading.value = true
       error.value = null
-      const now = new Date().toISOString()
-      boards.value = [
-        { id: 'demo-board-1', name: 'Product Backlog', description: 'Feature requests and bug reports.', isArchived: false, createdAt: now, updatedAt: now },
-        { id: 'demo-board-2', name: 'Sprint 12', description: 'Current sprint work items.', isArchived: false, createdAt: now, updatedAt: now },
-      ]
+      boards.value = buildDemoBoardList()
       loading.value = false
       return
     }
@@ -185,31 +189,9 @@ export const useBoardStore = defineStore('board', () => {
     if (isDemoMode) {
       loading.value = true
       error.value = null
-      const now = new Date().toISOString()
-      const demoBoards: Record<string, { name: string; desc: string }> = {
-        'demo-board-1': { name: 'Product Backlog', desc: 'Feature requests and bug reports.' },
-        'demo-board-2': { name: 'Sprint 12', desc: 'Current sprint work items.' },
-      }
-      const match = demoBoards[id] ?? { name: 'Demo Board', desc: 'A demo board.' }
-      currentBoard.value = {
-        id,
-        name: match.name,
-        description: match.desc,
-        isArchived: false,
-        createdAt: now,
-        updatedAt: now,
-        columns: [
-          { id: `${id}-col-1`, boardId: id, name: 'To Do', position: 0, wipLimit: null, cardCount: 2, createdAt: now, updatedAt: now },
-          { id: `${id}-col-2`, boardId: id, name: 'In Progress', position: 1, wipLimit: 3, cardCount: 1, createdAt: now, updatedAt: now },
-          { id: `${id}-col-3`, boardId: id, name: 'Done', position: 2, wipLimit: null, cardCount: 1, createdAt: now, updatedAt: now },
-        ],
-      }
-      currentBoardCards.value = [
-        { id: `${id}-card-1`, boardId: id, columnId: `${id}-col-1`, title: 'Set up CI pipeline', description: 'Configure GitHub Actions for build and test.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: now, updatedAt: now },
-        { id: `${id}-card-2`, boardId: id, columnId: `${id}-col-1`, title: 'Design landing page', description: 'Create mockups for the new landing page.', dueDate: '2026-03-30T00:00:00Z', isBlocked: false, blockReason: null, position: 1, labels: [], createdAt: now, updatedAt: now },
-        { id: `${id}-card-3`, boardId: id, columnId: `${id}-col-2`, title: 'Implement dark mode', description: 'Apply Obsidian & Ember tokens across all views.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: now, updatedAt: now },
-        { id: `${id}-card-4`, boardId: id, columnId: `${id}-col-3`, title: 'Write README', description: 'Document setup and usage instructions.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: now, updatedAt: now },
-      ]
+      const demo = buildDemoBoardDetail(id)
+      currentBoard.value = demo.board
+      currentBoardCards.value = demo.cards
       currentBoardLabels.value = []
       cardCommentsByCardId.value = {}
       loading.value = false
@@ -233,6 +215,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function createBoard(board: CreateBoardDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -249,6 +232,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function updateBoard(boardId: string, board: UpdateBoardDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -280,6 +264,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function deleteBoard(boardId: string) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -308,6 +293,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function createColumn(boardId: string, column: CreateColumnDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -328,6 +314,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function updateColumn(boardId: string, columnId: string, column: UpdateColumnDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -352,6 +339,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function deleteColumn(boardId: string, columnId: string) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -396,6 +384,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function createCard(boardId: string, card: CreateCardDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -413,6 +402,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function createLabel(boardId: string, label: CreateLabelDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -429,6 +419,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function updateLabel(boardId: string, labelId: string, label: UpdateLabelDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -451,6 +442,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function deleteLabel(boardId: string, labelId: string) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -499,6 +491,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function updateCard(boardId: string, cardId: string, card: UpdateCardDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -530,6 +523,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function deleteCard(boardId: string, cardId: string) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -557,6 +551,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function moveCard(boardId: string, cardId: string, targetColumnId: string, targetPosition: number) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -641,6 +636,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function createCardComment(boardId: string, cardId: string, dto: CreateCardCommentDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -669,6 +665,7 @@ export const useBoardStore = defineStore('board', () => {
     commentId: string,
     dto: UpdateCardCommentDto
   ) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -690,6 +687,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function deleteCardComment(boardId: string, cardId: string, commentId: string) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
