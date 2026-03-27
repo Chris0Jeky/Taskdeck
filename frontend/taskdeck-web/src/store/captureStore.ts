@@ -25,6 +25,19 @@ type DetailLoadOptions = {
   syncSummary?: boolean
 }
 
+const TRIAGE_TERMINAL_STATUSES: readonly CaptureStatusValue[] = [
+  'Triaged',
+  2,
+  'ProposalCreated',
+  3,
+  'Converted',
+  4,
+  'Ignored',
+  5,
+  'Failed',
+  6,
+]
+
 export const useCaptureStore = defineStore('capture', () => {
   const toast = useToastStore()
 
@@ -187,16 +200,7 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   function isTriageTerminalStatus(status: CaptureStatusValue): boolean {
-    return status === 'Triaged'
-      || status === 2
-      || status === 'ProposalCreated'
-      || status === 3
-      || status === 'Converted'
-      || status === 4
-      || status === 'Ignored'
-      || status === 5
-      || status === 'Failed'
-      || status === 6
+    return TRIAGE_TERMINAL_STATUSES.includes(status)
   }
 
   const triagePollingItemId = ref<string | null>(null)
@@ -307,7 +311,6 @@ export const useCaptureStore = defineStore('capture', () => {
     cancelItem,
     triageItem,
     triagePollingItemId,
-    isTriageTerminalStatus,
     pollTriageCompletion,
   }
 })

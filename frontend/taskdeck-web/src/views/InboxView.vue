@@ -71,6 +71,10 @@ function sourceLabel(source: CaptureSourceValue): string {
   return String(source)
 }
 
+function isTriageTerminalStatus(status: CaptureStatusValue): boolean {
+  return ['Triaged', 2, 'ProposalCreated', 3, 'Converted', 4, 'Ignored', 5, 'Failed', 6].includes(status)
+}
+
 async function loadInbox() {
   try {
     await captureStore.fetchItems({
@@ -298,16 +302,24 @@ async function cancelSelected() {
 }
 
 async function triageSelected() {
-  if (!selectedItemId.value) {
+  const itemId = selectedItemId.value
+  if (!itemId) {
     return
   }
 
   try {
-    await captureStore.triageItem(selectedItemId.value)
+    await captureStore.triageItem(itemId)
     if (stopTriagePolling) {
       stopTriagePolling()
+      stopTriagePolling = null
     }
-    stopTriagePolling = captureStore.pollTriageCompletion(selectedItemId.value)
+
+    const latestStatus = captureStore.detailById[itemId]?.status
+    if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
+      return
+    }
+
+    stopTriagePolling = captureStore.pollTriageCompletion(itemId)
   } catch {
     // Store handles toast + error state.
   }
@@ -354,7 +366,7 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
     return 'Triage Complete'
   }
 
-  if (label === 'Applied to board' || label === 'Converted') {
+  if (label === 'Applied to board') {
     return 'Converted'
   }
 
