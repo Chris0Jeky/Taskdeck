@@ -4,6 +4,7 @@ import { captureApi } from '../api/captureApi'
 import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto } from '../types/capture'
 import { useToastStore } from './toastStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
+import { isDemoMode, DEMO_USER } from '../utils/demoMode'
 
 function toSummary(item: CaptureItem): CaptureItemSummary {
   return {
@@ -57,6 +58,19 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function fetchItems(query?: CaptureListQuery) {
+    if (isDemoMode) {
+      loadingList.value = true
+      listError.value = null
+      const now = new Date().toISOString()
+      items.value = [
+        { id: 'demo-cap-1', userId: DEMO_USER.id, boardId: null, status: 'New', source: 'Typed', textExcerpt: 'Investigate slow dashboard load times on large boards', createdAt: now, processedAt: null },
+        { id: 'demo-cap-2', userId: DEMO_USER.id, boardId: 'demo-board-1', status: 'Triaging', source: 'Typed', textExcerpt: 'Add keyboard shortcuts for card navigation', createdAt: now, processedAt: null },
+        { id: 'demo-cap-3', userId: DEMO_USER.id, boardId: null, status: 'New', source: 'Paste', textExcerpt: 'Consider adding a calendar view for due dates', createdAt: now, processedAt: null },
+      ]
+      loadingList.value = false
+      return
+    }
+
     try {
       loadingList.value = true
       listError.value = null

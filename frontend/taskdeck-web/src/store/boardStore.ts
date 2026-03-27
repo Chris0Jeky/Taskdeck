@@ -7,6 +7,7 @@ import { cardCommentsApi } from '../api/cardCommentsApi'
 import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
+import { isDemoMode } from '../utils/demoMode'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { Board, BoardDetail, Card, CardCaptureProvenance, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
 import type { CardComment, CreateCardCommentDto, UpdateCardCommentDto } from '../types/comments'
@@ -156,6 +157,18 @@ export const useBoardStore = defineStore('board', () => {
 
   // Actions
   async function fetchBoards(search?: string, includeArchived = false) {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      const now = new Date().toISOString()
+      boards.value = [
+        { id: 'demo-board-1', name: 'Product Backlog', description: 'Feature requests and bug reports.', isArchived: false, createdAt: now, updatedAt: now },
+        { id: 'demo-board-2', name: 'Sprint 12', description: 'Current sprint work items.', isArchived: false, createdAt: now, updatedAt: now },
+      ]
+      loading.value = false
+      return
+    }
+
     try {
       loading.value = true
       error.value = null
@@ -169,6 +182,40 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function fetchBoard(id: string) {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      const now = new Date().toISOString()
+      const demoBoards: Record<string, { name: string; desc: string }> = {
+        'demo-board-1': { name: 'Product Backlog', desc: 'Feature requests and bug reports.' },
+        'demo-board-2': { name: 'Sprint 12', desc: 'Current sprint work items.' },
+      }
+      const match = demoBoards[id] ?? { name: 'Demo Board', desc: 'A demo board.' }
+      currentBoard.value = {
+        id,
+        name: match.name,
+        description: match.desc,
+        isArchived: false,
+        createdAt: now,
+        updatedAt: now,
+        columns: [
+          { id: `${id}-col-1`, boardId: id, name: 'To Do', position: 0, wipLimit: null, cardCount: 2, createdAt: now, updatedAt: now },
+          { id: `${id}-col-2`, boardId: id, name: 'In Progress', position: 1, wipLimit: 3, cardCount: 1, createdAt: now, updatedAt: now },
+          { id: `${id}-col-3`, boardId: id, name: 'Done', position: 2, wipLimit: null, cardCount: 1, createdAt: now, updatedAt: now },
+        ],
+      }
+      currentBoardCards.value = [
+        { id: `${id}-card-1`, boardId: id, columnId: `${id}-col-1`, title: 'Set up CI pipeline', description: 'Configure GitHub Actions for build and test.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: now, updatedAt: now },
+        { id: `${id}-card-2`, boardId: id, columnId: `${id}-col-1`, title: 'Design landing page', description: 'Create mockups for the new landing page.', dueDate: '2026-03-30T00:00:00Z', isBlocked: false, blockReason: null, position: 1, labels: [], createdAt: now, updatedAt: now },
+        { id: `${id}-card-3`, boardId: id, columnId: `${id}-col-2`, title: 'Implement dark mode', description: 'Apply Obsidian & Ember tokens across all views.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: now, updatedAt: now },
+        { id: `${id}-card-4`, boardId: id, columnId: `${id}-col-3`, title: 'Write README', description: 'Document setup and usage instructions.', dueDate: null, isBlocked: false, blockReason: null, position: 0, labels: [], createdAt: now, updatedAt: now },
+      ]
+      currentBoardLabels.value = []
+      cardCommentsByCardId.value = {}
+      loading.value = false
+      return
+    }
+
     try {
       loading.value = true
       error.value = null
