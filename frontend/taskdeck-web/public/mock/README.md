@@ -20,5 +20,5 @@ Suggested local usage:
 - or run the normal frontend dev server and open `/mock/`
 
 Suggested GitHub Pages usage:
-- publish the built `frontend/taskdeck-web/dist/mock/` directory
-- or copy this folder as-is to any static host
+- this repo's Pages workflow publishes `frontend/taskdeck-web/public/mock/` directly as the site root
+- for another static host, either copy this folder as-is or publish `frontend/taskdeck-web/dist/mock/`

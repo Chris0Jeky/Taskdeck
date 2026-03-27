@@ -177,7 +177,7 @@ function renderBanner() {
         <strong>Taskdeck UI mock.</strong>
         This is not wired to the backend. It is a visual/static walkthrough of the current product direction.
       </div>
-      <div class="td-banner__meta">Suggested GitHub Pages entry: <code>/mock/</code></div>
+      <div class="td-banner__meta">Suggested GitHub Pages entry: site root <code>/</code></div>
     </section>
   `;
 }
