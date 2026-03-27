@@ -90,6 +90,33 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
     }
 
     [Fact]
+    public async Task GetProviderHealth_WithProbe_ShouldReturnProbedStatus()
+    {
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ILlmProvider>();
+                services.AddScoped<ILlmProvider>(_ => new OpenAiProviderStub(_ => { }));
+            });
+        });
+        using var client = factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(client, "chat-probe-stub");
+
+        var response = await client.GetAsync("/api/llm/chat/health?probe=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<ChatProviderHealthDto>();
+        payload.Should().NotBeNull();
+        payload!.IsAvailable.Should().BeTrue();
+        payload.ProviderName.Should().Be("OpenAI");
+        payload.IsProbed.Should().BeTrue();
+        payload.IsMock.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SendMessage_ShouldReturnDegradedType_WhenProviderFallsBack()
     {
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
