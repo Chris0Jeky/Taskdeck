@@ -373,7 +373,7 @@ public class AutomationProposalService : IAutomationProposalService
                 BuildAffectedEntityLabel(
                     group.Key.EntityType,
                     group.Key.TargetId,
-                    ExtractNamedTarget(group.First().Parameters)),
+                    group.Select(op => ExtractNamedTarget(op.Parameters)).FirstOrDefault(name => name is not null)),
                 group.Count()))
             .ToList();
 
