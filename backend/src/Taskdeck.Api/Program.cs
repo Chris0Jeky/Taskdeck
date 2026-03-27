@@ -318,7 +318,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(corsAllowedOrigins.ToArray())
-              .WithHeaders("Authorization", "Content-Type", "X-Requested-With", "X-Request-Id", "X-SignalR-User-Agent")
+              .WithHeaders("Authorization", "Content-Type", "X-Requested-With", "X-Request-Id", "X-SignalR-User-Agent", "Idempotency-Key")
               .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
               .AllowCredentials();
     });
