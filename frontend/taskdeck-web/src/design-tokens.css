@@ -1,85 +1,104 @@
-/* Taskdeck Design Tokens */
+/* Taskdeck Design Tokens — Obsidian & Ember */
 :root {
-  /* Typography Scale */
-  --td-font-xs: 0.75rem;
-  --td-font-sm: 0.875rem;
-  --td-font-base: 1rem;
-  --td-font-lg: 1.125rem;
-  --td-font-xl: 1.25rem;
-  --td-font-2xl: 1.5rem;
-  --td-font-3xl: 1.875rem;
+  /* ── Typography Scale ── */
+  --td-font-xs: 0.6875rem;   /* 11px - label-sm */
+  --td-font-sm: 0.75rem;     /* 12px - label-md / body-sm */
+  --td-font-base: 0.875rem;  /* 14px - body-md */
+  --td-font-lg: 1rem;        /* 16px - body-lg / title-sm */
+  --td-font-xl: 1.25rem;     /* 20px - title-md */
+  --td-font-2xl: 1.5rem;     /* 24px - headline-sm */
+  --td-font-3xl: 2rem;       /* 32px - headline-md */
+  --td-font-4xl: 2.5rem;     /* 40px - headline-lg */
+  --td-font-5xl: 3.5rem;     /* 56px - display-lg */
 
-  /* Spacing Scale */
-  --td-space-1: 0.25rem;
-  --td-space-2: 0.5rem;
-  --td-space-3: 0.75rem;
-  --td-space-4: 1rem;
-  --td-space-5: 1.25rem;
-  --td-space-6: 1.5rem;
-  --td-space-8: 2rem;
-  --td-space-10: 2.5rem;
-  --td-space-12: 3rem;
+  /* ── Spacing Scale (tight, technical) ── */
+  --td-space-1: 0.2rem;
+  --td-space-2: 0.4rem;
+  --td-space-3: 0.6rem;
+  --td-space-4: 0.8rem;
+  --td-space-5: 1.1rem;
+  --td-space-6: 1.3rem;
+  --td-space-8: 1.75rem;
+  --td-space-10: 2.25rem;
+  --td-space-12: 2.75rem;
+  --td-space-16: 3.5rem;
 
-  /* Semantic Colors */
-  --td-color-primary: #3b82f6;
-  --td-color-primary-hover: #2563eb;
-  --td-color-primary-light: #dbeafe;
+  /* ── Obsidian Surface Tiers ── */
+  --td-surface-base: #131313;
+  --td-surface-container-lowest: #0e0e0e;
+  --td-surface-container-low: #1c1b1b;
+  --td-surface-container: #201f1f;
+  --td-surface-container-high: #2a2a2a;
+  --td-surface-container-highest: #353534;
+  --td-surface-bright: #3a3939;
 
-  --td-color-success: #22c55e;
-  --td-color-success-light: #dcfce7;
-  --td-color-warning: #f59e0b;
-  --td-color-warning-light: #fef3c7;
-  --td-color-error: #ef4444;
-  --td-color-error-light: #fee2e2;
-  --td-color-info: #3b82f6;
-  --td-color-info-light: #dbeafe;
+  /* ── Semantic Colors ── */
+  --td-color-primary: #ffb3ae;
+  --td-color-primary-hover: #ff5352;
+  --td-color-primary-light: rgba(255, 83, 82, 0.15);
 
-  /* Surface Colors */
-  --td-surface-primary: #ffffff;
-  --td-surface-secondary: #f8fafc;
-  --td-surface-tertiary: #f1f5f9;
-  --td-surface-hover: #e2e8f0;
+  --td-color-ember: #ff4d4d;
+  --td-color-ember-glow: #ff5352;
+  --td-color-ember-dim: rgba(255, 77, 77, 0.1);
 
-  /* Text Colors */
-  --td-text-primary: #0f172a;
-  --td-text-secondary: #475569;
-  --td-text-tertiary: #94a3b8;
-  --td-text-inverse: #ffffff;
+  --td-color-success: #4ade80;
+  --td-color-success-light: rgba(74, 222, 128, 0.15);
+  --td-color-warning: #fbbf24;
+  --td-color-warning-light: rgba(251, 191, 36, 0.15);
+  --td-color-error: #ff4d4d;
+  --td-color-error-light: rgba(255, 77, 77, 0.15);
+  --td-color-info: #ffb3ae;
+  --td-color-info-light: rgba(255, 179, 174, 0.15);
 
-  /* Border Colors */
-  --td-border-default: #e2e8f0;
-  --td-border-focus: #3b82f6;
+  /* ── Text Colors (Argent hierarchy) ── */
+  --td-text-primary: #e5e2e1;
+  --td-text-secondary: #e4beba;
+  --td-text-tertiary: rgba(229, 226, 225, 0.4);
+  --td-text-inverse: #131313;
+  --td-text-ember: #ff4d4d;
+  --td-text-muted: rgba(229, 226, 225, 0.6);
 
-  /* Focus Ring */
-  --td-focus-ring: 0 0 0 2px var(--td-color-primary), 0 0 0 4px var(--td-color-primary-light);
-  --td-focus-ring-error: 0 0 0 2px var(--td-color-error), 0 0 0 4px var(--td-color-error-light);
+  /* ── Border & Outline ── */
+  --td-border-default: rgba(91, 64, 62, 0.15);
+  --td-border-ghost: rgba(91, 64, 62, 0.1);
+  --td-border-focus: #ffb3ae;
+  --td-border-ember: #ff5352;
 
-  /* Elevation */
-  --td-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --td-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --td-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --td-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  /* ── Focus Ring ── */
+  --td-focus-ring: 0 0 0 2px #ff5352, 0 0 0 4px rgba(255, 83, 82, 0.2);
+  --td-focus-ring-error: 0 0 0 2px #ff4d4d, 0 0 0 4px rgba(255, 77, 77, 0.2);
 
-  /* Border Radius */
-  --td-radius-sm: 0.25rem;
-  --td-radius-md: 0.375rem;
+  /* ── Elevation (Obsidian ambient) ── */
+  --td-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --td-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --td-shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 1px rgba(199, 198, 196, 0.1);
+  --td-shadow-xl: 0 32px 64px rgba(0, 0, 0, 0.5);
+
+  /* ── Border Radius (architectural precision) ── */
+  --td-radius-sm: 0.125rem;
+  --td-radius-md: 0.25rem;
   --td-radius-lg: 0.5rem;
   --td-radius-xl: 0.75rem;
 
-  /* Transition */
-  --td-transition-fast: 150ms ease;
+  /* ── Motion ── */
+  --td-transition-fast: 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --td-transition-normal: 200ms ease;
+  --td-transition-smooth: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Shell Layout */
-  --td-sidebar-width: 240px;
+  /* ── Shell Layout ── */
+  --td-sidebar-width: 256px;
   --td-sidebar-collapsed-width: 56px;
-  --td-topbar-height: 48px;
+  --td-topbar-height: 64px;
+
+  /* ── Glass ── */
+  --td-glass-bg: rgba(32, 31, 31, 0.8);
+  --td-glass-blur: 16px;
 }
 
 /* Density: Compact */
 [data-density="compact"] {
   --td-space-1: 0.125rem;
   --td-space-2: 0.25rem;
-  --td-space-3: 0.5rem;
-  --td-space-4: 0.75rem;
+  --td-space-3: 0.4rem;
+  --td-space-4: 0.6rem;
 }
