@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { captureApi } from '../api/captureApi'
-import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto } from '../types/capture'
+import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CaptureStatusValue, CreateCaptureItemDto } from '../types/capture'
 import { useToastStore } from './toastStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
@@ -186,6 +186,69 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  function isTriageTerminalStatus(status: CaptureStatusValue): boolean {
+    return status === 'Triaged'
+      || status === 2
+      || status === 'ProposalCreated'
+      || status === 3
+      || status === 'Converted'
+      || status === 4
+      || status === 'Ignored'
+      || status === 5
+      || status === 'Failed'
+      || status === 6
+  }
+
+  const triagePollingItemId = ref<string | null>(null)
+
+  function pollTriageCompletion(itemId: string): () => void {
+    const POLL_INTERVAL_MS = 2_000
+    const MAX_POLLS = 15
+    let pollCount = 0
+    let stopped = false
+    let timerId: ReturnType<typeof setTimeout> | null = null
+
+    triagePollingItemId.value = itemId
+
+    async function tick() {
+      if (stopped) return
+      pollCount++
+
+      try {
+        const detail = await captureApi.getItem(itemId)
+        if (stopped) return
+        cacheDetail(detail)
+
+        if (isTriageTerminalStatus(detail.status)) {
+          stop()
+          return
+        }
+      } catch {
+        // Silently retry on transient errors; the manual refresh button is still available.
+      }
+
+      if (!stopped && pollCount < MAX_POLLS) {
+        timerId = setTimeout(tick, POLL_INTERVAL_MS)
+      } else {
+        stop()
+      }
+    }
+
+    function stop() {
+      stopped = true
+      if (timerId !== null) {
+        clearTimeout(timerId)
+        timerId = null
+      }
+      if (triagePollingItemId.value === itemId) {
+        triagePollingItemId.value = null
+      }
+    }
+
+    timerId = setTimeout(tick, POLL_INTERVAL_MS)
+    return stop
+  }
+
   async function triageItem(itemId: string) {
     try {
       actionBusyItemId.value = itemId
@@ -243,5 +306,8 @@ export const useCaptureStore = defineStore('capture', () => {
     ignoreItem,
     cancelItem,
     triageItem,
+    triagePollingItemId,
+    isTriageTerminalStatus,
+    pollTriageCompletion,
   }
 })
