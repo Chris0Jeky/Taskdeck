@@ -100,6 +100,15 @@ export const useCaptureStore = defineStore('capture', () => {
       return detailById.value[itemId]
     }
 
+    if (isDemoMode) {
+      const summary = items.value.find((i) => i.id === itemId)
+      if (summary) {
+        const detail = { ...summary, rawText: summary.textExcerpt, retryCount: 0, provenance: null }
+        cacheDetail(detail, syncSummary)
+        return detail
+      }
+    }
+
     try {
       loadingDetail.value = true
       if (recordError) {

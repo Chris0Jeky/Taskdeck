@@ -461,6 +461,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function fetchCards(boardId: string, filters?: { search?: string; labelId?: string; columnId?: string }) {
+    if (isDemoMode) return
     try {
       currentBoardCards.value = await cardsApi.getCards(boardId, filters)
 
@@ -482,6 +483,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function fetchLabels(boardId: string) {
+    if (isDemoMode) return
     try {
       currentBoardLabels.value = await labelsApi.getLabels(boardId)
     } catch (e: unknown) {
@@ -583,6 +585,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function fetchCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance | null> {
+    if (isDemoMode) return null
     try {
       return await cardsApi.getCardProvenance(boardId, cardId)
     } catch (e: unknown) {
@@ -622,6 +625,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function fetchCardComments(boardId: string, cardId: string) {
+    if (isDemoMode) return []
     try {
       const comments = await cardCommentsApi.getComments(boardId, cardId)
       cardCommentsByCardId.value = {
