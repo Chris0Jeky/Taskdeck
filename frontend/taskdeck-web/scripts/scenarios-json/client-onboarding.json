@@ -38,7 +38,8 @@
     },
     {
       "type": "executeProposal",
-      "proposal": "onboardingProposal"
+      "proposal": "onboardingProposal",
+      "requiresLlm": true
     }
   ]
 }

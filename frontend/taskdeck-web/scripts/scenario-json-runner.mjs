@@ -815,7 +815,17 @@ async function executeStep(api, ctx, step) {
     case 'executeProposal': {
       assert(typeof step.proposal === 'string' && step.proposal.length > 0, 'executeProposal.proposal is required')
       const proposal = ctx.refs.proposals?.[step.proposal]
-      const proposalId = proposal?.id || step.proposal
+      // Support both alias lookup and raw UUID passthrough.
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      const proposalId = proposal?.id || (UUID_RE.test(step.proposal) ? step.proposal : null)
+
+      if (!proposalId) {
+        throw new Error(
+          `executeProposal: "${step.proposal}" did not resolve to a proposal ID. ` +
+          `This usually means a prior waitForCaptureProposal step was skipped (e.g. --skip-llm). ` +
+          `Mark this step with "requiresLlm": true to skip it automatically.`,
+        )
+      }
 
       await approveAndExecuteProposal(api, proposalId)
       return { proposalId }
