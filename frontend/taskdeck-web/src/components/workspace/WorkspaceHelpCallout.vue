@@ -57,10 +57,13 @@ const { isVisible, dismiss, replay } = useWorkspaceHelp(props.topic)
   flex-direction: column;
   gap: var(--td-space-3);
   padding: var(--td-space-4);
-  border: 1px solid color-mix(in srgb, var(--td-color-primary) 18%, var(--td-border-default));
+  --_callout-primary-mix-border: 18%;
+  --_callout-primary-mix-bg: 9%;
+  --_callout-gradient-stop: 52%;
+  border: 1px solid color-mix(in srgb, var(--td-color-primary) var(--_callout-primary-mix-border), var(--td-border-default));
   border-radius: var(--td-radius-lg);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--td-color-primary) 9%, var(--td-surface-container-high)), transparent 52%),
+    linear-gradient(135deg, color-mix(in srgb, var(--td-color-primary) var(--_callout-primary-mix-bg), var(--td-surface-container-high)), transparent var(--_callout-gradient-stop)),
     var(--td-surface-primary);
 }
 
