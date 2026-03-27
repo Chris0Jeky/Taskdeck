@@ -88,6 +88,7 @@ describe('AppShell workspace navigation and command palette', () => {
     mockRoute.path = '/workspace/home'
     mockWorkspace.mode = 'guided'
     mockWorkspace.updateMode.mockResolvedValue(undefined)
+    mockFeatureFlags.isEnabled = vi.fn(() => true)
   })
 
   afterEach(() => {
@@ -116,6 +117,36 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(wrapper.text()).toContain('Today')
     expect(wrapper.text()).toContain('Activity')
     expect(wrapper.text()).not.toContain('Workbench Tools')
+  })
+
+  it('shows all shipped advanced surfaces in workbench mode even when feature flags are off', async () => {
+    mockWorkspace.mode = 'workbench'
+    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+    const text = wrapper.text()
+
+    expect(text).toContain('Activity')
+    expect(text).toContain('Ops')
+    expect(text).toContain('Access')
+    expect(text).toContain('Archive')
+    expect(text).toContain('Settings')
+    expect(text).toContain('Chat')
+  })
+
+  it('hides feature-flagged surfaces in guided mode when flags are off', async () => {
+    mockWorkspace.mode = 'guided'
+    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+    const text = wrapper.text()
+
+    expect(text).toContain('Home')
+    expect(text).toContain('Boards')
+    expect(text).toContain('Inbox')
+    expect(text).not.toContain('Activity')
+    expect(text).not.toContain('Ops')
+    expect(text).not.toContain('Archive')
   })
 
   it('updates workspace mode from the selector', async () => {
