@@ -669,7 +669,7 @@ onMounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: var(--td-text-tertiary);
-  background: var(--td-surface-highest, #353534);
+  background: var(--td-surface-container-highest);
   padding: 2px 10px;
   border-radius: var(--td-radius-sm);
 }
@@ -731,7 +731,7 @@ onMounted(() => {
   border-radius: var(--td-radius-sm);
   padding: 2px 8px;
   border: 0.5px solid var(--td-border-default);
-  background: var(--td-surface-highest, #353534);
+  background: var(--td-surface-container-highest);
   color: var(--td-text-secondary);
 }
 
@@ -886,74 +886,7 @@ onMounted(() => {
   border: 0.5px solid rgba(255, 77, 77, 0.2);
 }
 
-/* ─── Buttons ─── */
-
-.td-btn {
-  padding: var(--td-space-2) var(--td-space-3);
-  border-radius: var(--td-radius-md);
-  border: 0.5px solid transparent;
-  cursor: pointer;
-  text-decoration: none;
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: var(--td-font-sm);
-  letter-spacing: 0.02em;
-  transition: background var(--td-transition-fast, 120ms) ease,
-              border-color var(--td-transition-fast, 120ms) ease,
-              box-shadow var(--td-transition-fast, 120ms) ease;
-}
-
-.td-btn--sm {
-  padding: var(--td-space-1) var(--td-space-3);
-  font-size: var(--td-font-xs);
-}
-
-.td-btn--primary {
-  background: var(--td-color-ember, #ff4d4d);
-  color: var(--td-text-inverse);
-  font-weight: 600;
-  border-color: transparent;
-}
-
-.td-btn--primary:hover:not(:disabled) {
-  background: var(--td-color-ember-glow);
-  box-shadow: 0 0 12px rgba(255, 77, 77, 0.3);
-}
-
-.td-btn--secondary {
-  background: var(--td-surface-high, #2a2a2a);
-  color: var(--td-text-primary);
-  border-color: var(--td-border-default);
-}
-
-.td-btn--secondary:hover:not(:disabled) {
-  background: var(--td-surface-bright, #3a3939);
-}
-
-.td-btn--ghost {
-  background: transparent;
-  border-color: var(--td-border-ghost);
-  color: var(--td-text-secondary);
-}
-
-.td-btn--ghost:hover:not(:disabled) {
-  background: var(--td-surface-container, #201f1f);
-  border-color: var(--td-border-default);
-}
-
-.td-btn--danger {
-  background: rgba(255, 77, 77, 0.12);
-  color: var(--td-color-ember, #ff4d4d);
-  border-color: rgba(255, 77, 77, 0.25);
-}
-
-.td-btn--danger:hover:not(:disabled) {
-  background: rgba(255, 77, 77, 0.2);
-}
-
-.td-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+/* .td-btn variants are global (src/style.css) */
 
 /* ─── Responsive ─── */
 

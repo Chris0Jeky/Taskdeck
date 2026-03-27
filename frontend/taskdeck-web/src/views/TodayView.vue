@@ -390,32 +390,10 @@ onActivated(refreshTodaySummary)
   gap: var(--td-space-2);
 }
 
-/* ── Shared panel surface ── */
-
-.td-panel {
-  background: var(--td-surface-container-low);
-  border: 0.5px solid var(--td-border-ghost);
-  border-radius: var(--td-radius-lg);
-  padding: var(--td-space-5);
-}
+/* .td-panel, .td-section-title, .td-section-desc are global (src/style.css) */
 
 .td-today__placeholder {
   color: var(--td-text-tertiary);
-}
-
-/* ── Section titles ── */
-
-.td-section-title {
-  font-family: 'Manrope', system-ui, sans-serif;
-  font-size: var(--td-font-lg);
-  font-weight: 700;
-  color: var(--td-text-primary);
-}
-
-.td-section-desc {
-  font-size: var(--td-font-sm);
-  color: var(--td-text-tertiary);
-  line-height: 1.5;
 }
 
 /* ── Onboarding & Recommended sections ── */
@@ -622,30 +600,7 @@ onActivated(refreshTodaySummary)
   line-height: 1.5;
 }
 
-/* ── Small button ── */
-
-.td-btn--sm {
-  padding: var(--td-space-1) var(--td-space-3);
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
-/* ── Alerts ── */
-
-.td-alert {
-  border-radius: var(--td-radius-md);
-  padding: var(--td-space-3);
-  border: 0.5px solid var(--td-border-ghost);
-}
-
-.td-alert--error {
-  background: var(--td-color-error-light);
-  color: var(--td-color-error);
-  border-color: rgba(255, 77, 77, 0.2);
-}
+/* .td-btn--sm, .td-alert, .td-alert--error are global (src/style.css) */
 
 /* ── Responsive ── */
 

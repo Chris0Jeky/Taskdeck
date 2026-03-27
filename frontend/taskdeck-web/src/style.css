@@ -172,4 +172,20 @@
     line-height: 1.5;
     margin: 0;
   }
+
+  /* ── Alert ── */
+  .td-alert {
+    padding: var(--td-space-3) var(--td-space-4);
+    border-radius: var(--td-radius-md);
+    font-size: var(--td-font-sm);
+    line-height: 1.5;
+    background: var(--td-surface-container-low);
+    color: var(--td-text-primary);
+    border: 0.5px solid var(--td-border-default);
+  }
+  .td-alert--error {
+    background: var(--td-color-error-light);
+    color: var(--td-color-ember);
+    border-color: rgba(255, 77, 77, 0.2);
+  }
 }

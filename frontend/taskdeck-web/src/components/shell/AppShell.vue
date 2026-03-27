@@ -482,15 +482,15 @@ onUnmounted(() => {
           <span class="td-nav-item__label">Shortcuts</span>
         </button>
         <button
-          v-if="!sidebarCollapsed && session.isAuthenticated"
+          v-if="session.isAuthenticated"
           class="td-nav-item td-nav-item--logout"
           aria-label="Log out"
           @click="handleLogout"
         >
           <span class="td-nav-item__icon">
-            <span class="material-symbols-outlined" style="font-size: 16px;">logout</span>
+            <span class="material-symbols-outlined text-base">logout</span>
           </span>
-          <span class="td-nav-item__label">Logout</span>
+          <span v-if="!sidebarCollapsed" class="td-nav-item__label">Logout</span>
         </button>
       </div>
     </aside>
@@ -954,13 +954,8 @@ onUnmounted(() => {
   height: 6px;
   border-radius: 50%;
   background: var(--td-color-ember);
+  /* Reuse the Tailwind-generated ember-pulse keyframe from tailwind.config.js */
   animation: ember-pulse 2s infinite;
-}
-
-@keyframes ember-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.4); }
-  70% { box-shadow: 0 0 0 8px rgba(255, 77, 77, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
 }
 
 .td-topbar__status-label {

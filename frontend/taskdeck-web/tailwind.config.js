@@ -88,7 +88,6 @@ export default {
       },
       animation: {
         'ember-pulse': 'ember-pulse 2s infinite',
-        'kinetic': 'kinetic 150ms cubic-bezier(0.2, 0.8, 0.2, 1)',
       },
       keyframes: {
         'ember-pulse': {
