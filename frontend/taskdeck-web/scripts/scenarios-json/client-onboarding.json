@@ -28,17 +28,20 @@
     },
     {
       "type": "triageCapture",
-      "capture": "acmeCapture"
+      "capture": "acmeCapture",
+      "requiresLlm": true
     },
     {
       "type": "waitForCaptureProposal",
       "capture": "acmeCapture",
       "proposalAlias": "onboardingProposal",
-      "timeoutMs": 90000
+      "timeoutMs": 90000,
+      "requiresLlm": true
     },
     {
       "type": "executeProposal",
-      "proposal": "onboardingProposal"
+      "proposal": "onboardingProposal",
+      "requiresLlm": true
     }
   ]
 }
