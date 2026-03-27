@@ -3,7 +3,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQueueStore } from '../store/queueStore'
 import { useToastStore } from '../store/toastStore'
+import { boardsApi } from '../api/boardsApi'
+import InputAssistField from '../components/common/InputAssistField.vue'
+import { buildInputAssistOptions } from '../utils/inputAssist'
 import { getQueueTotal, normalizeQueueStatus } from '../utils/queue'
+import type { Board } from '../types/board'
 import type { QueueStatus } from '../types/queue'
 
 const router = useRouter()
@@ -16,6 +20,23 @@ const newBoardId = ref('')
 const newPayload = ref('')
 const showComposer = ref(false)
 const submitting = ref(false)
+const availableBoards = ref<Board[]>([])
+const loadingBoards = ref(false)
+
+const boardOptions = computed(() =>
+  buildInputAssistOptions(
+    availableBoards.value.map((board) => ({
+      value: board.id,
+      label: board.name,
+    })),
+  ),
+)
+
+const selectedBoardName = computed(() => {
+  if (!newBoardId.value.trim()) return ''
+  const board = availableBoards.value.find((b) => b.id === newBoardId.value.trim())
+  return board?.name ?? ''
+})
 
 const statusTabs = ['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled']
 const guidPatterns = [
@@ -58,12 +79,12 @@ async function handleSubmitRequest() {
 
   const trimmedBoardId = newBoardId.value.trim()
   if (!trimmedBoardId && boardScopedInstructionPattern.test(trimmedPayload)) {
-    toast.error('Board ID is required for board-scoped instructions.')
+    toast.error('Board is required for board-scoped instructions. Select one from the board picker.')
     return
   }
 
   if (trimmedBoardId && !isSupportedGuidFormat(trimmedBoardId)) {
-    toast.error('Board ID must be a GUID (for example 123e4567-e89b-12d3-a456-426614174000).')
+    toast.error('Board ID must be a valid board selection or GUID.')
     return
   }
 
@@ -131,7 +152,19 @@ function statusColor(status: QueueStatus | number): string {
   return colors[normalized] ?? 'var(--td-text-secondary)'
 }
 
+async function loadBoardOptions() {
+  try {
+    loadingBoards.value = true
+    availableBoards.value = await boardsApi.getBoards()
+  } catch {
+    // Board options are non-critical.
+  } finally {
+    loadingBoards.value = false
+  }
+}
+
 onMounted(() => {
+  void loadBoardOptions()
   loadQueueData().catch(() => {
     // Store handles queue errors.
   })
@@ -161,8 +194,8 @@ onMounted(() => {
     <section class="td-panel td-queue__explain">
       <h2 class="td-section-title">When to use queue directly</h2>
       <p class="td-section-desc">
-        Queue is the operator path for manual requests, troubleshooting, and low-level inspection. Request types and
-        raw board IDs stay visible here on purpose because this is not the normal happy path.
+        Queue is the operator path for manual requests, troubleshooting, and low-level inspection. Request types
+        stay visible here on purpose because this is not the normal happy path.
       </p>
     </section>
 
@@ -221,16 +254,20 @@ onMounted(() => {
         </div>
 
         <div class="td-form-group">
-          <label class="td-label">Board ID (optional)</label>
-          <input
+          <label class="td-label">Board (optional)</label>
+          <InputAssistField
             v-model="newBoardId"
-            type="text"
-            class="td-input"
-            placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"
+            :options="boardOptions"
+            aria-label="Board for queue request"
+            placeholder="Select a board..."
+            no-results-text="No matching boards."
+            :disabled="loadingBoards"
           />
+          <div v-if="selectedBoardName" class="td-helper">
+            Selected: <strong>{{ selectedBoardName }}</strong>
+          </div>
           <div class="td-helper">
-            Board-scoped instructions require a <strong>Board ID GUID</strong> because this page is intentionally a
-            low-level queue/operator surface.
+            Board-scoped instructions (create card, move column, etc.) require a board selection.
           </div>
         </div>
 
