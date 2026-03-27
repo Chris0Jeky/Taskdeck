@@ -411,6 +411,11 @@ function hasProvenanceContext(proposal: ApiProposal): boolean {
   return !!captureSourceReference(proposal)
 }
 
+function shortCorrelationId(correlationId: string): string {
+  const trimmed = correlationId.trim()
+  return trimmed.length > 8 ? trimmed.slice(0, 8) + '...' : trimmed
+}
+
 function captureHrefForProposal(proposal: ApiProposal): string {
   const sourceReference = captureSourceReference(proposal)
   return sourceReference
@@ -568,8 +573,12 @@ watch(
           >
             Open Board
           </button>
-          <span v-if="proposal.correlationId.trim().length > 0" class="td-review-card__provenance-meta">
-            Triage run: {{ proposal.correlationId }}
+          <span
+            v-if="proposal.correlationId.trim().length > 0"
+            class="td-review-card__provenance-meta"
+            :title="proposal.correlationId.trim()"
+          >
+            Triage run: {{ shortCorrelationId(proposal.correlationId) }}
           </span>
         </div>
 
