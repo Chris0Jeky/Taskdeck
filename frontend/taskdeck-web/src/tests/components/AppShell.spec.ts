@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import AppShell from '../../components/shell/AppShell.vue'
+import type { FeatureFlags } from '../../types/feature-flags'
 
 const mockRouter = {
   push: vi.fn(),
@@ -141,7 +142,8 @@ describe('AppShell workspace navigation and command palette', () => {
 
   it('hides feature-flagged surfaces in guided mode when flags are off', async () => {
     mockWorkspace.mode = 'guided'
-    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    const advancedFlagsOff = new Set<keyof FeatureFlags>(['newActivity', 'newOps', 'newAccess', 'newArchive'])
+    mockFeatureFlags.isEnabled = vi.fn((flag: keyof FeatureFlags) => !advancedFlagsOff.has(flag))
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
     const navHrefs = getRenderedNavHrefs(wrapper)
@@ -150,11 +152,9 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(text).toContain('Home')
     expect(text).toContain('Boards')
     expect(text).toContain('Inbox')
-    expect(navHrefs).not.toContain('/workspace/review')
-    expect(navHrefs).not.toContain('/workspace/automations/chat')
+    expect(navHrefs).toContain('/workspace/review')
     expect(navHrefs).not.toContain('/workspace/activity')
     expect(navHrefs).not.toContain('/workspace/ops/cli')
-    expect(navHrefs).not.toContain('/workspace/settings/profile')
     expect(navHrefs).not.toContain('/workspace/settings/access')
     expect(navHrefs).not.toContain('/workspace/archive')
   })

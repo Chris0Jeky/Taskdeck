@@ -6,6 +6,7 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import CaptureModal from '../common/CaptureModal.vue'
+import type { FeatureFlags } from '../../types/feature-flags'
 import type { WorkspaceMode } from '../../types/workspace'
 import { isWorkspaceMode } from '../../types/workspace'
 
@@ -29,7 +30,7 @@ type NavItem = {
   label: string
   icon: string
   path: string
-  flag: string | null
+  flag: keyof FeatureFlags | null
   workbenchBypassesFlag?: boolean
   primaryModes: WorkspaceMode[]
   secondaryModes?: WorkspaceMode[]
@@ -199,7 +200,7 @@ const navCatalog: NavItem[] = [
 const availableNavItems = computed(() => navCatalog.filter((item) => {
   if (!item.flag) return true
   if (activeWorkspaceMode.value === 'workbench' && item.workbenchBypassesFlag) return true
-  return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
+  return featureFlags.isEnabled(item.flag)
 }))
 
 const activeWorkspaceMode = computed<WorkspaceMode>(() =>
