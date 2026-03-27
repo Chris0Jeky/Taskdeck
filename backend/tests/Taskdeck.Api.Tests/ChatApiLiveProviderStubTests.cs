@@ -89,6 +89,70 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         payload.Model.Should().Be("gpt-4o-mini");
     }
 
+    [Fact]
+    public async Task SendMessage_ShouldReturnDegradedType_WhenProviderFallsBack()
+    {
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ILlmProvider>();
+                services.AddScoped<ILlmProvider>(_ => new DegradedProviderStub());
+            });
+        });
+        using var client = factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(client, "chat-degraded-stub");
+
+        var createSessionResponse = await client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Degraded provider test"));
+        createSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+
+        var sendMessageResponse = await client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            new SendChatMessageDto("tell me something"));
+
+        sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
+        assistant.Should().NotBeNull();
+        assistant!.MessageType.Should().Be("degraded");
+        assistant.DegradedReason.Should().Be("Live provider request failed.");
+        assistant.Content.Should().Contain("fallback");
+    }
+
+    private sealed class DegradedProviderStub : ILlmProvider
+    {
+        public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
+        {
+            return Task.FromResult(new LlmCompletionResult(
+                Content: "This is a degraded fallback response.",
+                TokensUsed: 10,
+                IsActionable: false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: "Live provider request failed."));
+        }
+
+        public async IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return new LlmTokenEvent("degraded", true);
+            await Task.CompletedTask;
+        }
+
+        public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(new LlmHealthStatus(
+                IsAvailable: true,
+                ProviderName: "OpenAI",
+                Model: "gpt-4o-mini"));
+        }
+    }
+
     private sealed class OpenAiProviderStub : ILlmProvider
     {
         private readonly Action<ChatCompletionRequest> _onCompletion;
