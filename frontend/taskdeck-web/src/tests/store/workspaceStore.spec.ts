@@ -188,6 +188,15 @@ describe('workspaceStore', () => {
     expect(store.homeSummary?.workload.proposalsPendingReview).toBe(2)
     expect(store.onboarding?.currentStepId).toBe('create-first-board')
     expect(store.mode).toBe('guided')
+    expect(store.inboxBadgeCount).toBe(1)
+    expect(store.reviewBadgeCount).toBe(2)
+  })
+
+  it('returns zero badge counts when home summary is not loaded', () => {
+    const store = useWorkspaceStore()
+
+    expect(store.inboxBadgeCount).toBe(0)
+    expect(store.reviewBadgeCount).toBe(0)
   })
 
   it('loads today summary and syncs onboarding state', async () => {

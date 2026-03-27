@@ -271,6 +271,11 @@ const activeCommandId = computed(() => {
   return `td-command-option-${selectedCommandIndex.value}`
 })
 
+const navBadgeCounts = computed<Record<string, number>>(() => ({
+  '/workspace/inbox': workspace.inboxBadgeCount,
+  '/workspace/review': workspace.reviewBadgeCount,
+}))
+
 function isActiveRoute(path: string): boolean {
   if (path === '/workspace/home') {
     return route.path === path
@@ -423,6 +428,9 @@ watch(filteredCommandItems, (items) => {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
+  if (session.isAuthenticated && !workspace.hasHomeSummary && !workspace.homeLoading) {
+    void workspace.fetchHomeSummary().catch(() => {})
+  }
 })
 
 onUnmounted(() => {
@@ -463,6 +471,11 @@ onUnmounted(() => {
         >
           <span class="td-nav-item__icon">{{ item.icon }}</span>
           <span v-if="!sidebarCollapsed" class="td-nav-item__label">{{ item.label }}</span>
+          <span
+            v-if="(navBadgeCounts[item.path] ?? 0) > 0"
+            class="td-nav-badge"
+            :aria-label="`${item.label}: ${navBadgeCounts[item.path]} pending`"
+          >{{ navBadgeCounts[item.path] }}</span>
         </router-link>
 
         <div v-if="secondaryNavItems.length > 0" class="td-sidebar__section">
@@ -827,6 +840,21 @@ onUnmounted(() => {
 
 .td-nav-item__label {
   white-space: nowrap;
+}
+
+.td-nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--td-color-ember, #ff4d4d);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 /* ── Sidebar Footer ── */
