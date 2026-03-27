@@ -22,14 +22,11 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
             return await _dbSet
                 .FromSqlInterpolated(
                     $"SELECT * FROM ChatSessions WHERE UserId = {userId} ORDER BY UpdatedAt DESC LIMIT {boundedLimit}")
-                .Include(s => s.Messages)
                 .ToListAsync(cancellationToken);
         }
 
         return await GetLimitedOrderedByUpdatedAtAsync(
-            _dbSet
-                .Where(s => s.UserId == userId)
-                .Include(s => s.Messages),
+            _dbSet.Where(s => s.UserId == userId),
             boundedLimit,
             cancellationToken);
     }

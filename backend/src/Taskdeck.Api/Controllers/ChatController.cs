@@ -47,6 +47,7 @@ public class ChatController : AuthenticatedControllerBase
     }
 
     [HttpGet("health")]
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
     public async Task<IActionResult> GetProviderHealth([FromQuery] bool probe = false, CancellationToken ct = default)
     {
         if (!TryGetCurrentUserId(out _, out var errorResult))

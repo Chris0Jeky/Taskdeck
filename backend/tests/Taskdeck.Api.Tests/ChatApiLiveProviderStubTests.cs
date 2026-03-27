@@ -157,17 +157,6 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         reloadedSession!.RecentMessages.Should().ContainSingle(message =>
             message.MessageType == "degraded" &&
             message.DegradedReason == "Live provider request failed.");
-
-        var sessionsResponse = await client.GetAsync("/api/llm/chat/sessions");
-        sessionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var sessions = await sessionsResponse.Content.ReadFromJsonAsync<List<ChatSessionDto>>();
-        sessions.Should().NotBeNull();
-        sessions!
-            .SelectMany(item => item.RecentMessages)
-            .Should()
-            .Contain(message =>
-                message.MessageType == "degraded" &&
-                message.DegradedReason == "Live provider request failed.");
     }
 
     private sealed class DegradedProviderStub : ILlmProvider

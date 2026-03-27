@@ -221,9 +221,9 @@ public class ChatService : IChatService
                 }
             }
 
-            var persistedDegradedReason = messageType == "degraded"
-                ? degradedReason
-                : null;
+            var persistedDegradedReason = string.IsNullOrWhiteSpace(degradedReason)
+                ? null
+                : degradedReason;
 
             // Add assistant message
             var assistantMessage = new ChatMessage(
