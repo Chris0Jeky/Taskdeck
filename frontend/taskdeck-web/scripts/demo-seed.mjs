@@ -1062,17 +1062,19 @@ function printUsage() {
 Usage: npm run demo:seed [-- [options]]
 
 Options:
-  --reset   Delete all demo boards before seeding (clean start)
-  --help    Print this usage information and exit
+  --reset      Delete all demo boards before seeding (clean start)
+  --help, -h   Print this usage information and exit
 
 Environment variables:
-  TASKDECK_API_BASE_URL       API base URL (default: http://localhost:5000/api)
-  TASKDECK_DEMO_USERNAME      Demo user name (default: demo)
-  TASKDECK_DEMO_EMAIL         Demo user email (default: demo@taskdeck.local)
-  TASKDECK_DEMO_PASSWORD      Demo user password (default: demo123)
-  TASKDECK_COLLAB_USERNAME    Collab user name (default: collab)
-  TASKDECK_COLLAB_EMAIL       Collab user email (default: collab@taskdeck.local)
-  TASKDECK_COLLAB_PASSWORD    Collab user password (default: demo123)
+  TASKDECK_API_BASE_URL            API base URL (default: http://localhost:5000/api)
+  TASKDECK_DEMO_USERNAME           Demo user name (default: demo)
+  TASKDECK_DEMO_EMAIL              Demo user email (default: demo@taskdeck.local)
+  TASKDECK_DEMO_PASSWORD           Demo user password (default: demo123)
+  TASKDECK_COLLAB_USERNAME         Collab user name (default: collab)
+  TASKDECK_COLLAB_EMAIL            Collab user email (default: collab@taskdeck.local)
+  TASKDECK_COLLAB_PASSWORD         Collab user password (default: demo123)
+  TASKDECK_DEMO_ALLOW_NON_LOCAL_API  Allow non-local API targets (default: false)
+  TASKDECK_UI_BASE                 UI base URL (default: http://localhost:5173)
 `.trim())
 }
 
