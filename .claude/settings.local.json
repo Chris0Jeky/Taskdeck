@@ -12,7 +12,8 @@
       "Bash(python -m json.tool /c/Users/jekyt/source/Taskdeck/.claude/settings.json)",
       "Bash(python -m json.tool /c/Users/jekyt/source/Taskdeck/.mcp.json)",
       "Bash(gh pr:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(grep -rn 'Capture triage' /c/Users/jekyt/source/Taskdeck/backend/src/ --include=*.cs)"
     ],
     "deny": [],
     "ask": []
