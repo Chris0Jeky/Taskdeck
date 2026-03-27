@@ -702,7 +702,7 @@ onUnmounted(() => {
   font-size: 1.375rem;
   font-weight: 800;
   letter-spacing: -0.04em;
-  color: #e5e2e1;
+  color: var(--td-text-primary);
   white-space: nowrap;
 }
 
@@ -712,20 +712,20 @@ onUnmounted(() => {
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #ff4d4d;
+  color: var(--td-color-ember);
 }
 
 .td-sidebar__toggle {
   background: transparent;
   border: none;
-  color: rgba(229, 226, 225, 0.4);
+  color: var(--td-text-tertiary);
   cursor: pointer;
   padding: var(--td-space-2);
   transition: color var(--td-transition-fast);
 }
 
 .td-sidebar__toggle:hover {
-  color: #ff4d4d;
+  color: var(--td-color-ember);
 }
 
 /* ── Nav Items ── */
@@ -749,7 +749,7 @@ onUnmounted(() => {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 700;
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
@@ -759,7 +759,7 @@ onUnmounted(() => {
   align-items: center;
   gap: var(--td-space-4);
   padding: var(--td-space-4) var(--td-space-5);
-  color: rgba(229, 226, 225, 0.4);
+  color: var(--td-text-tertiary);
   text-decoration: none;
   transition: all 200ms ease;
   cursor: pointer;
@@ -777,7 +777,7 @@ onUnmounted(() => {
 
 .td-nav-item:hover {
   background: var(--td-surface-bright);
-  color: #e5e2e1;
+  color: var(--td-text-primary);
 }
 
 .td-nav-item:active {
@@ -786,25 +786,25 @@ onUnmounted(() => {
 
 .td-nav-item--active {
   background: linear-gradient(to right, rgba(255, 77, 77, 0.1), transparent);
-  border-left: 4px solid #ff4d4d;
-  color: #ff4d4d;
+  border-left: 4px solid var(--td-color-ember);
+  color: var(--td-color-ember);
   font-weight: 700;
 }
 
 .td-nav-item--active .td-nav-item__icon {
-  color: #ff4d4d;
+  color: var(--td-color-ember);
 }
 
 .td-nav-item--secondary {
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
 }
 
 .td-nav-item--logout {
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
 }
 
 .td-nav-item--logout:hover {
-  color: #ffb3ae;
+  color: var(--td-color-primary);
 }
 
 .td-nav-item__icon {
@@ -868,7 +868,7 @@ onUnmounted(() => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.2em;
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
 }
 
 .td-topbar__mode-controls {
@@ -890,7 +890,7 @@ onUnmounted(() => {
 }
 
 .td-topbar__mode-select:focus {
-  border-color: #ff5352;
+  border-color: var(--td-color-ember-glow);
 }
 
 .td-topbar__mode-select option {
@@ -900,7 +900,7 @@ onUnmounted(() => {
 
 .td-topbar__mode-copy {
   font-size: var(--td-font-xs);
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -914,7 +914,7 @@ onUnmounted(() => {
   padding: var(--td-space-3) var(--td-space-5);
   background: var(--td-surface-container-low);
   border: 0.5px solid rgba(91, 64, 62, 0.15);
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
   cursor: pointer;
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 11px;
@@ -925,16 +925,16 @@ onUnmounted(() => {
 }
 
 .td-topbar__palette-trigger:hover {
-  border-color: rgba(255, 179, 174, 0.4);
+  border-color: var(--td-border-focus);
 }
 
 .td-topbar__search-icon {
   font-size: 16px;
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
 }
 
 .td-topbar__search-text {
-  color: rgba(229, 226, 225, 0.25);
+  color: var(--td-text-tertiary);
 }
 
 .td-topbar__right {
@@ -953,7 +953,7 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #ff4d4d;
+  background: var(--td-color-ember);
   animation: ember-pulse 2s infinite;
 }
 
@@ -969,13 +969,13 @@ onUnmounted(() => {
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: rgba(229, 226, 225, 0.4);
+  color: var(--td-text-tertiary);
 }
 
 .td-topbar__user {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 11px;
-  color: rgba(229, 226, 225, 0.5);
+  color: var(--td-text-muted);
   font-weight: 500;
   letter-spacing: 0.05em;
 }
@@ -1025,7 +1025,7 @@ onUnmounted(() => {
 }
 
 .td-command-palette__input::placeholder {
-  color: rgba(229, 226, 225, 0.25);
+  color: var(--td-text-tertiary);
 }
 
 .td-command-palette__results {
@@ -1038,7 +1038,7 @@ onUnmounted(() => {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 9px;
   font-weight: 700;
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.2em;
   padding: var(--td-space-3) var(--td-space-4);
@@ -1058,24 +1058,24 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   text-align: left;
-  color: rgba(229, 226, 225, 0.5);
+  color: var(--td-text-muted);
   transition: all var(--td-transition-fast);
 }
 
 .td-command-palette__item:hover {
   background: var(--td-surface-bright);
-  color: #e5e2e1;
+  color: var(--td-text-primary);
 }
 
 .td-command-palette__item--active {
   background: var(--td-surface-bright);
-  color: #ff4d4d;
-  border-left: 2px solid #ff5352;
+  color: var(--td-color-ember);
+  border-left: 2px solid var(--td-color-ember-glow);
 }
 
 .td-command-palette__empty {
   padding: var(--td-space-4);
-  color: rgba(229, 226, 225, 0.25);
+  color: var(--td-text-tertiary);
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 11px;
   letter-spacing: 0.05em;
@@ -1114,12 +1114,12 @@ onUnmounted(() => {
   border: none;
   font-size: var(--td-font-lg);
   cursor: pointer;
-  color: rgba(229, 226, 225, 0.3);
+  color: var(--td-text-tertiary);
   transition: color var(--td-transition-fast);
 }
 
 .td-keyboard-help__header button:hover {
-  color: #ff4d4d;
+  color: var(--td-color-ember);
 }
 
 .td-keyboard-help__content {
@@ -1134,7 +1134,7 @@ onUnmounted(() => {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 700;
-  color: #ff4d4d;
+  color: var(--td-color-ember);
   text-transform: uppercase;
   letter-spacing: 0.2em;
   margin-bottom: var(--td-space-3);
@@ -1146,7 +1146,7 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: var(--td-space-2) 0;
   font-size: var(--td-font-sm);
-  color: rgba(229, 226, 225, 0.5);
+  color: var(--td-text-muted);
 }
 
 .td-shortcut-row kbd {
@@ -1156,7 +1156,7 @@ onUnmounted(() => {
   font-family: 'Space Grotesk', monospace;
   font-size: 10px;
   letter-spacing: 0.05em;
-  color: #ffb3ae;
+  color: var(--td-color-primary);
 }
 
 @media (max-width: 900px) {

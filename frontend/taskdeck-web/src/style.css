@@ -127,7 +127,7 @@
     @apply text-primary;
   }
   .td-btn--danger {
-    @apply bg-[#ff4d4d] text-[#131313];
+    @apply bg-ember text-obsidian;
   }
   .td-btn--danger:hover {
     filter: brightness(1.1);
@@ -150,7 +150,7 @@
 
   /* ── Page Title ── */
   .td-page-title {
-    font-family: 'Manrope', sans-serif;
+    font-family: 'Manrope', system-ui, sans-serif;
     font-size: 2.5rem;
     font-weight: 800;
     letter-spacing: -0.04em;
@@ -160,7 +160,7 @@
 
   /* ── Section Title & Desc ── */
   .td-section-title {
-    font-family: 'Manrope', sans-serif;
+    font-family: 'Manrope', system-ui, sans-serif;
     font-size: 1rem;
     font-weight: 700;
     color: var(--td-text-primary);
