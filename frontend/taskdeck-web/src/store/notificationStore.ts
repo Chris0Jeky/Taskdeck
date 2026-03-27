@@ -66,9 +66,10 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   async function fetchPreferences() {
     if (isDemoMode) {
+      loading.value = true
       error.value = null
-      loading.value = false
       preferences.value = null
+      loading.value = false
       return preferences.value
     }
     try {
