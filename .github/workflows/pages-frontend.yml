@@ -1,0 +1,73 @@
+name: Deploy Frontend to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/pages-frontend.yml
+      - frontend/taskdeck-web/src/**
+      - frontend/taskdeck-web/public/**
+      - frontend/taskdeck-web/index.html
+      - frontend/taskdeck-web/package.json
+      - frontend/taskdeck-web/tailwind.config.js
+      - frontend/taskdeck-web/vite.config.ts
+      - frontend/taskdeck-web/tsconfig*.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend/taskdeck-web
+        run: npx vite build --base /Taskdeck/
+        env:
+          VITE_API_BASE_URL: ''
+
+      - name: SPA fallback for client-side routing
+        run: cp frontend/taskdeck-web/dist/index.html frontend/taskdeck-web/dist/404.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/taskdeck-web/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
