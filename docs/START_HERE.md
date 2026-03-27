@@ -51,7 +51,7 @@ All three workspace modes keep the same review-first trust model. They change ho
   - keeps `Home`, `Today`, `Review`, `Boards`, and `Inbox` front and center
 - `Workbench`
   - best for power users and operators
-  - shows all shipped workspace surfaces (Activity, Ops, Access, Archive, Chat) in the nav without requiring feature flags
+  - shows the full shipped workspace in the nav, including `Chat`, `Notifications`, `Settings`, `Preferences`, `Activity`, `Ops`, `Access`, and `Archive`, without requiring feature flags for shipped surfaces
 - `Agent`
   - preserves the same shipped product loop today
   - reserves the mental model for later `Agents` / `Runs` / `Knowledge` work without claiming those pages already exist

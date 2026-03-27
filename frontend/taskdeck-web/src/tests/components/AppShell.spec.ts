@@ -75,6 +75,10 @@ function mountShell() {
   })
 }
 
+function getRenderedNavHrefs(wrapper: ReturnType<typeof mountShell>) {
+  return wrapper.findAll('a').map((link) => link.attributes('href'))
+}
+
 async function waitForUi() {
   await Promise.resolve()
   await Promise.resolve()
@@ -124,14 +128,15 @@ describe('AppShell workspace navigation and command palette', () => {
     mockFeatureFlags.isEnabled = vi.fn(() => false)
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
-    const text = wrapper.text()
+    const navHrefs = getRenderedNavHrefs(wrapper)
 
-    expect(text).toContain('Activity')
-    expect(text).toContain('Ops')
-    expect(text).toContain('Access')
-    expect(text).toContain('Archive')
-    expect(text).toContain('Settings')
-    expect(text).toContain('Chat')
+    expect(navHrefs).toContain('/workspace/review')
+    expect(navHrefs).toContain('/workspace/automations/chat')
+    expect(navHrefs).toContain('/workspace/activity')
+    expect(navHrefs).toContain('/workspace/ops/cli')
+    expect(navHrefs).toContain('/workspace/settings/profile')
+    expect(navHrefs).toContain('/workspace/settings/access')
+    expect(navHrefs).toContain('/workspace/archive')
   })
 
   it('hides feature-flagged surfaces in guided mode when flags are off', async () => {
@@ -139,14 +144,19 @@ describe('AppShell workspace navigation and command palette', () => {
     mockFeatureFlags.isEnabled = vi.fn(() => false)
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
+    const navHrefs = getRenderedNavHrefs(wrapper)
     const text = wrapper.text()
 
     expect(text).toContain('Home')
     expect(text).toContain('Boards')
     expect(text).toContain('Inbox')
-    expect(text).not.toContain('Activity')
-    expect(text).not.toContain('Ops')
-    expect(text).not.toContain('Archive')
+    expect(navHrefs).not.toContain('/workspace/review')
+    expect(navHrefs).not.toContain('/workspace/automations/chat')
+    expect(navHrefs).not.toContain('/workspace/activity')
+    expect(navHrefs).not.toContain('/workspace/ops/cli')
+    expect(navHrefs).not.toContain('/workspace/settings/profile')
+    expect(navHrefs).not.toContain('/workspace/settings/access')
+    expect(navHrefs).not.toContain('/workspace/archive')
   })
 
   it('updates workspace mode from the selector', async () => {
