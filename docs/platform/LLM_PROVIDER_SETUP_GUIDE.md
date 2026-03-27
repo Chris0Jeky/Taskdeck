@@ -112,18 +112,29 @@ Opt-in live-provider verification outside demo mode:
 ## Product-Level Provider Truth
 
 Automation Chat now exposes provider-health state explicitly through:
-- `GET /api/llm/chat/health`
+- `GET /api/llm/chat/health` — returns config-validated health status
+- `GET /api/llm/chat/health?probe=true` — sends a minimal completion to the configured provider and returns `isProbed: true` with reachability status
 - the in-app provider-status banner in `Automation Chat`
+- the `Verify LLM` button which calls the probe endpoint
 
 Note:
 - `GET /api/llm/chat/health` is protected by the standard app auth on `ChatController`
 - callers must use an authenticated session or a valid Bearer token
 - unauthenticated requests return `401 Unauthorized`, so a direct browser or `curl` call without auth can fail even when the provider is healthy
+- `?probe=true` makes a real API call to the upstream provider; use it intentionally since it consumes tokens
 
 Current operator-visible states:
-- live provider ready
-- mock provider active
-- configured/degraded provider unavailable
+- `verified` — probe confirmed live reachability (only after `?probe=true`)
+- `configured` — config validation passed but reachability not proven
+- `mock` — Mock provider active (deterministic, no live LLM)
+- `unavailable` — provider configuration invalid or errored
+- `error` — health check itself failed
+- `loading` / `unknown` — transient states during resolution
+
+Degraded responses:
+- when a live provider is configured but the API call fails (network, auth, parse), the response carries `messageType: "degraded"` with a `degradedReason` field
+- the UI renders these with a visible warning border and reason text
+- this replaces the previous pattern where failure reasons were embedded in parenthetical text within the response content
 
 This is intentionally separate from the broader demo tooling so an operator can tell whether a live LLM is actually hooked before trusting a manual chat pass.
 
