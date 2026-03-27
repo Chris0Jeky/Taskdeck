@@ -251,7 +251,7 @@ Existing reused anchors:
 - `#175` for broader starter-pack expansion beyond the pre-demo slice
 - `#216` for broader demo script / public framing
 - `#326` for proposal readability and trust-cue hardening (demo-critical subset)
-- `#330` for in-app demoability and hero-board presentation quality (demo-critical subset)
+- `#330` for in-app demoability and hero-board presentation quality (demo-critical subset); nav badges now show pending triage and review counts on Inbox and Review nav items
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
 
 ## Manual Product Audit Follow-through Wave (2026-03-26)
