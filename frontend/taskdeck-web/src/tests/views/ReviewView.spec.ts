@@ -682,7 +682,7 @@ describe('ReviewView', () => {
     await clearButton?.trigger('click')
     await Promise.resolve()
 
-    expect(pushSpy).toHaveBeenCalledWith({ path: '/workspace/review' })
+    expect(pushSpy).toHaveBeenCalledWith({ name: 'workspace-review' })
   })
 
   it('does not reject a proposal when the rejection prompt is cancelled', async () => {
