@@ -60,7 +60,7 @@ const { isVisible, dismiss, replay } = useWorkspaceHelp(props.topic)
   border: 1px solid color-mix(in srgb, var(--td-color-primary) 18%, var(--td-border-default));
   border-radius: var(--td-radius-lg);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--td-color-primary) 9%, white), transparent 52%),
+    linear-gradient(135deg, color-mix(in srgb, var(--td-color-primary) 9%, var(--td-surface-container-high)), transparent 52%),
     var(--td-surface-primary);
 }
 
