@@ -34,8 +34,8 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             return Array.Empty<AuditLog>();
         }
 
-        List<Guid>? boardScopedEntityIdList = null;
         HashSet<Guid>? boardScopedEntityIdSet = null;
+        List<Guid>? boardScopedEntityIdList = null;
         if (boardId.HasValue)
         {
             boardScopedEntityIdList = await ResolveBoardScopedEntityIdsAsync(boardId.Value, cancellationToken);
@@ -77,7 +77,7 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
 
         if (!string.IsNullOrWhiteSpace(source))
         {
-            var normalizedSource = source.Trim().ToLower();
+            var normalizedSource = source.Trim().ToLowerInvariant();
             query = query.Where(al => al.EntityType.ToLower() == normalizedSource);
         }
 
@@ -134,22 +134,24 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
 
     public async Task<IEnumerable<AuditLog>> GetByBoardAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
-        var boardScopedEntityIds = await ResolveBoardScopedEntityIdsAsync(boardId, cancellationToken);
-        var entityIdSet = new HashSet<Guid>(boardScopedEntityIds);
-
         if (_context.Database.IsSqlite())
         {
-            var allLogs = await _context.AuditLogs
+            return await _context.AuditLogs
+                .FromSqlInterpolated($"""
+                    SELECT * FROM AuditLogs AS al
+                    WHERE al.EntityId = {boardId}
+                       OR EXISTS (SELECT 1 FROM Columns AS c WHERE c.Id = al.EntityId AND c.BoardId = {boardId})
+                       OR EXISTS (SELECT 1 FROM Cards   AS c WHERE c.Id = al.EntityId AND c.BoardId = {boardId})
+                       OR EXISTS (SELECT 1 FROM Labels  AS l WHERE l.Id = al.EntityId AND l.BoardId = {boardId})
+                    ORDER BY al.Timestamp DESC
+                    LIMIT {limit}
+                    """)
                 .AsNoTracking()
                 .Include(al => al.User)
                 .ToListAsync(cancellationToken);
-
-            return allLogs
-                .Where(al => entityIdSet.Contains(al.EntityId))
-                .OrderByDescending(al => al.Timestamp)
-                .Take(limit)
-                .ToList();
         }
+
+        var boardScopedEntityIds = await ResolveBoardScopedEntityIdsAsync(boardId, cancellationToken);
 
         return await _context.AuditLogs
             .AsNoTracking()
