@@ -62,6 +62,33 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         capturedRequest.Attribution.CorrelationId.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Fact]
+    public async Task GetProviderHealth_ShouldExposeLiveProviderStubStatus()
+    {
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ILlmProvider>();
+                services.AddScoped<ILlmProvider>(_ => new OpenAiProviderStub(_ => { }));
+            });
+        });
+        using var client = factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(client, "chat-live-provider-health");
+
+        var response = await client.GetAsync("/api/llm/chat/health");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<ChatProviderHealthDto>();
+        payload.Should().NotBeNull();
+        payload!.ProviderName.Should().Be("OpenAI");
+        payload.IsAvailable.Should().BeTrue();
+        payload.IsMock.Should().BeFalse();
+        payload.Model.Should().Be("gpt-4o-mini");
+    }
+
     private sealed class OpenAiProviderStub : ILlmProvider
     {
         private readonly Action<ChatCompletionRequest> _onCompletion;

@@ -46,16 +46,19 @@ Workspace modes are display preferences, not permission boundaries.
 Guided mode keeps the normal loop prominent:
 
 - primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`
-- secondary: `Notifications`, `Chat`, `Activity`, `Ops`, `Settings`, `Preferences`, `Access`, `Archive`
+- secondary: `Notifications`, `Chat`, `Settings`, `Preferences`
+- advanced feature-flagged surfaces that can still appear only after explicit toggles: `Activity`, `Ops`, `Access`, `Archive`
 
-Workbench mode keeps all shipped tools visible in the main nav:
+Workbench mode keeps the broader operator toolset close in the main nav, but feature-flagged advanced pages can still require toggles in `Settings`:
 
-- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`, `Notifications`, `Chat`, `Activity`, `Ops`, `Settings`, `Preferences`, `Access`, `Archive`
+- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`, `Notifications`, `Chat`, `Settings`, `Preferences`
+- advanced feature-flagged surfaces that may still need explicit toggles: `Activity`, `Ops`, `Access`, `Archive`
 
-Agent mode currently ships the same pages as guided mode plus the same secondary workbench tools:
+Agent mode currently ships the same core pages as guided mode, while the later agent-specific surfaces are still staged work:
 
 - primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`
-- secondary: `Notifications`, `Chat`, `Activity`, `Ops`, `Settings`, `Preferences`, `Access`, `Archive`
+- secondary: `Notifications`, `Chat`, `Settings`, `Preferences`
+- advanced feature-flagged surfaces that can still appear only after explicit toggles: `Activity`, `Ops`, `Access`, `Archive`
 
 Important truth:
 

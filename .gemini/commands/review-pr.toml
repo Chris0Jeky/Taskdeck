@@ -1,0 +1,12 @@
+description = "Draft PR review feedback given a goal"
+prompt = """
+Review the current PR diff against the goal: '{{args}}'.
+Use `docs/STATUS.md` and `docs/GOLDEN_PRINCIPLES.md` as standard context.
+Look for:
+- Missing edge cases
+- Incomplete tests
+- Deviation from 'Definition of Done'.
+
+Output:
+A short list of blocking and non-blocking issues.
+"""

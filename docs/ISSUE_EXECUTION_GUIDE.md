@@ -146,6 +146,20 @@ Execution note (demo-expansion wave):
 - Prefer file-scoped commits inside each batch to simplify review and rollback.
 - Current state (2026-03-06): `#298` through `#302` are delivered; retain this order as the historical dependency record for any future demo-tooling follow-ups.
 
+Priority I addendum (manual product audit follow-through wave, seeded 2026-03-26):
+28. `#363` ANL-2026-03-26 manual product audit follow-through tracker
+29. `#364` COL-05 realtime hub CORS/SignalR health
+30. `#365` CAP-23 Inbox triage freshness
+31. `#368` AUTO-04 live-provider status, degraded-mode messaging, and first-turn fidelity
+32. `#366` UX-20 Workbench/nav/docs truth alignment
+33. `#367` UX-21 board-history semantic alignment
+
+Execution note (manual product audit wave):
+- use `docs/analysis/2026-03-26_manual-product-audit.md` together with `docs/analysis/2026-03-26_manual-product-audit-followthrough.md`
+- keep the first pass focused on runtime trust/coherence, not broad future surface expansion
+- route the review raw-ID finding through existing issue `#326` instead of creating a duplicate
+- `#369` headed manual-audit Playwright follow-through is intentionally lower priority and should not block the Priority I runtime fixes above
+
 ### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
 
 Execution note (2026-02-22):
@@ -213,16 +227,17 @@ MVP productization wave seeded from the 2026-03-07 integration:
 Saul-facing demo alignment wave seeded from the 2026-03-26 reconciliation:
 48. `#356` `DEMO-00` Saul-facing demo alignment tracker
 49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario
-50. `#326` `UX-17` proposal readability and trust-cue hardening (reused existing anchor)
-51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (reused existing anchor)
-52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide
-53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (reused existing anchor)
+50. `#326` `UX-17` proposal readability and trust-cue hardening (demo-critical Saul-facing subset)
+51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (demo-critical Saul-facing subset)
+52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current execution step)
+53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (run only after `#355` lands)
 
 Execution note (Saul-facing demo wave):
 - use `docs/WIP/Taskdeck_Demo_Capability_Specification.md` together with `docs/analysis/2026-03-26_saul-demo-capability-reconciliation.md`
 - keep the hero path pinned to `Home -> Inbox/Capture -> Review -> Board`
 - do not reopen broad architecture, agent breadth, or generic pack expansion during this slice
 - keep `#175` as the broader starter-pack expansion anchor; `#354` is the narrow pre-recording business-demo slice
+- current execution order remains strict: `#354` -> demo-critical `#326` -> demo-critical `#330` -> `#355` -> `#216`
 
 ### Stage 3: Priority III - Expansion Wave
 

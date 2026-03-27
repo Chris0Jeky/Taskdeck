@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp"]
+    },
+    "playwright": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@executeautomation/playwright-mcp-server"]
+    },
+    "docker": {
+      "command": "docker",
+      "args": ["mcp", "gateway", "run", "--servers", "docker,docker-docs,filesystem,SQLite", "--transport", "stdio"]
+    }
+  }
+}

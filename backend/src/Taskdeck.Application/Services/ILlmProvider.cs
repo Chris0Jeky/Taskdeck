@@ -42,4 +42,9 @@ public record LlmCompletionResult(
 
 public record LlmTokenEvent(string Token, bool IsComplete);
 
-public record LlmHealthStatus(bool IsAvailable, string ProviderName, string? ErrorMessage = null, string? Model = null);
+public record LlmHealthStatus(
+    bool IsAvailable,
+    string ProviderName,
+    string? ErrorMessage = null,
+    string? Model = null,
+    bool IsMock = false);

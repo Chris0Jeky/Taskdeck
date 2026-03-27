@@ -1,0 +1,5 @@
+interface:
+  display_name: "Taskdeck Verification And Doc Sync"
+  short_description: "Finish checks, docs, and handoff cleanly"
+  default_prompt: "Use $taskdeck-verification-doc-sync to verify this Taskdeck change, update only the right docs, and prepare the final handoff summary."
+

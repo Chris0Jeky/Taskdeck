@@ -215,6 +215,42 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalByIdAsync_ShouldRenderCaptureTriageTaskBatch_InBusinessLanguage()
+    {
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Capture triage (2 tasks): Captured note for client onboarding.",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        var proposalId = proposal.Id;
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "create",
+            "card",
+            "{\"title\":\"Request director ID documents\"}",
+            "card-0"));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            1,
+            "create",
+            "card",
+            "{\"title\":\"Send engagement letter\"}",
+            "card-1"));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Presentation.PlainSummary.Should().Be("Create 2 task cards from the captured note.");
+        result.Value.Presentation.ImpactSummary.Should().Be("2 task card changes ready for approval.");
+    }
+
+    [Fact]
     public async Task GetProposalByIdAsync_ShouldReturnNotFound_WhenDoesNotExist()
     {
         // Arrange

@@ -112,6 +112,27 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetProviderHealth_ShouldRequireAuthentication()
+    {
+        await ApiTestHarness.AssertUnauthorizedAsync(await _client.GetAsync("/api/llm/chat/health"));
+    }
+
+    [Fact]
+    public async Task GetProviderHealth_ShouldExposeMockStatusByDefault()
+    {
+        await AuthenticateAsync("chat-health");
+
+        var response = await _client.GetAsync("/api/llm/chat/health");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<ChatProviderHealthDto>();
+        payload.Should().NotBeNull();
+        payload!.ProviderName.Should().Be("Mock");
+        payload.IsAvailable.Should().BeTrue();
+        payload.IsMock.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GetSession_ShouldReturnForbidden_ForDifferentUser()
     {
         var userOneId = await AuthenticateAsync("chat-owner");

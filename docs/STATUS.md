@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-26
+Last Updated: 2026-03-27
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -33,7 +33,7 @@ Current constraints are mostly hardening and consistency:
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
 - cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
-- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is already shipped, and the remaining pre-recording gap is business-legible packaging (client-onboarding hero scenario, trust-first wording hardening, and rehearsal discipline) rather than new architecture; targeted follow-through is now tracked in `#354` to `#356`
+- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`, and the remaining pre-recording blocker is locking the rehearsal contract in `#355` before broader script framing in `#216`
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -94,6 +94,7 @@ Direction guardrails (explicit):
 - Current navigation is now partially product-shaped:
   - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
   - `Today` is now shipped as the daily agenda route, while `Agents`, `Runs`, `Knowledge`, and `Integrations` remain planned but not shipped
+  - a static frontend-only UI mock now exists at `frontend/taskdeck-web/public/mock/` for lightweight GitHub Pages-style walkthroughs of the current `Home` / `Today` / `Review` / `Inbox` / `Board` feel using local example data only, and GitHub Pages now deploys that folder through a dedicated Actions workflow instead of the old branch-based `main` + `/docs` path
 - Feature slices integrated end to end:
   - workspace home summary shell with server-backed workspace mode persistence
   - workspace `Today` agenda with persisted onboarding state, replay/dismiss controls, and first-use board setup shortcuts
@@ -128,6 +129,8 @@ Direction guardrails (explicit):
   - advanced/diagnostic nav surfaces now default off via feature flags (`Activity`, `Ops`, `Access`, `Archive`)
   - `Automations` nav now defaults to proposals review path instead of queue path
   - queue composer now defaults to instruction-first request type with guided helper text and board-context guardrails for board-scoped instructions
+  - Automation Chat now exposes explicit provider-health truth (`/api/llm/chat/health`) so operators and tests can see whether the surface is using a live provider, mock provider, or a degraded/unavailable path
+  - opt-in live-provider chat verification now exists at `frontend/taskdeck-web/tests/e2e/live-llm.spec.ts` (gated by `TASKDECK_RUN_LIVE_LLM_TESTS=1`), with headed local entry points in `npm run test:e2e:audit:headed` and `npm run test:e2e:live-llm:headed`
 - Shared maintainability utilities:
   - `buildQueryString` for API query construction across filter-driven endpoints
   - `getErrorMessage` for consistent API/store error extraction
@@ -236,20 +239,39 @@ Implementation delivery (shipped in this context):
 
 Current state:
 - already shipped: capture triage, review-first proposal gating, board-centered follow-through, provenance links, and deterministic seed/director/scenario tooling
-- only partially demo-shaped today: proposal wording, hero-board curation, and business-facing starter-pack/setup language
-- still missing before recording: one dedicated client-onboarding hero blueprint/scenario, one exact ACME-style seeded capture story, and one committed rehearsal contract for the stakeholder path
+- delivered in the demo wave: dedicated client-onboarding starter pack/scenario (`#354`), trust-first review wording hardening (demo-critical `#326` subset), and in-app hero-path/demo-board cues (demo-critical `#330` subset)
+- still missing before recording: one committed rehearsal contract (`#355`) and then the broader reusable demo script/public framing follow-through (`#216`)
 
 Targeted follow-through seeded:
 - `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario
-- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide
+- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current execution step)
 - `#356` `DEMO-00`: Saul-facing demo alignment tracker
 
 Existing reused anchors:
 - `#175` for broader starter-pack expansion beyond the pre-demo slice
 - `#216` for broader demo script / public framing
-- `#326` for proposal readability and trust-cue hardening
-- `#330` for in-app demoability and hero-board presentation quality
+- `#326` for proposal readability and trust-cue hardening (demo-critical subset)
+- `#330` for in-app demoability and hero-board presentation quality (demo-critical subset)
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
+
+## Manual Product Audit Follow-through Wave (2026-03-26)
+
+The headed runtime audit in `docs/analysis/2026-03-26_manual-product-audit.md` was reconciled into a focused follow-through wave rather than left as a standalone artifact.
+
+Canonical follow-through record:
+- `docs/analysis/2026-03-26_manual-product-audit-followthrough.md`
+
+Seeded issues:
+- `#363` tracker
+- `#364` realtime hub CORS/SignalR health
+- `#365` Inbox triage freshness
+- `#366` Workbench/nav/docs truth alignment
+- `#367` board-history semantic alignment
+- `#368` chat live-provider status and first-turn fidelity
+- `#369` headed manual-audit Playwright pack (`Priority IV` by design)
+
+Reused existing anchor:
+- `#326` remains the correct owner for the audit's review-readability / raw-ID finding
 
 ## MVP Expansion Planning Integration (2026-03-07)
 
@@ -530,14 +552,15 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- default E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 24/24 passing
-- Playwright discovery currently contains 25 tests total; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default unless `TASKDECK_RUN_DEMO=1`
+- default required E2E lane remains the smoke + automation/ops + capture loop + starter-pack fixture flow
+- opt-in/manual coverage now also includes `stakeholder-demo.spec.ts` (`TASKDECK_RUN_DEMO=1`) and `live-llm.spec.ts` (`TASKDECK_RUN_LIVE_LLM_TESTS=1`)
 - 2026-03-06 local rerun still passes after frontend E2E startup hardening:
   - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) with deterministic runner/worker convergence.
   - local reuse mode only reuses already-listening ports when the listener is identity-verified as Taskdeck frontend; CI mode prefers bindable ports so stale listeners do not break startup.
   - first fallback resolution is now persisted in-process so worker config imports stay pinned to the runner-selected frontend port during CI execution.
   - backend Playwright startup stays on deterministic `Mock` provider mode unless the run is an explicit demo flow that injects live-provider overrides.
   - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+- 2026-03-26 manual audit confirmed the previously published raw API/E2E counts were stale; the next full end-to-end suite recertification should refresh discovery/pass totals rather than continuing to repeat the older 2026-03-06 figures.
 
 ### Demo Director Smoke
 

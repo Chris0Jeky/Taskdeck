@@ -132,11 +132,39 @@ describe('HomeView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('What is Home for?')
+    expect(wrapper.text()).toContain('Start with a note in Inbox, approve proposed changes in Review, then manage the work on a board.')
     expect(wrapper.text()).toContain('Setup loop')
     expect(wrapper.text()).toContain('Create your first board')
     expect(wrapper.text()).toContain('Needs triage')
     expect(wrapper.text()).toContain('Alpha Board')
+    expect(wrapper.text()).toContain('Review required')
     expect(wrapper.text()).toContain('Review pending proposals')
+    expect(wrapper.text()).toContain('Capture a note')
+    expect(wrapper.text()).toContain('Review proposed changes')
+  })
+
+  it('marks the onboarding demo board in the recent boards list', async () => {
+    mockWorkspaceStore.homeSummary = {
+      ...mockWorkspaceStore.homeSummary!,
+      boards: {
+        totalBoards: 1,
+        recentBoardsCount: 1,
+        recentBoards: [
+          {
+            id: 'board-demo',
+            name: 'DEMO: Client Onboarding Demo',
+            description: 'Stakeholder walkthrough board',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    }
+
+    const wrapper = mount(HomeView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('DEMO: Client Onboarding Demo')
+    expect(wrapper.text()).toContain('Demo board')
   })
 
   it('renders the store error state', async () => {

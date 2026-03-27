@@ -1,5 +1,6 @@
 import type { APIRequestContext } from '@playwright/test'
 import { expect, test } from '@playwright/test'
+import { parseTrueishEnv } from '../../scripts/demo-shared.mjs'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
@@ -51,6 +52,15 @@ test.beforeEach(async ({ page, request }) => {
 
 test('chat session should create and return assistant response', async ({ page }) => {
   await page.goto('/workspace/automations/chat')
+  const expectLiveProvider = parseTrueishEnv(process.env.TASKDECK_RUN_LIVE_LLM_TESTS)
+
+  if (expectLiveProvider) {
+    await expect(page.locator('[data-llm-health-state="configured"]')).toBeVisible()
+    await expect(page.getByText('Live LLM configured')).toBeVisible()
+  } else {
+    await expect(page.locator('[data-llm-health-state="mock"]')).toBeVisible()
+    await expect(page.getByText('Live LLM not active')).toBeVisible()
+  }
 
   await page.getByPlaceholder('Session title').fill(`Session ${Date.now()}`)
   await page.getByRole('button', { name: 'Create Session' }).click()
@@ -115,10 +125,10 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
   const proposalCard = page.locator('.td-review-card').filter({ hasText: proposal.summary }).first()
   await expect(proposalCard).toBeVisible()
 
-  await proposalCard.getByRole('button', { name: 'Approve' }).click()
+  await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Execute' }).click()
+  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
   await expect(proposalCard.getByText('Applied')).toBeVisible()
 })
