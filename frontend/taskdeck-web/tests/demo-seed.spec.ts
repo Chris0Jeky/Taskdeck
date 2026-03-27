@@ -47,7 +47,12 @@ describe('demo seed rerun planning', () => {
           textExcerpt: 'New client onboarding - ACME Ltd',
         },
         {
-          id: 'capture-pending',
+          id: 'capture-pending-acme',
+          boardId: 'board-1',
+          textExcerpt: 'ACME Ltd - year-end checklist',
+        },
+        {
+          id: 'capture-pending-northwind',
           boardId: 'board-1',
           textExcerpt: 'Client onboarding follow-up - Northwind Ltd',
         },
@@ -88,7 +93,8 @@ describe('demo seed rerun planning', () => {
 
     expect(plan.captures.ignored?.id).toBe('capture-ignored')
     expect(plan.captures.triageApplied?.id).toBe('capture-applied')
-    expect(plan.captures.triagePending?.id).toBe('capture-pending')
+    expect(plan.captures.triagePendingAcme?.id).toBe('capture-pending-acme')
+    expect(plan.captures.triagePendingNorthwind?.id).toBe('capture-pending-northwind')
     expect(plan.queue.seededCard?.id).toBe('card-1')
     expect(plan.queue.hasFailedRequest).toBe(true)
     expect(plan.chat.seededSession?.id).toBe('session-1')
@@ -125,7 +131,7 @@ describe('demo seed rerun planning', () => {
       collabUsername: 'collab',
     })
 
-    expect(plan.captures.triagePending?.id).toBe('capture-new')
+    expect(plan.captures.triagePendingNorthwind?.id).toBe('capture-new')
   })
 
   it('only treats the seeded rename instruction as reusable chat evidence', () => {
