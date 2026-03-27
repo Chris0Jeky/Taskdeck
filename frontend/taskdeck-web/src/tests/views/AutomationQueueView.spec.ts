@@ -53,6 +53,16 @@ vi.mock('../../store/toastStore', () => ({
   }),
 }))
 
+const boardsMocks = vi.hoisted(() => ({
+  getBoards: vi.fn(),
+}))
+
+vi.mock('../../api/boardsApi', () => ({
+  boardsApi: {
+    getBoards: boardsMocks.getBoards,
+  },
+}))
+
 async function waitForUi() {
   await Promise.resolve()
   await Promise.resolve()
@@ -72,6 +82,10 @@ async function openComposer(wrapper: ReturnType<typeof mount>) {
 describe('AutomationQueueView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    boardsMocks.getBoards.mockResolvedValue([
+      { id: '123e4567-e89b-12d3-a456-426614174000', name: 'Engineering Sprint' },
+      { id: 'board-42', name: 'Roadmap Board' },
+    ])
     mockQueueStore.loading = false
     mockQueueStore.requests = []
     mockQueueStore.fetchByStatus.mockResolvedValue(undefined)
@@ -92,25 +106,23 @@ describe('AutomationQueueView', () => {
     expect(wrapper.text()).toContain('Open Chat (Advanced)')
   })
 
-  it('shows guidance that board-scoped instructions need a GUID and triage starts from inbox', async () => {
+  it('shows board picker and triage guidance in the composer', async () => {
     const wrapper = mount(AutomationQueueView)
     await waitForUi()
     await openComposer(wrapper)
 
-    expect(wrapper.text()).toContain('Board-scoped instructions require a Board ID GUID')
+    expect(wrapper.text()).toContain('Board-scoped instructions')
     expect(wrapper.text()).toContain('Inbox -> Start Triage')
-    expect(wrapper.get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]').exists()).toBe(true)
+    expect(wrapper.get('input[aria-label="Board for queue request"]').exists()).toBe(true)
   })
 
-  it('submits trimmed valid GUID board id with queue request when provided', async () => {
+  it('submits board id selected via board picker with queue request', async () => {
     const wrapper = mount(AutomationQueueView)
     await waitForUi()
     await openComposer(wrapper)
 
     await wrapper.get('input[placeholder="instruction"]').setValue(' instruction ')
-    await wrapper
-      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
-      .setValue('  123E4567-E89B-12D3-A456-426614174000  ')
+    await wrapper.get('input[aria-label="Board for queue request"]').setValue('123e4567-e89b-12d3-a456-426614174000')
     await wrapper.get('textarea.td-textarea').setValue('  rename board to "Roadmap"  ')
 
     const submitButton = wrapper.findAll('button').find((button) => button.text() === 'Submit Request')
@@ -123,7 +135,7 @@ describe('AutomationQueueView', () => {
     expect(mockQueueStore.submitRequest).toHaveBeenCalledWith({
       requestType: 'instruction',
       payload: 'rename board to "Roadmap"',
-      boardId: '123E4567-E89B-12D3-A456-426614174000',
+      boardId: '123e4567-e89b-12d3-a456-426614174000',
     })
   })
 
@@ -133,9 +145,7 @@ describe('AutomationQueueView', () => {
     await openComposer(wrapper)
 
     await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
-    await wrapper
-      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
-      .setValue('board-42')
+    await wrapper.get('input[aria-label="Board for queue request"]').setValue('not-a-guid')
     await wrapper.get('textarea.td-textarea').setValue('rename board to "Roadmap"')
 
     const submitButton = wrapper.findAll('button').find((button) => button.text() === 'Submit Request')
@@ -147,19 +157,17 @@ describe('AutomationQueueView', () => {
 
     expect(mockQueueStore.submitRequest).not.toHaveBeenCalled()
     expect(toastMocks.error).toHaveBeenCalledWith(
-      'Board ID must be a GUID (for example 123e4567-e89b-12d3-a456-426614174000).',
+      'Board ID must be a valid board selection or GUID.',
     )
   })
 
-  it('blocks board-scoped instruction submit when board id is empty', async () => {
+  it('blocks board-scoped instruction submit when board is empty', async () => {
     const wrapper = mount(AutomationQueueView)
     await waitForUi()
     await openComposer(wrapper)
 
     await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
-    await wrapper
-      .get('input[placeholder="123e4567-e89b-12d3-a456-426614174000 (GUID for board-scoped instructions)"]')
-      .setValue('   ')
+    await wrapper.get('input[aria-label="Board for queue request"]').setValue('   ')
     await wrapper.get('textarea.td-textarea').setValue('rename board to "Roadmap"')
 
     const submitButton = wrapper.findAll('button').find((button) => button.text() === 'Submit Request')
@@ -170,7 +178,7 @@ describe('AutomationQueueView', () => {
     await submitButton.trigger('click')
 
     expect(mockQueueStore.submitRequest).not.toHaveBeenCalled()
-    expect(toastMocks.error).toHaveBeenCalledWith('Board ID is required for board-scoped instructions.')
+    expect(toastMocks.error).toHaveBeenCalledWith('Board is required for board-scoped instructions. Select one from the board picker.')
   })
 
   it('shows actionable empty-state guidance and routes back to review', async () => {
