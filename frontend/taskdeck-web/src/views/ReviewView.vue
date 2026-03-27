@@ -52,7 +52,10 @@ const boardOptions = computed(() =>
 
 const activeBoardName = computed(() => {
   if (!activeBoardFilter.value) return ''
-  const board = availableBoards.value.find((b) => b.id === activeBoardFilter.value)
+  const normalizedActiveId = normalizeBoardIdQueryParam(activeBoardFilter.value).toLowerCase()
+  const board = availableBoards.value.find(
+    (b) => normalizeBoardIdQueryParam(b.id).toLowerCase() === normalizedActiveId,
+  )
   return board?.name ?? activeBoardFilter.value
 })
 
@@ -470,7 +473,7 @@ function reviewStatusLabel(status: ApiProposal['status']): string {
 async function loadBoardOptions() {
   try {
     loadingBoards.value = true
-    availableBoards.value = await boardsApi.getBoards()
+    availableBoards.value = await boardsApi.getBoards(undefined, true)
   } catch {
     // Board options are non-critical; proposals still work without them.
   } finally {
@@ -480,6 +483,7 @@ async function loadBoardOptions() {
 
 function applyBoardFilter(boardId: string) {
   const trimmed = boardId.trim()
+  boardFilterInput.value = ''
   if (trimmed) {
     void router.push({ path: '/workspace/review', query: { boardId: trimmed } })
   } else {
