@@ -548,6 +548,162 @@ describe('captureStore', () => {
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
   })
 
+  describe('pollTriageCompletion', () => {
+    it('polls until terminal status and updates cached detail', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+      const createdAt = new Date().toISOString()
+      let callCount = 0
+
+      vi.mocked(captureApi.getItem).mockImplementation(async () => {
+        callCount++
+        return {
+          id: 'poll-1',
+          userId: 'u1',
+          boardId: 'b1',
+          status: callCount < 3 ? 'Triaging' : 'ProposalCreated',
+          source: 'Typed' as const,
+          textExcerpt: 'excerpt',
+          rawText: 'full text',
+          createdAt,
+          processedAt: callCount < 3 ? null : createdAt,
+          retryCount: 0,
+          provenance: callCount < 3 ? null : { captureItemId: 'poll-1', triageRunId: 'tr1', proposalId: 'p1', promptVersion: 'triage.v1' },
+        }
+      })
+
+      const stop = store.pollTriageCompletion('poll-1')
+      expect(store.triagePollingItemId).toBe('poll-1')
+
+      // First tick at 2s — still Triaging
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(callCount).toBe(1)
+      expect(store.detailById['poll-1']?.status).toBe('Triaging')
+
+      // Second tick at 4s — still Triaging
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(callCount).toBe(2)
+      expect(store.detailById['poll-1']?.status).toBe('Triaging')
+
+      // Third tick at 6s — now ProposalCreated, polling should stop
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(callCount).toBe(3)
+      expect(store.detailById['poll-1']?.status).toBe('ProposalCreated')
+      expect(store.triagePollingItemId).toBeNull()
+
+      // No more ticks after terminal
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(callCount).toBe(3)
+
+      stop()
+      vi.useRealTimers()
+    })
+
+    it('stops polling when stop function is called', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+      let callCount = 0
+
+      vi.mocked(captureApi.getItem).mockImplementation(async () => {
+        callCount++
+        return {
+          id: 'poll-2',
+          userId: 'u1',
+          boardId: null,
+          status: 'Triaging' as const,
+          source: 'Typed' as const,
+          textExcerpt: 'excerpt',
+          rawText: 'full text',
+          createdAt: new Date().toISOString(),
+          processedAt: null,
+          retryCount: 0,
+        }
+      })
+
+      const stop = store.pollTriageCompletion('poll-2')
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(callCount).toBe(1)
+
+      stop()
+      expect(store.triagePollingItemId).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(callCount).toBe(1)
+
+      vi.useRealTimers()
+    })
+
+    it('stops after max polls without terminal status', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+
+      vi.mocked(captureApi.getItem).mockResolvedValue({
+        id: 'poll-3',
+        userId: 'u1',
+        boardId: null,
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: 'excerpt',
+        rawText: 'full text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+      })
+
+      store.pollTriageCompletion('poll-3')
+
+      // Advance through all 15 polls (15 * 2s = 30s)
+      for (let i = 0; i < 15; i++) {
+        await vi.advanceTimersByTimeAsync(2_000)
+      }
+      expect(store.triagePollingItemId).toBeNull()
+
+      // No more calls after max
+      const callsBefore = vi.mocked(captureApi.getItem).mock.calls.length
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(vi.mocked(captureApi.getItem).mock.calls.length).toBe(callsBefore)
+
+      vi.useRealTimers()
+    })
+
+    it('continues polling after transient API errors', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+      let callCount = 0
+
+      vi.mocked(captureApi.getItem).mockImplementation(async () => {
+        callCount++
+        if (callCount === 1) throw new Error('transient')
+        return {
+          id: 'poll-4',
+          userId: 'u1',
+          boardId: null,
+          status: 'ProposalCreated' as const,
+          source: 'Typed' as const,
+          textExcerpt: 'excerpt',
+          rawText: 'full text',
+          createdAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          retryCount: 0,
+        }
+      })
+
+      store.pollTriageCompletion('poll-4')
+
+      // First tick — error, but keeps going
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(callCount).toBe(1)
+
+      // Second tick — success with terminal status
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(callCount).toBe(2)
+      expect(store.detailById['poll-4']?.status).toBe('ProposalCreated')
+      expect(store.triagePollingItemId).toBeNull()
+
+      vi.useRealTimers()
+    })
+  })
+
   it('emits a single triage error toast when detail refresh fails after enqueue', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
