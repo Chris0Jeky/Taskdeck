@@ -5,12 +5,24 @@ namespace Taskdeck.Domain.Entities;
 
 public class ChatMessage : Entity
 {
+    private static readonly string[] ValidMessageTypes =
+    {
+        "text",
+        "proposal-reference",
+        "error",
+        "status",
+        "degraded"
+    };
+
+    private static readonly HashSet<string> ValidMessageTypeSet = new(ValidMessageTypes, StringComparer.Ordinal);
+
     public Guid SessionId { get; private set; }
     public ChatMessageRole Role { get; private set; }
     public string Content { get; private set; } = string.Empty;
     public string MessageType { get; private set; } = string.Empty;
     public Guid? ProposalId { get; private set; }
     public int? TokenUsage { get; private set; }
+    public string? DegradedReason { get; private set; }
 
     // Navigation
     public ChatSession Session { get; private set; } = null!;
@@ -23,7 +35,8 @@ public class ChatMessage : Entity
         string content,
         string messageType = "text",
         Guid? proposalId = null,
-        int? tokenUsage = null)
+        int? tokenUsage = null,
+        string? degradedReason = null)
     {
         if (sessionId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "SessionId cannot be empty");
@@ -31,8 +44,10 @@ public class ChatMessage : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Content cannot be empty");
         if (string.IsNullOrWhiteSpace(messageType))
             throw new DomainException(ErrorCodes.ValidationError, "MessageType cannot be empty");
-        if (messageType != "text" && messageType != "proposal-reference" && messageType != "error" && messageType != "status" && messageType != "degraded")
-            throw new DomainException(ErrorCodes.ValidationError, "MessageType must be 'text', 'proposal-reference', 'error', 'status', or 'degraded'");
+        if (!ValidMessageTypeSet.Contains(messageType))
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                $"MessageType must be one of: {string.Join(", ", ValidMessageTypes)}");
         if (tokenUsage.HasValue && tokenUsage.Value < 0)
             throw new DomainException(ErrorCodes.ValidationError, "TokenUsage must be non-negative");
 
@@ -42,6 +57,7 @@ public class ChatMessage : Entity
         MessageType = messageType;
         ProposalId = proposalId;
         TokenUsage = tokenUsage;
+        DegradedReason = string.IsNullOrWhiteSpace(degradedReason) ? null : degradedReason.Trim();
     }
 
     public void SetTokenUsage(int tokenUsage)

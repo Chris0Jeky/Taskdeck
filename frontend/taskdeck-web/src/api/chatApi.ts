@@ -1,5 +1,6 @@
 import http from './http'
 import type { ChatMessage, ChatProviderHealth, ChatSession, CreateChatSessionRequest, SendChatMessageRequest } from '../types/chat'
+import { buildQueryString } from '../utils/queryBuilder'
 
 export const chatApi = {
   async createSession(request: CreateChatSessionRequest): Promise<ChatSession> {
@@ -18,8 +19,8 @@ export const chatApi = {
   },
 
   async getHealth(options?: { probe?: boolean }): Promise<ChatProviderHealth> {
-    const params = options?.probe ? '?probe=true' : ''
-    const { data } = await http.get<ChatProviderHealth>(`/llm/chat/health${params}`)
+    const query = buildQueryString({ probe: options?.probe ? true : undefined })
+    const { data } = await http.get<ChatProviderHealth>(`/llm/chat/health${query}`)
     return data
   },
 

@@ -131,7 +131,7 @@ public class GeminiLlmProvider : ILlmProvider
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("Gemini probe failed: {Message}", ex.Message);
+            _logger.LogWarning(ex, "Gemini probe failed: {Message}", ex.Message);
             return new LlmHealthStatus(false, "Gemini", $"Probe failed: {ex.Message}", model, IsProbed: true);
         }
     }

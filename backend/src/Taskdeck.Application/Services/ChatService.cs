@@ -221,6 +221,10 @@ public class ChatService : IChatService
                 }
             }
 
+            var persistedDegradedReason = messageType == "degraded"
+                ? degradedReason
+                : null;
+
             // Add assistant message
             var assistantMessage = new ChatMessage(
                 sessionId,
@@ -228,19 +232,14 @@ public class ChatService : IChatService
                 assistantContent,
                 messageType,
                 proposalId,
-                tokenUsage);
+                tokenUsage,
+                persistedDegradedReason);
             session.AddMessage(assistantMessage);
             await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
 
             await _unitOfWork.SaveChangesAsync(ct);
 
-            var resultDto = MapMessageToDto(assistantMessage);
-            if (degradedReason != null)
-            {
-                resultDto = resultDto with { DegradedReason = degradedReason };
-            }
-
-            return Result.Success(resultDto);
+            return Result.Success(MapMessageToDto(assistantMessage));
         }
         catch (DomainException ex)
         {
@@ -484,7 +483,8 @@ public class ChatService : IChatService
             message.MessageType,
             message.ProposalId,
             message.TokenUsage,
-            message.CreatedAt
+            message.CreatedAt,
+            message.DegradedReason
         );
     }
 }

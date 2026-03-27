@@ -35,6 +35,9 @@ public class ChatMessageConfiguration : IEntityTypeConfiguration<ChatMessage>
 
         builder.Property(cm => cm.TokenUsage);
 
+        builder.Property(cm => cm.DegradedReason)
+            .HasMaxLength(500);
+
         builder.Property(cm => cm.CreatedAt)
             .IsRequired();
 

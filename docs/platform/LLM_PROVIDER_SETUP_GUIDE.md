@@ -134,7 +134,7 @@ Current operator-visible states:
 Degraded responses:
 - when a live provider is configured but the API call fails (network, auth, parse), the response carries `messageType: "degraded"` with a `degradedReason` field
 - the UI renders these with a visible warning border and reason text
-- this replaces the previous pattern where failure reasons were embedded in parenthetical text within the response content
+- `degradedReason` is the primary structured field for failure detail; some fallback content may still include the reason in parenthetical text for compatibility
 
 This is intentionally separate from the broader demo tooling so an operator can tell whether a live LLM is actually hooked before trusting a manual chat pass.
 

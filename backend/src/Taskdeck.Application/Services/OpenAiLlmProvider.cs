@@ -124,7 +124,7 @@ public class OpenAiLlmProvider : ILlmProvider
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("OpenAI probe failed: {Message}", ex.Message);
+            _logger.LogWarning(ex, "OpenAI probe failed: {Message}", ex.Message);
             return new LlmHealthStatus(false, "OpenAI", $"Probe failed: {ex.Message}", model, IsProbed: true);
         }
     }
