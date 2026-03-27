@@ -33,7 +33,7 @@ Current constraints are mostly hardening and consistency:
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
 - cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
-- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`; the rehearsal contract is now codified in `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md` (`#355`), and the remaining pre-recording focus is broader script framing and narrative tightening in `#216`
+- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`; the rehearsal contract is now codified in `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md` (`#355`), and the GTM baseline is now delivered in `#216` with a timed demo script (`docs/product/DEMO_SCRIPT.md`), thesis-aligned landing copy (`docs/product/LANDING_COPY.md`), and beta intake workflow/cadence (`docs/product/BETA_INTAKE_WORKFLOW.md`)
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -240,7 +240,7 @@ Implementation delivery (shipped in this context):
 Current state:
 - already shipped: capture triage, review-first proposal gating, board-centered follow-through, provenance links, and deterministic seed/director/scenario tooling
 - delivered in the demo wave: dedicated client-onboarding starter pack/scenario (`#354`), trust-first review wording hardening (demo-critical `#326` subset), and in-app hero-path/demo-board cues (demo-critical `#330` subset)
-- rehearsal contract is now delivered (`#355`); the remaining pre-recording work is the broader reusable demo script/public framing follow-through (`#216`)
+- rehearsal contract is now delivered (`#355`); GTM baseline (demo script, landing copy, beta intake workflow) is now delivered (`#216`)
 
 Targeted follow-through seeded:
 - `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario
@@ -249,7 +249,7 @@ Targeted follow-through seeded:
 
 Existing reused anchors:
 - `#175` for broader starter-pack expansion beyond the pre-demo slice
-- `#216` for broader demo script / public framing
+- `#216` for broader demo script / public framing (delivered: `DEMO_SCRIPT.md`, `LANDING_COPY.md`, `BETA_INTAKE_WORKFLOW.md`)
 - `#326` for proposal readability and trust-cue hardening (demo-critical subset)
 - `#330` for in-app demoability and hero-board presentation quality (demo-critical subset); nav badges now show pending triage and review counts on Inbox and Review nav items
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
