@@ -52,7 +52,7 @@ const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: str
   },
   workbench: {
     label: 'Workbench',
-    description: 'Keep the broader operator toolset close, while feature-flagged advanced surfaces remain opt-in.',
+    description: 'Show all shipped workspace surfaces — activity, ops, access, archive, and settings — alongside the core loop.',
   },
   agent: {
     label: 'Agent',
@@ -190,6 +190,7 @@ const navCatalog: NavItem[] = [
 
 const availableNavItems = computed(() => navCatalog.filter((item) => {
   if (!item.flag) return true
+  if (activeWorkspaceMode.value === 'workbench') return true
   return featureFlags.isEnabled(item.flag as keyof typeof featureFlags.flags)
 }))
 
