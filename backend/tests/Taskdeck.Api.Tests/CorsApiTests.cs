@@ -8,6 +8,7 @@ namespace Taskdeck.Api.Tests;
 public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private const string AccessControlAllowOriginHeader = "Access-Control-Allow-Origin";
+    private const string AccessControlAllowCredentialsHeader = "Access-Control-Allow-Credentials";
     private const string DefaultFrontendOrigin = "http://localhost:5173";
     private readonly TestWebApplicationFactory _baseFactory;
 
@@ -110,6 +111,56 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         defaultOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         defaultOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
         allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
+    }
+
+    [Fact]
+    public async Task Cors_ShouldIncludeAllowCredentials_ForAllowedOrigin()
+    {
+        using var client = _baseFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.TryAddWithoutValidation("Origin", DefaultFrontendOrigin);
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues(AccessControlAllowCredentialsHeader, out var credentialsValues).Should().BeTrue();
+        credentialsValues.Should().ContainSingle().Which.Should().Be("true");
+    }
+
+    [Fact]
+    public async Task Cors_ShouldIncludeAllowCredentials_OnHubNegotiate()
+    {
+        using var client = _baseFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/hubs/boards/negotiate?negotiateVersion=1")
+        {
+            Content = new StringContent(string.Empty)
+        };
+        request.Headers.TryAddWithoutValidation("Origin", DefaultFrontendOrigin);
+
+        var response = await client.SendAsync(request);
+
+        response.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
+        allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
+        response.Headers.TryGetValues(AccessControlAllowCredentialsHeader, out var credentialsValues).Should().BeTrue();
+        credentialsValues.Should().ContainSingle().Which.Should().Be("true");
+    }
+
+    [Fact]
+    public async Task Cors_ShouldIncludeAllowCredentials_OnPreflightOptionsRequest()
+    {
+        using var client = _baseFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/hubs/boards/negotiate?negotiateVersion=1");
+        request.Headers.TryAddWithoutValidation("Origin", DefaultFrontendOrigin);
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Method", "POST");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Headers", "authorization");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
+        allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
+        response.Headers.TryGetValues(AccessControlAllowCredentialsHeader, out var credentialsValues).Should().BeTrue();
+        credentialsValues.Should().ContainSingle().Which.Should().Be("true");
     }
 
     [Theory]
