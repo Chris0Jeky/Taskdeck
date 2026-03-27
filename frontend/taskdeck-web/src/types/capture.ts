@@ -9,6 +9,23 @@ export type CaptureStatus =
 
 export type CaptureStatusValue = CaptureStatus | number
 
+export const TRIAGE_TERMINAL_STATUSES: readonly CaptureStatusValue[] = [
+  'Triaged',
+  2,
+  'ProposalCreated',
+  3,
+  'Converted',
+  4,
+  'Ignored',
+  5,
+  'Failed',
+  6,
+]
+
+export function isTriageTerminalStatus(status: CaptureStatusValue): boolean {
+  return TRIAGE_TERMINAL_STATUSES.includes(status)
+}
+
 export type CaptureSource =
   | 'Typed'
   | 'Paste'

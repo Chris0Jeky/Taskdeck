@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useCaptureStore } from '../store/captureStore'
+import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
@@ -69,10 +70,6 @@ function sourceLabel(source: CaptureSourceValue): string {
   if (source === 4 || source === 'Voice') return 'Voice'
   if (source === 5 || source === 'MeetingIntegration') return 'Meeting'
   return String(source)
-}
-
-function isTriageTerminalStatus(status: CaptureStatusValue): boolean {
-  return ['Triaged', 2, 'ProposalCreated', 3, 'Converted', 4, 'Ignored', 5, 'Failed', 6].includes(status)
 }
 
 async function loadInbox() {
@@ -307,12 +304,13 @@ async function triageSelected() {
     return
   }
 
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
+  }
+
   try {
     await captureStore.triageItem(itemId)
-    if (stopTriagePolling) {
-      stopTriagePolling()
-      stopTriagePolling = null
-    }
 
     const latestStatus = captureStore.detailById[itemId]?.status
     if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
@@ -321,6 +319,10 @@ async function triageSelected() {
 
     stopTriagePolling = captureStore.pollTriageCompletion(itemId)
   } catch {
+    if (stopTriagePolling) {
+      stopTriagePolling()
+      stopTriagePolling = null
+    }
     // Store handles toast + error state.
   }
 }

@@ -790,6 +790,48 @@ describe('InboxView', () => {
     expect(mockCaptureStore.pollTriageCompletion).not.toHaveBeenCalled()
   })
 
+  it('stops the previous triage poll before retrying triage, even when the retry fails', async () => {
+    const stopFirstPoll = vi.fn()
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: 'board-1',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: `Excerpt for ${itemId}`,
+        rawText: `Full text for ${itemId}`,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+    })
+
+    mockCaptureStore.pollTriageCompletion
+      .mockImplementationOnce(() => stopFirstPoll)
+      .mockImplementation(() => () => {})
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    const triageButton = () => wrapper.findAll('button').find((node) => node.text() === 'Start Triage')
+
+    await triageButton()?.trigger('click')
+    await waitForUi()
+
+    mockCaptureStore.triageItem.mockRejectedValueOnce(new Error('retry failed'))
+
+    await triageButton()?.trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.triageItem).toHaveBeenCalledTimes(2)
+    expect(stopFirstPoll).toHaveBeenCalledTimes(1)
+  })
+
   it('navigates to linked proposal route when detail includes proposal provenance', async () => {
     mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
       mockCaptureStore.detailById[itemId] = {

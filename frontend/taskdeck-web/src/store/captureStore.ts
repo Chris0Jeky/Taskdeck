@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { captureApi } from '../api/captureApi'
-import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CaptureStatusValue, CreateCaptureItemDto } from '../types/capture'
+import { isTriageTerminalStatus } from '../types/capture'
+import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto } from '../types/capture'
 import { useToastStore } from './toastStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
@@ -24,19 +25,6 @@ type DetailLoadOptions = {
   showToast?: boolean
   syncSummary?: boolean
 }
-
-const TRIAGE_TERMINAL_STATUSES: readonly CaptureStatusValue[] = [
-  'Triaged',
-  2,
-  'ProposalCreated',
-  3,
-  'Converted',
-  4,
-  'Ignored',
-  5,
-  'Failed',
-  6,
-]
 
 export const useCaptureStore = defineStore('capture', () => {
   const toast = useToastStore()
@@ -199,11 +187,8 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  function isTriageTerminalStatus(status: CaptureStatusValue): boolean {
-    return TRIAGE_TERMINAL_STATUSES.includes(status)
-  }
-
   const triagePollingItemId = ref<string | null>(null)
+  let activeTriagePollStop: (() => void) | null = null
 
   function pollTriageCompletion(itemId: string): () => void {
     const POLL_INTERVAL_MS = 2_000
@@ -211,6 +196,10 @@ export const useCaptureStore = defineStore('capture', () => {
     let pollCount = 0
     let stopped = false
     let timerId: ReturnType<typeof setTimeout> | null = null
+
+    if (activeTriagePollStop) {
+      activeTriagePollStop()
+    }
 
     triagePollingItemId.value = itemId
 
@@ -244,11 +233,15 @@ export const useCaptureStore = defineStore('capture', () => {
         clearTimeout(timerId)
         timerId = null
       }
+      if (activeTriagePollStop === stop) {
+        activeTriagePollStop = null
+      }
       if (triagePollingItemId.value === itemId) {
         triagePollingItemId.value = null
       }
     }
 
+    activeTriagePollStop = stop
     timerId = setTimeout(tick, POLL_INTERVAL_MS)
     return stop
   }

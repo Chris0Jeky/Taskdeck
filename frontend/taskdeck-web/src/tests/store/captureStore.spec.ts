@@ -702,6 +702,37 @@ describe('captureStore', () => {
 
       vi.useRealTimers()
     })
+
+    it('stops any existing poll before starting a new one', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+
+      vi.mocked(captureApi.getItem).mockImplementation(async (itemId: string) => ({
+        id: itemId,
+        userId: 'u1',
+        boardId: null,
+        status: 'Triaging',
+        source: 'Typed',
+        textExcerpt: `${itemId} excerpt`,
+        rawText: `${itemId} full text`,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+      }))
+
+      store.pollTriageCompletion('poll-old')
+      store.pollTriageCompletion('poll-new')
+
+      expect(store.triagePollingItemId).toBe('poll-new')
+
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+      expect(captureApi.getItem).toHaveBeenCalledWith('poll-new')
+      expect(store.triagePollingItemId).toBe('poll-new')
+
+      vi.useRealTimers()
+    })
   })
 
   it('emits a single triage error toast when detail refresh fails after enqueue', async () => {
