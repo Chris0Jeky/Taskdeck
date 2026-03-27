@@ -56,7 +56,10 @@ export const usePermissionsStore = defineStore('permissions', () => {
 
   async function fetchBoardAccess(boardId: string) {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       boardAccess.value.set(boardId, [])
+      loading.value = false
       return
     }
     try {

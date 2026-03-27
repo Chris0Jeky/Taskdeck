@@ -21,7 +21,10 @@ export const useAuditStore = defineStore('audit', () => {
 
   async function fetchBoardHistory(boardId: string, limit = 50) {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       entries.value = []
+      loading.value = false
       return
     }
     try {
@@ -40,7 +43,10 @@ export const useAuditStore = defineStore('audit', () => {
 
   async function fetchEntityHistory(entityType: string, entityId: string, limit = 50) {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       entries.value = []
+      loading.value = false
       return
     }
     try {
@@ -59,7 +65,10 @@ export const useAuditStore = defineStore('audit', () => {
 
   async function fetchUserHistory(limit = 50) {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       entries.value = []
+      loading.value = false
       return
     }
     try {

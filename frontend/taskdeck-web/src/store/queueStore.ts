@@ -25,7 +25,10 @@ export const useQueueStore = defineStore('queue', () => {
 
   async function fetchUserRequests() {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       requests.value = []
+      loading.value = false
       return
     }
     try {
@@ -45,7 +48,10 @@ export const useQueueStore = defineStore('queue', () => {
 
   async function fetchByStatus(status: string) {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       requests.value = []
+      loading.value = false
       return
     }
     try {
@@ -125,7 +131,10 @@ export const useQueueStore = defineStore('queue', () => {
 
   async function fetchStats() {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       stats.value = { pendingCount: 0, processingCount: 0, completedCount: 0, failedCount: 0 }
+      loading.value = false
       return
     }
     try {

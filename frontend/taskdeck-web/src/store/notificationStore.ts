@@ -28,7 +28,10 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   async function fetchNotifications(query?: NotificationQuery) {
     if (isDemoMode) {
+      loading.value = true
+      error.value = null
       notifications.value = []
+      loading.value = false
       return
     }
     try {
@@ -63,8 +66,10 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   async function fetchPreferences() {
     if (isDemoMode) {
+      error.value = null
+      loading.value = false
       preferences.value = null
-      return null
+      return preferences.value
     }
     try {
       loading.value = true
