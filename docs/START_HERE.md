@@ -39,7 +39,8 @@ Taskdeck is not yet:
 - `Review`: trust gate where proposed changes stop before they touch a board
 - `Boards`: current shipped board surface. In product language, think of these as projects
 - `Workbench tools`: advanced surfaces such as `Chat`, `Activity`, `Ops`, `Access`, and `Archive`
-  - some of these advanced surfaces still depend on feature-flag toggles in `Settings`
+  - in Workbench mode, all shipped advanced surfaces appear in the nav by default
+  - in Guided mode, some advanced surfaces remain opt-in via feature-flag toggles in `Settings`
 
 ## Pick A Workspace Mode
 
@@ -50,7 +51,7 @@ All three workspace modes keep the same review-first trust model. They change ho
   - keeps `Home`, `Today`, `Review`, `Boards`, and `Inbox` front and center
 - `Workbench`
   - best for power users and operators
-  - keeps the broader operator toolset close at hand, but feature-flagged advanced pages can still stay hidden until you enable them in `Settings`
+  - shows all shipped workspace surfaces (Activity, Ops, Access, Archive, Chat) in the nav without requiring feature flags
 - `Agent`
   - preserves the same shipped product loop today
   - reserves the mental model for later `Agents` / `Runs` / `Knowledge` work without claiming those pages already exist
