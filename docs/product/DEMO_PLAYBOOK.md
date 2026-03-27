@@ -51,6 +51,28 @@ npm run demo:seed
 The seeder creates demo users, boards, Inbox items, proposals, queue activity, notifications, and Ops logs.
 On reruns against the canonical demo account, it now reuses the seeded artifacts it can identify instead of appending a fresh copy of every capture, queue sample, comment, chat session, and Ops evidence item.
 
+Use `npm run demo:seed -- --reset` to delete all demo boards before seeding (clean start).
+Use `npm run demo:seed -- --help` for full usage information.
+
+### Database location
+
+The canonical dev database is `backend/src/Taskdeck.Api/taskdeck.db` (SQLite, created by EF Core migration on first backend startup). The connection string is `Data Source=taskdeck.db` in `appsettings.json`, resolved relative to the backend's working directory.
+
+To reset the database without `--reset` (which only deletes demo boards via the API):
+
+```bash
+cd frontend/taskdeck-web
+npm run demo:reset-db          # delete canonical dev DB
+npm run demo:reset-db -- --all # also delete e2e/demo/ci DB files
+```
+
+Then restart the backend — EF Core will recreate the DB from migrations.
+
+Other DB files in the repo are per-purpose:
+- `taskdeck.e2e*.db` — E2E test databases
+- `taskdeck.demo*.db` — demo director/CI databases
+- `taskdeck.db` at repo root — stale artifact (safe to delete)
+
 ## Runtime Preconditions
 
 - Demo scripts are local-safe by default. They target `http://localhost:5000/api` unless you override `TASKDECK_API_BASE_URL` or `TASKDECK_E2E_API_BASE_URL`.
