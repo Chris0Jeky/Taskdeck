@@ -18,12 +18,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
 
 const CANONICAL_DB = path.join(REPO_ROOT, 'backend', 'src', 'Taskdeck.Api', 'taskdeck.db')
 
-const EXTRA_DB_PATTERNS = [
-  'backend/src/Taskdeck.Api/taskdeck.e2e*.db',
-  'backend/tests/**/taskdeck.db',
-  'frontend/taskdeck-web/taskdeck.demo*.db',
-  'taskdeck.db',
-]
+let failures = 0
 
 function findExtraDbFiles() {
   const found = []
@@ -56,17 +51,18 @@ function findGlobMatches(dir, prefix) {
 
 function deleteFile(filePath) {
   const rel = path.relative(REPO_ROOT, filePath)
-  try {
-    // Also delete WAL and SHM files if present
-    for (const suffix of ['', '-wal', '-shm']) {
-      const target = filePath + suffix
-      if (fs.existsSync(target)) {
-        fs.unlinkSync(target)
-        console.log(`  deleted: ${rel}${suffix}`)
+  for (const suffix of ['', '-wal', '-shm']) {
+    const target = filePath + suffix
+    try {
+      fs.unlinkSync(target)
+      console.log(`  deleted: ${rel}${suffix}`)
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        continue
       }
+      console.error(`  FAILED: ${rel}${suffix} — ${err.message}`)
+      if (suffix === '') failures++
     }
-  } catch (err) {
-    console.error(`  FAILED: ${rel} — ${err.message}`)
   }
 }
 
@@ -79,8 +75,8 @@ if (showHelp) {
 Usage: npm run demo:reset-db [-- [options]]
 
 Options:
-  --all    Also delete e2e, demo, and CI database files
-  --help   Print this usage information
+  --all      Also delete e2e, demo, and CI database files
+  --help, -h Print this usage information
 
 Canonical dev DB: backend/src/Taskdeck.Api/taskdeck.db
 `.trim())
@@ -109,4 +105,9 @@ if (deleteAll) {
   }
 }
 
-console.log('\nDone. Restart the backend to trigger EF Core migration on a fresh DB.')
+if (failures > 0) {
+  console.error(`\n${failures} file(s) could not be deleted. Is the backend still running?`)
+  process.exitCode = 1
+} else {
+  console.log('\nDone. Restart the backend to trigger EF Core migration on a fresh DB.')
+}
