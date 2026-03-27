@@ -151,6 +151,15 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
                 ProviderName: "OpenAI",
                 Model: "gpt-4o-mini"));
         }
+
+        public Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(new LlmHealthStatus(
+                IsAvailable: true,
+                ProviderName: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsProbed: true));
+        }
     }
 
     private sealed class OpenAiProviderStub : ILlmProvider
@@ -189,6 +198,15 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
                 IsAvailable: true,
                 ProviderName: "OpenAI",
                 Model: "gpt-4o-mini"));
+        }
+
+        public Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
+        {
+            return Task.FromResult(new LlmHealthStatus(
+                IsAvailable: true,
+                ProviderName: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsProbed: true));
         }
     }
 }

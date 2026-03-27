@@ -5,6 +5,7 @@ public interface ILlmProvider
     Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default);
     IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, CancellationToken ct = default);
     Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default);
+    Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default);
 }
 
 public record ChatCompletionRequest(
@@ -49,4 +50,5 @@ public record LlmHealthStatus(
     string ProviderName,
     string? ErrorMessage = null,
     string? Model = null,
-    bool IsMock = false);
+    bool IsMock = false,
+    bool IsProbed = false);

@@ -30,7 +30,8 @@ public record ChatProviderHealthDto(
     string ProviderName,
     string? ErrorMessage,
     string? Model,
-    bool IsMock
+    bool IsMock,
+    bool IsProbed = false
 );
 
 public record CreateChatSessionDto(

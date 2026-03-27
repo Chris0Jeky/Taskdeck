@@ -97,6 +97,38 @@ public class OpenAiLlmProvider : ILlmProvider
         return Task.FromResult(new LlmHealthStatus(true, "OpenAI", Model: GetConfiguredModelOrDefault()));
     }
 
+    public async Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
+    {
+        var model = GetConfiguredModelOrDefault();
+
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var validationError))
+        {
+            return new LlmHealthStatus(false, "OpenAI", validationError, model, IsProbed: true);
+        }
+
+        try
+        {
+            var probeRequest = new ChatCompletionRequest(
+                [new ChatCompletionMessage("user", "Reply with exactly: OK")],
+                MaxTokens: 4,
+                Temperature: 0);
+
+            var result = await CompleteAsync(probeRequest, ct);
+
+            if (result.IsDegraded)
+            {
+                return new LlmHealthStatus(false, "OpenAI", result.DegradedReason ?? "Probe returned degraded response.", model, IsProbed: true);
+            }
+
+            return new LlmHealthStatus(true, "OpenAI", Model: model, IsProbed: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("OpenAI probe failed: {Message}", ex.Message);
+            return new LlmHealthStatus(false, "OpenAI", $"Probe failed: {ex.Message}", model, IsProbed: true);
+        }
+    }
+
     private string BuildChatCompletionsEndpoint()
     {
         var baseUrl = (_settings.OpenAi?.BaseUrl ?? "https://api.openai.com/v1").TrimEnd('/');

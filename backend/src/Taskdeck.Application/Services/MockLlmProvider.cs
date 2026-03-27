@@ -44,4 +44,9 @@ public class MockLlmProvider : ILlmProvider
     {
         return Task.FromResult(new LlmHealthStatus(true, "Mock", Model: "mock-default", IsMock: true));
     }
+
+    public Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
+    {
+        return Task.FromResult(new LlmHealthStatus(true, "Mock", Model: "mock-default", IsMock: true, IsProbed: true));
+    }
 }
