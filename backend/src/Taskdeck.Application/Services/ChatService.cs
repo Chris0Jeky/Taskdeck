@@ -80,15 +80,19 @@ public class ChatService : IChatService
         return Result.Success(sessions.Select(MapSessionToDto));
     }
 
-    public async Task<ChatProviderHealthDto> GetProviderHealthAsync(CancellationToken ct = default)
+    public async Task<ChatProviderHealthDto> GetProviderHealthAsync(bool probe = false, CancellationToken ct = default)
     {
-        var health = await _llmProvider.GetHealthAsync(ct);
+        var health = probe
+            ? await _llmProvider.ProbeAsync(ct)
+            : await _llmProvider.GetHealthAsync(ct);
+
         return new ChatProviderHealthDto(
             health.IsAvailable,
             health.ProviderName,
             health.ErrorMessage,
             health.Model,
-            health.IsMock);
+            health.IsMock,
+            health.IsProbed);
     }
 
     public async Task<Result<ChatMessageDto>> SendMessageAsync(Guid sessionId, Guid userId, SendChatMessageDto dto, CancellationToken ct = default)
@@ -133,6 +137,7 @@ public class ChatService : IChatService
             Guid? proposalId = null;
             string assistantContent;
             int? tokenUsage = null;
+            string? degradedReason = null;
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
             {
@@ -175,6 +180,12 @@ public class ChatService : IChatService
                 var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
+                degradedReason = llmResult.DegradedReason;
+
+                if (llmResult.IsDegraded)
+                {
+                    messageType = "degraded";
+                }
 
                 if (llmResult.IsActionable && dto.RequestProposal)
                 {
@@ -210,6 +221,10 @@ public class ChatService : IChatService
                 }
             }
 
+            var persistedDegradedReason = string.IsNullOrWhiteSpace(degradedReason)
+                ? null
+                : degradedReason;
+
             // Add assistant message
             var assistantMessage = new ChatMessage(
                 sessionId,
@@ -217,7 +232,8 @@ public class ChatService : IChatService
                 assistantContent,
                 messageType,
                 proposalId,
-                tokenUsage);
+                tokenUsage,
+                persistedDegradedReason);
             session.AddMessage(assistantMessage);
             await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
 
@@ -467,7 +483,8 @@ public class ChatService : IChatService
             message.MessageType,
             message.ProposalId,
             message.TokenUsage,
-            message.CreatedAt
+            message.CreatedAt,
+            message.DegradedReason
         );
     }
 }

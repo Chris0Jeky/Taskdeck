@@ -104,6 +104,38 @@ public class GeminiLlmProvider : ILlmProvider
         return Task.FromResult(new LlmHealthStatus(true, "Gemini", Model: GetConfiguredModelOrDefault()));
     }
 
+    public async Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
+    {
+        var model = GetConfiguredModelOrDefault();
+
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var validationError))
+        {
+            return new LlmHealthStatus(false, "Gemini", validationError, model, IsProbed: true);
+        }
+
+        try
+        {
+            var probeRequest = new ChatCompletionRequest(
+                [new ChatCompletionMessage("user", "Reply with exactly: OK")],
+                MaxTokens: 4,
+                Temperature: 0);
+
+            var result = await CompleteAsync(probeRequest, ct);
+
+            if (result.IsDegraded)
+            {
+                return new LlmHealthStatus(false, "Gemini", result.DegradedReason ?? "Probe returned degraded response.", model, IsProbed: true);
+            }
+
+            return new LlmHealthStatus(true, "Gemini", Model: model, IsProbed: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Gemini probe failed: {Message}", ex.Message);
+            return new LlmHealthStatus(false, "Gemini", $"Probe failed: {ex.Message}", model, IsProbed: true);
+        }
+    }
+
     private string BuildGenerateContentEndpoint()
     {
         var baseUrl = (_settings.Gemini?.BaseUrl ?? "https://generativelanguage.googleapis.com/v1beta").TrimEnd('/');
@@ -225,7 +257,9 @@ public class GeminiLlmProvider : ILlmProvider
             IsActionable: isActionable,
             ActionIntent: actionIntent,
             Provider: "Gemini",
-            Model: string.IsNullOrWhiteSpace(model) ? "gemini-unknown-model" : model.Trim());
+            Model: string.IsNullOrWhiteSpace(model) ? "gemini-unknown-model" : model.Trim(),
+            IsDegraded: true,
+            DegradedReason: reason);
     }
 
     private static int EstimateTokens(string text)

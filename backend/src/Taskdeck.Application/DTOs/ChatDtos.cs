@@ -21,7 +21,8 @@ public record ChatMessageDto(
     string MessageType,
     Guid? ProposalId,
     int? TokenUsage,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    string? DegradedReason = null
 );
 
 public record ChatProviderHealthDto(
@@ -29,7 +30,8 @@ public record ChatProviderHealthDto(
     string ProviderName,
     string? ErrorMessage,
     string? Model,
-    bool IsMock
+    bool IsMock,
+    bool IsProbed = false
 );
 
 public record CreateChatSessionDto(

@@ -179,6 +179,41 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_ShouldPersistDegradedReason_OnAssistantMessage()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Degraded session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "This is a degraded fallback response.",
+                10,
+                false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: "Live provider request failed."));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("tell me something"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.DegradedReason.Should().Be("Live provider request failed.");
+        session.Messages.Should().ContainSingle(message =>
+            message.Role == ChatMessageRole.Assistant &&
+            message.MessageType == "degraded" &&
+            message.DegradedReason == "Live provider request failed.");
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldSkipMentionNotification_WhenMentionedUserCannotReadBoard()
     {
         var sender = new User("sender_user", "sender_user@example.com", "hash");
@@ -496,6 +531,23 @@ public class ChatServiceTests
         result.ProviderName.Should().Be("DeterministicStub");
         result.Model.Should().Be("stub-model");
         result.IsMock.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldUseProbeStatus_WhenRequested()
+    {
+        _llmProviderMock
+            .Setup(p => p.ProbeAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(true, "OpenAI", Model: "gpt-4o-mini", IsProbed: true));
+
+        var result = await _service.GetProviderHealthAsync(probe: true, default);
+
+        result.IsAvailable.Should().BeTrue();
+        result.ProviderName.Should().Be("OpenAI");
+        result.Model.Should().Be("gpt-4o-mini");
+        result.IsProbed.Should().BeTrue();
+        _llmProviderMock.Verify(p => p.ProbeAsync(default), Times.Once);
+        _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
     }
 
     private static async IAsyncEnumerable<LlmTokenEvent> StreamEvents()

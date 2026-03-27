@@ -2,7 +2,7 @@ export type ChatSessionStatus = 'Active' | 'Archived'
 export type ChatSessionStatusValue = ChatSessionStatus | number
 export type ChatRole = 'User' | 'Assistant' | 'System'
 export type ChatRoleValue = ChatRole | number
-export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status'
+export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status' | 'degraded'
 
 export interface ChatMessage {
   id: string
@@ -13,6 +13,7 @@ export interface ChatMessage {
   proposalId: string | null
   tokenUsage: number | null
   createdAt: string
+  degradedReason?: string | null
 }
 
 export interface ChatSession {
@@ -32,6 +33,7 @@ export interface ChatProviderHealth {
   errorMessage: string | null
   model: string | null
   isMock: boolean
+  isProbed: boolean
 }
 
 export interface CreateChatSessionRequest {

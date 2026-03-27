@@ -24,7 +24,7 @@ Rebranding thesis (2026-02-23):
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
-- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture
+- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture; degraded provider responses are now structurally distinct (`messageType: "degraded"` + `degradedReason`) and the health endpoint supports opt-in probe verification (`?probe=true`)
 - managed-key shared-token abuse-control strategy is now explicitly seeded in `#235` to `#240` before broad external exposure
 - testing-harness guardrail expansion from `#254` to `#260` is shipped; remaining work is normal follow-up hardening rather than the original wave
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
@@ -129,7 +129,7 @@ Direction guardrails (explicit):
   - advanced/diagnostic nav surfaces now default off via feature flags (`Activity`, `Ops`, `Access`, `Archive`)
   - `Automations` nav now defaults to proposals review path instead of queue path
   - queue composer now defaults to instruction-first request type with guided helper text and board-context guardrails for board-scoped instructions
-  - Automation Chat now exposes explicit provider-health truth (`/api/llm/chat/health`) so operators and tests can see whether the surface is using a live provider, mock provider, or a degraded/unavailable path
+  - Automation Chat now exposes explicit provider-health truth (`/api/llm/chat/health`) so operators and tests can see whether the surface is using a live provider, mock provider, or a degraded/unavailable path; `?probe=true` sends a minimal completion to verify reachability; degraded responses now carry `messageType: "degraded"` with `degradedReason` instead of embedding failure text in normal response content
   - opt-in live-provider chat verification now exists at `frontend/taskdeck-web/tests/e2e/live-llm.spec.ts` (gated by `TASKDECK_RUN_LIVE_LLM_TESTS=1`), with headed local entry points in `npm run test:e2e:audit:headed` and `npm run test:e2e:live-llm:headed`
 - Shared maintainability utilities:
   - `buildQueryString` for API query construction across filter-driven endpoints
@@ -267,7 +267,7 @@ Seeded issues:
 - `#365` Inbox triage freshness
 - `#366` Workbench/nav/docs truth alignment
 - `#367` board-history semantic alignment
-- `#368` chat live-provider status and first-turn fidelity
+- `#368` chat live-provider status and first-turn fidelity — degraded message type, probe health, verified UI state
 - `#369` headed manual-audit Playwright pack (`Priority IV` by design)
 
 Reused existing anchor:

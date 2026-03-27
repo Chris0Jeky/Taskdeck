@@ -47,12 +47,13 @@ public class ChatController : AuthenticatedControllerBase
     }
 
     [HttpGet("health")]
-    public async Task<IActionResult> GetProviderHealth(CancellationToken ct = default)
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
+    public async Task<IActionResult> GetProviderHealth([FromQuery] bool probe = false, CancellationToken ct = default)
     {
         if (!TryGetCurrentUserId(out _, out var errorResult))
             return errorResult!;
 
-        return Ok(await _chatService.GetProviderHealthAsync(ct));
+        return Ok(await _chatService.GetProviderHealthAsync(probe, ct));
     }
 
     [HttpGet("sessions/{id}")]

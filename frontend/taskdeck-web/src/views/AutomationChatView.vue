@@ -106,6 +106,10 @@ const llmHealthState = computed(() => {
     return 'unknown'
   }
 
+  if (chatHealth.value.isProbed && chatHealth.value.isAvailable && !chatHealth.value.isMock) {
+    return 'verified'
+  }
+
   if (chatHealth.value.isAvailable && !chatHealth.value.isMock) {
     return 'configured'
   }
@@ -121,6 +125,8 @@ const llmStatusTitle = computed(() => {
   switch (llmHealthState.value) {
     case 'loading':
       return 'Checking LLM status'
+    case 'verified':
+      return 'Live LLM verified'
     case 'configured':
       return 'Live LLM configured'
     case 'mock':
@@ -151,8 +157,12 @@ const llmStatusCopy = computed(() => {
     ? `${chatHealth.value.providerName} (${chatHealth.value.model})`
     : chatHealth.value.providerName
 
+  if (llmHealthState.value === 'verified') {
+    return `${providerLabel} is live and responding. The probe confirmed reachability.`
+  }
+
   if (llmHealthState.value === 'configured') {
-    return `Taskdeck is configured to use ${providerLabel}, but this health check does not prove the upstream provider accepted a live request yet. Send a probe message before trusting manual chat output.`
+    return `Taskdeck is configured to use ${providerLabel}, but this health check does not prove the upstream provider accepted a live request yet. Use Verify LLM to confirm reachability.`
   }
 
   if (llmHealthState.value === 'mock') {
@@ -265,11 +275,11 @@ async function loadSession(sessionId: string) {
   }
 }
 
-async function loadProviderHealth() {
+async function loadProviderHealth(options?: { probe?: boolean }) {
   try {
     loadingHealth.value = true
     chatHealthLoadError.value = null
-    chatHealth.value = await chatApi.getHealth()
+    chatHealth.value = await chatApi.getHealth(options)
   } catch (e: unknown) {
     chatHealthLoadError.value = getErrorDisplay(e, 'Failed to load LLM status').message
     toast.error(chatHealthLoadError.value)
@@ -425,8 +435,11 @@ watch(
       </div>
 
       <div class="td-chat__hero-actions">
-        <button class="td-btn td-btn--secondary" :disabled="loadingHealth" @click="loadProviderHealth">
+        <button class="td-btn td-btn--secondary" :disabled="loadingHealth" @click="loadProviderHealth()">
           {{ loadingHealth ? 'Checking provider...' : 'Refresh LLM Status' }}
+        </button>
+        <button class="td-btn td-btn--secondary" :disabled="loadingHealth" @click="loadProviderHealth({ probe: true })">
+          {{ loadingHealth ? 'Probing...' : 'Verify LLM' }}
         </button>
         <button class="td-btn td-btn--primary" @click="openReviewRoute">Back to Review</button>
         <button class="td-btn td-btn--secondary" @click="openRoute('/workspace/automations/queue')">
@@ -536,10 +549,19 @@ watch(
                 decision.
               </p>
             </div>
-            <div v-for="message in sortedMessages" :key="message.id" class="td-message">
+            <div
+              v-for="message in sortedMessages"
+              :key="message.id"
+              class="td-message"
+              :class="{ 'td-message--degraded': message.messageType === 'degraded' }"
+              :data-message-type="message.messageType"
+            >
               <div class="td-message-header">
                 <span class="td-message-role">{{ normalizeChatRole(message.role) }}</span>
                 <span class="td-message-time">{{ new Date(message.createdAt).toLocaleTimeString() }}</span>
+              </div>
+              <div v-if="message.messageType === 'degraded'" class="td-message-degraded-warning">
+                Degraded response{{ message.degradedReason ? `: ${message.degradedReason}` : '' }}
               </div>
               <div class="td-message-content">{{ message.content }}</div>
               <div v-if="message.proposalId && message.messageType === 'proposal-reference'" class="td-message-proposal">
@@ -644,6 +666,11 @@ watch(
 .td-chat-status--configured {
   border-color: var(--td-color-success, #2f855a);
   background: color-mix(in srgb, var(--td-surface-primary) 85%, #dff5e7 15%);
+}
+
+.td-chat-status--verified {
+  border-color: var(--td-color-success, #2f855a);
+  background: color-mix(in srgb, var(--td-surface-primary) 80%, #c6f6d5 20%);
 }
 
 .td-chat-status--mock,
@@ -798,6 +825,18 @@ watch(
 .td-message-content {
   white-space: pre-wrap;
   font-size: var(--td-font-sm);
+}
+
+.td-message--degraded {
+  border-left: 3px solid var(--td-color-warning, #d69e2e);
+  padding-left: var(--td-space-2);
+}
+
+.td-message-degraded-warning {
+  font-size: var(--td-font-xs);
+  color: var(--td-color-warning, #d69e2e);
+  font-weight: 600;
+  margin-bottom: var(--td-space-1);
 }
 
 .td-chat-compose {

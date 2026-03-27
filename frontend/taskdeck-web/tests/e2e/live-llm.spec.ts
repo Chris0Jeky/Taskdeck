@@ -15,6 +15,10 @@ test.describe('live llm chat', () => {
     await expect(page.locator('[data-llm-health-state="configured"]')).toBeVisible()
     await expect(page.getByText('Live LLM configured')).toBeVisible()
 
+    await page.getByRole('button', { name: 'Verify LLM' }).click()
+    await expect(page.locator('[data-llm-health-state="verified"]')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('Live LLM verified')).toBeVisible()
+
     const probeToken = `LIVE_LLM_PROBE_${Date.now()}`
 
     await page.getByPlaceholder('Session title').fill(`Live LLM ${Date.now()}`)
@@ -32,8 +36,6 @@ test.describe('live llm chat', () => {
     const assistantContent = assistantMessage.locator('.td-message-content')
     await expect(assistantContent).toContainText(probeToken, { timeout: 30_000 })
     await expect(assistantContent).toContainText('Tuesday', { timeout: 30_000 })
-    await expect(assistantContent).not.toContainText('Live provider request failed.')
-    await expect(assistantContent).not.toContainText('Live provider configuration is invalid.')
-    await expect(assistantContent).not.toContainText('Live provider request errored.')
+    await expect(assistantMessage).not.toHaveAttribute('data-message-type', 'degraded')
   })
 })
