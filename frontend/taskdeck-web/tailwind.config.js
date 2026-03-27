@@ -78,7 +78,7 @@ export default {
         DEFAULT: '0.125rem',
         lg: '0.25rem',
         xl: '0.5rem',
-        full: '0.75rem',
+        /* Keep full at 9999px so rounded-full stays circular for avatars/spinners */
       },
       boxShadow: {
         'obsidian': '0 20px 40px rgba(0, 0, 0, 0.4), 0 0 1px rgba(199, 198, 196, 0.1)',
