@@ -34,6 +34,10 @@ const mockFeatureFlags = {
 const mockWorkspace = reactive({
   mode: 'guided' as string,
   updateMode: vi.fn<(mode: 'guided' | 'workbench' | 'agent') => Promise<void>>(),
+  inboxBadgeCount: 0,
+  reviewBadgeCount: 0,
+  hasHomeSummary: false,
+  fetchHomeSummary: vi.fn(),
 })
 
 vi.mock('vue-router', () => ({
@@ -93,6 +97,9 @@ describe('AppShell workspace navigation and command palette', () => {
     mockRoute.path = '/workspace/home'
     mockWorkspace.mode = 'guided'
     mockWorkspace.updateMode.mockResolvedValue(undefined)
+    mockWorkspace.inboxBadgeCount = 0
+    mockWorkspace.reviewBadgeCount = 0
+    mockWorkspace.hasHomeSummary = false
     mockFeatureFlags.isEnabled = vi.fn(() => true)
   })
 
@@ -374,5 +381,33 @@ describe('AppShell workspace navigation and command palette', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await waitForUi()
     expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+  })
+
+  it('shows nav badges when inbox and review have pending items', async () => {
+    mockWorkspace.inboxBadgeCount = 3
+    mockWorkspace.reviewBadgeCount = 1
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    const badges = wrapper.findAll('.td-nav-badge')
+    expect(badges.length).toBe(2)
+
+    const badgeTexts = badges.map((b) => b.text())
+    expect(badgeTexts).toContain('3')
+    expect(badgeTexts).toContain('1')
+
+    const inboxBadge = badges.find((b) => b.text() === '3')
+    expect(inboxBadge?.attributes('aria-label')).toBe('3 pending')
+    const reviewBadge = badges.find((b) => b.text() === '1')
+    expect(reviewBadge?.attributes('aria-label')).toBe('1 pending')
+  })
+
+  it('hides nav badges when counts are zero', async () => {
+    mockWorkspace.inboxBadgeCount = 0
+    mockWorkspace.reviewBadgeCount = 0
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    expect(wrapper.findAll('.td-nav-badge').length).toBe(0)
   })
 })
