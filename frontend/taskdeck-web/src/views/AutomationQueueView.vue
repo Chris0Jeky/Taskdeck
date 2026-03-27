@@ -17,6 +17,7 @@ const toast = useToastStore()
 const statusFilter = ref('Pending')
 const newRequestType = ref('instruction')
 const newBoardId = ref('')
+const boardDisplayValue = ref('')
 const newPayload = ref('')
 const showComposer = ref(false)
 const submitting = ref(false)
@@ -32,11 +33,19 @@ const boardOptions = computed(() =>
   ),
 )
 
-const selectedBoardName = computed(() => {
-  if (!newBoardId.value.trim()) return ''
-  const board = availableBoards.value.find((b) => b.id === newBoardId.value.trim())
-  return board?.name ?? ''
-})
+function handleBoardSelect(option: { value: string; label: string }) {
+  newBoardId.value = option.value
+  boardDisplayValue.value = option.label
+}
+
+function handleBoardInput(value: string) {
+  boardDisplayValue.value = value
+  // If the user clears or edits the display, clear the stored ID unless it still matches
+  const matchingBoard = availableBoards.value.find(
+    (b) => b.name === value || b.id === value,
+  )
+  newBoardId.value = matchingBoard ? matchingBoard.id : value
+}
 
 const statusTabs = ['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled']
 const guidPatterns = [
@@ -97,6 +106,7 @@ async function handleSubmitRequest() {
     })
     newRequestType.value = 'instruction'
     newBoardId.value = ''
+    boardDisplayValue.value = ''
     newPayload.value = ''
     showComposer.value = false
   } catch {
@@ -155,7 +165,7 @@ function statusColor(status: QueueStatus | number): string {
 async function loadBoardOptions() {
   try {
     loadingBoards.value = true
-    availableBoards.value = await boardsApi.getBoards()
+    availableBoards.value = await boardsApi.getBoards(undefined, true)
   } catch {
     // Board options are non-critical.
   } finally {
@@ -256,16 +266,15 @@ onMounted(() => {
         <div class="td-form-group">
           <label class="td-label">Board (optional)</label>
           <InputAssistField
-            v-model="newBoardId"
+            :model-value="boardDisplayValue"
             :options="boardOptions"
             aria-label="Board for queue request"
             placeholder="Select a board..."
             no-results-text="No matching boards."
             :disabled="loadingBoards"
+            @update:model-value="handleBoardInput"
+            @select="handleBoardSelect"
           />
-          <div v-if="selectedBoardName" class="td-helper">
-            Selected: <strong>{{ selectedBoardName }}</strong>
-          </div>
           <div class="td-helper">
             Board-scoped instructions (create card, move column, etc.) require a board selection.
           </div>
