@@ -57,7 +57,7 @@ function goToBoard(id: string) {
             v-model="newBoardName"
             type="text"
             placeholder="Board name"
-            class="flex-1 px-4 py-2 border border-outline-variant/15 rounded-lg bg-surface-container text-on-surface placeholder:text-on-surface/40 focus:outline-none focus:ring-1 focus:ring-[#ff5352]"
+            class="flex-1 px-4 py-2 border border-outline-variant/15 rounded-lg bg-surface-container text-on-surface placeholder:text-on-surface/40 focus:outline-none focus:ring-1 focus:ring-primary-container"
             autofocus
           />
           <button
@@ -83,7 +83,7 @@ function goToBoard(id: string) {
       </div>
 
       <!-- Error State -->
-      <div v-else-if="boardStore.error" class="bg-[#ff4d4d]/10 border border-[#ff4d4d] rounded-lg p-4 text-[#ff4d4d]">
+      <div v-else-if="boardStore.error" class="bg-ember/10 border border-ember rounded-lg p-4 text-ember">
         {{ boardStore.error }}
       </div>
 

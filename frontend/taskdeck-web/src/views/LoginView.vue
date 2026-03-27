@@ -104,7 +104,7 @@ async function handleSubmit() {
 }
 
 .td-auth-title {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-2xl);
   font-weight: 800;
   letter-spacing: -0.03em;

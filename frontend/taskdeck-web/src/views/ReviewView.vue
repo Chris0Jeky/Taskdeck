@@ -679,7 +679,7 @@ watch(
 }
 
 .td-review-summary-card__value {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-2xl);
   font-weight: 700;
   color: var(--td-text-primary);
@@ -734,7 +734,7 @@ watch(
 
 .td-review-card__title {
   margin: 0;
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-lg);
   font-weight: 700;
   color: var(--td-text-primary);

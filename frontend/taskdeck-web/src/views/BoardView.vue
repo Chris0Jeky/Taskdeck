@@ -490,7 +490,7 @@ useKeyboardShortcuts([
                   data-presence-user
                 >
                   <span>{{ member.displayName || member.userId.slice(0, 8) }}</span>
-                  <span v-if="member.editingCardId" class="font-medium text-[#fbbf24]">(editing)</span>
+                  <span v-if="member.editingCardId" class="font-medium text-[var(--td-color-warning)]">(editing)</span>
                 </span>
               </div>
             </div>

@@ -614,7 +614,7 @@ onMounted(() => {
 .td-inbox__subtitle {
   margin-top: var(--td-space-1);
   color: var(--td-text-secondary);
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
@@ -659,12 +659,12 @@ onMounted(() => {
 }
 
 .td-inbox__list-header h2 {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   color: var(--td-text-primary);
 }
 
 .td-inbox__count {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
@@ -724,7 +724,7 @@ onMounted(() => {
 
 .td-status-chip,
 .td-meta-chip {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
@@ -776,7 +776,7 @@ onMounted(() => {
 }
 
 .td-inbox-detail__header h2 {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   color: var(--td-text-primary);
 }
 
@@ -845,7 +845,7 @@ onMounted(() => {
 .td-placeholder--empty-state h3 {
   margin: 0;
   color: var(--td-text-primary);
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
 }
 
 .td-placeholder--empty-state p {
@@ -894,7 +894,7 @@ onMounted(() => {
   border: 0.5px solid transparent;
   cursor: pointer;
   text-decoration: none;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: var(--td-font-sm);
   letter-spacing: 0.02em;
   transition: background var(--td-transition-fast, 120ms) ease,
@@ -909,13 +909,13 @@ onMounted(() => {
 
 .td-btn--primary {
   background: var(--td-color-ember, #ff4d4d);
-  color: #131313;
+  color: var(--td-text-inverse);
   font-weight: 600;
   border-color: transparent;
 }
 
 .td-btn--primary:hover:not(:disabled) {
-  background: #ff5352;
+  background: var(--td-color-ember-glow);
   box-shadow: 0 0 12px rgba(255, 77, 77, 0.3);
 }
 

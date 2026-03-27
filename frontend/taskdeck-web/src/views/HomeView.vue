@@ -322,7 +322,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home__eyebrow {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -358,7 +358,7 @@ onActivated(refreshHomeSummary)
 
 /* ─── Section Title & Desc (shared) ─── */
 .td-section-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -399,7 +399,7 @@ onActivated(refreshHomeSummary)
   gap: var(--td-space-2);
   padding: 0.5rem 1rem;
   border-radius: var(--td-radius-md);
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: var(--td-font-sm);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -409,12 +409,12 @@ onActivated(refreshHomeSummary)
 }
 
 .td-btn--primary {
-  background: #ff5352;
-  color: #131313;
+  background: var(--td-color-ember-glow);
+  color: var(--td-text-inverse);
 }
 
 .td-btn--primary:hover {
-  background: #ff4d4d;
+  background: var(--td-color-ember);
   box-shadow: 0 0 16px rgba(255, 83, 82, 0.3);
 }
 
@@ -461,7 +461,7 @@ onActivated(refreshHomeSummary)
   background: var(--td-surface-container-high);
   border: 0.5px solid var(--td-border-default);
   color: var(--td-text-secondary);
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -500,7 +500,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-step__status {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -513,7 +513,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-step__title {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-base);
   font-weight: 700;
   color: var(--td-text-primary);
@@ -558,7 +558,7 @@ onActivated(refreshHomeSummary)
   background: var(--td-surface-container-high);
   border: 0.5px solid var(--td-border-ghost);
   color: var(--td-text-tertiary);
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -590,7 +590,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-card__value {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-2xl);
   font-weight: 700;
   color: var(--td-text-primary);
@@ -599,7 +599,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-card__label {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -634,12 +634,12 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-action--primary {
-  background: #ff5352;
-  color: #131313;
+  background: var(--td-color-ember-glow);
+  color: var(--td-text-inverse);
 }
 
 .td-home-action--primary:hover {
-  background: #ff4d4d;
+  background: var(--td-color-ember);
   box-shadow: 0 0 20px rgba(255, 83, 82, 0.25);
 }
 
@@ -655,7 +655,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-action__title {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-sm);
   font-weight: 700;
   display: flex;
@@ -702,7 +702,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-card__workspace-summary dt {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -713,7 +713,7 @@ onActivated(refreshHomeSummary)
 
 .td-home-card__workspace-summary dd {
   margin: 0;
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-xl);
   font-weight: 700;
   color: var(--td-text-primary);
@@ -753,7 +753,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-board__name {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-sm);
   font-weight: 700;
   color: var(--td-text-primary);

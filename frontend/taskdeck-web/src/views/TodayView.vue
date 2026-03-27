@@ -369,7 +369,7 @@ onActivated(refreshTodaySummary)
 }
 
 .td-today__eyebrow {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -406,7 +406,7 @@ onActivated(refreshTodaySummary)
 /* ── Section titles ── */
 
 .td-section-title {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-lg);
   font-weight: 700;
   color: var(--td-text-primary);
@@ -465,7 +465,7 @@ onActivated(refreshTodaySummary)
 }
 
 .td-today-step__state {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -474,7 +474,7 @@ onActivated(refreshTodaySummary)
 }
 
 .td-today-step__title {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-base);
   font-weight: 700;
   color: var(--td-text-primary);
@@ -507,7 +507,7 @@ onActivated(refreshTodaySummary)
 }
 
 .td-today-stat__label {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
@@ -516,7 +516,7 @@ onActivated(refreshTodaySummary)
 }
 
 .td-today-stat__value {
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-3xl);
   font-weight: 800;
   color: var(--td-text-primary);
@@ -556,7 +556,7 @@ onActivated(refreshTodaySummary)
   background: var(--td-color-error-light);
   border: 0.5px solid rgba(255, 77, 77, 0.2);
   color: var(--td-color-ember);
-  font-family: 'Manrope', sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-xs);
   font-weight: 800;
   padding: 0 0.5rem;
@@ -626,7 +626,7 @@ onActivated(refreshTodaySummary)
 
 .td-btn--sm {
   padding: var(--td-space-1) var(--td-space-3);
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.2em;
