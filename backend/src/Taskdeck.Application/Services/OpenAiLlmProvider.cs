@@ -208,7 +208,9 @@ public class OpenAiLlmProvider : ILlmProvider
             IsActionable: isActionable,
             ActionIntent: actionIntent,
             Provider: "OpenAI",
-            Model: string.IsNullOrWhiteSpace(model) ? "openai-unknown-model" : model.Trim());
+            Model: string.IsNullOrWhiteSpace(model) ? "openai-unknown-model" : model.Trim(),
+            IsDegraded: true,
+            DegradedReason: reason);
     }
 
     private static int EstimateTokens(string text)

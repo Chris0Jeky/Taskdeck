@@ -225,7 +225,9 @@ public class GeminiLlmProvider : ILlmProvider
             IsActionable: isActionable,
             ActionIntent: actionIntent,
             Provider: "Gemini",
-            Model: string.IsNullOrWhiteSpace(model) ? "gemini-unknown-model" : model.Trim());
+            Model: string.IsNullOrWhiteSpace(model) ? "gemini-unknown-model" : model.Trim(),
+            IsDegraded: true,
+            DegradedReason: reason);
     }
 
     private static int EstimateTokens(string text)

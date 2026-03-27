@@ -37,7 +37,9 @@ public record LlmCompletionResult(
     bool IsActionable,
     string? ActionIntent = null,
     string Provider = "Mock",
-    string Model = "mock-default"
+    string Model = "mock-default",
+    bool IsDegraded = false,
+    string? DegradedReason = null
 );
 
 public record LlmTokenEvent(string Token, bool IsComplete);
