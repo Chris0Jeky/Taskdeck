@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { notificationsApi } from '../api/notificationsApi'
 import { useToastStore } from './toastStore'
+import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import type {
   NotificationItem,
@@ -18,7 +19,18 @@ export const useNotificationStore = defineStore('notifications', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  function guardDemoMutation(): never | void {
+    if (isDemoMode) {
+      toast.info('This action is view-only in demo mode.')
+      throw new DemoModeError()
+    }
+  }
+
   async function fetchNotifications(query?: NotificationQuery) {
+    if (isDemoMode) {
+      notifications.value = []
+      return
+    }
     try {
       loading.value = true
       error.value = null
@@ -34,6 +46,7 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   async function markAsRead(notificationId: string) {
+    guardDemoMutation()
     try {
       const updated = await notificationsApi.markAsRead(notificationId)
       notifications.value = notifications.value.map((item) => (
@@ -49,6 +62,10 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   async function fetchPreferences() {
+    if (isDemoMode) {
+      preferences.value = null
+      return null
+    }
     try {
       loading.value = true
       error.value = null
@@ -65,6 +82,7 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   async function updatePreferences(dto: UpdateNotificationPreferenceRequest) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
