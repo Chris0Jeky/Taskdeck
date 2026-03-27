@@ -166,11 +166,14 @@ test('first-run path should guide home to capture to review to execute to board'
 
 test('home should recover from loading and error states on first-run summary refresh', async ({ page }) => {
   let requestCount = 0
+  let releaseFirstRequest: (() => void) | null = null
+  const firstRequestGate = new Promise<void>((resolve) => { releaseFirstRequest = resolve })
+
   await page.route('**/api/workspace/home', async (route) => {
     requestCount += 1
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
 
     if (requestCount === 1) {
+      await firstRequestGate
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -187,6 +190,7 @@ test('home should recover from loading and error states on first-run summary ref
 
   await page.goto('/workspace/home')
   await expect(page.getByText('Loading your workspace summary...')).toBeVisible()
+  releaseFirstRequest!()
   await expect(page.getByRole('alert')).toContainText('Temporary home summary failure')
 
   await page.reload()
