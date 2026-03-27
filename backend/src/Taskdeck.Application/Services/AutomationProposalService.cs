@@ -379,9 +379,11 @@ public class AutomationProposalService : IAutomationProposalService
             .Select(DescribeOperation)
             .ToList();
 
+        var isCaptureTaskBatch = IsCaptureTaskBatch(proposal.Summary, proposal.SourceType, orderedOperations);
+
         return new ProposalPresentationDto(
             BuildPlainSummary(proposal.Summary, orderedOperations, affectedEntities),
-            BuildImpactSummary(orderedOperations.Count, affectedEntities),
+            BuildImpactSummary(orderedOperations.Count, affectedEntities, isCaptureTaskBatch),
             BuildRiskCue(proposal.RiskLevel),
             BuildSourceCue(proposal.SourceType),
             operationHeadlines,
@@ -403,7 +405,7 @@ public class AutomationProposalService : IAutomationProposalService
             return $"{summary} This would {LowercaseSentenceLead(DescribeOperation(orderedOperations[0]))}";
         }
 
-        if (IsCaptureTaskBatch(summary, orderedOperations))
+        if (IsCaptureTaskBatch(summary, ProposalSourceType.Queue, orderedOperations))
         {
             return $"Create {orderedOperations.Count} task card{Pluralize(orderedOperations.Count)} from the captured note.";
         }
@@ -418,14 +420,15 @@ public class AutomationProposalService : IAutomationProposalService
         return $"{summary} This would apply {orderedOperations.Count} planned changes across {entitySummary}.";
     }
 
-    private static string BuildImpactSummary(int operationCount, IReadOnlyList<ProposalAffectedEntityDto> affectedEntities)
+    private static string BuildImpactSummary(int operationCount, IReadOnlyList<ProposalAffectedEntityDto> affectedEntities, bool isCaptureTaskBatch)
     {
         if (operationCount == 0)
         {
             return "No concrete board operations were attached to this proposal.";
         }
 
-        if (affectedEntities.Count == 1 &&
+        if (isCaptureTaskBatch &&
+            affectedEntities.Count == 1 &&
             string.Equals(affectedEntities[0].EntityType, "Card", StringComparison.OrdinalIgnoreCase) &&
             affectedEntities[0].ChangeCount == operationCount)
         {
@@ -593,8 +596,13 @@ public class AutomationProposalService : IAutomationProposalService
         return buffer.ToString();
     }
 
-    private static bool IsCaptureTaskBatch(string summary, IReadOnlyList<AutomationProposalOperation> orderedOperations)
+    private static bool IsCaptureTaskBatch(string summary, ProposalSourceType sourceType, IReadOnlyList<AutomationProposalOperation> orderedOperations)
     {
+        if (sourceType != ProposalSourceType.Queue)
+        {
+            return false;
+        }
+
         if (orderedOperations.Count < 2)
         {
             return false;
