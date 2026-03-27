@@ -10,7 +10,9 @@
       "Bash(docker --version)",
       "Bash(gh issue:*)",
       "Bash(python -m json.tool /c/Users/jekyt/source/Taskdeck/.claude/settings.json)",
-      "Bash(python -m json.tool /c/Users/jekyt/source/Taskdeck/.mcp.json)"
+      "Bash(python -m json.tool /c/Users/jekyt/source/Taskdeck/.mcp.json)",
+      "Bash(gh pr:*)",
+      "Bash(gh api:*)"
     ],
     "deny": [],
     "ask": []
