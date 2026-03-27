@@ -6,6 +6,7 @@ import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import type { LoginRequest, RegisterRequest, ChangePasswordRequest, SessionState, AuthResponse } from '../types/auth'
 import { getTokenExpiryIso, isTokenExpired } from '../utils/jwt'
+import { isDemoMode, isDemoSessionActive, activateDemoSession, clearDemoSession, DEMO_USER } from '../utils/demoMode'
 
 const TOKEN_KEY = 'taskdeck_token'
 const SESSION_KEY = 'taskdeck_session'
@@ -29,7 +30,10 @@ export const useSessionStore = defineStore('session', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  const isDemo = ref(false)
+
   const isAuthenticated = computed(() => {
+    if (isDemo.value) return true
     if (!token.value) return false
     return !isTokenExpired(token.value)
   })
@@ -66,6 +70,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function clearSession() {
+    isDemo.value = false
     token.value = null
     userId.value = null
     username.value = null
@@ -74,6 +79,7 @@ export const useSessionStore = defineStore('session', () => {
     expiresAt.value = null
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(SESSION_KEY)
+    clearDemoSession()
   }
 
   async function hydrateDefaultRoleFromProfile(restoredUserId: string, restoredToken: string) {
@@ -100,7 +106,28 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function setDemoSession() {
+    isDemo.value = true
+    token.value = null
+    userId.value = DEMO_USER.id
+    username.value = DEMO_USER.username
+    email.value = DEMO_USER.email
+    defaultRole.value = DEMO_USER.defaultRole
+    expiresAt.value = null
+    activateDemoSession()
+  }
+
+  function loginAsDemo() {
+    setDemoSession()
+    toast.success('Welcome to the Taskdeck demo')
+  }
+
   function restoreSession() {
+    if (isDemoMode && isDemoSessionActive()) {
+      setDemoSession()
+      return
+    }
+
     const savedToken = localStorage.getItem(TOKEN_KEY)
     const savedSession = localStorage.getItem(SESSION_KEY)
     if (savedToken && savedSession) {
@@ -207,8 +234,10 @@ export const useSessionStore = defineStore('session', () => {
     loading,
     error,
     isAuthenticated,
+    isDemo,
     sessionState,
     login,
+    loginAsDemo,
     register,
     changePassword,
     logout,
