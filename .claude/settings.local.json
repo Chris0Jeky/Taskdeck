@@ -6,7 +6,9 @@
       "Bash(echo $GITHUB_TOKEN)",
       "Bash(echo $GITHUB_PAT)",
       "Skill(update-config)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://api.github.com/rate_limit)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://api.github.com/rate_limit)",
+      "Bash(docker --version)",
+      "Bash(gh issue:*)"
     ],
     "deny": [],
     "ask": []
