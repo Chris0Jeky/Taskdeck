@@ -34,6 +34,14 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             return Array.Empty<AuditLog>();
         }
 
+        List<Guid>? boardScopedEntityIdList = null;
+        HashSet<Guid>? boardScopedEntityIdSet = null;
+        if (boardId.HasValue)
+        {
+            boardScopedEntityIdList = await ResolveBoardScopedEntityIdsAsync(boardId.Value, cancellationToken);
+            boardScopedEntityIdSet = new HashSet<Guid>(boardScopedEntityIdList);
+        }
+
         if (_context.Database.IsSqlite())
         {
             var auditLogs = await _context.AuditLogs
@@ -43,9 +51,7 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
 
             return auditLogs
                 .Where(al => !userId.HasValue || al.UserId == userId.Value)
-                .Where(al =>
-                    !boardId.HasValue ||
-                    (al.EntityId == boardId.Value && al.EntityType.Equals("board", StringComparison.OrdinalIgnoreCase)))
+                .Where(al => boardScopedEntityIdSet == null || boardScopedEntityIdSet.Contains(al.EntityId))
                 .Where(al =>
                     string.IsNullOrWhiteSpace(source) ||
                     al.EntityType.Equals(source.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -64,11 +70,9 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
             query = query.Where(al => al.UserId == userId.Value);
         }
 
-        if (boardId.HasValue)
+        if (boardScopedEntityIdList != null)
         {
-            query = query
-                .Where(al => al.EntityId == boardId.Value)
-                .Where(al => al.EntityType.ToLower() == "board");
+            query = query.Where(al => boardScopedEntityIdList.Contains(al.EntityId));
         }
 
         if (!string.IsNullOrWhiteSpace(source))
@@ -130,21 +134,54 @@ public class AuditLogRepository : Repository<AuditLog>, IAuditLogRepository
 
     public async Task<IEnumerable<AuditLog>> GetByBoardAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
     {
+        var boardScopedEntityIds = await ResolveBoardScopedEntityIdsAsync(boardId, cancellationToken);
+        var entityIdSet = new HashSet<Guid>(boardScopedEntityIds);
+
         if (_context.Database.IsSqlite())
         {
-            return await _context.AuditLogs
-                .FromSqlInterpolated(
-                    $"SELECT * FROM AuditLogs WHERE LOWER(EntityType) = {"board"} AND EntityId = {boardId} ORDER BY Timestamp DESC LIMIT {limit}")
+            var allLogs = await _context.AuditLogs
+                .AsNoTracking()
                 .Include(al => al.User)
                 .ToListAsync(cancellationToken);
+
+            return allLogs
+                .Where(al => entityIdSet.Contains(al.EntityId))
+                .OrderByDescending(al => al.Timestamp)
+                .Take(limit)
+                .ToList();
         }
 
         return await _context.AuditLogs
+            .AsNoTracking()
             .Include(al => al.User)
-            .Where(al => al.EntityType.ToLower() == "board" && al.EntityId == boardId)
+            .Where(al => boardScopedEntityIds.Contains(al.EntityId))
             .OrderByDescending(al => al.Timestamp)
             .Take(limit)
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task<List<Guid>> ResolveBoardScopedEntityIdsAsync(Guid boardId, CancellationToken cancellationToken = default)
+    {
+        var columnIds = await _context.Columns
+            .Where(c => c.BoardId == boardId)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+
+        var cardIds = await _context.Cards
+            .Where(c => c.BoardId == boardId)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+
+        var labelIds = await _context.Labels
+            .Where(l => l.BoardId == boardId)
+            .Select(l => l.Id)
+            .ToListAsync(cancellationToken);
+
+        var ids = new List<Guid>(columnIds.Count + cardIds.Count + labelIds.Count + 1) { boardId };
+        ids.AddRange(columnIds);
+        ids.AddRange(cardIds);
+        ids.AddRange(labelIds);
+        return ids;
     }
 
     private static AuditAction[] GetActionsForLevel(string level)
