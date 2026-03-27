@@ -15,6 +15,7 @@ import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.v
 import type { Column, Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
+import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 
 const route = useRoute()
 const router = useRouter()
@@ -57,6 +58,7 @@ const sortedColumns = computed(() => {
   if (!boardStore.currentBoard) return []
   return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
 })
+const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(boardStore.currentBoard?.name))
 
 onMounted(async () => {
   try {
@@ -469,9 +471,17 @@ useKeyboardShortcuts([
               </svg>
             </button>
             <div v-if="boardStore.currentBoard">
-              <h1 class="text-2xl font-bold text-on-surface">
-                {{ boardStore.currentBoard.name }}
-              </h1>
+              <div class="flex flex-wrap items-center gap-2">
+                <h1 class="text-2xl font-bold text-on-surface">
+                  {{ boardStore.currentBoard.name }}
+                </h1>
+                <span
+                  v-if="isDemoBoard"
+                  class="inline-flex items-center rounded-full border border-primary-container/30 bg-primary-container/10 px-2 py-0.5 text-xs font-semibold text-primary"
+                >
+                  Demo board
+                </span>
+              </div>
               <p v-if="boardStore.currentBoard.description" class="text-sm text-on-surface/60">
                 {{ boardStore.currentBoard.description }}
               </p>
@@ -597,7 +607,7 @@ useKeyboardShortcuts([
             Add card
           </button>
           <p class="text-sm text-on-surface/60">
-            Keep captures, proposals, and quick actions anchored to {{ boardStore.currentBoard.name }}.
+            New input starts in Capture or Inbox. Only approved changes land on this board.
           </p>
         </div>
 
@@ -606,7 +616,7 @@ useKeyboardShortcuts([
           topic="board"
           class="mt-4"
           title="What should happen on a board?"
-          description="Boards are where approved work lands. Capture here when new input belongs to this board, review proposals before applying changes, and use the board action rail to keep work anchored instead of bouncing between disconnected screens."
+          description="Boards are where approved work appears. Capture new input, review the proposed changes, then come back here to manage the result."
         >
           <template #actions>
             <button class="td-btn td-btn--secondary td-btn--sm" @click="openBoardCaptureModal">Capture here</button>

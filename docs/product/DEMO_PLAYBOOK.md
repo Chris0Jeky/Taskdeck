@@ -15,6 +15,9 @@ Core story:
 
 Capture -> Triage -> Proposal -> Apply -> Board
 
+Saul-facing recording contract:
+- `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
+
 ## Quick Start
 
 1. Start backend
@@ -124,8 +127,26 @@ npm run demo:autopilot -- --loop mixed
 
 ## 5-Minute Stakeholder Flow
 
+Saul-facing default (recording path):
+
+1. Home
+- Confirm the product teaches `Inbox -> Review -> Board`.
+- Open the `DEMO: Client Onboarding Demo` board path.
+
+2. Inbox/Capture
+- Show ACME capture lineage and the proposal handoff action.
+
+3. Review
+- Confirm review-first trust cues (`nothing changes until approval`).
+- Show the proposal in business wording and apply deliberately.
+
+4. Board
+- Show the clean onboarding reveal on `DEMO: Client Onboarding Demo`.
+
+Extended walkthrough (optional):
+
 1. Boards
-- Open `DEMO: Capture Loop`.
+- Open `DEMO: Client Onboarding Demo`.
 - Explain reviewed proposals are the mutation gate.
 
 2. Inbox
@@ -211,6 +232,9 @@ cd frontend/taskdeck-web
 
 # Full run with deterministic autopilot seed
 npm run demo:director -- --scenario engineering-sprint --turns 18 --brain heuristic --loop mixed --rng-seed demo-1
+
+# Saul-facing deterministic rehearsal artifacts (no autoplay turns)
+npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
 
 # CI-style deterministic run without LLM-required steps
 npm run demo:director -- --scenario engineering-sprint --turns 12 --skip-llm --rng-seed ci-1

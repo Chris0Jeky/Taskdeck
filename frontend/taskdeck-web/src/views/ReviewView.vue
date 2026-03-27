@@ -241,7 +241,7 @@ async function handleApproveProposal(proposalId: string) {
     proposalActionBusyId.value = proposalId
     const updated = await automationApi.approveProposal(proposalId)
     proposals.value = proposals.value.map((proposal) => (proposal.id === proposalId ? updated : proposal))
-    toast.success('Proposal approved')
+    toast.success('Proposal approved for board application')
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to approve proposal').message)
   } finally {
@@ -279,7 +279,7 @@ async function handleRejectProposal(proposalId: string, riskLevel: ApiProposal['
 }
 
 async function handleExecuteProposal(proposalId: string) {
-  if (!confirm('Execute this approved proposal?')) {
+  if (!confirm('Apply this approved proposal to the board now?')) {
     return
   }
 
@@ -287,9 +287,9 @@ async function handleExecuteProposal(proposalId: string) {
     proposalActionBusyId.value = proposalId
     const updated = await automationApi.executeProposal(proposalId, createRequestId())
     proposals.value = proposals.value.map((proposal) => (proposal.id === proposalId ? updated : proposal))
-    toast.success('Proposal executed')
+    toast.success('Proposal applied to board')
   } catch (e: unknown) {
-    toast.error(getErrorDisplay(e, 'Failed to execute proposal').message)
+    toast.error(getErrorDisplay(e, 'Failed to apply proposal to board').message)
   } finally {
     proposalActionBusyId.value = null
   }
@@ -426,6 +426,20 @@ function reviewStatusClass(status: ApiProposal['status']): string {
   return 'td-review-status--secondary'
 }
 
+const statusLabels: Record<string, string> = {
+  PendingReview: 'Review required',
+  Approved: 'Approved, ready to apply',
+  Applied: 'Applied to board',
+  Rejected: 'Rejected',
+  Failed: 'Failed',
+  Expired: 'Expired',
+}
+
+function reviewStatusLabel(status: ApiProposal['status']): string {
+  const normalized = normalizeProposalStatus(status)
+  return statusLabels[normalized] ?? normalized
+}
+
 onMounted(() => {
   void loadProposals()
 })
@@ -452,8 +466,7 @@ watch(
         <span class="td-review__eyebrow">Review</span>
         <h1 class="td-page-title">Review</h1>
         <p class="td-review__subtitle">
-          Review proposed changes before anything touches a board. Queue and chat remain advanced surfaces when you
-          need manual/operator control.
+          Nothing changes on a board until you approve it here.
         </p>
         <p v-if="activeBoardFilter" class="td-review__board-filter">
           Showing proposals for board {{ activeBoardFilter }}.
@@ -477,7 +490,7 @@ watch(
     <WorkspaceHelpCallout
       topic="review"
       title="What is Review for?"
-      description="Review is the trust gate. Proposed changes stop here before they touch a board, while queue and chat remain advanced/operator surfaces when you need to drive the workflow manually."
+      description="Review is the approval step. Taskdeck proposes changes first, then waits for your decision before anything is applied."
     >
       <template #actions>
         <button class="td-btn td-btn--secondary td-btn--sm" @click="openInbox">Open Inbox</button>
@@ -519,7 +532,7 @@ watch(
       >
         <div class="td-review-card__header">
           <div>
-            <h2 class="td-review-card__title">{{ proposal.summary }}</h2>
+            <h2 class="td-review-card__title">{{ readableSummary(proposal) }}</h2>
             <div class="td-review-card__meta">
               <span>Risk: {{ normalizeProposalRiskLevel(proposal.riskLevel) }}</span>
               <span>Created: {{ formatDate(proposal.createdAt) }}</span>
@@ -527,7 +540,7 @@ watch(
             </div>
           </div>
           <span :class="['td-review-status', reviewStatusClass(proposal.status)]">
-            {{ normalizeProposalStatus(proposal.status) }}
+            {{ reviewStatusLabel(proposal.status) }}
           </span>
         </div>
 
@@ -586,6 +599,12 @@ watch(
         </div>
 
         <div class="td-review-card__actions">
+          <span
+            v-if="normalizeProposalStatus(proposal.status) === 'PendingReview'"
+            class="td-review-card__action-cue"
+          >
+            Changes stay in review until you approve them.
+          </span>
           <button class="td-btn td-btn--secondary td-btn--sm" @click="handleToggleDiff(proposal.id)">
             {{ selectedDiffProposalId === proposal.id ? 'Hide Diff' : 'View Diff' }}
           </button>
@@ -594,7 +613,7 @@ watch(
             :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'PendingReview'"
             @click="handleApproveProposal(proposal.id)"
           >
-            Approve
+            Approve for board
           </button>
           <button
             class="td-btn td-btn--danger td-btn--sm"
@@ -608,7 +627,7 @@ watch(
             :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'Approved'"
             @click="handleExecuteProposal(proposal.id)"
           >
-            Execute
+            Apply to board
           </button>
         </div>
 
@@ -875,6 +894,14 @@ watch(
   display: flex;
   flex-wrap: wrap;
   gap: var(--td-space-2);
+  align-items: center;
+}
+
+.td-review-card__action-cue {
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  color: var(--td-text-secondary);
+  margin-inline-end: var(--td-space-2);
 }
 
 .td-review-card__diff {

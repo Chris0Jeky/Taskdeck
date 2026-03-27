@@ -53,8 +53,8 @@ function statusLabel(status: CaptureStatusValue): string {
   if (status === 0 || status === 'New') return 'New'
   if (status === 1 || status === 'Triaging') return 'Triaging'
   if (status === 2 || status === 'Triaged') return 'Triaged'
-  if (status === 3 || status === 'ProposalCreated') return 'Proposal Created'
-  if (status === 4 || status === 'Converted') return 'Converted'
+  if (status === 3 || status === 'ProposalCreated') return 'Ready for review'
+  if (status === 4 || status === 'Converted') return 'Applied to board'
   if (status === 5 || status === 'Ignored') return 'Ignored'
   if (status === 6 || status === 'Failed') return 'Failed'
   return String(status)
@@ -433,7 +433,7 @@ onMounted(() => {
     <header class="td-inbox__header">
       <div>
         <h1 class="td-page-title">Inbox</h1>
-        <p class="td-inbox__subtitle">Capture artifacts and triage-ready context.</p>
+        <p class="td-inbox__subtitle">Capture rough notes and turn them into reviewable proposed work.</p>
         <p v-if="activeBoardId" class="td-inbox__board-context">
           Showing capture items linked to board {{ activeBoardId }}.
         </p>
@@ -446,7 +446,7 @@ onMounted(() => {
     <WorkspaceHelpCallout
       topic="inbox"
       title="What is Inbox for?"
-      description="Inbox is where notes, pasted text, and follow-ups get shaped into reviewable proposals. Use triage here when you want help preparing a change, then switch to Review before anything reaches a board."
+      description="Inbox is where Taskdeck prepares a proposed change from your note, then sends it to Review before anything reaches a board."
     >
       <template #actions>
         <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
@@ -549,12 +549,12 @@ onMounted(() => {
           </div>
 
           <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link">
-            <span>Linked proposal is ready for review.</span>
+            <span>A proposed board update is ready for approval.</span>
             <button
               class="td-btn td-btn--primary td-btn--sm"
               @click="openProposal(selectedItem.provenance.proposalId)"
             >
-              Open Proposal
+              Open in Review
             </button>
           </div>
 

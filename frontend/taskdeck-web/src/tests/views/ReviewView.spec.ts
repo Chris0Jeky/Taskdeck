@@ -55,7 +55,7 @@ vi.mock('../../composables/useErrorMapper', () => ({
 
 function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
   const now = new Date().toISOString()
-  return {
+  const base: Proposal = {
     id: 'proposal-1',
     sourceType: 'Queue',
     sourceReferenceId: 'capture-1',
@@ -90,8 +90,32 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
         },
       ],
     },
-    ...overrides,
   }
+
+  const hasPresentationOverride = 'presentation' in overrides
+
+  const merged: Proposal = {
+    ...base,
+    ...overrides,
+    presentation: hasPresentationOverride
+      ? overrides.presentation
+        ? {
+            ...base.presentation!,
+            ...overrides.presentation,
+          }
+        : overrides.presentation
+      : base.presentation,
+  }
+
+  if (!hasPresentationOverride && overrides.summary && merged.presentation) {
+    merged.presentation = {
+      ...merged.presentation,
+      plainSummary: `${overrides.summary} This would create card "${overrides.summary}".`,
+      operationHeadlines: [`Create card "${overrides.summary}".`],
+    }
+  }
+
+  return merged
 }
 
 async function mountAt(path: string) {
@@ -173,10 +197,39 @@ describe('ReviewView', () => {
     const { wrapper } = await mountAt('/workspace/review')
 
     expect(wrapper.text()).toContain('What is Review for?')
+    expect(wrapper.text()).toContain('Nothing changes on a board until you approve it here.')
     expect(wrapper.text()).toContain('No proposals need review yet')
     expect(wrapper.text()).toContain('Go to Inbox')
     expect(wrapper.text()).toContain('Open Boards')
     expect(wrapper.text()).toContain('Back to Home')
+  })
+
+  it('uses trust-first review labels and board-apply action wording', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-review-needed',
+        status: 'PendingReview',
+      }),
+      buildProposal({
+        id: 'proposal-ready',
+        status: 'Approved',
+        sourceReferenceId: 'capture-2',
+      }),
+      buildProposal({
+        id: 'proposal-applied',
+        status: 'Applied',
+        sourceReferenceId: 'capture-3',
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    expect(wrapper.text()).toContain('Review required')
+    expect(wrapper.text()).toContain('Approved, ready to apply')
+    expect(wrapper.text()).toContain('Applied to board')
+    expect(wrapper.text()).toContain('Approve for board')
+    expect(wrapper.text()).toContain('Apply to board')
+    expect(wrapper.text()).toContain('Changes stay in review until you approve them.')
   })
 
   it('renders capture provenance and canonical review links', async () => {

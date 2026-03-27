@@ -328,6 +328,10 @@ describe('scenario json runner shipped scenario contracts', () => {
       columns: new Set(['Ideas', 'Drafting', 'Review', 'Scheduled']),
       labels: new Set(['needs-draft', 'needs-review', 'publish-week']),
     },
+    'board-blueprint-client-onboarding': {
+      columns: new Set(['New Intake', 'Waiting on Client', 'Ready for Review', 'In Progress', 'Completed']),
+      labels: new Set(['client-action', 'internal-review', 'waiting-on-client']),
+    },
   } as const
 
   it('rejects scenario paths that escape the scenarios-json directory', async () => {

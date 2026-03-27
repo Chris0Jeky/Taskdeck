@@ -60,6 +60,14 @@ describe('WorkspaceSetupModal', () => {
     })
     mocks.getCatalog.mockResolvedValue([
       {
+        id: 'board-blueprint-client-onboarding',
+        title: 'Board Blueprint - Client Onboarding',
+        manifest: {
+          schemaVersion: '1.0',
+          packId: 'board-blueprint-client-onboarding',
+        },
+      },
+      {
         id: 'board-blueprint-engineering-sprint',
         title: 'Board Blueprint - Engineering Sprint',
         manifest: {
@@ -111,6 +119,29 @@ describe('WorkspaceSetupModal', () => {
       expect.objectContaining({ dryRun: false }),
     )
     expect(mocks.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('supports selecting the client onboarding setup shape', async () => {
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: true,
+      },
+    })
+
+    await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Client Onboarding Demo')
+    await wrapper.get('input[value="client-onboarding"]').setValue(true)
+    await wrapper.get('.td-btn--primary').trigger('click')
+    await waitForUi()
+
+    expect(mocks.getCatalog).toHaveBeenCalledWith('board-1')
+    expect(mocks.applyStarterPack).toHaveBeenCalledWith(
+      'board-1',
+      expect.objectContaining({
+        manifest: expect.objectContaining({ packId: 'board-blueprint-client-onboarding' }),
+        dryRun: false,
+      }),
+    )
+    expect(wrapper.emitted('created')?.[0]?.[0]).toEqual({ boardId: 'board-1', templateId: 'client-onboarding' })
   })
 
   it('falls back to the created board when starter pack apply fails', async () => {

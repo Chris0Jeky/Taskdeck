@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "client-onboarding",
+  "title": "Client Onboarding",
+  "description": "Business-facing onboarding demo flow that turns one checklist capture into reviewed and applied board work.",
+  "tags": [
+    "demo",
+    "onboarding",
+    "operations"
+  ],
+  "steps": [
+    {
+      "type": "createBoard",
+      "alias": "board",
+      "name": "DEMO: Client Onboarding Demo",
+      "description": "Client onboarding board used for stakeholder walkthroughs."
+    },
+    {
+      "type": "applyStarterPack",
+      "board": "board",
+      "starterPackId": "board-blueprint-client-onboarding"
+    },
+    {
+      "type": "createCapture",
+      "alias": "acmeCapture",
+      "board": "board",
+      "text": "New client onboarding - ACME Ltd\n\n- Request director ID documents\n- Send engagement letter\n- Ask for prior year accounts\n- Request bookkeeping / software access\n- Schedule onboarding call\n- Confirm which records are still missing\n- Prepare internal review once documents arrive"
+    },
+    {
+      "type": "triageCapture",
+      "capture": "acmeCapture"
+    },
+    {
+      "type": "waitForCaptureProposal",
+      "capture": "acmeCapture",
+      "proposalAlias": "onboardingProposal",
+      "timeoutMs": 90000
+    },
+    {
+      "type": "executeProposal",
+      "proposal": "onboardingProposal"
+    }
+  ]
+}

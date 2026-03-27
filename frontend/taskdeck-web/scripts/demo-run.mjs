@@ -38,7 +38,7 @@ export async function main(argv = process.argv) {
 
   const config = getDemoConfig()
 
-  const scenarioName = args.scenario || 'engineering-sprint'
+  const scenarioName = args.scenario || 'client-onboarding'
 
   const api = new TaskdeckApiClient({ apiBaseUrl: config.apiBaseUrl })
   const demoLogin = await ensureUser(api, config.demoUser)

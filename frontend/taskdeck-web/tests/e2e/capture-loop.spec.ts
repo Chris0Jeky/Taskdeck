@@ -44,7 +44,7 @@ test('capture triage should create proposal and apply card with provenance links
   expect(cardsAfterTriage.length).toBe(0)
 
   await page.getByRole('button', { name: 'Refresh Detail' }).click()
-  const openProposalButton = page.getByRole('button', { name: 'Open Proposal' })
+  const openProposalButton = page.getByRole('button', { name: 'Open in Review' })
   await expect(openProposalButton).toBeVisible()
   await openProposalButton.click()
 
@@ -52,13 +52,13 @@ test('capture triage should create proposal and apply card with provenance links
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
 
-  await proposalCard.getByRole('button', { name: 'Approve' }).click()
+  await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved')).toBeVisible()
   const cardsAfterApprove = await listBoardCards(request, auth, boardId)
   expect(cardsAfterApprove.length).toBe(0)
 
   page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Execute' }).click()
+  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
   await expect(proposalCard.getByText('Applied')).toBeVisible()
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, checklistTaskTitle)

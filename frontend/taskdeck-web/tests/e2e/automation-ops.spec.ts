@@ -125,10 +125,10 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
   const proposalCard = page.locator('.td-review-card').filter({ hasText: proposal.summary }).first()
   await expect(proposalCard).toBeVisible()
 
-  await proposalCard.getByRole('button', { name: 'Approve' }).click()
+  await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await proposalCard.getByRole('button', { name: 'Execute' }).click()
+  await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
   await expect(proposalCard.getByText('Applied')).toBeVisible()
 })

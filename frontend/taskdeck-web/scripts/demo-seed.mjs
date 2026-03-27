@@ -58,9 +58,9 @@ const COLLAB = {
 
 const DEMO_BOARD_SPECS = {
   capture: {
-    canonicalName: 'DEMO: Capture Loop',
-    reusableNames: ['DEMO: Capture Loop', 'DEMO: Capture Loop (Demo)'],
-    description: 'Seeded demo board (capture -> triage -> proposal -> apply).',
+    canonicalName: 'DEMO: Client Onboarding Demo',
+    reusableNames: ['DEMO: Client Onboarding Demo', 'DEMO: Capture Loop', 'DEMO: Capture Loop (Demo)'],
+    description: 'Seeded demo board for review-first client onboarding workflows.',
     isArchived: false,
   },
   content: {
@@ -84,19 +84,25 @@ const DEMO_BOARD_SPECS = {
 }
 
 const SEEDED_CAPTURE_TEXT = {
-  ignored: 'This item is ignored (demo).',
+  ignored: 'Duplicate onboarding note from a prior client thread (demo).',
   triageApplied:
-    '- [ ] Draft a 5-minute stakeholder demo script\n' +
-    '- [ ] Add onboarding empty-states for scaffolding pages\n' +
-    '- [ ] Create demo seeding harness that populates Inbox/Proposals/Notifications\n',
+    'New client onboarding - ACME Ltd\n\n' +
+    '- Request director ID documents\n' +
+    '- Send engagement letter\n' +
+    '- Ask for prior year accounts\n' +
+    '- Request bookkeeping / software access\n' +
+    '- Schedule onboarding call\n' +
+    '- Confirm which records are still missing\n' +
+    '- Prepare internal review once documents arrive\n',
   triagePending:
-    '- [ ] Follow up: connect Activity view to real audit queries\n' +
-    '- [ ] Follow up: simplify Automation Queue composer\n',
+    'Client onboarding follow-up - Northwind Ltd\n\n' +
+    '- Confirm whether bank statements were uploaded\n' +
+    '- Ask client to share bookkeeping system access\n',
 }
 
 const SEEDED_QUEUE = {
-  successCardTitle: 'From queue: demo seeded item',
-  successInstruction: 'create card "From queue: demo seeded item"',
+  successCardTitle: 'From queue: confirm onboarding status update',
+  successInstruction: 'create card "From queue: confirm onboarding status update"',
   failureInstruction: 'create board named joji',
 }
 
@@ -921,9 +927,8 @@ export async function main() {
 
   // 3) Seed: starter packs
   console.log('\nApplying starter packs...')
-  await applyStarterPack(captureBoard.id, demoToken, 'common-column-flow-kanban')
-  await applyStarterPack(captureBoard.id, demoToken, 'common-labels-core')
-  console.log('- capture board: kanban columns + common labels')
+  await applyStarterPack(captureBoard.id, demoToken, 'board-blueprint-client-onboarding')
+  console.log('- capture board: client onboarding blueprint')
 
   await applyStarterPack(contentBoard.id, demoToken, 'board-blueprint-content-calendar')
   console.log('- content board: content calendar blueprint')
