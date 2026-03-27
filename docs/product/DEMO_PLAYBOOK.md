@@ -8,7 +8,7 @@ This playbook gives you:
 2. Scenario harness commands for repeatable demos.
 3. A short stakeholder flow and an opt-in recorder.
 
-Use [START_HERE.md](START_HERE.md) first if you are trying to understand the product.
+Use [START_HERE.md](../START_HERE.md) first if you are trying to understand the product.
 This playbook is for seeded demos, stakeholder walkthroughs, and regression/operator use, not the main onboarding path.
 
 Core story:
@@ -50,6 +50,29 @@ npm run demo:seed
 
 The seeder creates demo users, boards, Inbox items, proposals, queue activity, notifications, and Ops logs.
 On reruns against the canonical demo account, it now reuses the seeded artifacts it can identify instead of appending a fresh copy of every capture, queue sample, comment, chat session, and Ops evidence item.
+
+Use `npm run demo:seed -- --reset` to delete all demo boards before seeding (clean start).
+Use `npm run demo:seed -- --help` for full usage information.
+
+### Database location
+
+The canonical dev database is `backend/src/Taskdeck.Api/taskdeck.db` (SQLite, created by EF Core migration on first backend startup). The connection string is `Data Source=taskdeck.db` in `appsettings.json`, resolved relative to the backend's working directory.
+
+To reset the database without `--reset` (which only deletes demo boards via the API):
+
+```bash
+cd frontend/taskdeck-web
+npm run demo:reset-db          # delete canonical dev DB
+npm run demo:reset-db -- --all # also delete e2e/demo/ci DB files
+```
+
+Then restart the backend — EF Core will recreate the DB from migrations.
+
+Other DB files in the repo are per-purpose:
+- `taskdeck.e2e*.db` — E2E test databases (Playwright)
+- `taskdeck.demo*.db` — demo director/CI databases
+- `backend/tests/**/taskdeck.db` — backend test databases (created by test runs)
+- `taskdeck.db` at repo root — created when the backend is started from the repo root (e.g. `dotnet run --project backend/src/Taskdeck.Api/...`). Safe to delete when the backend is stopped and your active dev DB is `backend/src/Taskdeck.Api/taskdeck.db`.
 
 ## Runtime Preconditions
 
