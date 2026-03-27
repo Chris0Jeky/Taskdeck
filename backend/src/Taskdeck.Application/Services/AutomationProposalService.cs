@@ -382,7 +382,7 @@ public class AutomationProposalService : IAutomationProposalService
         var isCaptureTaskBatch = IsCaptureTaskBatch(proposal.Summary, proposal.SourceType, orderedOperations);
 
         return new ProposalPresentationDto(
-            BuildPlainSummary(proposal.Summary, orderedOperations, affectedEntities),
+            BuildPlainSummary(proposal.Summary, isCaptureTaskBatch, orderedOperations, affectedEntities),
             BuildImpactSummary(orderedOperations.Count, affectedEntities, isCaptureTaskBatch),
             BuildRiskCue(proposal.RiskLevel),
             BuildSourceCue(proposal.SourceType),
@@ -392,6 +392,7 @@ public class AutomationProposalService : IAutomationProposalService
 
     private static string BuildPlainSummary(
         string summary,
+        bool isCaptureTaskBatch,
         IReadOnlyList<AutomationProposalOperation> orderedOperations,
         IReadOnlyList<ProposalAffectedEntityDto> affectedEntities)
     {
@@ -405,7 +406,7 @@ public class AutomationProposalService : IAutomationProposalService
             return $"{summary} This would {LowercaseSentenceLead(DescribeOperation(orderedOperations[0]))}";
         }
 
-        if (IsCaptureTaskBatch(summary, ProposalSourceType.Queue, orderedOperations))
+        if (isCaptureTaskBatch)
         {
             return $"Create {orderedOperations.Count} task card{Pluralize(orderedOperations.Count)} from the captured note.";
         }

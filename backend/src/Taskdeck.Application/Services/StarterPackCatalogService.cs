@@ -75,9 +75,9 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
 
         var boardBlueprintCount = catalog.Count(entry =>
             string.Equals(entry.Category, StarterPackCatalogCategories.BoardBlueprint, StringComparison.Ordinal));
-        if (boardBlueprintCount != 4)
+        if (boardBlueprintCount == 0)
         {
-            errors.Add($"First-party catalog must include exactly 4 board-blueprint entries. Found {boardBlueprintCount}.");
+            errors.Add("First-party catalog must include at least one board-blueprint entry.");
         }
 
         if (errors.Count > 0)

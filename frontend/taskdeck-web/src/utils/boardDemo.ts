@@ -1,5 +1,5 @@
-export const CLIENT_ONBOARDING_DEMO_BOARD_NAME_FRAGMENT = 'client onboarding demo'
+export const CLIENT_ONBOARDING_DEMO_BOARD_NAME = 'DEMO: Client Onboarding Demo'
 
 export function isClientOnboardingDemoBoardName(boardName?: string | null): boolean {
-  return Boolean(boardName?.trim().toLowerCase().includes(CLIENT_ONBOARDING_DEMO_BOARD_NAME_FRAGMENT))
+  return boardName?.trim().toLowerCase() === CLIENT_ONBOARDING_DEMO_BOARD_NAME.toLowerCase()
 }
