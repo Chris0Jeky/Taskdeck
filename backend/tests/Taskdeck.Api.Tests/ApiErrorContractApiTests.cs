@@ -57,6 +57,30 @@ public class ApiErrorContractApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Login_ShouldReturn401_WhenRequestBodyIsEmptyJsonObject()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.PostAsync(
+            "/api/auth/login",
+            new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized, "AuthenticationFailed");
+    }
+
+    [Fact]
+    public async Task Login_ShouldReturn401_WhenRequestBodyIsJsonNull()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.PostAsync(
+            "/api/auth/login",
+            new StringContent("null", System.Text.Encoding.UTF8, "application/json"));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized, "AuthenticationFailed");
+    }
+
+    [Fact]
     public async Task Login_ShouldReturnAuthenticationFailedErrorContract_WhenCredentialsAreInvalid()
     {
         using var client = _factory.CreateClient();
