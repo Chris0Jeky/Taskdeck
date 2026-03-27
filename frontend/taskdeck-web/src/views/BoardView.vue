@@ -449,15 +449,15 @@ useKeyboardShortcuts([
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div class="min-h-screen bg-surface">
     <!-- Header -->
-    <div class="bg-white border-b border-gray-200">
+    <div class="bg-surface-container border-b border-outline-variant/15">
       <div class="max-w-full px-4 sm:px-6 lg:px-8 py-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-4">
             <button
               @click="goBack"
-              class="text-gray-600 hover:text-gray-900 transition-colors"
+              class="text-on-surface/60 hover:text-on-surface transition-colors"
             >
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -469,28 +469,28 @@ useKeyboardShortcuts([
               </svg>
             </button>
             <div v-if="boardStore.currentBoard">
-              <h1 class="text-2xl font-bold text-gray-900">
+              <h1 class="text-2xl font-bold text-on-surface">
                 {{ boardStore.currentBoard.name }}
               </h1>
-              <p v-if="boardStore.currentBoard.description" class="text-sm text-gray-600">
+              <p v-if="boardStore.currentBoard.description" class="text-sm text-on-surface/60">
                 {{ boardStore.currentBoard.description }}
               </p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
-                <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Live</span>
+                <span class="text-xs font-semibold uppercase tracking-wide text-on-surface/60">Live</span>
                 <span
                   v-if="presenceMembers.length === 0"
-                  class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                  class="inline-flex items-center rounded-full bg-surface-container-highest px-2 py-0.5 text-xs text-on-surface/60"
                 >
                   No active collaborators
                 </span>
                 <span
                   v-for="member in presenceMembers"
                   :key="member.userId"
-                  class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+                  class="inline-flex items-center gap-1 rounded-full bg-primary-container/10 px-2 py-0.5 text-xs text-primary"
                   data-presence-user
                 >
                   <span>{{ member.displayName || member.userId.slice(0, 8) }}</span>
-                  <span v-if="member.editingCardId" class="font-medium text-amber-700">(editing)</span>
+                  <span v-if="member.editingCardId" class="font-medium text-[#fbbf24]">(editing)</span>
                 </span>
               </div>
             </div>
@@ -500,21 +500,21 @@ useKeyboardShortcuts([
             <button
               @click="toggleFilterPanel"
               :class="[
-                'p-2 border border-gray-300 rounded-lg transition-colors',
-                showFilterPanel ? 'bg-blue-100 text-blue-700 border-blue-400' : 'text-gray-600 hover:bg-gray-100'
+                'p-2 border border-outline-variant/15 rounded-lg transition-colors',
+                showFilterPanel ? 'bg-primary-container/20 text-primary border-primary-container' : 'text-on-surface/60 hover:bg-surface-bright'
               ]"
               title="Filter Cards (Press f)"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
-              <span v-if="boardStore.filteredCardCount < boardStore.totalCardCount" class="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+              <span v-if="boardStore.filteredCardCount < boardStore.totalCardCount" class="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary-container text-[10px] font-bold text-on-primary-container">
                 {{ boardStore.filteredCardCount }}
               </span>
             </button>
             <button
               @click="showKeyboardHelp = true"
-              class="p-2 text-gray-600 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              class="p-2 text-on-surface/60 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
               title="Keyboard Shortcuts (Press ?)"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -523,7 +523,7 @@ useKeyboardShortcuts([
             </button>
             <button
               @click="showLabelManager = true"
-              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
               title="Manage Labels"
             >
               <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -533,7 +533,7 @@ useKeyboardShortcuts([
             </button>
             <button
               @click="showStarterPackCatalog = true"
-              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
               title="Browse Starter Packs"
             >
               <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -543,7 +543,7 @@ useKeyboardShortcuts([
             </button>
             <button
               @click="showBoardSettings = true"
-              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
               title="Board Settings"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -553,7 +553,7 @@ useKeyboardShortcuts([
             </button>
             <button
               @click="showColumnForm = !showColumnForm"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              class="px-4 py-2 bg-primary-container text-on-primary-container rounded-lg hover:brightness-110 transition-colors"
             >
               + Add Column
             </button>
@@ -562,41 +562,41 @@ useKeyboardShortcuts([
 
         <div
           v-if="boardStore.currentBoard"
-          class="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
+          class="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-outline-variant/15 bg-surface-container-low px-4 py-3"
           data-board-action-rail
         >
-          <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Board Actions</span>
+          <span class="text-xs font-semibold uppercase tracking-wide text-on-surface/60">Board Actions</span>
           <button
-            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            class="px-3 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-container border border-outline-variant/15 rounded-lg transition-colors"
             @click="openBoardCaptureModal"
           >
             Capture here
           </button>
           <button
-            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            class="px-3 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-container border border-outline-variant/15 rounded-lg transition-colors"
             @click="openBoardChat"
           >
             Ask assistant
           </button>
           <button
-            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            class="px-3 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-container border border-outline-variant/15 rounded-lg transition-colors"
             @click="openBoardReview"
           >
             Review proposals
           </button>
           <button
-            class="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-300 rounded-lg transition-colors"
+            class="px-3 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-container border border-outline-variant/15 rounded-lg transition-colors"
             @click="openBoardInbox"
           >
             Open Inbox
           </button>
           <button
-            class="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            class="px-3 py-2 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 rounded-lg transition-colors"
             @click="openBoardCardComposer"
           >
             Add card
           </button>
-          <p class="text-sm text-gray-600">
+          <p class="text-sm text-on-surface/60">
             Keep captures, proposals, and quick actions anchored to {{ boardStore.currentBoard.name }}.
           </p>
         </div>
@@ -615,25 +615,25 @@ useKeyboardShortcuts([
         </WorkspaceHelpCallout>
 
         <!-- Create Column Form -->
-        <div v-if="showColumnForm" class="mt-4 bg-gray-50 rounded-lg p-4">
+        <div v-if="showColumnForm" class="mt-4 bg-surface rounded-lg p-4">
           <form @submit.prevent="createColumn" class="flex gap-3">
             <input
               v-model="newColumnName"
               type="text"
               placeholder="Column name"
-              class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="flex-1 px-4 py-2 border border-outline-variant/15 rounded-lg bg-surface-container-lowest text-on-surface focus:outline-none ring-1 ring-primary-container"
               autofocus
             />
             <button
               type="submit"
-              class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              class="px-6 py-2 bg-primary-container text-on-primary-container rounded-lg hover:brightness-110 transition-colors"
             >
               Create
             </button>
             <button
               type="button"
               @click="showColumnForm = false"
-              class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              class="px-6 py-2 bg-surface-bright text-on-surface/70 rounded-lg hover:bg-surface-container-highest transition-colors"
             >
               Cancel
             </button>
@@ -653,12 +653,12 @@ useKeyboardShortcuts([
 
     <!-- Loading State -->
     <div v-if="boardStore.loading && !boardStore.currentBoard" class="flex justify-center items-center py-12">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary-container"></div>
     </div>
 
     <!-- Error State -->
     <div v-else-if="boardStore.error" class="max-w-7xl mx-auto px-4 py-8">
-      <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+      <div class="bg-error-container/20 border border-error/20 rounded-lg p-4 text-error">
         {{ boardStore.error }}
       </div>
     </div>
@@ -697,7 +697,7 @@ useKeyboardShortcuts([
         <!-- Empty State -->
         <div
           v-if="boardStore.currentBoard.columns.length === 0"
-          class="flex-1 flex flex-col items-center justify-center text-gray-400"
+          class="flex-1 flex flex-col items-center justify-center text-on-surface/20"
         >
           <svg
             class="w-16 h-16 mb-4"
