@@ -7,6 +7,8 @@
  * Usage:
  *   cd frontend/taskdeck-web
  *   npm run demo:seed
+ *   npm run demo:seed -- --reset    # delete demo boards first
+ *   npm run demo:seed -- --help     # print usage
  *
  * Optional env vars:
  *   TASKDECK_API_BASE_URL       (default: http://localhost:5000/api)
@@ -874,10 +876,11 @@ async function ensureOpsSeed(token) {
   }
 }
 
-export async function main() {
+export async function main({ reset = false } = {}) {
   ensureSafeApiBaseTarget()
 
   console.log(`\nTaskdeck demo seeder -> ${NORMALIZED_API_BASE}`)
+  if (reset) console.log('  --reset: will delete all demo boards before seeding')
   console.log('----------------------------------------')
 
   // 1) Ensure demo users exist
@@ -893,8 +896,27 @@ export async function main() {
   console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
   // 2) Reuse/create canonical demo boards and archive extra active DEMO boards.
-  const boards = await http('GET', '/boards?includeArchived=true', { token: demoToken })
-  const demoBoards = (boards || []).filter(isDemoBoard)
+  let boards = await http('GET', '/boards?includeArchived=true', { token: demoToken })
+  let demoBoards = (boards || []).filter(isDemoBoard)
+
+  if (reset && demoBoards.length) {
+    console.log(`\n--reset: deleting ${demoBoards.length} demo board(s)...`)
+    for (const b of demoBoards) {
+      try {
+        await http('DELETE', `/boards/${b.id}`, { token: demoToken })
+        console.log(`  - deleted ${b.name}`)
+      } catch (err) {
+        if (getHttpStatus(err) === 403) {
+          console.log(`  - skipped ${b.name} (403 Forbidden)`)
+          continue
+        }
+        throw err
+      }
+    }
+    // Re-fetch after deletion
+    boards = await http('GET', '/boards?includeArchived=true', { token: demoToken })
+    demoBoards = (boards || []).filter(isDemoBoard)
+  }
 
   const captureBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.capture, demoBoards, demoToken)
   const contentBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.content, demoBoards, demoToken)
@@ -1035,8 +1057,42 @@ export async function main() {
 
 const isDirectEntry = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false
 
+function printUsage() {
+  console.log(`
+Usage: npm run demo:seed [-- [options]]
+
+Options:
+  --reset   Delete all demo boards before seeding (clean start)
+  --help    Print this usage information and exit
+
+Environment variables:
+  TASKDECK_API_BASE_URL       API base URL (default: http://localhost:5000/api)
+  TASKDECK_DEMO_USERNAME      Demo user name (default: demo)
+  TASKDECK_DEMO_EMAIL         Demo user email (default: demo@taskdeck.local)
+  TASKDECK_DEMO_PASSWORD      Demo user password (default: demo123)
+  TASKDECK_COLLAB_USERNAME    Collab user name (default: collab)
+  TASKDECK_COLLAB_EMAIL       Collab user email (default: collab@taskdeck.local)
+  TASKDECK_COLLAB_PASSWORD    Collab user password (default: demo123)
+`.trim())
+}
+
+export function parseSeedArgs(argv) {
+  const args = argv.slice(2)
+  return {
+    help: args.includes('--help') || args.includes('-h'),
+    reset: args.includes('--reset'),
+  }
+}
+
 if (isDirectEntry) {
-  main().catch((err) => {
+  const flags = parseSeedArgs(process.argv)
+
+  if (flags.help) {
+    printUsage()
+    process.exit(0)
+  }
+
+  main({ reset: flags.reset }).catch((err) => {
     console.error('\nDemo seed failed')
     console.error(err?.stack || err)
     process.exitCode = 1
