@@ -5,11 +5,21 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-gray-50 text-gray-900;
+  html {
+    color-scheme: dark;
   }
 
-  /* Focus ring utility */
+  body {
+    @apply bg-surface text-on-surface font-body;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    @apply bg-primary-container text-on-primary-container;
+  }
+
+  /* Focus ring — Ember glow */
   *:focus-visible {
     outline: none;
     box-shadow: var(--td-focus-ring);
@@ -19,5 +29,163 @@
   /* Accessibility: aria-live region for toast announcements */
   [aria-live] {
     position: relative;
+  }
+
+  /* Custom scrollbar — Obsidian */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #5b403e;
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #ab8986;
+  }
+
+  /* Material Symbols baseline */
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24;
+    font-size: 20px;
+  }
+}
+
+@layer components {
+  /* ── Ember Pulse indicator ── */
+  .ember-pulse {
+    @apply animate-ember-pulse;
+  }
+
+  /* ── Ghost Border utility ── */
+  .ghost-border {
+    border: 0.5px solid rgba(91, 64, 62, 0.15);
+  }
+
+  /* ── Glass Panel ── */
+  .glass-panel {
+    background: var(--td-glass-bg);
+    backdrop-filter: blur(var(--td-glass-blur));
+  }
+
+  /* ── Tonal Card ── */
+  .td-card {
+    @apply bg-surface-container-low relative;
+    border: 0.5px solid rgba(91, 64, 62, 0.05);
+    transition: background-color var(--td-transition-fast), border-color var(--td-transition-fast);
+  }
+  .td-card:hover {
+    @apply bg-surface-container;
+  }
+
+  /* ── Ember leading-edge hover indicator ── */
+  .td-card-indicator {
+    @apply absolute left-0 top-0 bottom-0 w-[2px] bg-primary-container opacity-0;
+    transition: opacity var(--td-transition-fast);
+  }
+  .group:hover .td-card-indicator,
+  .td-card:hover .td-card-indicator {
+    @apply opacity-100;
+  }
+
+  /* ── Label chip ── */
+  .td-chip {
+    @apply px-2 py-0.5 font-label text-[9px] uppercase tracking-wider;
+    @apply bg-surface-container-highest text-on-surface;
+  }
+  .td-chip--ember {
+    @apply bg-primary-container/20 text-primary-container font-bold;
+  }
+
+  /* ── Buttons ── */
+  .td-btn {
+    @apply font-label text-xs uppercase tracking-widest font-bold;
+    @apply px-5 py-3 transition-all;
+    @apply active:scale-[0.98];
+  }
+  .td-btn--primary {
+    @apply bg-primary-container text-on-primary-container;
+  }
+  .td-btn--primary:hover {
+    filter: brightness(1.1);
+  }
+  .td-btn--secondary {
+    @apply bg-surface-container-highest text-on-surface;
+  }
+  .td-btn--secondary:hover {
+    @apply bg-surface-bright;
+  }
+  .td-btn--ghost {
+    @apply bg-transparent text-on-surface;
+    border: 0.5px solid rgba(91, 64, 62, 0.2);
+  }
+  .td-btn--ghost:hover {
+    border-color: var(--td-color-primary);
+    @apply text-primary;
+  }
+  .td-btn--danger {
+    @apply bg-ember text-obsidian;
+  }
+  .td-btn--danger:hover {
+    filter: brightness(1.1);
+  }
+  .td-btn--sm {
+    @apply px-3 py-1.5 text-[9px];
+  }
+  .td-btn:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  /* ── Panel ── */
+  .td-panel {
+    background: var(--td-surface-container-low);
+    border: 0.5px solid var(--td-border-ghost);
+    padding: var(--td-space-5);
+    border-radius: var(--td-radius-lg);
+  }
+
+  /* ── Page Title ── */
+  .td-page-title {
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-size: 2.5rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--td-text-primary);
+    margin: 0;
+  }
+
+  /* ── Section Title & Desc ── */
+  .td-section-title {
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--td-text-primary);
+    margin: 0;
+  }
+  .td-section-desc {
+    font-size: var(--td-font-sm);
+    color: var(--td-text-tertiary);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ── Alert ── */
+  .td-alert {
+    padding: var(--td-space-3) var(--td-space-4);
+    border-radius: var(--td-radius-md);
+    font-size: var(--td-font-sm);
+    line-height: 1.5;
+    background: var(--td-surface-container-low);
+    color: var(--td-text-primary);
+    border: 0.5px solid var(--td-border-default);
+  }
+  .td-alert--error {
+    background: var(--td-color-error-light);
+    color: var(--td-color-ember);
+    border-color: rgba(255, 77, 77, 0.2);
   }
 }

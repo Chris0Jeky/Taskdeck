@@ -88,12 +88,14 @@ async function handleSubmit() {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: var(--td-surface-secondary);
+  background: var(--td-surface-base);
   padding: var(--td-space-4);
 }
 
 .td-auth-card {
-  background: var(--td-surface-primary);
+  background: var(--td-glass-bg);
+  backdrop-filter: blur(var(--td-glass-blur));
+  border: 0.5px solid var(--td-border-ghost);
   border-radius: var(--td-radius-xl);
   box-shadow: var(--td-shadow-lg);
   padding: var(--td-space-8);
@@ -102,8 +104,10 @@ async function handleSubmit() {
 }
 
 .td-auth-title {
+  font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-2xl);
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   text-align: center;
   margin-bottom: var(--td-space-6);
   color: var(--td-text-primary);
@@ -140,7 +144,13 @@ async function handleSubmit() {
   border: 1px solid var(--td-border-default);
   border-radius: var(--td-radius-md);
   font-size: var(--td-font-base);
+  background: var(--td-surface-container);
+  color: var(--td-text-primary);
   transition: border-color var(--td-transition-fast);
+}
+
+.td-input::placeholder {
+  color: var(--td-text-tertiary);
 }
 
 .td-input:focus {
@@ -160,16 +170,16 @@ async function handleSubmit() {
 }
 
 .td-btn--primary {
-  background: var(--td-color-primary);
+  background: var(--td-color-ember-glow);
   color: var(--td-text-inverse);
 }
 
 .td-btn--primary:hover:not(:disabled) {
-  background: var(--td-color-primary-hover);
+  filter: brightness(1.1);
 }
 
 .td-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -188,5 +198,6 @@ async function handleSubmit() {
 
 .td-link:hover {
   text-decoration: underline;
+  color: var(--td-color-ember-glow);
 }
 </style>

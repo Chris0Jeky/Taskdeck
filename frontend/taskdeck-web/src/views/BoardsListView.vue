@@ -37,39 +37,39 @@ function goToBoard(id: string) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div class="min-h-screen bg-surface">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">My Boards</h1>
+        <h1 class="td-page-title">My Boards</h1>
         <button
           @click="showCreateForm = !showCreateForm"
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          class="td-btn td-btn--primary rounded-lg"
         >
           + New Board
         </button>
       </div>
 
       <!-- Create Board Form -->
-      <div v-if="showCreateForm" class="mb-6 bg-white rounded-lg shadow-sm p-6">
-        <h2 class="text-lg font-semibold mb-4">Create New Board</h2>
+      <div v-if="showCreateForm" class="mb-6 td-panel">
+        <h2 class="text-lg font-semibold mb-4 text-on-surface">Create New Board</h2>
         <form @submit.prevent="createBoard" class="flex gap-3">
           <input
             v-model="newBoardName"
             type="text"
             placeholder="Board name"
-            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="flex-1 px-4 py-2 border border-outline-variant/15 rounded-lg bg-surface-container text-on-surface placeholder:text-on-surface/40 focus:outline-none focus:ring-1 focus:ring-primary-container"
             autofocus
           />
           <button
             type="submit"
-            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            class="td-btn td-btn--primary rounded-lg"
           >
             Create
           </button>
           <button
             type="button"
             @click="showCreateForm = false"
-            class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+            class="td-btn td-btn--secondary rounded-lg"
           >
             Cancel
           </button>
@@ -78,19 +78,19 @@ function goToBoard(id: string) {
 
       <!-- Loading State -->
       <div v-if="boardStore.loading" class="text-center py-12">
-        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <p class="mt-4 text-gray-600">Loading boards...</p>
+        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary-container"></div>
+        <p class="mt-4 text-on-surface/60">Loading boards...</p>
       </div>
 
       <!-- Error State -->
-      <div v-else-if="boardStore.error" class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+      <div v-else-if="boardStore.error" class="bg-ember/10 border border-ember rounded-lg p-4 text-ember">
         {{ boardStore.error }}
       </div>
 
       <!-- Empty State -->
       <div v-else-if="boardStore.boards.length === 0" class="text-center py-12">
         <svg
-          class="mx-auto h-12 w-12 text-gray-400"
+          class="mx-auto h-12 w-12 text-on-surface/40"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -102,12 +102,12 @@ function goToBoard(id: string) {
             d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
           />
         </svg>
-        <h3 class="mt-2 text-sm font-medium text-gray-900">No boards</h3>
-        <p class="mt-1 text-sm text-gray-500">Get started by creating a new board.</p>
+        <h3 class="mt-2 text-sm font-medium text-on-surface">No boards</h3>
+        <p class="mt-1 text-sm text-on-surface/60">Get started by creating a new board.</p>
         <div class="mt-6">
           <button
             @click="showCreateForm = true"
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            class="td-btn td-btn--primary rounded-lg"
           >
             + Create Board
           </button>
@@ -120,16 +120,16 @@ function goToBoard(id: string) {
           v-for="board in boardStore.boards"
           :key="board.id"
           @click="goToBoard(board.id)"
-          class="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer p-6 border border-gray-200"
+          class="bg-surface-container-low rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.3)] transition-shadow cursor-pointer p-6 border border-outline-variant/15 hover:bg-surface-container group"
         >
-          <h3 class="text-xl font-semibold text-gray-900 mb-2">
+          <h3 class="text-xl font-semibold text-on-surface mb-2">
             {{ board.name }}
           </h3>
-          <p v-if="board.description" class="text-gray-600 text-sm line-clamp-2">
+          <p v-if="board.description" class="text-on-surface/60 text-sm line-clamp-2">
             {{ board.description }}
           </p>
-          <div v-else class="text-gray-400 text-sm italic">No description</div>
-          <div class="mt-4 text-xs text-gray-500">
+          <div v-else class="text-on-surface/40 text-sm italic">No description</div>
+          <div class="mt-4 text-xs text-on-surface/60">
             Created {{ new Date(board.createdAt).toLocaleDateString() }}
           </div>
         </div>
