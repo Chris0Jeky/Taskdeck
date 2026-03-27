@@ -1,5 +1,6 @@
 {
   "includeCoAuthoredBy": false,
+  "enableAllProjectMcpServers": true,
   "permissions": {
     "allow": [
       "Bash(dotnet --version)",
@@ -38,6 +39,7 @@
       "Bash(git merge:*)",
       "Bash(git fetch:*)",
       "Bash(git remote:*)",
+      "Bash(git push:*)",
       "Bash(gh :*)",
       "Bash(ls:*)",
       "Bash(pwd:*)",
