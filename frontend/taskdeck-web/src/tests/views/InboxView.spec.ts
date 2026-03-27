@@ -102,6 +102,8 @@ const mockCaptureStore = reactive({
   ignoreItem: vi.fn<(itemId: string) => Promise<void>>(),
   cancelItem: vi.fn<(itemId: string) => Promise<void>>(),
   triageItem: vi.fn<(itemId: string) => Promise<void>>(),
+  triagePollingItemId: null as string | null,
+  pollTriageCompletion: vi.fn<(itemId: string) => () => void>(),
 })
 
 vi.mock('../../store/captureStore', () => ({
@@ -237,6 +239,8 @@ describe('InboxView', () => {
     mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
     mockCaptureStore.cancelItem.mockResolvedValue(undefined)
     mockCaptureStore.triageItem.mockResolvedValue(undefined)
+    mockCaptureStore.triagePollingItemId = null
+    mockCaptureStore.pollTriageCompletion.mockImplementation(() => () => {})
     routerMocks.push.mockReset()
     routerMocks.replace.mockReset()
     routerMocks.replace.mockResolvedValue(undefined)
@@ -746,6 +750,86 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-1')
+    expect(mockCaptureStore.pollTriageCompletion).toHaveBeenCalledWith('capture-1')
+  })
+
+  it('does not start triage polling when the refreshed detail is already terminal', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: 'board-1',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: `Excerpt for ${itemId}`,
+        rawText: `Full text for ${itemId}`,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+    })
+    mockCaptureStore.triageItem.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        ...mockCaptureStore.detailById[itemId],
+        status: 'ProposalCreated',
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    const triageButton = wrapper.findAll('button').find((node) => node.text() === 'Start Triage')
+    await triageButton?.trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-1')
+    expect(mockCaptureStore.pollTriageCompletion).not.toHaveBeenCalled()
+  })
+
+  it('stops the previous triage poll before retrying triage, even when the retry fails', async () => {
+    const stopFirstPoll = vi.fn()
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: 'board-1',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: `Excerpt for ${itemId}`,
+        rawText: `Full text for ${itemId}`,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+    })
+
+    mockCaptureStore.pollTriageCompletion
+      .mockImplementationOnce(() => stopFirstPoll)
+      .mockImplementation(() => () => {})
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    const triageButton = () => wrapper.findAll('button').find((node) => node.text() === 'Start Triage')
+
+    await triageButton()?.trigger('click')
+    await waitForUi()
+
+    mockCaptureStore.triageItem.mockRejectedValueOnce(new Error('retry failed'))
+
+    await triageButton()?.trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.triageItem).toHaveBeenCalledTimes(2)
+    expect(stopFirstPoll).toHaveBeenCalledTimes(1)
   })
 
   it('navigates to linked proposal route when detail includes proposal provenance', async () => {

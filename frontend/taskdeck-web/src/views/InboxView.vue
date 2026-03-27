@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useCaptureStore } from '../store/captureStore'
+import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
@@ -14,6 +15,7 @@ const selectedItemId = ref<string | null>(null)
 const hashLoadFailedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
 const listContainer = ref<HTMLElement | null>(null)
+let stopTriagePolling: (() => void) | null = null
 
 const items = computed(() => captureStore.items)
 const activeDescendantId = computed(() => {
@@ -297,13 +299,30 @@ async function cancelSelected() {
 }
 
 async function triageSelected() {
-  if (!selectedItemId.value) {
+  const itemId = selectedItemId.value
+  if (!itemId) {
     return
   }
 
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
+  }
+
   try {
-    await captureStore.triageItem(selectedItemId.value)
+    await captureStore.triageItem(itemId)
+
+    const latestStatus = captureStore.detailById[itemId]?.status
+    if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
+      return
+    }
+
+    stopTriagePolling = captureStore.pollTriageCompletion(itemId)
   } catch {
+    if (stopTriagePolling) {
+      stopTriagePolling()
+      stopTriagePolling = null
+    }
     // Store handles toast + error state.
   }
 }
@@ -340,14 +359,16 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
 
   const label = statusLabel(status)
   if (label === 'Triaging') {
-    return 'Triaging...'
+    return captureStore.triagePollingItemId === selectedItemId.value
+      ? 'Triaging (checking...)'
+      : 'Triaging...'
   }
 
-  if (label === 'Triaged' || label === 'Proposal Created') {
+  if (label === 'Ready for review' || label === 'Triaged') {
     return 'Triage Complete'
   }
 
-  if (label === 'Converted') {
+  if (label === 'Applied to board') {
     return 'Converted'
   }
 
@@ -413,6 +434,11 @@ watch(
 )
 
 watch(selectedItemId, (itemId, _, onCleanup) => {
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
+  }
+
   if (!itemId) {
     return
   }
@@ -425,6 +451,13 @@ watch(selectedItemId, (itemId, _, onCleanup) => {
 
 onMounted(() => {
   void loadInbox()
+})
+
+onUnmounted(() => {
+  if (stopTriagePolling) {
+    stopTriagePolling()
+    stopTriagePolling = null
+  }
 })
 </script>
 
