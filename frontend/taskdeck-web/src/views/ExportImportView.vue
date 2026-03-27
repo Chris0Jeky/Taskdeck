@@ -204,7 +204,7 @@ function resetImport() {
 .td-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .td-export-result { margin-top: var(--td-space-4); }
 .td-result-actions { display: flex; gap: var(--td-space-2); margin-bottom: var(--td-space-2); }
-.td-json-viewer { background: var(--td-text-primary); color: #e2e8f0; padding: var(--td-space-4); border-radius: var(--td-radius-md); font-family: monospace; font-size: var(--td-font-sm); overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
+.td-json-viewer { background: var(--td-surface-container-lowest); color: var(--td-text-primary); padding: var(--td-space-4); border-radius: var(--td-radius-md); font-family: monospace; font-size: var(--td-font-sm); overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
 .td-json-viewer--sm { max-height: 200px; }
 .td-step-actions { display: flex; gap: var(--td-space-3); margin-top: var(--td-space-4); }
 .td-import-result { display: flex; align-items: center; gap: var(--td-space-3); padding: var(--td-space-4); border-radius: var(--td-radius-md); margin-bottom: var(--td-space-4); font-size: var(--td-font-sm); }

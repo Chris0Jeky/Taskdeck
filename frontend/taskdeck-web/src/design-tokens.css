@@ -93,6 +93,14 @@
   /* ── Glass ── */
   --td-glass-bg: rgba(32, 31, 31, 0.8);
   --td-glass-blur: 16px;
+
+  /* ── Legacy Aliases ──
+     Untouched views still reference the old light-mode token names.
+     Map them to their dark-mode equivalents so nothing breaks. */
+  --td-surface-primary: var(--td-surface-container);
+  --td-surface-secondary: var(--td-surface-container-low);
+  --td-surface-tertiary: var(--td-surface-container-high);
+  --td-surface-hover: var(--td-surface-bright);
 }
 
 /* Density: Compact */
