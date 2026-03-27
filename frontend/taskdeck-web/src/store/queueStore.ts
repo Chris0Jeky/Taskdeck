@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { queueApi } from '../api/queueApi'
 import { useToastStore } from './toastStore'
 import { useSessionStore } from './sessionStore'
+import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import type { QueueRequest, CreateQueueRequestDto, QueueStats } from '../types/queue'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
@@ -15,7 +16,21 @@ export const useQueueStore = defineStore('queue', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  function guardDemoMutation(): never | void {
+    if (isDemoMode) {
+      toast.info('This action is view-only in demo mode.')
+      throw new DemoModeError()
+    }
+  }
+
   async function fetchUserRequests() {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      requests.value = []
+      loading.value = false
+      return
+    }
     try {
       loading.value = true
       error.value = null
@@ -32,6 +47,13 @@ export const useQueueStore = defineStore('queue', () => {
   }
 
   async function fetchByStatus(status: string) {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      requests.value = []
+      loading.value = false
+      return
+    }
     try {
       loading.value = true
       error.value = null
@@ -47,6 +69,7 @@ export const useQueueStore = defineStore('queue', () => {
   }
 
   async function submitRequest(dto: CreateQueueRequestDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -66,6 +89,7 @@ export const useQueueStore = defineStore('queue', () => {
   }
 
   async function cancelRequest(requestId: string) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -84,6 +108,7 @@ export const useQueueStore = defineStore('queue', () => {
   }
 
   async function processNext() {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -105,6 +130,13 @@ export const useQueueStore = defineStore('queue', () => {
   }
 
   async function fetchStats() {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      stats.value = { pendingCount: 0, processingCount: 0, completedCount: 0, failedCount: 0 }
+      loading.value = false
+      return
+    }
     try {
       loading.value = true
       error.value = null

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { auditApi } from '../api/auditApi'
 import { useToastStore } from './toastStore'
+import { isDemoMode } from '../utils/demoMode'
 import type { AuditEntry } from '../types/audit'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
@@ -19,6 +20,13 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   async function fetchBoardHistory(boardId: string, limit = 50) {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      entries.value = []
+      loading.value = false
+      return
+    }
     try {
       loading.value = true
       error.value = null
@@ -34,6 +42,13 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   async function fetchEntityHistory(entityType: string, entityId: string, limit = 50) {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      entries.value = []
+      loading.value = false
+      return
+    }
     try {
       loading.value = true
       error.value = null
@@ -49,6 +64,13 @@ export const useAuditStore = defineStore('audit', () => {
   }
 
   async function fetchUserHistory(limit = 50) {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      entries.value = []
+      loading.value = false
+      return
+    }
     try {
       loading.value = true
       error.value = null

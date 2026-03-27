@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { boardAccessApi } from '../api/boardAccessApi'
 import { useToastStore } from './toastStore'
 import { useSessionStore } from './sessionStore'
+import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import type { BoardAccess, BoardRole, GrantAccessDto, UpdateAccessDto } from '../types/access'
 import { normalizeBoardRole } from '../utils/roles'
 import { getErrorDisplay } from '../composables/useErrorMapper'
@@ -14,6 +15,13 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const boardAccess = ref<Map<string, BoardAccess[]>>(new Map())
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  function guardDemoMutation(): never | void {
+    if (isDemoMode) {
+      toast.info('This action is view-only in demo mode.')
+      throw new DemoModeError()
+    }
+  }
 
   const currentUserRole = computed(() => {
     return (boardId: string): BoardRole | null => {
@@ -47,6 +55,13 @@ export const usePermissionsStore = defineStore('permissions', () => {
   })
 
   async function fetchBoardAccess(boardId: string) {
+    if (isDemoMode) {
+      loading.value = true
+      error.value = null
+      boardAccess.value.set(boardId, [])
+      loading.value = false
+      return
+    }
     try {
       loading.value = true
       error.value = null
@@ -63,6 +78,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   }
 
   async function grantAccess(boardId: string, dto: GrantAccessDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -83,6 +99,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   }
 
   async function updateAccess(boardId: string, accessId: string, dto: UpdateAccessDto) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
@@ -107,6 +124,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   }
 
   async function revokeAccess(boardId: string, accessId: string) {
+    guardDemoMutation()
     try {
       loading.value = true
       error.value = null
