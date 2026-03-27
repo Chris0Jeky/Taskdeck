@@ -66,6 +66,7 @@ const OPS_RUN_STATUS_BY_CODE = {
 }
 const OPS_RUN_FAILURE_STATUSES = new Set(['failed', 'timedout', 'cancelled'])
 const OPS_LOG_PREVIEW_LIMIT = 20
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -814,14 +815,13 @@ async function executeStep(api, ctx, step) {
 
     case 'executeProposal': {
       assert(typeof step.proposal === 'string' && step.proposal.length > 0, 'executeProposal.proposal is required')
-      const proposal = ctx.refs.proposals?.[step.proposal]
-      // Support both alias lookup and raw UUID passthrough.
-      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      const proposalId = proposal?.id || (UUID_RE.test(step.proposal) ? step.proposal : null)
+      const proposalRef = step.proposal.trim()
+      const proposal = ctx.refs.proposals?.[proposalRef]
+      const proposalId = proposal?.id || (UUID_RE.test(proposalRef) ? proposalRef : null)
 
       if (!proposalId) {
         throw new Error(
-          `executeProposal: "${step.proposal}" did not resolve to a proposal ID. ` +
+          `executeProposal: "${proposalRef}" did not resolve to a proposal ID. ` +
           `This usually means a prior waitForCaptureProposal step was skipped (e.g. --skip-llm). ` +
           `Mark this step with "requiresLlm": true to skip it automatically.`,
         )

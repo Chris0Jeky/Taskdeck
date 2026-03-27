@@ -398,3 +398,65 @@ describe('scenario json runner shipped scenario contracts', () => {
     }
   })
 })
+
+describe('executeProposal alias resolution', () => {
+  it('rejects unresolved proposal alias that is not a UUID', async () => {
+    await expect(
+      runJsonScenario({
+        api: createFakeApi(),
+        config: { uiBaseUrl: 'http://localhost:5173' },
+        scenario: {
+          version: 1,
+          id: 'unresolved-alias',
+          title: 'Unresolved Alias',
+          steps: [
+            {
+              type: 'executeProposal',
+              proposal: 'nonExistentAlias',
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow('did not resolve to a proposal ID')
+  })
+
+  it('accepts a raw UUID as proposal reference', async () => {
+    const uuid = '12345678-1234-1234-1234-123456789abc'
+    const baseApi = createFakeApi()
+
+    const api = {
+      ...baseApi,
+      async get(path: string) {
+        return baseApi.get(path)
+      },
+      async post(path: string, opts?: { body?: Record<string, unknown>; headers?: Record<string, string> }) {
+        if (path === `/automation/proposals/${uuid}/approve`) {
+          return { id: uuid, status: 'Approved' }
+        }
+        if (path === `/automation/proposals/${uuid}/execute`) {
+          return { id: uuid, status: 'Executed' }
+        }
+        return baseApi.post(path, opts)
+      },
+    }
+
+    // Should not throw — UUID passthrough should be accepted
+    await expect(
+      runJsonScenario({
+        api,
+        config: { uiBaseUrl: 'http://localhost:5173' },
+        scenario: {
+          version: 1,
+          id: 'uuid-passthrough',
+          title: 'UUID Passthrough',
+          steps: [
+            {
+              type: 'executeProposal',
+              proposal: uuid,
+            },
+          ],
+        },
+      }),
+    ).resolves.toBeDefined()
+  })
+})
