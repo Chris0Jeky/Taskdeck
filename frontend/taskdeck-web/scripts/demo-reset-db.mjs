@@ -25,6 +25,8 @@ function findExtraDbFiles() {
   const candidates = [
     path.join(REPO_ROOT, 'taskdeck.db'),
     ...findGlobMatches(path.join(REPO_ROOT, 'backend', 'src', 'Taskdeck.Api'), 'taskdeck.e2e'),
+    ...findGlobMatches(REPO_ROOT, 'taskdeck.e2e'),
+    ...findGlobMatches(path.join(REPO_ROOT, 'frontend', 'taskdeck-web'), 'taskdeck.e2e'),
     ...findGlobMatches(path.join(REPO_ROOT, 'frontend', 'taskdeck-web'), 'taskdeck.demo'),
   ]
   for (const f of candidates) {
@@ -86,12 +88,8 @@ Canonical dev DB: backend/src/Taskdeck.Api/taskdeck.db
 console.log('\nTaskdeck demo DB reset')
 console.log('----------------------------------------')
 
-if (fs.existsSync(CANONICAL_DB)) {
-  console.log('Deleting canonical dev DB:')
-  deleteFile(CANONICAL_DB)
-} else {
-  console.log(`Canonical dev DB not found: ${path.relative(REPO_ROOT, CANONICAL_DB)}`)
-}
+console.log('Deleting canonical dev DB (if present):')
+deleteFile(CANONICAL_DB)
 
 if (deleteAll) {
   const extras = findExtraDbFiles()

@@ -8,7 +8,7 @@ This playbook gives you:
 2. Scenario harness commands for repeatable demos.
 3. A short stakeholder flow and an opt-in recorder.
 
-Use [START_HERE.md](START_HERE.md) first if you are trying to understand the product.
+Use [START_HERE.md](../START_HERE.md) first if you are trying to understand the product.
 This playbook is for seeded demos, stakeholder walkthroughs, and regression/operator use, not the main onboarding path.
 
 Core story:
