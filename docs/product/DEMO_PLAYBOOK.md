@@ -69,9 +69,10 @@ npm run demo:reset-db -- --all # also delete e2e/demo/ci DB files
 Then restart the backend — EF Core will recreate the DB from migrations.
 
 Other DB files in the repo are per-purpose:
-- `taskdeck.e2e*.db` — E2E test databases
+- `taskdeck.e2e*.db` — E2E test databases (Playwright)
 - `taskdeck.demo*.db` — demo director/CI databases
-- `taskdeck.db` at repo root — stale artifact (safe to delete)
+- `backend/tests/**/taskdeck.db` — backend test databases (created by test runs)
+- `taskdeck.db` at repo root — created when the backend is started from the repo root (e.g. `dotnet run --project backend/src/Taskdeck.Api/...`). Safe to delete when the backend is stopped and your active dev DB is `backend/src/Taskdeck.Api/taskdeck.db`.
 
 ## Runtime Preconditions
 

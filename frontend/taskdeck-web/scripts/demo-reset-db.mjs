@@ -63,7 +63,7 @@ function deleteFile(filePath) {
         continue
       }
       console.error(`  FAILED: ${rel}${suffix} — ${err.message}`)
-      if (suffix === '') failures++
+      failures++
     }
   }
 }
@@ -77,7 +77,7 @@ if (showHelp) {
 Usage: npm run demo:reset-db [-- [options]]
 
 Options:
-  --all      Also delete e2e, demo, and CI database files
+  --all      Also delete e2e, demo, CI, and repo-root database files
   --help, -h Print this usage information
 
 Canonical dev DB: backend/src/Taskdeck.Api/taskdeck.db
