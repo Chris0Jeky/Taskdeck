@@ -509,7 +509,7 @@ watch(
     <WorkspaceHelpCallout
       topic="activity-selectors"
       title="Why do these selectors matter?"
-      description="Use selectors here instead of memorizing raw IDs. Start broad with board history, narrow down to entity history only when you already know the board context, and keep Review as the place for pending changes."
+      description="Board history shows all activity within a board — cards, columns, labels, and the board itself. Narrow down to entity history when you know exactly which item to inspect."
     >
       <template #actions>
         <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
