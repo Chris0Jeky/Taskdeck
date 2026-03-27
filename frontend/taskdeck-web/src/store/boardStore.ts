@@ -44,6 +44,11 @@ export const useBoardStore = defineStore('board', () => {
     return candidate?.response?.status === 404
   }
 
+  const isHttpConflict = (err: unknown): boolean => {
+    const candidate = err as { response?: { status?: number } } | null
+    return candidate?.response?.status === 409
+  }
+
   // Filter state
   const filters = ref<CardFilters>({
     searchText: '',
@@ -466,7 +471,11 @@ export const useBoardStore = defineStore('board', () => {
       toast.success('Card updated successfully')
       return updatedCard
     } catch (e: unknown) {
-      handleApiError(e, 'Failed to update card')
+      if (isHttpConflict(e)) {
+        toast.error(getErrorMessage(e, 'Failed to update card'))
+      } else {
+        handleApiError(e, 'Failed to update card')
+      }
       throw e
     } finally {
       loading.value = false
