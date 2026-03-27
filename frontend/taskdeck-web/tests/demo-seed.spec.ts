@@ -25,7 +25,8 @@ describe('demo seed rerun planning', () => {
 
     expect(plan.captures.ignored).toBeUndefined()
     expect(plan.captures.triageApplied).toBeUndefined()
-    expect(plan.captures.triagePending).toBeUndefined()
+    expect(plan.captures.triagePendingAcme).toBeUndefined()
+    expect(plan.captures.triagePendingNorthwind).toBeUndefined()
     expect(plan.queue.seededCard).toBeNull()
     expect(plan.queue.hasFailedRequest).toBe(false)
     expect(plan.chat.seededSession).toBeNull()
