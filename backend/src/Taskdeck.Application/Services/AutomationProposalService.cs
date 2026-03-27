@@ -9,6 +9,10 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationProposalService : IAutomationProposalService
 {
+    private const string CaptureTriageSummaryPrefix = "Capture triage";
+    private const string CaptureTriageActionType = "create";
+    private const string CaptureTriageTargetType = "card";
+
     private static readonly HashSet<string> KnownActionVerbs = new(StringComparer.OrdinalIgnoreCase)
     {
         "add",
@@ -596,14 +600,14 @@ public class AutomationProposalService : IAutomationProposalService
             return false;
         }
 
-        if (!string.Equals(summary.Trim(), "Capture triage", StringComparison.OrdinalIgnoreCase))
+        if (!summary.TrimStart().StartsWith(CaptureTriageSummaryPrefix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         return orderedOperations.All(operation =>
-            string.Equals(operation.ActionType, "card.create", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(operation.TargetType, "Card", StringComparison.OrdinalIgnoreCase));
+            string.Equals(operation.ActionType, CaptureTriageActionType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(operation.TargetType, CaptureTriageTargetType, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string Pluralize(int count) => count == 1 ? string.Empty : "s";

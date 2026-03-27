@@ -289,7 +289,7 @@ async function handleExecuteProposal(proposalId: string) {
     proposals.value = proposals.value.map((proposal) => (proposal.id === proposalId ? updated : proposal))
     toast.success('Proposal applied to board')
   } catch (e: unknown) {
-    toast.error(getErrorDisplay(e, 'Failed to execute proposal').message)
+    toast.error(getErrorDisplay(e, 'Failed to apply proposal to board').message)
   } finally {
     proposalActionBusyId.value = null
   }
@@ -426,15 +426,18 @@ function reviewStatusClass(status: ApiProposal['status']): string {
   return 'td-review-status--secondary'
 }
 
+const statusLabels: Record<string, string> = {
+  PendingReview: 'Review required',
+  Approved: 'Approved, ready to apply',
+  Applied: 'Applied to board',
+  Rejected: 'Rejected',
+  Failed: 'Failed',
+  Expired: 'Expired',
+}
+
 function reviewStatusLabel(status: ApiProposal['status']): string {
   const normalized = normalizeProposalStatus(status)
-  if (normalized === 'PendingReview') return 'Review required'
-  if (normalized === 'Approved') return 'Approved, ready to apply'
-  if (normalized === 'Applied') return 'Applied to board'
-  if (normalized === 'Rejected') return 'Rejected'
-  if (normalized === 'Failed') return 'Failed'
-  if (normalized === 'Expired') return 'Expired'
-  return normalized
+  return statusLabels[normalized] ?? normalized
 }
 
 onMounted(() => {
@@ -596,7 +599,12 @@ watch(
         </div>
 
         <div class="td-review-card__actions">
-          <span class="td-review-card__action-cue">Changes stay in review until you approve them.</span>
+          <span
+            v-if="normalizeProposalStatus(proposal.status) === 'PendingReview'"
+            class="td-review-card__action-cue"
+          >
+            Changes stay in review until you approve them.
+          </span>
           <button class="td-btn td-btn--secondary td-btn--sm" @click="handleToggleDiff(proposal.id)">
             {{ selectedDiffProposalId === proposal.id ? 'Hide Diff' : 'View Diff' }}
           </button>

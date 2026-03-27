@@ -92,18 +92,22 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
     },
   }
 
+  const hasPresentationOverride = 'presentation' in overrides
+
   const merged: Proposal = {
     ...base,
     ...overrides,
-    presentation: overrides.presentation
-      ? {
-          ...base.presentation!,
-          ...overrides.presentation,
-        }
+    presentation: hasPresentationOverride
+      ? overrides.presentation
+        ? {
+            ...base.presentation!,
+            ...overrides.presentation,
+          }
+        : overrides.presentation
       : base.presentation,
   }
 
-  if (!overrides.presentation && overrides.summary && merged.presentation) {
+  if (!hasPresentationOverride && overrides.summary && merged.presentation) {
     merged.presentation = {
       ...merged.presentation,
       plainSummary: `${overrides.summary} This would create card "${overrides.summary}".`,

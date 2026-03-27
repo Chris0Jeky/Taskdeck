@@ -220,7 +220,7 @@ public class AutomationProposalServiceTests
         var proposal = new AutomationProposal(
             ProposalSourceType.Queue,
             Guid.NewGuid(),
-            "Capture triage",
+            "Capture triage (2 tasks): Captured note for client onboarding.",
             RiskLevel.Low,
             Guid.NewGuid().ToString());
         var proposalId = proposal.Id;
@@ -228,17 +228,17 @@ public class AutomationProposalServiceTests
         proposal.AddOperation(new AutomationProposalOperation(
             proposal.Id,
             0,
-            "card.create",
-            "Card",
+            "create",
+            "card",
             "{\"title\":\"Request director ID documents\"}",
-            Guid.NewGuid().ToString()));
+            "card-0"));
         proposal.AddOperation(new AutomationProposalOperation(
             proposal.Id,
             1,
-            "card.create",
-            "Card",
+            "create",
+            "card",
             "{\"title\":\"Send engagement letter\"}",
-            Guid.NewGuid().ToString()));
+            "card-1"));
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
