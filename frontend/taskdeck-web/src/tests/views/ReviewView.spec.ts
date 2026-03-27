@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   rejectProposal: vi.fn(),
   executeProposal: vi.fn(),
   getProposalDiff: vi.fn(),
+  getBoards: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
   createRequestId: vi.fn(),
@@ -35,6 +36,12 @@ vi.mock('../../api/automationApi', () => ({
     rejectProposal: mocks.rejectProposal,
     executeProposal: mocks.executeProposal,
     getProposalDiff: mocks.getProposalDiff,
+  },
+}))
+
+vi.mock('../../api/boardsApi', () => ({
+  boardsApi: {
+    getBoards: mocks.getBoards,
   },
 }))
 
@@ -173,6 +180,12 @@ describe('ReviewView', () => {
     originalScrollIntoView = HTMLElement.prototype.scrollIntoView
     originalPrompt = window.prompt
     mocks.getProposals.mockResolvedValue([])
+    mocks.getBoards.mockResolvedValue([
+      { id: 'board-1', name: 'Engineering Sprint' },
+      { id: 'board-7', name: 'Support Triage' },
+      { id: 'board-12', name: 'Content Calendar' },
+      { id: 'board-99', name: 'Archived Board' },
+    ])
     mocks.approveProposal.mockResolvedValue(buildProposal({ status: 'Approved' }))
     mocks.rejectProposal.mockResolvedValue(buildProposal({ status: 'Rejected' }))
     mocks.executeProposal.mockResolvedValue(buildProposal({ status: 'Applied' }))
@@ -306,7 +319,7 @@ describe('ReviewView', () => {
     const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
 
     expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
-    expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+    expect(wrapper.text()).toContain('Support Triage')
   })
 
   it('hydrates board-scoped proposal hashes that fall outside the first page', async () => {
@@ -337,7 +350,7 @@ describe('ReviewView', () => {
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
     expect(wrapper.text()).toContain('Older board proposal')
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+    expect(wrapper.text()).toContain('Support Triage')
   })
 
   it('clears stale proposal hashes when the fetched proposal belongs to a different board', async () => {
@@ -484,7 +497,7 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Board 7 proposal')
-    expect(wrapper.text()).toContain('Showing proposals for board board-7.')
+    expect(wrapper.text()).toContain('Support Triage')
 
     initialLoad.resolve([
       buildProposal({
@@ -625,6 +638,51 @@ describe('ReviewView', () => {
 
     expect(wrapper.text()).toContain('diff-b')
     expect(mocks.errorToast).not.toHaveBeenCalled()
+  })
+
+  it('shows board name instead of raw ID in the board filter label', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({ boardId: 'board-7' }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
+
+    expect(wrapper.text()).toContain('Support Triage')
+    expect(wrapper.text()).not.toContain('board-7')
+    expect(wrapper.text()).toContain('Show all boards')
+  })
+
+  it('falls back to raw board ID when the board is not in the loaded list', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({ boardId: 'board-unknown' }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review?boardId=board-unknown')
+
+    expect(wrapper.text()).toContain('board-unknown')
+  })
+
+  it('renders a board filter selector (InputAssistField)', async () => {
+    const { wrapper } = await mountAt('/workspace/review')
+
+    const selector = wrapper.find('.td-review__board-selector')
+    expect(selector.exists()).toBe(true)
+    expect(selector.find('input').exists()).toBe(true)
+  })
+
+  it('clears the board filter when "Show all boards" is clicked', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({ boardId: 'board-7' }),
+    ])
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7')
+    const pushSpy = vi.spyOn(router, 'push')
+
+    const clearButton = wrapper.findAll('button').find((node) => node.text() === 'Show all boards')
+    await clearButton?.trigger('click')
+    await Promise.resolve()
+
+    expect(pushSpy).toHaveBeenCalledWith({ path: '/workspace/review' })
   })
 
   it('does not reject a proposal when the rejection prompt is cancelled', async () => {
