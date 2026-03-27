@@ -182,7 +182,43 @@ public class AutomationProposalServiceTests
         result.Value.Presentation.AffectedEntities.Should().Contain(entity =>
             entity.EntityType == "Board" &&
             entity.EntityId == boardId.ToString() &&
+            entity.Label == "Board \"Support follow-up\"" &&
             entity.ChangeCount == 1);
+        result.Value.Presentation.AffectedEntities.Should().Contain(entity =>
+            entity.EntityType == "Card" &&
+            entity.Label == "Card \"Draft follow-up\"" &&
+            entity.ChangeCount == 1);
+    }
+
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldFallBackToEntityId_WhenParametersLackName()
+    {
+        var targetId = Guid.NewGuid().ToString();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Update the card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "card.update",
+            "Card",
+            "{}",
+            Guid.NewGuid().ToString(),
+            targetId));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalByIdAsync(proposal.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Presentation.AffectedEntities.Should().ContainSingle(entity =>
+            entity.EntityType == "Card" &&
+            entity.Label == $"Card {targetId}");
     }
 
     [Fact]
