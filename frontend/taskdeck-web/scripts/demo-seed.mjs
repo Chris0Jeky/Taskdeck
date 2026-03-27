@@ -529,25 +529,31 @@ async function applyStarterPack(boardId, token, packId) {
     body: { manifest, dryRun: true },
   })
 
-  const hasBlockingConflicts = (preview?.conflicts || []).some(
+  // If every column and label action is "skip", the pack is already applied.
+  const structuralActions = (preview?.actions || []).filter((a) => {
+    const entityType = (a.entityType || '').toLowerCase()
+    return entityType === 'column' || entityType === 'label'
+  })
+  const allSkipped =
+    structuralActions.length > 0 &&
+    structuralActions.every((a) => (a.operation || '').toLowerCase() === 'skip')
+
+  if (allSkipped) {
+    console.log(`  (starter pack "${packId}" already applied — skipping)`)
+    return preview
+  }
+
+  const blockingConflicts = (preview?.conflicts || []).filter(
     (c) => !c.severity || c.severity.toLowerCase() === 'blocking',
   )
 
-  if (hasBlockingConflicts) {
-    // If every column and label action is "skip", the pack is already applied.
-    const structuralActions = (preview?.actions || []).filter(
-      (a) => a.entityType === 'column' || a.entityType === 'label',
-    )
-    const allSkipped = structuralActions.length > 0 && structuralActions.every((a) => a.operation === 'skip')
-
-    if (allSkipped) {
-      console.log(`  (starter pack "${packId}" already applied — skipping)`)
-      return preview
-    }
-
-    const conflictSummary = (preview?.conflicts || [])
-      .filter((c) => !c.severity || c.severity.toLowerCase() === 'blocking')
-      .map((c) => `  - ${c.code}: ${c.message}`)
+  if (blockingConflicts.length > 0) {
+    const conflictSummary = blockingConflicts
+      .map((c, i) => {
+        const code = typeof c.code === 'string' && c.code.trim() ? c.code : `#${i + 1}`
+        const message = typeof c.message === 'string' && c.message.trim() ? c.message : JSON.stringify(c)
+        return `  - ${code}: ${message}`
+      })
       .join('\n')
     throw new Error(
       `Starter pack "${packId}" has blocking conflicts on board ${boardId}:\n${conflictSummary}`,
