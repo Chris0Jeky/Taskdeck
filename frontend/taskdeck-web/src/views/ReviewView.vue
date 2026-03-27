@@ -64,8 +64,8 @@ function matchesActiveBoardFilter(boardId: string | null | undefined): boolean {
     return true
   }
 
-  const normalizedBoardId = normalizeBoardIdQueryParam(boardId)
-  return normalizedBoardId === activeBoardFilter.value
+  const normalizedBoardId = normalizeBoardIdQueryParam(boardId).toLowerCase()
+  return normalizedBoardId === activeBoardFilter.value.toLowerCase()
 }
 
 const visibleProposals = computed(() => proposals.value.filter((proposal) => matchesActiveBoardFilter(proposal.boardId)))
@@ -485,15 +485,15 @@ function applyBoardFilter(boardId: string) {
   const trimmed = boardId.trim()
   boardFilterInput.value = ''
   if (trimmed) {
-    void router.push({ path: '/workspace/review', query: { boardId: trimmed } })
+    void router.push({ name: 'workspace-review', query: { boardId: trimmed } })
   } else {
-    void router.push({ path: '/workspace/review' })
+    void router.push({ name: 'workspace-review' })
   }
 }
 
 function clearBoardFilter() {
   boardFilterInput.value = ''
-  void router.push({ path: '/workspace/review' })
+  void router.push({ name: 'workspace-review' })
 }
 
 onMounted(() => {
