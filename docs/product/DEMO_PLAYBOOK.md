@@ -41,6 +41,11 @@ Default URLs:
 - UI: `http://localhost:5173`
 - Local fallback ports for UI: `http://localhost:4173`, `http://localhost:5001`
 
+Health-check endpoints (note: these are **not** under the `/api` prefix):
+
+- `http://localhost:5000/health/live` — liveness probe
+- `http://localhost:5000/health/ready` — readiness probe
+
 3. Seed baseline demo data
 
 ```bash
