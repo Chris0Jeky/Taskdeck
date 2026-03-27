@@ -94,7 +94,12 @@ const SEEDED_CAPTURE_TEXT = {
     '- Schedule onboarding call\n' +
     '- Confirm which records are still missing\n' +
     '- Prepare internal review once documents arrive\n',
-  triagePending:
+  triagePendingAcme:
+    'ACME Ltd - year-end checklist\n\n' +
+    '- Chase outstanding VAT receipts from Q3\n' +
+    '- Confirm payroll submissions are current\n' +
+    '- Schedule pre-year-end review call with director\n',
+  triagePendingNorthwind:
     'Client onboarding follow-up - Northwind Ltd\n\n' +
     '- Confirm whether bank statements were uploaded\n' +
     '- Ask client to share bookkeeping system access\n',
@@ -329,7 +334,8 @@ export function planDemoSeedRerunState({
     captures: {
       ignored: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.ignored),
       triageApplied: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.triageApplied),
-      triagePending: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.triagePending),
+      triagePendingAcme: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.triagePendingAcme),
+      triagePendingNorthwind: findCaptureSummaryByTextFragment(captureSummaries, boardId, SEEDED_CAPTURE_TEXT.triagePendingNorthwind),
     },
     queue: {
       seededCard: findBoardCardByTitle(boardCards, SEEDED_QUEUE.successCardTitle),
@@ -1003,15 +1009,18 @@ export async function main() {
   const triageAppliedWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triageApplied, {
     applyProposal: true,
   })
-  const triagePendingWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triagePending)
+  const triagePendingAcmeWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triagePendingAcme)
+  const triagePendingNorthwindWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triagePendingNorthwind)
 
   console.log(
     `- capture items: ignored=${seedPlan.captures.ignored ? 'reused' : 'created'}, ` +
       `triage-applied=${seedPlan.captures.triageApplied ? 'reused' : 'created'}, ` +
-      `triage-pending=${seedPlan.captures.triagePending ? 'reused' : 'created'}`,
+      `triage-pending-acme=${seedPlan.captures.triagePendingAcme ? 'reused' : 'created'}, ` +
+      `triage-pending-northwind=${seedPlan.captures.triagePendingNorthwind ? 'reused' : 'created'}`,
   )
   console.log(`- triage (applied) proposal: ${triageAppliedWithProposal.provenance.proposalId}`)
-  console.log(`- triage (pending) proposal: ${triagePendingWithProposal.provenance.proposalId} (left for review)`)
+  console.log(`- triage (pending/ACME) proposal: ${triagePendingAcmeWithProposal.provenance.proposalId} (left for review)`)
+  console.log(`- triage (pending/Northwind) proposal: ${triagePendingNorthwindWithProposal.provenance.proposalId} (left for review)`)
 
   // 6) Seed: Queue requests (1 success + 1 failure)
   console.log('\nCreating Automation Queue items...')
