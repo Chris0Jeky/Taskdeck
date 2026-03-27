@@ -40,7 +40,9 @@ function handleBoardSelect(option: { value: string; label: string }) {
 
 function handleBoardInput(value: string) {
   boardDisplayValue.value = value
-  // If the user clears or edits the display, clear the stored ID unless it still matches
+  // Resolve typed input to a canonical board ID when it matches a known board
+  // name or ID. Otherwise pass the raw value through so GUID validation in
+  // handleSubmitRequest can catch invalid entries.
   const matchingBoard = availableBoards.value.find(
     (b) => b.name === value || b.id === value,
   )
