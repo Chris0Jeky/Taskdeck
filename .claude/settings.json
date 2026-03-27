@@ -2,6 +2,7 @@
   "includeCoAuthoredBy": false,
   "enableAllProjectMcpServers": true,
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
       "Bash(dotnet --version)",
       "Bash(dotnet --version:*)",
