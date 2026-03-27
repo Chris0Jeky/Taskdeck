@@ -17,8 +17,9 @@ export const chatApi = {
     return data
   },
 
-  async getHealth(): Promise<ChatProviderHealth> {
-    const { data } = await http.get<ChatProviderHealth>('/llm/chat/health')
+  async getHealth(options?: { probe?: boolean }): Promise<ChatProviderHealth> {
+    const params = options?.probe ? '?probe=true' : ''
+    const { data } = await http.get<ChatProviderHealth>(`/llm/chat/health${params}`)
     return data
   },
 
