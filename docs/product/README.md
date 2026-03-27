@@ -5,7 +5,10 @@ This folder contains product-facing guides that help users understand, use, demo
 - `FIRST_RUN_WORKFLOWS.md`
 - `HELP_AND_FAQ.md`
 - `DEMO_PLAYBOOK.md`
+- `DEMO_SCRIPT.md`
 - `SAUL_DEMO_REHEARSAL_CONTRACT.md`
+- `LANDING_COPY.md`
+- `BETA_INTAKE_WORKFLOW.md`
 - `DOGFOODING_GUIDE.md`
 - `SCENARIOS.md`
 
