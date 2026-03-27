@@ -18,6 +18,7 @@ import HomeView from '../views/HomeView.vue'
 import TodayView from '../views/TodayView.vue'
 import ReviewView from '../views/ReviewView.vue'
 import { isTokenExpired } from '../utils/jwt'
+import { isDemoMode, isDemoSessionActive } from '../utils/demoMode'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -221,19 +222,21 @@ const router = createRouter({
 // Navigation guard for auth
 router.beforeEach((to) => {
   const isPublic = to.meta.public === true
+  const demoActive = isDemoMode && isDemoSessionActive()
   const token = localStorage.getItem('taskdeck_token')
   const tokenValid = !!token && !isTokenExpired(token)
+  const hasValidSession = tokenValid || demoActive
 
   if (token && !tokenValid) {
     localStorage.removeItem('taskdeck_token')
     localStorage.removeItem('taskdeck_session')
   }
 
-  if (!isPublic && !tokenValid && to.path.startsWith('/workspace')) {
+  if (!isPublic && !hasValidSession && to.path.startsWith('/workspace')) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
 
-  if (isPublic && tokenValid && (to.path === '/login' || to.path === '/register')) {
+  if (isPublic && hasValidSession && (to.path === '/login' || to.path === '/register')) {
     return { path: '/workspace/home' }
   }
 })
