@@ -271,7 +271,7 @@ Seeded issues:
 - `#369` headed manual-audit Playwright pack (`Priority IV` by design)
 
 Reused existing anchor:
-- `#326` remains the correct owner for the audit's review-readability / raw-ID finding
+- `#326` proposal readability — affected entity labels now show named targets instead of raw IDs, correlation IDs truncated in UI
 
 ## MVP Expansion Planning Integration (2026-03-07)
 
@@ -298,7 +298,7 @@ Backlog implication:
 - `#320` is now shipped: durable `UserPreference` workspace mode persistence, `/api/workspace/home` + `/api/workspace/preferences`, `Home` default routing, and mode-aware shell navigation
 - `#322` is now shipped: `/workspace/review` is the canonical automation route, legacy proposals URLs redirect compatibly, queue/chat/ops/access are explicitly framed as advanced surfaces, board access/chat common flows prefer selectors over raw board IDs, and primary empty states now point users toward concrete next steps
 - `#324` is now shipped: `/workspace/today` aggregates review, triage, overdue, due-today, and blocked work into one agenda, while Home/Today share a persisted onboarding loop with setup replay/dismiss and first-use starter-board creation
-- `#326` is now shipped: proposal cards expose plain-language summaries, impact/risk/source cues, and affected-entity headlines from an application-layer presentation contract, while board pages now expose a board action rail (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) and board context now travels across inbox/review/chat/notifications/provenance links
+- `#326` is now shipped: proposal cards expose plain-language summaries, impact/risk/source cues, and affected-entity headlines from an application-layer presentation contract, while board pages now expose a board action rail (`Capture here`, `Ask assistant`, `Review proposals`, `Add card`) and board context now travels across inbox/review/chat/notifications/provenance links; affected entity labels now show named targets from operation parameters instead of raw IDs, and correlation IDs are truncated in the review UI
 - `#96` is now shipped: novice-first contextual help is now present on the key workflow surfaces (`Home`, `Today`, `Review`, `Inbox`, board action flow, and selector-heavy activity`) with dismiss/replay persistence that keeps guidance discoverable without forcing it on experienced users
 - the lower-priority secondary follow-through wave is now seeded as `#329` to `#334`, subordinate to Wave P, covering in-app demoability/product evidence, harness/report maturity, saved-view productivity follow-through, and broader note/clip intake follow-through
 - the remaining expanded-blueprint architecture wave is now seeded as `#335` to `#341`, subordinate to both Wave P and Wave Q, covering agent substrate, knowledge/search, supervised connector architecture, and explicit `R1` / `R2` / `R3` launch-gate framing

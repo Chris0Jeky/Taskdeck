@@ -233,12 +233,13 @@ describe('ReviewView', () => {
   })
 
   it('renders capture provenance and canonical review links', async () => {
+    const fullCorrelationId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-99',
         sourceType: 'Queue',
         sourceReferenceId: 'capture-99',
-        correlationId: 'triage-run-99',
+        correlationId: fullCorrelationId,
       }),
     ])
 
@@ -246,7 +247,10 @@ describe('ReviewView', () => {
 
     expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200 })
     expect(wrapper.text()).toContain('Capture-linked')
-    expect(wrapper.text()).toContain('Triage run: triage-run-99')
+    expect(wrapper.text()).toContain('Triage run: a1b2c3d4...')
+    expect(wrapper.text()).not.toContain(fullCorrelationId)
+    const triageSpan = wrapper.find('.td-review-card__provenance-meta')
+    expect(triageSpan.attributes('title')).toBe(fullCorrelationId)
     expect(wrapper.find('a[href="/workspace/inbox?boardId=board-1#capture-capture-99"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/workspace/review?boardId=board-1#proposal-proposal-99"]').exists()).toBe(true)
   })
