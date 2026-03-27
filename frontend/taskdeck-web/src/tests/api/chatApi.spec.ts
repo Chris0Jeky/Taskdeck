@@ -47,4 +47,20 @@ describe('chatApi', () => {
 
     expect(http.get).toHaveBeenCalledWith('/llm/chat/health')
   })
+
+  it('sends probe=true when probe option is set', async () => {
+    const healthPayload = {
+      isAvailable: true,
+      providerName: 'OpenAI',
+      errorMessage: null,
+      model: 'gpt-4o-mini',
+      isMock: false,
+      isProbed: true,
+    }
+    vi.mocked(http.get).mockResolvedValue({ data: healthPayload })
+
+    await expect(chatApi.getHealth({ probe: true })).resolves.toEqual(healthPayload)
+
+    expect(http.get).toHaveBeenCalledWith('/llm/chat/health?probe=true')
+  })
 })

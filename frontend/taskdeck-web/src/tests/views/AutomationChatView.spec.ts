@@ -274,6 +274,98 @@ describe('AutomationChatView', () => {
     expect(wrapper.get('[data-llm-health-state="configured"]').exists()).toBe(true)
   })
 
+  it('shows a verified banner when probe confirms live reachability', async () => {
+    mocks.getHealth.mockResolvedValue({
+      isAvailable: true,
+      providerName: 'OpenAI',
+      errorMessage: null,
+      model: 'gpt-4o-mini',
+      isMock: false,
+      isProbed: true,
+    })
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('Live LLM verified')
+    expect(wrapper.text()).toContain('probe confirmed reachability')
+    expect(wrapper.get('[data-llm-health-state="verified"]').exists()).toBe(true)
+  })
+
+  it('renders degraded messages with warning styling and reason', async () => {
+    const now = new Date().toISOString()
+    const degradedSession = {
+      id: 'session-degraded',
+      userId: 'user-1',
+      boardId: null,
+      title: 'Degraded test',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+      recentMessages: [
+        {
+          id: 'msg-user',
+          sessionId: 'session-degraded',
+          role: 'User',
+          content: 'Hello',
+          messageType: 'text',
+          proposalId: null,
+          tokenUsage: null,
+          createdAt: now,
+        },
+        {
+          id: 'msg-degraded',
+          sessionId: 'session-degraded',
+          role: 'Assistant',
+          content: 'I can help with that request. (Live provider request failed.)',
+          messageType: 'degraded',
+          proposalId: null,
+          tokenUsage: 10,
+          createdAt: now,
+          degradedReason: 'Live provider request failed.',
+        },
+      ],
+    }
+    mocks.getMySessions.mockResolvedValue([degradedSession])
+    mocks.getSession.mockResolvedValue(degradedSession)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    const sessionBtn = wrapper.findAll('button').find((b) => b.text().includes('Degraded test'))
+    expect(sessionBtn).toBeTruthy()
+    await sessionBtn!.trigger('click')
+    await waitForAsyncUi()
+
+    const degradedMsg = wrapper.find('[data-message-type="degraded"]')
+    expect(degradedMsg.exists()).toBe(true)
+    expect(degradedMsg.classes()).toContain('td-message--degraded')
+    expect(degradedMsg.text()).toContain('Degraded response: Live provider request failed.')
+  })
+
+  it('sends probe=true when Verify LLM button is clicked', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    mocks.getHealth.mockClear()
+    mocks.getHealth.mockResolvedValue({
+      isAvailable: true,
+      providerName: 'OpenAI',
+      errorMessage: null,
+      model: 'gpt-4o-mini',
+      isMock: false,
+      isProbed: true,
+    })
+
+    const verifyBtn = findButtonByText(wrapper, 'Verify LLM')
+    expect(verifyBtn).toBeTruthy()
+    await verifyBtn!.trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.getHealth).toHaveBeenCalledWith({ probe: true })
+    expect(wrapper.text()).toContain('Live LLM verified')
+  })
+
   it('prefills the create-session board context from the route boardId query', async () => {
     routeMock.query = { boardId: 'board-1' }
 
