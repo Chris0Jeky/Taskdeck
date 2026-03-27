@@ -370,7 +370,10 @@ public class AutomationProposalService : IAutomationProposalService
             .Select(group => new ProposalAffectedEntityDto(
                 group.Key.EntityType,
                 group.Key.TargetId,
-                BuildAffectedEntityLabel(group.Key.EntityType, group.Key.TargetId),
+                BuildAffectedEntityLabel(
+                    group.Key.EntityType,
+                    group.Key.TargetId,
+                    ExtractNamedTarget(group.First().Parameters)),
                 group.Count()))
             .ToList();
 
@@ -568,8 +571,13 @@ public class AutomationProposalService : IAutomationProposalService
         return char.ToLowerInvariant(sentence[0]) + sentence[1..];
     }
 
-    private static string BuildAffectedEntityLabel(string entityType, string? entityId)
+    private static string BuildAffectedEntityLabel(string entityType, string? entityId, string? namedTarget)
     {
+        if (!string.IsNullOrWhiteSpace(namedTarget))
+        {
+            return $"{entityType} \"{namedTarget}\"";
+        }
+
         if (string.IsNullOrWhiteSpace(entityId))
         {
             return entityType;
