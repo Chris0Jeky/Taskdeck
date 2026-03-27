@@ -37,7 +37,8 @@ const mockWorkspace = reactive({
   inboxBadgeCount: 0,
   reviewBadgeCount: 0,
   hasHomeSummary: false,
-  fetchHomeSummary: vi.fn(),
+  homeLoading: false,
+  fetchHomeSummary: vi.fn().mockResolvedValue(undefined),
 })
 
 vi.mock('vue-router', () => ({
@@ -397,9 +398,9 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(badgeTexts).toContain('1')
 
     const inboxBadge = badges.find((b) => b.text() === '3')
-    expect(inboxBadge?.attributes('aria-label')).toBe('3 pending')
+    expect(inboxBadge?.attributes('aria-label')).toBe('Inbox: 3 pending')
     const reviewBadge = badges.find((b) => b.text() === '1')
-    expect(reviewBadge?.attributes('aria-label')).toBe('1 pending')
+    expect(reviewBadge?.attributes('aria-label')).toBe('Review: 1 pending')
   })
 
   it('hides nav badges when counts are zero', async () => {
