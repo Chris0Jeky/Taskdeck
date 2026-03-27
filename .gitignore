@@ -57,6 +57,9 @@ lerna-debug.log*
 .fleet/
 .codex/runtime/
 /.runtime-codex/
+
+# Claude Code local settings (personal overrides, not shared)
+.claude/settings.local.json
 *.swp
 *.swo
 *~

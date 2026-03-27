@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A local-first execution workspace for developers. Core thesis: near-zero-friction capture with review-first (proposal-based) automation — no silent or destructive mutations. Local persistence via SQLite.
 
+## Required Reading Before Changes
+
+1. `docs/STATUS.md` — source of truth for current state (always read first)
+2. `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery sequencing / roadmap
+3. `docs/GOLDEN_PRINCIPLES.md` — stable invariants and guardrails
+4. `AGENTS.md` — full contributor protocol, definition of done, output expectations
+
+Precedence when instructions conflict: `docs/STATUS.md` > `AGENTS.md` > this file.
+
 ## Essential Commands
 
 ### Backend (.NET 8)
@@ -90,26 +99,48 @@ SignalR (`@microsoft/signalr`) provides realtime board collaboration.
 
 Mock provider is default. OpenAI and Gemini supported behind config gates. See `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`.
 
+## Work Protocol
+
+- Before edits: write a short plan (files, approach, risks, tests).
+- Keep diffs small and scoped; avoid large mixed refactors.
+- After edits: run required checks and report results.
+- For product-facing slices, ensure scope aligns with the thesis (reduce maintenance overhead/capture friction, preserve review-first trust).
+
+## Definition of Done
+
+- Behavior changes ship with tests (unit/integration/E2E as appropriate).
+- Handle error cases explicitly; do not swallow failures.
+- Update docs when reality changes: `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md`.
+- HTTP semantics: use stable codes (401/403/404/409). Claims-first identity.
+
 ## Coding Conventions
 
 - **Backend**: C# conventions, 4-space indent, PascalCase for public members, camelCase for locals. Respect layer boundaries (Domain must not reference Infrastructure).
 - **Frontend**: TypeScript + Vue SFCs in PascalCase. Use `<script setup>` and composition API. Meaningful names over abbreviations.
 - **Commits**: Present-tense, small, focused. One commit per file when spanning multiple files. File move/rename batches are fine as single commits.
 
-## Key Docs
+## Testing Guidelines
 
-- `docs/STATUS.md` — source of truth for current state (read first when orienting)
-- `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery sequencing / roadmap
-- `docs/GOLDEN_PRINCIPLES.md` — stable invariants and guardrails
-- `docs/TESTING_GUIDE.md` — test operations reference
-- `docs/ISSUE_EXECUTION_GUIDE.md` — dependency-aware issue execution order
-- `AGENTS.md` — full contributor protocol (definition of done, work protocol, output expectations)
+- Mirror production namespaces in test namespaces and file names.
+- Backend tests: project-per-layer in `backend/tests/` (Domain.Tests, Application.Tests, Api.Tests, Architecture.Tests).
+- Frontend: vitest for unit tests, Playwright for E2E. See `docs/TESTING_GUIDE.md`.
 
 ## CI
 
 Reusable GitHub Actions workflows under `.github/workflows/`. `ci-required.yml` is the gate for PRs. Nightly extended checks in `ci-nightly.yml`.
 
+## Key Docs
+
+- `docs/STATUS.md` — current shipped reality
+- `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery sequencing
+- `docs/GOLDEN_PRINCIPLES.md` — stable invariants
+- `docs/TESTING_GUIDE.md` — test operations reference
+- `docs/ISSUE_EXECUTION_GUIDE.md` — dependency-aware issue execution order
+- `docs/MCP_TOOLING_GUIDE.md` — MCP tool selection rules
+- `AGENTS.md` — full contributor protocol
+
 ## Windows Notes
 
 - If `git` resolves to Cygwin or fails with signal errors, use `C:\Program Files\Git\cmd\git.exe` explicitly.
 - Do not chain commands with `&&` in PowerShell; use `;` and check `$LASTEXITCODE`.
+- If `.git/index.lock` blocks commits, check for active git processes before removing it.

@@ -1,19 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet --version:*)",
-      "Bash(dotnet clean:*)",
-      "Bash(node --version:*)",
-      "Bash(npm --version:*)",
-      "Bash(dotnet tool uninstall:*)",
-      "Bash(dotnet nuget:*)",
-      "Bash(dotnet tool install:*)",
-      "Bash(dotnet ef database update:*)",
-      "Bash(dotnet ef migrations add:*)",
-      "Bash(git log:*)",
-      "Bash(npm run test)",
-      "Bash(npm run test:*)",
-      "Bash(taskkill:*)"
+      "Bash(python -m json.tool)",
+      "Bash(gh auth:*)",
+      "Bash(echo $GITHUB_TOKEN)",
+      "Bash(echo $GITHUB_PAT)",
+      "Skill(update-config)"
     ],
     "deny": [],
     "ask": []
