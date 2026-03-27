@@ -161,7 +161,7 @@ function handleCardDragOver(event: DragEvent) {
     :data-column-id="column.id"
     :class="[
       'flex-shrink-0 w-80 rounded-lg p-4 transition-all',
-      isDragOver ? 'bg-[#ff5352]/10 ring-2 ring-[#ff5352]' : 'bg-[#1c1b1b]'
+      isDragOver ? 'bg-primary-container/10 ring-2 ring-primary-container' : 'bg-surface-container-low'
     ]"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
@@ -170,13 +170,13 @@ function handleCardDragOver(event: DragEvent) {
     <!-- Column Header -->
     <div class="mb-4">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="flex items-center gap-2 font-semibold text-[#e5e2e1] flex-1 font-[Space_Grotesk] text-[11px] uppercase tracking-[0.2em]"><span class="w-1 h-4 rounded-full bg-[#ff5352]"></span>{{ column.name }}</h3>
+        <h3 class="flex items-center gap-2 font-semibold text-on-surface flex-1 font-label text-[11px] uppercase tracking-[0.2em]"><span class="w-1 h-4 rounded-full bg-primary-container"></span>{{ column.name }}</h3>
         <div class="flex items-center gap-2">
           <button
             type="button"
             data-action="drag-column-handle"
             draggable="true"
-            class="p-1 text-[#e5e2e1]/60 hover:text-[#e5e2e1]/70 hover:bg-[#3a3939] rounded transition-colors cursor-grab active:cursor-grabbing"
+            class="p-1 text-on-surface/60 hover:text-on-surface/70 hover:bg-surface-bright rounded transition-colors cursor-grab active:cursor-grabbing"
             title="Drag Column"
             aria-label="Drag Column"
             @click.stop
@@ -187,13 +187,13 @@ function handleCardDragOver(event: DragEvent) {
           </button>
           <span
             class="text-sm px-2 py-1 rounded"
-            :class="isWipLimitExceeded() ? 'bg-[#ff4d4d]/10 text-[#ff4d4d]' : 'bg-[#3a3939] text-[#e5e2e1]/70'"
+            :class="isWipLimitExceeded() ? 'bg-ember/10 text-ember' : 'bg-surface-bright text-on-surface/70'"
           >
             {{ cards.length }}{{ column.wipLimit ? `/${column.wipLimit}` : '' }}
           </span>
           <button
             @click="showColumnEdit = true"
-            class="p-1 text-[#e5e2e1]/60 hover:text-[#e5e2e1]/70 hover:bg-[#3a3939] rounded transition-colors"
+            class="p-1 text-on-surface/60 hover:text-on-surface/70 hover:bg-surface-bright rounded transition-colors"
             title="Edit Column"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,14 +204,14 @@ function handleCardDragOver(event: DragEvent) {
         </div>
       </div>
 
-      <div v-if="isWipLimitExceeded()" class="text-xs text-[#ff4d4d] mb-2">
+      <div v-if="isWipLimitExceeded()" class="text-xs text-ember mb-2">
         ⚠️ WIP limit exceeded
       </div>
 
       <button
         data-action="toggle-add-card"
         @click="openCardForm"
-        class="w-full px-3 py-2 text-sm text-[#e5e2e1]/60 border border-dashed border-[rgba(91,64,62,0.15)] hover:border-[#ff5352] hover:text-[#ffb3ae] rounded transition-colors flex items-center justify-center gap-1"
+        class="w-full px-3 py-2 text-sm text-on-surface/60 border border-dashed border-outline-variant/15 hover:border-primary-container hover:text-primary rounded transition-colors flex items-center justify-center gap-1"
       >
         <span>+</span>
         <span>Add Card</span>
@@ -221,21 +221,21 @@ function handleCardDragOver(event: DragEvent) {
       <div
         v-if="showCardForm"
         data-action="add-card-form"
-        class="mt-3 bg-[#201f1f] rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
+        class="mt-3 bg-surface-container rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
       >
         <form @submit.prevent="createCard">
           <textarea
             data-action="add-card-input"
             v-model="newCardTitle"
             placeholder="Enter card title..."
-            class="w-full px-3 py-2 bg-[#1c1b1b] border border-[rgba(91,64,62,0.15)] text-[#e5e2e1] rounded resize-none focus:outline-none focus:ring-2 focus:ring-[#ff5352] placeholder:text-[#e5e2e1]/40"
+            class="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/15 text-on-surface rounded resize-none focus:outline-none focus:ring-2 focus:ring-primary-container placeholder:text-on-surface/40"
             rows="3"
             autofocus
           ></textarea>
           <div class="flex gap-2 mt-2">
             <button
               type="submit"
-              class="px-3 py-1.5 bg-[#ff5352] text-[#5c0008] text-sm rounded hover:brightness-110 transition-colors"
+              class="px-3 py-1.5 bg-primary-container text-on-primary-container text-sm rounded hover:brightness-110 transition-colors"
             >
               Add
             </button>
@@ -243,7 +243,7 @@ function handleCardDragOver(event: DragEvent) {
               type="button"
               data-action="cancel-add-card"
               @click="showCardForm = false"
-              class="px-3 py-1.5 bg-[#3a3939] text-[#e5e2e1]/70 text-sm rounded hover:bg-[#3a3939]/80 transition-colors"
+              class="px-3 py-1.5 bg-surface-bright text-on-surface/70 text-sm rounded hover:bg-surface-bright/80 transition-colors"
             >
               Cancel
             </button>
@@ -270,7 +270,7 @@ function handleCardDragOver(event: DragEvent) {
       </div>
 
       <!-- Empty State -->
-      <div v-if="cards.length === 0 && !showCardForm" class="text-center py-8 text-[#e5e2e1]/40 text-sm">
+      <div v-if="cards.length === 0 && !showCardForm" class="text-center py-8 text-on-surface/40 text-sm">
         No cards yet
       </div>
     </div>
