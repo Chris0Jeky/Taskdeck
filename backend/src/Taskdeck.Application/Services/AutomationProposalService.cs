@@ -378,7 +378,7 @@ public class AutomationProposalService : IAutomationProposalService
             .Select(DescribeOperation)
             .ToList();
 
-        var isCaptureTaskBatch = IsCaptureTaskBatch(proposal.Summary, proposal.SourceType, orderedOperations);
+        var isCaptureTaskBatch = IsCaptureTaskBatch(proposal.SourceType, orderedOperations);
 
         return new ProposalPresentationDto(
             BuildPlainSummary(proposal.Summary, isCaptureTaskBatch, orderedOperations, affectedEntities),
@@ -596,7 +596,7 @@ public class AutomationProposalService : IAutomationProposalService
         return buffer.ToString();
     }
 
-    private static bool IsCaptureTaskBatch(string summary, ProposalSourceType sourceType, IReadOnlyList<AutomationProposalOperation> orderedOperations)
+    private static bool IsCaptureTaskBatch(ProposalSourceType sourceType, IReadOnlyList<AutomationProposalOperation> orderedOperations)
     {
         if (sourceType != ProposalSourceType.Queue)
         {
