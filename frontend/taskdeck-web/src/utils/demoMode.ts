@@ -6,7 +6,9 @@
 
 const DEMO_SESSION_KEY = 'taskdeck_demo'
 
-export const isDemoMode: boolean = import.meta.env.VITE_API_BASE_URL === ''
+const normalizedApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').toString().trim()
+
+export const isDemoMode: boolean = normalizedApiBaseUrl === ''
 
 export function isDemoSessionActive(): boolean {
   return isDemoMode && localStorage.getItem(DEMO_SESSION_KEY) === '1'
