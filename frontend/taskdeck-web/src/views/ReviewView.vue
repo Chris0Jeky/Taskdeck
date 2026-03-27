@@ -577,6 +577,8 @@ watch(
             v-if="proposal.correlationId.trim().length > 0"
             class="td-review-card__provenance-meta"
             :title="proposal.correlationId.trim()"
+            :aria-label="`Triage run: ${proposal.correlationId.trim()}`"
+            tabindex="0"
           >
             Triage run: {{ shortCorrelationId(proposal.correlationId) }}
           </span>
