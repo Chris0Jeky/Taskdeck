@@ -33,7 +33,7 @@ Current constraints are mostly hardening and consistency:
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list responsiveness remains tracked in `#213`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
 - cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
-- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`, and the remaining pre-recording blocker is locking the rehearsal contract in `#355` before broader script framing in `#216`
+- Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`; the rehearsal contract is now codified in `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md` (`#355`), and the remaining pre-recording focus is broader script framing and narrative tightening in `#216`
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -240,11 +240,11 @@ Implementation delivery (shipped in this context):
 Current state:
 - already shipped: capture triage, review-first proposal gating, board-centered follow-through, provenance links, and deterministic seed/director/scenario tooling
 - delivered in the demo wave: dedicated client-onboarding starter pack/scenario (`#354`), trust-first review wording hardening (demo-critical `#326` subset), and in-app hero-path/demo-board cues (demo-critical `#330` subset)
-- still missing before recording: one committed rehearsal contract (`#355`) and then the broader reusable demo script/public framing follow-through (`#216`)
+- rehearsal contract is now delivered (`#355`); the remaining pre-recording work is the broader reusable demo script/public framing follow-through (`#216`)
 
 Targeted follow-through seeded:
 - `#354` `PACK-08`: Saul-facing client-onboarding starter pack and deterministic demo scenario
-- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current execution step)
+- `#355` `TST-24`: Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (delivered)
 - `#356` `DEMO-00`: Saul-facing demo alignment tracker
 
 Existing reused anchors:

@@ -618,8 +618,8 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#354` client-onboarding starter pack + deterministic hero scenario
   - demo-critical `#326` trust-first readability hardening
   - demo-critical `#330` hero-path/demo-board cue hardening
-  - `#355` rehearsal contract + acceptance checklist (current execution step)
-  - `#216` broader reusable demo script/public framing (after `#355`)
+  - `#355` rehearsal contract + acceptance checklist (delivered)
+  - `#216` broader reusable demo script/public framing (current execution step)
 - Reuse-before-duplicate anchors for this wave:
   - `#326` proposal readability and trust cues
   - `#330` in-app demoability and hero-board quality
@@ -824,13 +824,13 @@ Execution conclusion:
 - the hard substrate is already shipped: capture triage, review-first gating, provenance, board-centered follow-through, and deterministic demo tooling are all present
 - the remaining pre-recording gap is business-legible packaging, not missing architecture
 - the work should stay pinned to one stakeholder story: `Home -> Inbox/Capture -> Review -> Board`
-- execution status now reflects stacked delivery in progress: `#354` plus demo-critical follow-through from `#326` and `#330` are already delivered for this wave, and `#355` is the current blocker before `#216`
+- execution status now reflects stacked delivery in progress: `#354` plus demo-critical follow-through from `#326` and `#330` are already delivered for this wave, `#355` rehearsal contract is delivered, and `#216` is the remaining pre-recording focus
 
 Seeded issues:
 - `#354` `PACK-08`: add a Saul-facing client-onboarding starter pack and deterministic demo scenario
 - demo-critical `#326`: trust-first review legibility hardening
 - demo-critical `#330`: in-app hero-path/demo-board cues
-- `#355` `TST-24`: add the rehearsal contract, acceptance checklist, and artifact expectations for the exact stakeholder path (current execution step)
+- `#355` `TST-24`: add the rehearsal contract, acceptance checklist, and artifact expectations for the exact stakeholder path (delivered)
 - `#356` `DEMO-00`: track the narrow demo-alignment wave
 
 Reused existing anchors:

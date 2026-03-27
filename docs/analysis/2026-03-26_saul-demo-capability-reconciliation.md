@@ -25,7 +25,8 @@ The repo already ships the hard substrate needed for the stakeholder demo:
 Execution status now:
 - business-facing hero board/scenario and exact ACME capture story are implemented under `#354`
 - demo-critical trust-copy and in-app cue hardening are implemented under demo-critical follow-through in `#326` and `#330`
-- the remaining pre-recording blocker is a committed rehearsal contract for the exact stakeholder path (`#355`), followed by broader script framing in `#216`
+- a committed rehearsal contract for the exact stakeholder path is now landed as `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md` under `#355`
+- the remaining pre-recording blocker is broader script framing and narrative stitching in `#216`
 
 ## Capability Map
 
@@ -40,7 +41,7 @@ Execution status now:
 | Deterministic demo reset and orchestration | Shipped | `demo:seed`, `demo:director`, `demo:director:smoke`, JSON scenarios | Delivered demo migration wave |
 | Business-facing starter pack / hero blueprint | Implemented | client-onboarding starter pack catalog + setup option + seed/default retargeting | `#354`; broader pack wave remains `#175` |
 | Saul-facing business scenario and exact ACME capture story | Implemented | `scripts/scenarios-json/client-onboarding.json`, demo seed/defaults, triage tests | `#354` |
-| Explicit rehearsal contract for recording | Missing | no committed pass/fail prep guide for this exact stakeholder path | New `#355` |
+| Explicit rehearsal contract for recording | Implemented | `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md` | Implemented via rehearsal contract doc (`#355`) |
 | Demo script / narrative framing | Partially planned | broader thesis/demo framing already tracked | Existing `#216` |
 
 ## What Is Already Documented

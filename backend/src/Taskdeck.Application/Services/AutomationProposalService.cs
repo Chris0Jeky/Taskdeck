@@ -9,7 +9,6 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationProposalService : IAutomationProposalService
 {
-    private const string CaptureTriageSummaryPrefix = "Capture triage";
     private const string CaptureTriageActionType = "create";
     private const string CaptureTriageTargetType = "card";
 
@@ -605,11 +604,6 @@ public class AutomationProposalService : IAutomationProposalService
         }
 
         if (orderedOperations.Count < 2)
-        {
-            return false;
-        }
-
-        if (!summary.TrimStart().StartsWith(CaptureTriageSummaryPrefix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
