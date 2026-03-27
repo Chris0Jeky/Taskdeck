@@ -107,6 +107,8 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function setDemoSession() {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(SESSION_KEY)
     isDemo.value = true
     token.value = null
     userId.value = DEMO_USER.id
