@@ -520,6 +520,8 @@ onUnmounted(() => {
             :key="item.id"
             :id="`td-inbox-option-${index}`"
             :data-inbox-index="index"
+            data-testid="inbox-item"
+            :data-capture-id="item.id"
             :class="[
               'td-inbox-row',
               index === activeItemIndex ? 'td-inbox-row--active' : '',

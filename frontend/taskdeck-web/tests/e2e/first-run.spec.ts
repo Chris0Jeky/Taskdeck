@@ -101,9 +101,9 @@ test('first-run path should guide home to capture to review to execute to board'
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
   await expect(page.getByText(`Showing capture items linked to board ${boardId}.`)).toBeVisible()
   await expect(page.getByText('What is Inbox for?')).toBeVisible()
-  await expect(page.locator('.td-inbox-row').filter({ hasText: controlCardTitle })).toHaveCount(0)
+  await expect(page.locator('[data-testid="inbox-item"]').filter({ hasText: controlCardTitle })).toHaveCount(0)
 
-  const captureRow = page.locator('.td-inbox-row').filter({ hasText: cardTitle }).first()
+  const captureRow = page.locator('[data-testid="inbox-item"]').filter({ hasText: cardTitle }).first()
   await expect(captureRow).toBeVisible()
   await captureRow.click()
 
@@ -159,8 +159,8 @@ test('first-run path should guide home to capture to review to execute to board'
   await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}#capture-${captureId}$`))
   await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible()
   await expect(page.getByText(`Showing capture items linked to board ${boardId}.`)).toBeVisible()
-  await expect(page.locator('.td-inbox-row').filter({ hasText: controlCardTitle })).toHaveCount(0)
-  await expect(page.locator('.td-inbox-row').filter({ hasText: cardTitle })).toHaveClass(/td-inbox-row--selected/)
+  await expect(page.locator('[data-testid="inbox-item"]').filter({ hasText: controlCardTitle })).toHaveCount(0)
+  await expect(page.locator('[data-testid="inbox-item"]').filter({ hasText: cardTitle })).toHaveClass(/td-inbox-row--selected/)
   await expect(page.locator('.td-inbox-detail__text')).toContainText(captureText)
 })
 

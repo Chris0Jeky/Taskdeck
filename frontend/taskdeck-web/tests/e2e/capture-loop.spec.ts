@@ -28,7 +28,7 @@ test('capture triage should create proposal and apply card with provenance links
   const captureId = createdCapture.id
 
   await page.goto('/workspace/inbox')
-  const captureRow = page.locator('.td-inbox-row').filter({ hasText: checklistTaskTitle }).first()
+  const captureRow = page.locator('[data-testid="inbox-item"]').filter({ hasText: checklistTaskTitle }).first()
   await expect(captureRow).toBeVisible()
   await captureRow.click()
 
