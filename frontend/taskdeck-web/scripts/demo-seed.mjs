@@ -522,6 +522,38 @@ async function getStarterPackManifest(boardId, token, packId) {
 
 async function applyStarterPack(boardId, token, packId) {
   const manifest = await getStarterPackManifest(boardId, token, packId)
+
+  // Dry-run first to detect conflicts before committing changes.
+  const preview = await http('POST', `/boards/${boardId}/starter-packs/apply`, {
+    token,
+    body: { manifest, dryRun: true },
+  })
+
+  const hasBlockingConflicts = (preview?.conflicts || []).some(
+    (c) => !c.severity || c.severity.toLowerCase() === 'blocking',
+  )
+
+  if (hasBlockingConflicts) {
+    // If every column and label action is "skip", the pack is already applied.
+    const structuralActions = (preview?.actions || []).filter(
+      (a) => a.entityType === 'column' || a.entityType === 'label',
+    )
+    const allSkipped = structuralActions.length > 0 && structuralActions.every((a) => a.operation === 'skip')
+
+    if (allSkipped) {
+      console.log(`  (starter pack "${packId}" already applied — skipping)`)
+      return preview
+    }
+
+    const conflictSummary = (preview?.conflicts || [])
+      .filter((c) => !c.severity || c.severity.toLowerCase() === 'blocking')
+      .map((c) => `  - ${c.code}: ${c.message}`)
+      .join('\n')
+    throw new Error(
+      `Starter pack "${packId}" has blocking conflicts on board ${boardId}:\n${conflictSummary}`,
+    )
+  }
+
   return await http('POST', `/boards/${boardId}/starter-packs/apply`, {
     token,
     body: { manifest, dryRun: false },
