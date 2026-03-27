@@ -319,7 +319,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(corsAllowedOrigins.ToArray())
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 builder.Services.AddRateLimiter(options => ConfigureRateLimiting(options, rateLimitingSettings));
