@@ -133,6 +133,7 @@ public class ChatService : IChatService
             Guid? proposalId = null;
             string assistantContent;
             int? tokenUsage = null;
+            string? degradedReason = null;
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
             {
@@ -175,6 +176,12 @@ public class ChatService : IChatService
                 var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
+                degradedReason = llmResult.DegradedReason;
+
+                if (llmResult.IsDegraded)
+                {
+                    messageType = "degraded";
+                }
 
                 if (llmResult.IsActionable && dto.RequestProposal)
                 {
@@ -223,7 +230,13 @@ public class ChatService : IChatService
 
             await _unitOfWork.SaveChangesAsync(ct);
 
-            return Result.Success(MapMessageToDto(assistantMessage));
+            var resultDto = MapMessageToDto(assistantMessage);
+            if (degradedReason != null)
+            {
+                resultDto = resultDto with { DegradedReason = degradedReason };
+            }
+
+            return Result.Success(resultDto);
         }
         catch (DomainException ex)
         {

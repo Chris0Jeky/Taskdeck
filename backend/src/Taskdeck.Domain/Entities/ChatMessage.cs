@@ -31,8 +31,8 @@ public class ChatMessage : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Content cannot be empty");
         if (string.IsNullOrWhiteSpace(messageType))
             throw new DomainException(ErrorCodes.ValidationError, "MessageType cannot be empty");
-        if (messageType != "text" && messageType != "proposal-reference" && messageType != "error" && messageType != "status")
-            throw new DomainException(ErrorCodes.ValidationError, "MessageType must be 'text', 'proposal-reference', 'error', or 'status'");
+        if (messageType != "text" && messageType != "proposal-reference" && messageType != "error" && messageType != "status" && messageType != "degraded")
+            throw new DomainException(ErrorCodes.ValidationError, "MessageType must be 'text', 'proposal-reference', 'error', 'status', or 'degraded'");
         if (tokenUsage.HasValue && tokenUsage.Value < 0)
             throw new DomainException(ErrorCodes.ValidationError, "TokenUsage must be non-negative");
 
