@@ -215,7 +215,7 @@ Manual-only checks (non-automatable in generic local script):
 1. Open `/workspace/activity`.
    - Expected: view loads and allows mode selection (`board`, `entity`, `user`).
 2. Fetch board history using the board selector.
-   - Expected: timeline entries display.
+   - Expected: timeline entries include board-level mutations *and* card/column/label activity within that board.
 3. Fetch entity history using entity type + board context + entity selectors.
    - Expected: timeline entries display without manual raw ID entry.
 4. Fetch user history in `user` mode.
