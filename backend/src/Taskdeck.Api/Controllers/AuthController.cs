@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.Filters;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -21,9 +24,19 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [SuppressModelStateValidation]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
-    public async Task<IActionResult> Login([FromBody] LoginDto dto)
+    public async Task<IActionResult> Login([FromBody] LoginDto? dto)
     {
+        if (dto is null
+            || string.IsNullOrWhiteSpace(dto.UsernameOrEmail)
+            || string.IsNullOrWhiteSpace(dto.Password))
+        {
+            return Unauthorized(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                "Invalid username/email or password."));
+        }
+
         var result = await _authService.LoginAsync(dto);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
