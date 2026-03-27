@@ -8,6 +8,7 @@ namespace Taskdeck.Api.Tests;
 public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private const string AccessControlAllowOriginHeader = "Access-Control-Allow-Origin";
+    private const string AccessControlAllowCredentialsHeader = "Access-Control-Allow-Credentials";
     private const string DefaultFrontendOrigin = "http://localhost:5173";
     private readonly TestWebApplicationFactory _baseFactory;
 
@@ -110,6 +111,36 @@ public class CorsApiTests : IClassFixture<TestWebApplicationFactory>
         defaultOriginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         defaultOriginResponse.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
         allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
+    }
+
+    [Theory]
+    [InlineData("/health/live", "GET", false)]
+    [InlineData("/hubs/boards/negotiate?negotiateVersion=1", "POST", false)]
+    [InlineData("/hubs/boards/negotiate?negotiateVersion=1", "OPTIONS", true)]
+    public async Task Cors_ShouldIncludeAllowCredentials_ForAllowedOriginRequests(
+        string path, string methodName, bool isPreflight)
+    {
+        using var client = _baseFactory.CreateClient();
+        var method = new HttpMethod(methodName);
+        using var request = new HttpRequestMessage(method, path);
+        request.Headers.TryAddWithoutValidation("Origin", DefaultFrontendOrigin);
+
+        if (isPreflight)
+        {
+            request.Headers.TryAddWithoutValidation("Access-Control-Request-Method", "POST");
+            request.Headers.TryAddWithoutValidation("Access-Control-Request-Headers", "authorization");
+        }
+        else if (method == HttpMethod.Post)
+        {
+            request.Content = new StringContent(string.Empty);
+        }
+
+        var response = await client.SendAsync(request);
+
+        response.Headers.TryGetValues(AccessControlAllowOriginHeader, out var allowedOrigins).Should().BeTrue();
+        allowedOrigins.Should().ContainSingle().Which.Should().Be(DefaultFrontendOrigin);
+        response.Headers.TryGetValues(AccessControlAllowCredentialsHeader, out var credentialsValues).Should().BeTrue();
+        credentialsValues.Should().ContainSingle().Which.Should().Be("true");
     }
 
     [Theory]
