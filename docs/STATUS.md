@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-26
+Last Updated: 2026-03-27
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -94,6 +94,7 @@ Direction guardrails (explicit):
 - Current navigation is now partially product-shaped:
   - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
   - `Today` is now shipped as the daily agenda route, while `Agents`, `Runs`, `Knowledge`, and `Integrations` remain planned but not shipped
+  - a static frontend-only UI mock now exists at `frontend/taskdeck-web/public/mock/` for lightweight GitHub Pages-style walkthroughs of the current `Home` / `Today` / `Review` / `Inbox` / `Board` feel using local example data only, and GitHub Pages now deploys that folder through a dedicated Actions workflow instead of the old branch-based `main` + `/docs` path
 - Feature slices integrated end to end:
   - workspace home summary shell with server-backed workspace mode persistence
   - workspace `Today` agenda with persisted onboarding state, replay/dismiss controls, and first-use board setup shortcuts
@@ -128,6 +129,8 @@ Direction guardrails (explicit):
   - advanced/diagnostic nav surfaces now default off via feature flags (`Activity`, `Ops`, `Access`, `Archive`)
   - `Automations` nav now defaults to proposals review path instead of queue path
   - queue composer now defaults to instruction-first request type with guided helper text and board-context guardrails for board-scoped instructions
+  - Automation Chat now exposes explicit provider-health truth (`/api/llm/chat/health`) so operators and tests can see whether the surface is using a live provider, mock provider, or a degraded/unavailable path
+  - opt-in live-provider chat verification now exists at `frontend/taskdeck-web/tests/e2e/live-llm.spec.ts` (gated by `TASKDECK_RUN_LIVE_LLM_TESTS=1`), with headed local entry points in `npm run test:e2e:audit:headed` and `npm run test:e2e:live-llm:headed`
 - Shared maintainability utilities:
   - `buildQueryString` for API query construction across filter-driven endpoints
   - `getErrorMessage` for consistent API/store error extraction
@@ -250,6 +253,25 @@ Existing reused anchors:
 - `#326` for proposal readability and trust-cue hardening (demo-critical subset)
 - `#330` for in-app demoability and hero-board presentation quality (demo-critical subset)
 - post-epic follow-through is now tracked in `#311` for continued demo/runtime/test hardening without reopening the migration batches
+
+## Manual Product Audit Follow-through Wave (2026-03-26)
+
+The headed runtime audit in `docs/analysis/2026-03-26_manual-product-audit.md` was reconciled into a focused follow-through wave rather than left as a standalone artifact.
+
+Canonical follow-through record:
+- `docs/analysis/2026-03-26_manual-product-audit-followthrough.md`
+
+Seeded issues:
+- `#363` tracker
+- `#364` realtime hub CORS/SignalR health
+- `#365` Inbox triage freshness
+- `#366` Workbench/nav/docs truth alignment
+- `#367` board-history semantic alignment
+- `#368` chat live-provider status and first-turn fidelity
+- `#369` headed manual-audit Playwright pack (`Priority IV` by design)
+
+Reused existing anchor:
+- `#326` remains the correct owner for the audit's review-readability / raw-ID finding
 
 ## MVP Expansion Planning Integration (2026-03-07)
 
@@ -530,14 +552,15 @@ Command:
 - `cd frontend/taskdeck-web && npx playwright test`
 
 Result:
-- default E2E smoke + automation/ops + capture loop + starter-pack fixture flow: 24/24 passing
-- Playwright discovery currently contains 25 tests total; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default unless `TASKDECK_RUN_DEMO=1`
+- default required E2E lane remains the smoke + automation/ops + capture loop + starter-pack fixture flow
+- opt-in/manual coverage now also includes `stakeholder-demo.spec.ts` (`TASKDECK_RUN_DEMO=1`) and `live-llm.spec.ts` (`TASKDECK_RUN_LIVE_LLM_TESTS=1`)
 - 2026-03-06 local rerun still passes after frontend E2E startup hardening:
   - Playwright frontend port resolution now auto-falls back (`5173` -> `4173` -> `5001`) with deterministic runner/worker convergence.
   - local reuse mode only reuses already-listening ports when the listener is identity-verified as Taskdeck frontend; CI mode prefers bindable ports so stale listeners do not break startup.
   - first fallback resolution is now persisted in-process so worker config imports stay pinned to the runner-selected frontend port during CI execution.
   - backend Playwright startup stays on deterministic `Mock` provider mode unless the run is an explicit demo flow that injects live-provider overrides.
   - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
+- 2026-03-26 manual audit confirmed the previously published raw API/E2E counts were stale; the next full end-to-end suite recertification should refresh discovery/pass totals rather than continuing to repeat the older 2026-03-06 figures.
 
 ### Demo Director Smoke
 

@@ -1,6 +1,6 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-03-06
+Last Updated: 2026-03-26
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
@@ -103,6 +103,30 @@ For full Playwright-backed demos (`npm run demo:director` or `TASKDECK_RUN_DEMO=
 - deterministic smoke runs still remain mock-backed because `demo:director:smoke` sets `--skip-llm`
 - when the demo runtime injects live-provider overrides, Playwright also disables existing-server reuse by default so a stale mock backend is not silently reused; set `TASKDECK_E2E_REUSE_EXISTING_SERVER=1` only if you intentionally want reuse anyway
 
+Opt-in live-provider verification outside demo mode:
+
+- set `TASKDECK_RUN_LIVE_LLM_TESTS=1` to let Playwright inject live-provider settings for the dedicated live chat probe without enabling the broader demo recorder
+- use `npx playwright test tests/e2e/live-llm.spec.ts --headed --reporter=line` for a manual visible check
+- use `npm run test:e2e:live-llm:headed` for the same local headed path through the package scripts
+
+## Product-Level Provider Truth
+
+Automation Chat now exposes provider-health state explicitly through:
+- `GET /api/llm/chat/health`
+- the in-app provider-status banner in `Automation Chat`
+
+Note:
+- `GET /api/llm/chat/health` is protected by the standard app auth on `ChatController`
+- callers must use an authenticated session or a valid Bearer token
+- unauthenticated requests return `401 Unauthorized`, so a direct browser or `curl` call without auth can fail even when the provider is healthy
+
+Current operator-visible states:
+- live provider ready
+- mock provider active
+- configured/degraded provider unavailable
+
+This is intentionally separate from the broader demo tooling so an operator can tell whether a live LLM is actually hooked before trusting a manual chat pass.
+
 ## Behavior Guarantees
 
 - application services remain provider-agnostic (`ChatService`, capture triage paths depend on `ILlmProvider` only)
@@ -123,8 +147,12 @@ For full Playwright-backed demos (`npm run demo:director` or `TASKDECK_RUN_DEMO=
 - API integration coverage:
   - capture triage provenance includes provider/model
   - chat flow validated using a non-mock provider stub with attribution assertions
+  - chat health endpoint returns explicit provider-status metadata for mock/live paths
   - capture create ignores client-supplied actor identity payload fields
   - queue ingest rejects spoofed provenance attribution fields
+- frontend/operator coverage:
+  - Automation Chat shows explicit mock/live/degraded provider state
+  - opt-in Playwright live-provider probe validates a real first-turn response path when `TASKDECK_RUN_LIVE_LLM_TESTS=1`
 
 ## Security and Trust Constraints
 

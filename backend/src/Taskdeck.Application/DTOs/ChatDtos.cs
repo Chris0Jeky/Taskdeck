@@ -24,6 +24,14 @@ public record ChatMessageDto(
     DateTimeOffset CreatedAt
 );
 
+public record ChatProviderHealthDto(
+    bool IsAvailable,
+    string ProviderName,
+    string? ErrorMessage,
+    string? Model,
+    bool IsMock
+);
+
 public record CreateChatSessionDto(
     string Title,
     Guid? BoardId = null

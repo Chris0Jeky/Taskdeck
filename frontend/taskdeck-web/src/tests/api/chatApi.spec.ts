@@ -32,4 +32,19 @@ describe('chatApi', () => {
       requestProposal: true,
     })
   })
+
+  it('loads provider health', async () => {
+    const healthPayload = {
+      isAvailable: true,
+      providerName: 'Mock',
+      errorMessage: null,
+      model: 'mock-default',
+      isMock: true,
+    }
+    vi.mocked(http.get).mockResolvedValue({ data: healthPayload })
+
+    await expect(chatApi.getHealth()).resolves.toEqual(healthPayload)
+
+    expect(http.get).toHaveBeenCalledWith('/llm/chat/health')
+  })
 })

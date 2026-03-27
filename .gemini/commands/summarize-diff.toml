@@ -1,0 +1,9 @@
+description = "Summarize local diff and review changes for best practices, security, and performance."
+prompt = """
+Examine the local git diff for the current branch and output a targeted code review.
+Focus on:
+- Best practices based on `AGENTS.md` and repository standards.
+- Security concerns (auth, input validation).
+- Performance implications.
+Provide a concise summary rather than a line-by-line annotation unless specifically warranted.
+"""

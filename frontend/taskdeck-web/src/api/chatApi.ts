@@ -1,5 +1,5 @@
 import http from './http'
-import type { ChatMessage, ChatSession, CreateChatSessionRequest, SendChatMessageRequest } from '../types/chat'
+import type { ChatMessage, ChatProviderHealth, ChatSession, CreateChatSessionRequest, SendChatMessageRequest } from '../types/chat'
 
 export const chatApi = {
   async createSession(request: CreateChatSessionRequest): Promise<ChatSession> {
@@ -14,6 +14,11 @@ export const chatApi = {
 
   async getSession(sessionId: string): Promise<ChatSession> {
     const { data } = await http.get<ChatSession>(`/llm/chat/sessions/${encodeURIComponent(sessionId)}`)
+    return data
+  },
+
+  async getHealth(): Promise<ChatProviderHealth> {
+    const { data } = await http.get<ChatProviderHealth>('/llm/chat/health')
     return data
   },
 

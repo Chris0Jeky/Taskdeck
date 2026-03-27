@@ -52,7 +52,7 @@ const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: str
   },
   workbench: {
     label: 'Workbench',
-    description: 'Keep every workspace surface visible for hands-on work.',
+    description: 'Keep the broader operator toolset close, while feature-flagged advanced surfaces remain opt-in.',
   },
   agent: {
     label: 'Agent',

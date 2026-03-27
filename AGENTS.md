@@ -42,6 +42,15 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
   - `docs/GITHUB_PROJECT_AUTOMATION.md`
   - this `AGENTS.md` (only if contributor behavior expectations changed)
 
+## Local skill packs
+- Repo-local Codex skills live under `.codex/skills/` and supplement `AGENTS.md`; they do not override it.
+- Use `.codex/skills/taskdeck-repo-onramp` when the request is broad, the repo area is unfamiliar, or current Taskdeck reality must be reconciled before planning.
+- Use `.codex/skills/taskdeck-backend-slice` for backend/API/application/infrastructure/worker/auth behavior changes.
+- Use `.codex/skills/taskdeck-frontend-workspace-slice` for frontend shell, workspace, route, help-state, and novice-legibility work outside the core capture-review semantics.
+- Use `.codex/skills/taskdeck-capture-review-loop` when capture, inbox, proposal review, execute flow, provenance, or board handoff semantics are involved.
+- Use `.codex/skills/taskdeck-demo-regression` when a task needs the right evidence path, seeded demo state, Playwright proof, or stakeholder-facing walkthrough validation.
+- Use `.codex/skills/taskdeck-verification-doc-sync` at the end of implementation to choose the right checks, update only the right docs, and prepare the required Taskdeck handoff summary.
+
 ## Work protocol (required)
 - Before edits: write a short plan (files, approach, risks, tests).
 - Keep diffs small and scoped; avoid large mixed refactors.
@@ -53,6 +62,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 
 ### Windows Git Reliability Fallback
 - If `git` resolves to Cygwin or produces signal/pipe-style failures, use `C:\Program Files\Git\cmd\git.exe` explicitly for repo operations.
+- When running automated commits in the background terminal, ALWAYS append `--no-gpg-sign` and `--no-verify` to `git commit` to prevent hidden GPG pinentry prompts from freezing the process.
 - If a commit fails because `.git/index.lock` cannot be created, first check for active `git` processes; remove `.git/index.lock` only when no git process is running.
 - For stacked branches with small conflict surfaces, prefer `merge` over `rebase` when branch reconciliation starts stalling (for example long-running interactive/conflict loops). Resolve conflicts once, merge, and continue delivery.
 

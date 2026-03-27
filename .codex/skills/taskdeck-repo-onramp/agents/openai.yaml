@@ -1,0 +1,5 @@
+interface:
+  display_name: "Taskdeck Repo Onramp"
+  short_description: "Orient to repo truth before editing"
+  default_prompt: "Use $taskdeck-repo-onramp to reconcile this Taskdeck task against current repo reality and produce a short execution plan."
+

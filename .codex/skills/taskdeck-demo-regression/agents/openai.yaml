@@ -1,0 +1,5 @@
+interface:
+  display_name: "Taskdeck Demo Regression"
+  short_description: "Choose the smallest useful proof path"
+  default_prompt: "Use $taskdeck-demo-regression to pick the right Taskdeck evidence path and prove this change without overusing demo tooling."
+

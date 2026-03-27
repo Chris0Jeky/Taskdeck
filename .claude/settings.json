@@ -1,0 +1,113 @@
+{
+  "includeCoAuthoredBy": false,
+  "enableAllProjectMcpServers": true,
+  "worktree": {
+    "symlinkDirectories": ["node_modules", "frontend/taskdeck-web/node_modules"]
+  },
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Bash(dotnet --version)",
+      "Bash(dotnet --version:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet run:*)",
+      "Bash(dotnet tool install:*)",
+      "Bash(dotnet tool uninstall:*)",
+      "Bash(dotnet nuget:*)",
+      "Bash(dotnet ef migrations:*)",
+      "Bash(dotnet ef database:*)",
+      "Bash(dotnet format:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)",
+      "Bash(npm install:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx playwright:*)",
+      "Bash(npx vue-tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git merge:*)",
+      "Bash(git fetch:*)",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(gh :*)",
+      "Bash(ls:*)",
+      "Bash(pwd:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker build:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker :*)",
+      "Bash(taskkill:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(rm -rf /:*)",
+      "Bash(git reset --hard:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); if echo \"$CMD\" | grep -qiE \"(git\\s+push\\s+--force|rm\\s+-rf\\s+/|DROP\\s+TABLE|DROP\\s+DATABASE)\"; then echo \"BLOCKED: Destructive command detected: $CMD\" >&2; exit 2; fi; exit 0'",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); STAGED=$(git diff --cached --name-only 2>/dev/null); HAS_CS=false; HAS_VUE=false; if echo \"$STAGED\" | grep -qE \"\\.cs$\"; then HAS_CS=true; fi; if echo \"$STAGED\" | grep -qE \"\\.(vue|ts)$\"; then HAS_VUE=true; fi; ERRORS=\"\"; if [ \"$HAS_CS\" = true ]; then RESULT=$(dotnet build backend/Taskdeck.sln -c Release --nologo -v q 2>&1); if [ $? -ne 0 ]; then ERRORS=\"Backend build failed:\\n$RESULT\"; fi; fi; if [ \"$HAS_VUE\" = true ]; then RESULT=$(cd frontend/taskdeck-web && npx vue-tsc --noEmit 2>&1); if [ $? -ne 0 ]; then ERRORS=\"$ERRORS\\nFrontend typecheck failed:\\n$RESULT\"; fi; fi; if [ -n \"$ERRORS\" ]; then echo \"PRE-COMMIT CHECK FAILED:\" >&2; echo -e \"$ERRORS\" >&2; exit 2; fi; exit 0'",
+            "timeout": 120,
+            "statusMessage": "Running pre-commit checks..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r \".tool_input.file_path // empty\"); if echo \"$FILE\" | grep -qE \"\\.(vue|ts)$\"; then if echo \"$FILE\" | grep -q \"frontend/taskdeck-web\"; then echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Vue/TS file edited: $FILE — consider running typecheck if making multiple related edits.\\\"}}\"; fi; fi; exit 0'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Taskdeck repo. Read CLAUDE.md for context. Read docs/STATUS.md for current state before making changes.'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

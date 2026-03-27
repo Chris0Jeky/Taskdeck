@@ -1,0 +1,7 @@
+description = "Write tests for the specified path"
+prompt = """
+Write tests conforming to `docs/TESTING_GUIDE.md` for the following component/path: {{args}}.
+- If `.NET` backend, mock dependencies and test application layer validation.
+- If Vue frontend, use vitest for component tests.
+- Provide incremental coverage output.
+"""
