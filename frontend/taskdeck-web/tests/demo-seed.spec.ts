@@ -5,6 +5,7 @@ import {
   collectSeededChatProposalIds,
   hasSeededChatEvidence,
   mergeSeedPlanChatSessions,
+  parseSeedArgs,
   planDemoSeedRerunState,
   shouldRecreateCaptureSeed,
 } from '../scripts/demo-seed.mjs'
@@ -265,5 +266,31 @@ describe('demo seed rerun planning', () => {
   it('builds a direct proposal lookup path for rerun reuse checks', () => {
     expect(buildProposalLookupPath('proposal/with spaces')).toBe('/automation/proposals/proposal%2Fwith%20spaces')
     expect(() => buildProposalLookupPath('')).toThrow('Proposal id is required')
+  })
+})
+
+describe('parseSeedArgs', () => {
+  it('detects --help flag', () => {
+    expect(parseSeedArgs(['node', 'demo-seed.mjs', '--help'])).toEqual({ help: true, reset: false })
+  })
+
+  it('detects -h shorthand', () => {
+    expect(parseSeedArgs(['node', 'demo-seed.mjs', '-h'])).toEqual({ help: true, reset: false })
+  })
+
+  it('detects --reset flag', () => {
+    expect(parseSeedArgs(['node', 'demo-seed.mjs', '--reset'])).toEqual({ help: false, reset: true })
+  })
+
+  it('detects both flags together', () => {
+    expect(parseSeedArgs(['node', 'demo-seed.mjs', '--reset', '--help'])).toEqual({ help: true, reset: true })
+  })
+
+  it('returns defaults when no flags are passed', () => {
+    expect(parseSeedArgs(['node', 'demo-seed.mjs'])).toEqual({ help: false, reset: false })
+  })
+
+  it('ignores unknown flags', () => {
+    expect(parseSeedArgs(['node', 'demo-seed.mjs', '--verbose', '--dry-run'])).toEqual({ help: false, reset: false })
   })
 })
