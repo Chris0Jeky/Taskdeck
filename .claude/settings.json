@@ -1,6 +1,9 @@
 {
   "includeCoAuthoredBy": false,
   "enableAllProjectMcpServers": true,
+  "worktree": {
+    "symlinkDirectories": ["node_modules", "frontend/taskdeck-web/node_modules"]
+  },
   "permissions": {
     "defaultMode": "auto",
     "allow": [
@@ -47,6 +50,7 @@
       "Bash(docker compose:*)",
       "Bash(docker build:*)",
       "Bash(docker ps:*)",
+      "Bash(docker :*)",
       "Bash(taskkill:*)"
     ],
     "deny": [
@@ -64,6 +68,30 @@
           {
             "type": "command",
             "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); if echo \"$CMD\" | grep -qiE \"(git\\s+push\\s+--force|rm\\s+-rf\\s+/|DROP\\s+TABLE|DROP\\s+DATABASE)\"; then echo \"BLOCKED: Destructive command detected: $CMD\" >&2; exit 2; fi; exit 0'",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); STAGED=$(git diff --cached --name-only 2>/dev/null); HAS_CS=false; HAS_VUE=false; if echo \"$STAGED\" | grep -qE \"\\.cs$\"; then HAS_CS=true; fi; if echo \"$STAGED\" | grep -qE \"\\.(vue|ts)$\"; then HAS_VUE=true; fi; ERRORS=\"\"; if [ \"$HAS_CS\" = true ]; then RESULT=$(dotnet build backend/Taskdeck.sln -c Release --nologo -v q 2>&1); if [ $? -ne 0 ]; then ERRORS=\"Backend build failed:\\n$RESULT\"; fi; fi; if [ \"$HAS_VUE\" = true ]; then RESULT=$(cd frontend/taskdeck-web && npx vue-tsc --noEmit 2>&1); if [ $? -ne 0 ]; then ERRORS=\"$ERRORS\\nFrontend typecheck failed:\\n$RESULT\"; fi; fi; if [ -n \"$ERRORS\" ]; then echo \"PRE-COMMIT CHECK FAILED:\" >&2; echo -e \"$ERRORS\" >&2; exit 2; fi; exit 0'",
+            "timeout": 120,
+            "statusMessage": "Running pre-commit checks..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r \".tool_input.file_path // empty\"); if echo \"$FILE\" | grep -qE \"\\.(vue|ts)$\"; then if echo \"$FILE\" | grep -q \"frontend/taskdeck-web\"; then echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Vue/TS file edited: $FILE — consider running typecheck if making multiple related edits.\\\"}}\"; fi; fi; exit 0'",
             "timeout": 5
           }
         ]

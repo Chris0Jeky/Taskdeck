@@ -7,6 +7,10 @@
     "playwright": {
       "command": "npx",
       "args": ["-y", "@executeautomation/playwright-mcp-server"]
+    },
+    "docker": {
+      "command": "docker",
+      "args": ["mcp", "gateway", "run", "--servers", "docker,docker-docs,filesystem,SQLite", "--transport", "stdio"]
     }
   }
 }
