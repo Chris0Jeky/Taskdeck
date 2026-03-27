@@ -22,6 +22,13 @@ export function clearDemoSession(): void {
   localStorage.removeItem(DEMO_SESSION_KEY)
 }
 
+export class DemoModeError extends Error {
+  constructor(message = 'This action is view-only in demo mode.') {
+    super(message)
+    this.name = 'DemoModeError'
+  }
+}
+
 export const DEMO_USER = {
   id: 'demo-user-0000-0000-000000000000',
   username: 'demo',

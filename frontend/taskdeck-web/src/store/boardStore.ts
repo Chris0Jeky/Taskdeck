@@ -7,7 +7,7 @@ import { cardCommentsApi } from '../api/cardCommentsApi'
 import { labelsApi } from '../api/labelsApi'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
-import { isDemoMode } from '../utils/demoMode'
+import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../utils/demoData'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { Board, BoardDetail, Card, CardCaptureProvenance, Label, CreateBoardDto, CreateColumnDto, CreateCardDto, CreateLabelDto, UpdateCardDto, UpdateBoardDto, UpdateColumnDto, UpdateLabelDto } from '../types/board'
@@ -44,7 +44,7 @@ export const useBoardStore = defineStore('board', () => {
   function guardDemoMutation(): never | void {
     if (isDemoMode) {
       toast.info('This action is view-only in demo mode.')
-      throw new Error('Demo mode: mutations are disabled.')
+      throw new DemoModeError()
     }
   }
 

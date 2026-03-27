@@ -4,7 +4,7 @@ import { captureApi } from '../api/captureApi'
 import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto } from '../types/capture'
 import { useToastStore } from './toastStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
-import { isDemoMode } from '../utils/demoMode'
+import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import { buildDemoCaptureItems } from '../utils/demoData'
 
 function toSummary(item: CaptureItem): CaptureItemSummary {
@@ -33,7 +33,7 @@ export const useCaptureStore = defineStore('capture', () => {
   function guardDemoMutation(): never | void {
     if (isDemoMode) {
       toast.info('This action is view-only in demo mode.')
-      throw new Error('Demo mode: mutations are disabled.')
+      throw new DemoModeError()
     }
   }
 
