@@ -73,6 +73,28 @@ public class AuditApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetBoardHistory_ShouldIncludeCardAndColumnActivity()
+    {
+        var user = await AuthenticateAsAsync("audit-board-scope");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "audit-board-scope-board", "Board-scoped history test");
+        var column = await CreateColumnAsync(board.Id, "Board Scope Column");
+        var card = await CreateCardAsync(board.Id, column.Id, "Board Scope Card");
+
+        var boardLog = await SeedAuditLogAsync("Board", board.Id, user.UserId);
+        var cardLog = await SeedAuditLogAsync("Card", card.Id, user.UserId);
+        var columnLog = await SeedAuditLogAsync("Column", column.Id, user.UserId);
+
+        var response = await _client.GetAsync($"/api/audit/boards/{board.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var logs = await response.Content.ReadFromJsonAsync<List<AuditLogDto>>();
+        logs.Should().NotBeNull();
+        logs!.Should().Contain(log => log.Id == boardLog.Id, "board history should include board-level audit entries");
+        logs.Should().Contain(log => log.Id == cardLog.Id, "board history should include card-level audit entries");
+        logs.Should().Contain(log => log.Id == columnLog.Id, "board history should include column-level audit entries");
+    }
+
+    [Fact]
     public async Task GetEntityHistory_ShouldReturnOk_ForAccessibleEntity()
     {
         var board = await CreateBoardAsync();
