@@ -122,7 +122,7 @@ test('first-run path should guide home to capture to review to execute to board'
   await openProposalButton.click()
 
   await expect(page).toHaveURL(new RegExp(`/workspace/review\\?boardId=${boardId}#proposal-${proposalId}`))
-  await expect(page.getByText(`Showing proposals for board ${boardId}.`)).toBeVisible()
+  await expect(page.getByText(boardName)).toBeVisible()
   await expect(page.locator(`#proposal-${controlProposalId}`)).toHaveCount(0)
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()

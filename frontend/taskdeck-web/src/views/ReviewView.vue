@@ -2,7 +2,9 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
+import { boardsApi } from '../api/boardsApi'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import InputAssistField from '../components/common/InputAssistField.vue'
 import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
 import {
@@ -10,8 +12,10 @@ import {
   normalizeProposalSourceType,
   normalizeProposalStatus,
 } from '../utils/automation'
+import { buildInputAssistOptions } from '../utils/inputAssist'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
 import type { Proposal as ApiProposal } from '../types/automation'
+import type { Board } from '../types/board'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 
 type ReviewSummaryCard = {
@@ -32,15 +36,36 @@ const selectedDiffProposalId = ref<string | null>(null)
 const selectedDiff = ref<string | null>(null)
 let latestProposalLoadRequestId = 0
 let latestDiffRequestId = 0
+const availableBoards = ref<Board[]>([])
+const loadingBoards = ref(false)
+const boardFilterInput = ref('')
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+
+const boardOptions = computed(() =>
+  buildInputAssistOptions(
+    availableBoards.value.map((board) => ({
+      value: board.id,
+      label: board.name,
+    })),
+  ),
+)
+
+const activeBoardName = computed(() => {
+  if (!activeBoardFilter.value) return ''
+  const normalizedActiveId = normalizeBoardIdQueryParam(activeBoardFilter.value).toLowerCase()
+  const board = availableBoards.value.find(
+    (b) => normalizeBoardIdQueryParam(b.id).toLowerCase() === normalizedActiveId,
+  )
+  return board?.name ?? activeBoardFilter.value
+})
 
 function matchesActiveBoardFilter(boardId: string | null | undefined): boolean {
   if (!activeBoardFilter.value) {
     return true
   }
 
-  const normalizedBoardId = normalizeBoardIdQueryParam(boardId)
-  return normalizedBoardId === activeBoardFilter.value
+  const normalizedBoardId = normalizeBoardIdQueryParam(boardId).toLowerCase()
+  return normalizedBoardId === activeBoardFilter.value.toLowerCase()
 }
 
 const visibleProposals = computed(() => proposals.value.filter((proposal) => matchesActiveBoardFilter(proposal.boardId)))
@@ -445,7 +470,34 @@ function reviewStatusLabel(status: ApiProposal['status']): string {
   return statusLabels[normalized] ?? normalized
 }
 
+async function loadBoardOptions() {
+  try {
+    loadingBoards.value = true
+    availableBoards.value = await boardsApi.getBoards(undefined, true)
+  } catch {
+    // Board options are non-critical; proposals still work without them.
+  } finally {
+    loadingBoards.value = false
+  }
+}
+
+function applyBoardFilter(boardId: string) {
+  const trimmed = boardId.trim()
+  boardFilterInput.value = ''
+  if (trimmed) {
+    void router.push({ name: 'workspace-review', query: { boardId: trimmed } })
+  } else {
+    void router.push({ name: 'workspace-review' })
+  }
+}
+
+function clearBoardFilter() {
+  boardFilterInput.value = ''
+  void router.push({ name: 'workspace-review' })
+}
+
 onMounted(() => {
+  void loadBoardOptions()
   void loadProposals()
 })
 
@@ -474,8 +526,21 @@ watch(
           Nothing changes on a board until you approve it here.
         </p>
         <p v-if="activeBoardFilter" class="td-review__board-filter">
-          Showing proposals for board {{ activeBoardFilter }}.
+          Showing proposals for <strong>{{ activeBoardName }}</strong>.
+          <button class="td-btn td-btn--link td-btn--sm" @click="clearBoardFilter">Show all boards</button>
         </p>
+      </div>
+
+      <div class="td-review__board-selector">
+        <InputAssistField
+          v-model="boardFilterInput"
+          :options="boardOptions"
+          aria-label="Filter by board"
+          placeholder="Filter proposals by board..."
+          no-results-text="No matching boards."
+          :disabled="loadingBoards"
+          @select="(option) => applyBoardFilter(option.value)"
+        />
       </div>
 
       <div class="td-review__hero-actions">
@@ -687,6 +752,13 @@ watch(
   color: var(--td-color-primary);
   font-size: var(--td-font-sm);
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+}
+
+.td-review__board-selector {
+  max-width: 320px;
 }
 
 .td-review__hero-actions {
