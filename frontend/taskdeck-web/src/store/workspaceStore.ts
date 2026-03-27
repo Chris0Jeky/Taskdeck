@@ -5,6 +5,8 @@ import { useSessionStore } from './sessionStore'
 import { useToastStore } from './toastStore'
 import { getErrorMessage } from '../utils/errorMessage'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../utils/storageKeys'
+import { isDemoMode } from '../utils/demoMode'
+import { DEMO_ONBOARDING, buildDemoHomeSummary, buildDemoTodaySummary } from '../utils/demoData'
 import type {
   HomeSummary,
   TodaySummary,
@@ -93,6 +95,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return null
     }
 
+    if (isDemoMode) {
+      applyMode('guided')
+      syncOnboarding(DEMO_ONBOARDING)
+      preferencesHydrated.value = true
+      return null
+    }
+
     const requestVersion = startVersionedPreferenceRequest()
 
     try {
@@ -118,8 +127,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function updateMode(nextMode: WorkspaceMode): Promise<void> {
-    const requestVersion = startVersionedPreferenceRequest()
     applyMode(nextMode)
+
+    if (isDemoMode) {
+      preferencesHydrated.value = true
+      return
+    }
+
+    const requestVersion = startVersionedPreferenceRequest()
 
     if (!session.isAuthenticated) {
       preferencesHydrated.value = false
@@ -148,6 +163,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function fetchHomeSummary(): Promise<HomeSummary> {
+    if (isDemoMode) {
+      homeLoading.value = true
+      homeError.value = null
+      const summary = buildDemoHomeSummary()
+      homeSummary.value = summary
+      applyMode(summary.workspaceMode)
+      syncOnboarding(summary.onboarding)
+      homeLoading.value = false
+      return summary
+    }
+
     try {
       homeLoading.value = true
       homeError.value = null
@@ -165,6 +191,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function fetchTodaySummary(): Promise<TodaySummary> {
+    if (isDemoMode) {
+      todayLoading.value = true
+      todayError.value = null
+      const summary = buildDemoTodaySummary()
+      todaySummary.value = summary
+      applyMode(summary.workspaceMode)
+      syncOnboarding(summary.onboarding)
+      todayLoading.value = false
+      return summary
+    }
+
     try {
       todayLoading.value = true
       todayError.value = null
@@ -182,6 +219,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function updateOnboarding(action: WorkspaceOnboardingAction): Promise<WorkspaceOnboarding> {
+    if (isDemoMode) {
+      const next: WorkspaceOnboarding = {
+        ...DEMO_ONBOARDING,
+        visibility: action === 'dismiss' ? 'dismissed' : 'active',
+      }
+      syncOnboarding(next)
+      return next
+    }
+
     try {
       beginPreferenceLoading()
       preferenceError.value = null

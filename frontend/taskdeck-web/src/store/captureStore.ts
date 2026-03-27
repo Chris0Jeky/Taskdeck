@@ -4,6 +4,8 @@ import { captureApi } from '../api/captureApi'
 import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto } from '../types/capture'
 import { useToastStore } from './toastStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
+import { isDemoMode, DemoModeError } from '../utils/demoMode'
+import { buildDemoCaptureItems } from '../utils/demoData'
 
 function toSummary(item: CaptureItem): CaptureItemSummary {
   return {
@@ -27,6 +29,13 @@ type DetailLoadOptions = {
 
 export const useCaptureStore = defineStore('capture', () => {
   const toast = useToastStore()
+
+  function guardDemoMutation(): never | void {
+    if (isDemoMode) {
+      toast.info('This action is view-only in demo mode.')
+      throw new DemoModeError()
+    }
+  }
 
   const items = ref<CaptureItemSummary[]>([])
   const detailById = ref<Record<string, CaptureItem>>({})
@@ -57,6 +66,14 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function fetchItems(query?: CaptureListQuery) {
+    if (isDemoMode) {
+      loadingList.value = true
+      listError.value = null
+      items.value = buildDemoCaptureItems()
+      loadingList.value = false
+      return
+    }
+
     try {
       loadingList.value = true
       listError.value = null
@@ -81,6 +98,15 @@ export const useCaptureStore = defineStore('capture', () => {
 
     if (!forceRefresh && detailById.value[itemId]) {
       return detailById.value[itemId]
+    }
+
+    if (isDemoMode) {
+      const summary = items.value.find((i) => i.id === itemId)
+      if (summary) {
+        const detail = { ...summary, rawText: summary.textExcerpt, retryCount: 0, provenance: null }
+        cacheDetail(detail, syncSummary)
+        return detail
+      }
     }
 
     try {
@@ -137,6 +163,7 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function createItem(dto: CreateCaptureItemDto) {
+    guardDemoMutation()
     try {
       actionError.value = null
       const created = await captureApi.createItem(dto)
@@ -153,6 +180,7 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function ignoreItem(itemId: string) {
+    guardDemoMutation()
     try {
       actionBusyItemId.value = itemId
       actionError.value = null
@@ -170,6 +198,7 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function cancelItem(itemId: string) {
+    guardDemoMutation()
     try {
       actionBusyItemId.value = itemId
       actionError.value = null
@@ -187,6 +216,7 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function triageItem(itemId: string) {
+    guardDemoMutation()
     try {
       actionBusyItemId.value = itemId
       actionError.value = null

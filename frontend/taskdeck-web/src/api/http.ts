@@ -2,6 +2,7 @@ import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 import { isTokenExpired } from '../utils/jwt'
 import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
+import { isDemoMode } from '../utils/demoMode'
 
 const TOKEN_KEY = 'taskdeck_token'
 const SESSION_KEY = 'taskdeck_session'
@@ -48,8 +49,8 @@ http.interceptors.response.use(
     if (error.response) {
       console.error('API Error:', error.response.data)
 
-      // Handle 401 - clear session and redirect to login
-      if (error.response.status === 401) {
+      // Handle 401 - clear session and redirect to login (skip in demo mode)
+      if (error.response.status === 401 && !isDemoMode) {
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem(SESSION_KEY)
         const pathname = window.location.pathname

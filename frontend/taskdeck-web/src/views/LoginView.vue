@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '../store/sessionStore'
 import { sanitizeInternalRedirect } from '../utils/navigation'
+import { isDemoMode } from '../utils/demoMode'
 
 const router = useRouter()
 const route = useRoute()
@@ -13,6 +14,17 @@ const password = ref('')
 const formError = ref<string | null>(null)
 const submitting = ref(false)
 
+function navigateAfterLogin() {
+  const redirectRaw = (route.query.redirect as string) || '/workspace/home'
+  const redirect = sanitizeInternalRedirect(redirectRaw)
+  router.push(redirect)
+}
+
+function enterDemo() {
+  session.loginAsDemo()
+  navigateAfterLogin()
+}
+
 async function handleSubmit() {
   formError.value = null
   if (!username.value.trim() || !password.value) {
@@ -22,9 +34,7 @@ async function handleSubmit() {
   try {
     submitting.value = true
     await session.login({ usernameOrEmail: username.value.trim(), password: password.value })
-    const redirectRaw = (route.query.redirect as string) || '/workspace/home'
-    const redirect = sanitizeInternalRedirect(redirectRaw)
-    router.push(redirect)
+    navigateAfterLogin()
   } catch {
     formError.value = session.error || 'Login failed. Please try again.'
   } finally {
@@ -38,46 +48,57 @@ async function handleSubmit() {
     <div class="td-auth-card">
       <h1 class="td-auth-title">Sign in to Taskdeck</h1>
 
-      <form @submit.prevent="handleSubmit" class="td-auth-form">
-        <div v-if="formError" class="td-auth-error" role="alert">
-          {{ formError }}
-        </div>
-
-        <div class="td-form-group">
-          <label for="login-username" class="td-label">Username or Email</label>
-          <input
-            id="login-username"
-            v-model="username"
-            type="text"
-            class="td-input"
-            placeholder="Enter your username or email"
-            autocomplete="username"
-            required
-          />
-        </div>
-
-        <div class="td-form-group">
-          <label for="login-password" class="td-label">Password</label>
-          <input
-            id="login-password"
-            v-model="password"
-            type="password"
-            class="td-input"
-            placeholder="Enter your password"
-            autocomplete="current-password"
-            required
-          />
-        </div>
-
-        <button type="submit" class="td-btn td-btn--primary" :disabled="submitting">
-          {{ submitting ? 'Signing in...' : 'Sign in' }}
+      <div v-if="isDemoMode" class="td-demo-entry">
+        <p class="td-demo-entry__description">
+          This is a static demo of Taskdeck. No backend is connected &mdash; explore the UI freely.
+        </p>
+        <button class="td-btn td-btn--primary td-demo-entry__btn" type="button" @click="enterDemo">
+          Enter Demo
         </button>
-      </form>
+      </div>
 
-      <p class="td-auth-footer">
-        Don't have an account?
-        <router-link to="/register" class="td-link">Register</router-link>
-      </p>
+      <template v-if="!isDemoMode">
+        <form @submit.prevent="handleSubmit" class="td-auth-form">
+          <div v-if="formError" class="td-auth-error" role="alert">
+            {{ formError }}
+          </div>
+
+          <div class="td-form-group">
+            <label for="login-username" class="td-label">Username or Email</label>
+            <input
+              id="login-username"
+              v-model="username"
+              type="text"
+              class="td-input"
+              placeholder="Enter your username or email"
+              autocomplete="username"
+              required
+            />
+          </div>
+
+          <div class="td-form-group">
+            <label for="login-password" class="td-label">Password</label>
+            <input
+              id="login-password"
+              v-model="password"
+              type="password"
+              class="td-input"
+              placeholder="Enter your password"
+              autocomplete="current-password"
+              required
+            />
+          </div>
+
+          <button type="submit" class="td-btn td-btn--primary" :disabled="submitting">
+            {{ submitting ? 'Signing in...' : 'Sign in' }}
+          </button>
+        </form>
+
+        <p class="td-auth-footer">
+          Don't have an account?
+          <router-link to="/register" class="td-link">Register</router-link>
+        </p>
+      </template>
     </div>
   </div>
 </template>
@@ -199,5 +220,24 @@ async function handleSubmit() {
 .td-link:hover {
   text-decoration: underline;
   color: var(--td-color-ember-glow);
+}
+
+.td-demo-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-4);
+  text-align: center;
+}
+
+.td-demo-entry__description {
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-base);
+  line-height: 1.6;
+}
+
+.td-demo-entry__btn {
+  width: 100%;
+  padding: var(--td-space-3) var(--td-space-4);
+  font-size: var(--td-font-lg);
 }
 </style>
