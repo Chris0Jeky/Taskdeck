@@ -238,6 +238,25 @@ Execution note (Saul-facing demo wave):
 - do not reopen broad architecture, agent breadth, or generic pack expansion during this slice
 - keep `#175` as the broader starter-pack expansion anchor; `#354` is the narrow pre-recording business-demo slice
 - current execution order remains strict: `#354` -> demo-critical `#326` -> demo-critical `#330` -> `#355` -> `#216`
+- Saul-facing demo wave items (`#354`, `#326`, `#330`, `#355`, `#216`) are now all delivered; `#356` tracker is closed
+
+Demo rehearsal runtime issues wave (seeded from 2026-03-27 walkthrough):
+54. `#395` `DEMO-01` demo rehearsal runtime issues tracker
+55. `#387` `SEED-01` demo:seed fails on re-run with starter pack conflicts (blocker)
+56. `#389` `SEED-03` demo:run --skip-llm fails — proposal alias never resolves (blocker)
+57. `#388` `SEED-02` add --reset and --help flags to demo:seed
+58. `#390` `DX-01` document canonical SQLite DB path and add demo:reset-db script
+59. `#394` `SEED-04` seeded demo state narrative mismatch
+60. `#391` `DX-02` health endpoint not under /api prefix (docs)
+61. `#392` `DX-03` login returns 400 for non-existent user
+62. `#393` `UX-22` Inbox items lack data-testid attributes
+
+Execution note (demo rehearsal runtime issues):
+- blockers first: `#387` and `#389` can be parallel
+- friction next: `#388`, `#390` after blockers
+- narrative: `#394` after seed tooling is reliable
+- polish: `#391`, `#392`, `#393` lowest priority
+- analysis: `docs/analysis/2026-03-27_demo-rehearsal-runtime-issues.md`
 
 ### Stage 3: Priority III - Expansion Wave
 
