@@ -8,7 +8,9 @@
       "Skill(update-config)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://api.github.com/rate_limit)",
       "Bash(docker --version)",
-      "Bash(gh issue:*)"
+      "Bash(gh issue:*)",
+      "Bash(python -m json.tool /c/Users/jekyt/source/Taskdeck/.claude/settings.json)",
+      "Bash(python -m json.tool /c/Users/jekyt/source/Taskdeck/.mcp.json)"
     ],
     "deny": [],
     "ask": []
