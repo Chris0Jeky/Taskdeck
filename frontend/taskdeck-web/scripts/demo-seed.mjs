@@ -529,23 +529,22 @@ async function applyStarterPack(boardId, token, packId) {
     body: { manifest, dryRun: true },
   })
 
-  // If every column and label action is "skip", the pack is already applied.
-  const structuralActions = (preview?.actions || []).filter((a) => {
-    const entityType = (a.entityType || '').toLowerCase()
-    return entityType === 'column' || entityType === 'label'
-  })
+  const blockingConflicts = (preview?.conflicts || []).filter(
+    (c) => !c.severity || c.severity.toLowerCase() === 'blocking',
+  )
+
+  // If every action is "skip" and there are no blocking conflicts, the pack
+  // is already fully applied — no need to re-apply.
+  const allActions = preview?.actions || []
   const allSkipped =
-    structuralActions.length > 0 &&
-    structuralActions.every((a) => (a.operation || '').toLowerCase() === 'skip')
+    allActions.length > 0 &&
+    allActions.every((a) => (a.operation || '').toLowerCase() === 'skip') &&
+    blockingConflicts.length === 0
 
   if (allSkipped) {
     console.log(`  (starter pack "${packId}" already applied — skipping)`)
     return preview
   }
-
-  const blockingConflicts = (preview?.conflicts || []).filter(
-    (c) => !c.severity || c.severity.toLowerCase() === 'blocking',
-  )
 
   if (blockingConflicts.length > 0) {
     const conflictSummary = blockingConflicts
