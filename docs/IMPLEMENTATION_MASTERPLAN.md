@@ -220,189 +220,189 @@ Delivered in the latest cycle:
    - added scheduled/manual nightly orchestrator (`.github/workflows/ci-nightly.yml`) for backend solution regression, E2E regression, and container-image regression
    - added release/security orchestrator (`.github/workflows/release-security.yml`) with dependency inventory/vulnerability reporting artifacts and explicit SBOM/provenance follow-through mapping to `#103`
    - added reusable full backend regression lane (`.github/workflows/reusable-backend-solution.yml`) to avoid orchestration-layer command duplication
-49b. OPS-19 CI topology completion (`#168`):
+50. OPS-19 CI topology completion (`#168`):
    - added `ci-release.yml` release build-verification lane with SBOM/provenance placeholder, container image artifact lane
    - added comprehensive workflow topology documentation to `ci-required.yml` header comment mapping all orchestrators and reusable workflows
    - added topology reference comments to `ci-extended.yml`, `ci-nightly.yml`, `nightly-quality.yml`, and `release-security.yml`
    - added `CODEOWNERS` file for `.github/workflows/`, issue templates, PR template, and governance scripts
    - updated CI Status section in `docs/STATUS.md` to reflect the complete topology including `ci-release.yml` and `nightly-quality.yml`
-50. SEC-11 LLM queue board-scope authorization follow-through (`#152`):
+51. SEC-11 LLM queue board-scope authorization follow-through (`#152`):
    - `POST /api/llm-queue` now enforces board-read authorization when `boardId` is supplied
    - queue creation now aligns to policy (`403` for authenticated cross-user unauthorized board access, `404` for true missing boards)
    - regression coverage expanded in `LlmQueueServiceTests`, `LlmQueueApiTests`, and `AuthzRegressionMatrixApiTests`
-51. SEC-11 API regression coverage final sweep (`#152`):
+52. SEC-11 API regression coverage final sweep (`#152`):
    - expanded cross-user `403` coverage for board update and board-access management (`list/grant/update/revoke`)
    - expanded chat authorization coverage for cross-user forbidden access and true-missing session `404` branches (`get session`, `send message`)
    - API integration suite increased to 185 passing tests with explicit `403/404` branch locking for remaining protected route gaps
-52. API-06 centralized exception/fallback error-contract hardening (`#153`):
+53. API-06 centralized exception/fallback error-contract hardening (`#153`):
    - added global unhandled-exception middleware in the API pipeline to return deterministic `ApiErrorResponse` payloads for unexpected server failures
    - standardized unknown-result fallback `500` mapping to `ApiErrorResponse` (`UnexpectedError`) instead of `ProblemDetails` to keep fallback payload shape contract-uniform
    - added fault-injection API integration coverage validating unhandled-failure contract shape, non-leakage message behavior, and correlation-header continuity under `500` responses
-53. TST-14 architecture-guard expansion (`#157`):
+54. TST-14 architecture-guard expansion (`#157`):
    - expanded architecture tests beyond csproj references with source-layer purity invariants for Domain/Application forbidden namespace imports
    - added API controller boundary invariants to restrict direct `ControllerBase` inheritance to auth/health controllers and enforce `[Authorize]` declaration on protected controllers
    - architecture guard suite now emits deterministic file-scoped diagnostics for quick remediation in CI and local runs
-54. TST-01 load/concurrency harness delivery (`#70`):
+55. TST-01 load/concurrency harness delivery (`#70`):
    - added k6 board-heavy API regression profile (`tests/load/k6/board-heavy-load.js`) with seeded-auth setup, read/write traffic mix, thresholds, and failure diagnostics
    - added multi-session Playwright concurrency harness coverage (`frontend/taskdeck-web/tests/e2e/concurrency.spec.ts`) for conflicting edits and realtime cross-session propagation
    - added reusable CI lane (`.github/workflows/reusable-load-concurrency-harness.yml`) and wired it into `ci-extended` (testing label/manual) plus `ci-nightly` with persisted k6/Playwright artifacts
-55. ARCH-01 multi-tenancy strategy ADR delivery (`#71`):
+56. ARCH-01 multi-tenancy strategy ADR delivery (`#71`):
    - added accepted ADR at `docs/analysis/2026-02-22_multi-tenancy-strategy-adr.md` comparing `database-per-tenant`, `schema-per-tenant`, and `shared-schema + TenantId`
    - selected `shared-schema + TenantId` as immediate rollout model with explicit promotion path to `database-per-tenant` for high-isolation tiers
    - defined phased migration/enforcement plan plus tenant-isolation readiness checklist and cross-tenant `403` test strategy expectations
-56. FE-11 frontend lint baseline + CI enforcement (`#154`):
+57. FE-11 frontend lint baseline + CI enforcement (`#154`):
    - added pragmatic Vue 3 + TypeScript ESLint baseline (`.eslintrc.cjs`) with focused rule suppressions to avoid style-churn while catching correctness issues
    - added `npm run lint` script with zero-warning enforcement and integrated lint into reusable frontend CI lane (`reusable-frontend-unit.yml`)
    - documented frontend lint execution and suppression guidance in active testing docs to keep lint policy explicit for contributors
-57. FE-12 frontend coverage threshold gate (`#155`):
+58. FE-12 frontend coverage threshold gate (`#155`):
    - codified global and critical-surface Vitest coverage thresholds (`src/api`, `src/store`, `src/composables`, `src/utils`, `src/components/board`) in frontend test configuration
    - switched reusable frontend CI lane to threshold-enforced coverage execution and standardized machine-readable triage artifacts (JUnit + coverage JSON/HTML)
    - documented explicit ratchet policy (thresholds can remain or increase, never decrease) and local threshold-breach verification command
-58. COL-02 notifications framework delivery (`#72`):
+59. COL-02 notifications framework delivery (`#72`):
    - added notification persistence model (`Notifications`, `NotificationPreferences`) with user-scoped preference toggles for event-family cadence controls and in-app channel enablement
    - shipped authenticated notification APIs (`GET /api/notifications`, `POST /api/notifications/{id}/read`, `GET/PUT /api/notifications/preferences`) with board-filter authorization guardrails and deduplication-aware publish semantics
    - integrated frontend notification inbox/preferences routes + Pinia store/api clients and added regression coverage for backend event publication, API auth/filter behavior, and frontend inbox/preferences interactions
-59. COL-03 collaborative presence/conflict policy delivery (`#73`):
+60. COL-03 collaborative presence/conflict policy delivery (`#73`):
    - added SignalR-backed board/card presence snapshots with active viewer/editor state publication on join/leave/disconnect and card editing focus changes
    - added optimistic card update conflict policy via `ExpectedUpdatedAt` with deterministic `409 Conflict` user feedback and stale-write conflict audit logging (actor + expected/actual timestamps)
    - expanded backend/frontend regression coverage, including multi-session Playwright conflict scenario validation and realtime presence broadcast assertions
-60. COL-04 threaded card comments and mentions workflow delivery (`#74`):
+61. COL-04 threaded card comments and mentions workflow delivery (`#74`):
    - added authenticated board/card comment APIs for create/list/reply/update/delete with reply-depth guardrails and moderation constraints (author or board owner/admin)
    - added mention parsing + actor-linking for card comment bodies with board-read permission checks before mention notification publication
    - added card-comment audit entries and frontend card-modal comment UI flow (thread list, reply, edit, delete), with backend/frontend test coverage for mention parsing and authorization boundaries
-61. Capture realignment backlog seeding delivery (`#199` to `#213`):
+62. Capture realignment backlog seeding delivery (`#199` to `#213`):
    - reconciled in-review capture/security/performance planning packs into dependency-mapped GitHub issues
    - seeded a dedicated capture wave tracker (`#199`) with execution issues (`#200` to `#211`) plus linked security/performance follow-through (`#212`, `#213`)
-62. UX-15 review-first routing and selector cleanup delivery (`#322`):
+63. UX-15 review-first routing and selector cleanup delivery (`#322`):
    - `/workspace/review` is now the canonical normal-user automation route, with legacy proposals URLs redirected compatibly and shell/home/inbox/card links pointed at Review
    - queue, chat, ops, and access surfaces now explain their advanced/operator purpose in plain language and expose action-oriented next steps instead of orphan empty states
    - board access now uses a board picker, automation chat accepts selector-safe board context instead of raw-ID happy paths, and frontend unit + Playwright coverage now locks selector flow, route defaults, and representative empty-state branches
    - linked follow-through status is now split: `#212` delivered the logging/telemetry redaction policy and runtime guardrails, while `#213` remains the pending performance/responsiveness slice
    - updated existing SEC-06 rate-limiting issue (`#81`) and wave index (`#107`) to integrate capture-specific scope without duplicate issue creation
-63. InReview extraction coverage expansion (`#216` to `#220`):
+64. InReview extraction coverage expansion (`#216` to `#220`):
    - seeded go-to-market and user-research execution issues from HUMAN playbooks (`#216`, `#217`)
    - seeded deferred capture follow-ons from the original realignment pack (`#218`, `#219`, `#220`)
    - updated capture wave tracker (`#199`) and wave index (`#107`) to keep extraction coverage explicit
-64. CAP-01 capture model/domain contract delivery (`#200`):
+65. CAP-01 capture model/domain contract delivery (`#200`):
    - accepted queue-wrapper MVP model (`LlmRequest` + `inbox.capture.v1`) with explicit migration path to dedicated capture entities
    - added canonical capture source/status contracts plus transition policy mapping from queue lifecycle states
    - added capture payload schema/invariant enforcement (schema version, raw text bounds, actor-field rejection) and provenance linkage representation for capture item -> triage run -> proposal
-65. CAP-03 queue provenance fix delivery (`#202`):
+66. CAP-03 queue provenance fix delivery (`#202`):
    - extended planner contract to support explicit source metadata (`sourceType`, `sourceReferenceId`, `correlationId`) with manual-safe defaults
    - queue worker now stamps queue-origin proposals as `ProposalSourceType.Queue` instead of `Manual`
    - queue item id is now forwarded as source-reference and correlation metadata for deterministic provenance traceability
-65. CAP-02 capture API slice delivery (`#201`):
+66. CAP-02 capture API slice delivery (`#201`):
    - added authenticated `/api/capture/items` API surface for create/list/detail/ignore/cancel actions with claims-derived user scoping
    - create endpoint now returns `201 Created` and persists capture payloads via queue-wrapper model (`LlmRequest` + `inbox.capture.v1`)
    - list/detail contracts now enforce excerpt-only list payloads and detail-only full text visibility, with idempotent ignore/cancel action behavior and cross-user `403` vs true-missing `404` policy coverage
-66. CAP-04 triage enqueue + state transition delivery (`#203`):
+67. CAP-04 triage enqueue + state transition delivery (`#203`):
    - added authenticated triage enqueue endpoint: `POST /api/capture/items/{id}/triage` returning `202 Accepted`
    - capture triage enqueue now returns deterministic triage state (`Triaging`) with explicit idempotent replay signaling (`AlreadyTriaging`)
    - invalid-state transitions now return stable `Conflict` error-contract payloads, including ignored/cancelled capture items
    - queue processing guardrails now skip pending capture request types (`inbox.capture.v1`) to preserve explicit triage-trigger semantics ahead of CAP-05 worker routing
-67. CAP-05 triage worker routing and proposal generation delivery (`#204`):
+68. CAP-05 triage worker routing and proposal generation delivery (`#204`):
    - queue worker now routes triaging capture items (`inbox.capture.*` + `Processing`) through a dedicated capture-triage pipeline rather than generic planner parsing
    - deterministic extraction baseline now converts checklist/bullet/numbered capture content into proposal operations with stable idempotency keys
    - triage pipeline now persists provenance linkage (`capture item -> triage run -> proposal`) on capture payloads and exposes `ProposalCreated` capture status once linked
    - capture triage failure paths now return deterministic non-mutating outcomes (no direct board writes), with bounded retry behavior retained under worker policy
-68. CAP-06 strict triage contract + prompt versioning delivery (`#205`):
+69. CAP-06 strict triage contract + prompt versioning delivery (`#205`):
    - added strict triage output contract (`capture-triage-output.v1`) with version + prompt invariants and explicit machine-readable schema file under `Taskdeck.Application/Schemas`
    - triage proposal generation now validates structured output against schema constraints before creating proposals, with deterministic `ValidationError` outcomes on contract violations
    - triage provenance persistence now includes `promptVersion` (`triage.v1`) for each successful triage run (`capture item -> triage run -> proposal`)
    - added deterministic fixture-backed validation coverage (golden + negative cases for missing tasks, wrong prompt version, unknown properties)
-69. CAP-07 inbox frontend route/list/detail delivery (`#206`):
+70. CAP-07 inbox frontend route/list/detail delivery (`#206`):
    - added workspace inbox surface (`/workspace/inbox`) with shell navigation and router integration
    - inbox list now renders excerpt-first capture summaries, while full raw capture text is fetched only on detail open
    - inbox detail now supports deterministic ignore/cancel actions with refreshed capture state after mutation calls
    - keyboard-first inbox navigation (`ArrowUp`/`ArrowDown`/`Enter`) plus escape-stack compliant detail close behavior is now covered by frontend regression tests
-70. CAP-08 capture modal + command palette/hotkey delivery (`#207`):
+71. CAP-08 capture modal + command palette/hotkey delivery (`#207`):
    - added quick capture modal with keyboard-first submit (`Ctrl+Enter`) and deterministic close behavior
    - command palette now includes explicit capture action command while preserving inbox navigation command access
    - global quick capture hotkey (`Ctrl+Shift+C`) now opens capture modal from workspace shell contexts
    - successful capture submission now routes directly to inbox and surfaces the new item in list state for immediate follow-through
-71. CAP-09 inbox triage trigger + proposal-linking UX delivery (`#208`):
+72. CAP-09 inbox triage trigger + proposal-linking UX delivery (`#208`):
    - inbox detail now includes explicit triage enqueue action with deterministic in-progress/completion state handling
    - capture detail contract now surfaces provenance linkage metadata (`capture item -> triage run -> proposal`) for UI consumers
    - inbox detail now renders direct proposal review navigation when triage yields a linked proposal id
    - frontend regression suite now covers triage action success/failure and proposal-link rendering paths
-72. CAP-10 card/proposal provenance UX delivery (`#209`):
+73. CAP-10 card/proposal provenance UX delivery (`#209`):
    - added card provenance API contract for capture-created cards (`GET /api/boards/{boardId}/cards/{cardId}/provenance`) with board-scope authz guardrails (`403` cross-user)
    - capture triage create-card operations now persist deterministic card target ids so provenance lookup remains stable after proposal execution
    - card modal now surfaces capture-origin marker, capture/proposal deep-links, proposal status, and triage-run metadata when provenance exists
    - automations proposal surface now exposes capture-linked context (capture artifact link + triage-run reference), with frontend/backend regression coverage
-73. CAP-11 capture loop end-to-end regression delivery (`#210`):
+74. CAP-11 capture loop end-to-end regression delivery (`#210`):
    - added dedicated Playwright regression (`tests/e2e/capture-loop.spec.ts`) for capture create -> triage -> proposal approve/execute -> card provenance verification
    - end-to-end flow now validates proposal-first trust posture by asserting board mutation only after explicit proposal approval and execute action
    - regression asserts resulting card provenance links (`Open Capture`, `Open Proposal`) and triage-run metadata visibility in card modal
    - full Playwright suite now exercises capture-loop path by default to guard against cross-surface regressions
-74. CAP-12 canonical docs promotion delivery (`#211`):
+75. CAP-12 canonical docs promotion delivery (`#211`):
    - updated canonical docs (`docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/TESTING_GUIDE.md`, `docs/MANUAL_TEST_CHECKLIST.md`) to represent capture MVP as shipped behavior
    - moved capture validation language from planned-only posture to active regression posture in testing and manual guides
    - marked original in-review capture pack READMEs as historical/stale after canonical promotion
-75. TST-17 drag/drop persistence regression coverage delivery (`#256`):
+76. TST-17 drag/drop persistence regression coverage delivery (`#256`):
    - `tests/e2e/smoke.spec.ts` now asserts card drag/move persistence after a full page reload by validating target-column presence and source-column absence post-refresh
    - `tests/e2e/smoke.spec.ts` now asserts column reorder persistence after a full page reload using explicit ordered heading checks
    - drag-handle safety coverage in smoke was hardened to use stable add-card control coordinates for non-handle drag attempts, reducing intermittent setup flake while preserving behavior assertions
-76. AUTO-03 provider-agnostic runtime delivery (`#232`):
+77. AUTO-03 provider-agnostic runtime delivery (`#232`):
    - expanded runtime provider support to `OpenAI` + `Gemini` behind deterministic environment/config gates with explicit `Mock` fallback on invalid live-provider configuration
    - added Gemini provider adapter (`generateContent`) and parity fallback behavior across success/failure/invalid-response/cancellation branches
    - capture triage provenance now persists provider/model metadata (`provider`, `model`) alongside `promptVersion` for linked triage/proposal flows
    - expanded regression coverage across selection policy, provider adapters, capture provenance surfaces, and API chat integration with non-mock provider stubs
    - follow-on managed-key identity attribution baseline (`#236`) now threads server-derived attribution (`userId`, correlation ID, source surface, board/session scope) through chat/provider boundaries, persists attribution in capture provenance, and adds spoofing/propagation regression coverage
-77. INT-01 external import adapters foundation delivery (`#75`):
+78. INT-01 external import adapters foundation delivery (`#75`):
    - added provider-registry external import orchestration (`IExternalImportAdapter`, `IExternalImportService`) so new providers can be added without core import-service rewrite
    - shipped CSV adapter baseline with outreach-contact profile mapping and deterministic dedupe key ordering (`linkedin_url` -> `email` -> normalized `display_name+company`)
    - added board-scoped authenticated import endpoint (`POST /api/boards/{boardId}/imports/external`) with dry-run/apply result contracts (`create/update/skip/conflicts`) and rollback-safe apply behavior
    - added backend regression coverage for malformed CSV, duplicate input handling, deterministic upsert behavior, rollback safety, archived-board rejection behavior, and CSV payload/row guardrails, plus operator-facing mapping guidance in `docs/platform/IMPORT_ADAPTERS_GUIDE.md`
-78. INT-02 webhook integration security model delivery (`#76`):
+79. INT-02 webhook integration security model delivery (`#76`):
    - added board-scoped outbound webhook subscription and delivery contracts (`POST/GET/PATCH/DELETE /api/boards/{boardId}/webhooks`) with authz-safe ownership and revocation handling
    - added mutation-event queueing and signed webhook dispatch (`X-Taskdeck-Webhook-*` headers) with HTTPS/default host safety checks and localhost gating controls
    - added worker/runtime hardening for atomic claim/reload flow, non-success response retry scheduling, dead-letter terminal handling, and stale-processing recovery
    - added backend regression coverage across domain/application/API/worker/repository webhook paths, including non-success dispatch retry/dead-letter branches
-79. API CORS development-origin configurability delivery:
+80. API CORS development-origin configurability delivery:
    - API CORS composition now keeps default localhost origins (`http://localhost:5173`, `http://localhost:5174`) as baseline behavior
    - development fallback localhost origins (`http://localhost:4173`, `http://localhost:5001`) are now included so restricted local frontend-port runs remain preflight-safe
    - development runtime now accepts additive allowed origins from configuration key `Cors:DevelopmentAllowedOrigins`
    - API integration coverage now verifies both default-origin allowance and development-configured alternate-origin allowance via deterministic in-memory config overrides
-80. OPS-16 deployment/container hardening verification matrix delivery (`#142`):
+81. OPS-16 deployment/container hardening verification matrix delivery (`#142`):
    - added deployment verification script (`scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1`) covering secret-enforcement validation, reverse-proxy header checks, unauthorized-path checks, and startup/restart/shutdown reliability checks for the compose baseline
    - added explicit pass/fail matrix doc (`docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`) and linked it from deployment/testing docs for deterministic operator execution
    - expanded manual checklist coverage for non-automatable deployment controls (backend exposure posture, edge TLS termination posture, host restart rehearsal expectations)
-81. PACK-07 warning-first starter-pack apply UX delivery (`#176`):
+82. PACK-07 warning-first starter-pack apply UX delivery (`#176`):
    - starter-pack apply conflict contract now includes severity (`blocking`/`warning`) and controller conflict responses now hard-stop only on blocking conflicts
    - starter-pack apply service now marks non-blocking seed-card skip paths as warnings and preserves apply success when only warnings exist
    - starter-pack modal now shows explicit applied/skipped/blocked/warnings outcome summaries with warning-first messaging, and backend/frontend regression coverage now locks warning-vs-blocking behavior
-82. TST-18 Playwright frontend port-resolution hardening delivery:
+83. TST-18 Playwright frontend port-resolution hardening delivery:
    - frontend E2E config now resolves fallback ports deterministically across Playwright runner and worker imports
    - local runs (server reuse enabled) prefer identity-verified running Taskdeck frontend listeners before bind probes to prevent runner/worker drift (`4173` to `5001`)
    - CI runs (server reuse disabled) prefer bindable ports first so stale listeners do not trigger `url is already used` startup failures
    - fallback port selection now persists first resolution in-process (`TASKDECK_E2E_RESOLVED_FRONTEND_PORT`) so worker config imports do not diverge from runner webServer startup port
    - local Windows E2E gate now re-verifies with `npx playwright test --reporter=line` using fallback path (`5173` -> `4173` -> `5001`)
-83. FE-13 local dev server startup hardening delivery:
+84. FE-13 local dev server startup hardening delivery:
    - `npm run dev` now launches through a small Vite wrapper that auto-resolves restricted/unavailable local ports with fallback order `5173` -> `4173` -> `5001`
    - wrapper now selects the first bindable candidate port and skips occupied candidates for new Vite processes, preventing strict-port startup failures on stale listeners
    - wrapper now sets strict-port startup semantics by default, avoiding implicit Vite auto-increment drift when a requested port is occupied
    - explicit local overrides remain supported (`--host`, `--port`, `TASKDECK_DEV_PORT`) for reproducible manual debugging
    - manual local flows no longer require one-off fallback command rewrites when `localhost:5173` is blocked with `listen EACCES`
-84. OPS-19 container-image frontend dependency-policy unblock follow-through:
+85. OPS-19 container-image frontend dependency-policy unblock follow-through:
    - frontend npm dependency graph now keeps `@microsoft/signalr` on its supported `ws@7.5.10` major line via a vendored local tarball dependency (`ws: file:vendor/ws-7.5.10.tgz`) so container `npm ci` no longer fetches blocked registry tarballs for that version
    - frontend npm dependency graph now uses `p-limit@3.0.2` override (compatible with `p-locate@5`) to remove blocked `yocto-queue-0.1.0` fetches without cross-major override drift
    - refreshed lockfile keeps container `npm ci` deterministic and unblocks `.github/workflows/reusable-container-images.yml` frontend build stage
    - local Docker validation confirms `deploy/docker/frontend.Dockerfile` build-stage `npm ci` and `npm run build` both complete successfully with the override
-85. OPS-20 role discoverability and permission-guidance delivery (`#179`):
+86. OPS-20 role discoverability and permission-guidance delivery (`#179`):
    - ops command permission failures now include current-role context, runnable-template fallback lists, and explicit next-step guidance to verify/request elevated access
    - ops console now surfaces current role and runnable-template discoverability context up front, and restricted template selection now shows explicit role-based warnings before run attempts
    - settings profile surface now includes role and ops-capability summaries, and operator/manual docs now codify the role-assignment workflow used for access elevation requests
-86. UX-11 archive lifecycle control refinement (`#177`):
+87. UX-11 archive lifecycle control refinement (`#177`):
    - board settings lifecycle controls now use one explicit archive/restore action with deterministic confirmation messaging, replacing duplicate archive semantics in the same surface
    - archive workspace now supports hiding archived boards from the default list, explicit hidden-board reveal (`Show Hidden Boards`), and reversible unhide actions for clearer long-tail archive management
    - archive/frontend regression coverage now locks hidden-board visibility filtering behavior while API integration coverage locks archive/restore lifecycle transitions via board update contracts
-87. SEC-05 OWASP baseline hardening (`#80`, delivered):
+88. SEC-05 OWASP baseline hardening (`#80`, delivered):
    - added API security-header middleware with explicit baseline headers (`Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`)
    - added environment-aware HSTS behavior (enabled for HTTPS, disabled by default in development unless explicitly configured)
    - added API integration coverage for header presence on success and auth-failure paths, plus HTTPS HSTS emission behavior in non-development hosting
    - published `docs/security/SECURITY_OWASP_BASELINE.md` with CSRF posture, OWASP checklist, and tracked follow-up security gaps
-88. SEC-06 API rate-limiting and abuse-protection hardening (`#81`, delivered):
+89. SEC-06 API rate-limiting and abuse-protection hardening (`#81`, delivered):
    - added partitioned fixed-window rate limiter policies for auth (`AuthPerIp`), capture create/triage (`CaptureWritePerUser`), and hot/costly paths (`HotPathPerUser`)
    - applied endpoint-level rate-limit policies across auth, capture, chat, and llm-queue write/stream surfaces
    - standardized throttle response contract (`429` + `ApiErrorResponse`) with deterministic retry diagnostics headers (`Retry-After`, `X-RateLimit-Policy`)
