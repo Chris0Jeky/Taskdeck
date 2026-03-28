@@ -101,61 +101,42 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
             {
                 File.Copy(databasePath, backupPath, overwrite: true);
                 backupCreated = true;
+
+                try
+                {
+                    // File.Replace is atomic on most filesystems, providing safer database replacement.
+                    File.Replace(stagingPath, databasePath, backupPath);
+                }
+                catch (PlatformNotSupportedException)
+                {
+                    // Fall back to copy on platforms that do not support File.Replace.
+                    File.Copy(stagingPath, databasePath, overwrite: true);
+                }
+            }
+            else
+            {
+                File.Move(stagingPath, databasePath);
             }
 
-            File.Copy(stagingPath, databasePath, overwrite: true);
             return Result.Success();
         }
         catch (IOException ex)
         {
-            if (backupCreated && File.Exists(backupPath))
-            {
-                try
-                {
-                    File.Copy(backupPath, databasePath, overwrite: true);
-                }
-                catch
-                {
-                    // Intentionally swallow backup restore failures to preserve original error.
-                }
-            }
-
+            TryRestoreBackup(backupCreated, backupPath, databasePath);
             return Result.Failure(
                 ErrorCodes.InvalidOperation,
                 $"Database import failed because the database file is in use or locked. Ensure no active connections and retry. Details: {ex.Message}");
         }
         catch (UnauthorizedAccessException ex)
         {
-            if (backupCreated && File.Exists(backupPath))
-            {
-                try
-                {
-                    File.Copy(backupPath, databasePath, overwrite: true);
-                }
-                catch
-                {
-                    // Intentionally swallow backup restore failures to preserve original error.
-                }
-            }
-
+            TryRestoreBackup(backupCreated, backupPath, databasePath);
             return Result.Failure(
                 ErrorCodes.InvalidOperation,
                 $"Database import failed due to file access restrictions. Ensure no active connections and retry. Details: {ex.Message}");
         }
         catch (Exception ex)
         {
-            if (backupCreated && File.Exists(backupPath))
-            {
-                try
-                {
-                    File.Copy(backupPath, databasePath, overwrite: true);
-                }
-                catch
-                {
-                    // Intentionally swallow backup restore failures to preserve original error.
-                }
-            }
-
+            TryRestoreBackup(backupCreated, backupPath, databasePath);
             return Result.Failure(ErrorCodes.UnexpectedError, $"Database import failed: {ex.Message}");
         }
         finally
@@ -224,6 +205,21 @@ public class DatabaseFileExportImportService : IDatabaseFileExportImportService
         }
 
         return true;
+    }
+
+    private static void TryRestoreBackup(bool backupCreated, string backupPath, string databasePath)
+    {
+        if (!backupCreated || !File.Exists(backupPath))
+            return;
+
+        try
+        {
+            File.Copy(backupPath, databasePath, overwrite: true);
+        }
+        catch
+        {
+            // Intentionally swallow backup restore failures to preserve original error.
+        }
     }
 
     private static void TryDeleteFile(string path)

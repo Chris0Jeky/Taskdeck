@@ -285,17 +285,28 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             .ToList()
             ?? new List<ImportColumnDto>();
 
-        var labels = exportDto.Labels?
-            .Select(l => new ImportLabelDto(l.Name, l.ColorHex))
-            .ToList()
-            ?? new List<ImportLabelDto>();
+        var labels = new List<ImportLabelDto>();
+        var seenLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var label in exportDto.Labels ?? Enumerable.Empty<LabelDto>())
+        {
+            if (!seenLabelNames.Add(label.Name))
+            {
+                throw new JsonException($"Export payload contains duplicate label name '{label.Name}'");
+            }
+            labels.Add(new ImportLabelDto(label.Name, label.ColorHex));
+        }
 
         var columnNameById = new Dictionary<Guid, string>();
+        var columnNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var column in exportDto.Columns ?? Enumerable.Empty<ColumnDto>())
         {
             if (!columnNameById.TryAdd(column.Id, column.Name))
             {
                 throw new JsonException($"Export payload contains duplicate column ID '{column.Id}'");
+            }
+            if (!columnNames.Add(column.Name))
+            {
+                throw new JsonException($"Export payload contains duplicate column name '{column.Name}'");
             }
         }
 
