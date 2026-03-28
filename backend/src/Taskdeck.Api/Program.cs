@@ -72,7 +72,12 @@ builder.Services.AddScoped<AuthorizationService>();
 builder.Services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<BoardAccessService>();
-builder.Services.AddScoped<IExportImportService, ExportImportService>();
+builder.Services.AddScoped<IBoardJsonExportImportService, BoardJsonExportImportService>();
+builder.Services.AddScoped<IDatabaseFileExportImportService, DatabaseFileExportImportService>();
+builder.Services.AddScoped<IExportImportService>(sp =>
+    new ExportImportService(
+        sp.GetRequiredService<IBoardJsonExportImportService>(),
+        sp.GetRequiredService<IDatabaseFileExportImportService>()));
 builder.Services.AddScoped<IExternalImportService, ExternalImportService>();
 builder.Services.AddScoped<IExternalImportAdapter, CsvExternalImportAdapter>();
 builder.Services.AddScoped<LlmQueueService>();
