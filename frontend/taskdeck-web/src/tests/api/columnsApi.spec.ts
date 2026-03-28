@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import http from '../../api/http'
 import { columnsApi } from '../../api/columnsApi'
+import type { CreateColumnDto, UpdateColumnDto } from '../../types/board'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -26,20 +27,20 @@ describe('columnsApi', () => {
   })
 
   it('createColumn sends POST with column payload', async () => {
-    const column = { name: 'In Progress', position: 1 }
+    const column: CreateColumnDto = { name: 'In Progress', position: 1 }
     vi.mocked(http.post).mockResolvedValue({ data: { id: '2', ...column } })
 
-    const result = await columnsApi.createColumn('board-1', column as any)
+    const result = await columnsApi.createColumn('board-1', column)
 
     expect(http.post).toHaveBeenCalledWith('/boards/board-1/columns', column)
     expect(result).toEqual({ id: '2', ...column })
   })
 
   it('updateColumn sends PATCH with column payload', async () => {
-    const update = { name: 'Done' }
+    const update: UpdateColumnDto = { name: 'Done' }
     vi.mocked(http.patch).mockResolvedValue({ data: { id: '1', name: 'Done' } })
 
-    const result = await columnsApi.updateColumn('board-1', 'col-1', update as any)
+    const result = await columnsApi.updateColumn('board-1', 'col-1', update)
 
     expect(http.patch).toHaveBeenCalledWith('/boards/board-1/columns/col-1', update)
     expect(result).toEqual({ id: '1', name: 'Done' })
