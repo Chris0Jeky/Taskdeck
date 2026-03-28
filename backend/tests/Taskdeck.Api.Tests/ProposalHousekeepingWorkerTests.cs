@@ -213,6 +213,7 @@ public class ProposalHousekeepingWorkerTests
         public IUserPreferenceRepository UserPreferences => null!;
         public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions => null!;
         public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries => null!;
+        public ILlmUsageRecordRepository LlmUsageRecords => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
