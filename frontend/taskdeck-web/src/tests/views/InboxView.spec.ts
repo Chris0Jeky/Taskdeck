@@ -3,6 +3,11 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import InboxView from '../../views/InboxView.vue'
 
+const vueHelpers = vi.hoisted(async () => {
+  const { computed, ref, shallowRef } = await import('vue')
+  return { computed, ref, shallowRef }
+})
+
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
@@ -129,6 +134,34 @@ vi.mock('../../composables/useEscapeStack', () => ({
     }
   }),
 }))
+
+vi.mock('../../composables/useVirtualList', async () => {
+  const { computed, ref, shallowRef } = await vueHelpers
+  return {
+    useVirtualList: (options: { count: { value: number } | (() => number); estimateSize: number }) => {
+      const getCount = typeof options.count === 'function'
+        ? options.count
+        : () => options.count.value
+      return {
+        parentRef: ref(null),
+        virtualItemEls: shallowRef([]),
+        virtualRows: computed(() =>
+          Array.from({ length: getCount() }, (_, i) => ({
+            key: i,
+            index: i,
+            start: i * options.estimateSize,
+            end: (i + 1) * options.estimateSize,
+            size: options.estimateSize,
+            lane: 0,
+          })),
+        ),
+        totalSize: computed(() => getCount() * options.estimateSize),
+        translateY: computed(() => 0),
+        scrollToIndex: vi.fn(),
+      }
+    },
+  }
+})
 
 async function waitForUi() {
   await Promise.resolve()

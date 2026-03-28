@@ -6,6 +6,7 @@ import { useCaptureStore } from '../store/captureStore'
 import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
+import { useVirtualList } from '../composables/useVirtualList'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const captureStore = useCaptureStore()
@@ -14,7 +15,6 @@ const route = useRoute()
 const selectedItemId = ref<string | null>(null)
 const hashLoadFailedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
-const listContainer = ref<HTMLElement | null>(null)
 let stopTriagePolling: (() => void) | null = null
 
 const items = computed(() => captureStore.items)
@@ -33,6 +33,19 @@ const selectedItem = computed(() => {
   return captureStore.detailById[selectedItemId.value] ?? null
 })
 const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+
+const {
+  parentRef: virtualParentRef,
+  virtualItemEls,
+  virtualRows,
+  totalSize: virtualTotalSize,
+  translateY: virtualTranslateY,
+  scrollToIndex: virtualScrollToIndex,
+} = useVirtualList({
+  count: computed(() => items.value.length),
+  estimateSize: 80,
+  overscan: 5,
+})
 
 function getCaptureIdFromHash(hash: string): string | null {
   if (!hash.startsWith('#capture-')) {
@@ -233,13 +246,7 @@ function setActiveIndex(index: number) {
 }
 
 function scrollActiveItemIntoView() {
-  if (!listContainer.value) {
-    return
-  }
-
-  const targetRow = listContainer.value.querySelector<HTMLElement>(
-    `[data-inbox-index="${activeItemIndex.value}"]`)
-  targetRow?.scrollIntoView?.({ block: 'nearest' })
+  virtualScrollToIndex(activeItemIndex.value)
 }
 
 async function openActiveItem() {
@@ -495,7 +502,7 @@ onUnmounted(() => {
         </div>
 
         <div
-          ref="listContainer"
+          ref="virtualParentRef"
           class="td-inbox__list"
           tabindex="0"
           role="listbox"
@@ -516,28 +523,50 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-for="(item, index) in items"
-            :key="item.id"
-            :id="`td-inbox-option-${index}`"
-            :data-inbox-index="index"
-            data-testid="inbox-item"
-            :data-capture-id="item.id"
-            :class="[
-              'td-inbox-row',
-              index === activeItemIndex ? 'td-inbox-row--active' : '',
-              selectedItemId === item.id ? 'td-inbox-row--selected' : ''
-            ]"
-            role="option"
-            :aria-selected="selectedItemId === item.id"
-            @mouseenter="setActiveIndex(index)"
-            @click="openItemFromList(item, index)"
+            v-if="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError"
+            :style="{ height: `${virtualTotalSize}px`, width: '100%', position: 'relative' }"
           >
-            <div class="td-inbox-row__head">
-              <span class="td-status-chip">{{ statusLabel(item.status) }}</span>
-              <span class="td-meta-chip">{{ sourceLabel(item.source) }}</span>
+            <div
+              :style="{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualTranslateY}px)`,
+              }"
+            >
+              <div
+                v-for="virtualRow in virtualRows"
+                :key="String(virtualRow.key)"
+                :data-index="virtualRow.index"
+                ref="virtualItemEls"
+              >
+                <template v-if="items[virtualRow.index]">
+                  <div
+                    :id="`td-inbox-option-${virtualRow.index}`"
+                    :data-inbox-index="virtualRow.index"
+                    data-testid="inbox-item"
+                    :data-capture-id="items[virtualRow.index]!.id"
+                    :class="[
+                      'td-inbox-row',
+                      virtualRow.index === activeItemIndex ? 'td-inbox-row--active' : '',
+                      selectedItemId === items[virtualRow.index]!.id ? 'td-inbox-row--selected' : ''
+                    ]"
+                    role="option"
+                    :aria-selected="selectedItemId === items[virtualRow.index]!.id"
+                    @mouseenter="setActiveIndex(virtualRow.index)"
+                    @click="openItemFromList(items[virtualRow.index]!, virtualRow.index)"
+                  >
+                    <div class="td-inbox-row__head">
+                      <span class="td-status-chip">{{ statusLabel(items[virtualRow.index]!.status) }}</span>
+                      <span class="td-meta-chip">{{ sourceLabel(items[virtualRow.index]!.source) }}</span>
+                    </div>
+                    <p class="td-inbox-row__excerpt">{{ items[virtualRow.index]!.textExcerpt }}</p>
+                    <p class="td-inbox-row__meta">{{ new Date(items[virtualRow.index]!.createdAt).toLocaleString() }}</p>
+                  </div>
+                </template>
+              </div>
             </div>
-            <p class="td-inbox-row__excerpt">{{ item.textExcerpt }}</p>
-            <p class="td-inbox-row__meta">{{ new Date(item.createdAt).toLocaleString() }}</p>
           </div>
         </div>
       </section>

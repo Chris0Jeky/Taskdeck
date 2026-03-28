@@ -277,7 +277,7 @@ Delivered in the latest cycle:
    - `/workspace/review` is now the canonical normal-user automation route, with legacy proposals URLs redirected compatibly and shell/home/inbox/card links pointed at Review
    - queue, chat, ops, and access surfaces now explain their advanced/operator purpose in plain language and expose action-oriented next steps instead of orphan empty states
    - board access now uses a board picker, automation chat accepts selector-safe board context instead of raw-ID happy paths, and frontend unit + Playwright coverage now locks selector flow, route defaults, and representative empty-state branches
-   - linked follow-through status is now split: `#212` delivered the logging/telemetry redaction policy and runtime guardrails, while `#213` remains the pending performance/responsiveness slice
+   - linked follow-through status is now split: `#212` delivered the logging/telemetry redaction policy and runtime guardrails; `#213` delivered frontend list virtualization (inbox + activity views) using `@tanstack/vue-virtual`
    - updated existing SEC-06 rate-limiting issue (`#81`) and wave index (`#107`) to integrate capture-specific scope without duplicate issue creation
 64. InReview extraction coverage expansion (`#216` to `#220`):
    - seeded go-to-market and user-research execution issues from HUMAN playbooks (`#216`, `#217`)
@@ -562,7 +562,7 @@ These continue in parallel where they protect trust, performance, or operator po
 
 - managed-key LLM control plane and abuse controls: `#235`, `#237`, `#238`, `#239`, `#240`
 - premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`)
-- long-list responsiveness and related UX scale follow-through: `#213`
+- long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
 - platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
 - deferred outreach CRM expansion: `#262` to `#268`
 
