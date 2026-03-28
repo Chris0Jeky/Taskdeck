@@ -29,15 +29,16 @@ public class LlmQuotaController : AuthenticatedControllerBase
 
     [HttpGet("quota/usage")]
     public async Task<IActionResult> GetUsageSummary(
-        [FromQuery] Guid? userId = null,
         [FromQuery] LlmSurface? surface = null,
         [FromQuery] DateTimeOffset? from = null,
         [FromQuery] DateTimeOffset? to = null,
         CancellationToken ct = default)
     {
-        if (!TryGetCurrentUserId(out _, out var errorResult))
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
+        // Always scope to the authenticated user. Admin-scoped cross-user queries
+        // will be added when the role system is implemented.
         var summary = await _quotaService.GetUsageSummaryAsync(userId, surface, from, to, ct);
         return Ok(summary);
     }
@@ -57,8 +58,28 @@ public class LlmQuotaController : AuthenticatedControllerBase
         [FromBody] SetKillSwitchRequestDto dto,
         CancellationToken ct = default)
     {
-        if (!TryGetCurrentUserId(out _, out var errorResult))
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
+
+        // Global and Surface scopes require admin privileges. Until a role system
+        // exists, reject these with 403. Identity scope is allowed only for the
+        // caller's own user ID.
+        if (dto.Scope == KillSwitchScope.Global || dto.Scope == KillSwitchScope.Surface)
+        {
+            return StatusCode(403, new Contracts.ApiErrorResponse(
+                Domain.Exceptions.ErrorCodes.Forbidden,
+                "Global and surface kill switch operations require admin privileges (not yet implemented)"));
+        }
+
+        if (dto.Scope == KillSwitchScope.Identity)
+        {
+            if (!Guid.TryParse(dto.Target, out var targetUserId) || targetUserId != userId)
+            {
+                return StatusCode(403, new Contracts.ApiErrorResponse(
+                    Domain.Exceptions.ErrorCodes.Forbidden,
+                    "You can only set the kill switch for your own user ID"));
+            }
+        }
 
         var result = await _killSwitchService.SetKillSwitchAsync(
             dto.Scope, dto.Target, dto.Enabled, dto.Reason, ct);

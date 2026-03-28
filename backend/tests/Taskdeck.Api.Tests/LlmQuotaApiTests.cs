@@ -107,10 +107,27 @@ public class LlmQuotaApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task PostKillSwitch_ShouldSetAndReturnUpdatedState()
+    public async Task PostKillSwitch_GlobalScope_ShouldReturn403()
     {
         using var client = _factory.CreateClient();
-        await AuthenticateAsync(client, "killswitch-set");
+        await AuthenticateAsync(client, "killswitch-global");
+
+        var response = await client.PostAsJsonAsync("/api/llm/killswitch", new
+        {
+            scope = (int)KillSwitchScope.Global,
+            target = (string?)null,
+            enabled = true,
+            reason = "test"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task PostKillSwitch_SurfaceScope_ShouldReturn403()
+    {
+        using var client = _factory.CreateClient();
+        await AuthenticateAsync(client, "killswitch-surface");
 
         var response = await client.PostAsJsonAsync("/api/llm/killswitch", new
         {
@@ -120,19 +137,50 @@ public class LlmQuotaApiTests : IClassFixture<TestWebApplicationFactory>
             reason = "integration test"
         });
 
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task PostKillSwitch_IdentityScope_OwnUser_ShouldSucceed()
+    {
+        using var client = _factory.CreateClient();
+        var userId = await AuthenticateAndGetUserIdAsync(client, "killswitch-own");
+
+        var response = await client.PostAsJsonAsync("/api/llm/killswitch", new
+        {
+            scope = (int)KillSwitchScope.Identity,
+            target = userId.ToString(),
+            enabled = true,
+            reason = "self-kill"
+        });
+
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, because: body);
+    }
 
-        var json = JsonSerializer.Deserialize<JsonElement>(body);
-        json.TryGetProperty("entries", out var entries).Should().BeTrue();
+    [Fact]
+    public async Task PostKillSwitch_IdentityScope_OtherUser_ShouldReturn403()
+    {
+        using var client = _factory.CreateClient();
+        await AuthenticateAsync(client, "killswitch-other");
 
-        var entryArray = entries.EnumerateArray().ToList();
-        entryArray.Should().Contain(e =>
-            e.GetProperty("target").GetString() == "Worker" &&
-            e.GetProperty("enabled").GetBoolean());
+        var response = await client.PostAsJsonAsync("/api/llm/killswitch", new
+        {
+            scope = (int)KillSwitchScope.Identity,
+            target = Guid.NewGuid().ToString(),
+            enabled = true,
+            reason = "trying to kill another user"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     private static async Task AuthenticateAsync(HttpClient client, string stem)
+    {
+        await AuthenticateAndGetUserIdAsync(client, stem);
+    }
+
+    private static async Task<Guid> AuthenticateAndGetUserIdAsync(HttpClient client, string stem)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var username = $"{stem}_{suffix}";
@@ -145,7 +193,9 @@ public class LlmQuotaApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         var token = payload.GetProperty("token").GetString();
+        var userId = payload.GetProperty("user").GetProperty("id").GetGuid();
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return userId;
     }
 }
