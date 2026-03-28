@@ -62,6 +62,24 @@ Telemetry and release-gate follow-through from the expanded blueprint:
   - `R2` agent foundation alpha -> inspectable runs, policies, and bounded templates
   - `R3` knowledge/integrations alpha -> durable searchable context plus supervised connector flows
 
+## Codex Coverage Wave (TST-CODEX-01 to TST-CODEX-15, seeded 2026-03-28)
+
+A dedicated test-coverage wave designed for token-efficient agents (Codex, lightweight LLM runners). Each task is self-contained with pattern files, source paths, and verify commands in `docs/codex-tasks/`.
+
+Tracked issues: `#415` to `#429`.
+
+| Tier | Tasks | Scope | Issues |
+|------|-------|-------|--------|
+| 1 — Frontend API | labelsApi, columnsApi, usersApi | Mock HTTP, verify URL/payload | `#415`-`#417` |
+| 2 — Frontend Composables | useErrorMapper, useEscapeToClose, useShortcutContext | Pure function + lifecycle tests | `#418`-`#420` |
+| 3 — Frontend Stores | auditStore, queueStore (real coverage, not demo) | Pinia store with mocked API | `#421`-`#422` |
+| 4 — Backend Domain | CardComment, Notification, AutomationProposal, LlmUsageRecord | Entity construction + invariants | `#423`-`#426` |
+| 5 — Backend Services | OutboundWebhookSignature (expand), WorkerHeartbeatRegistry, CompositeBoardRealtimeNotifier | Service tests with mocking | `#427`-`#429` |
+
+Coverage gap context (2026-03-28 audit):
+- Frontend: 4 API modules untested, 3 composables untested, 2 stores have only demo specs
+- Backend: Infrastructure repositories 95% untested, 13 of 25 domain entities untested, 3 of 5 workers untested
+
 ## Backend Commands
 
 Run full backend verification (recommended):

@@ -57,6 +57,8 @@ Stable reference material belongs in topical subfolders.
   - Provider, import-adapter, and starter-pack platform or reference docs.
 - `security/`
   - Active security and abuse-protection policies or baselines.
+- `codex-tasks/`
+  - Codex-friendly task catalog: self-contained, token-efficient task prompts for lightweight agents. Organized by tier (frontend-api, frontend-composables, frontend-stores, backend-domain, backend-services). Each `.md` is a standalone prompt with source paths, pattern files, test cases, and verify commands. Tracked as `TST-CODEX-*` issues (`#415`-`#429`).
 - `tooling/`
   - MCP operations, harness or tooling guidance, and deferred tooling backlog.
 - `analysis/`
