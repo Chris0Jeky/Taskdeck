@@ -79,7 +79,8 @@ public class NotificationTests
 
         // Assert
         act.Should().Throw<DomainException>()
-            .WithMessage("User ID cannot be empty");
+            .WithMessage("User ID cannot be empty")
+            .And.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
     [Theory]
@@ -216,7 +217,8 @@ public class NotificationTests
         // Assert
         notification.IsRead.Should().BeTrue();
         notification.ReadAt.Should().NotBeNull();
-        notification.UpdatedAt.Should().BeOnOrAfter(originalUpdatedAt);
+        notification.ReadAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(1));
+        notification.UpdatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -261,7 +263,7 @@ public class NotificationTests
         // Assert
         notification.IsRead.Should().BeFalse();
         notification.ReadAt.Should().BeNull();
-        notification.UpdatedAt.Should().BeOnOrAfter(readUpdatedAt);
+        notification.UpdatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -283,5 +285,37 @@ public class NotificationTests
         notification.IsRead.Should().BeFalse();
         notification.ReadAt.Should().BeNull();
         notification.UpdatedAt.Should().Be(originalUpdatedAt);
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenTitleIsNull()
+    {
+        // Act
+        var act = () => new Notification(
+            _userId,
+            NotificationType.Mention,
+            NotificationCadence.Immediate,
+            null!,
+            "Message");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Notification title cannot be empty");
+    }
+
+    [Fact]
+    public void Constructor_ShouldThrow_WhenMessageIsNull()
+    {
+        // Act
+        var act = () => new Notification(
+            _userId,
+            NotificationType.Mention,
+            NotificationCadence.Immediate,
+            "Title",
+            null!);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Notification message cannot be empty");
     }
 }
