@@ -65,6 +65,13 @@ export function useVirtualList(options: UseVirtualListOptions): UseVirtualListRe
   }
 
   onMounted(measureAll)
+  // NOTE: onUpdated(measureAll) re-measures every visible element on each Vue
+  // update cycle, which can be heavier than necessary when updates are unrelated
+  // to item sizing. An alternative is to have each consuming component call
+  // measureElement per-item via a template ref callback. We keep the blanket
+  // approach here because (a) the virtual window limits the element count to
+  // ~overscan*2 items, and (b) changing to per-item measurement would require
+  // template changes in every consumer (InboxView, ActivityView).
   onUpdated(measureAll)
 
   function scrollToIndex(index: number) {
