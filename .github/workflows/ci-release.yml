@@ -1,0 +1,90 @@
+# =============================================================================
+# CI Release — release lane for SBOM/provenance placeholder and container
+# build verification. Complements release-security.yml with a lighter-weight
+# build-verification pass suitable for tag/release automation.
+#
+# Follow-through:
+#   - OPS-11 (#103): SBOM/provenance generation and attestation policy
+#   - SEC-09 (#106) / OPS-17 (#148): dependency vulnerability policy + automation
+# =============================================================================
+
+name: CI Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  release-build-verification:
+    name: Release Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Build backend (Release)
+        run: dotnet build backend/Taskdeck.sln -c Release --no-restore
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Build frontend (production)
+        working-directory: frontend/taskdeck-web
+        run: npx vite build
+
+      - name: Write release build summary
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          ## Release Build Verification
+
+          - Backend: restore + build (Release) passed
+          - Frontend: npm ci + vite build passed
+
+          ### SBOM / Provenance (placeholder)
+
+          SBOM generation and provenance attestation are not yet wired.
+          Follow-through tracked in:
+          - `#103` OPS-11 SBOM/provenance workflow
+          - `#106` SEC-09 dependency vulnerability policy
+          - `#148` OPS-17 dependency update automation
+          EOF
+
+  container-images:
+    name: Container Image Artifacts
+    uses: ./.github/workflows/reusable-container-images.yml

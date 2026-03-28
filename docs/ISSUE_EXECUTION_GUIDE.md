@@ -162,8 +162,8 @@ Execution note (manual product audit wave):
 
 ### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
 
-Execution note (2026-02-22):
-- `#168` now includes required-lane reusable extraction plus explicit non-blocking (`ci-extended`), scheduled (`ci-nightly`), and release/security (`release-security`) orchestrators; continue remaining hardening tracks after this topology baseline lands.
+Execution note (2026-02-22, updated 2026-03-28):
+- `#168` CI topology expansion is complete: required-lane reusable extraction, non-blocking (`ci-extended`), scheduled (`ci-nightly`, `nightly-quality`), release (`ci-release`, `release-security`) orchestrators, topology documentation in `ci-required.yml` header, and `CODEOWNERS` governance are all delivered. Remaining hardening tracks continue independently.
 
 Analysis follow-through, CI topology, and hardening:
 1. `#151` ANL-2026-02-21 analysis follow-through umbrella (tracking)

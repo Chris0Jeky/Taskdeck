@@ -1,3 +1,61 @@
+# =============================================================================
+# CI Required — PR merge gate
+# =============================================================================
+#
+# Workflow Topology (see docs/analysis/2026-02-21_ci-github-actions-expansion-plan.md):
+#
+#   ci-required.yml          PR/push/merge_group gate (this file)
+#     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
+#     ├── reusable-backend-architecture.yml    architecture boundary tests
+#     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
+#     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
+#     ├── reusable-frontend-unit.yml           lint + typecheck + build + unit tests (Ubuntu + Windows)
+#     ├── reusable-container-images.yml        compose validation + image build + artifact export
+#     └── reusable-e2e-smoke.yml               Playwright smoke (depends on all above)
+#
+#   ci-extended.yml          optional PR lane (label/path/manual dispatch)
+#     ├── actionlint workflow lint
+#     ├── dependency-review (PR only)
+#     ├── reusable-dependency-security-signals.yml (label: security)
+#     ├── reusable-openapi-guardrail.yml
+#     ├── reusable-backend-solution.yml (label: testing)
+#     ├── reusable-e2e-smoke.yml (label: testing)
+#     ├── reusable-demo-director-smoke.yml (label: automation)
+#     └── reusable-load-concurrency-harness.yml (label: testing)
+#
+#   ci-nightly.yml           scheduled regression (03:25 UTC daily)
+#     ├── reusable-openapi-guardrail.yml
+#     ├── reusable-backend-solution.yml
+#     ├── reusable-e2e-smoke.yml
+#     ├── reusable-load-concurrency-harness.yml
+#     └── reusable-container-images.yml
+#
+#   nightly-quality.yml      scheduled quality signals (03:55 UTC daily)
+#     ├── backend coverage (domain + application)
+#     ├── frontend coverage
+#     └── reusable-dependency-security-signals.yml
+#
+#   ci-release.yml           release lane (tag/release/manual)
+#     ├── release build verification (backend + frontend)
+#     ├── SBOM/provenance placeholder (follow-through: #103, #106, #148)
+#     └── reusable-container-images.yml
+#
+#   release-security.yml     release security deep scan (tag/release/manual)
+#     ├── dependency inventory + vulnerability scan + enforcement
+#     └── reusable-container-images.yml
+#
+#   pages-frontend.yml       GitHub Pages deploy (main push, frontend paths)
+#
+# Design principles:
+#   - ci-required.yml is the merge gate: fast, deterministic, no opt-out
+#   - Reusable workflows use workflow_call for composition by multiple callers
+#   - ci-extended.yml runs heavier checks on label/path/manual triggers
+#   - Nightly workflows shift expensive suites off the PR critical path
+#   - Release workflows emit dependency + provenance artifacts
+#   - Least-privilege permissions per job; no global elevation
+#   - Third-party actions pinned to immutable references where feasible
+# =============================================================================
+
 name: CI
 
 on:

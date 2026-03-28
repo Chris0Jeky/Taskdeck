@@ -1,3 +1,10 @@
+# =============================================================================
+# Release Security — deep dependency inventory and vulnerability signal lane.
+# Runs on tag push, release publish, and manual dispatch.
+# For lighter release build verification, see ci-release.yml.
+# Topology context documented in ci-required.yml header.
+# =============================================================================
+
 name: Release Security
 
 on:

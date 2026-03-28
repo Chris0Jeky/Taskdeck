@@ -1,3 +1,9 @@
+# =============================================================================
+# Nightly Quality Signals — scheduled coverage and dependency signal lane.
+# Runs at 03:55 UTC daily and on manual dispatch.
+# Topology context documented in ci-required.yml header.
+# =============================================================================
+
 name: Nightly Quality Signals
 
 on:
