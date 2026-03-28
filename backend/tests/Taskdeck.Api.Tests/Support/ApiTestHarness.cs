@@ -183,6 +183,40 @@ public static class ApiTestHarness
             $"{description} did not complete after {maxAttempts} attempts (~{stopwatch.ElapsedMilliseconds}ms). Last observed value: {diagnosticsText}");
     }
 
+    public static async Task<Guid> CreateBoardWithColumnAsync(
+        HttpClient client,
+        string boardNamePrefix = "test-board")
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/import/boards",
+            new ImportBoardDto(
+                $"{boardNamePrefix}-{Guid.NewGuid():N}",
+                null,
+                new[] { new ImportColumnDto("Backlog", 0, null) },
+                Array.Empty<ImportCardDto>(),
+                Array.Empty<ImportLabelDto>()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
+        result.Should().NotBeNull();
+        result!.BoardId.Should().NotBeNull();
+        return result.BoardId!.Value;
+    }
+
+    public static async Task<Guid> CreateChatSessionAsync(
+        HttpClient client,
+        string title,
+        Guid boardId)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto(title, boardId));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var session = await response.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+        return session!.Id;
+    }
+
     private static readonly JsonSerializerOptions JsonOptionsForDiagnostics = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

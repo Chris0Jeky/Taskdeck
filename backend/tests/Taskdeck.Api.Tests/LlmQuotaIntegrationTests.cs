@@ -64,22 +64,17 @@ public class LlmQuotaEnforcementIntegrationTests : IClassFixture<LowQuotaWebAppl
     public async Task SendMessage_ShouldReturn429_WhenQuotaExhausted()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "quota-enforce");
-        var boardId = await CreateBoardWithColumnAsync(client);
+        await ApiTestHarness.AuthenticateAsync(client, "quota-enforce");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "quota");
 
         // Create a chat session
-        var sessionResponse = await client.PostAsJsonAsync(
-            "/api/llm/chat/sessions",
-            new CreateChatSessionDto("Quota enforcement test", boardId));
-        sessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var session = await sessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
-        session.Should().NotBeNull();
+        var sessionId = await ApiTestHarness.CreateChatSessionAsync(client, "Quota enforcement test", boardId);
 
         // Send 3 messages (the configured per-hour limit) — all should succeed
         for (var i = 0; i < 3; i++)
         {
             var msgResponse = await client.PostAsJsonAsync(
-                $"/api/llm/chat/sessions/{session!.Id}/messages",
+                $"/api/llm/chat/sessions/{sessionId}/messages",
                 new SendChatMessageDto($"Quota test message {i + 1}"));
             var body = await msgResponse.Content.ReadAsStringAsync();
             msgResponse.StatusCode.Should().Be(HttpStatusCode.OK,
@@ -92,7 +87,7 @@ public class LlmQuotaEnforcementIntegrationTests : IClassFixture<LowQuotaWebAppl
 
         // The 4th message should be rejected with 429
         var overQuotaResponse = await client.PostAsJsonAsync(
-            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            $"/api/llm/chat/sessions/{sessionId}/messages",
             new SendChatMessageDto("This message exceeds the quota"));
 
         var overQuotaBody = await overQuotaResponse.Content.ReadAsStringAsync();
@@ -108,8 +103,8 @@ public class LlmQuotaEnforcementIntegrationTests : IClassFixture<LowQuotaWebAppl
     public async Task QuotaStatus_ShouldReflectUsage_AfterMessages()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "quota-status-int");
-        var boardId = await CreateBoardWithColumnAsync(client);
+        await ApiTestHarness.AuthenticateAsync(client, "quota-status-int");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "quota-status");
 
         // Check initial status — should be allowed with zero usage
         var initialStatusResponse = await client.GetAsync("/api/llm/quota/status");
@@ -120,14 +115,10 @@ public class LlmQuotaEnforcementIntegrationTests : IClassFixture<LowQuotaWebAppl
         initialStatus.GetProperty("requestsPerHourLimit").GetInt64().Should().Be(3);
 
         // Create session and send one message
-        var sessionResponse = await client.PostAsJsonAsync(
-            "/api/llm/chat/sessions",
-            new CreateChatSessionDto("Quota status test", boardId));
-        sessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var session = await sessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        var sessionId = await ApiTestHarness.CreateChatSessionAsync(client, "Quota status test", boardId);
 
         var msgResponse = await client.PostAsJsonAsync(
-            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            $"/api/llm/chat/sessions/{sessionId}/messages",
             new SendChatMessageDto("Status tracking message"));
         msgResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -136,25 +127,7 @@ public class LlmQuotaEnforcementIntegrationTests : IClassFixture<LowQuotaWebAppl
         afterStatusResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var afterStatus = await afterStatusResponse.Content.ReadFromJsonAsync<JsonElement>();
         afterStatus.GetProperty("allowed").GetBoolean().Should().BeTrue();
-        afterStatus.GetProperty("requestsThisHour").GetInt64().Should().BeGreaterOrEqualTo(1);
-    }
-
-    private static async Task<Guid> CreateBoardWithColumnAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/api/import/boards",
-            new ImportBoardDto(
-                $"quota-board-{Guid.NewGuid():N}",
-                null,
-                new[] { new ImportColumnDto("Backlog", 0, null) },
-                Array.Empty<ImportCardDto>(),
-                Array.Empty<ImportLabelDto>()));
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
-        result.Should().NotBeNull();
-        result!.BoardId.Should().NotBeNull();
-        return result.BoardId!.Value;
+        afterStatus.GetProperty("requestsThisHour").GetInt64().Should().Be(1);
     }
 }
 
@@ -175,19 +148,14 @@ public class LlmKillSwitchIntegrationTests : IClassFixture<TestWebApplicationFac
     {
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "ks-block");
-        var boardId = await CreateBoardWithColumnAsync(client);
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "ks");
 
         // Create chat session
-        var sessionResponse = await client.PostAsJsonAsync(
-            "/api/llm/chat/sessions",
-            new CreateChatSessionDto("Kill switch test", boardId));
-        sessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var session = await sessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
-        session.Should().NotBeNull();
+        var sessionId = await ApiTestHarness.CreateChatSessionAsync(client, "Kill switch test", boardId);
 
         // Verify chat works before kill switch
         var preKillResponse = await client.PostAsJsonAsync(
-            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            $"/api/llm/chat/sessions/{sessionId}/messages",
             new SendChatMessageDto("Before kill switch"));
         preKillResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -204,7 +172,7 @@ public class LlmKillSwitchIntegrationTests : IClassFixture<TestWebApplicationFac
 
         // Attempt chat — should be blocked with 503
         var blockedResponse = await client.PostAsJsonAsync(
-            $"/api/llm/chat/sessions/{session.Id}/messages",
+            $"/api/llm/chat/sessions/{sessionId}/messages",
             new SendChatMessageDto("This should be blocked"));
 
         blockedResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -224,27 +192,9 @@ public class LlmKillSwitchIntegrationTests : IClassFixture<TestWebApplicationFac
 
         // Chat should work again
         var unblockResponse = await client.PostAsJsonAsync(
-            $"/api/llm/chat/sessions/{session.Id}/messages",
+            $"/api/llm/chat/sessions/{sessionId}/messages",
             new SendChatMessageDto("After kill switch disabled"));
         unblockResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    private static async Task<Guid> CreateBoardWithColumnAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/api/import/boards",
-            new ImportBoardDto(
-                $"ks-board-{Guid.NewGuid():N}",
-                null,
-                new[] { new ImportColumnDto("Backlog", 0, null) },
-                Array.Empty<ImportCardDto>(),
-                Array.Empty<ImportLabelDto>()));
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
-        result.Should().NotBeNull();
-        result!.BoardId.Should().NotBeNull();
-        return result.BoardId!.Value;
     }
 }
 
@@ -265,15 +215,15 @@ public class LlmQuotaCrossUserIsolationTests : IClassFixture<LowQuotaWebApplicat
     {
         // Setup user A
         using var clientA = _factory.CreateClient();
-        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "quota-iso-a");
-        var boardA = await CreateBoardWithColumnAsync(clientA);
-        var sessionA = await CreateChatSessionAsync(clientA, "User A session", boardA);
+        await ApiTestHarness.AuthenticateAsync(clientA, "quota-iso-a");
+        var boardA = await ApiTestHarness.CreateBoardWithColumnAsync(clientA, "iso-a");
+        var sessionA = await ApiTestHarness.CreateChatSessionAsync(clientA, "User A session", boardA);
 
         // Setup user B
         using var clientB = _factory.CreateClient();
-        var userB = await ApiTestHarness.AuthenticateAsync(clientB, "quota-iso-b");
-        var boardB = await CreateBoardWithColumnAsync(clientB);
-        var sessionB = await CreateChatSessionAsync(clientB, "User B session", boardB);
+        await ApiTestHarness.AuthenticateAsync(clientB, "quota-iso-b");
+        var boardB = await ApiTestHarness.CreateBoardWithColumnAsync(clientB, "iso-b");
+        var sessionB = await ApiTestHarness.CreateChatSessionAsync(clientB, "User B session", boardB);
 
         // Exhaust user A's quota (3 messages)
         for (var i = 0; i < 3; i++)
@@ -310,35 +260,6 @@ public class LlmQuotaCrossUserIsolationTests : IClassFixture<LowQuotaWebApplicat
             await statusB.Content.ReadAsStringAsync());
         statusBJson.GetProperty("allowed").GetBoolean().Should().BeTrue();
     }
-
-    private static async Task<Guid> CreateBoardWithColumnAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/api/import/boards",
-            new ImportBoardDto(
-                $"iso-board-{Guid.NewGuid():N}",
-                null,
-                new[] { new ImportColumnDto("Backlog", 0, null) },
-                Array.Empty<ImportCardDto>(),
-                Array.Empty<ImportLabelDto>()));
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
-        result.Should().NotBeNull();
-        result!.BoardId.Should().NotBeNull();
-        return result.BoardId!.Value;
-    }
-
-    private static async Task<Guid> CreateChatSessionAsync(HttpClient client, string title, Guid boardId)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/api/llm/chat/sessions",
-            new CreateChatSessionDto(title, boardId));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var session = await response.Content.ReadFromJsonAsync<ChatSessionDto>();
-        session.Should().NotBeNull();
-        return session!.Id;
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -357,8 +278,8 @@ public class LlmUsageRecordingIntegrationTests : IClassFixture<TestWebApplicatio
     public async Task UsageSummary_ShouldReflectRecordedUsage()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "usage-summary");
-        var boardId = await CreateBoardWithColumnAsync(client);
+        await ApiTestHarness.AuthenticateAsync(client, "usage-summary");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "usage");
 
         // Check initial usage — should be zero
         var initialUsageResponse = await client.GetAsync("/api/llm/quota/usage");
@@ -368,17 +289,13 @@ public class LlmUsageRecordingIntegrationTests : IClassFixture<TestWebApplicatio
         initialUsage.GetProperty("totalTokens").GetInt64().Should().Be(0);
 
         // Create session and send messages
-        var sessionResponse = await client.PostAsJsonAsync(
-            "/api/llm/chat/sessions",
-            new CreateChatSessionDto("Usage recording test", boardId));
-        sessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var session = await sessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        var sessionId = await ApiTestHarness.CreateChatSessionAsync(client, "Usage recording test", boardId);
 
         const int messageCount = 3;
         for (var i = 0; i < messageCount; i++)
         {
             var msgResponse = await client.PostAsJsonAsync(
-                $"/api/llm/chat/sessions/{session!.Id}/messages",
+                $"/api/llm/chat/sessions/{sessionId}/messages",
                 new SendChatMessageDto($"Usage recording message {i + 1}"));
             msgResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
@@ -388,10 +305,7 @@ public class LlmUsageRecordingIntegrationTests : IClassFixture<TestWebApplicatio
         usageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var usage = await usageResponse.Content.ReadFromJsonAsync<JsonElement>();
 
-        // The mock provider returns deterministic responses with token counts.
-        // We should have at least messageCount requests recorded.
-        usage.GetProperty("totalRequests").GetInt64().Should().BeGreaterOrEqualTo(messageCount);
-        // Tokens depend on mock provider output — just verify non-negative
+        usage.GetProperty("totalRequests").GetInt64().Should().Be(messageCount);
         usage.GetProperty("totalTokens").GetInt64().Should().BeGreaterOrEqualTo(0);
         usage.GetProperty("totalInputTokens").GetInt64().Should().BeGreaterOrEqualTo(0);
         usage.GetProperty("totalOutputTokens").GetInt64().Should().BeGreaterOrEqualTo(0);
@@ -405,53 +319,30 @@ public class LlmUsageRecordingIntegrationTests : IClassFixture<TestWebApplicatio
     public async Task QuotaStatus_ShouldReturnCorrectRemainingCounts()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "quota-remaining");
-        var boardId = await CreateBoardWithColumnAsync(client);
+        await ApiTestHarness.AuthenticateAsync(client, "quota-remaining");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "remaining");
 
         // Check initial status
         var initialResponse = await client.GetAsync("/api/llm/quota/status");
         initialResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var initial = await initialResponse.Content.ReadFromJsonAsync<JsonElement>();
         initial.GetProperty("allowed").GetBoolean().Should().BeTrue();
-        var initialRequestsThisHour = initial.GetProperty("requestsThisHour").GetInt64();
-        initialRequestsThisHour.Should().Be(0);
+        initial.GetProperty("requestsThisHour").GetInt64().Should().Be(0);
 
         // Send one message
-        var sessionResponse = await client.PostAsJsonAsync(
-            "/api/llm/chat/sessions",
-            new CreateChatSessionDto("Remaining count test", boardId));
-        sessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var session = await sessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        var sessionId = await ApiTestHarness.CreateChatSessionAsync(client, "Remaining count test", boardId);
 
         var msgResponse = await client.PostAsJsonAsync(
-            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            $"/api/llm/chat/sessions/{sessionId}/messages",
             new SendChatMessageDto("Remaining count message"));
         msgResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // After one message, requestsThisHour should have increased
+        // After one message, requestsThisHour should be exactly 1
         var afterResponse = await client.GetAsync("/api/llm/quota/status");
         afterResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var after = await afterResponse.Content.ReadFromJsonAsync<JsonElement>();
-        after.GetProperty("requestsThisHour").GetInt64().Should().BeGreaterOrEqualTo(1);
+        after.GetProperty("requestsThisHour").GetInt64().Should().Be(1);
         after.GetProperty("tokensUsedToday").GetInt64().Should().BeGreaterOrEqualTo(0);
-    }
-
-    private static async Task<Guid> CreateBoardWithColumnAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/api/import/boards",
-            new ImportBoardDto(
-                $"usage-board-{Guid.NewGuid():N}",
-                null,
-                new[] { new ImportColumnDto("Backlog", 0, null) },
-                Array.Empty<ImportCardDto>(),
-                Array.Empty<ImportLabelDto>()));
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
-        result.Should().NotBeNull();
-        result!.BoardId.Should().NotBeNull();
-        return result.BoardId!.Value;
     }
 }
 
@@ -473,14 +364,14 @@ public class LlmUsageSqliteRepositoryIntegrationTests : IClassFixture<TestWebApp
         // This test verifies the raw SQL queries against real SQLite by
         // recording usage for two users and ensuring per-user filtering works.
         using var clientA = _factory.CreateClient();
-        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "sql-user-a");
-        var boardA = await CreateBoardWithColumnAsync(clientA);
-        var sessionA = await CreateChatSessionAsync(clientA, "SQL test A", boardA);
+        await ApiTestHarness.AuthenticateAsync(clientA, "sql-user-a");
+        var boardA = await ApiTestHarness.CreateBoardWithColumnAsync(clientA, "sql-a");
+        var sessionA = await ApiTestHarness.CreateChatSessionAsync(clientA, "SQL test A", boardA);
 
         using var clientB = _factory.CreateClient();
-        var userB = await ApiTestHarness.AuthenticateAsync(clientB, "sql-user-b");
-        var boardB = await CreateBoardWithColumnAsync(clientB);
-        var sessionB = await CreateChatSessionAsync(clientB, "SQL test B", boardB);
+        await ApiTestHarness.AuthenticateAsync(clientB, "sql-user-b");
+        var boardB = await ApiTestHarness.CreateBoardWithColumnAsync(clientB, "sql-b");
+        var sessionB = await ApiTestHarness.CreateChatSessionAsync(clientB, "SQL test B", boardB);
 
         // Send 2 messages as user A
         for (var i = 0; i < 2; i++)
@@ -516,9 +407,9 @@ public class LlmUsageSqliteRepositoryIntegrationTests : IClassFixture<TestWebApp
     public async Task SqliteQueries_ShouldReturnCorrectTokenTotals()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "sql-tokens");
-        var boardId = await CreateBoardWithColumnAsync(client);
-        var sessionId = await CreateChatSessionAsync(client, "Token totals", boardId);
+        await ApiTestHarness.AuthenticateAsync(client, "sql-tokens");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "sql-tokens");
+        var sessionId = await ApiTestHarness.CreateChatSessionAsync(client, "Token totals", boardId);
 
         // Send messages to accumulate tokens
         const int messageCount = 3;
@@ -558,34 +449,5 @@ public class LlmUsageSqliteRepositoryIntegrationTests : IClassFixture<TestWebApp
         usage.GetProperty("totalTokens").GetInt64().Should().Be(0);
         usage.GetProperty("totalInputTokens").GetInt64().Should().Be(0);
         usage.GetProperty("totalOutputTokens").GetInt64().Should().Be(0);
-    }
-
-    private static async Task<Guid> CreateBoardWithColumnAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/api/import/boards",
-            new ImportBoardDto(
-                $"sql-board-{Guid.NewGuid():N}",
-                null,
-                new[] { new ImportColumnDto("Backlog", 0, null) },
-                Array.Empty<ImportCardDto>(),
-                Array.Empty<ImportLabelDto>()));
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<ImportResultDto>();
-        result.Should().NotBeNull();
-        result!.BoardId.Should().NotBeNull();
-        return result.BoardId!.Value;
-    }
-
-    private static async Task<Guid> CreateChatSessionAsync(HttpClient client, string title, Guid boardId)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/api/llm/chat/sessions",
-            new CreateChatSessionDto(title, boardId));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var session = await response.Content.ReadFromJsonAsync<ChatSessionDto>();
-        session.Should().NotBeNull();
-        return session!.Id;
     }
 }
