@@ -24,6 +24,8 @@ public interface IUnitOfWork
     ILlmUsageRecordRepository LlmUsageRecords { get; }
     IAgentProfileRepository AgentProfiles { get; }
     IAgentRunRepository AgentRuns { get; }
+    IKnowledgeDocumentRepository KnowledgeDocuments { get; }
+    IKnowledgeChunkRepository KnowledgeChunks { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

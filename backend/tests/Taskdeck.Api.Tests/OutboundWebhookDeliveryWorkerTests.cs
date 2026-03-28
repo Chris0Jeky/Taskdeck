@@ -545,6 +545,8 @@ public class OutboundWebhookDeliveryWorkerTests
         public ILlmUsageRecordRepository LlmUsageRecords => null!;
         public IAgentProfileRepository AgentProfiles => null!;
         public IAgentRunRepository AgentRuns => null!;
+        public IKnowledgeDocumentRepository KnowledgeDocuments => null!;
+        public IKnowledgeChunkRepository KnowledgeChunks => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {

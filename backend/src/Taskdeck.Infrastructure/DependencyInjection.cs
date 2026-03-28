@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
 
@@ -39,6 +40,9 @@ public static class DependencyInjection
         services.AddScoped<ILlmUsageRecordRepository, LlmUsageRecordRepository>();
         services.AddScoped<IAgentProfileRepository, AgentProfileRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
+        services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
+        services.AddScoped<IKnowledgeChunkRepository, KnowledgeChunkRepository>();
+        services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;

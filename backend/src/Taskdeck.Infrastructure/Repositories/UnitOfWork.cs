@@ -34,7 +34,9 @@ public class UnitOfWork : IUnitOfWork
         IOutboundWebhookDeliveryRepository outboundWebhookDeliveries,
         ILlmUsageRecordRepository llmUsageRecords,
         IAgentProfileRepository agentProfiles,
-        IAgentRunRepository agentRuns)
+        IAgentRunRepository agentRuns,
+        IKnowledgeDocumentRepository knowledgeDocuments,
+        IKnowledgeChunkRepository knowledgeChunks)
     {
         _context = context;
         Boards = boards;
@@ -59,6 +61,8 @@ public class UnitOfWork : IUnitOfWork
         LlmUsageRecords = llmUsageRecords;
         AgentProfiles = agentProfiles;
         AgentRuns = agentRuns;
+        KnowledgeDocuments = knowledgeDocuments;
+        KnowledgeChunks = knowledgeChunks;
     }
 
     public IBoardRepository Boards { get; }
@@ -83,6 +87,8 @@ public class UnitOfWork : IUnitOfWork
     public ILlmUsageRecordRepository LlmUsageRecords { get; }
     public IAgentProfileRepository AgentProfiles { get; }
     public IAgentRunRepository AgentRuns { get; }
+    public IKnowledgeDocumentRepository KnowledgeDocuments { get; }
+    public IKnowledgeChunkRepository KnowledgeChunks { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

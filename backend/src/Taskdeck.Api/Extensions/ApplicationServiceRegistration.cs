@@ -38,6 +38,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ILogQueryService, LogQueryService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IKnowledgeService, KnowledgeService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
         services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
         services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
