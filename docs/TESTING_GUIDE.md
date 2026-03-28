@@ -62,11 +62,11 @@ Telemetry and release-gate follow-through from the expanded blueprint:
   - `R2` agent foundation alpha -> inspectable runs, policies, and bounded templates
   - `R3` knowledge/integrations alpha -> durable searchable context plus supervised connector flows
 
-## Codex Coverage Wave (TST-CODEX-01 to TST-CODEX-15, seeded 2026-03-28)
+## Codex Coverage Wave (TST-CODEX-01 to TST-CODEX-15, delivered 2026-03-28)
 
 A dedicated test-coverage wave designed for token-efficient agents (Codex, lightweight LLM runners). Each task is self-contained with pattern files, source paths, and verify commands in `docs/codex-tasks/`.
 
-Tracked issues: `#415` to `#429`.
+Tracked issues: `#415` to `#429`. PRs: `#436` to `#448`. All delivered and merged 2026-03-28 after adversarial review pass with fixes for tautological assertions, missing guard branches, and edge-case gaps.
 
 | Tier | Tasks | Scope | Issues |
 |------|-------|-------|--------|
@@ -76,9 +76,9 @@ Tracked issues: `#415` to `#429`.
 | 4 — Backend Domain | CardComment, Notification, AutomationProposal, LlmUsageRecord | Entity construction + invariants | `#423`-`#426` |
 | 5 — Backend Services | OutboundWebhookSignature (expand), WorkerHeartbeatRegistry, CompositeBoardRealtimeNotifier | Service tests with mocking | `#427`-`#429` |
 
-Coverage gap context (2026-03-28 audit):
-- Frontend: 4 API modules untested, 3 composables untested, 2 stores have only demo specs
-- Backend: Infrastructure repositories 95% untested, 13 of 25 domain entities untested, 3 of 5 workers untested
+Remaining coverage gaps (post-wave):
+- Frontend: 1 API module untested (captureApi), remaining composables/stores have baseline coverage
+- Backend: Infrastructure repositories still largely untested, remaining domain entities untested, 1 of 5 workers untested
 
 ## Backend Commands
 

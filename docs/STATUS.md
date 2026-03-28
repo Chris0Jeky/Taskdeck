@@ -757,6 +757,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Applied `Priority I` through `Priority V` labels to every repository issue.
 - Seeded testing-harness wave issues (`#254` to `#260`) and updated in-review extraction records with duplicate prevention notes.
 - Seeded outreach CRM deferred-wave issues (`#262` to `#268`) and reconciled overlapping scope into existing issues (`#75`, `#77`, `#175`, `#107`).
+- Delivered TST-CODEX-01 to TST-CODEX-15 unit test coverage wave (`#415` to `#429`, PRs `#436` to `#448`): added frontend API/composable/store tests and backend domain entity/application service/API tests across 13 PRs, with adversarial review fixes for tautological assertions, missing guard branches, modifier-key coverage, and edge-case gaps.
 
 ## Canonical Documentation Policy
 
