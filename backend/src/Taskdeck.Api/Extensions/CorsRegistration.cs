@@ -26,9 +26,33 @@ public static class CorsRegistration
     internal static IReadOnlyList<string> ResolveCorsAllowedOrigins(IConfiguration configuration, bool isDevelopment)
     {
         var defaultAllowedOrigins = new[] { "http://localhost:5173", "http://localhost:5174" };
+
         if (!isDevelopment)
         {
-            return defaultAllowedOrigins;
+            var productionOrigins = configuration
+                .GetSection("Cors:AllowedOrigins")
+                .GetChildren()
+                .Select(child => child.Value)
+                .OfType<string>()
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToArray();
+
+            if (productionOrigins.Length == 0 &&
+                !string.IsNullOrWhiteSpace(configuration["Cors:AllowedOrigins"]))
+            {
+                productionOrigins = configuration["Cors:AllowedOrigins"]!
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+
+            // Fall back to localhost defaults when no production origins are configured,
+            // preserving the existing local-first development posture.
+            var origins = productionOrigins.Length > 0 ? productionOrigins : defaultAllowedOrigins;
+
+            return origins
+                .Where(origin => !string.IsNullOrWhiteSpace(origin))
+                .Select(NormalizeCorsOrigin)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
 
         var configuredDevelopmentOrigins = configuration
@@ -64,14 +88,14 @@ public static class CorsRegistration
         if (!Uri.TryCreate(trimmedOrigin, UriKind.Absolute, out var parsedOrigin))
         {
             throw new InvalidOperationException(
-                $"Invalid Cors:DevelopmentAllowedOrigins value \"{trimmedOrigin}\". Provide an absolute http(s) origin.");
+                $"Invalid CORS allowed origin value \"{trimmedOrigin}\". Provide an absolute http(s) origin.");
         }
 
         if (!string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(parsedOrigin.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Invalid Cors:DevelopmentAllowedOrigins value \"{trimmedOrigin}\". Only http and https schemes are supported.");
+                $"Invalid CORS allowed origin value \"{trimmedOrigin}\". Only http and https schemes are supported.");
         }
 
         return parsedOrigin.GetLeftPart(UriPartial.Authority);
