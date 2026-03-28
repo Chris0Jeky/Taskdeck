@@ -356,6 +356,128 @@ public class AutomationProposalTests
             .WithMessage("Cannot update diff preview after proposal has been decided");
     }
 
+    [Fact]
+    public void SetValidationIssues_ShouldThrow_WhenProposalHasBeenDecided()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Reject(Guid.NewGuid(), "Not needed");
+
+        // Act
+        var act = () => proposal.SetValidationIssues("issues");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot update validation issues after proposal has been decided");
+    }
+
+    [Fact]
+    public void Approve_ShouldThrow_WhenDecidedByUserIdIsEmpty()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+
+        // Act
+        var act = () => proposal.Approve(Guid.Empty);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("DecidedByUserId cannot be empty");
+    }
+
+    [Fact]
+    public void Reject_ShouldThrow_WhenDecidedByUserIdIsEmpty()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+
+        // Act
+        var act = () => proposal.Reject(Guid.Empty, "reason");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("DecidedByUserId cannot be empty");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void MarkAsFailed_ShouldThrow_WhenFailureReasonIsBlank(string reason)
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+
+        // Act
+        var act = () => proposal.MarkAsFailed(reason);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("FailureReason cannot be empty");
+    }
+
+    [Fact]
+    public void Approve_ShouldThrow_WhenProposalIsAlreadyRejected()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Reject(Guid.NewGuid(), "Not needed");
+
+        // Act
+        var act = () => proposal.Approve(Guid.NewGuid());
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot approve proposal in status Rejected");
+    }
+
+    [Fact]
+    public void Reject_ShouldThrow_WhenProposalIsAlreadyApproved()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+
+        // Act
+        var act = () => proposal.Reject(Guid.NewGuid(), "Too late");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot reject proposal in status Approved");
+    }
+
+    [Fact]
+    public void Reject_ShouldThrow_WhenCriticalRiskReasonIsMissing()
+    {
+        // Arrange
+        var proposal = CreateProposal(riskLevel: RiskLevel.Critical);
+
+        // Act
+        var act = () => proposal.Reject(Guid.NewGuid());
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Rejection reason is required for High and Critical risk proposals");
+    }
+
+    [Fact]
+    public void Constructor_ShouldAcceptSummary_AtExactMaxLength()
+    {
+        // Arrange
+        var summary = new string('a', 500);
+
+        // Act
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Manual,
+            _requestedByUserId,
+            summary,
+            RiskLevel.Low,
+            "corr-1");
+
+        // Assert
+        proposal.Summary.Should().HaveLength(500);
+    }
+
     private AutomationProposal CreateProposal(RiskLevel riskLevel = RiskLevel.Medium)
     {
         return new AutomationProposal(
