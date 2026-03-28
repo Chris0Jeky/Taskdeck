@@ -82,6 +82,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
   }
 
   async function reorderColumns(boardId: string, columnIds: string[]) {
+    helpers.guardDemoMutation()
     try {
       state.loading.value = true
       state.error.value = null
