@@ -30,6 +30,8 @@ public class ChatService : IChatService
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly INotificationService _notificationService;
     private readonly IAuthorizationService? _authorizationService;
+    private readonly ILlmQuotaService? _quotaService;
+    private readonly ILlmKillSwitchService? _killSwitchService;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -38,7 +40,9 @@ public class ChatService : IChatService
         IAutomationProposalService proposalService,
         IAutomationPolicyEngine policyEngine,
         INotificationService? notificationService = null,
-        IAuthorizationService? authorizationService = null)
+        IAuthorizationService? authorizationService = null,
+        ILlmQuotaService? quotaService = null,
+        ILlmKillSwitchService? killSwitchService = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -47,6 +51,8 @@ public class ChatService : IChatService
         _policyEngine = policyEngine;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _authorizationService = authorizationService;
+        _quotaService = quotaService;
+        _killSwitchService = killSwitchService;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -139,6 +145,17 @@ public class ChatService : IChatService
             int? tokenUsage = null;
             string? degradedReason = null;
 
+            // Quota and kill switch gate — block before any LLM call
+            if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
+                return Result.Failure<ChatMessageDto>(ErrorCodes.LlmKillSwitchActive, "LLM access is currently disabled");
+
+            if (_quotaService != null)
+            {
+                var quotaCheck = await _quotaService.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
+                if (!quotaCheck.Allowed)
+                    return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, quotaCheck.DeniedReason ?? "LLM quota exceeded");
+            }
+
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
             {
                 if (!session.BoardId.HasValue)
@@ -181,6 +198,16 @@ public class ChatService : IChatService
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
                 degradedReason = llmResult.DegradedReason;
+
+                // Record usage for quota tracking
+                if (_quotaService != null && llmResult.TokensUsed > 0)
+                {
+                    await _quotaService.RecordUsageAsync(
+                        userId, Domain.Enums.LlmSurface.Chat,
+                        llmResult.Provider, llmResult.Model,
+                        llmResult.TokensUsed / 2, llmResult.TokensUsed - (llmResult.TokensUsed / 2),
+                        ct);
+                }
 
                 if (llmResult.IsDegraded)
                 {
@@ -252,6 +279,17 @@ public class ChatService : IChatService
         var session = await _unitOfWork.ChatSessions.GetByIdWithMessagesAsync(sessionId, ct);
         if (session == null || session.UserId != userId)
             yield break;
+
+        // Kill switch and quota gate for streaming
+        if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
+            yield break;
+
+        if (_quotaService != null)
+        {
+            var quotaCheck = await _quotaService.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
+            if (!quotaCheck.Allowed)
+                yield break;
+        }
 
         var chatMessages = session.Messages
             .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
