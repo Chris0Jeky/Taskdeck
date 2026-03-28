@@ -99,27 +99,30 @@ public class LlmUsageRecordTests
 
         // Assert
         act.Should().Throw<DomainException>()
-            .WithMessage("User ID cannot be empty");
+            .WithMessage("User ID cannot be empty")
+            .And.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
     [Theory]
+    [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
     [InlineData("\t")]
-    public void Constructor_ShouldThrow_WhenProviderIsBlank(string provider)
+    public void Constructor_ShouldThrow_WhenProviderIsBlank(string? provider)
     {
         // Act
         var act = () => new LlmUsageRecord(
             _userId,
             LlmSurface.Chat,
-            provider,
+            provider!,
             "gpt-5.4",
             1,
             1);
 
         // Assert
         act.Should().Throw<DomainException>()
-            .WithMessage("Provider cannot be empty");
+            .WithMessage("Provider cannot be empty")
+            .And.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
     [Fact]
@@ -136,7 +139,8 @@ public class LlmUsageRecordTests
 
         // Assert
         act.Should().Throw<DomainException>()
-            .WithMessage("Input tokens cannot be negative");
+            .WithMessage("Input tokens cannot be negative")
+            .And.ErrorCode.Should().Be(ErrorCodes.ValidationError);
     }
 
     [Fact]
@@ -153,6 +157,26 @@ public class LlmUsageRecordTests
 
         // Assert
         act.Should().Throw<DomainException>()
-            .WithMessage("Output tokens cannot be negative");
+            .WithMessage("Output tokens cannot be negative")
+            .And.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Theory]
+    [InlineData(LlmSurface.Chat)]
+    [InlineData(LlmSurface.Worker)]
+    [InlineData(LlmSurface.CaptureTriage)]
+    public void Constructor_ShouldAcceptAllLlmSurfaceValues(LlmSurface surface)
+    {
+        // Act
+        var record = new LlmUsageRecord(
+            _userId,
+            surface,
+            "OpenAI",
+            "gpt-5.4",
+            10,
+            5);
+
+        // Assert
+        record.Surface.Should().Be(surface);
     }
 }
