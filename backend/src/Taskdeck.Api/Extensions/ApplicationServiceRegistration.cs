@@ -1,0 +1,48 @@
+using Taskdeck.Api.Realtime;
+using Taskdeck.Application.Services;
+
+namespace Taskdeck.Api.Extensions;
+
+public static class ApplicationServiceRegistration
+{
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    {
+        services.AddScoped<BoardService>();
+        services.AddScoped<ColumnService>();
+        services.AddScoped<CardService>();
+        services.AddScoped<CardCommentService>();
+        services.AddScoped<LabelService>();
+        services.AddScoped<AuthenticationService>();
+        services.AddScoped<AuthorizationService>();
+        services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
+        services.AddScoped<UserService>();
+        services.AddScoped<BoardAccessService>();
+        services.AddScoped<IExportImportService, ExportImportService>();
+        services.AddScoped<IExternalImportService, ExternalImportService>();
+        services.AddScoped<IExternalImportAdapter, CsvExternalImportAdapter>();
+        services.AddScoped<LlmQueueService>();
+        services.AddScoped<ICaptureService, CaptureService>();
+        services.AddScoped<ICaptureTriageService, CaptureTriageService>();
+        services.AddScoped<HistoryService>();
+        services.AddScoped<IAutomationProposalService, AutomationProposalService>();
+        services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
+        services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
+        services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
+        services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
+        services.AddScoped<IOpsCliService, OpsCliService>();
+        services.AddScoped<IChatService, ChatService>();
+        services.AddScoped<ILogQueryService, LogQueryService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
+        services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
+        services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
+        services.AddScoped<IOutboundWebhookService, OutboundWebhookService>();
+        services.AddScoped<SignalRBoardRealtimeNotifier>();
+        services.AddScoped<WebhookBoardMutationNotifier>();
+        services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
+        services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
+
+        return services;
+    }
+}
