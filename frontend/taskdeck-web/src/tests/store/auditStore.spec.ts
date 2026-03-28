@@ -30,16 +30,6 @@ vi.mock('../../store/toastStore', () => ({
   useToastStore: () => toastMocks,
 }))
 
-vi.mock('../../composables/useErrorMapper', () => ({
-  getErrorDisplay: (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message.trim().length > 0) {
-      return { message: error.message, code: null }
-    }
-
-    return { message: fallback, code: null }
-  },
-}))
-
 describe('auditStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -77,25 +67,43 @@ describe('auditStore', () => {
     expect(store.error).toBeNull()
   })
 
-  it('fetchEntityHistory forwards entity filters and clamps the limit', async () => {
+  it.each([
+    { method: 'fetchBoardHistory' as const, call: (s: ReturnType<typeof useAuditStore>) => s.fetchBoardHistory('b', 0), api: 'getBoardHistory' as const, expectedLimit: 1 },
+    { method: 'fetchBoardHistory' as const, call: (s: ReturnType<typeof useAuditStore>) => s.fetchBoardHistory('b', 999), api: 'getBoardHistory' as const, expectedLimit: 100 },
+    { method: 'fetchEntityHistory' as const, call: (s: ReturnType<typeof useAuditStore>) => s.fetchEntityHistory('Card', 'c', 0), api: 'getEntityHistory' as const, expectedLimit: 1 },
+    { method: 'fetchEntityHistory' as const, call: (s: ReturnType<typeof useAuditStore>) => s.fetchEntityHistory('Card', 'c', 999), api: 'getEntityHistory' as const, expectedLimit: 100 },
+    { method: 'fetchUserHistory' as const, call: (s: ReturnType<typeof useAuditStore>) => s.fetchUserHistory(0), api: 'getUserHistory' as const, expectedLimit: 1 },
+    { method: 'fetchUserHistory' as const, call: (s: ReturnType<typeof useAuditStore>) => s.fetchUserHistory(999), api: 'getUserHistory' as const, expectedLimit: 100 },
+  ])('$method clamps limit to $expectedLimit', async ({ call, api, expectedLimit }) => {
     const store = useAuditStore()
-    vi.mocked(auditApi.getEntityHistory).mockResolvedValue([])
+    vi.mocked(auditApi[api]).mockResolvedValue([])
 
-    await store.fetchEntityHistory('Card', 'card-7', 999)
+    await call(store)
 
-    expect(auditApi.getEntityHistory).toHaveBeenCalledWith('Card', 'card-7', 100)
+    const calls = vi.mocked(auditApi[api]).mock.calls[0]
+    expect(calls[calls.length - 1]).toBe(expectedLimit)
   })
 
-  it('fetchUserHistory clamps pagination before calling the API', async () => {
-    const store = useAuditStore()
-    vi.mocked(auditApi.getUserHistory).mockResolvedValue([])
-
-    await store.fetchUserHistory(0)
-
-    expect(auditApi.getUserHistory).toHaveBeenCalledWith(1)
-  })
-
-  it('preserves existing entries when a fetch fails and records the error', async () => {
+  it.each([
+    {
+      method: 'fetchBoardHistory' as const,
+      call: (s: ReturnType<typeof useAuditStore>) => s.fetchBoardHistory('board-1'),
+      api: 'getBoardHistory' as const,
+      fallback: 'Failed to fetch board history',
+    },
+    {
+      method: 'fetchEntityHistory' as const,
+      call: (s: ReturnType<typeof useAuditStore>) => s.fetchEntityHistory('Card', 'c'),
+      api: 'getEntityHistory' as const,
+      fallback: 'Failed to fetch entity history',
+    },
+    {
+      method: 'fetchUserHistory' as const,
+      call: (s: ReturnType<typeof useAuditStore>) => s.fetchUserHistory(),
+      api: 'getUserHistory' as const,
+      fallback: 'Failed to fetch user history',
+    },
+  ])('$method preserves entries on error, records error, and shows toast', async ({ call, api }) => {
     const store = useAuditStore()
     store.entries = [
       {
@@ -109,34 +117,78 @@ describe('auditStore', () => {
         timestamp: '2026-03-28T11:00:00Z',
       },
     ]
-    vi.mocked(auditApi.getUserHistory).mockRejectedValue(new Error('history failed'))
+    vi.mocked(auditApi[api]).mockRejectedValue(new Error('fetch failed'))
 
-    await expect(store.fetchUserHistory()).rejects.toBeInstanceOf(Error)
+    await expect(call(store)).rejects.toBeInstanceOf(Error)
 
-    expect(store.entries).toEqual([
-      expect.objectContaining({
-        id: 'existing-audit',
-      }),
-    ])
-    expect(store.error).toBe('history failed')
-    expect(toastMocks.error).toHaveBeenCalledWith('history failed')
+    expect(store.entries).toHaveLength(1)
+    expect(store.entries[0].id).toBe('existing-audit')
+    expect(store.error).toBe('fetch failed')
+    expect(toastMocks.error).toHaveBeenCalledWith('fetch failed')
+    expect(store.loading).toBe(false)
   })
 
-  it('sets loading true during fetch and false after completion', async () => {
+  it.each([
+    {
+      method: 'fetchBoardHistory' as const,
+      api: 'getBoardHistory' as const,
+      call: (s: ReturnType<typeof useAuditStore>) => s.fetchBoardHistory('board-1'),
+    },
+    {
+      method: 'fetchEntityHistory' as const,
+      api: 'getEntityHistory' as const,
+      call: (s: ReturnType<typeof useAuditStore>) => s.fetchEntityHistory('Card', 'c'),
+    },
+    {
+      method: 'fetchUserHistory' as const,
+      api: 'getUserHistory' as const,
+      call: (s: ReturnType<typeof useAuditStore>) => s.fetchUserHistory(),
+    },
+  ])('$method sets loading true during fetch and false after', async ({ call, api }) => {
     const store = useAuditStore()
-    let resolveRequest: ((value: []) => void) | null = null
+    let resolveRequest: ((value: never[]) => void) | null = null
 
-    vi.mocked(auditApi.getBoardHistory).mockImplementation(() => new Promise((resolve) => {
-      resolveRequest = resolve as (value: []) => void
+    vi.mocked(auditApi[api]).mockImplementation(() => new Promise((resolve) => {
+      resolveRequest = resolve as (value: never[]) => void
     }))
 
-    const fetchPromise = store.fetchBoardHistory('board-1', 25)
+    const fetchPromise = call(store)
 
     expect(store.loading).toBe(true)
 
     resolveRequest?.([])
     await fetchPromise
 
+    expect(store.loading).toBe(false)
+  })
+})
+
+describe('auditStore (demo mode)', () => {
+  beforeEach(async () => {
+    vi.resetModules()
+    vi.doMock('../../utils/demoMode', () => ({ isDemoMode: true }))
+    vi.doMock('../../api/auditApi', () => ({
+      auditApi: {
+        getBoardHistory: vi.fn(),
+        getEntityHistory: vi.fn(),
+        getUserHistory: vi.fn(),
+      },
+    }))
+    vi.doMock('../../store/toastStore', () => ({
+      useToastStore: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
+    }))
+    setActivePinia(createPinia())
+  })
+
+  it('fetchBoardHistory returns empty entries without calling API in demo mode', async () => {
+    const { useAuditStore: useDemoStore } = await import('../../store/auditStore')
+    const { auditApi: demoApi } = await import('../../api/auditApi')
+    const store = useDemoStore()
+
+    await store.fetchBoardHistory('board-1')
+
+    expect(demoApi.getBoardHistory).not.toHaveBeenCalled()
+    expect(store.entries).toEqual([])
     expect(store.loading).toBe(false)
   })
 })
