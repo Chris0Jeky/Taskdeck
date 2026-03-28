@@ -186,8 +186,8 @@ describe('boardStore', () => {
         isArchived: null,
       })
 
-      // Should still update currentBoard even if not in boards array
-      expect(store.currentBoard).toEqual(updatedBoard)
+      // currentBoard should remain null — a Board (without columns) is not a valid BoardDetail
+      expect(store.currentBoard).toBeNull()
     })
   })
 
@@ -643,8 +643,22 @@ describe('boardStore', () => {
       expect(store.loading).toBe(false)
     })
 
-    it('should delete a comment and refresh card comments', async () => {
-      const refreshedComment: CardComment = {
+    it('should delete a comment and remove it from local state', async () => {
+      const comment1: CardComment = {
+        id: 'comment-1',
+        boardId: 'board-1',
+        cardId: 'card-1',
+        parentCommentId: null,
+        authorUserId: 'user-1',
+        authorUsername: 'user_one',
+        content: 'First comment',
+        isDeleted: false,
+        editedAt: null,
+        mentions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+      const comment2: CardComment = {
         id: 'comment-2',
         boardId: 'board-1',
         cardId: 'card-1',
@@ -659,14 +673,17 @@ describe('boardStore', () => {
         updatedAt: new Date().toISOString(),
       }
 
+      // Pre-populate comments in store
+      vi.mocked(cardCommentsApi.getComments).mockResolvedValue([comment1, comment2])
+      await store.fetchCardComments('board-1', 'card-1')
+
       vi.mocked(cardCommentsApi.deleteComment).mockResolvedValue()
-      vi.mocked(cardCommentsApi.getComments).mockResolvedValue([refreshedComment])
 
       await store.deleteCardComment('board-1', 'card-1', 'comment-1')
 
       expect(cardCommentsApi.deleteComment).toHaveBeenCalledWith('board-1', 'card-1', 'comment-1')
-      expect(cardCommentsApi.getComments).toHaveBeenCalledWith('board-1', 'card-1')
-      expect(store.getCardComments('card-1')).toEqual([refreshedComment])
+      // Should remove locally without re-fetching
+      expect(store.getCardComments('card-1')).toEqual([comment2])
       expect(store.loading).toBe(false)
       expect(store.error).toBeNull()
     })
