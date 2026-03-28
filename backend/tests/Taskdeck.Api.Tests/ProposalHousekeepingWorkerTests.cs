@@ -214,6 +214,8 @@ public class ProposalHousekeepingWorkerTests
         public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions => null!;
         public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries => null!;
         public ILlmUsageRecordRepository LlmUsageRecords => null!;
+        public IKnowledgeDocumentRepository KnowledgeDocuments => null!;
+        public IKnowledgeChunkRepository KnowledgeChunks => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
