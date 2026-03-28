@@ -21,7 +21,7 @@ public class StarterPackCatalogServiceTests
         catalog.Should().OnlyHaveUniqueItems(entry => entry.Id);
         catalog.Count(entry => entry.Category == StarterPackCatalogCategories.LabelPack).Should().BeGreaterThanOrEqualTo(1);
         catalog.Count(entry => entry.Category == StarterPackCatalogCategories.ColumnFlow).Should().BeGreaterThanOrEqualTo(1);
-        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.BoardBlueprint).Should().Be(4);
+        catalog.Count(entry => entry.Category == StarterPackCatalogCategories.BoardBlueprint).Should().Be(9);
     }
 
     [Fact]
@@ -100,6 +100,89 @@ public class StarterPackCatalogServiceTests
         clientOnboardingPack.Manifest.SeedCards.Select(card => card.Title).Should().Contain(
             "Review new onboarding intake",
             "Confirm onboarding owner and due date");
+    }
+
+    [Fact]
+    public void GetCatalog_ShouldKeepReleaseChecklistBlueprintContractStable()
+    {
+        var service = new StarterPackCatalogService(_validator);
+
+        var catalog = service.GetCatalog();
+
+        var pack = catalog.Single(entry => entry.Id == "board-blueprint-release-checklist");
+        pack.Category.Should().Be(StarterPackCatalogCategories.BoardBlueprint);
+        pack.Manifest.Columns.Select(column => column.Name).Should().Equal(
+            "Planning", "Development", "QA", "Staging", "Released");
+        pack.Manifest.Labels.Select(label => label.Name).Should().Equal(
+            "high-risk", "low-risk", "rollback-plan");
+        pack.Manifest.SeedCards.Should().ContainSingle()
+            .Which.ColumnName.Should().Be("Planning");
+    }
+
+    [Fact]
+    public void GetCatalog_ShouldKeepBugTrackerBlueprintContractStable()
+    {
+        var service = new StarterPackCatalogService(_validator);
+
+        var catalog = service.GetCatalog();
+
+        var pack = catalog.Single(entry => entry.Id == "board-blueprint-bug-tracker");
+        pack.Category.Should().Be(StarterPackCatalogCategories.BoardBlueprint);
+        pack.Manifest.Columns.Select(column => column.Name).Should().Equal(
+            "Reported", "Confirmed", "Fixing", "Testing", "Closed");
+        pack.Manifest.Labels.Select(label => label.Name).Should().Equal(
+            "severity-critical", "severity-major", "severity-minor");
+        pack.Manifest.Templates.Should().ContainSingle()
+            .Which.TemplateId.Should().Be("bug-report");
+    }
+
+    [Fact]
+    public void GetCatalog_ShouldKeepPersonalKanbanBlueprintContractStable()
+    {
+        var service = new StarterPackCatalogService(_validator);
+
+        var catalog = service.GetCatalog();
+
+        var pack = catalog.Single(entry => entry.Id == "board-blueprint-personal-kanban");
+        pack.Category.Should().Be(StarterPackCatalogCategories.BoardBlueprint);
+        pack.Manifest.Columns.Select(column => column.Name).Should().Equal(
+            "To Do", "Doing", "Done");
+        pack.Manifest.Labels.Select(label => label.Name).Should().Equal(
+            "focus", "someday");
+        pack.Manifest.Templates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetCatalog_ShouldKeepOnboardingPlanBlueprintContractStable()
+    {
+        var service = new StarterPackCatalogService(_validator);
+
+        var catalog = service.GetCatalog();
+
+        var pack = catalog.Single(entry => entry.Id == "board-blueprint-onboarding-plan");
+        pack.Category.Should().Be(StarterPackCatalogCategories.BoardBlueprint);
+        pack.Manifest.Columns.Select(column => column.Name).Should().Equal(
+            "Week 1", "Week 2", "Week 3", "Ongoing");
+        pack.Manifest.Labels.Select(label => label.Name).Should().Equal(
+            "tooling", "culture", "domain");
+        pack.Manifest.SeedCards.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void GetCatalog_ShouldKeepResearchProjectBlueprintContractStable()
+    {
+        var service = new StarterPackCatalogService(_validator);
+
+        var catalog = service.GetCatalog();
+
+        var pack = catalog.Single(entry => entry.Id == "board-blueprint-research-project");
+        pack.Category.Should().Be(StarterPackCatalogCategories.BoardBlueprint);
+        pack.Manifest.Columns.Select(column => column.Name).Should().Equal(
+            "Explore", "Hypothesize", "Experiment", "Analyze", "Document");
+        pack.Manifest.Labels.Select(label => label.Name).Should().Equal(
+            "user-research", "technical-spike", "data-analysis");
+        pack.Manifest.Templates.Should().ContainSingle()
+            .Which.TemplateId.Should().Be("research-brief");
     }
 
     [Fact]
