@@ -128,17 +128,22 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
         return (totalInput, totalOutput, count);
     }
 
+    // EF Core SQLite stores DateTimeOffset as "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz"
+    // (space separator, not 'T') and Guid as uppercase text. Match both formats
+    // so raw SQL string comparisons work correctly.
+    private const string SqliteDateFormat = "yyyy-MM-dd HH:mm:ss.FFFFFFFzzz";
+
     private static (List<string> WhereClauses, List<object> Parameters) BuildSqliteWhere(
         Guid? userId, LlmSurface? surface, DateTimeOffset from, DateTimeOffset to)
     {
         var clauses = new List<string> { "CreatedAt >= {0}", "CreatedAt < {1}" };
-        var parameters = new List<object> { from.ToString("o"), to.ToString("o") };
+        var parameters = new List<object> { from.ToString(SqliteDateFormat), to.ToString(SqliteDateFormat) };
         var paramIndex = 2;
 
         if (userId.HasValue)
         {
             clauses.Add($"UserId = {{{paramIndex}}}");
-            parameters.Add(userId.Value.ToString());
+            parameters.Add(userId.Value.ToString().ToUpperInvariant());
             paramIndex++;
         }
 
