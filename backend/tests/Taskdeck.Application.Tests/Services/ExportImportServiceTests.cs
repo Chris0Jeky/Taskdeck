@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -494,6 +495,12 @@ public class ExportImportServiceTests
     [Fact]
     public async Task ImportDatabaseAsync_ShouldPreserveOriginalDatabase_WhenOverwriteFailsAfterBackupCreation()
     {
+        // FileAttributes.ReadOnly only prevents File.Copy(overwrite: true) on Windows.
+        // On Linux the ReadOnly attribute just clears the owner write bit, which does not
+        // reliably block overwrites — especially on CI runners with elevated permissions.
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return;
+
         var user = CreateUser("dbimport");
         var dbPath = CreateTempFilePath();
         var originalBytes = CreateSqlitePayload();
