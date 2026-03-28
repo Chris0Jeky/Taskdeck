@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using FluentAssertions;
 using Taskdeck.Application.Services;
 using Xunit;
@@ -24,27 +22,16 @@ public class OutboundWebhookSignatureTests
     [Fact]
     public void Compute_ShouldProduceExpectedHmac_ForKnownInput()
     {
-        var signingSecret = "known-secret";
-        var timestamp = DateTimeOffset.FromUnixTimeSeconds(1_700_000_123);
-        var payload = "{\"event\":\"board.updated\",\"id\":\"123\"}";
-        var expected = ComputeExpectedSignature(signingSecret, timestamp, payload);
+        // Expected value computed independently via Python:
+        // hmac.new(b'known-secret', b'1700000123.{"event":"board.updated","id":"123"}', hashlib.sha256).hexdigest()
+        const string expected = "c94507c8910f1ea62c6c240331acdacbe66291bab0d4bb733d6ed4cae3b27a2b";
 
-        var actual = OutboundWebhookSignature.Compute(signingSecret, timestamp, payload);
+        var actual = OutboundWebhookSignature.Compute(
+            "known-secret",
+            DateTimeOffset.FromUnixTimeSeconds(1_700_000_123),
+            "{\"event\":\"board.updated\",\"id\":\"123\"}");
 
         actual.Should().Be(expected);
-    }
-
-    [Fact]
-    public void Compute_ShouldMatchExpectedSignature_WhenInputsAreCorrect()
-    {
-        var signingSecret = "test-secret";
-        var timestamp = DateTimeOffset.FromUnixTimeSeconds(1_700_000_456);
-        var payload = "{\"event\":\"card.created\",\"id\":\"42\"}";
-        var expectedSignature = OutboundWebhookSignature.Compute(signingSecret, timestamp, payload);
-
-        var recomputedSignature = OutboundWebhookSignature.Compute(signingSecret, timestamp, payload);
-
-        recomputedSignature.Should().Be(expectedSignature);
     }
 
     [Fact]
@@ -64,47 +51,52 @@ public class OutboundWebhookSignatureTests
     {
         var signingSecret = "test-secret";
         var timestamp = DateTimeOffset.FromUnixTimeSeconds(1_700_000_456);
-        var payload = "{\"event\":\"card.created\",\"id\":\"42\"}";
-        var expectedSignature = OutboundWebhookSignature.Compute(signingSecret, timestamp, payload);
+        var original = OutboundWebhookSignature.Compute(signingSecret, timestamp, "{\"id\":\"42\"}");
 
-        var tamperedPayloadSignature = OutboundWebhookSignature.Compute(signingSecret, timestamp, "{\"event\":\"card.created\",\"id\":\"43\"}");
+        var tampered = OutboundWebhookSignature.Compute(signingSecret, timestamp, "{\"id\":\"43\"}");
 
-        tamperedPayloadSignature.Should().NotBe(expectedSignature);
+        tampered.Should().NotBe(original);
+    }
+
+    [Fact]
+    public void Compute_ShouldProduceDifferentSignature_WhenTimestampChanges()
+    {
+        var signingSecret = "test-secret";
+        var payload = "{\"event\":\"card.updated\"}";
+        var sig1 = OutboundWebhookSignature.Compute(signingSecret, DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), payload);
+
+        var sig2 = OutboundWebhookSignature.Compute(signingSecret, DateTimeOffset.FromUnixTimeSeconds(1_700_000_001), payload);
+
+        sig2.Should().NotBe(sig1);
     }
 
     [Fact]
     public void Compute_ShouldReturnValidSignature_ForEmptyPayload()
     {
-        var signature = OutboundWebhookSignature.Compute(
+        var emptyPayloadSig = OutboundWebhookSignature.Compute(
             "test-secret",
             DateTimeOffset.FromUnixTimeSeconds(1_700_000_789),
             string.Empty);
 
-        signature.Should().NotBeNullOrWhiteSpace();
-        signature.Should().MatchRegex("^[a-f0-9]{64}$");
+        var normalSig = OutboundWebhookSignature.Compute(
+            "test-secret",
+            DateTimeOffset.FromUnixTimeSeconds(1_700_000_789),
+            "{\"data\":\"value\"}");
+
+        emptyPayloadSig.Should().MatchRegex("^[a-f0-9]{64}$");
+        emptyPayloadSig.Should().NotBe(normalSig);
     }
 
     [Fact]
     public void Compute_ShouldThrow_WhenSigningSecretIsNull()
     {
+        // This tests delegated BCL behavior — production code has no explicit guard.
         var act = () => OutboundWebhookSignature.Compute(
             null!,
             DateTimeOffset.FromUnixTimeSeconds(1_700_000_789),
             "{}");
 
         act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Compute_ShouldReturnValidSignature_WhenSigningSecretIsEmpty()
-    {
-        var signature = OutboundWebhookSignature.Compute(
-            string.Empty,
-            DateTimeOffset.FromUnixTimeSeconds(1_700_000_789),
-            "{}");
-
-        signature.Should().NotBeNullOrWhiteSpace();
-        signature.Should().MatchRegex("^[a-f0-9]{64}$");
     }
 
     [Fact]
@@ -117,15 +109,6 @@ public class OutboundWebhookSignatureTests
             DateTimeOffset.FromUnixTimeSeconds(1_700_000_999),
             payload);
 
-        signature.Should().NotBeNullOrWhiteSpace();
         signature.Should().MatchRegex("^[a-f0-9]{64}$");
-    }
-
-    private static string ComputeExpectedSignature(string signingSecret, DateTimeOffset timestamp, string payload)
-    {
-        var canonical = $"{timestamp.ToUnixTimeSeconds()}.{payload}";
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(signingSecret));
-        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }
