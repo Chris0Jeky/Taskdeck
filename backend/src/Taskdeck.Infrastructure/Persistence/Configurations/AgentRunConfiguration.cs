@@ -63,6 +63,11 @@ public class AgentRunConfiguration : IEntityTypeConfiguration<AgentRun>
         builder.Property(ar => ar.UpdatedAt)
             .IsRequired();
 
+        builder.HasOne<AgentProfile>()
+            .WithMany()
+            .HasForeignKey(ar => ar.AgentProfileId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasMany(ar => ar.Events)
             .WithOne(e => e.Run)
             .HasForeignKey(e => e.RunId)

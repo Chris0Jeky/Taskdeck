@@ -57,6 +57,12 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AgentRuns", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AgentRuns_AgentProfiles_AgentProfileId",
+                        column: x => x.AgentProfileId,
+                        principalTable: "AgentProfiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
