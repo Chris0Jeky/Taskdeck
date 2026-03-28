@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
 

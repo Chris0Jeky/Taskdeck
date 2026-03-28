@@ -1,6 +1,6 @@
 using Taskdeck.Application.DTOs;
 
-namespace Taskdeck.Application.Interfaces;
+namespace Taskdeck.Application.Services;
 
 public interface IKnowledgeSearchService
 {

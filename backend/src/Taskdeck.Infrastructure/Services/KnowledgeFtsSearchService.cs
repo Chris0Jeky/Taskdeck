@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -49,19 +50,19 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
             sql += " ORDER BY rank LIMIT {3}";
 
             var resultsWithBoard = await _context.Database
-                .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), boardId.Value.ToString(), limit.ToString())
+                .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), boardId.Value.ToString(), limit)
                 .ToListAsync(cancellationToken);
 
-            return resultsWithBoard.Select(MapRowToDto);
+            return resultsWithBoard.Select(MapRowToDto).Where(r => r.DocumentId != Guid.Empty);
         }
 
         sql += " ORDER BY rank LIMIT {2}";
 
         var results = await _context.Database
-            .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), limit.ToString())
+            .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), limit)
             .ToListAsync(cancellationToken);
 
-        return results.Select(MapRowToDto);
+        return results.Select(MapRowToDto).Where(r => r.DocumentId != Guid.Empty);
     }
 
     internal static string SanitizeFtsQuery(string query)
