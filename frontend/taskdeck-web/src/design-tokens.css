@@ -103,10 +103,93 @@
   --td-surface-hover: var(--td-surface-bright);
 }
 
+/* ══════════════════════════════════════════════════
+   Light Theme — warm professional variant
+   Apply via <html data-theme="light">
+   Only overrides tokens that differ from the dark default.
+   ══════════════════════════════════════════════════ */
+[data-theme="light"] {
+  /* ── Surface Tiers (warm gray / cream) ── */
+  --td-surface-base: #f5f3f1;
+  --td-surface-container-lowest: #ffffff;
+  --td-surface-container-low: #f0edeb;
+  --td-surface-container: #eae7e5;
+  --td-surface-container-high: #dfdcda;
+  --td-surface-container-highest: #d4d1cf;
+  --td-surface-bright: #c9c6c4;
+
+  /* ── Text Colors ── */
+  --td-text-primary: #1c1917;
+  --td-text-secondary: #6b4c48;
+  --td-text-tertiary: rgba(28, 25, 23, 0.45);
+  --td-text-inverse: #f5f3f1;
+  --td-text-ember: #d93636;
+  --td-text-muted: rgba(28, 25, 23, 0.55);
+
+  /* ── Semantic Colors (deeper for contrast on light bg) ── */
+  --td-color-primary: #d93636;
+  --td-color-primary-hover: #c12e2e;
+  --td-color-primary-light: rgba(217, 54, 54, 0.1);
+
+  --td-color-ember: #d93636;
+  --td-color-ember-glow: #c12e2e;
+  --td-color-ember-dim: rgba(217, 54, 54, 0.07);
+
+  --td-color-success: #16a34a;
+  --td-color-success-light: rgba(22, 163, 74, 0.1);
+  --td-color-warning: #d97706;
+  --td-color-warning-light: rgba(217, 119, 6, 0.1);
+  --td-color-error: #dc2626;
+  --td-color-error-light: rgba(220, 38, 38, 0.1);
+  --td-color-info: #d93636;
+  --td-color-info-light: rgba(217, 54, 54, 0.08);
+
+  /* ── Border & Outline ── */
+  --td-border-default: rgba(28, 25, 23, 0.12);
+  --td-border-ghost: rgba(28, 25, 23, 0.06);
+  --td-border-focus: #d93636;
+  --td-border-ember: #c12e2e;
+
+  /* ── Focus Ring ── */
+  --td-focus-ring: 0 0 0 2px #d93636, 0 0 0 4px rgba(217, 54, 54, 0.2);
+  --td-focus-ring-error: 0 0 0 2px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.2);
+
+  /* ── Elevation (softer for light surfaces) ── */
+  --td-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --td-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --td-shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.1), 0 0 1px rgba(0, 0, 0, 0.06);
+  --td-shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.12);
+
+  /* ── Glass ── */
+  --td-glass-bg: rgba(245, 243, 241, 0.85);
+}
+
+/* ══════════════════════════════════════════════════
+   Density: Comfortable (explicit default)
+   Values match :root — declared for symmetry so JS
+   can set data-density="comfortable" without side effects.
+   ══════════════════════════════════════════════════ */
+[data-density="comfortable"] {
+  /* Intentionally empty — comfortable spacing is the :root default. */
+}
+
 /* Density: Compact */
 [data-density="compact"] {
   --td-space-1: 0.125rem;
   --td-space-2: 0.25rem;
   --td-space-3: 0.4rem;
   --td-space-4: 0.6rem;
+}
+
+/* ══════════════════════════════════════════════════
+   Reduced Motion
+   Respects OS-level preference. Zeroes transition
+   durations so no animation plays.
+   ══════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --td-transition-fast: 0ms linear;
+    --td-transition-normal: 0ms linear;
+    --td-transition-smooth: 0ms linear;
+  }
 }
