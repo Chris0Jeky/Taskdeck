@@ -114,10 +114,24 @@ describe('queueStore', () => {
 
     expect(queueApi.getRequestsByStatus).toHaveBeenCalledWith('Failed')
     expect(store.requests).toEqual(payload)
+    expect(store.loading).toBe(false)
+    expect(store.error).toBeNull()
   })
 
-  it('submitRequest forwards the payload to the API and appends the new request', async () => {
+  it('submitRequest appends the new request to existing requests', async () => {
     const store = useQueueStore()
+    const existingRequest = {
+      id: 'req-existing',
+      userId: 'user-1',
+      boardId: 'board-1',
+      requestType: 'Instruction',
+      status: 'Completed',
+      errorMessage: null,
+      createdAt: '2026-03-28T11:00:00Z',
+      processedAt: '2026-03-28T11:05:00Z',
+      retryCount: 0,
+    }
+    store.requests = [existingRequest]
     const dto = {
       requestType: 'Instruction',
       payload: 'Create a new task',
@@ -140,7 +154,7 @@ describe('queueStore', () => {
 
     expect(sessionMocks.requireUserId).toHaveBeenCalledWith('queue operations')
     expect(queueApi.createRequest).toHaveBeenCalledWith(dto)
-    expect(store.requests).toEqual([createdRequest])
+    expect(store.requests).toEqual([existingRequest, createdRequest])
     expect(toastMocks.success).toHaveBeenCalledWith('Request submitted')
   })
 
@@ -174,6 +188,7 @@ describe('queueStore', () => {
 
     await store.cancelRequest('req-4')
 
+    expect(sessionMocks.requireUserId).toHaveBeenCalledWith('queue operations')
     expect(queueApi.cancelRequest).toHaveBeenCalledWith('req-4')
     expect(store.requests).toEqual([
       expect.objectContaining({ id: 'req-5' }),
@@ -224,6 +239,29 @@ describe('queueStore', () => {
 
     expect(store.loading).toBe(false)
     expect(toastMocks.info).toHaveBeenCalledWith('No pending requests')
+  })
+
+  it('processNext shows success toast when a request is processed', async () => {
+    const store = useQueueStore()
+    const processedRequest = {
+      id: 'req-processed',
+      userId: 'user-1',
+      boardId: 'board-1',
+      requestType: 'Instruction',
+      status: 'Completed',
+      errorMessage: null,
+      createdAt: '2026-03-28T12:00:00Z',
+      processedAt: '2026-03-28T12:01:00Z',
+      retryCount: 0,
+    }
+    vi.mocked(queueApi.processNext).mockResolvedValue(processedRequest)
+
+    const result = await store.processNext()
+
+    expect(result).toEqual(processedRequest)
+    expect(toastMocks.success).toHaveBeenCalledWith('Request processed')
+    expect(toastMocks.info).not.toHaveBeenCalled()
+    expect(store.loading).toBe(false)
   })
 
   it('fetchStats populates queue stats state', async () => {
