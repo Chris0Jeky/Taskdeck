@@ -33,6 +33,11 @@ public class KnowledgeChunkConfiguration : IEntityTypeConfiguration<KnowledgeChu
         builder.Property(c => c.UpdatedAt)
             .IsRequired();
 
+        builder.HasOne<KnowledgeDocument>()
+            .WithMany()
+            .HasForeignKey(c => c.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasIndex(c => c.DocumentId);
         builder.HasIndex(c => new { c.DocumentId, c.ChunkIndex }).IsUnique();
     }

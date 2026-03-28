@@ -49,7 +49,7 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
             sql += " ORDER BY rank LIMIT {3}";
 
             var resultsWithBoard = await _context.Database
-                .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), boardId.Value.ToString(), limit)
+                .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), boardId.Value.ToString(), limit.ToString())
                 .ToListAsync(cancellationToken);
 
             return resultsWithBoard.Select(MapRowToDto);
@@ -58,7 +58,7 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
         sql += " ORDER BY rank LIMIT {2}";
 
         var results = await _context.Database
-            .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), limit)
+            .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), limit.ToString())
             .ToListAsync(cancellationToken);
 
         return results.Select(MapRowToDto);
@@ -98,15 +98,23 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
             ? parsed
             : KnowledgeSourceType.Manual;
 
+        var documentId = Guid.TryParse(row.DocumentId, out var parsedDocId)
+            ? parsedDocId
+            : Guid.Empty;
+
+        var createdAt = DateTimeOffset.TryParse(row.CreatedAt, out var parsedDate)
+            ? parsedDate
+            : DateTimeOffset.MinValue;
+
         return new KnowledgeSearchResultDto(
-            Guid.Parse(row.DocumentId),
+            documentId,
             row.Title,
             row.Snippet,
             row.Rank,
             boardId,
             sourceType,
             row.Tags,
-            DateTimeOffset.Parse(row.CreatedAt));
+            createdAt);
     }
 }
 

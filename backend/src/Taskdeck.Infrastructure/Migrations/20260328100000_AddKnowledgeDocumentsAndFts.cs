@@ -47,6 +47,12 @@ namespace Taskdeck.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_KnowledgeChunks", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_KnowledgeChunks_KnowledgeDocuments_DocumentId",
+                        column: x => x.DocumentId,
+                        principalTable: "KnowledgeDocuments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateIndex(
@@ -88,20 +94,22 @@ namespace Taskdeck.Infrastructure.Migrations
                       VALUES (new.Title, new.Content, new.Id);
                   END;");
 
-            // Trigger to update FTS on UPDATE
+            // Trigger to update FTS on UPDATE (FTS5 requires special delete command)
             migrationBuilder.Sql(
                 @"CREATE TRIGGER IF NOT EXISTS KnowledgeDocuments_au AFTER UPDATE ON KnowledgeDocuments
                   BEGIN
-                      DELETE FROM KnowledgeDocumentsFts WHERE document_id = old.Id;
+                      INSERT INTO KnowledgeDocumentsFts(KnowledgeDocumentsFts, title, content, document_id)
+                      VALUES ('delete', old.Title, old.Content, old.Id);
                       INSERT INTO KnowledgeDocumentsFts(title, content, document_id)
                       VALUES (new.Title, new.Content, new.Id);
                   END;");
 
-            // Trigger to clean FTS on DELETE
+            // Trigger to clean FTS on DELETE (FTS5 requires special delete command)
             migrationBuilder.Sql(
                 @"CREATE TRIGGER IF NOT EXISTS KnowledgeDocuments_ad AFTER DELETE ON KnowledgeDocuments
                   BEGIN
-                      DELETE FROM KnowledgeDocumentsFts WHERE document_id = old.Id;
+                      INSERT INTO KnowledgeDocumentsFts(KnowledgeDocumentsFts, title, content, document_id)
+                      VALUES ('delete', old.Title, old.Content, old.Id);
                   END;");
         }
 

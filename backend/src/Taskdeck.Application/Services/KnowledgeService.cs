@@ -144,6 +144,9 @@ public class KnowledgeService : IKnowledgeService
         if (userId == Guid.Empty)
             return Result.Failure<IEnumerable<KnowledgeDocumentDto>>(ErrorCodes.ValidationError, "User ID cannot be empty");
 
+        if (limit <= 0 || limit > 1000) limit = 100;
+        if (offset < 0) offset = 0;
+
         var documents = await _unitOfWork.KnowledgeDocuments.GetByUserIdAsync(
             userId, boardId, false, limit, offset, cancellationToken);
 
