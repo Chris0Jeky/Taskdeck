@@ -109,6 +109,10 @@
    Only overrides tokens that differ from the dark default.
    ══════════════════════════════════════════════════ */
 [data-theme="light"] {
+  /* ── Internal accent aliases (single source for accent tweaks) ── */
+  --_td-light-accent: #d93636;
+  --_td-light-accent-hover: #c12e2e;
+
   /* ── Surface Tiers (warm gray / cream) ── */
   --td-surface-base: #f5f3f1;
   --td-surface-container-lowest: #ffffff;
@@ -123,16 +127,16 @@
   --td-text-secondary: #6b4c48;
   --td-text-tertiary: rgba(28, 25, 23, 0.45);
   --td-text-inverse: #f5f3f1;
-  --td-text-ember: #d93636;
+  --td-text-ember: var(--_td-light-accent);
   --td-text-muted: rgba(28, 25, 23, 0.55);
 
   /* ── Semantic Colors (deeper for contrast on light bg) ── */
-  --td-color-primary: #d93636;
-  --td-color-primary-hover: #c12e2e;
+  --td-color-primary: var(--_td-light-accent);
+  --td-color-primary-hover: var(--_td-light-accent-hover);
   --td-color-primary-light: rgba(217, 54, 54, 0.1);
 
-  --td-color-ember: #d93636;
-  --td-color-ember-glow: #c12e2e;
+  --td-color-ember: var(--_td-light-accent);
+  --td-color-ember-glow: var(--_td-light-accent-hover);
   --td-color-ember-dim: rgba(217, 54, 54, 0.07);
 
   --td-color-success: #16a34a;
@@ -141,17 +145,17 @@
   --td-color-warning-light: rgba(217, 119, 6, 0.1);
   --td-color-error: #dc2626;
   --td-color-error-light: rgba(220, 38, 38, 0.1);
-  --td-color-info: #d93636;
+  --td-color-info: var(--_td-light-accent);
   --td-color-info-light: rgba(217, 54, 54, 0.08);
 
   /* ── Border & Outline ── */
   --td-border-default: rgba(28, 25, 23, 0.12);
   --td-border-ghost: rgba(28, 25, 23, 0.06);
-  --td-border-focus: #d93636;
-  --td-border-ember: #c12e2e;
+  --td-border-focus: var(--_td-light-accent);
+  --td-border-ember: var(--_td-light-accent-hover);
 
   /* ── Focus Ring ── */
-  --td-focus-ring: 0 0 0 2px #d93636, 0 0 0 4px rgba(217, 54, 54, 0.2);
+  --td-focus-ring: 0 0 0 2px var(--_td-light-accent), 0 0 0 4px rgba(217, 54, 54, 0.2);
   --td-focus-ring-error: 0 0 0 2px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.2);
 
   /* ── Elevation (softer for light surfaces) ── */
