@@ -17,14 +17,6 @@ public class AgentRunRepository : Repository<AgentRun>, IAgentRunRepository
     {
         var boundedLimit = limit <= 0 ? DefaultLimit : limit;
 
-        if (_context.Database.IsSqlite())
-        {
-            return await _dbSet
-                .FromSqlInterpolated(
-                    $"SELECT * FROM AgentRuns WHERE AgentProfileId = {agentProfileId} ORDER BY CreatedAt DESC LIMIT {boundedLimit}")
-                .ToListAsync(cancellationToken);
-        }
-
         return await _dbSet
             .Where(ar => ar.AgentProfileId == agentProfileId)
             .OrderByDescending(ar => ar.CreatedAt)
