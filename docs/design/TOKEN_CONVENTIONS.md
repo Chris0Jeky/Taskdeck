@@ -105,5 +105,6 @@ Components using `var(--td-transition-*)` will automatically stop animating when
 1. Add the token to `:root` in `design-tokens.css`.
 2. If it varies by theme, add the light override in `[data-theme="light"]`.
 3. If it varies by density, add overrides in `[data-density="compact"]`.
-4. Use a descriptive name following the `--td-{category}-{variant}` pattern.
-5. Document the token's purpose with a CSS comment.
+4. If it is a transition/motion token, add a `0ms` override in the `@media (prefers-reduced-motion: reduce)` block.
+5. Use a descriptive name following the `--td-{category}-{variant}` pattern.
+6. Document the token's purpose with a CSS comment.
