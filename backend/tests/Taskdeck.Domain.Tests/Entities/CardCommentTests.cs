@@ -220,8 +220,53 @@ public class CardCommentTests
         // Assert
         comment.Mentions.Should().HaveCount(2);
         comment.Mentions.Select(m => m.CardCommentId).Should().OnlyContain(id => id == comment.Id);
-        comment.Mentions.Select(m => m.MentionedUserId).Should().BeEquivalentTo([aliceId, bobId]);
-        comment.Mentions.Select(m => m.MentionedUsername).Should().BeEquivalentTo(["alice", "bob"]);
+        comment.Mentions.Select(m => (m.MentionedUserId, m.MentionedUsername))
+            .Should().BeEquivalentTo(new[] { (aliceId, "alice"), (bobId, "bob") });
         comment.UpdatedAt.Should().BeOnOrAfter(originalUpdatedAt);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\t")]
+    public void UpdateContent_ShouldThrow_WhenContentIsBlank(string content)
+    {
+        // Arrange
+        var comment = new CardComment(_cardId, _boardId, _authorUserId, "Original");
+
+        // Act
+        var act = () => comment.UpdateContent(content);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Comment content cannot be empty");
+    }
+
+    [Fact]
+    public void UpdateContent_ShouldThrow_WhenContentExceedsMaxLength()
+    {
+        // Arrange
+        var comment = new CardComment(_cardId, _boardId, _authorUserId, "Original");
+        var content = new string('a', 4001);
+
+        // Act
+        var act = () => comment.UpdateContent(content);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Comment content cannot exceed 4000 characters");
+    }
+
+    [Fact]
+    public void Constructor_ShouldAcceptContent_AtExactMaxLength()
+    {
+        // Arrange
+        var content = new string('a', 4000);
+
+        // Act
+        var comment = new CardComment(_cardId, _boardId, _authorUserId, content);
+
+        // Assert
+        comment.Content.Should().HaveLength(4000);
     }
 }
