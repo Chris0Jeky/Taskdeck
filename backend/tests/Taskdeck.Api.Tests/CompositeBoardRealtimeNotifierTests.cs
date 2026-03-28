@@ -143,11 +143,36 @@ public class CompositeBoardRealtimeNotifierTests
 
         await notifier.NotifyBoardMutationAsync(mutation, CancellationToken.None);
 
-        var signalRMutation = signalRClientProxy.Arguments.Single().Should().BeOfType<BoardRealtimeEvent>().Subject;
-        signalRMutation.EntityType.Should().Be(entityType);
-        signalRMutation.Operation.Should().Be(operation);
-        outboundService.Calls.Single().Mutation.EntityType.Should().Be(entityType);
-        outboundService.Calls.Single().Mutation.Operation.Should().Be(operation);
+        ReferenceEquals(signalRClientProxy.Arguments.Single(), mutation).Should().BeTrue();
+        ReferenceEquals(outboundService.Calls.Single().Mutation, mutation).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task NotifyBoardMutationAsync_ShouldNotThrow_WhenBothChannelsFail()
+    {
+        var mutation = CreateMutation();
+        var signalRClientProxy = new RecordingClientProxy
+        {
+            ExceptionToThrow = new InvalidOperationException("signalr failed")
+        };
+        var hubContext = new FakeHubContext(signalRClientProxy);
+        var signalRNotifier = new SignalRBoardRealtimeNotifier(hubContext);
+        var outboundService = new RecordingOutboundWebhookService
+        {
+            ExceptionToThrow = new InvalidOperationException("webhook failed")
+        };
+        var webhookLogger = new InMemoryLogger<WebhookBoardMutationNotifier>();
+        var webhookNotifier = new WebhookBoardMutationNotifier(outboundService, webhookLogger);
+        var compositeLogger = new InMemoryLogger<CompositeBoardRealtimeNotifier>();
+        var notifier = new CompositeBoardRealtimeNotifier(signalRNotifier, webhookNotifier, compositeLogger);
+
+        var act = () => notifier.NotifyBoardMutationAsync(mutation, CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        // SignalR exception caught by composite's NotifySafeAsync
+        compositeLogger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error);
+        // Webhook exception caught by WebhookBoardMutationNotifier's own try-catch
+        webhookLogger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error);
     }
 
     private static BoardRealtimeEvent CreateMutation()
