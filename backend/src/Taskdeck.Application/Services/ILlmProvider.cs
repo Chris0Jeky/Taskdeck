@@ -43,7 +43,7 @@ public record LlmCompletionResult(
     string? DegradedReason = null
 );
 
-public record LlmTokenEvent(string Token, bool IsComplete);
+public record LlmTokenEvent(string Token, bool IsComplete, string? Error = null);
 
 public record LlmHealthStatus(
     bool IsAvailable,

@@ -199,13 +199,16 @@ public class ChatService : IChatService
                 tokenUsage = llmResult.TokensUsed;
                 degradedReason = llmResult.DegradedReason;
 
-                // Record usage for quota tracking
+                // Record usage for quota tracking. The provider reports a combined
+                // TokensUsed total without an input/output split. Record the full
+                // total as input tokens and 0 for output until providers surface
+                // separate counts.
                 if (_quotaService != null && llmResult.TokensUsed > 0)
                 {
                     await _quotaService.RecordUsageAsync(
                         userId, Domain.Enums.LlmSurface.Chat,
                         llmResult.Provider, llmResult.Model,
-                        llmResult.TokensUsed / 2, llmResult.TokensUsed - (llmResult.TokensUsed / 2),
+                        llmResult.TokensUsed, 0,
                         ct);
                 }
 
@@ -282,13 +285,19 @@ public class ChatService : IChatService
 
         // Kill switch and quota gate for streaming
         if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
+        {
+            yield return new LlmTokenEvent(string.Empty, true, Error: "LLM access is currently disabled");
             yield break;
+        }
 
         if (_quotaService != null)
         {
             var quotaCheck = await _quotaService.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, ct);
             if (!quotaCheck.Allowed)
+            {
+                yield return new LlmTokenEvent(string.Empty, true, Error: quotaCheck.DeniedReason ?? "LLM quota exceeded");
                 yield break;
+            }
         }
 
         var chatMessages = session.Messages
@@ -299,6 +308,9 @@ public class ChatService : IChatService
             chatMessages,
             Attribution: BuildAttribution(session, userId));
 
+        // TODO: Streaming responses cannot record usage because token counts are
+        // not available until the stream completes. Implement post-stream usage
+        // recording when the provider surfaces cumulative token counts.
         await foreach (var token in _llmProvider.StreamAsync(request, ct))
         {
             yield return token;
