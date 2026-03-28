@@ -36,17 +36,17 @@ describe('usersApi', () => {
   it('gets a single user by id', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: userPayload })
 
-    await expect(usersApi.getUser('user-1')).resolves.toEqual(userPayload)
+    await expect(usersApi.getUser(userPayload.id)).resolves.toEqual(userPayload)
 
-    expect(http.get).toHaveBeenCalledWith('/users/user-1')
+    expect(http.get).toHaveBeenCalledWith(`/users/${userPayload.id}`)
   })
 
   it('gets a single user by username', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: userPayload })
 
-    await expect(usersApi.getUserByUsername('alice')).resolves.toEqual(userPayload)
+    await expect(usersApi.getUserByUsername(userPayload.username)).resolves.toEqual(userPayload)
 
-    expect(http.get).toHaveBeenCalledWith('/users/by-username/alice')
+    expect(http.get).toHaveBeenCalledWith(`/users/by-username/${userPayload.username}`)
   })
 
   it('creates a user', async () => {
@@ -76,22 +76,38 @@ describe('usersApi', () => {
 
     await expect(usersApi.updateUser('user-1', request)).resolves.toEqual(updatedUser)
 
-    expect(http.put).toHaveBeenCalledWith('/users/user-1', request)
+    expect(http.put).toHaveBeenCalledWith(`/users/${userPayload.id}`, request)
   })
 
   it('deactivates a user', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: undefined })
 
-    await usersApi.deactivateUser('user-1')
+    await usersApi.deactivateUser(userPayload.id)
 
-    expect(http.post).toHaveBeenCalledWith('/users/user-1/deactivate')
+    expect(http.post).toHaveBeenCalledWith(`/users/${userPayload.id}/deactivate`)
   })
 
   it('activates a user', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: undefined })
 
-    await usersApi.activateUser('user-1')
+    await usersApi.activateUser(userPayload.id)
 
-    expect(http.post).toHaveBeenCalledWith('/users/user-1/activate')
+    expect(http.post).toHaveBeenCalledWith(`/users/${userPayload.id}/activate`)
+  })
+
+  it('propagates HTTP errors from getUsers', async () => {
+    const error = new Error('Network Error')
+    vi.mocked(http.get).mockRejectedValue(error)
+
+    await expect(usersApi.getUsers()).rejects.toThrow('Network Error')
+  })
+
+  it('propagates HTTP errors from createUser', async () => {
+    const error = new Error('Server Error')
+    vi.mocked(http.post).mockRejectedValue(error)
+
+    await expect(
+      usersApi.createUser({ username: 'a', email: 'a@b.c', password: 'x' }),
+    ).rejects.toThrow('Server Error')
   })
 })
