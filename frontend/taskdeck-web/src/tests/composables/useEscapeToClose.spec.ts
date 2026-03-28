@@ -24,45 +24,63 @@ function mountWithEscapeToClose(initialOpen = true) {
 }
 
 describe('useEscapeToClose', () => {
+  let wrapper: ReturnType<typeof mountWithEscapeToClose>['wrapper'] | undefined
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = undefined
+  })
+
   it('calls the close callback when Escape is pressed while open', () => {
-    const { wrapper, onClose } = mountWithEscapeToClose()
+    const ctx = mountWithEscapeToClose()
+    wrapper = ctx.wrapper
 
     pressKey('Escape')
 
-    expect(onClose).toHaveBeenCalledTimes(1)
-    wrapper.unmount()
+    expect(ctx.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call the close callback when initially closed', () => {
+    const ctx = mountWithEscapeToClose(false)
+    wrapper = ctx.wrapper
+
+    pressKey('Escape')
+
+    expect(ctx.onClose).not.toHaveBeenCalled()
   })
 
   it('does not call the close callback for non-Escape keys', () => {
-    const { wrapper, onClose } = mountWithEscapeToClose()
+    const ctx = mountWithEscapeToClose()
+    wrapper = ctx.wrapper
 
     pressKey('Enter')
 
-    expect(onClose).not.toHaveBeenCalled()
-    wrapper.unmount()
+    expect(ctx.onClose).not.toHaveBeenCalled()
   })
 
   it('removes the escape listener on cleanup', async () => {
-    const { wrapper, isOpen, onClose } = mountWithEscapeToClose()
+    const ctx = mountWithEscapeToClose()
+    wrapper = ctx.wrapper
 
-    isOpen.value = false
+    ctx.isOpen.value = false
     await nextTick()
 
     pressKey('Escape')
-    expect(onClose).not.toHaveBeenCalled()
+    expect(ctx.onClose).not.toHaveBeenCalled()
 
-    isOpen.value = true
+    ctx.isOpen.value = true
     await nextTick()
     pressKey('Escape')
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(ctx.onClose).toHaveBeenCalledTimes(1)
 
-    wrapper.unmount()
+    ctx.wrapper.unmount()
+    wrapper = undefined
     pressKey('Escape')
 
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(ctx.onClose).toHaveBeenCalledTimes(1)
   })
 })
