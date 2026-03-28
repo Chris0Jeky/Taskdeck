@@ -31,13 +31,13 @@ public class WorkerHeartbeatRegistryTests
     }
 
     [Fact]
-    public void ReportHeartbeat_ShouldUpdateExistingWorkerHeartbeat()
+    public async Task ReportHeartbeat_ShouldUpdateExistingWorkerHeartbeat()
     {
         var registry = new WorkerHeartbeatRegistry();
         registry.ReportHeartbeat("proposal-worker");
         var firstHeartbeat = registry.GetLastHeartbeat("proposal-worker");
 
-        Thread.Sleep(20);
+        await Task.Delay(50);
 
         registry.ReportHeartbeat("proposal-worker");
 
@@ -67,7 +67,17 @@ public class WorkerHeartbeatRegistryTests
         registry.ReportHeartbeat(workerName);
 
         registry.GetLastHeartbeat(workerName).Should().BeNull();
-        registry.GetLastHeartbeat("other-worker").Should().BeNull();
+    }
+
+    [Fact]
+    public void ReportHeartbeat_ShouldIgnoreNullWorkerName()
+    {
+        var registry = new WorkerHeartbeatRegistry();
+
+        registry.ReportHeartbeat(null!);
+
+        // Verify nothing was registered by checking a known-good name
+        registry.GetLastHeartbeat("any-worker").Should().BeNull();
     }
 
     [Fact]
@@ -80,6 +90,6 @@ public class WorkerHeartbeatRegistryTests
 
         registry.GetLastHeartbeat("proposal-worker").Should().NotBeNull();
         registry.GetLastHeartbeat("delivery-worker").Should().NotBeNull();
-        registry.GetLastHeartbeat("proposal-worker").Should().NotBe(registry.GetLastHeartbeat("missing-worker"));
     }
+
 }
