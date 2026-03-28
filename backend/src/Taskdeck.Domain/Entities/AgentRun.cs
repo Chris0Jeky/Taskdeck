@@ -100,6 +100,9 @@ public sealed class AgentRun : Entity
 
     public void AttachProposal(Guid proposalId, string? summary = null)
     {
+        if (Status == AgentRunStatus.Completed || Status == AgentRunStatus.Failed || Status == AgentRunStatus.Cancelled)
+            throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot attach proposal in terminal status {Status}");
+
         if (proposalId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "ProposalId cannot be empty");
 
@@ -116,6 +119,9 @@ public sealed class AgentRun : Entity
 
     public void MarkFailed(string reason)
     {
+        if (Status == AgentRunStatus.Completed || Status == AgentRunStatus.Failed || Status == AgentRunStatus.Cancelled)
+            throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot mark as failed from terminal status {Status}");
+
         if (string.IsNullOrWhiteSpace(reason))
             throw new DomainException(ErrorCodes.ValidationError, "FailureReason cannot be empty");
 

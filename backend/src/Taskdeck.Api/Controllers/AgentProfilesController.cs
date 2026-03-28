@@ -51,7 +51,9 @@ public class AgentProfilesController : AuthenticatedControllerBase
             return errorResult!;
 
         var result = await _agentProfileService.CreateAsync(userId, dto, cancellationToken);
-        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+        return result.IsSuccess
+            ? CreatedAtAction(nameof(GetProfile), new { id = result.Value.Id }, result.Value)
+            : result.ToErrorActionResult();
     }
 
     [HttpPut("{id}")]

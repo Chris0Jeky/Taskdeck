@@ -141,6 +141,30 @@ public class AgentRunTests
     }
 
     [Fact]
+    public void MarkFailed_ShouldThrow_WhenAlreadyTerminal()
+    {
+        var run = new AgentRun(_profileId, _userId, "Test objective");
+        run.TransitionTo(AgentRunStatus.Completed);
+
+        var act = () => run.MarkFailed("Late failure");
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.InvalidOperation);
+    }
+
+    [Fact]
+    public void AttachProposal_ShouldThrow_WhenAlreadyTerminal()
+    {
+        var run = new AgentRun(_profileId, _userId, "Test objective");
+        run.TransitionTo(AgentRunStatus.Completed);
+
+        var act = () => run.AttachProposal(Guid.NewGuid(), "Late proposal");
+
+        act.Should().Throw<DomainException>()
+            .Where(e => e.ErrorCode == ErrorCodes.InvalidOperation);
+    }
+
+    [Fact]
     public void IncrementSteps_ShouldIncreaseCount()
     {
         var run = new AgentRun(_profileId, _userId, "Test objective");

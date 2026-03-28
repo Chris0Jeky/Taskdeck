@@ -32,19 +32,22 @@ public class AgentRunsController : AuthenticatedControllerBase
             return errorResult!;
 
         var result = await _agentRunService.CreateRunAsync(agentId, userId, dto, cancellationToken);
-        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+        return result.IsSuccess
+            ? CreatedAtAction(nameof(GetRun), new { agentId, runId = result.Value.Id }, result.Value)
+            : result.ToErrorActionResult();
     }
 
     [HttpGet]
     public async Task<IActionResult> ListRuns(
         Guid agentId,
-        [FromQuery] int limit = 100,
+        [FromQuery] int limit = 100, // capped to 500 below
         CancellationToken cancellationToken = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _agentRunService.GetRunsForProfileAsync(agentId, userId, limit, cancellationToken);
+        var boundedLimit = Math.Clamp(limit, 1, 500);
+        var result = await _agentRunService.GetRunsForProfileAsync(agentId, userId, boundedLimit, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
