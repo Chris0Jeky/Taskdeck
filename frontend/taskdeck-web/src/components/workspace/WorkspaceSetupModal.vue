@@ -213,6 +213,7 @@ watch(
 
 .td-setup-modal {
   width: min(760px, 100%);
+  max-height: min(90vh, 100%);
   background: var(--td-surface-primary);
   border: 1px solid var(--td-border-default);
   border-radius: var(--td-radius-xl);
@@ -253,6 +254,8 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--td-space-4);
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .td-field {
