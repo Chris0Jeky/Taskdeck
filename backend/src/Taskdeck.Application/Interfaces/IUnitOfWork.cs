@@ -22,6 +22,8 @@ public interface IUnitOfWork
     IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
     IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
     ILlmUsageRecordRepository LlmUsageRecords { get; }
+    IAgentProfileRepository AgentProfiles { get; }
+    IAgentRunRepository AgentRuns { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

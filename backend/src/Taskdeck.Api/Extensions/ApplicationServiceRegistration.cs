@@ -43,6 +43,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
         services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
         services.AddScoped<IOutboundWebhookService, OutboundWebhookService>();
+        services.AddScoped<AgentProfileService>();
+        services.AddScoped<AgentRunService>();
         services.AddScoped<SignalRBoardRealtimeNotifier>();
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();

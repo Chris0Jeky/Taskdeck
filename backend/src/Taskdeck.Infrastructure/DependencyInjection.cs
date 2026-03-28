@@ -37,6 +37,8 @@ public static class DependencyInjection
         services.AddScoped<IOutboundWebhookSubscriptionRepository, OutboundWebhookSubscriptionRepository>();
         services.AddScoped<IOutboundWebhookDeliveryRepository, OutboundWebhookDeliveryRepository>();
         services.AddScoped<ILlmUsageRecordRepository, LlmUsageRecordRepository>();
+        services.AddScoped<IAgentProfileRepository, AgentProfileRepository>();
+        services.AddScoped<IAgentRunRepository, AgentRunRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;

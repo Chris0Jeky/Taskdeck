@@ -543,6 +543,8 @@ public class OutboundWebhookDeliveryWorkerTests
         public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions => null!;
         public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
         public ILlmUsageRecordRepository LlmUsageRecords => null!;
+        public IAgentProfileRepository AgentProfiles => null!;
+        public IAgentRunRepository AgentRuns => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
