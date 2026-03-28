@@ -31,7 +31,8 @@ public class UnitOfWork : IUnitOfWork
         INotificationPreferenceRepository notificationPreferences,
         IUserPreferenceRepository userPreferences,
         IOutboundWebhookSubscriptionRepository outboundWebhookSubscriptions,
-        IOutboundWebhookDeliveryRepository outboundWebhookDeliveries)
+        IOutboundWebhookDeliveryRepository outboundWebhookDeliveries,
+        ILlmUsageRecordRepository llmUsageRecords)
     {
         _context = context;
         Boards = boards;
@@ -53,6 +54,7 @@ public class UnitOfWork : IUnitOfWork
         UserPreferences = userPreferences;
         OutboundWebhookSubscriptions = outboundWebhookSubscriptions;
         OutboundWebhookDeliveries = outboundWebhookDeliveries;
+        LlmUsageRecords = llmUsageRecords;
     }
 
     public IBoardRepository Boards { get; }
@@ -74,6 +76,7 @@ public class UnitOfWork : IUnitOfWork
     public IUserPreferenceRepository UserPreferences { get; }
     public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
     public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
+    public ILlmUsageRecordRepository LlmUsageRecords { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
