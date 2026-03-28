@@ -362,7 +362,7 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
             Highlights:
             [
                 "Staged release lane progression",
-                "Risk and priority labels",
+                "Risk labels with rollback tracking",
                 "Go/no-go checklist template and kickoff card"
             ],
             Manifest: new StarterPackManifestDto
@@ -425,7 +425,7 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
             Highlights:
             [
                 "Full defect triage lane model",
-                "Severity and component labels",
+                "Severity labels for triage prioritization",
                 "Bug report template with reproduction checklist"
             ],
             Manifest: new StarterPackManifestDto
@@ -538,7 +538,7 @@ public sealed class StarterPackCatalogService : IStarterPackCatalogService
             [
                 "Weekly progression columns",
                 "Category labels for learning areas",
-                "Onboarding task template with evidence checklist"
+                "Onboarding task template with completion checklist"
             ],
             Manifest: new StarterPackManifestDto
             {
