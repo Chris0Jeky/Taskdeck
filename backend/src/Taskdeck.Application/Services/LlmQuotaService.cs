@@ -37,33 +37,32 @@ public class LlmQuotaService : ILlmQuotaService
         CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var hourStart = now.AddHours(-1);
+        var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+        var dayEnd = dayStart.AddDays(1);
+
+        // Fetch request count once and reuse for both the limit check and remaining calculation
+        long requestCount = _settings.RequestsPerHour > 0
+            ? await _unitOfWork.LlmUsageRecords.GetRequestCountAsync(userId, surface, hourStart, now, ct)
+            : 0;
 
         // Check per-user requests per hour
-        if (_settings.RequestsPerHour > 0)
+        if (_settings.RequestsPerHour > 0 && requestCount >= _settings.RequestsPerHour)
         {
-            var hourStart = now.AddHours(-1);
-            var requestCount = await _unitOfWork.LlmUsageRecords.GetRequestCountAsync(
-                userId, null, hourStart, now, ct);
-
-            if (requestCount >= _settings.RequestsPerHour)
-            {
-                return new QuotaCheckResultDto(
-                    Allowed: false,
-                    DeniedReason: $"Per-user hourly request limit ({_settings.RequestsPerHour}) exceeded",
-                    RemainingTokens: 0,
-                    RemainingRequests: 0);
-            }
+            return new QuotaCheckResultDto(
+                Allowed: false,
+                DeniedReason: $"Per-user hourly request limit ({_settings.RequestsPerHour}) exceeded",
+                RemainingTokens: 0,
+                RemainingRequests: 0);
         }
 
         // Check per-user tokens per day
-        var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
-        var dayEnd = dayStart.AddDays(1);
         long remainingTokens = _settings.TokensPerDay > 0 ? _settings.TokensPerDay : long.MaxValue;
 
         if (_settings.TokensPerDay > 0)
         {
             var tokensUsed = await _unitOfWork.LlmUsageRecords.GetTotalTokensAsync(
-                userId, null, dayStart, dayEnd, ct);
+                userId, surface, dayStart, dayEnd, ct);
 
             if (tokensUsed >= _settings.TokensPerDay)
             {
@@ -81,7 +80,7 @@ public class LlmQuotaService : ILlmQuotaService
         if (_settings.GlobalBudgetCeilingTokens > 0)
         {
             var globalTokensUsed = await _unitOfWork.LlmUsageRecords.GetTotalTokensAsync(
-                null, null, dayStart, dayEnd, ct);
+                null, surface, dayStart, dayEnd, ct);
 
             if (globalTokensUsed >= _settings.GlobalBudgetCeilingTokens)
             {
@@ -97,8 +96,7 @@ public class LlmQuotaService : ILlmQuotaService
         }
 
         long remainingRequests = _settings.RequestsPerHour > 0
-            ? _settings.RequestsPerHour - await _unitOfWork.LlmUsageRecords.GetRequestCountAsync(
-                userId, null, now.AddHours(-1), now, ct)
+            ? _settings.RequestsPerHour - requestCount
             : long.MaxValue;
 
         return new QuotaCheckResultDto(

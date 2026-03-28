@@ -188,7 +188,7 @@ public class LlmQuotaServiceTests
     {
         _usageRepoMock
             .Setup(r => r.GetRequestCountAsync(
-                userId, null,
+                userId, It.IsAny<LlmSurface?>(),
                 It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(count);
@@ -198,7 +198,7 @@ public class LlmQuotaServiceTests
     {
         _usageRepoMock
             .Setup(r => r.GetTotalTokensAsync(
-                userId, null,
+                userId, It.IsAny<LlmSurface?>(),
                 It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(tokens);
@@ -208,7 +208,7 @@ public class LlmQuotaServiceTests
     {
         _usageRepoMock
             .Setup(r => r.GetTotalTokensAsync(
-                null, null,
+                null, It.IsAny<LlmSurface?>(),
                 It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(tokens);
