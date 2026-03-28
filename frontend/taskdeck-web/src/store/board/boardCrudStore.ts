@@ -3,7 +3,7 @@
  */
 import { boardsApi } from '../../api/boardsApi'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
-import type { CreateBoardDto, UpdateBoardDto, BoardDetail } from '../../types/board'
+import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
@@ -93,12 +93,8 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       }
 
       // Update current board if it's the one being edited
-      if (state.currentBoard.value) {
-        if (state.currentBoard.value.id === boardId) {
-          state.currentBoard.value = { ...state.currentBoard.value, ...updatedBoard }
-        }
-      } else {
-        state.currentBoard.value = updatedBoard as BoardDetail
+      if (state.currentBoard.value?.id === boardId) {
+        state.currentBoard.value = { ...state.currentBoard.value, ...updatedBoard }
       }
 
       helpers.toast.success('Board updated successfully')

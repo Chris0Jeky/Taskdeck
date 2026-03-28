@@ -86,7 +86,11 @@ export function createCardCommentActions(state: BoardState, helpers: BoardHelper
       state.loading.value = true
       state.error.value = null
       await cardCommentsApi.deleteComment(boardId, cardId, commentId)
-      await fetchCardComments(boardId, cardId)
+      const existingComments = state.cardCommentsByCardId.value[cardId] ?? []
+      state.cardCommentsByCardId.value = {
+        ...state.cardCommentsByCardId.value,
+        [cardId]: existingComments.filter((comment) => comment.id !== commentId),
+      }
       helpers.toast.success('Comment deleted')
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to delete card comment')
