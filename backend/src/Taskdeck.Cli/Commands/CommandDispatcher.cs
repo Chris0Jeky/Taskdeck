@@ -1,6 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Taskdeck.Application.Interfaces;
-using Taskdeck.Application.Services;
 
 namespace Taskdeck.Cli.Commands;
 
@@ -28,31 +26,12 @@ internal sealed class CommandDispatcher
 
         return group switch
         {
-            "boards" => await CreateBoardsHandler(scope).HandleAsync(command, remainingArgs),
-            "columns" => await CreateColumnsHandler(scope).HandleAsync(command, remainingArgs),
-            "cards" => await CreateCardsHandler(scope).HandleAsync(command, remainingArgs),
+            "boards" => await scope.ServiceProvider.GetRequiredService<BoardsCommandHandler>().HandleAsync(command, remainingArgs),
+            "columns" => await scope.ServiceProvider.GetRequiredService<ColumnsCommandHandler>().HandleAsync(command, remainingArgs),
+            "cards" => await scope.ServiceProvider.GetRequiredService<CardsCommandHandler>().HandleAsync(command, remainingArgs),
             "help" => ReturnHelp(),
             _ => ReturnUnknownCommand(group)
         };
-    }
-
-    private static BoardsCommandHandler CreateBoardsHandler(IServiceScope scope)
-    {
-        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        return new BoardsCommandHandler(boardService, unitOfWork);
-    }
-
-    private static ColumnsCommandHandler CreateColumnsHandler(IServiceScope scope)
-    {
-        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
-        return new ColumnsCommandHandler(columnService);
-    }
-
-    private static CardsCommandHandler CreateCardsHandler(IServiceScope scope)
-    {
-        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
-        return new CardsCommandHandler(cardService);
     }
 
     private static int ReturnHelp()

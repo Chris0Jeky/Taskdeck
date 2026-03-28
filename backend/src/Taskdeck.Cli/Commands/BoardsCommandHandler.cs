@@ -163,7 +163,7 @@ internal sealed class BoardsCommandHandler
             return existingActor.Id;
         }
 
-        var actor = new User(actorUsername, actorEmail, "cli-internal-actor-password-hash");
+        var actor = new User(actorUsername, actorEmail, Guid.NewGuid().ToString("N"));
         await _unitOfWork.Users.AddAsync(actor);
         await _unitOfWork.SaveChangesAsync();
         return actor.Id;

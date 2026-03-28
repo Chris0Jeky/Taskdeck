@@ -26,6 +26,9 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ColumnService>();
 builder.Services.AddScoped<CardService>();
+builder.Services.AddScoped<BoardsCommandHandler>();
+builder.Services.AddScoped<ColumnsCommandHandler>();
+builder.Services.AddScoped<CardsCommandHandler>();
 
 using var host = builder.Build();
 
