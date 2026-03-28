@@ -12,8 +12,19 @@ async function loadShortcutContextModule() {
   shortcutContextModule = await import('../../composables/useShortcutContext')
 }
 
-function pressKey(key: string) {
-  document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+function pressKey(key: string, opts?: { ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean; target?: EventTarget }) {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: opts?.ctrlKey,
+    shiftKey: opts?.shiftKey,
+    altKey: opts?.altKey,
+  })
+  if (opts?.target) {
+    Object.defineProperty(event, 'target', { value: opts.target })
+  }
+  document.dispatchEvent(event)
 }
 
 function mountContext(
@@ -152,5 +163,107 @@ describe('useShortcutContext', () => {
     expect(() => context.popContext('global-shell')).not.toThrow()
     expect(() => context.popContext('modal/drawer')).not.toThrow()
     expect(context.activeContext()).toBe('global-shell')
+  })
+
+  it('fires a ctrl shortcut only when ctrlKey is held', () => {
+    const handler = vi.fn()
+
+    mountContext('board-canvas', [
+      { key: 's', ctrl: true, description: 'Save', handler },
+    ])
+
+    pressKey('s')
+    expect(handler).not.toHaveBeenCalled()
+
+    pressKey('s', { ctrlKey: true })
+    expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire a plain shortcut when ctrlKey is held', () => {
+    const handler = vi.fn()
+
+    mountContext('board-canvas', [
+      { key: 'j', description: 'Next card', handler },
+    ])
+
+    pressKey('j', { ctrlKey: true })
+    expect(handler).not.toHaveBeenCalled()
+
+    pressKey('j')
+    expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires a shift shortcut only when shiftKey is held', () => {
+    const handler = vi.fn()
+
+    mountContext('board-canvas', [
+      { key: '?', shift: true, description: 'Help', handler },
+    ])
+
+    pressKey('?')
+    expect(handler).not.toHaveBeenCalled()
+
+    pressKey('?', { shiftKey: true })
+    expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  it('suppresses plain shortcuts when typing in an input', () => {
+    const handler = vi.fn()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+
+    mountContext('board-canvas', [
+      { key: 'j', description: 'Next card', handler },
+    ])
+
+    pressKey('j', { target: input })
+    expect(handler).not.toHaveBeenCalled()
+
+    document.body.removeChild(input)
+  })
+
+  it('suppresses plain shortcuts when typing in a textarea', () => {
+    const handler = vi.fn()
+    const textarea = document.createElement('textarea')
+    document.body.appendChild(textarea)
+
+    mountContext('board-canvas', [
+      { key: 'k', description: 'Prev card', handler },
+    ])
+
+    pressKey('k', { target: textarea })
+    expect(handler).not.toHaveBeenCalled()
+
+    document.body.removeChild(textarea)
+  })
+
+  it('allows Escape while typing in an input', () => {
+    const handler = vi.fn()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+
+    mountContext('board-canvas', [
+      { key: 'Escape', description: 'Close', handler },
+    ])
+
+    pressKey('Escape', { target: input })
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    document.body.removeChild(input)
+  })
+
+  it('allows ctrl shortcuts while typing in an input', () => {
+    const handler = vi.fn()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+
+    mountContext('board-canvas', [
+      { key: 's', ctrl: true, description: 'Save', handler },
+    ])
+
+    pressKey('s', { ctrlKey: true, target: input })
+    expect(handler).toHaveBeenCalledTimes(1)
+
+    document.body.removeChild(input)
   })
 })
