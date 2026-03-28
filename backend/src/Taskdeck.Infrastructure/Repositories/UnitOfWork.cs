@@ -33,6 +33,8 @@ public class UnitOfWork : IUnitOfWork
         IOutboundWebhookSubscriptionRepository outboundWebhookSubscriptions,
         IOutboundWebhookDeliveryRepository outboundWebhookDeliveries,
         ILlmUsageRecordRepository llmUsageRecords,
+        IAgentProfileRepository agentProfiles,
+        IAgentRunRepository agentRuns,
         IKnowledgeDocumentRepository knowledgeDocuments,
         IKnowledgeChunkRepository knowledgeChunks)
     {
@@ -57,6 +59,8 @@ public class UnitOfWork : IUnitOfWork
         OutboundWebhookSubscriptions = outboundWebhookSubscriptions;
         OutboundWebhookDeliveries = outboundWebhookDeliveries;
         LlmUsageRecords = llmUsageRecords;
+        AgentProfiles = agentProfiles;
+        AgentRuns = agentRuns;
         KnowledgeDocuments = knowledgeDocuments;
         KnowledgeChunks = knowledgeChunks;
     }
@@ -81,6 +85,8 @@ public class UnitOfWork : IUnitOfWork
     public IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
     public IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
     public ILlmUsageRecordRepository LlmUsageRecords { get; }
+    public IAgentProfileRepository AgentProfiles { get; }
+    public IAgentRunRepository AgentRuns { get; }
     public IKnowledgeDocumentRepository KnowledgeDocuments { get; }
     public IKnowledgeChunkRepository KnowledgeChunks { get; }
 
