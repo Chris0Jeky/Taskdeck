@@ -17,7 +17,12 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAuthorizationService>(sp => sp.GetRequiredService<AuthorizationService>());
         services.AddScoped<UserService>();
         services.AddScoped<BoardAccessService>();
-        services.AddScoped<IExportImportService, ExportImportService>();
+        services.AddScoped<IBoardJsonExportImportService, BoardJsonExportImportService>();
+        services.AddScoped<IDatabaseFileExportImportService, DatabaseFileExportImportService>();
+        services.AddScoped<IExportImportService>(sp =>
+            new ExportImportService(
+                sp.GetRequiredService<IBoardJsonExportImportService>(),
+                sp.GetRequiredService<IDatabaseFileExportImportService>()));
         services.AddScoped<IExternalImportService, ExternalImportService>();
         services.AddScoped<IExternalImportAdapter, CsvExternalImportAdapter>();
         services.AddScoped<LlmQueueService>();
