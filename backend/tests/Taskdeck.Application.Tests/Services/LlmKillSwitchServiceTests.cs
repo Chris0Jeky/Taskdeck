@@ -46,7 +46,7 @@ public class LlmKillSwitchServiceTests
     {
         var settings = new LlmKillSwitchSettings
         {
-            KilledSurfaces = new List<string> { "Chat" }
+            KilledSurfaces = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Chat" }
         };
         var service = new LlmKillSwitchService(settings);
 
@@ -62,7 +62,7 @@ public class LlmKillSwitchServiceTests
         var otherUserId = Guid.NewGuid();
         var settings = new LlmKillSwitchSettings
         {
-            KilledUserIds = new List<string> { killedUserId.ToString() }
+            KilledUserIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { killedUserId.ToString() }
         };
         var service = new LlmKillSwitchService(settings);
 
@@ -138,13 +138,28 @@ public class LlmKillSwitchServiceTests
     }
 
     [Fact]
+    public async Task SetKillSwitchAsync_ShouldStoreAndReturnReason()
+    {
+        var settings = new LlmKillSwitchSettings();
+        var service = new LlmKillSwitchService(settings);
+
+        await service.SetKillSwitchAsync(KillSwitchScope.Global, null, true, "emergency shutdown");
+        await service.SetKillSwitchAsync(KillSwitchScope.Surface, "Chat", true, "maintenance window");
+
+        var status = await service.GetStatusAsync();
+
+        status.Entries.Should().Contain(e => e.Scope == KillSwitchScope.Global && e.Reason == "emergency shutdown");
+        status.Entries.Should().Contain(e => e.Scope == KillSwitchScope.Surface && e.Target == "Chat" && e.Reason == "maintenance window");
+    }
+
+    [Fact]
     public async Task GetStatusAsync_ShouldReflectCurrentState()
     {
         var settings = new LlmKillSwitchSettings
         {
             GlobalKill = true,
-            KilledSurfaces = new List<string> { "Worker" },
-            KilledUserIds = new List<string> { Guid.NewGuid().ToString() }
+            KilledSurfaces = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Worker" },
+            KilledUserIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Guid.NewGuid().ToString() }
         };
         var service = new LlmKillSwitchService(settings);
 

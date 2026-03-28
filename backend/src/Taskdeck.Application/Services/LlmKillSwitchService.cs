@@ -25,12 +25,10 @@ public class LlmKillSwitchService : ILlmKillSwitchService
             if (_settings.GlobalKill)
                 return Task.FromResult(true);
 
-            if (surface.HasValue &&
-                _settings.KilledSurfaces.Contains(surface.Value.ToString(), StringComparer.OrdinalIgnoreCase))
+            if (surface.HasValue && _settings.KilledSurfaces.Contains(surface.Value.ToString()))
                 return Task.FromResult(true);
 
-            if (userId.HasValue &&
-                _settings.KilledUserIds.Contains(userId.Value.ToString(), StringComparer.OrdinalIgnoreCase))
+            if (userId.HasValue && _settings.KilledUserIds.Contains(userId.Value.ToString()))
                 return Task.FromResult(true);
         }
 
@@ -50,6 +48,7 @@ public class LlmKillSwitchService : ILlmKillSwitchService
             {
                 case KillSwitchScope.Global:
                     _settings.GlobalKill = enabled;
+                    _settings.GlobalKillReason = enabled ? reason : null;
                     break;
 
                 case KillSwitchScope.Surface:
@@ -58,10 +57,17 @@ public class LlmKillSwitchService : ILlmKillSwitchService
                     if (!Enum.TryParse<LlmSurface>(target, ignoreCase: true, out _))
                         return Task.FromResult(Result.Failure(ErrorCodes.ValidationError, $"Unknown surface: {target}"));
 
-                    if (enabled && !_settings.KilledSurfaces.Contains(target, StringComparer.OrdinalIgnoreCase))
+                    if (enabled)
+                    {
                         _settings.KilledSurfaces.Add(target);
-                    else if (!enabled)
-                        _settings.KilledSurfaces.RemoveAll(s => s.Equals(target, StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrWhiteSpace(reason))
+                            _settings.Reasons[target] = reason;
+                    }
+                    else
+                    {
+                        _settings.KilledSurfaces.Remove(target);
+                        _settings.Reasons.Remove(target);
+                    }
                     break;
 
                 case KillSwitchScope.Identity:
@@ -70,10 +76,17 @@ public class LlmKillSwitchService : ILlmKillSwitchService
                     if (!Guid.TryParse(target, out _))
                         return Task.FromResult(Result.Failure(ErrorCodes.ValidationError, "Target must be a valid user ID"));
 
-                    if (enabled && !_settings.KilledUserIds.Contains(target, StringComparer.OrdinalIgnoreCase))
+                    if (enabled)
+                    {
                         _settings.KilledUserIds.Add(target);
-                    else if (!enabled)
-                        _settings.KilledUserIds.RemoveAll(u => u.Equals(target, StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrWhiteSpace(reason))
+                            _settings.Reasons[target] = reason;
+                    }
+                    else
+                    {
+                        _settings.KilledUserIds.Remove(target);
+                        _settings.Reasons.Remove(target);
+                    }
                     break;
 
                 default:
@@ -90,16 +103,18 @@ public class LlmKillSwitchService : ILlmKillSwitchService
 
         lock (_lock)
         {
-            entries.Add(new KillSwitchEntryDto(KillSwitchScope.Global, null, _settings.GlobalKill, null));
+            entries.Add(new KillSwitchEntryDto(KillSwitchScope.Global, null, _settings.GlobalKill, _settings.GlobalKillReason));
 
             foreach (var surface in _settings.KilledSurfaces)
             {
-                entries.Add(new KillSwitchEntryDto(KillSwitchScope.Surface, surface, true, null));
+                _settings.Reasons.TryGetValue(surface, out var surfaceReason);
+                entries.Add(new KillSwitchEntryDto(KillSwitchScope.Surface, surface, true, surfaceReason));
             }
 
             foreach (var userId in _settings.KilledUserIds)
             {
-                entries.Add(new KillSwitchEntryDto(KillSwitchScope.Identity, userId, true, null));
+                _settings.Reasons.TryGetValue(userId, out var userReason);
+                entries.Add(new KillSwitchEntryDto(KillSwitchScope.Identity, userId, true, userReason));
             }
         }
 
