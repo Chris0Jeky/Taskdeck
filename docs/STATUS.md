@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-27
+Last Updated: 2026-03-28
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -605,11 +605,26 @@ Nightly workflow: `.github/workflows/ci-nightly.yml`
 - scheduled/manual load/concurrency harness (reuses `.github/workflows/reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
 
-Release/security workflow: `.github/workflows/release-security.yml`
+Release workflow: `.github/workflows/ci-release.yml`
+
+- release/tag/manual build verification (backend + frontend)
+- container image artifact/checksum lane reused from container baseline workflow
+- SBOM/provenance placeholder (follow-through: `#103`, `#106`, `#148`)
+
+Release/security deep workflow: `.github/workflows/release-security.yml`
 
 - release/tag/manual dependency inventory + vulnerability signal artifacts
 - optional strict frontend audit enforcement for manual runs
 - container image artifact/checksum lane reused from container baseline workflow
+
+Nightly quality signals workflow: `.github/workflows/nightly-quality.yml`
+
+- scheduled/manual backend coverage (domain + application)
+- scheduled/manual frontend coverage
+- dependency and security signal scan (reuses `.github/workflows/reusable-dependency-security-signals.yml`)
+
+CI workflow topology is documented in the header comment of `.github/workflows/ci-required.yml`.
+Workflow ownership is enforced via `CODEOWNERS` (`.github/workflows/` requires maintainer review).
 
 ## Known Gaps and Risks
 
@@ -676,6 +691,7 @@ Security/compliance hardening backlog added from research cross-check:
 - Delivered OPS-19 CI topology fourth pass (`#168`): extracted backend-unit lane into reusable workflow `.github/workflows/reusable-backend-unit.yml` and routed `ci-required.yml` through it while preserving Ubuntu/Windows matrix behavior and domain/application/CLI split coverage.
 - Delivered OPS-19 CI topology fifth pass (`#168`): extracted container image and E2E smoke lanes into reusable workflows (`.github/workflows/reusable-container-images.yml`, `.github/workflows/reusable-e2e-smoke.yml`) and routed `ci-required.yml` through them while preserving required-gate dependencies and artifact behavior.
 - Delivered OPS-19 CI topology sixth pass (`#168`): added non-blocking and scheduled orchestrator workflows (`.github/workflows/ci-extended.yml`, `.github/workflows/ci-nightly.yml`) plus release/security orchestration (`.github/workflows/release-security.yml`) and reusable full backend regression lane (`.github/workflows/reusable-backend-solution.yml`) to make nightly and release topology explicit.
+- Delivered OPS-19 CI topology completion (`#168`): added `ci-release.yml` release build-verification lane with SBOM/provenance placeholder, added comprehensive workflow topology documentation to `ci-required.yml` header, added topology reference comments to all orchestrator workflows, added `CODEOWNERS` for `.github/workflows/` governance, and updated CI Status section in `STATUS.md` to reflect the full topology including `nightly-quality.yml`.
 - Added docs governance script and architecture boundary tests as CI invariants.
 - Added GitHub operations governance script to enforce issue-template label hygiene and project-automation doc invariants in CI.
 - Retrofitted boards controller family to claims-first authz with integration coverage for 401/403/cross-user/happy path.

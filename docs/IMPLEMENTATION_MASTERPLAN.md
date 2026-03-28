@@ -220,6 +220,12 @@ Delivered in the latest cycle:
    - added scheduled/manual nightly orchestrator (`.github/workflows/ci-nightly.yml`) for backend solution regression, E2E regression, and container-image regression
    - added release/security orchestrator (`.github/workflows/release-security.yml`) with dependency inventory/vulnerability reporting artifacts and explicit SBOM/provenance follow-through mapping to `#103`
    - added reusable full backend regression lane (`.github/workflows/reusable-backend-solution.yml`) to avoid orchestration-layer command duplication
+49b. OPS-19 CI topology completion (`#168`):
+   - added `ci-release.yml` release build-verification lane with SBOM/provenance placeholder, container image artifact lane
+   - added comprehensive workflow topology documentation to `ci-required.yml` header comment mapping all orchestrators and reusable workflows
+   - added topology reference comments to `ci-extended.yml`, `ci-nightly.yml`, `nightly-quality.yml`, and `release-security.yml`
+   - added `CODEOWNERS` file for `.github/workflows/`, issue templates, PR template, and governance scripts
+   - updated CI Status section in `docs/STATUS.md` to reflect the complete topology including `ci-release.yml` and `nightly-quality.yml`
 50. SEC-11 LLM queue board-scope authorization follow-through (`#152`):
    - `POST /api/llm-queue` now enforces board-read authorization when `boardId` is supplied
    - queue creation now aligns to policy (`403` for authenticated cross-user unauthorized board access, `404` for true missing boards)
