@@ -98,6 +98,14 @@ builder.Services.AddScoped<WebhookBoardMutationNotifier>();
 builder.Services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
 builder.Services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
 
+// LLM quota and kill switch settings
+var llmQuotaSettings = builder.Configuration.GetSection("LlmQuota").Get<LlmQuotaSettings>() ?? new LlmQuotaSettings();
+builder.Services.AddSingleton(llmQuotaSettings);
+var llmKillSwitchSettings = builder.Configuration.GetSection("LlmKillSwitch").Get<LlmKillSwitchSettings>() ?? new LlmKillSwitchSettings();
+builder.Services.AddSingleton(llmKillSwitchSettings);
+builder.Services.AddScoped<ILlmQuotaService, LlmQuotaService>();
+builder.Services.AddSingleton<ILlmKillSwitchService, LlmKillSwitchService>();
+
 // LLM provider settings and deterministic provider selection policy
 var llmProviderSettings = builder.Configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
 builder.Services.AddSingleton(llmProviderSettings);
