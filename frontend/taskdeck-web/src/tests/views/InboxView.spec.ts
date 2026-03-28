@@ -130,6 +130,32 @@ vi.mock('../../composables/useEscapeStack', () => ({
   }),
 }))
 
+vi.mock('../../composables/useVirtualList', () => ({
+  useVirtualList: (options: { count: { value: number } | (() => number); estimateSize: number }) => {
+    const { computed, ref, shallowRef } = require('vue')
+    const getCount = typeof options.count === 'function'
+      ? options.count
+      : () => options.count.value
+    return {
+      parentRef: ref(null),
+      virtualItemEls: shallowRef([]),
+      virtualRows: computed(() =>
+        Array.from({ length: getCount() }, (_, i) => ({
+          key: i,
+          index: i,
+          start: i * options.estimateSize,
+          end: (i + 1) * options.estimateSize,
+          size: options.estimateSize,
+          lane: 0,
+        })),
+      ),
+      totalSize: computed(() => getCount() * options.estimateSize),
+      translateY: computed(() => 0),
+      scrollToIndex: vi.fn(),
+    }
+  },
+}))
+
 async function waitForUi() {
   await Promise.resolve()
   await Promise.resolve()
