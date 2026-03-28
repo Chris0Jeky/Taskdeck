@@ -1,0 +1,107 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.Net.Http.Headers;
+using Taskdeck.Api.Contracts;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Exceptions;
+
+namespace Taskdeck.Api.Extensions;
+
+public static class AuthenticationRegistration
+{
+    public static IServiceCollection AddTaskdeckAuthentication(
+        this IServiceCollection services,
+        JwtSettings jwtSettings)
+    {
+        if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey) ||
+            jwtSettings.SecretKey.Length < 32 ||
+            string.IsNullOrWhiteSpace(jwtSettings.Issuer) ||
+            string.IsNullOrWhiteSpace(jwtSettings.Audience))
+        {
+            return services;
+        }
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = jwtSettings.Issuer,
+                    ValidAudience = jwtSettings.Audience,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
+                };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrWhiteSpace(accessToken) && path.StartsWithSegments("/hubs/boards"))
+                        {
+                            context.Token = accessToken;
+                        }
+
+                        return Task.CompletedTask;
+                    },
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        if (context.Response.HasStarted)
+                        {
+                            return;
+                        }
+
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        context.Response.Headers[HeaderNames.WWWAuthenticate] =
+                            BuildWwwAuthenticateHeaderValue(context.Error, context.ErrorDescription);
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                            ErrorCodes.Unauthorized,
+                            "Authentication is required to access this resource."));
+                    },
+                    OnForbidden = async context =>
+                    {
+                        if (context.Response.HasStarted)
+                        {
+                            return;
+                        }
+
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                            ErrorCodes.Forbidden,
+                            "You do not have permission to access this resource."));
+                    }
+                };
+            });
+
+        return services;
+    }
+
+    private static string BuildWwwAuthenticateHeaderValue(string? error, string? errorDescription)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            return "Bearer";
+        }
+
+        var escapedError = EscapeAuthHeaderValue(error);
+        if (string.IsNullOrWhiteSpace(errorDescription))
+        {
+            return $"Bearer error=\"{escapedError}\"";
+        }
+
+        return $"Bearer error=\"{escapedError}\", error_description=\"{EscapeAuthHeaderValue(errorDescription)}\"";
+    }
+
+    private static string EscapeAuthHeaderValue(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+}
