@@ -1,0 +1,14 @@
+# Taskdeck CODEOWNERS
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# CI/CD workflows — changes require maintainer review
+.github/workflows/ @Chris0Jeky
+
+# GitHub operational config (issue templates, PR template)
+.github/ISSUE_TEMPLATE/ @Chris0Jeky
+.github/pull_request_template.md @Chris0Jeky
+
+# Governance scripts
+scripts/check-docs-governance.mjs @Chris0Jeky
+scripts/check-golden-principles.mjs @Chris0Jeky
+scripts/check-github-ops-governance.mjs @Chris0Jeky
