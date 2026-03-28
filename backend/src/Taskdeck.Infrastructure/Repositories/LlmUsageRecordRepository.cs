@@ -71,53 +71,84 @@ public class LlmUsageRecordRepository : Repository<LlmUsageRecord>, ILlmUsageRec
         return (totalInput, totalOutput, count);
     }
 
-    // SQLite cannot translate DateTimeOffset comparisons from LINQ; use client-side filtering.
+    // SQLite stores DateTimeOffset as ISO 8601 text. Use raw SQL with string
+    // comparison so filtering is pushed to the database instead of loading the
+    // entire table into memory.
+
     private async Task<long> GetRequestCountSqliteAsync(
         Guid? userId, LlmSurface? surface, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
-        var all = await _dbSet.AsNoTracking().ToListAsync(ct);
-        return FilterClientSide(all, userId, surface, from, to).LongCount();
+        var (whereClauses, parameters) = BuildSqliteWhere(userId, surface, from, to);
+        var sql = $"SELECT COUNT(*) AS Value FROM LlmUsageRecords WHERE {string.Join(" AND ", whereClauses)}";
+
+        var result = await _context.Database
+            .SqlQueryRaw<int>(sql, parameters.ToArray())
+            .FirstAsync(ct);
+
+        return result;
     }
 
     private async Task<long> GetTotalTokensSqliteAsync(
         Guid? userId, LlmSurface? surface, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
-        var all = await _dbSet.AsNoTracking().ToListAsync(ct);
-        var filtered = FilterClientSide(all, userId, surface, from, to);
-        return filtered.Sum(r => (long)r.InputTokens + r.OutputTokens);
+        var (whereClauses, parameters) = BuildSqliteWhere(userId, surface, from, to);
+        var sql = $"SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER) + CAST(OutputTokens AS INTEGER)), 0) AS Value FROM LlmUsageRecords WHERE {string.Join(" AND ", whereClauses)}";
+
+        var result = await _context.Database
+            .SqlQueryRaw<long>(sql, parameters.ToArray())
+            .FirstAsync(ct);
+
+        return result;
     }
 
     private async Task<(long, long, long)> GetUsageSummarySqliteAsync(
         Guid? userId, LlmSurface? surface, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
-        var all = await _dbSet.AsNoTracking().ToListAsync(ct);
-        var filtered = FilterClientSide(all, userId, surface, from, to).ToList();
+        var (whereClauses, parameters) = BuildSqliteWhere(userId, surface, from, to);
+        var where = string.Join(" AND ", whereClauses);
 
-        if (filtered.Count == 0)
+        var countSql = $"SELECT COUNT(*) AS Value FROM LlmUsageRecords WHERE {where}";
+        var count = await _context.Database
+            .SqlQueryRaw<long>(countSql, parameters.ToArray())
+            .FirstAsync(ct);
+
+        if (count == 0)
             return (0, 0, 0);
 
-        return (
-            filtered.Sum(r => (long)r.InputTokens),
-            filtered.Sum(r => (long)r.OutputTokens),
-            filtered.Count);
+        var inputSql = $"SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER)), 0) AS Value FROM LlmUsageRecords WHERE {where}";
+        var totalInput = await _context.Database
+            .SqlQueryRaw<long>(inputSql, parameters.ToArray())
+            .FirstAsync(ct);
+
+        var outputSql = $"SELECT COALESCE(SUM(CAST(OutputTokens AS INTEGER)), 0) AS Value FROM LlmUsageRecords WHERE {where}";
+        var totalOutput = await _context.Database
+            .SqlQueryRaw<long>(outputSql, parameters.ToArray())
+            .FirstAsync(ct);
+
+        return (totalInput, totalOutput, count);
     }
 
-    private static IEnumerable<LlmUsageRecord> FilterClientSide(
-        IEnumerable<LlmUsageRecord> records,
-        Guid? userId,
-        LlmSurface? surface,
-        DateTimeOffset from,
-        DateTimeOffset to)
+    private static (List<string> WhereClauses, List<object> Parameters) BuildSqliteWhere(
+        Guid? userId, LlmSurface? surface, DateTimeOffset from, DateTimeOffset to)
     {
-        var query = records.Where(r => r.CreatedAt >= from && r.CreatedAt < to);
+        var clauses = new List<string> { "CreatedAt >= {0}", "CreatedAt < {1}" };
+        var parameters = new List<object> { from.ToString("o"), to.ToString("o") };
+        var paramIndex = 2;
 
         if (userId.HasValue)
-            query = query.Where(r => r.UserId == userId.Value);
+        {
+            clauses.Add($"UserId = {{{paramIndex}}}");
+            parameters.Add(userId.Value.ToString());
+            paramIndex++;
+        }
 
         if (surface.HasValue)
-            query = query.Where(r => r.Surface == surface.Value);
+        {
+            clauses.Add($"Surface = {{{paramIndex}}}");
+            parameters.Add((int)surface.Value);
+        }
 
-        return query;
+        return (clauses, parameters);
     }
 
     private IQueryable<LlmUsageRecord> BuildFilteredQuery(
