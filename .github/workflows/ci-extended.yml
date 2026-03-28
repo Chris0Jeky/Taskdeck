@@ -1,3 +1,10 @@
+# =============================================================================
+# CI Extended — optional PR lane for heavier checks.
+# Runs on PR path changes, label triggers, and manual dispatch.
+# Non-blocking: does not gate PR merges.
+# Topology context documented in ci-required.yml header.
+# =============================================================================
+
 name: CI Extended
 
 on:

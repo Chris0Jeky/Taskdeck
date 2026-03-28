@@ -1,3 +1,10 @@
+# =============================================================================
+# CI Nightly — scheduled deep regression lane.
+# Runs at 03:25 UTC daily and on manual dispatch.
+# Shifts expensive suites off the PR critical path.
+# Topology context documented in ci-required.yml header.
+# =============================================================================
+
 name: CI Nightly
 
 on:
