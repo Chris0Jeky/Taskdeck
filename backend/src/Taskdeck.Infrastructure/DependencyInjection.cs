@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
         services.AddScoped<IOutboundWebhookSubscriptionRepository, OutboundWebhookSubscriptionRepository>();
         services.AddScoped<IOutboundWebhookDeliveryRepository, OutboundWebhookDeliveryRepository>();
+        services.AddScoped<ILlmUsageRecordRepository, LlmUsageRecordRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;

@@ -32,6 +32,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<OutboundWebhookSubscription> OutboundWebhookSubscriptions => Set<OutboundWebhookSubscription>();
     public DbSet<OutboundWebhookDelivery> OutboundWebhookDeliveries => Set<OutboundWebhookDelivery>();
+    public DbSet<LlmUsageRecord> LlmUsageRecords => Set<LlmUsageRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

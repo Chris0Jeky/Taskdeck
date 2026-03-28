@@ -21,6 +21,7 @@ public interface IUnitOfWork
     IUserPreferenceRepository UserPreferences { get; }
     IOutboundWebhookSubscriptionRepository OutboundWebhookSubscriptions { get; }
     IOutboundWebhookDeliveryRepository OutboundWebhookDeliveries { get; }
+    ILlmUsageRecordRepository LlmUsageRecords { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

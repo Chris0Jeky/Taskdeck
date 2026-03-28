@@ -28,4 +28,6 @@ public static class ErrorCodes
     public const string TooManyRequests = "TooManyRequests";
     public const string AuthenticationFailed = "AuthenticationFailed";
     public const string InvalidOperation = "InvalidOperation";
+    public const string LlmQuotaExceeded = "LlmQuotaExceeded";
+    public const string LlmKillSwitchActive = "LlmKillSwitchActive";
 }
