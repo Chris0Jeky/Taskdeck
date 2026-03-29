@@ -184,4 +184,211 @@ describe('createReplayEngine', () => {
     await vi.advanceTimersByTimeAsync(200)
     expect(executed).toEqual(['A']) // B should not have executed
   })
+
+  it('emits error with string message when handler throws non-Error value', async () => {
+    const trace = buildTrace([{ label: 'Bad', offsetMs: 0 }])
+    const states: ReplayState[] = []
+    const engine = createReplayEngine(trace)
+    engine.onAction(() => {
+      throw 'string error'
+    })
+    engine.onStateChange((s) => states.push({ ...s }))
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const errorState = states.find(s => s.status === 'error')
+    expect(errorState).toBeDefined()
+    expect(errorState!.error).toBe('string error')
+  })
+
+  it('restarts from beginning when play is called after completion', async () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 0 },
+    ])
+
+    const executed: string[] = []
+    const states: ReplayState[] = []
+    const engine = createReplayEngine(trace)
+    engine.onAction((action) => executed.push(action.label))
+    engine.onStateChange((s) => states.push({ ...s }))
+
+    // Play to completion
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(states[states.length - 1].status).toBe('completed')
+
+    // Play again after completion - should restart
+    executed.length = 0
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(executed).toContain('A')
+  })
+
+  it('seekTo pauses playback when seeking during active play', async () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 0 },
+      { label: 'B', offsetMs: 100 },
+      { label: 'C', offsetMs: 200 },
+    ])
+
+    const engine = createReplayEngine(trace)
+    engine.onAction(() => {})
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    // Engine is now playing, currentIndex = 1
+
+    engine.seekTo(2)
+    expect(engine.getState().status).toBe('paused')
+    expect(engine.getState().currentIndex).toBe(2)
+  })
+
+  it('pause is a no-op when not playing', () => {
+    const trace = buildTrace([{ label: 'A', offsetMs: 0 }])
+    const engine = createReplayEngine(trace)
+
+    // Pause from idle - should be a no-op
+    engine.pause()
+    expect(engine.getState().status).toBe('idle')
+  })
+
+  it('reports elapsed time based on last executed action', async () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 50 },
+      { label: 'B', offsetMs: 200 },
+    ])
+
+    const engine = createReplayEngine(trace)
+    engine.onAction(() => {})
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(50)
+    // After executing action 0 (offsetMs=50), currentIndex should be 1
+    const state = engine.getState()
+    expect(state.elapsedMs).toBe(50)
+  })
+
+  it('respects playback speed for action timing', async () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 0 },
+      { label: 'B', offsetMs: 200 },
+    ])
+
+    const executed: string[] = []
+    const engine = createReplayEngine(trace)
+    engine.onAction((action) => executed.push(action.label))
+    engine.setSpeed(2) // 2x speed
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(executed).toEqual(['A'])
+
+    // At 2x speed, 200ms delay becomes 100ms
+    await vi.advanceTimersByTimeAsync(100)
+    expect(executed).toEqual(['A', 'B'])
+  })
+
+  it('seekTo preserves current status when not playing', () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 0 },
+      { label: 'B', offsetMs: 100 },
+    ])
+
+    const engine = createReplayEngine(trace)
+    // Seek from idle - status should remain idle
+    engine.seekTo(1)
+    expect(engine.getState().status).toBe('idle')
+    expect(engine.getState().currentIndex).toBe(1)
+  })
+
+  it('stop clears pending timer during active playback', async () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 0 },
+      { label: 'B', offsetMs: 500 },
+    ])
+
+    const executed: string[] = []
+    const engine = createReplayEngine(trace)
+    engine.onAction((action) => executed.push(action.label))
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(executed).toEqual(['A'])
+
+    // Stop while waiting for B
+    engine.stop()
+    await vi.advanceTimersByTimeAsync(600)
+    expect(executed).toEqual(['A']) // B should not execute
+    expect(engine.getState().status).toBe('idle')
+    expect(engine.getState().currentIndex).toBe(0)
+  })
+
+  it('calls multiple registered action handlers', async () => {
+    const trace = buildTrace([{ label: 'A', offsetMs: 0 }])
+
+    const handler1Calls: string[] = []
+    const handler2Calls: string[] = []
+    const engine = createReplayEngine(trace)
+    engine.onAction((action) => handler1Calls.push(action.label))
+    engine.onAction((action) => handler2Calls.push(action.label))
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(handler1Calls).toEqual(['A'])
+    expect(handler2Calls).toEqual(['A'])
+  })
+
+  it('resume from paused continues remaining actions', async () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 0 },
+      { label: 'B', offsetMs: 100 },
+      { label: 'C', offsetMs: 200 },
+    ])
+
+    const executed: string[] = []
+    const engine = createReplayEngine(trace)
+    engine.onAction((action) => executed.push(action.label))
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(executed).toEqual(['A'])
+
+    engine.pause()
+
+    // Resume
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(executed).toContain('B')
+  })
+
+  it('seekTo while paused stays paused', async () => {
+    const trace = buildTrace([
+      { label: 'A', offsetMs: 0 },
+      { label: 'B', offsetMs: 100 },
+      { label: 'C', offsetMs: 200 },
+    ])
+
+    const engine = createReplayEngine(trace)
+    engine.onAction(() => {})
+
+    engine.play()
+    await vi.advanceTimersByTimeAsync(0)
+    engine.pause()
+    expect(engine.getState().status).toBe('paused')
+
+    engine.seekTo(0)
+    expect(engine.getState().status).toBe('paused')
+    expect(engine.getState().currentIndex).toBe(0)
+  })
+
+  it('buildState reports zero elapsed when no actions executed', () => {
+    const trace = buildTrace([{ label: 'A', offsetMs: 100 }])
+    const engine = createReplayEngine(trace)
+
+    const state = engine.getState()
+    expect(state.elapsedMs).toBe(0)
+    expect(state.currentIndex).toBe(0)
+  })
 })

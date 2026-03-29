@@ -164,6 +164,152 @@ describe('validateScenario', () => {
     const errors = validateScenario(scenario)
     expect(errors.some(e => e.path.includes('delayMs'))).toBe(true)
   })
+
+  it('rejects non-string description', () => {
+    const scenario = buildValidScenario()
+    ;(scenario as Record<string, unknown>).description = 42
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path === 'description')).toBe(true)
+  })
+
+  it('rejects non-array tags', () => {
+    const scenario = buildValidScenario()
+    ;(scenario as Record<string, unknown>).tags = 'not-an-array'
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path === 'tags')).toBe(true)
+  })
+
+  it('rejects step with null params', () => {
+    const scenario = buildValidScenario()
+    ;(scenario.steps[0] as Record<string, unknown>).params = null
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('params'))).toBe(true)
+  })
+
+  it('rejects step that is not an object', () => {
+    const scenario = buildValidScenario()
+    ;(scenario as Record<string, unknown>).steps = ['not-an-object']
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.message.includes('non-null object'))).toBe(true)
+  })
+
+  it('validates assert step with text-equals expectation requires value', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'assert', description: 'Assert',
+      params: { selector: '#el', expectation: 'text-equals' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('value'))).toBe(true)
+  })
+
+  it('validates assert with visible expectation does not require value', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'assert', description: 'Assert visible',
+      params: { selector: '#el', expectation: 'visible' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('value'))).toBe(false)
+  })
+
+  it('validates assert with hidden expectation does not require value', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'assert', description: 'Assert hidden',
+      params: { selector: '#el', expectation: 'hidden' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('value'))).toBe(false)
+  })
+
+  it('validates assert with invalid expectation', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'assert', description: 'Assert',
+      params: { selector: '#el', expectation: 'invalid' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('expectation'))).toBe(true)
+  })
+
+  it('rejects step with missing description', () => {
+    const scenario = buildValidScenario()
+    delete (scenario.steps[0] as Record<string, unknown>).description
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('description'))).toBe(true)
+  })
+
+  it('accepts valid fill step', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'fill', description: 'Fill input',
+      params: { selector: '#input', value: 'hello' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors).toHaveLength(0)
+  })
+
+  it('rejects fill step with missing value', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'fill', description: 'Fill input',
+      params: { selector: '#input' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('value'))).toBe(true)
+  })
+
+  it('accepts valid api-seed step', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'api-seed', description: 'Seed data',
+      params: { method: 'POST', endpoint: '/api/items' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors).toHaveLength(0)
+  })
+
+  it('accepts valid store-dispatch step', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'store-dispatch', description: 'Dispatch action',
+      params: { store: 'boardStore', action: 'loadBoard' },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors).toHaveLength(0)
+  })
+
+  it('accepts valid wait step', () => {
+    const scenario = buildValidScenario()
+    scenario.steps = [{
+      id: 's1', type: 'wait', description: 'Wait',
+      params: { durationMs: 500 },
+    }]
+    const errors = validateScenario(scenario)
+    expect(errors).toHaveLength(0)
+  })
+
+  it('rejects delayMs that is not a number', () => {
+    const scenario = buildValidScenario()
+    ;(scenario.steps[0] as Record<string, unknown>).delayMs = 'not-a-number'
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('delayMs'))).toBe(true)
+  })
+
+  it('accepts undefined delayMs', () => {
+    const scenario = buildValidScenario()
+    delete (scenario.steps[0] as Record<string, unknown>).delayMs
+    const errors = validateScenario(scenario)
+    expect(errors.some(e => e.path.includes('delayMs'))).toBe(false)
+  })
+
+  it('accepts scenario without tags', () => {
+    const scenario = buildValidScenario()
+    delete (scenario as Record<string, unknown>).tags
+    const errors = validateScenario(scenario)
+    expect(errors).toHaveLength(0)
+  })
 })
 
 describe('createBlankScenario', () => {
@@ -192,6 +338,38 @@ describe('createBlankStep', () => {
     const step1 = createBlankStep('click')
     const step2 = createBlankStep('click')
     expect(step1.id).not.toBe(step2.id)
+  })
+
+  it('creates click step with empty selector', () => {
+    const step = createBlankStep('click')
+    expect(step.type).toBe('click')
+    expect((step.params as Record<string, unknown>).selector).toBe('')
+  })
+
+  it('creates fill step with empty selector and value', () => {
+    const step = createBlankStep('fill')
+    expect(step.type).toBe('fill')
+    expect((step.params as Record<string, unknown>).selector).toBe('')
+    expect((step.params as Record<string, unknown>).value).toBe('')
+  })
+
+  it('creates assert step with default visible expectation', () => {
+    const step = createBlankStep('assert')
+    expect(step.type).toBe('assert')
+    expect((step.params as Record<string, unknown>).expectation).toBe('visible')
+  })
+
+  it('creates api-seed step with POST method', () => {
+    const step = createBlankStep('api-seed')
+    expect(step.type).toBe('api-seed')
+    expect((step.params as Record<string, unknown>).method).toBe('POST')
+  })
+
+  it('creates store-dispatch step with empty store and action', () => {
+    const step = createBlankStep('store-dispatch')
+    expect(step.type).toBe('store-dispatch')
+    expect((step.params as Record<string, unknown>).store).toBe('')
+    expect((step.params as Record<string, unknown>).action).toBe('')
   })
 })
 
