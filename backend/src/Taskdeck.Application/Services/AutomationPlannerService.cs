@@ -370,8 +370,8 @@ public class AutomationPlannerService : IAutomationPlannerService
             }
 
             if (!operations.Any())
-                return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, 
-                    "Could not parse instruction. Supported patterns: 'create card \"title\"', 'move card {id} to column \"name\"', 'archive card {id}', 'archive cards matching \"pattern\"', 'update card {id} title/description \"value\"', 'rename board to \"name\"', 'update board description \"value\"', 'archive board', 'unarchive board', 'move column \"name\" to position {n}'");
+                return Result.Failure<ProposalDto>(ErrorCodes.ValidationError,
+                    BuildParseHintMessage(instruction));
 
             // Classify risk
             var operationDtos = operations.Select(o => new ProposalOperationDto(
@@ -419,6 +419,104 @@ public class AutomationPlannerService : IAutomationPlannerService
             return Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, $"Failed to parse instruction: {ex.Message}");
         }
     }
+
+    internal static readonly string ParseHintMarker = "[PARSE_HINT]";
+
+    internal static readonly (string Pattern, string Example, string[] Keywords)[] SupportedPatterns = new[]
+    {
+        ("create card \"title\"", "create card \"My new task\"", new[] { "create", "add", "new", "card", "task" }),
+        ("create card \"title\" in column \"name\"", "create card \"Bug fix\" in column \"In Progress\"", new[] { "create", "add", "new", "card", "column", "in" }),
+        ("move card {id} to column \"name\"", "move card abc-123 to column \"Done\"", new[] { "move", "card", "column", "to" }),
+        ("archive card {id}", "archive card abc-123", new[] { "archive", "card", "remove", "delete" }),
+        ("archive cards matching \"pattern\"", "archive cards matching \"old tasks\"", new[] { "archive", "cards", "matching", "bulk", "batch" }),
+        ("update card {id} title \"value\"", "update card abc-123 title \"New title\"", new[] { "update", "edit", "change", "card", "title", "rename" }),
+        ("update card {id} description \"value\"", "update card abc-123 description \"Updated details\"", new[] { "update", "edit", "change", "card", "description", "desc" }),
+        ("rename board to \"name\"", "rename board to \"Sprint 5\"", new[] { "rename", "board", "name", "title" }),
+        ("update board description \"value\"", "update board description \"Team workspace\"", new[] { "update", "board", "description", "desc" }),
+        ("archive board", "archive board", new[] { "archive", "board" }),
+        ("unarchive board", "unarchive board", new[] { "unarchive", "restore", "board" }),
+        ("move column \"name\" to position {n}", "move column \"Done\" to position 0", new[] { "move", "column", "position", "reorder" }),
+    };
+
+    internal static string BuildParseHintMessage(string instruction)
+    {
+        var detectedIntent = DetectIntent(instruction);
+        var bestMatch = FindClosestPattern(instruction, detectedIntent);
+
+        var patterns = SupportedPatterns.Select(p => p.Pattern).ToArray();
+        var hint = new ParseHintPayload(
+            patterns,
+            bestMatch.Example,
+            bestMatch.Pattern,
+            detectedIntent);
+
+        var hintJson = JsonSerializer.Serialize(hint, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        return $"Could not parse instruction into a proposal.{ParseHintMarker}{hintJson}";
+    }
+
+    internal static string? DetectIntent(string instruction)
+    {
+        var lower = instruction.Trim().ToLowerInvariant();
+
+        if (lower.Contains("create") || lower.Contains("add") || lower.Contains("new"))
+            return "create";
+        if (lower.Contains("move") || lower.Contains("drag") || lower.Contains("transfer"))
+            return "move";
+        if (lower.Contains("archive") || lower.Contains("remove") || lower.Contains("delete"))
+            return "archive";
+        if (lower.Contains("update") || lower.Contains("edit") || lower.Contains("change") || lower.Contains("rename") || lower.Contains("set"))
+            return "update";
+        if (lower.Contains("unarchive") || lower.Contains("restore"))
+            return "unarchive";
+        if (lower.Contains("reorder") || lower.Contains("position"))
+            return "reorder";
+
+        return null;
+    }
+
+    internal static (string Pattern, string Example) FindClosestPattern(string instruction, string? detectedIntent)
+    {
+        var lower = instruction.Trim().ToLowerInvariant();
+        var words = lower.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        var bestScore = -1;
+        var bestPattern = SupportedPatterns[0];
+
+        foreach (var entry in SupportedPatterns)
+        {
+            var score = 0;
+
+            // Boost patterns whose keywords overlap with the instruction words
+            foreach (var keyword in entry.Keywords)
+            {
+                if (words.Any(w => w.Contains(keyword)))
+                    score += 2;
+            }
+
+            // Extra boost if the detected intent matches the first keyword
+            if (detectedIntent != null && entry.Keywords.Length > 0 &&
+                entry.Keywords[0].Equals(detectedIntent, StringComparison.OrdinalIgnoreCase))
+                score += 5;
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestPattern = entry;
+            }
+        }
+
+        return (bestPattern.Pattern, bestPattern.Example);
+    }
+
+    internal record ParseHintPayload(
+        string[] SupportedPatterns,
+        string ExampleInstruction,
+        string ClosestPattern,
+        string? DetectedIntent);
 
     private static bool TryResolveCorrelationId(string? correlationId, out string resolvedCorrelationId, out string error)
     {
