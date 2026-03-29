@@ -70,9 +70,10 @@ const emit = defineEmits<{
 
 .td-keyboard-help {
   background: var(--td-glass-bg);
-  backdrop-filter: blur(24px);
-  border: 0.5px solid rgba(91, 64, 62, 0.2);
-  box-shadow: var(--td-shadow-lg);
+  backdrop-filter: blur(var(--td-glass-blur));
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  box-shadow: var(--td-shadow-xl);
   width: 100%;
   max-width: 520px;
   max-height: 80vh;
@@ -84,7 +85,7 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: space-between;
   padding: var(--td-space-5) var(--td-space-6);
-  border-bottom: 1px solid rgba(91, 64, 62, 0.15);
+  border-bottom: 1px solid var(--td-border-default);
 }
 
 .td-keyboard-help__header h2 {
@@ -98,14 +99,22 @@ const emit = defineEmits<{
 .td-keyboard-help__header button {
   background: transparent;
   border: none;
+  border-radius: var(--td-radius-md);
   font-size: var(--td-font-lg);
   cursor: pointer;
+  padding: var(--td-space-1) var(--td-space-2);
   color: var(--td-text-tertiary);
-  transition: color var(--td-transition-fast);
+  transition: color var(--td-transition-fast), background var(--td-transition-fast);
 }
 
 .td-keyboard-help__header button:hover {
   color: var(--td-color-ember);
+  background: var(--td-surface-container-high);
+}
+
+.td-keyboard-help__header button:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
 }
 
 .td-keyboard-help__content {
@@ -118,7 +127,7 @@ const emit = defineEmits<{
 
 .td-keyboard-help__section h3 {
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: var(--td-font-xs);
   font-weight: 700;
   color: var(--td-color-ember);
   text-transform: uppercase;
@@ -137,10 +146,11 @@ const emit = defineEmits<{
 
 .td-shortcut-row kbd {
   background: var(--td-surface-container-highest);
-  border: 0.5px solid rgba(91, 64, 62, 0.2);
-  padding: 2px 8px;
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-sm);
+  padding: var(--td-space-1) var(--td-space-3);
   font-family: 'Space Grotesk', monospace;
-  font-size: 10px;
+  font-size: var(--td-font-xs);
   letter-spacing: 0.05em;
   color: var(--td-color-primary);
 }
