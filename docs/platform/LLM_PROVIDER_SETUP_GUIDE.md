@@ -175,10 +175,14 @@ This is intentionally separate from the broader demo tooling so an operator can 
 ## Managed-Key Abuse-Control Follow-Through
 
 Provider runtime support does not replace managed-key control-plane requirements.
+
+**User-facing policy**: When operating in managed-key mode, fair-use boundaries, privacy disclosures, and enforcement consequences are defined in `docs/security/MANAGED_KEY_USAGE_POLICY.md`. Operators and demo presenters should be familiar with this policy before enabling live providers for shared access.
+
 Continue tracked work in:
 
 - delivered baseline: `#236` (identity attribution contract)
-- remaining follow-through: `#235`, `#237`, `#238`, `#239`, `#240`
+- delivered policy: `#240` (user-facing managed-key usage policy)
+- remaining follow-through: `#235`, `#237`, `#238`, `#239`
 
 ## References
 
