@@ -358,6 +358,37 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_ShouldReturnStatusWithHint_WhenRequestProposalExplicitButPlannerFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Explicit request planner fail", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Here is some info.", 12, false, null));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Could not parse instruction"));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please do something with this", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("Could not create the requested proposal");
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldPersistDegradedReason_OnAssistantMessage()
     {
         var userId = Guid.NewGuid();

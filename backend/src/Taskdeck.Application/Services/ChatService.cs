@@ -267,6 +267,11 @@ public class ChatService : IChatService
                         proposalId = proposalResult.Value.Id;
                         assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
                     }
+                    else
+                    {
+                        assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
+                        messageType = "status";
+                    }
                 }
             }
 

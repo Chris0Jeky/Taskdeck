@@ -12,7 +12,8 @@ public static class LlmIntentClassifier
             || lower.Contains("create task") || lower.Contains("add task")
             || lower.Contains("create a task") || lower.Contains("add a task")
             || lower.Contains("new card") || lower.Contains("new task")
-            || lower.Contains("make a card") || lower.Contains("make a task"))
+            || lower.Contains("make a card") || lower.Contains("make a task")
+            || lower.Contains("make card") || lower.Contains("make task"))
             return (true, "card.create");
 
         if (lower.Contains("move card"))
@@ -28,7 +29,10 @@ public static class LlmIntentClassifier
             return (true, "board.create");
         if (lower.Contains("rename board"))
             return (true, "board.update");
-        if (lower.Contains("reorder") || lower.Contains("sort"))
+        if (lower.Contains("reorder cards") || lower.Contains("reorder column")
+            || lower.Contains("reorder columns") || lower.Contains("reorder board")
+            || lower.Contains("sort cards") || lower.Contains("sort column")
+            || lower.Contains("sort columns") || lower.Contains("sort board"))
             return (true, "column.reorder");
 
         return (false, null);
