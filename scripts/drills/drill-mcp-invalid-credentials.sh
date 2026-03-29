@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# drill-mcp-invalid-credentials.sh - Verify MCP gateway configuration validation.
+# drill-mcp-invalid-credentials.sh - MCP configuration validation and unknown-server handling.
 #
 # Scenario: Optional MCP setup is missing helper scripts, misclassifies optional
-#           servers, or the gateway is asked to launch an unknown server name.
-# Expected: Credential-management helpers exist, credential-free default servers
-#           remain unaffected, and bogus server names fail clearly at dry-run time.
+#           servers, or the gateway is asked to launch an unknown (misconfigured)
+#           server name.  This drill validates static config structure and unknown-
+#           server rejection — it does NOT inject bad credentials into a live server.
+#
+# NOTE: Credential injection testing (configured server + wrong secret) requires a
+#       live MCP-enabled deployment and is out of scope for local drills.
 #
 # Recovery path: Rotate or re-set credentials via `docker mcp secret set`.
 #                See docs/ops/ and scripts/mcp/Set-MarketplaceMcpCredentials.ps1.
@@ -138,6 +141,34 @@ if [[ -f "$APPSETTINGS" ]]; then
             echo "[$DRILL_NAME] Default provider is Mock (safe fallback)"
         fi
     fi
+fi
+
+# Sub-drill 4: Static scan for placeholder/template credentials
+echo ""
+echo "[$DRILL_NAME] Sub-drill 4: Static scan for placeholder credential strings"
+
+PLACEHOLDER_PATTERNS="CHANGE_ME\|your-token-here\|YOUR_API_KEY\|INSERT_SECRET\|<secret>\|TODO_FILL_IN\|REPLACE_ME\|placeholder"
+PLACEHOLDER_FILES=()
+
+for cfg_file in \
+    "$REPO_ROOT/.env" \
+    "$REPO_ROOT/deploy/.env" \
+    "$REPO_ROOT/deploy/.env.example" \
+    "$REPO_ROOT/backend/src/Taskdeck.Api/appsettings.json" \
+    "$REPO_ROOT/backend/src/Taskdeck.Api/appsettings.Development.json"; do
+    if [[ -f "$cfg_file" ]]; then
+        if grep -q "$PLACEHOLDER_PATTERNS" "$cfg_file" 2>/dev/null; then
+            PLACEHOLDER_FILES+=("$cfg_file")
+            echo "[$DRILL_NAME] WARNING - Placeholder credential string found in: $cfg_file"
+            grep -n "$PLACEHOLDER_PATTERNS" "$cfg_file" 2>/dev/null | head -5 | sed 's/^/  /'
+        fi
+    fi
+done
+
+if [[ ${#PLACEHOLDER_FILES[@]} -eq 0 ]]; then
+    echo "[$DRILL_NAME] No placeholder credential strings detected in known config files"
+else
+    echo "[$DRILL_NAME] ${#PLACEHOLDER_FILES[@]} file(s) contain placeholder credential strings — review before deploying"
 fi
 
 echo ""

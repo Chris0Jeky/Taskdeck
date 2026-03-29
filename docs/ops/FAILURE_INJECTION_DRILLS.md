@@ -92,16 +92,16 @@ Artifacts (logs, captured output) are written to `drill-artifacts/` in the repo 
 
 ---
 
-### Drill 4: MCP Configuration Validation (`drill-mcp-invalid-credentials.sh`)
+### Drill 4: MCP Configuration Validation / Unknown-Server Handling (`drill-mcp-invalid-credentials.sh`)
 
 | Field | Value |
 | --- | --- |
 | Script | `scripts/drills/drill-mcp-invalid-credentials.sh` |
 | Category | MCP configuration / unknown-server handling |
-| Simulates | Missing MCP helper scripts, optional-server classification drift, or an unknown server name passed to the MCP gateway |
-| Expected behavior | Credential-management helpers exist, default servers remain unaffected, and bogus server names fail clearly at dry-run time |
-| Pass criteria | Credential management scripts exist with validation; profile test distinguishes optional servers; unknown-server dry-run fails; LLM provider has Mock fallback |
-| Failure signal | No credential management scripts; optional/required handling missing; bogus server dry-run unexpectedly succeeds |
+| Simulates | Missing MCP helper scripts, optional-server classification drift, an unknown (misconfigured) server name passed to the MCP gateway, and presence of placeholder credential strings in config files |
+| Expected behavior | Credential-management helpers exist, default servers remain unaffected, bogus server names fail clearly at dry-run time, and no placeholder secrets are left in config files |
+| Pass criteria | Credential management scripts exist with validation; profile test distinguishes optional servers; unknown-server dry-run fails; LLM provider has Mock fallback; no placeholder credential strings in known config files |
+| Failure signal | No credential management scripts; optional/required handling missing; bogus server dry-run unexpectedly succeeds; placeholder credential strings detected |
 
 **Recovery path:**
 
@@ -110,10 +110,11 @@ Artifacts (logs, captured output) are written to `drill-artifacts/` in the repo 
 3. For LLM providers: set `Llm__Provider=Mock` for safe local fallback
 4. For optional servers: use `-SkipOptionalWhenMissingPrereqs` flag
 5. See `scripts/mcp/Set-MarketplaceMcpCredentials.ps1` for credential setup
+6. Replace any placeholder credential strings (e.g. `CHANGE_ME`, `your-token-here`) in `.env` / `appsettings` before deploying
 
-**Scope note:** This drill does not currently inject a known-bad secret into a real optional MCP server. It validates gateway/config behavior and unknown-server failure handling only.
+**Scope note:** This drill validates MCP config structure, unknown-server rejection, and static placeholder-credential detection. It does **not** inject a known-bad secret into a live MCP server — testing a configured server with wrong credentials requires a live MCP-enabled deployment and is out of scope for local drills.
 
-**CI compatibility:** Static analysis always runs. Live Docker MCP tests run only when Docker Desktop MCP is available (skipped gracefully in CI).
+**CI compatibility:** Static analysis (including placeholder scan) always runs. Live Docker MCP tests run only when Docker Desktop MCP is available (skipped gracefully in CI).
 
 ---
 
