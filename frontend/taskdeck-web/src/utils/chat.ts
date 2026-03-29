@@ -5,11 +5,11 @@ const chatSessionStatusByIndex = ['Active', 'Archived'] as const
 
 export function normalizeChatRole(value: ChatRoleValue): typeof chatRoleByIndex[number] {
   if (typeof value === 'number') {
-    return chatRoleByIndex[value] ?? 'Assistant'
+    return chatRoleByIndex[value] ?? 'User'
   }
 
   const found = chatRoleByIndex.find(v => v.toLowerCase() === value.toLowerCase())
-  return found ?? 'Assistant'
+  return found ?? 'User'
 }
 
 export function normalizeChatSessionStatus(value: ChatSessionStatusValue): typeof chatSessionStatusByIndex[number] {
