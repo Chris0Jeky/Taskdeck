@@ -142,6 +142,85 @@ public class LlmIntentClassifierTests
 
     #endregion
 
+    #region Edge Cases — Input Extremes
+
+    [Fact]
+    public void Classify_NullInput_ThrowsNullReferenceException()
+    {
+        // The classifier calls message.ToLowerInvariant() without a null guard.
+        // This documents that null input is not handled gracefully.
+        var act = () => LlmIntentClassifier.Classify(null!);
+
+        act.Should().Throw<NullReferenceException>();
+    }
+
+    [Fact]
+    public void Classify_VeryLongString_ReturnsNotActionable()
+    {
+        var longMessage = new string('x', 50_000);
+
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(longMessage);
+
+        isActionable.Should().BeFalse();
+        actionIntent.Should().BeNull();
+    }
+
+    [Fact]
+    public void Classify_VeryLongStringContainingPattern_StillMatches()
+    {
+        var longMessage = new string('x', 25_000) + " create card for testing " + new string('x', 25_000);
+
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(longMessage);
+
+        isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.create");
+    }
+
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("\t\t")]
+    [InlineData("\n\n\n")]
+    public void Classify_WhitespaceOnly_ReturnsNotActionable(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeFalse();
+        actionIntent.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Hello! @#$%^&*() special chars")]
+    [InlineData("Unicode: \u00e9\u00e8\u00ea\u00eb\u00fc\u00f6\u00e4")]
+    [InlineData("<script>alert('xss')</script>")]
+    [InlineData("SELECT * FROM cards; DROP TABLE boards;")]
+    public void Classify_SpecialCharacters_WithoutPattern_ReturnsNotActionable(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeFalse();
+        actionIntent.Should().BeNull();
+    }
+
+    [Fact]
+    public void Classify_PatternWithSpecialCharsSurrounding_StillMatches()
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify("!!! create card !!! @#$ testing");
+
+        isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.create");
+    }
+
+    [Fact]
+    public void Classify_PatternWithNewlines_StillMatches()
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify("line 1\ncreate card for testing\nline 3");
+
+        isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.create");
+    }
+
+    #endregion
+
     #region Known Gaps — Natural Language Misses (Documents #570/#571)
 
     /// <summary>
