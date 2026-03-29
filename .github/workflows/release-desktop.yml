@@ -1,0 +1,239 @@
+# =============================================================================
+# Release Desktop — cross-platform self-contained executable builds
+# =============================================================================
+#
+# Triggers on version tags (v*). Builds self-contained single-file executables
+# for win-x64, linux-x64, osx-x64, osx-arm64 and publishes them as a GitHub
+# Release with SHA256 checksums and auto-generated release notes.
+#
+# Tracked by: #535 (PKG-03)
+# =============================================================================
+
+name: Release Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to build (e.g. v0.2.0). Defaults to current ref."
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  DOTNET_VERSION: "8.0.x"
+  NODE_VERSION: "24.13.1"
+  PUBLISH_PROJECT: backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build frontend assets (shared by all platform builds)
+  # ---------------------------------------------------------------------------
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Build production bundle
+        working-directory: frontend/taskdeck-web
+        run: npx vite build
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/taskdeck-web/dist/
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Build self-contained executables per platform
+  # ---------------------------------------------------------------------------
+  build-backend:
+    name: Build ${{ matrix.rid }}
+    needs: build-frontend
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            archive_ext: zip
+          - rid: linux-x64
+            os: ubuntu-latest
+            archive_ext: tar.gz
+          - rid: osx-x64
+            os: macos-latest
+            archive_ext: tar.gz
+          - rid: osx-arm64
+            os: macos-latest
+            archive_ext: tar.gz
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln -r ${{ matrix.rid }}
+
+      - name: Publish self-contained executable
+        run: >
+          dotnet publish ${{ env.PUBLISH_PROJECT }}
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -o publish/${{ matrix.rid }}
+          --no-restore
+
+      - name: Copy frontend dist into publish output
+        shell: bash
+        run: |
+          mkdir -p publish/${{ matrix.rid }}/wwwroot
+          cp -r frontend-dist/* publish/${{ matrix.rid }}/wwwroot/
+
+      - name: Verify frontend assets present
+        shell: bash
+        run: |
+          if [ ! -f "publish/${{ matrix.rid }}/wwwroot/index.html" ]; then
+            echo "::error::Frontend dist missing index.html — build may have failed silently"
+            exit 1
+          fi
+          echo "Frontend assets verified ($(find publish/${{ matrix.rid }}/wwwroot -type f | wc -l) files)"
+
+      - name: Determine version tag
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag || '' }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Package artifact (zip — Windows)
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "publish/${{ matrix.rid }}/*" `
+            -DestinationPath "taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.zip"
+
+      - name: Package artifact (tar.gz — Linux/macOS)
+        if: matrix.archive_ext == 'tar.gz'
+        run: |
+          tar -czf "taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.tar.gz" \
+            -C publish/${{ matrix.rid }} .
+
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          ARCHIVE="taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}"
+          if command -v sha256sum &>/dev/null; then
+            sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256"
+          else
+            shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
+          fi
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: |
+            taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}
+            taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}.sha256
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Create GitHub Release with all platform artifacts
+  # ---------------------------------------------------------------------------
+  create-release:
+    name: Create GitHub Release
+    needs: build-backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Verify checksums
+        working-directory: artifacts
+        run: |
+          echo "=== Release artifacts ==="
+          ls -la
+          echo ""
+          echo "=== SHA256 checksums ==="
+          cat ./*.sha256
+          echo ""
+          echo "=== Verifying checksums ==="
+          sha256sum -c ./*.sha256
+
+      - name: Determine version tag
+        id: version
+        run: |
+          TAG="${{ inputs.tag || '' }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            artifacts/* \
+            --title "Taskdeck ${{ steps.version.outputs.tag }}" \
+            --generate-notes \
+            --verify-tag
