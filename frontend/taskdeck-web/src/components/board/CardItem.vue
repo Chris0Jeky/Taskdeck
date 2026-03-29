@@ -166,6 +166,13 @@ function isOverdue(dateString: string | null): boolean {
   box-shadow: var(--td-shadow-lg), 0 0 0 2px rgba(255, 83, 82, 0.25);
 }
 
+.td-board-card--selected:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring), 0 0 0 4px rgba(255, 83, 82, 0.15);
+  border-color: var(--td-border-ember);
+  background: var(--td-color-ember-dim);
+}
+
 /* Dragging state */
 .td-board-card--dragging {
   opacity: 0.5;
