@@ -17,32 +17,32 @@ Analyze gaps in the current hardening and testing posture across MCP integration
 
 **What exists:**
 - Domain entity tests: 23 test files covering core entities (Board, Card, Column, Label, User, AutomationProposal, CardComment, Notification, LlmUsageRecord, AbuseActor/Event, AgentProfile/Run/RunEvent, KnowledgeChunk/Document, etc.)
-- Application service tests: 40+ test files covering all major services including automation, capture, chat, export/import, webhooks, LLM providers, knowledge, abuse detection, starter packs
-- API integration tests: 50+ test files covering HTTP contracts, auth, error contracts, CORS, rate limiting, security headers, correlation IDs, observability, realtime hubs, and a comprehensive authz regression matrix
+- Application service tests: 55 test files covering all major services including automation, capture, chat, export/import, webhooks, LLM providers, knowledge, abuse detection, starter packs
+- API integration tests: 44 test files covering HTTP contracts, auth, error contracts, CORS, rate limiting, security headers, correlation IDs, observability, realtime hubs, and a comprehensive authz regression matrix
 - CLI contract tests: 4 tests
 - Architecture boundary tests: 8 tests enforcing layer purity and controller conventions
 - Last verified total: 962+ backend tests passing
 
 **Gaps identified:**
-- **Infrastructure repository layer has no dedicated tests.** 26 repository classes in `Taskdeck.Infrastructure/Repositories/` have zero dedicated unit/integration tests. Repository behavior is only exercised transitively through API integration tests using `TestWebApplicationFactory`.
+- **Infrastructure repository layer has minimal dedicated tests.** 24 concrete repository classes exist in `Taskdeck.Infrastructure/Repositories/`. Only `OutboundWebhookDeliveryRepository` has a dedicated test file (`OutboundWebhookDeliveryRepositoryTests.cs` in Api.Tests). The remaining 23 repositories are exercised only transitively through API integration tests using `TestWebApplicationFactory`.
 - **No dedicated `DatabaseFileExportImportService` test coverage** for the SQLite file replacement/backup-restore fallback path at the infrastructure level.
 - **`AbuseDetectionService` live-traffic wiring is untested** — domain/service tests exist but the runtime event-to-detection pipeline is not yet wired or tested.
-- **Worker coverage is partial.** `OutboundWebhookDeliveryWorkerTests` and `ProposalHousekeepingWorkerTests` exist, but the main `LlmQueueWorker` and `WorkerHeartbeatWorker` lack dedicated test files (behavior is covered through service-level and integration tests only).
+- **Worker coverage is partial.** `OutboundWebhookDeliveryWorkerTests`, `ProposalHousekeepingWorkerTests`, and `WorkerHeartbeatRegistryTests` exist, but `LlmQueueToProposalWorker` lacks a dedicated test file (behavior is covered through service-level and integration tests only).
 
 ### 1.2 Frontend Test Coverage
 
 **What exists:**
 - API module tests: 19 spec files covering all 19 API modules (complete coverage)
-- Store tests: 10 stores with test files (including real + demo specs), covering all Pinia stores
+- Store tests: 18 spec files covering all 10 Pinia stores (including real, demo, and filtering specs)
 - Composable tests: 13 spec files covering error mapper, escape stack/close, shortcuts, performance marks, board drag-drop/keyboard-nav/realtime, activity query, virtual list, workspace help/onboarding
 - View tests: 14 spec files covering all primary views (HomeView, TodayView, InboxView, ReviewView, BoardView, ActivityView, ArchiveView, OpsConsoleView, etc.)
-- Component tests: 16 spec files covering board components (action rail, canvas, toolbar, dialog host), modals, cards, app shell, and UI primitives
+- Component tests: 27 spec files covering board components (action rail, canvas, toolbar, dialog host), modals, cards, app shell, and 12 UI primitive specs (TdButton, TdDialog, TdDropdown, TdInput, etc.)
 - E2E: 10 Playwright spec files covering smoke, automation-ops, capture-loop, first-run, concurrency, starter-pack fixtures, workspace-help, today-onboarding, live-llm (opt-in), stakeholder-demo (opt-in)
 - Last verified total: 478+ unit tests, 29+ E2E tests passing
 
 **Gaps identified:**
 - **No dedicated tests for `router/` configuration** — route guards, redirect behavior, and workspace-mode routing logic are only tested transitively through E2E.
-- **Board sub-store modules (`store/board/`) lack individual test files.** 10 sub-modules (boardCrudStore, boardState, boardUiStore, cardStore, columnStore, labelStore, cardCommentStore, cardFilterStore, boardStoreHelpers) are exercised through the main `boardStore.spec.ts` but have no dedicated per-module tests for isolation.
+- **Board sub-store modules (`store/board/`) lack individual test files.** 8 sub-modules (boardCrudStore, boardState, boardUiStore, cardStore, columnStore, labelStore, cardCommentStore, cardFilterStore) plus boardStoreHelpers are exercised through the main `boardStore.spec.ts` but have no dedicated per-module tests for isolation.
 - **`http.ts` (base HTTP client)** has no dedicated test — interceptor behavior, token attachment, and error transformation are untested in isolation.
 
 ### 1.3 CI and Workflow Coverage
@@ -148,7 +148,7 @@ Analyze gaps in the current hardening and testing posture across MCP integration
 | 6 | Ops Reliability | Failure drills not in CI | Medium | Regression in failure-handling discovered only manually |
 | 7 | MCP | No MCP validation in CI | Medium | MCP config drift breaks developer tooling silently |
 | 8 | Deployment | No Terraform validation in CI | Medium | IaC drift/breakage discovered only at apply time |
-| 9 | Backend | Infrastructure repositories untested | Medium | Data access regressions caught only at integration level |
+| 9 | Backend | Infrastructure repositories mostly untested (23 of 24) | Medium | Data access regressions caught only at integration level |
 | 10 | Security | No DAST scans | Medium | Runtime-only vulnerabilities (auth bypass, injection) missed |
 | 11 | Ops Reliability | No graceful shutdown test | Low-Medium | In-flight work lost on deploy/restart |
 | 12 | Frontend | Board sub-store modules lack isolated tests | Low-Medium | Sub-module regressions caught only through aggregate store tests |
@@ -249,7 +249,7 @@ Analyze gaps in the current hardening and testing posture across MCP integration
 #### TST-27: Infrastructure repository integration tests
 **Proposed issue title:** `TST-27: Add integration tests for Infrastructure repository layer`
 **Acceptance criteria:**
-- At least 8 high-traffic repositories get dedicated integration tests with in-memory/test SQLite
+- At least 8 of the 23 untested repositories get dedicated integration tests with in-memory/test SQLite
 - Coverage targets: `BoardRepository`, `CardRepository`, `ColumnRepository`, `UserRepository`, `AutomationProposalRepository`, `LlmQueueRepository`, `NotificationRepository`, `ArchiveItemRepository`
 - Tests exercise query filtering, ordering, and edge cases not covered by transitive API tests
 - Repository test project or shared test infrastructure documented
