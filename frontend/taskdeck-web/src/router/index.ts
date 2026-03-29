@@ -19,6 +19,7 @@ import TodayView from '../views/TodayView.vue'
 import ReviewView from '../views/ReviewView.vue'
 import { isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive } from '../utils/demoMode'
+import * as tokenStorage from '../utils/tokenStorage'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -223,13 +224,12 @@ const router = createRouter({
 router.beforeEach((to) => {
   const isPublic = to.meta.public === true
   const demoActive = isDemoMode && isDemoSessionActive()
-  const token = localStorage.getItem('taskdeck_token')
+  const token = tokenStorage.getToken()
   const tokenValid = !!token && !isTokenExpired(token)
   const hasValidSession = tokenValid || demoActive
 
   if (token && !tokenValid) {
-    localStorage.removeItem('taskdeck_token')
-    localStorage.removeItem('taskdeck_session')
+    tokenStorage.clearAll()
   }
 
   if (!isPublic && !hasValidSession && to.path.startsWith('/workspace')) {
