@@ -30,4 +30,5 @@ public static class ErrorCodes
     public const string InvalidOperation = "InvalidOperation";
     public const string LlmQuotaExceeded = "LlmQuotaExceeded";
     public const string LlmKillSwitchActive = "LlmKillSwitchActive";
+    public const string AbuseContainmentActive = "AbuseContainmentActive";
 }
