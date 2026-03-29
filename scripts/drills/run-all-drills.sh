@@ -28,7 +28,7 @@ DRILLS=(
     "drill-db-missing.sh|Startup with missing SQLite database"
     "drill-db-locked.sh|Startup with locked SQLite database"
     "drill-startup-timeout.sh|Delayed readiness / transient startup timeout"
-    "drill-mcp-invalid-credentials.sh|Invalid or expired optional MCP credentials"
+    "drill-mcp-invalid-credentials.sh|MCP configuration validation and unknown-server handling"
     "drill-proxy-misconfiguration.sh|Reverse-proxy misconfiguration regression"
 )
 

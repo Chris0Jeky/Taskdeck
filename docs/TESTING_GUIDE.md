@@ -327,7 +327,7 @@ Scenarios covered:
 - Missing SQLite database at startup
 - Locked SQLite database at startup
 - Readiness-check timeout behavior
-- Invalid/expired MCP credentials
+- MCP configuration validation / unknown-server handling
 - Reverse-proxy misconfiguration regression
 
 Drill documentation and recovery paths: `docs/ops/FAILURE_INJECTION_DRILLS.md`

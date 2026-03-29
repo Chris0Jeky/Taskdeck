@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# drill-mcp-invalid-credentials.sh — Verify MCP gateway behavior with invalid credentials.
+# drill-mcp-invalid-credentials.sh - Verify MCP gateway configuration validation.
 #
-# Scenario: Optional MCP servers (postman, dockerhub) are configured with
-#           invalid, expired, or missing credentials.
-# Expected: The MCP gateway dry-run should fail with a clear credential error
-#           rather than silently succeeding or producing opaque failures.
-#           Default (credential-free) servers should remain unaffected.
+# Scenario: Optional MCP setup is missing helper scripts, misclassifies optional
+#           servers, or the gateway is asked to launch an unknown server name.
+# Expected: Credential-management helpers exist, credential-free default servers
+#           remain unaffected, and bogus server names fail clearly at dry-run time.
 #
 # Recovery path: Rotate or re-set credentials via `docker mcp secret set`.
 #                See docs/ops/ and scripts/mcp/Set-MarketplaceMcpCredentials.ps1.
@@ -21,7 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[$DRILL_NAME] Scenario: MCP gateway behavior with invalid/missing credentials"
+echo "[$DRILL_NAME] Scenario: MCP gateway configuration validation and unknown-server handling"
 
 # Sub-drill 1: Verify credential-check script exists and validates
 echo ""
@@ -36,35 +35,32 @@ if [[ -f "$MCP_CRED_SCRIPT" ]]; then
     echo "[$DRILL_NAME] Found credential management script: $MCP_CRED_SCRIPT"
     FOUND_CRED_MGMT=true
 
-    # Check it validates inputs
     if grep -q "Validate\|validate\|mandatory\|Mandatory\|required\|Required" "$MCP_CRED_SCRIPT" 2>/dev/null; then
         echo "[$DRILL_NAME] Credential script has input validation"
     else
-        echo "[$DRILL_NAME] WARNING — Credential script may lack input validation"
+        echo "[$DRILL_NAME] WARNING - Credential script may lack input validation"
     fi
 else
-    echo "[$DRILL_NAME] WARNING — Credential management script not found"
+    echo "[$DRILL_NAME] WARNING - Credential management script not found"
 fi
 
 if [[ -f "$MCP_TEST_SCRIPT" ]]; then
     echo "[$DRILL_NAME] Found MCP profile test script: $MCP_TEST_SCRIPT"
     FOUND_CRED_MGMT=true
 
-    # Check it handles missing prereqs
     if grep -q "prereq\|Prereq\|Warning\|warning\|Missing\|missing" "$MCP_TEST_SCRIPT" 2>/dev/null; then
         echo "[$DRILL_NAME] Profile test script has prerequisite/warning handling"
     else
-        echo "[$DRILL_NAME] WARNING — Profile test script may not handle missing prerequisites"
+        echo "[$DRILL_NAME] WARNING - Profile test script may not handle missing prerequisites"
     fi
 
-    # Check for optional server handling
     if grep -q "Optional\|optional\|SkipOptional\|FailOnOptional" "$MCP_TEST_SCRIPT" 2>/dev/null; then
         echo "[$DRILL_NAME] Profile test script distinguishes optional from required servers"
     else
-        echo "[$DRILL_NAME] WARNING — No optional/required server distinction found"
+        echo "[$DRILL_NAME] WARNING - No optional/required server distinction found"
     fi
 else
-    echo "[$DRILL_NAME] WARNING — MCP profile test script not found"
+    echo "[$DRILL_NAME] WARNING - MCP profile test script not found"
 fi
 
 # Sub-drill 2: Check if docker MCP CLI is available and test dry-run
@@ -73,7 +69,6 @@ echo "[$DRILL_NAME] Sub-drill 2: Docker MCP gateway dry-run validation"
 
 DOCKER_MCP_AVAILABLE=false
 if command -v docker &>/dev/null; then
-    # Check if docker mcp subcommand exists
     if docker mcp --help &>/dev/null 2>&1; then
         DOCKER_MCP_AVAILABLE=true
         echo "[$DRILL_NAME] Docker MCP CLI is available"
@@ -86,7 +81,6 @@ else
 fi
 
 if $DOCKER_MCP_AVAILABLE; then
-    # Test default servers (should not need credentials)
     echo "[$DRILL_NAME] Testing default (credential-free) server dry-run..."
     set +e
     docker mcp gateway run --dry-run --servers docker,time 2>"$TEMP_DIR/default-stderr.log" >"$TEMP_DIR/default-stdout.log"
@@ -96,7 +90,7 @@ if $DOCKER_MCP_AVAILABLE; then
     if [[ $DEFAULT_EXIT -eq 0 ]]; then
         echo "[$DRILL_NAME] Default server dry-run succeeded (expected)"
     else
-        echo "[$DRILL_NAME] WARNING — Default server dry-run failed (exit $DEFAULT_EXIT)"
+        echo "[$DRILL_NAME] WARNING - Default server dry-run failed (exit $DEFAULT_EXIT)"
         echo "[$DRILL_NAME] This may indicate Docker MCP is not fully configured"
         if [[ -s "$TEMP_DIR/default-stderr.log" ]]; then
             echo "[$DRILL_NAME] stderr:"
@@ -104,7 +98,6 @@ if $DOCKER_MCP_AVAILABLE; then
         fi
     fi
 
-    # Test with a bogus server name (simulates invalid config)
     echo ""
     echo "[$DRILL_NAME] Testing dry-run with nonexistent server (expect failure)..."
     set +e
@@ -115,25 +108,23 @@ if $DOCKER_MCP_AVAILABLE; then
     if [[ $BOGUS_EXIT -ne 0 ]]; then
         echo "[$DRILL_NAME] Bogus server dry-run correctly failed (exit $BOGUS_EXIT)"
     else
-        echo "[$DRILL_NAME] WARNING — Bogus server dry-run unexpectedly succeeded"
+        echo "[$DRILL_NAME] WARNING - Bogus server dry-run unexpectedly succeeded"
     fi
 else
     echo "[$DRILL_NAME] Skipping live Docker MCP tests (CLI not available)"
     echo "[$DRILL_NAME] Performing static-only validation"
 fi
 
-# Sub-drill 3: Verify LLM provider fallback for invalid credentials
+# Sub-drill 3: Verify LLM provider fallback/config safety documentation
 echo ""
 echo "[$DRILL_NAME] Sub-drill 3: LLM provider credential fallback analysis"
 
 LLM_PROVIDER_DIR="$REPO_ROOT/backend/src/Taskdeck.Infrastructure"
 if [[ -d "$LLM_PROVIDER_DIR" ]]; then
-    # Check for provider fallback logic
     if grep -rq "Mock\|mock\|fallback\|Fallback" "$LLM_PROVIDER_DIR/" --include="*.cs" 2>/dev/null | grep -iq "provider\|llm" 2>/dev/null; then
         echo "[$DRILL_NAME] Infrastructure layer has LLM provider fallback references"
     fi
 
-    # Check for credential validation
     if grep -rq "ApiKey\|apiKey\|api_key\|credential\|Credential" "$LLM_PROVIDER_DIR/" --include="*.cs" 2>/dev/null; then
         echo "[$DRILL_NAME] Infrastructure layer references API key / credential config"
     fi
@@ -150,7 +141,7 @@ if [[ -f "$APPSETTINGS" ]]; then
 fi
 
 echo ""
-echo "[$DRILL_NAME] CAUSE CLASSIFICATION: credential / mcp-configuration"
+echo "[$DRILL_NAME] CAUSE CLASSIFICATION: mcp-configuration / unknown-server-handling"
 echo "[$DRILL_NAME] RECOVERY:"
 echo "[$DRILL_NAME]   1. For MCP secrets: echo '<key>' | docker mcp secret set <server>.<secret-name>"
 echo "[$DRILL_NAME]   2. For expired tokens: rotate via the provider portal, then re-set"
@@ -159,7 +150,7 @@ echo "[$DRILL_NAME]   4. For optional servers: use -SkipOptionalWhenMissingPrere
 echo "[$DRILL_NAME]   5. See scripts/mcp/Set-MarketplaceMcpCredentials.ps1 for credential setup"
 
 if ! $FOUND_CRED_MGMT; then
-    echo "[$DRILL_NAME] FAIL — No credential management scripts found"
+    echo "[$DRILL_NAME] FAIL - No credential management scripts found"
     exit 1
 fi
 

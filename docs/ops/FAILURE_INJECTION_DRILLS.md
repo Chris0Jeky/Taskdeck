@@ -92,16 +92,16 @@ Artifacts (logs, captured output) are written to `drill-artifacts/` in the repo 
 
 ---
 
-### Drill 4: Invalid MCP Credentials (`drill-mcp-invalid-credentials.sh`)
+### Drill 4: MCP Configuration Validation (`drill-mcp-invalid-credentials.sh`)
 
 | Field | Value |
 | --- | --- |
 | Script | `scripts/drills/drill-mcp-invalid-credentials.sh` |
-| Category | Credential / MCP configuration |
-| Simulates | Optional MCP servers configured with invalid, expired, or missing credentials |
-| Expected behavior | MCP gateway dry-run fails with clear credential error; default servers unaffected |
-| Pass criteria | Credential management scripts exist with validation; LLM provider has Mock fallback |
-| Failure signal | No credential management scripts; silent success with bad credentials |
+| Category | MCP configuration / unknown-server handling |
+| Simulates | Missing MCP helper scripts, optional-server classification drift, or an unknown server name passed to the MCP gateway |
+| Expected behavior | Credential-management helpers exist, default servers remain unaffected, and bogus server names fail clearly at dry-run time |
+| Pass criteria | Credential management scripts exist with validation; profile test distinguishes optional servers; unknown-server dry-run fails; LLM provider has Mock fallback |
+| Failure signal | No credential management scripts; optional/required handling missing; bogus server dry-run unexpectedly succeeds |
 
 **Recovery path:**
 
@@ -110,6 +110,8 @@ Artifacts (logs, captured output) are written to `drill-artifacts/` in the repo 
 3. For LLM providers: set `Llm__Provider=Mock` for safe local fallback
 4. For optional servers: use `-SkipOptionalWhenMissingPrereqs` flag
 5. See `scripts/mcp/Set-MarketplaceMcpCredentials.ps1` for credential setup
+
+**Scope note:** This drill does not currently inject a known-bad secret into a real optional MCP server. It validates gateway/config behavior and unknown-server failure handling only.
 
 **CI compatibility:** Static analysis always runs. Live Docker MCP tests run only when Docker Desktop MCP is available (skipped gracefully in CI).
 
