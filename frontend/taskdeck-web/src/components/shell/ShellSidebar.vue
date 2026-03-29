@@ -112,6 +112,16 @@ const navCatalog: NavItem[] = [
     keywords: 'inbox captures triage',
   },
   {
+    id: 'views',
+    label: 'Views',
+    icon: 'V',
+    path: '/workspace/views',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'views saved filters shortcuts blocked due week review',
+  },
+  {
     id: 'notifications',
     label: 'Notifications',
     icon: 'N',
