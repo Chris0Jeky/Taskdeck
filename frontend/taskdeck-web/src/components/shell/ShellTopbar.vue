@@ -90,7 +90,7 @@ function handleWorkspaceModeChange(event: Event) {
 <style scoped>
 .td-topbar {
   background: var(--td-surface-base);
-  border-bottom: 1px solid rgba(91, 64, 62, 0.15);
+  border-bottom: 1px solid var(--td-border-default);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -115,7 +115,7 @@ function handleWorkspaceModeChange(event: Event) {
 
 .td-topbar__mode-label {
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: var(--td-font-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.2em;
@@ -129,19 +129,23 @@ function handleWorkspaceModeChange(event: Event) {
 }
 
 .td-topbar__mode-select {
-  border: 0.5px solid rgba(91, 64, 62, 0.2);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-sm);
   background: var(--td-surface-container-lowest);
   color: var(--td-text-primary);
-  padding: 0.35rem 0.75rem;
+  padding: var(--td-space-2) var(--td-space-4);
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 11px;
+  font-size: var(--td-font-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   min-width: 120px;
+  transition: border-color var(--td-transition-fast);
 }
 
 .td-topbar__mode-select:focus {
-  border-color: var(--td-color-ember-glow);
+  border-color: var(--td-border-focus);
+  outline: none;
+  box-shadow: var(--td-focus-ring);
 }
 
 .td-topbar__mode-select option {
@@ -164,23 +168,29 @@ function handleWorkspaceModeChange(event: Event) {
   gap: var(--td-space-3);
   padding: var(--td-space-3) var(--td-space-5);
   background: var(--td-surface-container-low);
-  border: 0.5px solid rgba(91, 64, 62, 0.15);
+  border: 1px solid var(--td-border-ghost);
+  border-radius: var(--td-radius-md);
   color: var(--td-text-tertiary);
   cursor: pointer;
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 11px;
+  font-size: var(--td-font-xs);
   letter-spacing: 0.05em;
   min-width: 260px;
   width: fit-content;
-  transition: border-color var(--td-transition-fast);
+  transition: border-color var(--td-transition-fast), box-shadow var(--td-transition-fast);
 }
 
 .td-topbar__palette-trigger:hover {
   border-color: var(--td-border-focus);
 }
 
+.td-topbar__palette-trigger:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
+}
+
 .td-topbar__search-icon {
-  font-size: 16px;
+  font-size: var(--td-font-lg);
   color: var(--td-text-tertiary);
 }
 
@@ -210,7 +220,7 @@ function handleWorkspaceModeChange(event: Event) {
 
 .td-topbar__status-label {
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: var(--td-font-xs);
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -219,7 +229,7 @@ function handleWorkspaceModeChange(event: Event) {
 
 .td-topbar__user {
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 11px;
+  font-size: var(--td-font-xs);
   color: var(--td-text-muted);
   font-weight: 500;
   letter-spacing: 0.05em;
