@@ -4,10 +4,12 @@ import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { usePerformanceMark } from '../composables/usePerformanceMark'
 import type { HomeRecommendedAction, WorkspaceOnboarding } from '../types/workspace'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 
 const workspace = useWorkspaceStore()
+const homeLoadPerf = usePerformanceMark('home-load')
 
 const summary = computed(() => workspace.homeSummary)
 const recentBoards = computed(() => summary.value?.boards.recentBoards ?? [])
@@ -60,10 +62,13 @@ const onboardingSummary = computed(() => {
 })
 
 async function loadHomeSummary() {
+  homeLoadPerf.start()
   try {
     await workspace.fetchHomeSummary()
   } catch {
     // The store keeps the error state for the view.
+  } finally {
+    homeLoadPerf.end()
   }
 }
 

@@ -25,6 +25,11 @@ Terraform follow-through:
 
 When Terraform is used, these compose assets remain the workload layer. The Terraform baseline provisions the host/network/storage shell around them; it does not replace the compose deployment model.
 
+## Secrets
+
+Secret handling for all environments follows `docs/security/SECRETS_MANAGEMENT_BASELINE.md`.
+For compose deployments, `TASKDECK_JWT_SECRET` in `deploy/.env` is required and enforced at render time.
+
 ## Prerequisites
 
 - Docker Engine with `docker compose` support

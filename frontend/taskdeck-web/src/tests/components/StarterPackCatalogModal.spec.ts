@@ -5,6 +5,7 @@ import StarterPackCatalogModal from '../../components/board/StarterPackCatalogMo
 const mocks = vi.hoisted(() => ({
   getCatalog: vi.fn(),
   applyStarterPack: vi.fn(),
+  validateManifestJson: vi.fn(),
   fetchBoard: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock('../../api/starterPacksApi', () => ({
   starterPacksApi: {
     getCatalog: mocks.getCatalog,
     applyStarterPack: mocks.applyStarterPack,
+    validateManifestJson: mocks.validateManifestJson,
   },
 }))
 
@@ -306,5 +308,195 @@ describe('StarterPackCatalogModal', () => {
     expect(wrapper.text()).toContain('Blocking')
     expect(wrapper.text()).toContain('ColumnPositionConflict')
     expect(mocks.fetchBoard).not.toHaveBeenCalled()
+  })
+
+  describe('JSON Import tab', () => {
+    function buildValidManifest() {
+      return {
+        schemaVersion: '1.0',
+        packId: 'imported-pack',
+        displayName: 'Imported Pack',
+        description: 'A test imported manifest',
+        compatibility: {
+          minTaskdeckVersion: '1.0.0',
+          requiredFeatures: ['boards'],
+        },
+        tags: ['starter'],
+        labels: [{ name: 'bug', color: '#FF0000' }],
+        columns: [{ name: 'Todo', position: 0 }],
+        templates: [],
+        seedCards: [],
+      }
+    }
+
+    async function switchToImportTab(wrapper: ReturnType<typeof mount>) {
+      const importTab = wrapper.find('[data-testid="tab-import"]')
+      await importTab.trigger('click')
+      await waitForUi()
+    }
+
+    it('shows JSON Import tab and switches to import panel', async () => {
+      const wrapper = mount(StarterPackCatalogModal, {
+        props: { boardId: 'board-1', isOpen: true },
+      })
+
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="tab-catalog"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="tab-import"]').exists()).toBe(true)
+
+      await switchToImportTab(wrapper)
+
+      expect(wrapper.find('[data-testid="import-json-textarea"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Paste or upload manifest JSON')
+    })
+
+    it('validates pasted JSON and shows validation errors for invalid schema', async () => {
+      mocks.validateManifestJson.mockResolvedValue({
+        isValid: false,
+        manifest: null,
+        errors: [
+          { path: '$.packId', message: 'Pack ID must be kebab-case.' },
+          { path: '$.displayName', message: 'Display name is required.' },
+        ],
+      })
+
+      const wrapper = mount(StarterPackCatalogModal, {
+        props: { boardId: 'board-1', isOpen: true },
+      })
+
+      await waitForUi()
+      await switchToImportTab(wrapper)
+
+      const textarea = wrapper.find('[data-testid="import-json-textarea"]')
+      await textarea.setValue('{"schemaVersion":"1.0","packId":"!!bad!!"}')
+
+      const validateBtn = wrapper.find('[data-testid="import-validate-btn"]')
+      await validateBtn.trigger('click')
+      await waitForUi()
+
+      expect(mocks.validateManifestJson).toHaveBeenCalledWith('board-1', '{"schemaVersion":"1.0","packId":"!!bad!!"}')
+      expect(wrapper.find('[data-testid="import-validation-errors"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('$.packId')
+      expect(wrapper.text()).toContain('Pack ID must be kebab-case.')
+      expect(mocks.toastError).toHaveBeenCalled()
+    })
+
+    it('validates valid JSON and enables dry-run/apply buttons', async () => {
+      const manifest = buildValidManifest()
+      mocks.validateManifestJson.mockResolvedValue({
+        isValid: true,
+        manifest,
+        errors: [],
+      })
+
+      const wrapper = mount(StarterPackCatalogModal, {
+        props: { boardId: 'board-1', isOpen: true },
+      })
+
+      await waitForUi()
+      await switchToImportTab(wrapper)
+
+      const textarea = wrapper.find('[data-testid="import-json-textarea"]')
+      await textarea.setValue(JSON.stringify(manifest))
+
+      const validateBtn = wrapper.find('[data-testid="import-validate-btn"]')
+      await validateBtn.trigger('click')
+      await waitForUi()
+
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('Manifest is valid.')
+      expect(wrapper.text()).toContain('Imported Pack')
+      expect(wrapper.find('[data-testid="import-preview-btn"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="import-apply-btn"]').exists()).toBe(true)
+    })
+
+    it('runs dry-run preview for validated imported manifest', async () => {
+      const manifest = buildValidManifest()
+      mocks.validateManifestJson.mockResolvedValue({
+        isValid: true,
+        manifest,
+        errors: [],
+      })
+      mocks.applyStarterPack.mockResolvedValue(
+        buildResult({
+          packId: 'imported-pack',
+          dryRun: true,
+          applied: false,
+          actions: [{ entityType: 'label', operation: 'create', key: 'bug', reason: 'missing' }],
+        }),
+      )
+
+      const wrapper = mount(StarterPackCatalogModal, {
+        props: { boardId: 'board-1', isOpen: true },
+      })
+
+      await waitForUi()
+      await switchToImportTab(wrapper)
+
+      await wrapper.find('[data-testid="import-json-textarea"]').setValue(JSON.stringify(manifest))
+      await wrapper.find('[data-testid="import-validate-btn"]').trigger('click')
+      await waitForUi()
+
+      await wrapper.find('[data-testid="import-preview-btn"]').trigger('click')
+      await waitForUi()
+
+      expect(mocks.applyStarterPack).toHaveBeenCalledWith(
+        'board-1',
+        expect.objectContaining({ dryRun: true, manifest }),
+      )
+      expect(wrapper.find('[data-testid="import-result-panel"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Dry-run Result')
+      expect(wrapper.text()).toContain('Preview ready')
+    })
+
+    it('applies imported manifest and refreshes board', async () => {
+      const manifest = buildValidManifest()
+      mocks.validateManifestJson.mockResolvedValue({
+        isValid: true,
+        manifest,
+        errors: [],
+      })
+      mocks.applyStarterPack.mockResolvedValue(
+        buildResult({ packId: 'imported-pack', applied: true }),
+      )
+
+      const wrapper = mount(StarterPackCatalogModal, {
+        props: { boardId: 'board-1', isOpen: true },
+      })
+
+      await waitForUi()
+      await switchToImportTab(wrapper)
+
+      await wrapper.find('[data-testid="import-json-textarea"]').setValue(JSON.stringify(manifest))
+      await wrapper.find('[data-testid="import-validate-btn"]').trigger('click')
+      await waitForUi()
+
+      await wrapper.find('[data-testid="import-apply-btn"]').trigger('click')
+      await waitForUi()
+
+      expect(mocks.applyStarterPack).toHaveBeenCalledWith(
+        'board-1',
+        expect.objectContaining({ dryRun: false, manifest }),
+      )
+      expect(mocks.fetchBoard).toHaveBeenCalledWith('board-1')
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('Applied imported manifest.')
+      expect(wrapper.emitted('applied')).toBeTruthy()
+    })
+
+    it('shows client-side error when validate is clicked with empty textarea', async () => {
+      const wrapper = mount(StarterPackCatalogModal, {
+        props: { boardId: 'board-1', isOpen: true },
+      })
+
+      await waitForUi()
+      await switchToImportTab(wrapper)
+
+      await wrapper.find('[data-testid="import-validate-btn"]').trigger('click')
+      await waitForUi()
+
+      expect(mocks.validateManifestJson).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="import-validation-errors"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Paste or upload manifest JSON first.')
+    })
   })
 })

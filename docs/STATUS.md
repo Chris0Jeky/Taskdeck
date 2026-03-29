@@ -31,6 +31,7 @@ Current constraints are mostly hardening and consistency:
 - collaborative editing now includes board/card presence visibility and conflict-hinting guardrails for stale card writes
 - card collaboration now includes threaded comments with mention-linked notifications and moderation-aware edit/delete guardrails
 - capture/inbox realignment is now shipped for the CAP MVP loop (`#200` to `#211`); logging redaction guardrails are delivered in `#212`, and long-list virtualization for inbox/activity views is delivered in `#213`
+- frontend interaction latency budgets and instrumentation are delivered in `#250`: performance mark composable, route-transition/board/inbox/review/home/diff instrumentation, lazy route splitting, and documented thresholds in `docs/PERFORMANCE_BUDGETS.md`
 - post-demo-expansion planning is now explicitly biased toward product legibility before new surface breadth: novice-first entry, board-context continuity, readable review flows, and stronger in-app guidance take precedence over broad autonomy work
 - cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
 - Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`; the rehearsal contract is now codified in `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md` (`#355`), and the GTM baseline is now delivered in `#216` with a timed demo script (`docs/product/DEMO_SCRIPT.md`), thesis-aligned landing copy (`docs/product/LANDING_COPY.md`), and beta intake workflow/cadence (`docs/product/BETA_INTAKE_WORKFLOW.md`)
@@ -424,14 +425,14 @@ Documentation baseline for this track:
 
 ## Managed-Key Abuse-Control Track (2026-02-23)
 
-To capture the security and operational risk of letting users consume model calls via a platform-managed provider key, a dedicated control wave was seeded. Identity attribution foundation is now delivered via `#236`; remaining controls stay in this wave:
+To capture the security and operational risk of letting users consume model calls via a platform-managed provider key, a dedicated control wave was seeded. Identity attribution foundation is now delivered via `#236`; user-facing usage policy is now delivered via `#240`. Remaining controls stay in this wave:
 
 - `#235` tracker: managed-key threat model and control sequencing
-- `#236` identity attribution contract for managed-key requests (`Priority II`)
+- `#236` identity attribution contract for managed-key requests (`Priority II`) -- delivered
 - `#237` quota/budget/kill-switch guardrails (`Priority II`)
 - `#238` abuse detection + automated containment (`Priority III`)
 - `#239` incident response + key rotation drills (`Priority III`)
-- `#240` user-facing fair-use and abuse consequence policy (`Priority III`)
+- `#240` user-facing fair-use and abuse consequence policy (`Priority III`) -- delivered: `docs/security/MANAGED_KEY_USAGE_POLICY.md`
 
 ## Frontend Premium UI Wave (2026-02-23)
 
@@ -636,7 +637,7 @@ Security and identity:
 
 Automation and data:
 - active LLM provider policy supports explicit mock vs live-provider switching (`OpenAI`/`Gemini`) with safe defaults for development/test environments
-- managed-key shared-token controls are partially shipped: identity attribution baseline is delivered (`#236`); remaining quota/abuse/incident/policy follow-through is tracked in `#235`, `#237`, `#238`, `#239`, and `#240`
+- managed-key shared-token controls are partially shipped: identity attribution baseline is delivered (`#236`), user-facing usage policy is delivered (`#240`, `docs/security/MANAGED_KEY_USAGE_POLICY.md`); remaining quota/abuse/incident follow-through is tracked in `#235`, `#237`, `#238`, and `#239`
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible

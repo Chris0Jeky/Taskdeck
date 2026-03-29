@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -56,21 +56,6 @@ namespace Taskdeck.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_KnowledgeDocuments_UserId",
-                table: "KnowledgeDocuments",
-                column: "UserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_KnowledgeDocuments_BoardId",
-                table: "KnowledgeDocuments",
-                column: "BoardId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_KnowledgeDocuments_UserId_IsArchived",
-                table: "KnowledgeDocuments",
-                columns: new[] { "UserId", "IsArchived" });
-
-            migrationBuilder.CreateIndex(
                 name: "IX_KnowledgeChunks_DocumentId",
                 table: "KnowledgeChunks",
                 column: "DocumentId");
@@ -80,6 +65,21 @@ namespace Taskdeck.Infrastructure.Migrations
                 table: "KnowledgeChunks",
                 columns: new[] { "DocumentId", "ChunkIndex" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_KnowledgeDocuments_BoardId",
+                table: "KnowledgeDocuments",
+                column: "BoardId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_KnowledgeDocuments_UserId",
+                table: "KnowledgeDocuments",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_KnowledgeDocuments_UserId_IsArchived",
+                table: "KnowledgeDocuments",
+                columns: new[] { "UserId", "IsArchived" });
 
             // Create FTS5 virtual table for full-text search
             migrationBuilder.Sql(
@@ -94,35 +94,24 @@ namespace Taskdeck.Infrastructure.Migrations
                       VALUES (new.Title, new.Content, new.Id);
                   END;");
 
-            // Trigger to update FTS on UPDATE (FTS5 requires special delete command)
-            migrationBuilder.Sql(
-                @"CREATE TRIGGER IF NOT EXISTS KnowledgeDocuments_au AFTER UPDATE ON KnowledgeDocuments
-                  BEGIN
-                      INSERT INTO KnowledgeDocumentsFts(KnowledgeDocumentsFts, title, content, document_id)
-                      VALUES ('delete', old.Title, old.Content, old.Id);
-                      INSERT INTO KnowledgeDocumentsFts(title, content, document_id)
-                      VALUES (new.Title, new.Content, new.Id);
-                  END;");
+            // FTS update/delete sync: managed in application code (KnowledgeService)
+            // to avoid FTS5 special-delete value-mismatch issues with SQLite triggers.
+            // The AFTER INSERT trigger above handles initial indexing;
+            // update and delete sync is handled by KnowledgeFtsSearchService.
 
-            // Trigger to clean FTS on DELETE (FTS5 requires special delete command)
-            migrationBuilder.Sql(
-                @"CREATE TRIGGER IF NOT EXISTS KnowledgeDocuments_ad AFTER DELETE ON KnowledgeDocuments
-                  BEGIN
-                      INSERT INTO KnowledgeDocumentsFts(KnowledgeDocumentsFts, title, content, document_id)
-                      VALUES ('delete', old.Title, old.Content, old.Id);
-                  END;");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("DROP TRIGGER IF EXISTS KnowledgeDocuments_ad;");
-            migrationBuilder.Sql("DROP TRIGGER IF EXISTS KnowledgeDocuments_au;");
             migrationBuilder.Sql("DROP TRIGGER IF EXISTS KnowledgeDocuments_ai;");
             migrationBuilder.Sql("DROP TABLE IF EXISTS KnowledgeDocumentsFts;");
 
-            migrationBuilder.DropTable(name: "KnowledgeChunks");
-            migrationBuilder.DropTable(name: "KnowledgeDocuments");
+            migrationBuilder.DropTable(
+                name: "KnowledgeChunks");
+
+            migrationBuilder.DropTable(
+                name: "KnowledgeDocuments");
         }
     }
 }

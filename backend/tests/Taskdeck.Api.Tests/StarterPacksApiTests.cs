@@ -56,6 +56,69 @@ public class StarterPacksApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ValidateManifest_ShouldReturnValid_WhenManifestJsonIsCorrect()
+    {
+        var board = await CreateBoardAsync();
+
+        var manifestJson = System.Text.Json.JsonSerializer.Serialize(BuildCanonicalManifest());
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/validate-manifest",
+            new ValidateManifestJsonDto(manifestJson));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<ValidateManifestResultDto>();
+        payload.Should().NotBeNull();
+        payload!.IsValid.Should().BeTrue();
+        payload.Errors.Should().BeEmpty();
+        payload.Manifest.Should().NotBeNull();
+        payload.Manifest!.PackId.Should().Be("engineering-onboarding");
+    }
+
+    [Fact]
+    public async Task ValidateManifest_ShouldReturnErrors_WhenManifestJsonIsInvalid()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/validate-manifest",
+            new ValidateManifestJsonDto("{\"schemaVersion\":\"1.0\",\"packId\":\"!!invalid!!\"}"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<ValidateManifestResultDto>();
+        payload.Should().NotBeNull();
+        payload!.IsValid.Should().BeFalse();
+        payload.Errors.Should().NotBeEmpty();
+        payload.Errors.Should().Contain(e => e.Path == "$.packId");
+    }
+
+    [Fact]
+    public async Task ValidateManifest_ShouldReturnErrors_WhenManifestJsonIsMalformed()
+    {
+        var board = await CreateBoardAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/starter-packs/validate-manifest",
+            new ValidateManifestJsonDto("{not valid json}"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<ValidateManifestResultDto>();
+        payload.Should().NotBeNull();
+        payload!.IsValid.Should().BeFalse();
+        payload.Errors.Should().NotBeEmpty();
+        payload.Errors.Should().Contain(e => e.Path == "$");
+    }
+
+    [Fact]
+    public async Task ValidateManifest_ShouldReturnUnauthorized_WhenUnauthenticated()
+    {
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{Guid.NewGuid()}/starter-packs/validate-manifest",
+            new ValidateManifestJsonDto("{}"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task ApplyStarterPack_ShouldReturnForbidden_WhenUserHasNoBoardAccess()
     {
         var board = await CreateBoardAsync();

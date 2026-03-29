@@ -114,3 +114,7 @@ Advanced or operator paths:
 - `Archive`
 
 Use the advanced paths when you specifically need diagnostics, collaboration evidence, or manual operator control.
+
+## Managed-Key LLM Mode Notice
+
+If your Taskdeck instance uses a platform-managed LLM provider key (rather than your own), fair-use limits and privacy disclosures apply to Chat and capture triage features. See `docs/security/MANAGED_KEY_USAGE_POLICY.md` for the full policy.

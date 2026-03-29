@@ -17,6 +17,7 @@ import { normalizeBoardIdQueryParam } from '../utils/navigation'
 import type { Proposal as ApiProposal } from '../types/automation'
 import type { Board } from '../types/board'
 import { getErrorDisplay } from '../composables/useErrorMapper'
+import { usePerformanceMark } from '../composables/usePerformanceMark'
 
 type ReviewSummaryCard = {
   id: string
@@ -28,6 +29,8 @@ type ReviewSummaryCard = {
 const route = useRoute()
 const router = useRouter()
 const toast = useToastStore()
+const reviewLoadPerf = usePerformanceMark('review-load')
+const diffRenderPerf = usePerformanceMark('proposal-diff-render')
 
 const proposals = ref<ApiProposal[]>([])
 const proposalsLoading = ref(false)
@@ -121,6 +124,7 @@ const summaryCards = computed<ReviewSummaryCard[]>(() => {
 })
 
 async function loadProposals() {
+  reviewLoadPerf.start()
   const requestId = ++latestProposalLoadRequestId
 
   try {
@@ -144,6 +148,7 @@ async function loadProposals() {
     if (requestId === latestProposalLoadRequestId) {
       proposalsLoading.value = false
     }
+    reviewLoadPerf.end()
   }
 
   if (requestId === latestProposalLoadRequestId) {
@@ -328,6 +333,7 @@ async function handleToggleDiff(proposalId: string) {
     return
   }
 
+  diffRenderPerf.start()
   const requestId = ++latestDiffRequestId
 
   try {
@@ -348,6 +354,8 @@ async function handleToggleDiff(proposalId: string) {
     selectedDiffProposalId.value = null
     selectedDiff.value = null
     toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
+  } finally {
+    diffRenderPerf.end()
   }
 }
 
