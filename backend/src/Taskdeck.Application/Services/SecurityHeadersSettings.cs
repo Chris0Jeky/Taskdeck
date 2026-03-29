@@ -13,7 +13,7 @@ public sealed class SecurityHeadersSettings
     public bool HstsIncludeSubDomains { get; set; } = false;
     public bool HstsPreload { get; set; } = false;
     public string ContentSecurityPolicy { get; set; } =
-        "default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'";
+        "default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'";
     public string XFrameOptions { get; set; } = "DENY";
     public string ReferrerPolicy { get; set; } = "no-referrer";
 }
