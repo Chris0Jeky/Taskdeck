@@ -717,8 +717,8 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('No capture items yet')
-    expect(wrapper.text()).toContain('Start from Home')
-    expect(wrapper.find('button').text()).toContain('Refresh')
+    expect(wrapper.text()).toContain('Capture a note or transcript to get started')
+    expect(wrapper.find('button').text()).toContain('New Capture')
     expect(wrapper.findAll('button').some((node) => node.text() === 'Open Home')).toBe(true)
     expect(wrapper.findAll('button').some((node) => node.text() === 'Open Review')).toBe(true)
   })

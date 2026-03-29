@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import CaptureModal from '../components/common/CaptureModal.vue'
 import { useCaptureStore } from '../store/captureStore'
 import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
@@ -17,7 +18,21 @@ const inboxLoadPerf = usePerformanceMark('inbox-load')
 const selectedItemId = ref<string | null>(null)
 const hashLoadFailedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
+const showCaptureModal = ref(false)
 let stopTriagePolling: (() => void) | null = null
+
+function openCaptureModal() {
+  showCaptureModal.value = true
+}
+
+function closeCaptureModal() {
+  showCaptureModal.value = false
+}
+
+async function handleCaptureCreated() {
+  closeCaptureModal()
+  await loadInbox()
+}
 
 const items = computed(() => captureStore.items)
 const activeDescendantId = computed(() => {
@@ -482,9 +497,18 @@ onUnmounted(() => {
           Showing capture items linked to board {{ activeBoardId }}.
         </p>
       </div>
-      <button class="td-btn td-btn--secondary" @click="loadInbox" :disabled="captureStore.loadingList">
-        {{ captureStore.loadingList ? 'Refreshing...' : 'Refresh' }}
-      </button>
+      <div class="td-inbox__header-actions">
+        <button
+          class="td-btn td-btn--primary"
+          aria-label="Open capture modal to add a new inbox item"
+          @click="openCaptureModal"
+        >
+          + New Capture
+        </button>
+        <button class="td-btn td-btn--secondary" @click="loadInbox" :disabled="captureStore.loadingList">
+          {{ captureStore.loadingList ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
     </header>
 
     <WorkspaceHelpCallout
@@ -518,9 +542,16 @@ onUnmounted(() => {
           <div v-else-if="captureStore.listError" class="td-alert td-alert--error">{{ captureStore.listError }}</div>
           <div v-else-if="!captureStore.hasItems" class="td-placeholder td-placeholder--empty-state">
             <h3>No capture items yet</h3>
-            <p>Start from Home or Today when you want to drop in fresh notes or transcripts. Review will light up once triage creates proposals.</p>
+            <p>Capture a note or transcript to get started. Once triage runs, proposals will appear in Review.</p>
             <div class="td-placeholder__actions">
-              <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
+              <button
+                class="td-btn td-btn--primary td-btn--sm"
+                aria-label="Open capture modal to add a new inbox item"
+                @click="openCaptureModal"
+              >
+                + New Capture
+              </button>
+              <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
               <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/today')">Open Today</button>
               <button class="td-btn td-btn--secondary td-btn--sm" @click="openReview">Open Review</button>
             </div>
@@ -660,6 +691,14 @@ onUnmounted(() => {
       </section>
     </div>
   </div>
+
+  <Teleport to="body">
+    <CaptureModal
+      v-if="showCaptureModal"
+      @close="closeCaptureModal"
+      @created="handleCaptureCreated"
+    />
+  </Teleport>
 </template>
 
 <style scoped>
@@ -677,6 +716,13 @@ onUnmounted(() => {
   align-items: flex-start;
   gap: var(--td-space-4);
   margin-bottom: var(--td-space-4);
+}
+
+.td-inbox__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  flex-shrink: 0;
 }
 
 .td-inbox__subtitle {
