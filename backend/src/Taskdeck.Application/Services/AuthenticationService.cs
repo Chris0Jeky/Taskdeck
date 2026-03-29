@@ -115,6 +115,94 @@ public class AuthenticationService : IAuthenticationService
         }
     }
 
+    public async Task<Result<AuthResultDto>> ExternalLoginAsync(ExternalLoginDto dto)
+    {
+        try
+        {
+            if (!TryValidateJwtSettings(out var jwtValidationError))
+                return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
+
+            if (string.IsNullOrWhiteSpace(dto.Provider))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Provider is required");
+
+            if (string.IsNullOrWhiteSpace(dto.ProviderUserId))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Provider user ID is required");
+
+            if (string.IsNullOrWhiteSpace(dto.Email))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
+
+            if (string.IsNullOrWhiteSpace(dto.Username))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Username is required");
+
+            // Check if an external login already exists for this provider+userId
+            var existingLogin = await _unitOfWork.ExternalLogins.GetByProviderAsync(dto.Provider, dto.ProviderUserId);
+            if (existingLogin != null)
+            {
+                // Existing linked account — update profile and issue token
+                var existingUser = await _unitOfWork.Users.GetByIdAsync(existingLogin.UserId);
+                if (existingUser == null)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.NotFound, "Linked user account not found");
+
+                if (!existingUser.IsActive)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+                existingLogin.UpdateProfile(dto.DisplayName, dto.AvatarUrl);
+                await _unitOfWork.SaveChangesAsync();
+
+                var token = GenerateJwtToken(existingUser);
+                return Result.Success(new AuthResultDto(token, MapToDto(existingUser)));
+            }
+
+            // Check if a user with this email already exists — link the external login
+            var normalizedEmail = dto.Email.Trim();
+            var userByEmail = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
+            if (userByEmail != null)
+            {
+                if (!userByEmail.IsActive)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+                var externalLogin = new ExternalLogin(userByEmail.Id, dto.Provider, dto.ProviderUserId, dto.DisplayName, dto.AvatarUrl);
+                await _unitOfWork.ExternalLogins.AddAsync(externalLogin);
+                await _unitOfWork.SaveChangesAsync();
+
+                var token = GenerateJwtToken(userByEmail);
+                return Result.Success(new AuthResultDto(token, MapToDto(userByEmail)));
+            }
+
+            // New user — create account with a random unusable password hash
+            var normalizedUsername = dto.Username.Trim();
+
+            // Ensure username uniqueness — append suffix if needed
+            var candidateUsername = normalizedUsername;
+            var suffix = 0;
+            while (await _unitOfWork.Users.GetByUsernameAsync(candidateUsername) != null)
+            {
+                suffix++;
+                candidateUsername = $"{normalizedUsername}{suffix}";
+            }
+
+            var randomPassword = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString());
+            var newUser = new User(candidateUsername, normalizedEmail, randomPassword);
+
+            await _unitOfWork.Users.AddAsync(newUser);
+
+            var newExternalLogin = new ExternalLogin(newUser.Id, dto.Provider, dto.ProviderUserId, dto.DisplayName, dto.AvatarUrl);
+            await _unitOfWork.ExternalLogins.AddAsync(newExternalLogin);
+            await _unitOfWork.SaveChangesAsync();
+
+            var newToken = GenerateJwtToken(newUser);
+            return Result.Success(new AuthResultDto(newToken, MapToDto(newUser)));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, $"External login failed: {ex.Message}");
+        }
+    }
+
     public async Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
     {
         try

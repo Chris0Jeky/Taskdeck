@@ -29,3 +29,11 @@ public record LoginDto(
 public record AuthResultDto(
     string Token,
     UserDto User);
+
+public record ExternalLoginDto(
+    string Provider,
+    string ProviderUserId,
+    string Username,
+    string Email,
+    string? DisplayName = null,
+    string? AvatarUrl = null);
