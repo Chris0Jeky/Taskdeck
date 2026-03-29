@@ -309,25 +309,25 @@ useKeyboardShortcuts([
         </WorkspaceHelpCallout>
 
         <!-- Create Column Form -->
-        <div v-if="showColumnForm" class="mt-4 bg-surface rounded-lg p-4">
-          <form @submit.prevent="createColumn" class="flex gap-3">
+        <div v-if="showColumnForm" class="td-column-form">
+          <form @submit.prevent="createColumn" class="td-column-form__row">
             <input
               v-model="newColumnName"
               type="text"
               placeholder="Column name"
-              class="flex-1 px-4 py-2 border border-outline-variant/15 rounded-lg bg-surface-container-lowest text-on-surface focus:outline-none ring-1 ring-primary-container"
+              class="td-column-form__input"
               autofocus
             />
             <button
               type="submit"
-              class="px-6 py-2 bg-primary-container text-on-primary-container rounded-lg hover:brightness-110 transition-colors"
+              class="td-column-form__btn td-column-form__btn--primary"
             >
               Create
             </button>
             <button
               type="button"
               @click="showColumnForm = false"
-              class="px-6 py-2 bg-surface-bright text-on-surface/70 rounded-lg hover:bg-surface-container-highest transition-colors"
+              class="td-column-form__btn td-column-form__btn--secondary"
             >
               Cancel
             </button>
@@ -396,3 +396,75 @@ useKeyboardShortcuts([
     />
   </div>
 </template>
+
+<style scoped>
+/* ── Create Column Form — token-based ── */
+.td-column-form {
+  margin-top: var(--td-space-5);
+  background: var(--td-surface-container);
+  border-radius: var(--td-radius-lg);
+  padding: var(--td-space-5);
+}
+
+.td-column-form__row {
+  display: flex;
+  gap: var(--td-space-4);
+}
+
+.td-column-form__input {
+  flex: 1;
+  padding: var(--td-space-2) var(--td-space-5);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  background: var(--td-surface-container-lowest);
+  color: var(--td-text-primary);
+  font-size: var(--td-font-base);
+}
+
+.td-column-form__input:focus {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+.td-column-form__input::placeholder {
+  color: var(--td-text-tertiary);
+}
+
+.td-column-form__btn {
+  padding: var(--td-space-2) var(--td-space-6);
+  font-size: var(--td-font-sm);
+  font-weight: 500;
+  border-radius: var(--td-radius-lg);
+  transition:
+    background-color var(--td-transition-fast),
+    filter var(--td-transition-fast);
+}
+
+.td-column-form__btn--primary {
+  background: var(--td-color-primary);
+  color: var(--td-text-inverse);
+}
+
+.td-column-form__btn--primary:hover {
+  background: var(--td-color-primary-hover);
+}
+
+.td-column-form__btn--primary:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+.td-column-form__btn--secondary {
+  background: var(--td-surface-bright);
+  color: var(--td-text-muted);
+}
+
+.td-column-form__btn--secondary:hover {
+  background: var(--td-surface-container-highest);
+}
+
+.td-column-form__btn--secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+</style>
