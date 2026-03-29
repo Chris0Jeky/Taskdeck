@@ -36,15 +36,15 @@ $ErrorActionPreference = "Stop"
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot    = Split-Path -Parent $ScriptDir
 
-$FrontendDir  = Join-Path $RepoRoot "frontend\taskdeck-web"
+$FrontendDir  = Join-Path $RepoRoot "frontend/taskdeck-web"
 $FrontendDist = Join-Path $FrontendDir "dist"
 
-$ApiProject  = Join-Path $RepoRoot "backend\src\Taskdeck.Api\Taskdeck.Api.csproj"
+$ApiProject  = Join-Path $RepoRoot "backend/src/Taskdeck.Api/Taskdeck.Api.csproj"
 # NOTE: PKG-01 (#533) must be merged before UseStaticFiles / wwwroot serving is configured
 # in the .NET API (Program.cs / PipelineConfiguration.cs). Until that PR lands, the published
 # binary will NOT serve the SPA — it will return 404 for the frontend routes. Do not ship
 # a release artifact built from main until PKG-01 is merged.
-$Wwwroot     = Join-Path $RepoRoot "backend\src\Taskdeck.Api\wwwroot"
+$Wwwroot     = Join-Path $RepoRoot "backend/src/Taskdeck.Api/wwwroot"
 
 $OutputBase  = Join-Path $RepoRoot "artifacts\publish"
 $OutputDir   = Join-Path $OutputBase $Rid
@@ -121,7 +121,7 @@ function Copy-ToWwwroot {
     }
     New-Item -ItemType Directory -Path $Wwwroot -Force | Out-Null
 
-    Copy-Item -Path "$FrontendDist\*" -Destination $Wwwroot -Recurse -Force
+    Copy-Item -Path (Join-Path $FrontendDist '*') -Destination $Wwwroot -Recurse -Force
     Write-Step "Copied to wwwroot: $Wwwroot"
 }
 
@@ -162,7 +162,7 @@ function Write-Summary {
     Write-Step "  RID         : $Rid"
     Write-Step "  Artifact    : $OutputDir"
 
-    $exeName = if ($Rid -eq "win-x64") { "Taskdeck.Api.exe" } else { "Taskdeck.Api" }
+    $exeName = if ($Rid -like "win-*") { "Taskdeck.Api.exe" } else { "Taskdeck.Api" }
     $exePath = Join-Path $OutputDir $exeName
 
     if (Test-Path $exePath) {
