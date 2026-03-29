@@ -160,23 +160,23 @@ function handleCardDragOver(event: DragEvent) {
   <div
     :data-column-id="column.id"
     :class="[
-      'flex-shrink-0 w-80 rounded-lg p-4 transition-all',
-      isDragOver ? 'bg-primary-container/10 ring-2 ring-primary-container' : 'bg-surface-container-low'
+      'td-column-lane',
+      isDragOver ? 'td-column-lane--drag-over' : ''
     ]"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
   >
     <!-- Column Header -->
-    <div class="mb-4">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="flex items-center gap-2 font-semibold text-on-surface flex-1 font-label text-[11px] uppercase tracking-[0.2em]"><span class="w-1 h-4 rounded-full bg-primary-container"></span>{{ column.name }}</h3>
-        <div class="flex items-center gap-2">
+    <div class="td-column-lane__header">
+      <div class="td-column-lane__header-row">
+        <h3 class="td-column-lane__title"><span class="td-column-lane__title-dot"></span>{{ column.name }}</h3>
+        <div class="td-column-lane__actions">
           <button
             type="button"
             data-action="drag-column-handle"
             draggable="true"
-            class="p-1 text-on-surface/60 hover:text-on-surface/70 hover:bg-surface-bright rounded transition-colors cursor-grab active:cursor-grabbing"
+            class="td-column-lane__icon-btn cursor-grab active:cursor-grabbing"
             title="Drag Column"
             aria-label="Drag Column"
             @click.stop
@@ -186,14 +186,14 @@ function handleCardDragOver(event: DragEvent) {
             </svg>
           </button>
           <span
-            class="text-sm px-2 py-1 rounded"
-            :class="isWipLimitExceeded() ? 'bg-ember/10 text-ember' : 'bg-surface-bright text-on-surface/70'"
+            class="td-column-lane__count"
+            :class="isWipLimitExceeded() ? 'td-column-lane__count--exceeded' : ''"
           >
             {{ cards.length }}{{ column.wipLimit ? `/${column.wipLimit}` : '' }}
           </span>
           <button
             @click="showColumnEdit = true"
-            class="p-1 text-on-surface/60 hover:text-on-surface/70 hover:bg-surface-bright rounded transition-colors"
+            class="td-column-lane__icon-btn"
             title="Edit Column"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,14 +204,14 @@ function handleCardDragOver(event: DragEvent) {
         </div>
       </div>
 
-      <div v-if="isWipLimitExceeded()" class="text-xs text-ember mb-2">
-        ⚠️ WIP limit exceeded
+      <div v-if="isWipLimitExceeded()" class="td-column-lane__wip-warning">
+        WIP limit exceeded
       </div>
 
       <button
         data-action="toggle-add-card"
         @click="openCardForm"
-        class="w-full px-3 py-2 text-sm text-on-surface/60 border border-dashed border-outline-variant/15 hover:border-primary-container hover:text-primary rounded transition-colors flex items-center justify-center gap-1"
+        class="td-column-lane__add-card-btn"
       >
         <span>+</span>
         <span>Add Card</span>
@@ -221,21 +221,21 @@ function handleCardDragOver(event: DragEvent) {
       <div
         v-if="showCardForm"
         data-action="add-card-form"
-        class="mt-3 bg-surface-container rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
+        class="td-column-lane__card-form"
       >
         <form @submit.prevent="createCard">
           <textarea
             data-action="add-card-input"
             v-model="newCardTitle"
             placeholder="Enter card title..."
-            class="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/15 text-on-surface rounded resize-none focus:outline-none focus:ring-2 focus:ring-primary-container placeholder:text-on-surface/40"
+            class="td-column-lane__card-input"
             rows="3"
             autofocus
           ></textarea>
-          <div class="flex gap-2 mt-2">
+          <div class="td-column-lane__card-form-actions">
             <button
               type="submit"
-              class="px-3 py-1.5 bg-primary-container text-on-primary-container text-sm rounded hover:brightness-110 transition-colors"
+              class="td-column-lane__form-btn td-column-lane__form-btn--primary"
             >
               Add
             </button>
@@ -243,7 +243,7 @@ function handleCardDragOver(event: DragEvent) {
               type="button"
               data-action="cancel-add-card"
               @click="showCardForm = false"
-              class="px-3 py-1.5 bg-surface-bright text-on-surface/70 text-sm rounded hover:bg-surface-bright/80 transition-colors"
+              class="td-column-lane__form-btn td-column-lane__form-btn--secondary"
             >
               Cancel
             </button>
@@ -253,7 +253,7 @@ function handleCardDragOver(event: DragEvent) {
     </div>
 
     <!-- Cards List -->
-    <div class="space-y-2 overflow-y-auto max-h-[calc(100vh-280px)] min-h-[100px]">
+    <div class="td-column-lane__cards">
       <div
         v-for="card in cards"
         :key="card.id"
@@ -270,7 +270,7 @@ function handleCardDragOver(event: DragEvent) {
       </div>
 
       <!-- Empty State -->
-      <div v-if="cards.length === 0 && !showCardForm" class="text-center py-8 text-on-surface/40 text-sm">
+      <div v-if="cards.length === 0 && !showCardForm" class="td-column-lane__empty">
         No cards yet
       </div>
     </div>
@@ -295,3 +295,222 @@ function handleCardDragOver(event: DragEvent) {
     />
   </div>
 </template>
+
+<style scoped>
+/* ── Column Lane — token-based layout ── */
+.td-column-lane {
+  flex-shrink: 0;
+  width: 20rem;
+  border-radius: var(--td-radius-lg);
+  padding: var(--td-space-5);
+  background: var(--td-surface-container-low);
+  border: 0.5px solid var(--td-border-ghost);
+  transition:
+    background-color var(--td-transition-fast),
+    border-color var(--td-transition-fast),
+    box-shadow var(--td-transition-fast);
+}
+
+.td-column-lane--drag-over {
+  background: var(--td-color-ember-dim);
+  border-color: var(--td-border-ember);
+  box-shadow: var(--td-shadow-sm);
+}
+
+/* ── Column header ── */
+.td-column-lane__header {
+  margin-bottom: var(--td-space-5);
+}
+
+.td-column-lane__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--td-space-3);
+}
+
+.td-column-lane__title {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  flex: 1;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--td-text-primary);
+}
+
+.td-column-lane__title-dot {
+  width: 3px;
+  height: 1rem;
+  border-radius: 9999px;
+  background: var(--td-color-ember-glow);
+  flex-shrink: 0;
+}
+
+.td-column-lane__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+}
+
+.td-column-lane__icon-btn {
+  padding: var(--td-space-1);
+  color: var(--td-text-tertiary);
+  border-radius: var(--td-radius-md);
+  transition:
+    color var(--td-transition-fast),
+    background-color var(--td-transition-fast);
+}
+
+.td-column-lane__icon-btn:hover {
+  color: var(--td-text-secondary);
+  background: var(--td-surface-bright);
+}
+
+.td-column-lane__icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+/* ── Card count badge ── */
+.td-column-lane__count {
+  font-size: var(--td-font-sm);
+  padding: var(--td-space-1) var(--td-space-2);
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-bright);
+  color: var(--td-text-muted);
+}
+
+.td-column-lane__count--exceeded {
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+/* ── WIP warning ── */
+.td-column-lane__wip-warning {
+  font-size: var(--td-font-sm);
+  color: var(--td-color-error);
+  margin-bottom: var(--td-space-3);
+}
+
+/* ── Add card button ── */
+.td-column-lane__add-card-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--td-space-1);
+  padding: var(--td-space-2) var(--td-space-4);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-tertiary);
+  border: 1px dashed var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  transition:
+    color var(--td-transition-fast),
+    border-color var(--td-transition-fast);
+}
+
+.td-column-lane__add-card-btn:hover {
+  color: var(--td-color-primary);
+  border-color: var(--td-color-primary);
+}
+
+.td-column-lane__add-card-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+/* ── Card creation form ── */
+.td-column-lane__card-form {
+  margin-top: var(--td-space-4);
+  background: var(--td-surface-container);
+  border-radius: var(--td-radius-lg);
+  padding: var(--td-space-4);
+  box-shadow: var(--td-shadow-sm);
+}
+
+.td-column-lane__card-input {
+  width: 100%;
+  padding: var(--td-space-2) var(--td-space-4);
+  background: var(--td-surface-container-low);
+  border: 1px solid var(--td-border-default);
+  color: var(--td-text-primary);
+  border-radius: var(--td-radius-md);
+  resize: none;
+  font-size: var(--td-font-base);
+}
+
+.td-column-lane__card-input::placeholder {
+  color: var(--td-text-tertiary);
+}
+
+.td-column-lane__card-input:focus {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+.td-column-lane__card-form-actions {
+  display: flex;
+  gap: var(--td-space-2);
+  margin-top: var(--td-space-3);
+}
+
+.td-column-lane__form-btn {
+  padding: var(--td-space-1) var(--td-space-4);
+  font-size: var(--td-font-sm);
+  font-weight: 500;
+  border-radius: var(--td-radius-md);
+  transition:
+    background-color var(--td-transition-fast),
+    filter var(--td-transition-fast);
+}
+
+.td-column-lane__form-btn--primary {
+  background: var(--td-color-primary);
+  color: var(--td-text-inverse);
+}
+
+.td-column-lane__form-btn--primary:hover {
+  background: var(--td-color-primary-hover);
+}
+
+.td-column-lane__form-btn--primary:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+.td-column-lane__form-btn--secondary {
+  background: var(--td-surface-bright);
+  color: var(--td-text-muted);
+}
+
+.td-column-lane__form-btn--secondary:hover {
+  background: var(--td-surface-container-highest);
+}
+
+.td-column-lane__form-btn--secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+/* ── Cards list ── */
+.td-column-lane__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+  min-height: 100px;
+}
+
+/* ── Empty state ── */
+.td-column-lane__empty {
+  text-align: center;
+  padding: var(--td-space-8) 0;
+  font-size: var(--td-font-sm);
+  color: var(--td-text-tertiary);
+}
+</style>
