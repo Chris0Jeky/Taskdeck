@@ -81,7 +81,7 @@ Do not commit:
 
 The repo `.gitignore` now excludes generated environment copies such as `deploy/terraform/aws/environments/*/terraform.tfvars`, `*.auto.tfvars`, and `backend.hcl`.
 
-This baseline stops at secret handoff mechanics. Rotation policy, provider credentials, and long-term secret storage posture stay in `#110`.
+This baseline stops at secret handoff mechanics. Rotation policy, provider credentials, and long-term secret storage posture are defined in `docs/security/SECRETS_MANAGEMENT_BASELINE.md` (`#110`).
 
 ## Environment Differences
 
