@@ -217,7 +217,9 @@ public class ChatService : IChatService
                     messageType = "degraded";
                 }
 
-                if (llmResult.IsActionable)
+                var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
+
+                if (shouldAttemptProposal)
                 {
                     if (!session.BoardId.HasValue)
                     {
@@ -241,36 +243,18 @@ public class ChatService : IChatService
                             proposalId = proposalResult.Value.Id;
                             assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
                         }
-                        else
+                        else if (llmResult.IsActionable)
                         {
-                            // Planner could not parse — return the LLM prose with a hint
+                            // Planner could not parse an auto-detected actionable message — hint the user
                             assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})";
                             messageType = "status";
                         }
-                    }
-                }
-                else if (dto.RequestProposal && session.BoardId.HasValue)
-                {
-                    // User explicitly requested proposal even though LLM did not
-                    // detect actionable intent — try the planner anyway.
-                    var proposalResult = await _automationPlanner.ParseInstructionAsync(
-                        dto.Content,
-                        userId,
-                        session.BoardId,
-                        ct,
-                        sourceType: ProposalSourceType.Chat,
-                        sourceReferenceId: session.Id.ToString());
-
-                    if (proposalResult.IsSuccess)
-                    {
-                        messageType = "proposal-reference";
-                        proposalId = proposalResult.Value.Id;
-                        assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
-                    }
-                    else
-                    {
-                        assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
-                        messageType = "status";
+                        else
+                        {
+                            // User explicitly requested proposal but planner failed — surface the error
+                            assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
+                            messageType = "status";
+                        }
                     }
                 }
             }
