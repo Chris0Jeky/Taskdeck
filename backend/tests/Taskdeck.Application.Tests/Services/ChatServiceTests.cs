@@ -889,6 +889,237 @@ public class ChatServiceTests
 
     #endregion
 
+    #region LLM Instruction Extraction
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldUseLlmExtractedInstructions_WhenAvailable()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "LLM extraction session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "I'll create that task for you.",
+                12,
+                true,
+                "llm.extracted",
+                Instructions: new List<string> { "create card 'Onboarding task'" }));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                "create card 'Onboarding task'",
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId, ProposalSourceType.Chat, null, boardId, userId,
+                ProposalStatus.PendingReview, RiskLevel.Low,
+                "create card", null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1), null, null, null, null,
+                "corr", new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("can you create an onboarding task?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+
+        // Verify the planner was called with the extracted instruction, not the raw user message
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                "create card 'Onboarding task'",
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldFallBackToRawMessage_WhenNoLlmInstructions()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Fallback session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "I'll create that card.",
+                12,
+                true,
+                "card.create",
+                Instructions: null));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                "create card 'Test'",
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId, ProposalSourceType.Chat, null, boardId, userId,
+                ProposalStatus.PendingReview, RiskLevel.Low,
+                "create card", null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1), null, null, null, null,
+                "corr", new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card 'Test'"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+
+        // Verify the planner was called with the raw user message (fallback)
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                "create card 'Test'",
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldCreateMultipleProposals_WhenMultipleInstructionsExtracted()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId1 = Guid.NewGuid();
+        var proposalId2 = Guid.NewGuid();
+        var session = new ChatSession(userId, "Multi-instruction session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "I'll create those tasks.",
+                20,
+                true,
+                "llm.extracted",
+                Instructions: new List<string>
+                {
+                    "create card 'Setup environment'",
+                    "create card 'Read docs'"
+                }));
+
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                "create card 'Setup environment'",
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId1, ProposalSourceType.Chat, null, boardId, userId,
+                ProposalStatus.PendingReview, RiskLevel.Low,
+                "create card", null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1), null, null, null, null,
+                "corr", new List<ProposalOperationDto>())));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                "create card 'Read docs'",
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId2, ProposalSourceType.Chat, null, boardId, userId,
+                ProposalStatus.PendingReview, RiskLevel.Low,
+                "create card", null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1), null, null, null, null,
+                "corr", new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("can you create onboarding tasks?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.Content.Should().Contain("2 proposals created");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldFallBackToRawMessage_WhenEmptyInstructionsList()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Empty instructions session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "Response",
+                12,
+                true,
+                "card.create",
+                Instructions: new List<string>()));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(),
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Cannot parse"));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card 'Test'"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        // Planner was called with raw user message since instructions list was empty
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                "create card 'Test'",
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    #endregion
+
     private static async IAsyncEnumerable<LlmTokenEvent> StreamEvents()
     {
         yield return new LlmTokenEvent("token", true);
