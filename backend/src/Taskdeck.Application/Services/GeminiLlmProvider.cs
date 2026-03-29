@@ -38,26 +38,38 @@ public class GeminiLlmProvider : ILlmProvider
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
             message.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
+            var useInstructionExtraction = request.SystemPrompt is null;
             var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
-            var allMessages = new List<object>
+            var allMessages = new List<object>();
+
+            if (!string.IsNullOrEmpty(systemPrompt))
             {
-                new
+                allMessages.Add(new
                 {
                     role = "user",
                     parts = new[] { new { text = systemPrompt } }
-                }
-            };
+                });
+            }
+
             allMessages.AddRange(request.Messages.Select(MapMessage));
 
-            message.Content = JsonContent.Create(new
-            {
-                contents = allMessages.ToArray(),
-                generationConfig = new
+            var generationConfig = useInstructionExtraction
+                ? (object)new
                 {
                     temperature = request.Temperature,
                     maxOutputTokens = request.MaxTokens,
                     responseMimeType = "application/json"
                 }
+                : new
+                {
+                    temperature = request.Temperature,
+                    maxOutputTokens = request.MaxTokens
+                };
+
+            message.Content = JsonContent.Create(new
+            {
+                contents = allMessages.ToArray(),
+                generationConfig
             });
 
             using var response = await _httpClient.SendAsync(message, ct);
@@ -146,10 +158,12 @@ public class GeminiLlmProvider : ILlmProvider
 
         try
         {
+            // Pass empty SystemPrompt to opt out of instruction extraction / JSON mode for probes
             var probeRequest = new ChatCompletionRequest(
                 [new ChatCompletionMessage("user", "Reply with exactly: OK")],
                 MaxTokens: 4,
-                Temperature: 0);
+                Temperature: 0,
+                SystemPrompt: string.Empty);
 
             var result = await CompleteAsync(probeRequest, ct);
 

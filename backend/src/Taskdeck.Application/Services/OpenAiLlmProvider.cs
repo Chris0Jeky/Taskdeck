@@ -127,10 +127,12 @@ public class OpenAiLlmProvider : ILlmProvider
 
         try
         {
+            // Pass empty SystemPrompt to opt out of instruction extraction / JSON mode for probes
             var probeRequest = new ChatCompletionRequest(
                 [new ChatCompletionMessage("user", "Reply with exactly: OK")],
                 MaxTokens: 4,
-                Temperature: 0);
+                Temperature: 0,
+                SystemPrompt: string.Empty);
 
             var result = await CompleteAsync(probeRequest, ct);
 
@@ -180,9 +182,16 @@ public class OpenAiLlmProvider : ILlmProvider
     {
         var messages = new List<object>();
 
-        // Prepend system prompt for instruction extraction
+        // Only inject system prompt and JSON mode when no explicit SystemPrompt override
+        // is provided. Probe requests and other special calls pass SystemPrompt = ""
+        // to opt out of instruction extraction.
+        var useInstructionExtraction = request.SystemPrompt is null;
         var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
-        messages.Add(new { role = "system", content = systemPrompt });
+
+        if (!string.IsNullOrEmpty(systemPrompt))
+        {
+            messages.Add(new { role = "system", content = systemPrompt });
+        }
 
         messages.AddRange(request.Messages.Select(MapMessage));
 
@@ -192,9 +201,13 @@ public class OpenAiLlmProvider : ILlmProvider
             ["messages"] = messages.ToArray(),
             ["max_tokens"] = request.MaxTokens,
             ["temperature"] = request.Temperature,
-            ["stream"] = false,
-            ["response_format"] = new { type = "json_object" }
+            ["stream"] = false
         };
+
+        if (useInstructionExtraction)
+        {
+            payload["response_format"] = new { type = "json_object" };
+        }
 
         if (request.Attribution is not null)
         {
