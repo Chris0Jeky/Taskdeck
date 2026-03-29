@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="64" fill="#131313"/>
+  <!-- Taskdeck "T" mark with ember accent line -->
+  <rect x="116" y="138" width="280" height="32" rx="10" fill="#ff4d4d"/>
+  <rect x="224" y="138" width="64" height="236" rx="10" fill="#e5e2e1"/>
+  <!-- Ember spark dots -->
+  <circle cx="396" cy="374" r="13" fill="#ff4d4d" opacity="0.8"/>
+  <circle cx="364" cy="394" r="8" fill="#ffb3ae" opacity="0.6"/>
+</svg>
