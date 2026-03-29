@@ -70,17 +70,32 @@ LABEL_A=$(curl -s -X POST http://localhost:5000/api/boards/$BOARD_A/labels \
   -H "Authorization: Bearer $TOKEN_A" \
   -d '{"name":"Priority","color":"#ff0000"}' | tee /dev/stderr | jq -r '.id')
 
+## 8. UserA creates an agent profile (for cross-user agent isolation tests)
+AGENT_A=$(curl -s -X POST http://localhost:5000/api/agents \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -d '{"name":"UserA Test Agent","description":"Fixture agent"}' | tee /dev/stderr | jq -r '.id')
+
+# 9. UserA creates a knowledge item (for cross-user knowledge isolation tests)
+KNOWLEDGE_A=$(curl -s -X POST http://localhost:5000/api/knowledge \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -d '{"title":"UserA Knowledge","content":"Fixture content"}' | tee /dev/stderr | jq -r '.id')
+
 echo "TOKEN_A=$TOKEN_A"
 echo "TOKEN_B=$TOKEN_B"
 echo "BOARD_A=$BOARD_A"
 echo "COL_A=$COL_A"
 echo "CARD_A=$CARD_A"
 echo "LABEL_A=$LABEL_A"
+echo "AGENT_A=$AGENT_A"
+echo "KNOWLEDGE_A=$KNOWLEDGE_A"
 ```
 
 ### Fixture Invariants
 
 - UserA owns `BOARD_A` and all entities within it.
+- UserA owns `AGENT_A` and `KNOWLEDGE_A`.
 - UserB has no board access grants for `BOARD_A`.
 - Neither user is an admin unless explicitly promoted.
 
@@ -388,15 +403,15 @@ These controllers have specialized auth or role requirements beyond standard boa
 | ID    | Method | Route                              | Token   | Expected | Notes                          |
 |-------|--------|-------------------------------------|---------|----------|--------------------------------|
 | B-160 | GET    | `/api/agents`                       | UserB   | 200      | Returns only UserB's agents    |
-| B-161 | GET    | `/api/agents/{UserA_agent_id}`      | UserB   | 404      | Cross-user agent isolation     |
-| B-162 | POST   | `/api/agents/{UserA_agent_id}/runs` | UserB   | 404      | Cannot trigger run on foreign agent |
+| B-161 | GET    | `/api/agents/{AGENT_A}`             | UserB   | 404      | Cross-user agent isolation     |
+| B-162 | POST   | `/api/agents/{AGENT_A}/runs`        | UserB   | 404      | Cannot trigger run on foreign agent |
 
 ### Knowledge (`/api/knowledge`)
 
 | ID    | Method | Route                              | Token   | Expected | Notes                          |
 |-------|--------|-------------------------------------|---------|----------|--------------------------------|
 | B-165 | GET    | `/api/knowledge`                    | UserB   | 200      | Returns only UserB's items     |
-| B-166 | GET    | `/api/knowledge/{UserA_item_id}`    | UserB   | 404      | Cross-user knowledge isolation |
+| B-166 | GET    | `/api/knowledge/{KNOWLEDGE_A}`      | UserB   | 404      | Cross-user knowledge isolation |
 
 ### Outbound Webhooks (`/api/boards/{boardId}/webhooks`)
 
