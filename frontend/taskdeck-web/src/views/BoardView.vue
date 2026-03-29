@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
+import { useSessionStore } from '../store/sessionStore'
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
@@ -20,6 +21,7 @@ import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
 const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
+const sessionStore = useSessionStore()
 
 const newColumnName = ref('')
 const showColumnForm = ref(false)
@@ -32,6 +34,17 @@ const showBoardCaptureModal = ref(false)
 const presenceMembers = ref<BoardPresenceMember[]>([])
 
 const boardLoadPerf = usePerformanceMark('board-load')
+
+/**
+ * Build a presence entry for the current authenticated user so the panel
+ * shows immediately on mount, without waiting for the async SignalR
+ * BoardJoined push event. This eliminates the empty-state flicker.
+ */
+function currentUserPresenceSeed(): BoardPresenceMember[] {
+  const uid = sessionStore.userId
+  if (!uid) return []
+  return [{ userId: uid, displayName: sessionStore.username ?? null, editingCardId: null }]
+}
 
 
 const boardId = ref(route.params.id as string)
@@ -84,8 +97,12 @@ const {
 onMounted(async () => {
   boardLoadPerf.start()
   try {
-    presenceMembers.value = []
-    boardStore.setBoardPresenceMembers([])
+    // Seed presence with the current user immediately so the panel never
+    // shows "No active collaborators" while waiting for the SignalR
+    // BoardJoined push event (fixes #523 flicker).
+    const seed = currentUserPresenceSeed()
+    presenceMembers.value = seed
+    boardStore.setBoardPresenceMembers(seed)
     boardStore.setEditingCard(null)
     await boardStore.fetchBoard(boardId.value)
     await realtime.start(boardId.value)
@@ -106,8 +123,10 @@ watch(
 
     boardId.value = nextBoardId
     resetSelection()
-    presenceMembers.value = []
-    boardStore.setBoardPresenceMembers([])
+    // Seed with current user on board switch for the same reason as onMounted.
+    const seed = currentUserPresenceSeed()
+    presenceMembers.value = seed
+    boardStore.setBoardPresenceMembers(seed)
     boardStore.setEditingCard(null)
 
     try {
