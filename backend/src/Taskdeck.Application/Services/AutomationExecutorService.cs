@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
@@ -259,7 +260,7 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ExecuteCardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
     {
-        if (!TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
+        if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
 
         switch (actionType)
@@ -286,15 +287,15 @@ public class AutomationExecutorService : IAutomationExecutorService
         string? targetId,
         CancellationToken cancellationToken)
     {
-        if (!TryGetRequiredString(parameters, "title", out var title, out var titleError))
+        if (!OperationParameterParser.TryGetRequiredString(parameters,"title", out var title, out var titleError))
             return Result.Failure(ErrorCodes.ValidationError, titleError);
 
-        var description = GetOptionalString(parameters, "description");
+        var description = OperationParameterParser.GetOptionalString(parameters,"description");
 
-        if (!TryGetRequiredGuid(parameters, "columnId", out var columnId, out var columnIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"columnId", out var columnId, out var columnIdError))
             return Result.Failure(ErrorCodes.ValidationError, columnIdError);
 
-        if (!TryGetRequiredGuid(parameters, "boardId", out var boardId, out var boardIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"boardId", out var boardId, out var boardIdError))
             return Result.Failure(ErrorCodes.ValidationError, boardIdError);
 
         Guid? cardId = null;
@@ -314,11 +315,11 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> UpdateCardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        if (!TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"cardId", out var cardId, out var cardIdError))
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
-        var title = GetOptionalString(parameters, "title");
-        var description = GetOptionalString(parameters, "description");
+        var title = OperationParameterParser.GetOptionalString(parameters, "title");
+        var description = OperationParameterParser.GetOptionalString(parameters, "description");
         if (title == null && description == null)
             return Result.Failure(ErrorCodes.ValidationError, "Update card operation requires at least one of 'title' or 'description'");
 
@@ -330,10 +331,10 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> MoveCardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        if (!TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"cardId", out var cardId, out var cardIdError))
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
-        if (!TryGetRequiredGuid(parameters, "columnId", out var columnId, out var columnIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"columnId", out var columnId, out var columnIdError))
             return Result.Failure(ErrorCodes.ValidationError, columnIdError);
 
         // Get current cards in target column to determine position
@@ -350,7 +351,7 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ArchiveCardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        if (!TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"cardId", out var cardId, out var cardIdError))
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
         var dto = new UpdateCardDto(null, null, null, true, null, null);
@@ -361,7 +362,7 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ExecuteBoardOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
     {
-        if (!TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
+        if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
 
         switch (actionType)
@@ -376,12 +377,12 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> UpdateBoardAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        if (!TryGetRequiredGuid(parameters, "boardId", out var boardId, out var boardIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"boardId", out var boardId, out var boardIdError))
             return Result.Failure(ErrorCodes.ValidationError, boardIdError);
 
-        var name = GetOptionalString(parameters, "name");
-        var description = GetOptionalString(parameters, "description");
-        var isArchived = GetOptionalBoolean(parameters, "isArchived");
+        var name = OperationParameterParser.GetOptionalString(parameters, "name");
+        var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        var isArchived = OperationParameterParser.GetOptionalBoolean(parameters, "isArchived");
         if (name == null && description == null && !isArchived.HasValue)
             return Result.Failure(ErrorCodes.ValidationError, "Update board operation requires at least one of 'name', 'description', or 'isArchived'");
 
@@ -393,7 +394,7 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ExecuteColumnOperationAsync(string actionType, ProposalOperationDto operation, CancellationToken cancellationToken)
     {
-        if (!TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
+        if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
             return Result.Failure(ErrorCodes.ValidationError, parseError);
 
         switch (actionType)
@@ -408,10 +409,10 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     private async Task<Result> ReorderColumnAsync(JsonElement parameters, CancellationToken cancellationToken)
     {
-        if (!TryGetRequiredGuid(parameters, "columnId", out var columnId, out var columnIdError))
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters,"columnId", out var columnId, out var columnIdError))
             return Result.Failure(ErrorCodes.ValidationError, columnIdError);
 
-        if (!TryGetRequiredInt32(parameters, "position", out var newPosition, out var positionError))
+        if (!OperationParameterParser.TryGetRequiredInt32(parameters,"position", out var newPosition, out var positionError))
             return Result.Failure(ErrorCodes.ValidationError, positionError);
 
         if (newPosition < 0)
@@ -457,15 +458,15 @@ public class AutomationExecutorService : IAutomationExecutorService
         if (!string.IsNullOrWhiteSpace(operation.TargetId) && Guid.TryParse(operation.TargetId, out var targetId))
             return (operation.TargetType, targetId);
 
-        if (TryDeserializeParameters(operation.Parameters, out var parameters, out _))
+        if (OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out _))
         {
-            if (TryGetGuidFromParameters(parameters, "cardId", out var cardId))
+            if (OperationParameterParser.TryGetGuidFromParameters(parameters, "cardId", out var cardId))
                 return ("card", cardId);
 
-            if (TryGetGuidFromParameters(parameters, "columnId", out var columnId))
+            if (OperationParameterParser.TryGetGuidFromParameters(parameters, "columnId", out var columnId))
                 return ("column", columnId);
 
-            if (TryGetGuidFromParameters(parameters, "boardId", out var boardId))
+            if (OperationParameterParser.TryGetGuidFromParameters(parameters, "boardId", out var boardId))
                 return ("board", boardId);
         }
 
@@ -482,132 +483,6 @@ public class AutomationExecutorService : IAutomationExecutorService
             : operation.Parameters[..500] + "...";
 
         return $"Automation proposal {proposal.Id}, sequence {operation.Sequence}: {operation.ActionType} {operation.TargetType}. Parameters: {parameterPreview}";
-    }
-
-    private static bool TryDeserializeParameters(string rawParameters, out JsonElement parameters, out string error)
-    {
-        parameters = default;
-        error = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(rawParameters))
-        {
-            error = "Operation parameters cannot be empty";
-            return false;
-        }
-
-        try
-        {
-            parameters = JsonSerializer.Deserialize<JsonElement>(rawParameters);
-            return true;
-        }
-        catch (JsonException ex)
-        {
-            error = $"Invalid operation parameters JSON: {ex.Message}";
-            return false;
-        }
-    }
-
-    private static bool TryGetRequiredString(JsonElement parameters, string parameterName, out string value, out string error)
-    {
-        value = string.Empty;
-        error = string.Empty;
-
-        if (!parameters.TryGetProperty(parameterName, out var property))
-        {
-            error = $"Missing required parameter '{parameterName}'";
-            return false;
-        }
-
-        if (property.ValueKind != JsonValueKind.String)
-        {
-            error = $"Parameter '{parameterName}' must be a string";
-            return false;
-        }
-
-        var parsed = property.GetString();
-        if (string.IsNullOrWhiteSpace(parsed))
-        {
-            error = $"Parameter '{parameterName}' cannot be empty";
-            return false;
-        }
-
-        value = parsed;
-        return true;
-    }
-
-    private static string? GetOptionalString(JsonElement parameters, string parameterName)
-    {
-        if (!parameters.TryGetProperty(parameterName, out var property))
-            return null;
-
-        if (property.ValueKind == JsonValueKind.Null)
-            return null;
-
-        if (property.ValueKind != JsonValueKind.String)
-            return null;
-
-        var value = property.GetString();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    private static bool? GetOptionalBoolean(JsonElement parameters, string parameterName)
-    {
-        if (!parameters.TryGetProperty(parameterName, out var property))
-            return null;
-
-        return property.ValueKind switch
-        {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => null
-        };
-    }
-
-    private static bool TryGetRequiredGuid(JsonElement parameters, string parameterName, out Guid value, out string error)
-    {
-        value = Guid.Empty;
-
-        if (!TryGetRequiredString(parameters, parameterName, out var rawValue, out error))
-            return false;
-
-        if (!Guid.TryParse(rawValue, out value))
-        {
-            error = $"Invalid {parameterName}";
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool TryGetRequiredInt32(JsonElement parameters, string parameterName, out int value, out string error)
-    {
-        value = 0;
-        error = string.Empty;
-
-        if (!parameters.TryGetProperty(parameterName, out var property))
-        {
-            error = $"Missing required parameter '{parameterName}'";
-            return false;
-        }
-
-        if (property.ValueKind != JsonValueKind.Number || !property.TryGetInt32(out value))
-        {
-            error = $"Parameter '{parameterName}' must be an integer";
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool TryGetGuidFromParameters(JsonElement parameters, string parameterName, out Guid value)
-    {
-        value = Guid.Empty;
-
-        if (!parameters.TryGetProperty(parameterName, out var property) || property.ValueKind != JsonValueKind.String)
-            return false;
-
-        var raw = property.GetString();
-        return Guid.TryParse(raw, out value);
     }
 
     private async Task<Result> SyncLinkedCaptureConversionAsync(ProposalDto proposal, CancellationToken cancellationToken)
