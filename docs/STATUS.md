@@ -285,6 +285,24 @@ Seeded issues:
 Reused existing anchor:
 - `#326` proposal readability — affected entity labels now show named targets instead of raw IDs, correlation IDs truncated in UI
 
+## Future Testing and Hardening Strategy Analysis (2026-03-29)
+
+TST-08 (`#143`) delivered a gap analysis of the current testing/hardening posture across MCP integrations, deployment/container runtime, operational reliability, and security checks.
+
+Analysis record:
+- `docs/analysis/2026-03-29_testing-hardening-strategy.md`
+
+Key findings:
+- Current posture is strong (1400+ automated tests, comprehensive CI topology, established security baselines)
+- Highest-ROI gaps are CI automation of existing manual validation (MCP, Terraform, drills, container runtime) and supply-chain security scanning (SAST, secrets, image CVEs)
+- 15 proposed follow-up issues across 4 priority tiers with acceptance criteria and execution sequencing
+
+Proposed issue summary:
+- Priority I (SEC-20 to SEC-22): SAST, secret scanning, container image scanning
+- Priority II (SEC-23, OPS-21 to OPS-24): dependency blocking gate, container smoke, drill/MCP/Terraform CI wiring
+- Priority III (TST-27 to TST-29, SEC-24): repository tests, board sub-store tests, router tests, DAST
+- Priority IV (TST-30, TST-31, OPS-25, SEC-25): OpenAPI snapshots, shutdown tests, CSP reporting, HTTP client tests
+
 ## MVP Expansion Planning Integration (2026-03-07)
 
 New review packages under `docs/InReview/MVP_EXPANSION/` were cross-read against the current repo state and backlog:
