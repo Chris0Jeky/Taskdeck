@@ -155,7 +155,7 @@ public class OpsCliApiTests : IClassFixture<TestWebApplicationFactory>
             var midRangePayload = await midRangeResponse.Content.ReadFromJsonAsync<CommandRunDto>();
             midRangePayload.Should().NotBeNull();
             midRangePayload!.CorrelationId.Should().NotBe(midRangeInvalidCorrelationId);
-            midRangePayload.CorrelationId.Length.Should().BeLessOrEqualTo(100);
+            midRangePayload.CorrelationId.Length.Should().BeLessThanOrEqualTo(100);
 
             midRangeResponse.Headers.TryGetValues("X-Request-Id", out var midRangeResponseRequestIds).Should().BeTrue();
             midRangeResponseRequestIds!.Single().Should().Be(midRangePayload.CorrelationId);

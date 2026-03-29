@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260329193734_EfCore9SnapshotResync")]
+    partial class EfCore9SnapshotResync
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.14");
@@ -876,49 +879,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasIndex("Timestamp");
 
                     b.ToTable("CommandRunLogs", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ExternalLogin", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AvatarUrl")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProviderDisplayName")
-                        .HasMaxLength(255)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProviderUserId")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("Provider", "ProviderUserId")
-                        .IsUnique();
-
-                    b.ToTable("ExternalLogins", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.KnowledgeChunk", b =>

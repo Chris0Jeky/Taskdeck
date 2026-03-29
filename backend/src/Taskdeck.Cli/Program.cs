@@ -9,7 +9,10 @@ using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+
+// CLI stdout must be clean JSON. Remove all default logging providers so EF Core
+// and framework diagnostics never corrupt JSON output parsed by callers.
+builder.Logging.ClearProviders();
 
 var fallbackConnectionString = Environment.GetEnvironmentVariable("TASKDECK_CONNECTION_STRING")
     ?? "Data Source=taskdeck.db";
