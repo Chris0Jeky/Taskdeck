@@ -290,3 +290,44 @@ describe('ColumnLane — WIP limit enforcement', () => {
     })
   })
 })
+
+describe('ColumnLane — card modal', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(useBoardStore).mockReturnValue({
+      createCard: vi.fn().mockResolvedValue({}),
+      moveCard: vi.fn().mockResolvedValue({}),
+    } as any)
+  })
+
+  it('opens the card modal when handleCardClick is called', async () => {
+    const column = makeColumn()
+    const card = makeCard('c1')
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [card] },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    await (wrapper.vm as any).handleCardClick(card)
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.vm as any).selectedCard).toEqual(card)
+    expect((wrapper.vm as any).showCardModal).toBe(true)
+  })
+
+  it('closes the card modal and clears selectedCard when handleModalClose is called', async () => {
+    const column = makeColumn()
+    const card = makeCard('c1')
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [card] },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    await (wrapper.vm as any).handleCardClick(card)
+    await (wrapper.vm as any).handleModalClose()
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.vm as any).selectedCard).toBeNull()
+    expect((wrapper.vm as any).showCardModal).toBe(false)
+  })
+})
