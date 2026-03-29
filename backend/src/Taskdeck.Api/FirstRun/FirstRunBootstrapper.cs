@@ -185,7 +185,7 @@ public static class FirstRunBootstrapper
             "First-run: SQLite DB path resolved to AppData location: {DbPath}", resolvedPath);
     }
 
-    private static bool IsHeadlessEnvironment()
+    internal static bool IsHeadlessEnvironment()
     {
         return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"))
             || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TF_BUILD"))

@@ -33,7 +33,7 @@ public sealed class FirstRunService
             return;
         }
 
-        if (IsHeadlessEnvironment())
+        if (FirstRunBootstrapper.IsHeadlessEnvironment())
         {
             _logger.LogDebug(
                 "First-run: AutoOpenBrowser skipped (headless/CI environment detected).");
@@ -56,13 +56,5 @@ public sealed class FirstRunService
             // Non-fatal: the user can always open the browser manually.
             _logger.LogWarning(ex, "First-run: Failed to open browser at {Url}.", url);
         }
-    }
-
-    private static bool IsHeadlessEnvironment()
-    {
-        return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"))
-            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TF_BUILD"))
-            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"))
-            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TASKDECK_HEADLESS"));
     }
 }
