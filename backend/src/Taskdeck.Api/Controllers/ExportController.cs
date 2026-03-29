@@ -83,6 +83,7 @@ public class ExportController : AuthenticatedControllerBase
     }
 
     [HttpPost("import/database")]
+    [Consumes("multipart/form-data")]
     public async Task<IActionResult> ImportDatabase([FromForm] IFormFile? file)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
