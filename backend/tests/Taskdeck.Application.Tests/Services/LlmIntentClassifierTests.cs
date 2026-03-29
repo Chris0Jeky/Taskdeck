@@ -145,15 +145,12 @@ public class LlmIntentClassifierTests
     #region Edge Cases — Input Extremes
 
     [Fact]
-    public void Classify_NullInput_Throws()
+    public void Classify_NullInput_ReturnsNotActionable()
     {
-        // The classifier calls message.ToLowerInvariant() without a null guard.
-        // This documents that null input is not handled gracefully.
-        // Using base Exception type so the test survives if a null guard
-        // (ArgumentNullException) is added later.
-        var act = () => LlmIntentClassifier.Classify(null!);
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(null!);
 
-        act.Should().Throw<Exception>();
+        isActionable.Should().BeFalse();
+        actionIntent.Should().BeNull();
     }
 
     [Fact]
