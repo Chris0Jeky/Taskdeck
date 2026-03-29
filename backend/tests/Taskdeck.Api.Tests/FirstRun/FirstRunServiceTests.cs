@@ -15,7 +15,7 @@ public class FirstRunServiceTests
         var sut = new FirstRunService(NullLogger<FirstRunService>.Instance, settings);
 
         // Should be a no-op, no exception.
-        sut.TryOpenBrowser();
+        sut.TryOpenBrowser("http://localhost:5000");
     }
 
     [Fact]
@@ -29,7 +29,7 @@ public class FirstRunServiceTests
             var settings = new FirstRunSettings { AutoOpenBrowser = true, Port = 5000 };
             var sut = new FirstRunService(NullLogger<FirstRunService>.Instance, settings);
 
-            sut.TryOpenBrowser(); // should be a no-op in headless mode
+            sut.TryOpenBrowser("http://localhost:5000"); // should be a no-op in headless mode
         }
         finally
         {
