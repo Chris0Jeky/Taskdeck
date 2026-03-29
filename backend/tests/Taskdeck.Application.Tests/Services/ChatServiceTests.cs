@@ -760,6 +760,135 @@ public class ChatServiceTests
         _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
     }
 
+    #region NLP Gap Tests — Documents #570 (Chat-to-Proposal NLP Gap)
+
+    /// <summary>
+    /// Documents the exact user-reported scenario from #570:
+    /// Natural language with RequestProposal=true, classifier returns non-actionable,
+    /// parser receives raw message and fails.
+    /// </summary>
+    [Fact]
+    public async Task SendMessageAsync_NaturalLanguage_WithRequestProposal_ShowsParseError()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "NLP gap session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "You're absolutely right to tailor onboarding for non-technical roles!",
+                50, false, null));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(
+                ErrorCodes.ValidationError,
+                "Could not parse instruction. Supported patterns: 'create card \"title\"'..."));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(
+                "can you create new onboarding tasks for people who aren't technical?",
+                RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("Could not create the requested proposal");
+        result.Value.Content.Should().Contain("Could not parse instruction");
+    }
+
+    /// <summary>
+    /// Documents that natural language without RequestProposal just gets a conversational
+    /// reply with no proposal attempt — the classifier misses the intent entirely.
+    /// </summary>
+    [Fact]
+    public async Task SendMessageAsync_NaturalLanguage_WithoutRequestProposal_NoProposalAttempt()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "NLP no-proposal session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "Great idea! Here's how to approach non-technical onboarding...",
+                50, false, null));  // IsActionable = false (classifier missed it)
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(
+                "can you create new onboarding tasks for people who aren't technical?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        // No proposal attempt — classifier didn't detect intent, RequestProposal not set
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// Verifies the happy path: structured syntax works end-to-end.
+    /// Contrast with natural language tests above to show the gap.
+    /// </summary>
+    [Fact]
+    public async Task SendMessageAsync_StructuredSyntax_ProposalCreatedSuccessfully()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Structured syntax session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "I can help with that. I'll create a proposal to card.create.",
+                20, true, "card.create"));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                "create card \"Onboarding for non-technical roles\"",
+                userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId, ProposalSourceType.Chat, null, boardId, userId,
+                ProposalStatus.PendingReview, RiskLevel.Low,
+                "create card", null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1), null, null, null, null,
+                "corr", new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"Onboarding for non-technical roles\""),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+    }
+
+    #endregion
+
     private static async IAsyncEnumerable<LlmTokenEvent> StreamEvents()
     {
         yield return new LlmTokenEvent("token", true);
