@@ -53,7 +53,10 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Stale .git/index.lock detection
 # ---------------------------------------------------------------------------
-LOCK_FILE="$REPO_DIR/.git/index.lock"
+# In worktrees, .git is a file pointing to the real git dir.
+# Use git rev-parse to find the actual git directory.
+GIT_DIR="$(git -C "$REPO_DIR" rev-parse --git-dir 2>/dev/null || echo "$REPO_DIR/.git")"
+LOCK_FILE="$GIT_DIR/index.lock"
 
 if [ -f "$LOCK_FILE" ]; then
     echo ""
