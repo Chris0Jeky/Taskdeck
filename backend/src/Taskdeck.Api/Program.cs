@@ -15,7 +15,8 @@ builder.Services.AddTaskdeckSettings(
     builder.Environment,
     out var observabilitySettings,
     out var rateLimitingSettings,
-    out var jwtSettings);
+    out var jwtSettings,
+    out var gitHubOAuthSettings);
 
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -30,8 +31,8 @@ builder.Services.AddLlmProviders(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdeck.Infrastructure.Identity.UserContext>();
 
-// Add JWT Authentication
-builder.Services.AddTaskdeckAuthentication(jwtSettings);
+// Add JWT Authentication (with optional GitHub OAuth)
+builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings);
 
 // Add OpenTelemetry observability
 builder.Services.AddTaskdeckObservability(observabilitySettings);
