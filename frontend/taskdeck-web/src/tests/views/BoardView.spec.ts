@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
 
-const mockSessionStore = reactive({
+const mockSessionStore = reactive<{ userId: string | null; username: string | null }>({
   userId: 'user-abc',
   username: 'alice',
 })
@@ -254,8 +254,8 @@ describe('BoardView', () => {
   })
 
   it('seeds presence with empty array when no user session is active', async () => {
-    mockSessionStore.userId = null as unknown as string
-    mockSessionStore.username = null as unknown as string
+    mockSessionStore.userId = null
+    mockSessionStore.username = null
 
     mountView()
     await waitForUi()
