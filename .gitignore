@@ -1,6 +1,8 @@
 # Backend (.NET)
 backend/src/*/bin/
 backend/src/*/obj/
+# Generated SPA static files (produced by build-release.sh / build-release.ps1)
+backend/src/Taskdeck.Api/wwwroot/
 backend/tests/*/bin/
 backend/tests/*/obj/
 backend/*.user
