@@ -177,9 +177,10 @@ watch(filteredCommandItems, (items) => {
 
 .td-command-palette {
   background: var(--td-glass-bg);
-  backdrop-filter: blur(24px);
-  border: 0.5px solid rgba(91, 64, 62, 0.2);
-  box-shadow: var(--td-shadow-lg);
+  backdrop-filter: blur(var(--td-glass-blur));
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  box-shadow: var(--td-shadow-xl);
   width: 100%;
   max-width: 560px;
   overflow: hidden;
@@ -192,7 +193,7 @@ watch(filteredCommandItems, (items) => {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: var(--td-font-lg);
   outline: none;
-  border-bottom: 1px solid rgba(91, 64, 62, 0.15);
+  border-bottom: 1px solid var(--td-border-default);
   background: transparent;
   color: var(--td-text-primary);
 }
@@ -209,7 +210,7 @@ watch(filteredCommandItems, (items) => {
 
 .td-command-palette__group-title {
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 9px;
+  font-size: var(--td-font-xs);
   font-weight: 700;
   color: var(--td-text-tertiary);
   text-transform: uppercase;
@@ -224,10 +225,12 @@ watch(filteredCommandItems, (items) => {
   width: 100%;
   padding: var(--td-space-3) var(--td-space-4);
   border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--td-radius-sm);
   background: transparent;
   cursor: pointer;
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 11px;
+  font-size: var(--td-font-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   text-align: left;
@@ -243,14 +246,14 @@ watch(filteredCommandItems, (items) => {
 .td-command-palette__item--active {
   background: var(--td-surface-bright);
   color: var(--td-color-ember);
-  border-left: 2px solid var(--td-color-ember-glow);
+  border-left-color: var(--td-color-ember-glow);
 }
 
 .td-command-palette__empty {
   padding: var(--td-space-4);
   color: var(--td-text-tertiary);
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 11px;
+  font-size: var(--td-font-xs);
   letter-spacing: 0.05em;
 }
 </style>
