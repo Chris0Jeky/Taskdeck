@@ -6,16 +6,28 @@ public static class LlmIntentClassifier
     {
         var lower = message.ToLowerInvariant();
 
-        if (lower.Contains("create card") || lower.Contains("add card"))
+        // Card creation — explicit commands and natural language
+        if (lower.Contains("create card") || lower.Contains("add card")
+            || lower.Contains("create a card") || lower.Contains("add a card")
+            || lower.Contains("create task") || lower.Contains("add task")
+            || lower.Contains("create a task") || lower.Contains("add a task")
+            || lower.Contains("new card") || lower.Contains("new task")
+            || lower.Contains("make a card") || lower.Contains("make a task"))
             return (true, "card.create");
+
         if (lower.Contains("move card"))
             return (true, "card.move");
-        if (lower.Contains("archive card") || lower.Contains("delete card"))
+        if (lower.Contains("archive card") || lower.Contains("delete card")
+            || lower.Contains("remove card"))
             return (true, "card.archive");
-        if (lower.Contains("update card") || lower.Contains("edit card"))
+        if (lower.Contains("update card") || lower.Contains("edit card")
+            || lower.Contains("rename card"))
             return (true, "card.update");
-        if (lower.Contains("create board") || lower.Contains("add board"))
+        if (lower.Contains("create board") || lower.Contains("add board")
+            || lower.Contains("new board"))
             return (true, "board.create");
+        if (lower.Contains("rename board"))
+            return (true, "board.update");
         if (lower.Contains("reorder") || lower.Contains("sort"))
             return (true, "column.reorder");
 
