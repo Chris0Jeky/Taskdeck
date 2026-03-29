@@ -237,7 +237,10 @@ public class OpenAiLlmProviderTests
                 new(null!, "raw prompt")
             }));
 
-        capturedRoles.Should().ContainSingle().Which.Should().Be("user");
+        // First role is the system prompt injected by the provider, second is the user message
+        capturedRoles.Should().HaveCount(2);
+        capturedRoles[0].Should().Be("system");
+        capturedRoles[1].Should().Be("user");
     }
 
     [Fact]

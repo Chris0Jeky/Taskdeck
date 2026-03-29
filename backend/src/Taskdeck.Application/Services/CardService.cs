@@ -1,4 +1,4 @@
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -113,6 +113,14 @@ public class CardService
                     "Card was updated by another session. Refresh and retry your changes.");
             }
 
+            // Capture pre-mutation state for change summary
+            var oldTitle = card.Title;
+            var oldDescription = card.Description;
+            var oldDueDate = card.DueDate;
+            var oldIsBlocked = card.IsBlocked;
+            var oldBlockReason = card.BlockReason;
+            var oldLabelIds = card.CardLabels.Select(cl => cl.LabelId).OrderBy(id => id).ToList();
+
             // Update basic fields
             if (dto.Title != null || dto.Description != null || dto.DueDate.HasValue)
                 card.Update(dto.Title, dto.Description, dto.DueDate);
@@ -140,11 +148,13 @@ public class CardService
                 }
             }
 
+            var changeSummary = BuildCardChangeSummary(dto, oldTitle, oldDescription, oldDueDate, oldIsBlocked, oldBlockReason, oldLabelIds);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "updated", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId);
+            await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId, changeSummary);
 
             var updatedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(updatedCard!));
@@ -153,6 +163,38 @@ public class CardService
         {
             return Result.Failure<CardDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    private static string BuildCardChangeSummary(
+        UpdateCardDto dto,
+        string oldTitle,
+        string? oldDescription,
+        DateTimeOffset? oldDueDate,
+        bool oldIsBlocked,
+        string? oldBlockReason,
+        List<Guid> oldLabelIds)
+    {
+        var parts = new List<string>();
+        if (dto.Title != null && dto.Title != oldTitle)
+            parts.Add($"Title: '{oldTitle}' -> '{dto.Title}'");
+        if (dto.Description != null && dto.Description != oldDescription)
+            parts.Add("Description changed");
+        if (dto.DueDate.HasValue && dto.DueDate.Value != oldDueDate)
+            parts.Add($"DueDate: '{oldDueDate?.ToString("O") ?? "none"}' -> '{dto.DueDate.Value:O}'");
+        if (dto.IsBlocked.HasValue && dto.IsBlocked.Value != oldIsBlocked)
+        {
+            if (dto.IsBlocked.Value && !string.IsNullOrEmpty(dto.BlockReason) && !oldIsBlocked)
+                parts.Add($"Blocked: {dto.BlockReason}");
+            else if (!dto.IsBlocked.Value && oldIsBlocked)
+                parts.Add("Unblocked");
+        }
+        if (dto.LabelIds != null)
+        {
+            var newLabelIds = dto.LabelIds.OrderBy(id => id).ToList();
+            if (!oldLabelIds.SequenceEqual(newLabelIds))
+                parts.Add($"Labels changed: {oldLabelIds.Count} -> {newLabelIds.Count}");
+        }
+        return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }
 
     public Task<Result<CardDto>> UpdateCardAsync(

@@ -297,6 +297,7 @@ public class GeminiLlmProviderTests
                 new(null!, "raw prompt")
             }));
 
+        // System prompt is now sent via system_instruction, not as a user message in contents
         capturedRoles.Should().ContainSingle().Which.Should().Be("user");
     }
 
@@ -325,6 +326,110 @@ public class GeminiLlmProviderTests
         message.Should().NotContain("capture secret");
         message.Should().NotContain("provider-token");
         message.Should().Contain($"x-goog-api-key: {SensitiveDataRedactor.RedactedValue}");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldSendSystemPromptAsSystemInstruction_NotAsUserMessage()
+    {
+        var settings = BuildSettings();
+        string? capturedSystemInstruction = null;
+        var capturedContentRoles = new List<string>();
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            var body = request.Content is null
+                ? "{}"
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            using var json = System.Text.Json.JsonDocument.Parse(body);
+            var root = json.RootElement;
+
+            if (root.TryGetProperty("system_instruction", out var sysInstr) &&
+                sysInstr.TryGetProperty("parts", out var parts) &&
+                parts.GetArrayLength() > 0)
+            {
+                capturedSystemInstruction = parts[0].GetProperty("text").GetString();
+            }
+
+            var contents = root.GetProperty("contents");
+            foreach (var content in contents.EnumerateArray())
+            {
+                capturedContentRoles.Add(content.GetProperty("role").GetString() ?? string.Empty);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "candidates": [
+                        {
+                          "content": {
+                            "parts": [{ "text": "ok" }]
+                          }
+                        }
+                      ],
+                      "usageMetadata": { "totalTokenCount": 5 }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var provider = new GeminiLlmProvider(new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
+
+        await provider.CompleteAsync(new ChatCompletionRequest(
+            new List<ChatCompletionMessage>
+            {
+                new("User", "create card 'Test'")
+            }));
+
+        capturedSystemInstruction.Should().NotBeNullOrWhiteSpace("system prompt should be sent via system_instruction");
+        capturedSystemInstruction.Should().Contain("Taskdeck");
+        // The contents array should NOT contain the system prompt as a user message
+        capturedContentRoles.Should().ContainSingle().Which.Should().Be("user");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldOmitSystemInstruction_WhenSystemPromptIsEmpty()
+    {
+        var settings = BuildSettings();
+        var hasSystemInstruction = false;
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            var body = request.Content is null
+                ? "{}"
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            using var json = System.Text.Json.JsonDocument.Parse(body);
+            hasSystemInstruction = json.RootElement.TryGetProperty("system_instruction", out _);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "candidates": [
+                        {
+                          "content": {
+                            "parts": [{ "text": "OK" }]
+                          }
+                        }
+                      ],
+                      "usageMetadata": { "totalTokenCount": 2 }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var provider = new GeminiLlmProvider(new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
+
+        // Probes pass SystemPrompt: string.Empty to opt out
+        await provider.CompleteAsync(new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "Reply with exactly: OK") },
+            SystemPrompt: string.Empty));
+
+        hasSystemInstruction.Should().BeFalse("empty system prompt should not produce system_instruction field");
     }
 
     private static LlmProviderSettings BuildSettings()

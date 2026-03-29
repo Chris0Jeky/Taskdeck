@@ -58,6 +58,25 @@ public class OpenAiLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.", GetConfiguredModelOrDefault());
             }
 
+            // Try to parse structured instruction extraction from the LLM response
+            if (LlmInstructionExtractionPrompt.TryParseStructuredResponse(
+                    content,
+                    out var structuredReply,
+                    out var structuredActionable,
+                    out var structuredInstructions))
+            {
+                return new LlmCompletionResult(
+                    structuredReply,
+                    tokensUsed,
+                    structuredActionable,
+                    structuredActionable ? "llm.extracted" : null,
+                    "OpenAI",
+                    GetConfiguredModelOrDefault(),
+                    Instructions: structuredInstructions.Count > 0 ? structuredInstructions : null);
+            }
+
+            // Fallback to static classifier when structured parse fails
+            _logger.LogDebug("OpenAI response was not structured JSON; falling back to static classifier.");
             var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
             return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "OpenAI", GetConfiguredModelOrDefault());
         }
@@ -108,10 +127,12 @@ public class OpenAiLlmProvider : ILlmProvider
 
         try
         {
+            // Pass empty SystemPrompt to opt out of instruction extraction / JSON mode for probes
             var probeRequest = new ChatCompletionRequest(
                 [new ChatCompletionMessage("user", "Reply with exactly: OK")],
                 MaxTokens: 4,
-                Temperature: 0);
+                Temperature: 0,
+                SystemPrompt: string.Empty);
 
             var result = await CompleteAsync(probeRequest, ct);
 
@@ -159,14 +180,34 @@ public class OpenAiLlmProvider : ILlmProvider
 
     private object BuildRequestPayload(ChatCompletionRequest request)
     {
+        var messages = new List<object>();
+
+        // Only inject system prompt and JSON mode when no explicit SystemPrompt override
+        // is provided. Probe requests and other special calls pass SystemPrompt = ""
+        // to opt out of instruction extraction.
+        var useInstructionExtraction = request.SystemPrompt is null;
+        var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
+
+        if (!string.IsNullOrEmpty(systemPrompt))
+        {
+            messages.Add(new { role = "system", content = systemPrompt });
+        }
+
+        messages.AddRange(request.Messages.Select(MapMessage));
+
         var payload = new Dictionary<string, object?>
         {
             ["model"] = _settings.OpenAi.Model.Trim(),
-            ["messages"] = request.Messages.Select(MapMessage).ToArray(),
+            ["messages"] = messages.ToArray(),
             ["max_tokens"] = request.MaxTokens,
             ["temperature"] = request.Temperature,
             ["stream"] = false
         };
+
+        if (useInstructionExtraction)
+        {
+            payload["response_format"] = new { type = "json_object" };
+        }
 
         if (request.Attribution is not null)
         {

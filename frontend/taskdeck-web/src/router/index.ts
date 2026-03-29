@@ -37,6 +37,7 @@ const HomeView = () => import('../views/HomeView.vue')
 const TodayView = () => import('../views/TodayView.vue')
 const ReviewView = () => import('../views/ReviewView.vue')
 const DevToolsView = () => import('../views/DevToolsView.vue')
+const SavedViewsView = () => import('../views/SavedViewsView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -221,6 +222,18 @@ const router = createRouter({
       name: 'workspace-archive',
       component: ArchiveView,
       meta: { requiresShell: true, requiresFlag: 'newArchive' },
+    },
+    {
+      path: '/workspace/views',
+      name: 'workspace-views',
+      component: SavedViewsView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/views/:viewId',
+      name: 'workspace-views-detail',
+      component: SavedViewsView,
+      meta: { requiresShell: true },
     },
     {
       path: '/workspace/inbox',
