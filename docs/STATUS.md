@@ -303,6 +303,25 @@ Proposed issue summary:
 - Priority III (TST-27 to TST-29, SEC-24): repository tests, board sub-store tests, router tests, DAST
 - Priority IV (TST-30, TST-31, OPS-25, SEC-25): OpenAPI snapshots, shutdown tests, CSP reporting, HTTP client tests
 
+## Post-Merge Wave (2026-03-29)
+
+Windows Git hardening (`#121`):
+- `scripts/check-git-env.sh` validates Git for Windows resolution (not Cygwin/MSYS2) and detects stale `.git/index.lock` with worktree awareness
+- `CLAUDE.md` and `AGENTS.md` updated with script reference and PATH remediation guidance
+
+Dependency update automation (`#148`):
+- `.github/dependabot.yml` active for NuGet, npm, and GitHub Actions with weekly cadence and grouped minor/patch updates
+- `docs/ops/DEPENDENCY_UPDATE_POLICY.md` covers triage SLAs, escalation, and policy boundaries
+
+Headed manual-audit Playwright pack (`#369`):
+- `frontend/taskdeck-web/tests/e2e/manual-audit.spec.ts` covers core `Home -> Inbox/Capture -> Review -> Board` audit loop with 18 screenshots
+- gated behind `TASKDECK_RUN_AUDIT` env var; live LLM probes opt-in via `TASKDECK_RUN_LIVE_LLM_TESTS`
+- usage documented in `docs/testing/MANUAL_AUDIT_PACK.md`
+
+Manual validation checklists (`#130`, `#131`):
+- Slice A (`#130`): 22 step-indexed scenarios (A-01 to A-22) in `docs/testing/manual-validation-a-workspace-board-ux.md` covering workspace shell, board lifecycle, keyboard UX, and escape behavior stack
+- Slice B (`#131`): 175 step-indexed checks (B-01 to B-175) in `docs/testing/manual-validation-b-authz-contracts.md` covering all 28 controllers with two-user isolation matrix
+
 ## MVP Expansion Planning Integration (2026-03-07)
 
 New review packages under `docs/InReview/MVP_EXPANSION/` were cross-read against the current repo state and backlog:

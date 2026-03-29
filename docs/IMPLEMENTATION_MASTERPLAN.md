@@ -439,6 +439,22 @@ Delivered in the latest cycle:
    - minor/patch updates grouped per ecosystem; major NuGet/npm updates arrive as individual PRs; GitHub Actions updates fully grouped
    - added `docs/ops/DEPENDENCY_UPDATE_POLICY.md` with update categories, PR verification expectations, severity-based triage SLAs, escalation procedures, and policy boundaries
    - security triage workflow aligns with existing `docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md` severity policy; no auto-merge enabled
+96. OPS Windows Git resolution hardening (`#121`):
+   - added `scripts/check-git-env.sh` diagnostic script validating Git for Windows resolution (not Cygwin/MSYS2) and stale `.git/index.lock` detection with worktree awareness
+   - updated `CLAUDE.md` and `AGENTS.md` Windows Notes to reference the script and PATH remediation guidance
+97. TST-08 testing and hardening strategy analysis (`#143`):
+   - delivered `docs/analysis/2026-03-29_testing-hardening-strategy.md` with gap analysis across backend/frontend tests, CI, MCP, deployment, ops reliability, and security
+   - proposed 15 follow-up issues across 4 priority tiers with acceptance criteria and execution sequencing
+98. TST-25 headed manual-audit Playwright pack (`#369`):
+   - added `frontend/taskdeck-web/tests/e2e/manual-audit.spec.ts` covering core `Home -> Inbox/Capture -> Review -> Board` audit loop with 18 screenshots
+   - live LLM probes gated behind `TASKDECK_RUN_LIVE_LLM_TESTS` env var; CI exclusion via `TASKDECK_RUN_AUDIT` env var gate
+   - added `docs/testing/MANUAL_AUDIT_PACK.md` documenting usage vs stakeholder demo recorder vs default smoke
+99. TST-07 manual validation slice A — workspace shell, board lifecycle, and keyboard UX (`#130`):
+   - added `docs/testing/manual-validation-a-workspace-board-ux.md` with 22 step-indexed scenarios (A-01 to A-22)
+   - covers auth flows, shell navigation, board lifecycle, column/card/label operations, keyboard UX, escape behavior stack, and Today view
+100. TST-08 manual validation slice B — authz policy, cross-user isolation, and API error contracts (`#131`):
+    - added `docs/testing/manual-validation-b-authz-contracts.md` with 175 step-indexed checks (B-01 to B-175) covering all 28 controllers
+    - two-user fixture setup with curl-based bootstrap script; covers unauthenticated denial, cross-user board isolation, error payload contract verification
 
 ## Current Planning Pivot (2026-03-07)
 

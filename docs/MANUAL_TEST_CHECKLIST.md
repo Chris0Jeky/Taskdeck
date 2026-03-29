@@ -445,7 +445,7 @@ Scope (22 scenarios, A-01 through A-22):
 6. Today view and onboarding: agenda, dismiss/replay persistence (A-21 to A-22)
 
 Reference: `docs/testing/manual-validation-a-workspace-board-ux.md` for full step tables, evidence guidance, automation candidates, and defect filing template.
-## P. Authz Policy, Cross-User Isolation, and API Error Contracts (Slice B, `#131`)
+## Q. Authz Policy, Cross-User Isolation, and API Error Contracts (Slice B, `#131`)
 
 Status:
 - active; comprehensive two-user authz matrix covering all controller families

@@ -582,6 +582,10 @@ Planned quality expectations when implementation starts:
 Use `docs/MANUAL_TEST_CHECKLIST.md` for action-by-action manual validation.
 Use `docs/ops/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
 
+Detailed step-indexed validation checklists:
+- Slice A — workspace shell, board lifecycle, keyboard UX: `docs/testing/manual-validation-a-workspace-board-ux.md`
+- Slice B — authz policy, cross-user isolation, API error contracts: `docs/testing/manual-validation-b-authz-contracts.md`
+
 ## Thesis Alignment Validation (Capture Realignment)
 
 This section defines validation expectations for the capture-first direction.
