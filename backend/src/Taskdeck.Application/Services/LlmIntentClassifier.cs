@@ -35,7 +35,7 @@ public static class LlmIntentClassifier
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
-    // Card move — "move" + optional words + "card/task", or "move" + card/task context + "to"
+    // Card move — "move" + optional words + "card/task"
     private static readonly Regex CardMovePattern = new(
         @"\bmove\b(\s+\w+){0,4}\s+\b(cards?|tasks?)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase,

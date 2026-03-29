@@ -172,7 +172,6 @@ public class LlmIntentClassifierTests
     [InlineData("do not create a card until I approve")]
     [InlineData("don't add task please")]
     [InlineData("never create tasks automatically")]
-    [InlineData("stop creating cards")]
     [InlineData("cancel the add task operation")]
     public void Classify_Negation_ShouldReturnFalse(string message)
     {
@@ -180,6 +179,21 @@ public class LlmIntentClassifierTests
 
         isActionable.Should().BeFalse(
             because: $"'{message}' contains a negation that should suppress the intent");
+    }
+
+    /// <summary>
+    /// "stop creating cards" is non-actionable, but NOT because negation catches it.
+    /// The gerund "creating" doesn't match \bcreate\b in either the negation or
+    /// positive patterns. This documents a known gap: gerund forms are invisible
+    /// to both negation and classification.
+    /// </summary>
+    [Fact]
+    public void Classify_GerundForm_IsNonActionable_ButNotDueToNegation()
+    {
+        var (isActionable, _) = LlmIntentClassifier.Classify("stop creating cards");
+
+        isActionable.Should().BeFalse(
+            because: "gerund 'creating' does not match \\bcreate\\b — neither negation nor positive patterns fire");
     }
 
     #endregion
@@ -237,6 +251,22 @@ public class LlmIntentClassifierTests
     #endregion
 
     #region Edge Cases
+
+    /// <summary>
+    /// Known false positive: "I deleted the create card button by accident"
+    /// contains the literal substring "create card", so it matches card.create.
+    /// Fixing this would require POS tagging or context analysis beyond keyword matching.
+    /// </summary>
+    [Fact]
+    public void Classify_PastTenseNarrative_IsKnownFalsePositive()
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(
+            "I deleted the create card button by accident");
+
+        isActionable.Should().BeTrue(
+            because: "substring 'create card' appears literally — known false positive");
+        actionIntent.Should().Be("card.create");
+    }
 
     [Fact]
     public void Classify_NullInput_ShouldReturnFalse()
