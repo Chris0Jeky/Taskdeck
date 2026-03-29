@@ -84,6 +84,7 @@ Manual-only checks (non-automatable in generic local script):
 
 1. Register new user from `/register`.
    - Expected: redirected/authenticated into workspace.
+   - **Data isolation check (fresh registration):** After registering, navigate to `/workspace/automation/queue`. Expected: 0 items. If items from previous dates appear, this is a P0 queue scoping failure (`#508`).
 2. Login with valid credentials from `/login`.
    - Expected: routed to `/workspace/home`.
 3. Attempt workspace route while logged out.
@@ -124,6 +125,7 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: `count/limit` indicator visible.
 8. Attempt to exceed WIP by adding/moving cards.
    - Expected: operation blocked with visible error feedback.
+   - **Known bug (`#517`):** As of 2026-03-29, the WIP limit is warning-only — the `+ Add Card` affordance is not disabled when the limit is exceeded. Check is marked failing until `#517` is resolved.
 
 9. Create card inline.
    - Expected: card appears in target column.
@@ -134,7 +136,8 @@ Manual-only checks (non-automatable in generic local script):
 12. Move card to another column via drag/drop using the `Drag Card` handle.
     - Expected: card relocates and counts update.
 13. Delete card from modal.
-    - Expected: card removed.
+    - Expected: confirmation dialog shown first ("Delete this card? This cannot be undone."), then card removed on confirm.
+    - **Known bug (`#513`):** As of 2026-03-29, deletion is immediate with no confirmation dialog.
 
 14. Open label manager and perform create/update/delete.
     - Expected: label list and card chips reflect changes.

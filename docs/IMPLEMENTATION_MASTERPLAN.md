@@ -950,9 +950,19 @@ Immediate hardening landed in this context:
 - opt-in live-provider Playwright probe (`tests/e2e/live-llm.spec.ts`)
 - headed local audit shortcuts (`npm run test:e2e:audit:headed`, `npm run test:e2e:live-llm:headed`)
 
+## Active Blockers (2026-03-29 Manual Test Session)
+
+Two P0 bugs discovered in fresh-registration manual testing must be resolved before Phase 4 can be signed off or any external user onboarding begins. These are data correctness/security failures, not UX polish:
+
+- **`#508`** — Queue list endpoint not scoped to the authenticated user: a fresh-registered account sees all historical queue items from other sessions. Add a `userId` predicate to the LLM queue list query and add a cross-user isolation integration test.
+- **`#509`** — Board view auto-switches between boards every few seconds: `boardStore` overwrites `activeBoardId` on each `fetchBoards` response. Add a `preserveSelection` guard so the active board is not reset while it still exists in the refreshed list.
+
+Additional P1 issues from the same session (tracked in `#510`–`#515`) cover excessive board polling, the missing Inbox capture button, chat not emitting proposals, delete-card without confirmation, dark-mode theming gaps on three surfaces, and text-selected cards being non-draggable. Full findings at `docs/analysis/2026-03-29_manual_testing_consolidated_findings.md`.
+
 ## Next Best Steps (Immediate)
 
-1. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
+1. **Resolve `#508` and `#509` (P0 blockers above) before any other backlog work.**
+2. Close remaining unblocked Priority I security/policy work first (`#33`, `#34`, `#44`, `#152`) with regression coverage.
 2. Run the manual-audit follow-through wave in trust-first order: `#364` -> `#365` -> `#368`, then align product truthfulness through `#366` and `#367`, while routing review-readability detail through `#326`; keep `#369` explicitly lower priority.
 3. Run the Saul-facing demo alignment wave as the next narrow product-facing slice: `#354` first, then legibility/demoability follow-through through `#326` and `#330`, then lock the recording contract in `#355` and `#216`.
 4. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
