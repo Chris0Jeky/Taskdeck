@@ -27,11 +27,11 @@ else
     echo "[INFO]  git path:    $GIT_PATH"
     echo "[INFO]  git version: $GIT_VERSION"
 
-    # Detect Cygwin git — its path typically contains /cygdrive/ or /usr/bin/
-    # and its version string includes "cygwin".
+    # Detect Cygwin or MSYS2 (non-MinGW) git — path typically contains
+    # /cygdrive/ or /usr/bin/. Git for Windows (MinGW) resolves to /mingw64/bin/git.
     case "$GIT_PATH" in
         /cygdrive/*|/usr/bin/git)
-            echo "[WARN]  git appears to be Cygwin git ($GIT_PATH)."
+            echo "[WARN]  git appears to be Cygwin or MSYS2 (non-MinGW) git ($GIT_PATH)."
             echo "        This can cause signal errors and path translation issues."
             echo "        Fix: add 'C:\\Program Files\\Git\\cmd' to the FRONT of your PATH,"
             echo "        or set alias git='\"C:\\Program Files\\Git\\cmd\\git.exe\"' in your shell profile."
@@ -55,7 +55,9 @@ fi
 # ---------------------------------------------------------------------------
 # In worktrees, .git is a file pointing to the real git dir.
 # Use git rev-parse to find the actual git directory.
-GIT_DIR="$(git -C "$REPO_DIR" rev-parse --git-dir 2>/dev/null || echo "$REPO_DIR/.git")"
+# --absolute-git-dir (Git 2.13+) returns an absolute path, avoiding the bug
+# where a relative ".git" would resolve against CWD instead of REPO_DIR.
+GIT_DIR="$(git -C "$REPO_DIR" rev-parse --absolute-git-dir 2>/dev/null || echo "$REPO_DIR/.git")"
 LOCK_FILE="$GIT_DIR/index.lock"
 
 if [ -f "$LOCK_FILE" ]; then
