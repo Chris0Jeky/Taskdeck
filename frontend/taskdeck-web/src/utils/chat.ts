@@ -20,7 +20,7 @@ export interface ParsedHintMessage {
 }
 
 export function extractParseHint(content: string): ParsedHintMessage | null {
-  const markerIndex = content.indexOf(PARSE_HINT_MARKER)
+  const markerIndex = content.lastIndexOf(PARSE_HINT_MARKER)
   if (markerIndex === -1) {
     return null
   }

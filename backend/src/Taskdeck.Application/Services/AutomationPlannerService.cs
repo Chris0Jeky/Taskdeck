@@ -461,19 +461,25 @@ public class AutomationPlannerService : IAutomationPlannerService
     internal static string? DetectIntent(string instruction)
     {
         var lower = instruction.Trim().ToLowerInvariant();
+        var words = lower.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        if (lower.Contains("create") || lower.Contains("add") || lower.Contains("new"))
-            return "create";
-        if (lower.Contains("move") || lower.Contains("drag") || lower.Contains("transfer"))
-            return "move";
-        if (lower.Contains("archive") || lower.Contains("remove") || lower.Contains("delete"))
-            return "archive";
-        if (lower.Contains("update") || lower.Contains("edit") || lower.Contains("change") || lower.Contains("rename") || lower.Contains("set"))
-            return "update";
-        if (lower.Contains("unarchive") || lower.Contains("restore"))
+        // Check more-specific intents before their substrings (e.g. "unarchive" before "archive",
+        // "rename" before "new"). Use word-level matching to avoid substring false positives
+        // like "sunset" matching "set" or "address" matching "add".
+        bool hasWord(string word) => words.Any(w => w == word);
+
+        if (lower.Contains("unarchive") || hasWord("restore"))
             return "unarchive";
-        if (lower.Contains("reorder") || lower.Contains("position"))
+        if (lower.Contains("rename") || hasWord("edit") || hasWord("change") || hasWord("update"))
+            return "update";
+        if (hasWord("reorder") || hasWord("position"))
             return "reorder";
+        if (hasWord("create") || hasWord("add") || hasWord("new"))
+            return "create";
+        if (hasWord("move") || hasWord("drag") || hasWord("transfer"))
+            return "move";
+        if (hasWord("archive") || hasWord("remove") || hasWord("delete"))
+            return "archive";
 
         return null;
     }
@@ -490,10 +496,10 @@ public class AutomationPlannerService : IAutomationPlannerService
         {
             var score = 0;
 
-            // Boost patterns whose keywords overlap with the instruction words
+            // Boost patterns whose keywords match whole words in the instruction
             foreach (var keyword in entry.Keywords)
             {
-                if (words.Any(w => w.Contains(keyword)))
+                if (words.Any(w => w == keyword))
                     score += 2;
             }
 

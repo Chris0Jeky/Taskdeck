@@ -860,6 +860,8 @@ public class AutomationPlannerServiceTests
     [InlineData("delete old stuff", "archive")]
     [InlineData("change the card name", "update")]
     [InlineData("restore the board", "unarchive")]
+    [InlineData("unarchive my board", "unarchive")]
+    [InlineData("rename board to Sprint 5", "update")]
     public void DetectIntent_ShouldIdentifyIntent_FromNaturalLanguage(string instruction, string expectedIntent)
     {
         // Act
