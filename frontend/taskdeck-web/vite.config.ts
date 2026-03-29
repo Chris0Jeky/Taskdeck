@@ -36,6 +36,22 @@ export default defineConfig({
             },
           },
           {
+            // StaleWhileRevalidate for Google Fonts CSS — without this, offline users
+            // fall back to system fonts because the stylesheet is not served from cache.
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\//i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'google-fonts-stylesheets',
+              expiration: {
+                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                maxEntries: 10,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
             // CacheFirst for static assets (fonts, images, icons)
             urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i,
             handler: 'CacheFirst',
