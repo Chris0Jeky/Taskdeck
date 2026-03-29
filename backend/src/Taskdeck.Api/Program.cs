@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.FirstRun;
 using Taskdeck.Infrastructure;
@@ -76,11 +78,16 @@ appLifetime.ApplicationStarted.Register(() =>
     var fr = app.Services.GetRequiredService<FirstRunService>();
     var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
-    var url = $"http://localhost:{firstRunSettings.Port}";
-    startupLogger.LogInformation("Taskdeck API is running at {Url}", url);
-    startupLogger.LogInformation("Swagger UI available at {SwaggerUrl}", $"{url}/swagger");
+    var server = app.Services.GetRequiredService<IServer>();
+    var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
+    var browserUrl = addresses?.FirstOrDefault(u => u.Contains("://localhost"))
+        ?? addresses?.FirstOrDefault()
+        ?? $"http://localhost:{firstRunSettings.Port}";
 
-    fr.TryOpenBrowser();
+    startupLogger.LogInformation("Taskdeck API is running at {Url}", browserUrl);
+    startupLogger.LogInformation("Swagger UI available at {SwaggerUrl}", $"{browserUrl}/swagger");
+
+    fr.TryOpenBrowser(browserUrl);
 });
 
 app.Run();

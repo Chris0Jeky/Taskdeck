@@ -22,11 +22,13 @@ public sealed class FirstRunService
     }
 
     /// <summary>
-    /// Opens the browser to the app URL when
+    /// Opens the browser to the given URL when
     /// <see cref="FirstRunSettings.AutoOpenBrowser"/> is enabled and the
     /// process is not running in a headless/CI context.
     /// </summary>
-    public void TryOpenBrowser()
+    /// <param name="url">The URL to open. Typically the actual listening address
+    /// obtained from <c>IServerAddressesFeature</c>.</param>
+    public void TryOpenBrowser(string url)
     {
         if (!_settings.AutoOpenBrowser)
         {
@@ -40,7 +42,6 @@ public sealed class FirstRunService
             return;
         }
 
-        var url = $"http://localhost:{_settings.Port}";
         _logger.LogInformation("First-run: Opening browser at {Url}", url);
 
         try
