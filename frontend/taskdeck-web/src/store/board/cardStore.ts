@@ -41,7 +41,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
       const newCard = await cardsApi.createCard(boardId, card)
       state.currentBoardCards.value.push(newCard)
       helpers.updateColumnCardCount(newCard.columnId, 1)
-      helpers.toast.success(`Card "${newCard.title}" created successfully`)
+      helpers.toast.success(`Card "${newCard.title.trim()}" created successfully`)
       return newCard
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to create card')
