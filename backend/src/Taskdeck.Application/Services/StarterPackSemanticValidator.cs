@@ -11,15 +11,11 @@ namespace Taskdeck.Application.Services;
 public sealed class StarterPackSemanticValidator
 {
     public void Validate(
-        StarterPackManifestDto manifest,
         StarterPackSchemaValidationOutput schemaOutput,
         List<StarterPackManifestValidationError> errors)
     {
-        var seedCards = StarterPackSchemaValidator.NormalizeCollection(
-            manifest.SeedCards, "$.seedCards", "Seed cards", errors);
-
         ValidateSeedCards(
-            seedCards,
+            schemaOutput.NormalizedSeedCards,
             schemaOutput.KnownLabelNames,
             schemaOutput.KnownColumnNames,
             schemaOutput.KnownTemplateIds,

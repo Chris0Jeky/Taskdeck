@@ -65,7 +65,7 @@ public sealed class StarterPackManifestValidator : IStarterPackManifestValidator
         }
 
         var schemaOutput = _schemaValidator.Validate(manifest, errors);
-        _semanticValidator.Validate(manifest, schemaOutput, errors);
+        _semanticValidator.Validate(schemaOutput, errors);
 
         return new StarterPackManifestValidationResult(manifest, errors);
     }

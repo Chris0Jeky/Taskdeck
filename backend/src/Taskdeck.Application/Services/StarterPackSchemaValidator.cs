@@ -45,7 +45,7 @@ public sealed class StarterPackSchemaValidator
         var knownColumnNames = ValidateColumns(columns, errors);
         var knownTemplateIds = ValidateTemplates(templates, errors);
 
-        return new StarterPackSchemaValidationOutput(knownLabelNames, knownColumnNames, knownTemplateIds);
+        return new StarterPackSchemaValidationOutput(knownLabelNames, knownColumnNames, knownTemplateIds, seedCards);
     }
 
     private static void ValidateHeader(
@@ -400,4 +400,5 @@ public sealed class StarterPackSchemaValidator
 public sealed record StarterPackSchemaValidationOutput(
     HashSet<string> KnownLabelNames,
     HashSet<string> KnownColumnNames,
-    HashSet<string> KnownTemplateIds);
+    HashSet<string> KnownTemplateIds,
+    List<StarterPackSeedCardDto> NormalizedSeedCards);

@@ -13,13 +13,13 @@ public class StarterPackSemanticValidatorTests
     public void Validate_ShouldNotAddErrors_WhenAllReferencesAreValid()
     {
         var manifest = BuildManifestWithSeedCard("Backlog", "bug-report", ["priority-high"]);
-        var schemaOutput = new StarterPackSchemaValidationOutput(
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "priority-high" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Backlog" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "bug-report" });
+        var schemaOutput = BuildSchemaOutput(manifest,
+            knownLabels: ["priority-high"],
+            knownColumns: ["Backlog"],
+            knownTemplates: ["bug-report"]);
         var errors = new List<StarterPackManifestValidationError>();
 
-        _validator.Validate(manifest, schemaOutput, errors);
+        _validator.Validate(schemaOutput, errors);
 
         errors.Should().BeEmpty();
     }
@@ -28,13 +28,11 @@ public class StarterPackSemanticValidatorTests
     public void Validate_ShouldAddError_WhenSeedCardReferencesUnknownColumn()
     {
         var manifest = BuildManifestWithSeedCard("NonExistent", null, []);
-        var schemaOutput = new StarterPackSchemaValidationOutput(
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Backlog" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var schemaOutput = BuildSchemaOutput(manifest,
+            knownColumns: ["Backlog"]);
         var errors = new List<StarterPackManifestValidationError>();
 
-        _validator.Validate(manifest, schemaOutput, errors);
+        _validator.Validate(schemaOutput, errors);
 
         errors.Should().Contain(e =>
             e.Path == "$.seedCards[0].columnName" &&
@@ -45,13 +43,12 @@ public class StarterPackSemanticValidatorTests
     public void Validate_ShouldAddError_WhenSeedCardReferencesUnknownLabel()
     {
         var manifest = BuildManifestWithSeedCard("Backlog", null, ["missing-label"]);
-        var schemaOutput = new StarterPackSchemaValidationOutput(
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "priority-high" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Backlog" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var schemaOutput = BuildSchemaOutput(manifest,
+            knownLabels: ["priority-high"],
+            knownColumns: ["Backlog"]);
         var errors = new List<StarterPackManifestValidationError>();
 
-        _validator.Validate(manifest, schemaOutput, errors);
+        _validator.Validate(schemaOutput, errors);
 
         errors.Should().Contain(e =>
             e.Path == "$.seedCards[0].labels[0]" &&
@@ -62,13 +59,12 @@ public class StarterPackSemanticValidatorTests
     public void Validate_ShouldAddError_WhenSeedCardReferencesUnknownTemplate()
     {
         var manifest = BuildManifestWithSeedCard("Backlog", "missing-template", []);
-        var schemaOutput = new StarterPackSchemaValidationOutput(
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Backlog" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "bug-report" });
+        var schemaOutput = BuildSchemaOutput(manifest,
+            knownColumns: ["Backlog"],
+            knownTemplates: ["bug-report"]);
         var errors = new List<StarterPackManifestValidationError>();
 
-        _validator.Validate(manifest, schemaOutput, errors);
+        _validator.Validate(schemaOutput, errors);
 
         errors.Should().Contain(e =>
             e.Path == "$.seedCards[0].templateId" &&
@@ -80,13 +76,11 @@ public class StarterPackSemanticValidatorTests
     {
         var manifest = BuildManifestWithSeedCard("Backlog", null, []);
         manifest.SeedCards[0].Title = "";
-        var schemaOutput = new StarterPackSchemaValidationOutput(
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Backlog" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var schemaOutput = BuildSchemaOutput(manifest,
+            knownColumns: ["Backlog"]);
         var errors = new List<StarterPackManifestValidationError>();
 
-        _validator.Validate(manifest, schemaOutput, errors);
+        _validator.Validate(schemaOutput, errors);
 
         errors.Should().Contain(e => e.Path == "$.seedCards[0].title");
     }
@@ -95,13 +89,10 @@ public class StarterPackSemanticValidatorTests
     public void Validate_ShouldAddError_WhenSeedCardColumnNameIsMissing()
     {
         var manifest = BuildManifestWithSeedCard("", null, []);
-        var schemaOutput = new StarterPackSchemaValidationOutput(
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var schemaOutput = BuildSchemaOutput(manifest);
         var errors = new List<StarterPackManifestValidationError>();
 
-        _validator.Validate(manifest, schemaOutput, errors);
+        _validator.Validate(schemaOutput, errors);
 
         errors.Should().Contain(e => e.Path == "$.seedCards[0].columnName");
     }
@@ -110,17 +101,28 @@ public class StarterPackSemanticValidatorTests
     public void Validate_ShouldAddError_WhenSeedCardLabelIsEmpty()
     {
         var manifest = BuildManifestWithSeedCard("Backlog", null, [""]);
-        var schemaOutput = new StarterPackSchemaValidationOutput(
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Backlog" },
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var schemaOutput = BuildSchemaOutput(manifest,
+            knownColumns: ["Backlog"]);
         var errors = new List<StarterPackManifestValidationError>();
 
-        _validator.Validate(manifest, schemaOutput, errors);
+        _validator.Validate(schemaOutput, errors);
 
         errors.Should().Contain(e =>
             e.Path == "$.seedCards[0].labels[0]" &&
             e.Message.Contains("empty", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static StarterPackSchemaValidationOutput BuildSchemaOutput(
+        StarterPackManifestDto manifest,
+        IEnumerable<string>? knownLabels = null,
+        IEnumerable<string>? knownColumns = null,
+        IEnumerable<string>? knownTemplates = null)
+    {
+        return new StarterPackSchemaValidationOutput(
+            new HashSet<string>(knownLabels ?? [], StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(knownColumns ?? [], StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(knownTemplates ?? [], StringComparer.OrdinalIgnoreCase),
+            manifest.SeedCards);
     }
 
     private static StarterPackManifestDto BuildManifestWithSeedCard(
