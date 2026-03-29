@@ -94,15 +94,19 @@ const {
   resetSelection,
 } = useBoardKeyboardNav(sortedColumns)
 
+function applyPresenceSeed() {
+  const seed = currentUserPresenceSeed()
+  presenceMembers.value = seed
+  boardStore.setBoardPresenceMembers(seed)
+}
+
 onMounted(async () => {
   boardLoadPerf.start()
   try {
     // Seed presence with the current user immediately so the panel never
     // shows "No active collaborators" while waiting for the SignalR
     // BoardJoined push event (fixes #523 flicker).
-    const seed = currentUserPresenceSeed()
-    presenceMembers.value = seed
-    boardStore.setBoardPresenceMembers(seed)
+    applyPresenceSeed()
     boardStore.setEditingCard(null)
     await boardStore.fetchBoard(boardId.value)
     await realtime.start(boardId.value)
@@ -124,9 +128,7 @@ watch(
     boardId.value = nextBoardId
     resetSelection()
     // Seed with current user on board switch for the same reason as onMounted.
-    const seed = currentUserPresenceSeed()
-    presenceMembers.value = seed
-    boardStore.setBoardPresenceMembers(seed)
+    applyPresenceSeed()
     boardStore.setEditingCard(null)
 
     try {
