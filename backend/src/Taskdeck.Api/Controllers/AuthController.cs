@@ -88,6 +88,7 @@ public class AuthController : ControllerBase
     /// Handles the GitHub OAuth callback, creates/links the user, and redirects with a JWT token.
     /// </summary>
     [HttpGet("github/callback")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> GitHubCallback([FromQuery] string? returnUrl = null)
     {
         if (!_gitHubOAuthSettings.IsConfigured)
@@ -145,7 +146,8 @@ public class AuthController : ControllerBase
             : "/";
 
         var separator = safeReturnUrl.Contains('?') ? "&" : "?";
-        return Redirect($"{safeReturnUrl}{separator}token={result.Value.Token}");
+        var encodedToken = Uri.EscapeDataString(result.Value.Token);
+        return Redirect($"{safeReturnUrl}{separator}token={encodedToken}");
     }
 
     /// <summary>
