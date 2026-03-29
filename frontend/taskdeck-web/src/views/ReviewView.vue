@@ -1095,7 +1095,7 @@ watch(
   }
 
   .td-review-card__diff {
-    font-size: 11px;
+    font-size: var(--td-font-xs); /* Avoid sub-16px sizes that trigger iOS auto-zoom */
     padding: var(--td-space-2);
   }
 
