@@ -74,25 +74,26 @@ describe('CardItem drag guardrails', () => {
 })
 
 describe('CardItem drag handle — text selection clearing', () => {
-  let removeAllRanges: ReturnType<typeof vi.fn>
+  it('clears an active text selection when the drag handle is mousedown-ed', async () => {
+    const card = createCard()
+    const wrapper = mount(CardItem, { props: { card } })
 
-  beforeEach(() => {
-    removeAllRanges = vi.fn()
-    vi.stubGlobal('getSelection', () => ({ removeAllRanges }))
-  })
+    // Build a real DOM range over the card title text and add it to the selection
+    const selection = window.getSelection()
+    if (!selection) return // JSDOM always provides getSelection; guard for type safety
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
+    const titleEl = wrapper.get('.td-board-card__title').element
+    const range = document.createRange()
+    range.selectNodeContents(titleEl)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    expect(selection.toString()).toBe(card.title)
 
-  it('calls removeAllRanges on drag handle mousedown to clear prior text selection', async () => {
-    const wrapper = mount(CardItem, {
-      props: { card: createCard() },
-    })
-
+    // Trigger mousedown on the drag handle
     await wrapper.get('[data-action="drag-card-handle"]').trigger('mousedown')
 
-    expect(removeAllRanges).toHaveBeenCalledOnce()
+    // Selection must be cleared
+    expect(selection.toString()).toBe('')
   })
 
   it('does not throw when getSelection returns null', async () => {
@@ -105,5 +106,7 @@ describe('CardItem drag handle — text selection clearing', () => {
     await expect(
       wrapper.get('[data-action="drag-card-handle"]').trigger('mousedown'),
     ).resolves.not.toThrow()
+
+    vi.unstubAllGlobals()
   })
 })

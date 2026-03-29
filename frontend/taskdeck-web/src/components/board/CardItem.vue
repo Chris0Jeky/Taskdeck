@@ -207,8 +207,10 @@ function isOverdue(dateString: string | null): boolean {
 
 /* ── Drag handle — prevent text-selection interference with drag ── */
 .td-card-drag-handle {
-  user-select: none;
   -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 /* ── Drag handle label ── */
