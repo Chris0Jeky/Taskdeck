@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useToastStore } from '../../store/toastStore'
+import { getErrorDisplay } from '../../composables/useErrorMapper'
 import CardItem from './CardItem.vue'
 import CardModal from './CardModal.vue'
 import ColumnEditModal from './ColumnEditModal.vue'
@@ -21,12 +23,23 @@ const emit = defineEmits<{
 }>()
 
 const boardStore = useBoardStore()
+const toast = useToastStore()
 const newCardTitle = ref('')
 const showCardForm = ref(false)
 const selectedCard = ref<Card | null>(null)
 const showCardModal = ref(false)
 const showColumnEdit = ref(false)
 const isDragOver = ref(false)
+
+/** True when cards.length > wipLimit (already over limit) */
+const isWipLimitExceeded = computed(() => {
+  return props.column.wipLimit !== null && props.cards.length > props.column.wipLimit
+})
+
+/** True when cards.length >= wipLimit (at or over limit — adding would violate) */
+const isWipLimitAtOrExceeded = computed(() => {
+  return props.column.wipLimit !== null && props.cards.length >= props.column.wipLimit
+})
 
 function handleCardClick(card: Card) {
   selectedCard.value = card
@@ -39,6 +52,12 @@ function handleModalClose() {
 }
 
 function openCardForm() {
+  if (isWipLimitAtOrExceeded.value) {
+    toast.warning(
+      `WIP limit reached: column "${props.column.name}" is at its limit of ${props.column.wipLimit}. Remove a card before adding another.`
+    )
+    return
+  }
   showCardForm.value = true
 }
 
@@ -54,12 +73,10 @@ async function createCard() {
     newCardTitle.value = ''
     showCardForm.value = false
   } catch (error) {
+    const { message } = getErrorDisplay(error, 'Failed to create card')
+    toast.error(message)
     console.error('Failed to create card:', error)
   }
-}
-
-const isWipLimitExceeded = () => {
-  return props.column.wipLimit !== null && props.cards.length > props.column.wipLimit
 }
 
 function handleCardDragStart(card: Card) {
@@ -187,7 +204,7 @@ function handleCardDragOver(event: DragEvent) {
           </button>
           <span
             class="td-column-lane__count"
-            :class="isWipLimitExceeded() ? 'td-column-lane__count--exceeded' : ''"
+            :class="isWipLimitExceeded ? 'td-column-lane__count--exceeded' : ''"
           >
             {{ cards.length }}{{ column.wipLimit ? `/${column.wipLimit}` : '' }}
           </span>
@@ -204,14 +221,20 @@ function handleCardDragOver(event: DragEvent) {
         </div>
       </div>
 
-      <div v-if="isWipLimitExceeded()" class="td-column-lane__wip-warning">
+      <div v-if="isWipLimitExceeded" class="td-column-lane__wip-warning">
         WIP limit exceeded
       </div>
 
       <button
         data-action="toggle-add-card"
         @click="openCardForm"
-        class="td-column-lane__add-card-btn"
+        :disabled="isWipLimitAtOrExceeded"
+        :title="isWipLimitAtOrExceeded ? `WIP limit of ${column.wipLimit} reached` : 'Add a card'"
+        :aria-disabled="isWipLimitAtOrExceeded"
+        :class="[
+          'td-column-lane__add-card-btn',
+          isWipLimitAtOrExceeded ? 'td-column-lane__add-card-btn--disabled' : '',
+        ]"
       >
         <span>+</span>
         <span>Add Card</span>
@@ -421,6 +444,13 @@ function handleCardDragOver(event: DragEvent) {
 .td-column-lane__add-card-btn:focus-visible {
   outline: none;
   box-shadow: var(--td-focus-ring);
+}
+
+.td-column-lane__add-card-btn--disabled,
+.td-column-lane__add-card-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* ── Card creation form ── */
