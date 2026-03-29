@@ -12,6 +12,9 @@ export default defineConfig({
       workbox: {
         // Precache app shell assets (JS, CSS, HTML, icons)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
+        // Exclude manifest icons from glob — they are precached via the manifest config
+        // to prevent duplicate precache entries and Workbox runtime warnings.
+        globIgnores: ['icons/**'],
         // Clean stale caches on SW activation
         cleanupOutdatedCaches: true,
         // NetworkFirst for API calls with 5-minute cache TTL fallback
@@ -55,7 +58,6 @@ export default defineConfig({
         theme_color: '#1e293b',
         background_color: '#0f172a',
         display: 'standalone',
-        orientation: 'portrait-primary',
         scope: '/',
         start_url: '/',
         icons: [
