@@ -231,6 +231,37 @@ describe('ArchiveView', () => {
     setItemSpy.mockRestore()
   })
 
+  it('shows error toast when board restore fails', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-archived',
+        name: 'Failing Board',
+        description: null,
+        isArchived: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+    mocks.updateBoard.mockRejectedValue(new Error('network error'))
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    const restoreBoardButton = findButtonByText(wrapper, 'Restore Board')
+    await restoreBoardButton.trigger('click')
+    await waitForAsyncUi()
+
+    expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
+    expect(mocks.successToast).not.toHaveBeenCalled()
+    expect(mocks.errorToast).toHaveBeenCalledWith('Failed to restore board')
+    // Board remains in the list
+    expect(wrapper.findAll('.td-archive-list--section .td-archive-row')).toHaveLength(1)
+
+    confirmSpy.mockRestore()
+  })
+
   it('hides archived board from default list and reveals it when hidden toggle is enabled', async () => {
     mocks.getBoards.mockResolvedValue([
       {
