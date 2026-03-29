@@ -125,7 +125,7 @@ vi.mock('../../store/toastStore', () => ({
 // useActivityQuery must be called inside a Vue setup context,
 // so we use a minimal wrapper component to exercise it.
 import { mount } from '@vue/test-utils'
-import { defineComponent, onMounted } from 'vue'
+import { defineComponent } from 'vue'
 import { useActivityQuery } from '../../composables/useActivityQuery'
 
 function mountWithQuery(onSetup?: (q: ReturnType<typeof useActivityQuery>) => void) {
