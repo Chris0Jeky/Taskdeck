@@ -75,6 +75,22 @@ describe('ColumnLane — WIP limit enforcement', () => {
       expect(btn.attributes('disabled')).toBeUndefined()
     })
 
+    it('is enabled when wipLimit is 0 (defensive: backend prevents this but guard against stale data)', () => {
+      // The backend domain layer throws if wipLimit <= 0, so this should never arrive
+      // from a healthy API. This test guards against stale/corrupt data reaching the
+      // frontend: wipLimit=0 must NOT block card creation (treated as no limit).
+      const column = makeColumn({ wipLimit: 0 as unknown as null })
+      const wrapper = mount(ColumnLane, {
+        props: { ...defaultProps, column, cards: [] },
+        global: {
+          stubs: { CardItem: true, CardModal: true, ColumnEditModal: true },
+        },
+      })
+
+      const btn = wrapper.find('[data-action="toggle-add-card"]')
+      expect(btn.attributes('disabled')).toBeUndefined()
+    })
+
     it('is enabled when column is under WIP limit', () => {
       const column = makeColumn({ wipLimit: 3 })
       const cards = [makeCard('c1'), makeCard('c2')]

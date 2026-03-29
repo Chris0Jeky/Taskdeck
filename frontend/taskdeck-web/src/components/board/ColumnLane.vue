@@ -33,12 +33,14 @@ const isDragOver = ref(false)
 
 /** True when cards.length > wipLimit (already over limit) */
 const isWipLimitExceeded = computed(() => {
-  return props.column.wipLimit !== null && props.cards.length > props.column.wipLimit
+  // Treat null or <= 0 as "no limit" — mirrors backend's SetWipLimit guard (must be > 0)
+  return props.column.wipLimit != null && props.column.wipLimit > 0 && props.cards.length > props.column.wipLimit
 })
 
 /** True when cards.length >= wipLimit (at or over limit — adding would violate) */
 const isWipLimitAtOrExceeded = computed(() => {
-  return props.column.wipLimit !== null && props.cards.length >= props.column.wipLimit
+  // Treat null or <= 0 as "no limit" — mirrors backend's SetWipLimit guard (must be > 0)
+  return props.column.wipLimit != null && props.column.wipLimit > 0 && props.cards.length >= props.column.wipLimit
 })
 
 function handleCardClick(card: Card) {
@@ -450,7 +452,9 @@ function handleCardDragOver(event: DragEvent) {
 .td-column-lane__add-card-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  pointer-events: none;
+  /* pointer-events must stay enabled so the :title tooltip is shown on hover
+     and cursor: not-allowed is visible. The native disabled attribute already
+     prevents click/submit events. */
 }
 
 /* ── Card creation form ── */
