@@ -140,6 +140,23 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
+    {
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.LlmRequests
+                .FromSqlInterpolated($"SELECT * FROM LlmRequests WHERE UserId = {userId} AND Status = {(int)status} ORDER BY CreatedAt DESC")
+                .Include(lr => lr.Board)
+                .ToListAsync(cancellationToken);
+        }
+
+        return await _context.LlmRequests
+            .Include(lr => lr.Board)
+            .Where(lr => lr.UserId == userId && lr.Status == status)
+            .OrderByDescending(lr => lr.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
     {
         if (_context.Database.IsSqlite())
