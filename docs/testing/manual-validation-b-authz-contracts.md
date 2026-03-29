@@ -68,19 +68,19 @@ CARD_A=$(curl -s -X POST http://localhost:5000/api/boards/$BOARD_A/cards \
 LABEL_A=$(curl -s -X POST http://localhost:5000/api/boards/$BOARD_A/labels \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN_A" \
-  -d '{"name":"Priority","color":"#ff0000"}' | tee /dev/stderr | jq -r '.id')
+  -d '{"name":"Priority","colorHex":"#ff0000"}' | tee /dev/stderr | jq -r '.id')
 
-## 8. UserA creates an agent profile (for cross-user agent isolation tests)
+# 8. UserA creates an agent profile (for cross-user agent isolation tests)
 AGENT_A=$(curl -s -X POST http://localhost:5000/api/agents \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN_A" \
-  -d '{"name":"UserA Test Agent","description":"Fixture agent"}' | tee /dev/stderr | jq -r '.id')
+  -d '{"name":"UserA Test Agent","templateKey":"default","scopeType":"User","description":"Fixture agent"}' | tee /dev/stderr | jq -r '.id')
 
 # 9. UserA creates a knowledge item (for cross-user knowledge isolation tests)
 KNOWLEDGE_A=$(curl -s -X POST http://localhost:5000/api/knowledge \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN_A" \
-  -d '{"title":"UserA Knowledge","content":"Fixture content"}' | tee /dev/stderr | jq -r '.id')
+  -d '{"title":"UserA Knowledge","content":"Fixture content","sourceType":"Manual"}' | tee /dev/stderr | jq -r '.id')
 
 echo "TOKEN_A=$TOKEN_A"
 echo "TOKEN_B=$TOKEN_B"
@@ -160,7 +160,7 @@ Note: ASP.NET Core's JWT middleware may return a bare `401` without a JSON body 
 | B-28  | GET    | `/api/knowledge`                                | 401             | Same                  |
 | B-29  | GET    | `/api/export/boards/{random-guid}`              | 401             | Same                  |
 | B-30  | GET    | `/api/export/database`                          | 401             | Same                  |
-| B-31  | GET    | `/api/boards/{random-guid}/imports/external`    | 401             | Same (POST only, GET should be 405 or 401) |
+| B-31  | POST   | `/api/boards/{random-guid}/imports/external`    | 401             | Same                  |
 | B-32  | GET    | `/api/workspace/preferences`                    | 401             | Same                  |
 
 ### Curl template for unauthenticated checks
@@ -251,7 +251,7 @@ Verify that accessing a genuinely nonexistent resource returns `404` with the co
 | ID    | Method | Route                                            | Token   | Expected | Notes                          |
 |-------|--------|--------------------------------------------------|---------|----------|--------------------------------|
 | B-90  | GET    | `/api/boards/00000000-0000-0000-0000-000000000001` | UserA | 404      | Board does not exist           |
-| B-91  | GET    | `/api/boards/{BOARD_A}/cards/00000000-0000-0000-0000-000000000001` | UserA | 404 | Card does not exist on own board |
+| B-91  | GET    | `/api/boards/{BOARD_A}/cards/00000000-0000-0000-0000-000000000001/provenance` | UserA | 404 | Card provenance for nonexistent card on own board |
 | B-92  | GET    | `/api/boards/{BOARD_A}/columns` (after deleting all) | UserA | 200 | Empty list, not 404            |
 | B-93  | GET    | `/api/capture/items/00000000-0000-0000-0000-000000000001` | UserA | 404 | Capture item does not exist    |
 | B-94  | GET    | `/api/llm/chat/sessions/00000000-0000-0000-0000-000000000001` | UserA | 404 | Chat session does not exist    |
@@ -290,6 +290,7 @@ Known `errorCode` values (from `ErrorCodes` in `Taskdeck.Domain.Exceptions`):
 | 404         | `NotFound`                                       |
 | 409         | `Conflict`, `InvalidOperation`                   |
 | 429         | `TooManyRequests`, `LlmQuotaExceeded`            |
+| 500         | `UnexpectedError`, `AbuseContainmentActive` (no explicit mapping -- falls to default) |
 | 503         | `LlmKillSwitchActive`                            |
 
 ### Targeted error-contract checks
@@ -300,7 +301,7 @@ Known `errorCode` values (from `ErrorCodes` in `Taskdeck.Domain.Exceptions`):
 | B-101 | `POST /api/auth/login` with wrong password             | 401             | `AuthenticationFailed`| `errorCode`+`message` present |
 | B-102 | `POST /api/auth/register` with duplicate username      | 409             | `Conflict`            | `errorCode`+`message` present |
 | B-103 | `GET /api/llm-queue/status/not-a-real-status`          | 400             | `ValidationError`     | `errorCode`+`message` present |
-| B-104 | `POST /api/automation/proposals/{id}/execute` without `Idempotency-Key` header | 400 | `ValidationError` | `errorCode`+`message` present |
+| B-104 | `POST /api/automation/proposals/{id}/execute` without `Idempotency-Key` header (use a real approved proposal ID -- a fake ID returns 404 before the header check) | 400 | `ValidationError` | `errorCode`+`message` present |
 | B-105 | `GET /api/export/database` (sandbox disabled)          | 403             | `Forbidden`           | `errorCode`+`message` present |
 | B-106 | `POST /api/import/database` (sandbox disabled)         | 403             | `Forbidden`           | `errorCode`+`message` present |
 | B-107 | `POST /api/boards/{BOARD_A}/cards` with missing `columnId` | 400         | `ValidationError`     | `errorCode`+`message` present |
@@ -325,8 +326,10 @@ curl -s -o /tmp/b_103.json -w "%{http_code}" \
 cat /tmp/b_103.json | jq .
 
 # B-104: Execute proposal without Idempotency-Key
+# NOTE: Replace the proposal ID below with a real approved proposal ID.
+# Using a fake ID will return 404 before reaching the Idempotency-Key check.
 curl -s -o /tmp/b_104.json -w "%{http_code}" \
-  -X POST http://localhost:5000/api/automation/proposals/00000000-0000-0000-0000-000000000001/execute \
+  -X POST http://localhost:5000/api/automation/proposals/<REAL_APPROVED_PROPOSAL_ID>/execute \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json"
 cat /tmp/b_104.json | jq .
@@ -387,7 +390,7 @@ These controllers have specialized auth or role requirements beyond standard boa
 | ID    | Method | Route                                         | Token   | Expected | Notes                          |
 |-------|--------|-----------------------------------------------|---------|----------|--------------------------------|
 | B-150 | GET    | `/api/abuse/actors/{UserA_ID}/status`         | UserA   | 200 or 403 | May require admin role      |
-| B-151 | POST   | `/api/abuse/actors/override`                  | UserA   | 403      | Admin-only override            |
+| B-151 | POST   | `/api/abuse/actors/override`                  | UserA   | 200      | **No admin gate in current code** -- any authenticated user can override; file security issue if unexpected |
 
 ### LLM Quota (`/api/llm`)
 
