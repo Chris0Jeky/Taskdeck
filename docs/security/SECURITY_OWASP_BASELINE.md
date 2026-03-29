@@ -29,7 +29,7 @@ API middleware now emits these headers for API responses:
   - `connect-src 'self'`
   - `img-src 'self'`
   - `style-src 'self' 'unsafe-inline'`
-  - `script-src 'self' 'unsafe-inline'`
+  - `script-src 'self'` (hardened in `#156` — `'unsafe-inline'` removed)
 
 Environment-aware behavior:
 
@@ -72,6 +72,7 @@ No additional net-new high-severity gaps were identified in this baseline pass b
 - `#83` data portability/deletion workflow
 - `#106` dependency vulnerability management policy
 - `#110` secrets/configuration management baseline
+- `#156` session-token storage hardening (ADR and near-term mitigations delivered; see `docs/analysis/session-token-storage-adr.md`)
 
 ## Verification
 
