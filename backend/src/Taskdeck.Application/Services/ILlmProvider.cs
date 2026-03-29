@@ -12,7 +12,8 @@ public record ChatCompletionRequest(
     List<ChatCompletionMessage> Messages,
     int MaxTokens = 1024,
     double Temperature = 0.7,
-    LlmRequestAttribution? Attribution = null
+    LlmRequestAttribution? Attribution = null,
+    string? SystemPrompt = null
 );
 
 public record ChatCompletionMessage(string Role, string Content);
@@ -40,7 +41,8 @@ public record LlmCompletionResult(
     string Provider = "Mock",
     string Model = "mock-default",
     bool IsDegraded = false,
-    string? DegradedReason = null
+    string? DegradedReason = null,
+    List<string>? Instructions = null
 );
 
 public record LlmTokenEvent(string Token, bool IsComplete, string? Error = null);
