@@ -239,6 +239,67 @@ public class LlmQueueApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertForbiddenAsync(response);
     }
 
+    [Fact]
+    public async Task GetByStatus_ShouldOnlyReturnCurrentUserRequests()
+    {
+        using var userAClient = _factory.CreateClient();
+        using var userBClient = _factory.CreateClient();
+
+        var userA = await ApiTestHarness.AuthenticateAsync(userAClient, "llm-status-isolation-userA");
+        var boardA = await ApiTestHarness.CreateBoardAsync(userAClient, "llm-status-isolation-board-a");
+
+        // User A creates a queue item
+        var createResponse = await userAClient.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("summarize", "user-a payload", boardA.Id));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var createdItem = await createResponse.Content.ReadFromJsonAsync<LlmRequestDto>();
+        createdItem.Should().NotBeNull();
+
+        // User B queries the same status — must not see user A's item
+        await ApiTestHarness.AuthenticateAsync(userBClient, "llm-status-isolation-userB");
+        var response = await userBClient.GetAsync("/api/llm-queue/status/Pending");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var items = await response.Content.ReadFromJsonAsync<List<LlmRequestDto>>();
+        items.Should().NotBeNull();
+        items.Should().NotContain(item => item.UserId == userA.UserId,
+            "user B must not see user A's queue items");
+    }
+
+    [Fact]
+    public async Task GetQueueStats_ShouldOnlyCountCurrentUserRequests()
+    {
+        using var userAClient = _factory.CreateClient();
+        using var userBClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(userAClient, "llm-stats-isolation-userA");
+        await ApiTestHarness.AuthenticateAsync(userBClient, "llm-stats-isolation-userB");
+
+        // Verify user B starts with zero pending
+        var baselineResponse = await userBClient.GetAsync("/api/llm-queue/stats");
+        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var baselineStats = await baselineResponse.Content.ReadFromJsonAsync<QueueStatsDto>();
+        baselineStats.Should().NotBeNull();
+        var baselinePending = baselineStats!.PendingCount;
+
+        // User A creates a queue item (no boardId — queue accepts null board)
+        var boardA = await ApiTestHarness.CreateBoardAsync(userAClient, "llm-stats-isolation-board");
+        var createResponse = await userAClient.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("summarize", "user-a stats payload", boardA.Id));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // User B's stats must not change
+        var afterResponse = await userBClient.GetAsync("/api/llm-queue/stats");
+        afterResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterStats = await afterResponse.Content.ReadFromJsonAsync<QueueStatsDto>();
+        afterStats.Should().NotBeNull();
+        afterStats!.PendingCount.Should().Be(baselinePending,
+            "user A's pending items must not appear in user B's stats");
+    }
+
     private async Task<Guid> CreateOwnedBoardAsync(string stem)
     {
         await EnsureAuthenticatedAsync();
