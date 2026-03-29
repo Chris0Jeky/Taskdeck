@@ -153,36 +153,40 @@ public class AuthenticationService : IAuthenticationService
                 return Result.Success(new AuthResultDto(token, MapToDto(existingUser)));
             }
 
-            // Check if a user with this email already exists — link the external login
-            var normalizedEmail = dto.Email.Trim();
-            var userByEmail = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
-            if (userByEmail != null)
-            {
-                if (!userByEmail.IsActive)
-                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
-
-                var externalLogin = new ExternalLogin(userByEmail.Id, dto.Provider, dto.ProviderUserId, dto.DisplayName, dto.AvatarUrl);
-                await _unitOfWork.ExternalLogins.AddAsync(externalLogin);
-                await _unitOfWork.SaveChangesAsync();
-
-                var token = GenerateJwtToken(userByEmail);
-                return Result.Success(new AuthResultDto(token, MapToDto(userByEmail)));
-            }
+            // Security: Do NOT auto-link by email. An attacker could create a GitHub
+            // account with the same email as an existing Taskdeck user and take over
+            // their account, because GitHub does not guarantee email verification.
+            // Instead, always create a new account for unlinked external logins.
 
             // New user — create account with a random unusable password hash
+            var normalizedEmail = dto.Email.Trim();
             var normalizedUsername = dto.Username.Trim();
 
-            // Ensure username uniqueness — append suffix if needed
+            // If an account with this email already exists, generate a unique email
+            // to avoid conflicts. The user can link accounts manually later.
+            var candidateEmail = normalizedEmail;
+            if (await _unitOfWork.Users.GetByEmailAsync(candidateEmail) != null)
+            {
+                candidateEmail = $"{dto.Provider.ToLowerInvariant()}-{dto.ProviderUserId}@external.taskdeck.local";
+            }
+
+            // Ensure username uniqueness — append suffix if needed (capped to prevent DoS)
             var candidateUsername = normalizedUsername;
             var suffix = 0;
+            const int maxUsernameSuffixAttempts = 100;
             while (await _unitOfWork.Users.GetByUsernameAsync(candidateUsername) != null)
             {
                 suffix++;
+                if (suffix > maxUsernameSuffixAttempts)
+                {
+                    candidateUsername = $"{normalizedUsername}-{Guid.NewGuid():N}".Substring(0, 50);
+                    break;
+                }
                 candidateUsername = $"{normalizedUsername}{suffix}";
             }
 
             var randomPassword = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString());
-            var newUser = new User(candidateUsername, normalizedEmail, randomPassword);
+            var newUser = new User(candidateUsername, candidateEmail, randomPassword);
 
             await _unitOfWork.Users.AddAsync(newUser);
 
@@ -197,9 +201,10 @@ public class AuthenticationService : IAuthenticationService
         {
             return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, $"External login failed: {ex.Message}");
+            // Do not expose internal details in error messages
+            return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, "External login failed due to an unexpected error");
         }
     }
 
