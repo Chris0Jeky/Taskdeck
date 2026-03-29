@@ -57,14 +57,41 @@ public class ExternalLogin : Entity
         UserId = userId;
         Provider = provider;
         ProviderUserId = providerUserId;
-        ProviderDisplayName = providerDisplayName;
-        AvatarUrl = avatarUrl;
+        ProviderDisplayName = SanitizeDisplayName(providerDisplayName);
+        AvatarUrl = ValidateAvatarUrl(avatarUrl);
     }
 
     public void UpdateProfile(string? displayName, string? avatarUrl)
     {
-        ProviderDisplayName = displayName;
-        AvatarUrl = avatarUrl;
+        ProviderDisplayName = SanitizeDisplayName(displayName);
+        AvatarUrl = ValidateAvatarUrl(avatarUrl);
         Touch();
+    }
+
+    private static string? SanitizeDisplayName(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+            return null;
+
+        // Limit length and strip control characters
+        var sanitized = displayName.Length > 255 ? displayName[..255] : displayName;
+        return new string(sanitized.Where(c => !char.IsControl(c)).ToArray());
+    }
+
+    private static string? ValidateAvatarUrl(string? avatarUrl)
+    {
+        if (string.IsNullOrWhiteSpace(avatarUrl))
+            return null;
+
+        // Only accept valid https:// URLs to prevent javascript: and other protocol attacks
+        if (Uri.TryCreate(avatarUrl, UriKind.Absolute, out var uri)
+            && uri.Scheme == Uri.UriSchemeHttps
+            && avatarUrl.Length <= 2048)
+        {
+            return avatarUrl;
+        }
+
+        // Invalid URL — discard it silently rather than failing the login
+        return null;
     }
 }
