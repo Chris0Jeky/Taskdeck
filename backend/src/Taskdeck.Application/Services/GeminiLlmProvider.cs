@@ -40,18 +40,6 @@ public class GeminiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             var useInstructionExtraction = request.SystemPrompt is null;
             var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
-            var allMessages = new List<object>();
-
-            if (!string.IsNullOrEmpty(systemPrompt))
-            {
-                allMessages.Add(new
-                {
-                    role = "user",
-                    parts = new[] { new { text = systemPrompt } }
-                });
-            }
-
-            allMessages.AddRange(request.Messages.Select(MapMessage));
 
             var generationConfig = useInstructionExtraction
                 ? (object)new
@@ -66,11 +54,18 @@ public class GeminiLlmProvider : ILlmProvider
                     maxOutputTokens = request.MaxTokens
                 };
 
-            message.Content = JsonContent.Create(new
-            {
-                contents = allMessages.ToArray(),
-                generationConfig
-            });
+            message.Content = !string.IsNullOrEmpty(systemPrompt)
+                ? JsonContent.Create(new
+                {
+                    contents = request.Messages.Select(MapMessage).ToArray(),
+                    generationConfig,
+                    system_instruction = new { parts = new[] { new { text = systemPrompt } } }
+                })
+                : JsonContent.Create(new
+                {
+                    contents = request.Messages.Select(MapMessage).ToArray(),
+                    generationConfig
+                });
 
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
