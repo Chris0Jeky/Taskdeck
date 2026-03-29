@@ -24,7 +24,7 @@ function renderMarkdown(content: string): string {
   if (!content) {
     return ''
   }
-  return DOMPurify.sanitize(marked.parse(content) as string)
+  return DOMPurify.sanitize(marked.parse(content, { async: false }))
 }
 
 const router = useRouter()
