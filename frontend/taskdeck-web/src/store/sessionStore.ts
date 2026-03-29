@@ -7,16 +7,7 @@ import { getErrorMessage } from '../utils/errorMessage'
 import type { LoginRequest, RegisterRequest, ChangePasswordRequest, SessionState, AuthResponse } from '../types/auth'
 import { getTokenExpiryIso, isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive, activateDemoSession, clearDemoSession, DEMO_USER } from '../utils/demoMode'
-
-const TOKEN_KEY = 'taskdeck_token'
-const SESSION_KEY = 'taskdeck_session'
-
-interface PersistedSession {
-  userId: string
-  username: string
-  email: string
-  defaultRole?: number
-}
+import * as tokenStorage from '../utils/tokenStorage'
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -49,10 +40,20 @@ export const useSessionStore = defineStore('session', () => {
   }))
 
   function persistSessionSnapshot(snapshot: { userId: string; username: string; email: string; defaultRole: number | null }) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot))
+    tokenStorage.setSession({
+      userId: snapshot.userId,
+      username: snapshot.username,
+      email: snapshot.email,
+      defaultRole: typeof snapshot.defaultRole === 'number' ? snapshot.defaultRole : undefined,
+    })
   }
 
   function setSession(data: AuthResponse) {
+    if (!tokenStorage.isValidJwtStructure(data.token)) {
+      console.warn('Received token with invalid JWT structure — session not persisted.')
+      return
+    }
+
     token.value = data.token
     userId.value = data.user.id
     username.value = data.user.username
@@ -60,7 +61,7 @@ export const useSessionStore = defineStore('session', () => {
     defaultRole.value = data.user.defaultRole
     expiresAt.value = getTokenExpiryIso(data.token)
 
-    localStorage.setItem(TOKEN_KEY, data.token)
+    tokenStorage.setToken(data.token)
     persistSessionSnapshot({
       userId: data.user.id,
       username: data.user.username,
@@ -77,8 +78,7 @@ export const useSessionStore = defineStore('session', () => {
     email.value = null
     defaultRole.value = null
     expiresAt.value = null
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(SESSION_KEY)
+    tokenStorage.clearAll()
     clearDemoSession()
   }
 
@@ -107,8 +107,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function setDemoSession() {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(SESSION_KEY)
+    tokenStorage.clearAll()
     isDemo.value = true
     token.value = null
     userId.value = DEMO_USER.id
@@ -130,35 +129,24 @@ export const useSessionStore = defineStore('session', () => {
       return
     }
 
-    const savedToken = localStorage.getItem(TOKEN_KEY)
-    const savedSession = localStorage.getItem(SESSION_KEY)
-    if (savedToken && savedSession) {
-      try {
-        const session = JSON.parse(savedSession) as PersistedSession
-        if (
-          typeof session.userId !== 'string'
-          || typeof session.username !== 'string'
-          || typeof session.email !== 'string'
-        ) {
-          clearSession()
-          return
-        }
-
-        token.value = savedToken
-        userId.value = session.userId
-        username.value = session.username
-        email.value = session.email
-        defaultRole.value = typeof session.defaultRole === 'number' ? session.defaultRole : null
-        expiresAt.value = getTokenExpiryIso(savedToken)
-        if (isTokenExpired(savedToken)) {
-          clearSession()
-          return
-        }
-
-        void hydrateDefaultRoleFromProfile(session.userId, savedToken)
-      } catch {
+    const savedToken = tokenStorage.getToken()
+    const session = tokenStorage.getSession()
+    if (savedToken && session) {
+      token.value = savedToken
+      userId.value = session.userId
+      username.value = session.username
+      email.value = session.email
+      defaultRole.value = typeof session.defaultRole === 'number' ? session.defaultRole : null
+      expiresAt.value = getTokenExpiryIso(savedToken)
+      if (isTokenExpired(savedToken)) {
         clearSession()
+        return
       }
+
+      void hydrateDefaultRoleFromProfile(session.userId, savedToken)
+    } else if (savedToken && !session) {
+      // Token exists but session metadata is missing or corrupt — clean up
+      tokenStorage.clearAll()
     }
   }
 

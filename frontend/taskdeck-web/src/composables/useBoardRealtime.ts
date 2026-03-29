@@ -6,6 +6,7 @@ import {
   LogLevel,
 } from '@microsoft/signalr'
 import type { BoardPresenceSnapshot, BoardRealtimeEvent } from '../types/realtime'
+import { getToken } from '../utils/tokenStorage'
 
 const BOARD_MUTATION_EVENT = 'boardMutation'
 const BOARD_PRESENCE_EVENT = 'boardPresence'
@@ -19,7 +20,7 @@ function resolveHubUrl(): string {
 }
 
 function getAccessToken(): string {
-  return localStorage.getItem('taskdeck_token') ?? ''
+  return getToken() ?? ''
 }
 
 export interface BoardRealtimeControllerOptions {

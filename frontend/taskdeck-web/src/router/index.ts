@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import { isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive } from '../utils/demoMode'
+import * as tokenStorage from '../utils/tokenStorage'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
 
 // Lazy-loaded route components — keeps initial bundle small and speeds up
@@ -232,13 +233,12 @@ router.beforeEach((to) => {
 
   const isPublic = to.meta.public === true
   const demoActive = isDemoMode && isDemoSessionActive()
-  const token = localStorage.getItem('taskdeck_token')
+  const token = tokenStorage.getToken()
   const tokenValid = !!token && !isTokenExpired(token)
   const hasValidSession = tokenValid || demoActive
 
   if (token && !tokenValid) {
-    localStorage.removeItem('taskdeck_token')
-    localStorage.removeItem('taskdeck_session')
+    tokenStorage.clearAll()
   }
 
   if (!isPublic && !hasValidSession && to.path.startsWith('/workspace')) {

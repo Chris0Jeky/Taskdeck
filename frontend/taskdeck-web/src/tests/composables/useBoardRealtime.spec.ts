@@ -92,7 +92,9 @@ describe('createBoardRealtimeController', () => {
 
   it('configures SignalR with websocket transport and negotiation enabled', async () => {
     const fetchBoard = vi.fn(async () => undefined)
-    localStorage.setItem('taskdeck_token', 'token-123')
+    // Use a structurally valid JWT (three base64url segments) so tokenStorage.getToken() accepts it
+    const fakeJwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.fakesig'
+    localStorage.setItem('taskdeck_token', fakeJwt)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
@@ -102,7 +104,7 @@ describe('createBoardRealtimeController', () => {
     const [, options] = withUrlCall as [string, { accessTokenFactory: () => string; transport: number; skipNegotiation?: boolean }]
     expect(options.transport).toBe(HttpTransportType.WebSockets)
     expect(options.skipNegotiation).toBeUndefined()
-    expect(options.accessTokenFactory()).toBe('token-123')
+    expect(options.accessTokenFactory()).toBe(fakeJwt)
   })
 
   it('uses an empty access token when no session token is present', async () => {

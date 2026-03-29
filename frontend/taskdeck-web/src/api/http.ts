@@ -3,9 +3,8 @@ import { isTokenExpired } from '../utils/jwt'
 import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
+import * as tokenStorage from '../utils/tokenStorage'
 
-const TOKEN_KEY = 'taskdeck_token'
-const SESSION_KEY = 'taskdeck_session'
 const REQUEST_ID_HEADER = 'X-Request-Id'
 
 function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
@@ -28,11 +27,10 @@ http.interceptors.request.use(
   (config) => {
     ensureRequestIdHeader(config)
 
-    const token = localStorage.getItem(TOKEN_KEY)
+    const token = tokenStorage.getToken()
     if (token) {
       if (isTokenExpired(token)) {
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(SESSION_KEY)
+        tokenStorage.clearAll()
       } else {
         config.headers.Authorization = `Bearer ${token}`
       }
@@ -51,8 +49,7 @@ http.interceptors.response.use(
 
       // Handle 401 - clear session and redirect to login (skip in demo mode)
       if (error.response.status === 401 && !isDemoMode) {
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(SESSION_KEY)
+        tokenStorage.clearAll()
         const pathname = window.location.pathname
         const currentPath = `${pathname}${window.location.search}`
         if (!isAuthRoutePath(pathname)) {
