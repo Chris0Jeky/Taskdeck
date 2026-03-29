@@ -36,6 +36,7 @@ const InboxView = () => import('../views/InboxView.vue')
 const HomeView = () => import('../views/HomeView.vue')
 const TodayView = () => import('../views/TodayView.vue')
 const ReviewView = () => import('../views/ReviewView.vue')
+const DevToolsView = () => import('../views/DevToolsView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -232,6 +233,14 @@ const router = createRouter({
       name: 'workspace-notifications',
       component: NotificationInboxView,
       meta: { requiresShell: true },
+    },
+
+    // Internal dev tooling (trace replay + scenario editor)
+    {
+      path: '/workspace/dev-tools',
+      name: 'workspace-dev-tools',
+      component: DevToolsView,
+      meta: { requiresShell: true, requiresFlag: 'devTools' },
     },
   ],
 })
