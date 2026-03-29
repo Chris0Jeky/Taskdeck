@@ -20,6 +20,7 @@ export interface CardFilters {
 
 export function createBoardState() {
   const boards = ref<Board[]>([])
+  const activeBoardId = ref<string | null>(null)
   const currentBoard = ref<BoardDetail | null>(null)
   const currentBoardCards = ref<Card[]>([])
   const currentBoardLabels = ref<Label[]>([])
@@ -38,6 +39,7 @@ export function createBoardState() {
 
   return {
     boards,
+    activeBoardId,
     currentBoard,
     currentBoardCards,
     currentBoardLabels,
