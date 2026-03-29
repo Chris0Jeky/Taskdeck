@@ -145,7 +145,12 @@ jobs:
       - name: Determine version tag
         id: version
         shell: bash
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${{ inputs.tag || '' }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Package artifact (zip — Windows)
         if: matrix.archive_ext == 'zip'
@@ -216,7 +221,12 @@ jobs:
 
       - name: Determine version tag
         id: version
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${{ inputs.tag || '' }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         env:
