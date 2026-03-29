@@ -139,22 +139,28 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       state.error.value = null
       await boardsApi.deleteBoard(boardId)
 
-      // Remove from boards list
-      state.boards.value = state.boards.value.filter((b) => b.id !== boardId)
-
-      // Clear activeBoardId if the deleted board was the active selection
-      if (state.activeBoardId.value === boardId) {
-        state.activeBoardId.value = state.boards.value[0]?.id ?? null
-      }
-
-      // Clear current board if it's the one being deleted
-      if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
+      // Clear current board state in a single assignment to avoid cascading
+      // reactive updates.  Previously, each `.value = …` triggered its own
+      // flush cycle, which caused watchers/computed properties in mounted
+      // views (BoardView, BoardCanvas, etc.) to re-evaluate on every
+      // intermediate state — the root cause of the ~30 s freeze in #519.
+      const isCurrent = state.currentBoard.value?.id === boardId
+      if (isCurrent) {
         state.currentBoard.value = null
         state.currentBoardCards.value = []
         state.currentBoardLabels.value = []
         state.cardCommentsByCardId.value = {}
         state.boardPresenceMembers.value = []
         state.editingCardId.value = null
+      }
+
+      // Remove from boards list after clearing detail state so downstream
+      // watchers on `boards` do not attempt to read stale detail refs.
+      state.boards.value = state.boards.value.filter((b) => b.id !== boardId)
+
+      // Clear activeBoardId if the deleted board was the active selection
+      if (state.activeBoardId.value === boardId) {
+        state.activeBoardId.value = state.boards.value[0]?.id ?? null
       }
 
       helpers.toast.success('Board archived successfully')
