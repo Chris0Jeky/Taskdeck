@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
 
 namespace Taskdeck.Api.FirstRun;
 
@@ -26,12 +27,49 @@ public static class FirstRunBootstrapper
     /// source so that previously generated secrets are picked up.
     /// Call this before building <see cref="WebApplication"/>.
     /// </summary>
+    /// <remarks>
+    /// The source is inserted <em>before</em> any
+    /// <see cref="EnvironmentVariablesConfigurationSource"/> entries so that
+    /// environment variables always win over the auto-generated file.  This
+    /// preserves 12-factor / container deployment patterns where operators
+    /// supply <c>Jwt__SecretKey</c> (or similar) via environment variables
+    /// and must not be silently overridden by a previously written file.
+    /// </remarks>
     public static WebApplicationBuilder AddLocalConfigFile(this WebApplicationBuilder builder)
     {
-        builder.Configuration.AddJsonFile(
-            LocalConfigPath,
-            optional: true,
-            reloadOnChange: false);
+        var sources = builder.Configuration.Sources;
+
+        // Find the first EnvironmentVariablesConfigurationSource so we can
+        // insert the file source before it, giving env vars higher priority.
+        var envIndex = -1;
+        for (var i = 0; i < sources.Count; i++)
+        {
+            if (sources[i] is EnvironmentVariablesConfigurationSource)
+            {
+                envIndex = i;
+                break;
+            }
+        }
+
+        var fileSource = new Microsoft.Extensions.Configuration.Json.JsonConfigurationSource
+        {
+            Path = LocalConfigPath,
+            Optional = true,
+            ReloadOnChange = false
+        };
+        // Resolve the file provider so the source can locate the file.
+        fileSource.ResolveFileProvider();
+
+        if (envIndex >= 0)
+        {
+            sources.Insert(envIndex, fileSource);
+        }
+        else
+        {
+            // No env-var source found (unusual); append at end.
+            sources.Add(fileSource);
+        }
+
         return builder;
     }
 
