@@ -71,6 +71,8 @@ Deploy a single Taskdeck instance to a managed platform. Each user gets their ow
   └── SignalR (same process, no scale-out needed yet)
 ```
 
+**Frontend hosting optimization:** Serve the Vue SPA from **Cloudflare Pages** (free tier: unlimited bandwidth, global CDN) rather than from the API process. This offloads static asset delivery to a zero-cost CDN and reduces API server load. The API server then only handles `/api/*` and `/hubs/*` routes.
+
 **What changes from local:**
 - SQLite works fine for 100-500 concurrent users on a single node
 - JWT auth already exists — multi-user is already supported
@@ -148,10 +150,10 @@ SQLite works for early cloud, but has limits:
   - CRDTs (Conflict-free Replicated Data Types) — what Figma uses
   - For board/card-level operations, the current proposal-first model + 409 is actually sufficient. Real-time card text co-editing is the only case that would need OT/CRDT.
 
-**Azure SignalR Service cost:**
-- Free tier: 20 concurrent connections, 20K messages/day
-- Standard: $50/mo per unit (1K concurrent connections each)
-- For 100-500 users: Free tier likely sufficient, ~$50/mo if not
+**Azure SignalR Service pricing (confirmed):**
+- Free tier: 20 concurrent connections, 20K messages/day (sufficient for dev/testing only)
+- Standard tier: ~$50/unit/month, each unit supports 1K concurrent connections
+- For 100-500 users: Free tier likely sufficient for light usage, one Standard unit (~$50/mo) if connection count exceeds 20
 
 ### Phase 5: Local + Cloud Sync (Month 9-12)
 
