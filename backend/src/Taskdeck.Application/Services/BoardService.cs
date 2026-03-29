@@ -2,6 +2,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -11,20 +12,30 @@ public class BoardService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService? _authorizationService;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
+    private readonly IHistoryService? _historyService;
 
     public BoardService(IUnitOfWork unitOfWork)
-        : this(unitOfWork, authorizationService: null, realtimeNotifier: null)
+        : this(unitOfWork, authorizationService: null, realtimeNotifier: null, historyService: null)
     {
     }
 
     public BoardService(
         IUnitOfWork unitOfWork,
         IAuthorizationService? authorizationService,
-        IBoardRealtimeNotifier? realtimeNotifier = null)
+        IBoardRealtimeNotifier? realtimeNotifier = null,
+        IHistoryService? historyService = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
         _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
+        _historyService = historyService;
+    }
+
+    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+    {
+        if (_historyService == null) return;
+        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
+        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
     }
 
     public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
@@ -139,6 +150,7 @@ public class BoardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "created", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            await SafeLogAsync("board", board.Id, AuditAction.Created, ownerId, $"name={board.Name}");
 
             return Result.Success(MapToDto(board));
         }
@@ -171,6 +183,12 @@ public class BoardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "updated", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            if (dto.IsArchived == true)
+                await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
+            else if (dto.IsArchived == false)
+                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: $"unarchived; name={board.Name}");
+            else
+                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: $"name={board.Name}");
             return Result.Success(MapToDto(board));
         }
         catch (DomainException ex)
@@ -199,6 +217,7 @@ public class BoardService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
             cancellationToken);
+        await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
         return Result.Success();
     }
 

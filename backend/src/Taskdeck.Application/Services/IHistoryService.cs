@@ -6,7 +6,6 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// Service interface for audit log and history operations.
-/// SCAFFOLDING: Implementation pending.
 /// </summary>
 public interface IHistoryService
 {

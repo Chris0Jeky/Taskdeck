@@ -30,6 +30,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ICaptureService, CaptureService>();
         services.AddScoped<ICaptureTriageService, CaptureTriageService>();
         services.AddScoped<HistoryService>();
+        services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
