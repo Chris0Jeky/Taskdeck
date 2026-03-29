@@ -44,10 +44,10 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 
 | Step | Action | Expected Outcome |
 |---|---|---|
-| 1 | Navigate to `/register` | Registration form renders with username, email, and password fields |
-| 2 | Fill valid username, email, and password | Fields accept input without validation errors |
+| 1 | Navigate to `/register` | Registration form renders with username, email, password, and confirm password fields |
+| 2 | Fill valid username, email, password, and confirm password | Fields accept input without validation errors |
 | 3 | Submit registration form | User is authenticated and redirected to `/workspace/home` |
-| 4 | Verify session token exists | Token is stored (check DevTools > Application > Local Storage for `td_token`) |
+| 4 | Verify session token exists | Token is stored (check DevTools > Application > Local Storage for `taskdeck_token`) |
 
 **Evidence:** Screenshot of `/workspace/home` after registration. Note any redirect delays.
 
@@ -129,7 +129,7 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 | 1 | Ensure no input field is focused | Cursor is not in a text entry element |
 | 2 | Press `?` | Keyboard shortcuts help dialog opens |
 | 3 | Verify dialog content | Three sections visible: Global, Board Navigation, Editor |
-| 4 | Verify listed shortcuts match implementation | `Ctrl+K` (command palette), `Ctrl+Shift+C` (quick capture), `?` (help), `Escape` (close top surface), `h/l/j/k` (board nav), `Enter` (open card), `n` (new card), `Shift+N` (new column), `f` (filter panel), `Ctrl+S` / `Ctrl+Enter` / `Alt+1` / `Alt+2` / `Alt+4` (editor) |
+| 4 | Verify listed shortcuts match implementation | `Ctrl+K` (command palette), `Ctrl+Shift+C` (quick capture), `?` (help), `Escape` (close top surface), `h/l/j/k` (board nav), `Enter` (open card), `n` (new card), `Shift+N` (new column -- **listed in help dialog but NOT wired in BoardView; known pre-existing gap**), `f` (filter panel -- **wired in BoardView but NOT listed in help dialog; known gap**), `Ctrl+S` / `Ctrl+Enter` / `Alt+1` / `Alt+2` / `Alt+4` (editor) |
 | 5 | Press `Escape` | Dialog closes |
 | 6 | Press `?` again | Dialog reopens (toggle behavior) |
 
@@ -141,13 +141,16 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 
 **Goal:** Verify `Ctrl+Shift+C` opens the quick capture modal from anywhere.
 
+Note: `Ctrl+Shift+C` is guarded by `isTextEntryTarget()` in AppShell -- it will NOT fire when an input, textarea, select, or contentEditable element is focused. This is intentional to avoid capturing when the user intends to copy text.
+
 | Step | Action | Expected Outcome |
 |---|---|---|
 | 1 | Navigate to `/workspace/home` | Home view renders |
-| 2 | Press `Ctrl+Shift+C` | Capture modal opens (teleported to body) |
+| 2 | Ensure no text input is focused, then press `Ctrl+Shift+C` | Capture modal opens (teleported to body) |
 | 3 | Close capture modal | Modal closes |
 | 4 | Navigate to `/workspace/boards` | Boards list renders |
-| 5 | Press `Ctrl+Shift+C` | Capture modal opens from boards list context |
+| 5 | Ensure no text input is focused, then press `Ctrl+Shift+C` | Capture modal opens from boards list context |
+| 6 | Close capture modal, focus a text input, then press `Ctrl+Shift+C` | Shortcut does NOT fire (text-entry guard) |
 
 **Evidence:** Screenshot of capture modal open from a non-board route.
 
@@ -160,7 +163,7 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 | Step | Action | Expected Outcome |
 |---|---|---|
 | 1 | Click logout control in sidebar/topbar | Session cleared, redirected to `/login` |
-| 2 | Verify token removed | DevTools > Local Storage: `td_token` absent |
+| 2 | Verify token removed | DevTools > Local Storage: `taskdeck_token` absent |
 | 3 | Attempt to navigate to `/workspace/home` | Redirected to `/login` |
 
 **Evidence:** Screenshot showing `/login` after logout.
@@ -230,8 +233,10 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 | 5 | Navigate back to board | Board view restores |
 | 6 | Click "Review proposals" | Navigates to `/workspace/review?boardId={boardId}` |
 | 7 | Navigate back to board | Board view restores |
-| 8 | Click "Add card" on board with columns | Inline add-card form opens in active column |
-| 9 | Click "Add card" on empty board (no columns) | Column creation form opens instead |
+| 8 | Click "Open Inbox" | Navigates to `/workspace/inbox?boardId={boardId}` |
+| 9 | Navigate back to board | Board view restores |
+| 10 | Click "Add card" on board with columns | Inline add-card form opens in active column |
+| 11 | Click "Add card" on empty board (no columns) | Column creation form opens instead |
 
 **Evidence:** Screenshots of each action rail target route with boardId query preserved.
 
@@ -243,7 +248,7 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 
 | Step | Action | Expected Outcome |
 |---|---|---|
-| 1 | Open column creation form (toolbar or `Shift+N`) | Form renders with name input |
+| 1 | Open column creation form (toolbar button; `Shift+N` is listed in help dialog but **not currently wired** -- use toolbar instead) | Form renders with name input |
 | 2 | Create column "Todo" | Column appears on board |
 | 3 | Create column "In Progress" | Second column appears |
 | 4 | Create column "Done" | Third column appears |
