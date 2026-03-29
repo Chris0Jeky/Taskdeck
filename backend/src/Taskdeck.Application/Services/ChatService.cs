@@ -243,6 +243,15 @@ public class ChatService : IChatService
                             proposalId = proposalResult.Value.Id;
                             assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
                         }
+                        else if (proposalResult.ErrorMessage?.Contains(AutomationPlannerService.ParseHintMarker) == true)
+                        {
+                            // Structured parse hint — use parse-hint message type so frontend can render a hint card
+                            var hintContext = llmResult.IsActionable
+                                ? "I detected a task request but could not parse it into a proposal."
+                                : "Could not create the requested proposal.";
+                            assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{proposalResult.ErrorMessage}";
+                            messageType = "parse-hint";
+                        }
                         else if (llmResult.IsActionable)
                         {
                             // Planner could not parse an auto-detected actionable message — hint the user
