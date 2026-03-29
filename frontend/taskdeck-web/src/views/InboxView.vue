@@ -51,18 +51,21 @@ const selectedItem = computed(() => {
 })
 const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
-const {
-  parentRef: virtualParentRef,
-  virtualItemEls,
-  virtualRows,
-  totalSize: virtualTotalSize,
-  translateY: virtualTranslateY,
-  scrollToIndex: virtualScrollToIndex,
-} = useVirtualList({
+const _vl = useVirtualList({
   count: computed(() => items.value.length),
   estimateSize: 80,
   overscan: 5,
 })
+// vue-tsc >=3.2.6 does not count ref="name" in templates as a script read;
+// these refs are intentionally bound via template ref attributes.
+// @ts-expect-error TS6133
+const parentRef = _vl.parentRef
+// @ts-expect-error TS6133
+const virtualItemEls = _vl.virtualItemEls
+const virtualRows = _vl.virtualRows
+const virtualTotalSize = _vl.totalSize
+const virtualTranslateY = _vl.translateY
+const virtualScrollToIndex = _vl.scrollToIndex
 
 function getCaptureIdFromHash(hash: string): string | null {
   if (!hash.startsWith('#capture-')) {
@@ -530,7 +533,7 @@ onUnmounted(() => {
         </div>
 
         <div
-          ref="virtualParentRef"
+          ref="parentRef"
           class="td-inbox__list"
           tabindex="0"
           role="listbox"

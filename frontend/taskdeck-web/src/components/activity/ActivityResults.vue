@@ -15,17 +15,20 @@ const emit = defineEmits<{
 
 const audit = useAuditStore()
 
-const {
-  parentRef: timelineParentRef,
-  virtualItemEls: timelineItemEls,
-  virtualRows: timelineVirtualRows,
-  totalSize: timelineTotalSize,
-  translateY: timelineTranslateY,
-} = useVirtualList({
+const timeline = useVirtualList({
   count: computed(() => audit.entries.length),
   estimateSize: 100,
   overscan: 5,
 })
+// vue-tsc >=3.2.6 does not count ref="name" in templates as a script read;
+// these refs are intentionally bound via template ref attributes.
+// @ts-expect-error TS6133
+const parentRef = timeline.parentRef
+// @ts-expect-error TS6133
+const virtualItemEls = timeline.virtualItemEls
+const timelineVirtualRows = timeline.virtualRows
+const timelineTotalSize = timeline.totalSize
+const timelineTranslateY = timeline.translateY
 </script>
 
 <template>
@@ -44,7 +47,7 @@ const {
 
   <div
     v-else
-    ref="timelineParentRef"
+    ref="parentRef"
     class="td-timeline td-timeline--virtual"
   >
     <div
@@ -63,7 +66,7 @@ const {
           v-for="virtualRow in timelineVirtualRows"
           :key="String(virtualRow.key)"
           :data-index="virtualRow.index"
-          ref="timelineItemEls"
+          ref="virtualItemEls"
         >
           <template v-if="audit.entries[virtualRow.index]">
             <div class="td-timeline__entry">
