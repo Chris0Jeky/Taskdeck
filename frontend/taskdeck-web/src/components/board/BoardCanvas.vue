@@ -26,8 +26,8 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="h-[calc(100vh-120px)] overflow-x-auto">
-    <div class="flex gap-4 p-6 min-h-full">
+  <div class="td-board-canvas">
+    <div class="td-board-canvas__lanes">
       <div
         v-for="column in sortedColumns"
         :key="column.id"
@@ -59,10 +59,10 @@ defineEmits<{
       <!-- Empty State -->
       <div
         v-if="!hasColumns"
-        class="flex-1 flex flex-col items-center justify-center text-on-surface/20"
+        class="td-board-canvas__empty"
       >
         <svg
-          class="w-16 h-16 mb-4"
+          class="td-board-canvas__empty-icon"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -74,9 +74,50 @@ defineEmits<{
             d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
           />
         </svg>
-        <p class="text-lg font-medium">No columns yet</p>
-        <p class="text-sm mt-1">Click "Add Column" to get started</p>
+        <p class="td-board-canvas__empty-title">No columns yet</p>
+        <p class="td-board-canvas__empty-hint">Click "Add Column" to get started</p>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.td-board-canvas {
+  height: calc(100vh - 120px);
+  overflow-x: auto;
+}
+
+.td-board-canvas__lanes {
+  display: flex;
+  gap: var(--td-space-5);
+  padding: var(--td-space-6);
+  min-height: 100%;
+}
+
+.td-board-canvas__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--td-text-tertiary);
+}
+
+.td-board-canvas__empty-icon {
+  width: 4rem;
+  height: 4rem;
+  margin-bottom: var(--td-space-5);
+}
+
+.td-board-canvas__empty-title {
+  font-size: var(--td-font-lg);
+  font-weight: 500;
+  color: var(--td-text-tertiary);
+}
+
+.td-board-canvas__empty-hint {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-tertiary);
+  margin-top: var(--td-space-1);
+}
+</style>
