@@ -2,6 +2,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -10,16 +11,18 @@ public class ColumnService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
+    private readonly IHistoryService? _historyService;
 
     public ColumnService(IUnitOfWork unitOfWork)
-        : this(unitOfWork, realtimeNotifier: null)
+        : this(unitOfWork, realtimeNotifier: null, historyService: null)
     {
     }
 
-    public ColumnService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null)
+    public ColumnService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null, IHistoryService? historyService = null)
     {
         _unitOfWork = unitOfWork;
         _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
+        _historyService = historyService;
     }
 
     public async Task<Result<ColumnDto>> CreateColumnAsync(CreateColumnDto dto, CancellationToken cancellationToken = default)
@@ -45,6 +48,8 @@ public class ColumnService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "created", column.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            if (_historyService != null)
+                await _historyService.LogActionAsync("column", column.Id, AuditAction.Created, changes: $"name={column.Name}");
 
             return Result.Success(MapToDto(column));
         }
@@ -67,6 +72,8 @@ public class ColumnService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "updated", column.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            if (_historyService != null)
+                await _historyService.LogActionAsync("column", column.Id, AuditAction.Updated);
 
             return Result.Success(MapToDto(column));
         }
@@ -105,6 +112,8 @@ public class ColumnService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(column.BoardId, "column", "deleted", column.Id, DateTimeOffset.UtcNow),
             cancellationToken);
+        if (_historyService != null)
+            await _historyService.LogActionAsync("column", column.Id, AuditAction.Deleted, changes: $"name={column.Name}");
 
         return Result.Success();
     }

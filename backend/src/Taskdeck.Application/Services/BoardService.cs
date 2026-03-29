@@ -2,6 +2,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -11,20 +12,23 @@ public class BoardService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService? _authorizationService;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
+    private readonly IHistoryService? _historyService;
 
     public BoardService(IUnitOfWork unitOfWork)
-        : this(unitOfWork, authorizationService: null, realtimeNotifier: null)
+        : this(unitOfWork, authorizationService: null, realtimeNotifier: null, historyService: null)
     {
     }
 
     public BoardService(
         IUnitOfWork unitOfWork,
         IAuthorizationService? authorizationService,
-        IBoardRealtimeNotifier? realtimeNotifier = null)
+        IBoardRealtimeNotifier? realtimeNotifier = null,
+        IHistoryService? historyService = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
         _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
+        _historyService = historyService;
     }
 
     public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
@@ -139,6 +143,8 @@ public class BoardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "created", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            if (_historyService != null)
+                await _historyService.LogActionAsync("board", board.Id, AuditAction.Created, ownerId, $"name={board.Name}");
 
             return Result.Success(MapToDto(board));
         }
@@ -171,6 +177,8 @@ public class BoardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "updated", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            if (_historyService != null)
+                await _historyService.LogActionAsync("board", board.Id, AuditAction.Updated);
             return Result.Success(MapToDto(board));
         }
         catch (DomainException ex)
@@ -199,6 +207,8 @@ public class BoardService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
             cancellationToken);
+        if (_historyService != null)
+            await _historyService.LogActionAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
         return Result.Success();
     }
 
