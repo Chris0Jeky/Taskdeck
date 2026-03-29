@@ -24,7 +24,7 @@ Rebranding thesis (2026-02-23):
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
-- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture; degraded provider responses are now structurally distinct (`messageType: "degraded"` + `degradedReason`) and the health endpoint supports opt-in probe verification (`?probe=true`); **known gap**: chat-to-proposal pipeline uses static keyword matching for intent detection and regex-based instruction parsing — natural language requests fail to produce proposals (`#570`); all three providers share the same brittle `LlmIntentClassifier` and none leverage the LLM for instruction extraction; improvement plan spans classifier hardening (`#571`), error UX (`#572`), LLM-assisted extraction (`#573`), multi-instruction support (`#574`), board-context prompting (`#575`), and conversational refinement (`#576`); test coverage added in `#577`; analysis at `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
+- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture; degraded provider responses are now structurally distinct (`messageType: "degraded"` + `degradedReason`) and the health endpoint supports opt-in probe verification (`?probe=true`); chat-to-proposal pipeline improvements delivered: `LlmIntentClassifier` now uses compiled regex patterns with word-distance matching, stemming/plurals, broader verb coverage, and negative context filtering for negations and other-tool questions (`#571`); parse failures now return structured hint payloads with closest-match suggestions and a frontend hint card with "try this instead" pre-fill (`#572`); dedicated classifier and chat-to-proposal integration test coverage added (`#577`); **remaining gap**: pipeline still relies on regex-based instruction parsing — natural language requests that pass the classifier still fail at `ParseInstructionAsync` unless they match structured syntax; LLM-assisted extraction (`#573`), multi-instruction support (`#574`), board-context prompting (`#575`), and conversational refinement (`#576`) remain undelivered; analysis at `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 - managed-key shared-token abuse-control strategy is now explicitly seeded in `#235` to `#240` before broad external exposure
 - testing-harness guardrail expansion from `#254` to `#260` is shipped; remaining work is normal follow-up hardening rather than the original wave
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
@@ -36,7 +36,7 @@ Current constraints are mostly hardening and consistency:
 - cold first-run now has launch-criteria proofing beyond route teaching; guided `Home`, durable workspace modes, review-first automation routing, the recoverable `Today` onboarding path, board-centered review/capture handoff, key-route contextual help, and the novice-first docs/help-center stack (root entry docs, chaptered manual, and page-level help/workflow guides) are now shipped, and the dedicated first-run smoke plus launch-criteria guardrail is delivered in `#328`
 - Saul-facing demo reconciliation is now explicit: the core `Home -> Inbox/Capture -> Review -> Board` proof is shipped, the business-facing substrate/trust-cue/hero-path slices are delivered through `#354` plus demo-critical follow-through from `#326` and `#330`; the rehearsal contract is now codified in `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md` (`#355`), and the GTM baseline is now delivered in `#216` with a timed demo script (`docs/product/DEMO_SCRIPT.md`), thesis-aligned landing copy (`docs/product/LANDING_COPY.md`), and beta intake workflow/cadence (`docs/product/BETA_INTAKE_WORKFLOW.md`)
 - demo rehearsal walkthrough (2026-03-27) confirmed the core loop is visually correct but surfaced 9 runtime issues in seed tooling, scenario runner, and DX ergonomics; two are blockers for one-command deterministic rehearsal: seed re-run 409 conflicts (`#387`) and `--skip-llm` proposal alias resolution failure (`#389`); tracked in `#395` with analysis in `docs/analysis/2026-03-27_demo-rehearsal-runtime-issues.md`
-- fresh-registration manual test (2026-03-29) surfaced 2 P0 blockers and 16 additional bugs/observations spanning data isolation, board stability, dark-mode theming, chat utility, and UX polish; full findings at `docs/analysis/2026-03-29_manual_testing_consolidated_findings.md`; P0 blockers: queue data not scoped to the authenticated user (`#508`), board auto-switching on multi-board accounts (`#509`); P1 issues tracked in `#510` through `#515`; P2/P3 in `#516` through `#524`; **no external user onboarding should occur until `#508` is resolved**
+- fresh-registration manual test (2026-03-29) surfaced 2 P0 blockers and 16 additional bugs/observations spanning data isolation, board stability, dark-mode theming, chat utility, and UX polish; full findings at `docs/analysis/2026-03-29_manual_testing_consolidated_findings.md`; P0 blockers: queue data not scoped to the authenticated user (`#508`), board auto-switching on multi-board accounts (`#509`); P1 issues tracked in `#510` through `#515`; P2/P3 in `#516` through `#524`; **no external user onboarding should occur until `#508` is resolved**; two bugs from this session now resolved: activity audit trail not recording board mutations (`#521`, fixed — audit logging wired for all board/card/column/label mutations with `SafeLogAsync` resilience wrapper), archive board 30-second freeze (`#519`, fixed — navigation before reactive state teardown prevents cascading re-renders)
 - platform expansion strategy (2026-03-29) now covers four strategic pillars: market adoption (`#544`), packaging/distribution (`#532`), cloud/collaboration (`#537`), and mobile platform (`#540`); master strategy tracker at `#531`; strategy documents at `docs/strategy/`; release versioning plan: `v0.1.0` (self-contained exe) → `v0.2.0` (hosted cloud) → `v0.3.0` (PWA/mobile) → `v0.4.0` (collaboration) → `v0.5.0` (platform maturity) → `v1.0.0` (GA)
 
 Target experience metrics for the capture direction:
@@ -620,11 +620,11 @@ Command:
 
 Result:
 - Domain: 306/306 passing
-- Application: 868/868 passing
+- Application: 943/943 passing
 - API integration: 407/407 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 1593/1593 passing
+- Backend Total: 1668/1668 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -635,7 +635,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 1102/1102 passing (120 test files)
+- Frontend unit: 1174/1174 passing (123 test files)
 - Typecheck: passing
 - Production build: passing
 

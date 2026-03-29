@@ -55,8 +55,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 962 passing
-   - Frontend unit: 478 passing
+   - Backend: 1668 passing
+   - Frontend unit: 1174 passing (123 test files)
    - Default Playwright regression lane: 24 passing (`stakeholder-demo.spec.ts` remains opt-in/skipped by default)
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -1015,10 +1015,10 @@ Immediate hardening landed in this context:
 Manual testing surfaced a significant usability gap in the chat-to-proposal pipeline: natural language requests (e.g., "can you create new onboarding tasks for people who aren't technical?") fail to produce proposals because the pipeline relies on static keyword substring matching (`LlmIntentClassifier`) and regex-based instruction parsing (`AutomationPlannerService.ParseInstructionAsync`). All three LLM providers (Mock, OpenAI, Gemini) share the same brittle classifier; none leverage the LLM for instruction extraction.
 
 Tracker: `#570`. Improvement tiers:
-- **Tier 1 (quick wins):** classifier hardening for word distance, stemming, plurals (`#571`); better error UX with format hints (`#572`)
-- **Tier 2 (LLM-assisted):** system prompt + structured output for instruction extraction from real providers (`#573`); multi-instruction parsing for batch requests (`#574`)
-- **Tier 3 (advanced NLP):** board-context-aware prompting (`#575`); conversational refinement loop for ambiguous requests (`#576`)
-- **Testing:** dedicated classifier + chat flow integration tests delivered (`#577`); also uncovered a substring ordering bug where "remove card" misclassifies as `card.move`
+- **Tier 1 (shipped):** classifier hardening with compiled regex, word-distance matching, stemming/plurals, broader verb coverage, and negative context filtering (`#571`); structured parse-hint error responses with closest-match suggestions and frontend hint card with "try this instead" pre-fill (`#572`); substring ordering bug fixed ("remove card" no longer misclassifies as `card.move`)
+- **Tier 2 (next):** system prompt + structured output for instruction extraction from real providers (`#573`); multi-instruction parsing for batch requests (`#574`)
+- **Tier 3 (deferred):** board-context-aware prompting (`#575`); conversational refinement loop for ambiguous requests (`#576`)
+- **Testing (shipped):** dedicated classifier + chat-to-proposal integration tests (`#577`); null guard added to `Classify()`; 86 classifier unit tests + 28 ChatService flow tests
 
 Analysis: `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 
@@ -1043,10 +1043,10 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 7. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` (quota/kill-switch, not yet started) -> SEC-18 live-traffic wiring follow-up; `#238`/`#239`/`#240` operator tooling and policy groundwork are now delivered.
 8. Continue frontend premium UI wave from the delivered foundations: shared primitives (UI-02), PERF-08 budgets, and the stack decision spike (UI-03) are done; next is `#246` (token system audit), `#247` (component reskin pass), and `#248`/`#249`/`#250` interaction/accessibility hardening.
 9. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
-13. Address the chat-to-proposal NLP gap (`#570`): start with classifier hardening (`#571`) and error UX (`#572`) as quick wins, then sequence LLM-assisted instruction extraction (`#573`) behind the P0/P1 blockers. Board-context prompting (`#575`) and conversational refinement (`#576`) are Tier 3 and should wait until the basic extraction path is proven.
+13. Continue the chat-to-proposal NLP gap (`#570`): Tier 1 delivered — classifier hardening (`#571`), error UX (`#572`), and integration tests (`#577`) are merged; next is LLM-assisted instruction extraction (`#573`) which requires real provider integration. Board-context prompting (`#575`) and conversational refinement (`#576`) remain Tier 3. Follow-up: enrich audit log entries with changed field details (`#583`).
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
-12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave and knowledge service tests added significant coverage since that certification.
+12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave, knowledge service tests, and 2026-03-29 NLP/audit/error-UX wave added significant coverage since that certification. Frontend is now at 1174 tests (123 files).
 
 ## Documentation Operating Model
 Active docs:
