@@ -90,8 +90,14 @@ export function usePerformanceMark(
           `[perf] "${name}" took ${measure.duration.toFixed(1)}ms (budget: ${budget}ms)`,
         )
       }
-    } catch {
+    } catch (error) {
       // Missing start mark — caller error, but don't crash
+      if (import.meta.env.DEV) {
+        console.error(
+          `[perf] usePerformanceMark('${name}').end() called without a preceding start().`,
+          error,
+        )
+      }
       duration.value = null
       overBudget.value = null
     }

@@ -47,6 +47,7 @@ All marks use the `td:` prefix (e.g., `td:board-load:start`, `td:board-load:end`
 | Review view | `src/views/ReviewView.vue` | `review-load` |
 | Review diff toggle | `src/views/ReviewView.vue` | `proposal-diff-render` |
 | Home view | `src/views/HomeView.vue` | `home-load` |
+| Capture modal | `src/components/common/CaptureModal.vue` | `modal-open` |
 
 ### Observing in DevTools
 

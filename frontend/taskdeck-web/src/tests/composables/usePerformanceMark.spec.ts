@@ -101,6 +101,16 @@ describe('usePerformanceMark', () => {
     expect(perf.overBudget.value).toBeNull()
   })
 
+  it('logs a dev error when end() runs without a start mark', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const perf = usePerformanceMark('no-start')
+
+    perf.end()
+
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(errorSpy.mock.calls[0][0]).toContain("usePerformanceMark('no-start').end()")
+  })
+
   it('exports PERF_BUDGETS with expected keys', () => {
     expect(PERF_BUDGETS).toHaveProperty('route-transition')
     expect(PERF_BUDGETS).toHaveProperty('board-load')
