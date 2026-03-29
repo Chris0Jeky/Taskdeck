@@ -160,3 +160,10 @@ We are looking for developers and small-team leads who manage their own boards a
 ---
 
 *[docs/START_HERE.md](docs/START_HERE.md) — first 15 minutes guided path | [docs/INDEX.md](docs/INDEX.md) — full documentation map*
+- Open or pick a GitHub issue before larger changes.
+- Keep PRs scoped and include verification evidence.
+- For contribution guidance and repo rules, see `AGENTS.md`.
+
+## License
+
+Taskdeck is released under the [MIT License](LICENSE).
