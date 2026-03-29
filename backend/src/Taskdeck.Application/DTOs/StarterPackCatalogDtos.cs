@@ -15,3 +15,13 @@ public record StarterPackCatalogEntryDto(
     List<string> Highlights,
     StarterPackManifestDto Manifest
 );
+
+public record ValidateManifestJsonDto(string? ManifestJson);
+
+public record ManifestValidationErrorDto(string Path, string Message);
+
+public record ValidateManifestResultDto(
+    bool IsValid,
+    StarterPackManifestDto? Manifest,
+    List<ManifestValidationErrorDto> Errors
+);

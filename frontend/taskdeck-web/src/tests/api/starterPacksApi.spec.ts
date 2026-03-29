@@ -82,4 +82,31 @@ describe('starterPacksApi', () => {
     expect(http.post).toHaveBeenCalledWith('/boards/board-1/starter-packs/apply', expect.any(Object))
     expect(result).toEqual(payload)
   })
+
+  it('posts manifest JSON to the validate-manifest endpoint', async () => {
+    const payload = {
+      isValid: true,
+      manifest: {
+        schemaVersion: '1.0',
+        packId: 'test-pack',
+        displayName: 'Test Pack',
+        compatibility: { minTaskdeckVersion: '1.0.0', requiredFeatures: ['boards'] },
+        tags: ['starter'],
+        labels: [],
+        columns: [{ name: 'Backlog', position: 0 }],
+        templates: [],
+        seedCards: [],
+      },
+      errors: [],
+    }
+
+    vi.mocked(http.post).mockResolvedValue({ data: payload })
+
+    const result = await starterPacksApi.validateManifestJson('board-1', '{"some":"json"}')
+
+    expect(http.post).toHaveBeenCalledWith('/boards/board-1/starter-packs/validate-manifest', {
+      manifestJson: '{"some":"json"}',
+    })
+    expect(result).toEqual(payload)
+  })
 })

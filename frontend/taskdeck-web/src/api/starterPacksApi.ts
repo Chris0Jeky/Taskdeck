@@ -1,5 +1,10 @@
 import http from './http'
-import type { ApplyStarterPackDto, StarterPackApplyResult, StarterPackCatalogEntry } from '../types/starter-packs'
+import type {
+  ApplyStarterPackDto,
+  StarterPackApplyResult,
+  StarterPackCatalogEntry,
+  ValidateManifestResult,
+} from '../types/starter-packs'
 
 export const starterPacksApi = {
   async getCatalog(boardId: string): Promise<StarterPackCatalogEntry[]> {
@@ -9,6 +14,14 @@ export const starterPacksApi = {
 
   async applyStarterPack(boardId: string, request: ApplyStarterPackDto): Promise<StarterPackApplyResult> {
     const { data } = await http.post<StarterPackApplyResult>(`/boards/${boardId}/starter-packs/apply`, request)
+    return data
+  },
+
+  async validateManifestJson(boardId: string, manifestJson: string): Promise<ValidateManifestResult> {
+    const { data } = await http.post<ValidateManifestResult>(
+      `/boards/${boardId}/starter-packs/validate-manifest`,
+      { manifestJson },
+    )
     return data
   },
 }
