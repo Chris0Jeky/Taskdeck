@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate compose baseline
         run: TASKDECK_JWT_SECRET=ci-placeholder-secret docker compose -f deploy/docker-compose.yml --profile baseline config > /tmp/taskdeck-compose.resolved.yml
@@ -31,7 +31,7 @@ jobs:
 
       - name: Upload container image artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: container-image-artifacts
           path: |
