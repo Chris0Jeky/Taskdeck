@@ -293,6 +293,57 @@ describe('savedViewStore', () => {
       expect(restored).toBeDefined()
       expect(restored!.filter.dueDateFilter).toBe('all') // falls back to default
     })
+
+    it('should skip entries with null filter on restore', () => {
+      const nullFilter = [{
+        id: 'custom-null-filter',
+        name: 'Null Filter',
+        icon: 'N',
+        filter: null,
+        isDefault: false,
+        createdAt: '2024-06-01T00:00:00.000Z',
+      }]
+      localStorage.setItem('taskdeck_saved_views', JSON.stringify(nullFilter))
+
+      const store = useSavedViewStore()
+      // typeof null === 'object' in JS, so explicit null guard must reject this entry
+      const restored = store.customViews.find((v) => v.id === 'custom-null-filter')
+      expect(restored).toBeUndefined()
+    })
+
+    it('should reject entries with non-string labelNames on restore', () => {
+      const badLabels = [{
+        id: 'custom-bad-labels',
+        name: 'Bad Labels',
+        icon: 'L',
+        filter: { searchText: '', labelNames: [123, null], dueDateFilter: 'all', showBlockedOnly: false },
+        isDefault: false,
+        createdAt: '2024-06-01T00:00:00.000Z',
+      }]
+      localStorage.setItem('taskdeck_saved_views', JSON.stringify(badLabels))
+
+      const store = useSavedViewStore()
+      const restored = store.customViews.find((v) => v.id === 'custom-bad-labels')
+      expect(restored).toBeDefined()
+      expect(restored!.filter.labelNames).toEqual([]) // falls back to default
+    })
+
+    it('should coerce non-boolean showBlockedOnly to default on restore', () => {
+      const badBlocked = [{
+        id: 'custom-bad-blocked',
+        name: 'Bad Blocked',
+        icon: 'B',
+        filter: { searchText: '', labelNames: [], dueDateFilter: 'all', showBlockedOnly: 'yes' },
+        isDefault: false,
+        createdAt: '2024-06-01T00:00:00.000Z',
+      }]
+      localStorage.setItem('taskdeck_saved_views', JSON.stringify(badBlocked))
+
+      const store = useSavedViewStore()
+      const restored = store.customViews.find((v) => v.id === 'custom-bad-blocked')
+      expect(restored).toBeDefined()
+      expect(restored!.filter.showBlockedOnly).toBe(false) // falls back to default
+    })
   })
 
   describe('filterCards', () => {
@@ -430,6 +481,21 @@ describe('cardMatchesSavedViewFilter', () => {
       const card = createMockCard({ dueDate: tomorrow.toISOString() })
       const filter = createBaseFilter({ dueDateFilter: 'overdue' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
+    })
+
+    it('should match overdue cards regardless of columnId (no completion status on Card type)', () => {
+      // The Card type has no isDone/isCompleted field; "done" is a column-level
+      // concept.  cardMatchesSavedViewFilter intentionally does not filter by
+      // column status — callers should pre-filter by column if needed.
+      const yesterday = new Date()
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+      const card = createMockCard({
+        dueDate: yesterday.toISOString(),
+        columnId: 'done-column-id',
+      })
+      const filter = createBaseFilter({ dueDateFilter: 'overdue' })
+      // Card is overdue by date alone; column-based exclusion is the caller's job
+      expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
     })
 
     it('should match cards due this week', () => {
