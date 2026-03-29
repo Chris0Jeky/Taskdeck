@@ -1,4 +1,4 @@
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -73,12 +73,19 @@ public class ColumnService
             if (column == null)
                 return Result.Failure<ColumnDto>(ErrorCodes.NotFound, $"Column with ID {id} not found");
 
+            // Capture pre-mutation state for change summary
+            var oldName = column.Name;
+            var oldWipLimit = column.WipLimit;
+            var oldPosition = column.Position;
+
             column.Update(dto.Name, dto.WipLimit, dto.Position);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "updated", column.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("column", column.Id, AuditAction.Updated);
+
+            var changeSummary = BuildColumnChangeSummary(dto, oldName, oldWipLimit, oldPosition);
+            await SafeLogAsync("column", column.Id, AuditAction.Updated, changes: changeSummary);
 
             return Result.Success(MapToDto(column));
         }
@@ -86,6 +93,18 @@ public class ColumnService
         {
             return Result.Failure<ColumnDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    private static string BuildColumnChangeSummary(UpdateColumnDto dto, string oldName, int? oldWipLimit, int oldPosition)
+    {
+        var parts = new List<string>();
+        if (dto.Name != null && dto.Name != oldName)
+            parts.Add($"Name: '{oldName}' -> '{dto.Name}'");
+        if (dto.WipLimit.HasValue && dto.WipLimit.Value != oldWipLimit)
+            parts.Add($"WipLimit: {oldWipLimit?.ToString() ?? "none"} -> {dto.WipLimit.Value}");
+        if (dto.Position.HasValue && dto.Position.Value != oldPosition)
+            parts.Add($"Position: {oldPosition} -> {dto.Position.Value}");
+        return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }
 
     public async Task<Result<ColumnDto>> UpdateColumnAsync(Guid boardId, Guid id, UpdateColumnDto dto, CancellationToken cancellationToken = default)

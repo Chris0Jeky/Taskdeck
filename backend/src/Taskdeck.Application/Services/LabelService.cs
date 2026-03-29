@@ -1,4 +1,4 @@
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -64,12 +64,18 @@ public class LabelService
             if (label == null)
                 return Result.Failure<LabelDto>(ErrorCodes.NotFound, $"Label with ID {id} not found");
 
+            // Capture pre-mutation state for change summary
+            var oldName = label.Name;
+            var oldColorHex = label.ColorHex;
+
             label.Update(dto.Name, dto.ColorHex);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "updated", label.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("label", label.Id, AuditAction.Updated);
+
+            var changeSummary = BuildLabelChangeSummary(dto, oldName, oldColorHex);
+            await SafeLogAsync("label", label.Id, AuditAction.Updated, changes: changeSummary);
 
             return Result.Success(MapToDto(label));
         }
@@ -77,6 +83,16 @@ public class LabelService
         {
             return Result.Failure<LabelDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    private static string BuildLabelChangeSummary(UpdateLabelDto dto, string oldName, string oldColorHex)
+    {
+        var parts = new List<string>();
+        if (dto.Name != null && dto.Name != oldName)
+            parts.Add($"Name: '{oldName}' -> '{dto.Name}'");
+        if (dto.ColorHex != null && dto.ColorHex != oldColorHex)
+            parts.Add($"Color: '{oldColorHex}' -> '{dto.ColorHex}'");
+        return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }
 
     public async Task<Result<LabelDto>> UpdateLabelAsync(Guid boardId, Guid id, UpdateLabelDto dto, CancellationToken cancellationToken = default)
