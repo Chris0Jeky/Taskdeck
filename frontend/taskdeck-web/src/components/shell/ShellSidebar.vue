@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { FeatureFlags } from '../../types/feature-flags'
@@ -42,6 +43,26 @@ function closeMobileMenu() {
 function toggleMobileMenu() {
   mobileOpen.value = !mobileOpen.value
 }
+
+// Lock body scroll and register Escape handler while mobile menu is open
+watch(mobileOpen, (isOpen, _, onCleanup) => {
+  if (!isOpen) return
+
+  document.body.style.overflow = 'hidden'
+  const unregisterEscape = registerEscapeHandler(closeMobileMenu)
+
+  onCleanup(() => {
+    document.body.style.overflow = ''
+    unregisterEscape()
+  })
+})
+
+onUnmounted(() => {
+  // Safety: restore scroll if component unmounts while open
+  if (mobileOpen.value) {
+    document.body.style.overflow = ''
+  }
+})
 
 const navCatalog: NavItem[] = [
   {
@@ -240,6 +261,7 @@ defineExpose({
   <div
     v-if="mobileOpen"
     class="td-sidebar-overlay"
+    aria-hidden="true"
     @click="closeMobileMenu"
   />
   <aside
