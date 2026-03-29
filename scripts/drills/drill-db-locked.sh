@@ -16,7 +16,6 @@ REPO_ROOT="${1:-.}"
 DRILL_NAME="drill-db-locked"
 TEMP_DIR="$(mktemp -d)"
 DB_PATH="$TEMP_DIR/taskdeck.drill.db"
-LOCK_FILE="$TEMP_DIR/taskdeck.drill.db-lock"
 API_PROJECT="$REPO_ROOT/backend/src/Taskdeck.Api/Taskdeck.Api.csproj"
 API_PORT=5098
 PID_FILE="$TEMP_DIR/api.pid"
