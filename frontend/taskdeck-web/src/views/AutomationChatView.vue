@@ -8,7 +8,8 @@ import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
 import type { ChatProviderHealth, ChatMessage, ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
-import { normalizeChatRole } from '../utils/chat'
+import { normalizeChatRole, extractParseHint } from '../utils/chat'
+import type { ParsedHintMessage } from '../utils/chat'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
@@ -48,6 +49,7 @@ const newSessionBoardId = ref('')
 const selectedNewSessionBoardId = ref<string | null>(null)
 const messageContent = ref('')
 const requestProposal = ref(false)
+const expandedHintIds = ref<Set<string>>(new Set())
 
 const boardOptions = computed(() =>
   buildInputAssistOptions(
@@ -412,6 +414,28 @@ function pushToReview(hash?: string) {
   })
 }
 
+function getParseHint(message: ChatMessage): ParsedHintMessage | null {
+  if (message.messageType !== 'parse-hint') {
+    return null
+  }
+  return extractParseHint(message.content)
+}
+
+function toggleHintPatterns(messageId: string) {
+  const updated = new Set(expandedHintIds.value)
+  if (updated.has(messageId)) {
+    updated.delete(messageId)
+  } else {
+    updated.add(messageId)
+  }
+  expandedHintIds.value = updated
+}
+
+function applyHintSuggestion(example: string) {
+  messageContent.value = example
+  requestProposal.value = true
+}
+
 function openReviewRoute() {
   pushToReview()
 }
@@ -577,12 +601,62 @@ watch(
               <div v-if="message.messageType === 'degraded'" class="td-message-degraded-warning">
                 Degraded response{{ message.degradedReason ? `: ${message.degradedReason}` : '' }}
               </div>
-              <div
-                v-if="isAssistantOrSystemMessage(message)"
-                class="td-message-content td-message-content--markdown"
-                v-html="renderMarkdown(message.content)"
-              ></div>
-              <div v-else class="td-message-content">{{ message.content }}</div>
+              <template v-if="message.messageType === 'parse-hint' && getParseHint(message)">
+                <div
+                  class="td-message-content td-message-content--markdown"
+                  v-html="renderMarkdown(getParseHint(message)!.textBeforeHint)"
+                ></div>
+                <div class="td-hint-card" role="region" aria-label="Instruction format hint">
+                  <div class="td-hint-card__header">
+                    <span class="td-hint-card__icon" aria-hidden="true">i</span>
+                    <span class="td-hint-card__title">
+                      {{ getParseHint(message)!.hint.detectedIntent
+                        ? `Detected intent: ${getParseHint(message)!.hint.detectedIntent}`
+                        : 'Could not detect intent' }}
+                    </span>
+                  </div>
+                  <p class="td-hint-card__suggestion">
+                    Try this format:
+                    <code>{{ getParseHint(message)!.hint.closestPattern }}</code>
+                  </p>
+                  <div class="td-hint-card__actions">
+                    <button
+                      class="td-btn td-btn--primary td-btn--sm"
+                      @click="applyHintSuggestion(getParseHint(message)!.hint.exampleInstruction)"
+                    >
+                      Try this instead
+                    </button>
+                    <button
+                      class="td-btn td-btn--secondary td-btn--sm"
+                      :aria-expanded="expandedHintIds.has(message.id)"
+                      @click="toggleHintPatterns(message.id)"
+                    >
+                      {{ expandedHintIds.has(message.id) ? 'Hide all patterns' : 'Show all patterns' }}
+                    </button>
+                  </div>
+                  <ul
+                    v-if="expandedHintIds.has(message.id)"
+                    class="td-hint-card__patterns"
+                    role="list"
+                    aria-label="Supported instruction patterns"
+                  >
+                    <li
+                      v-for="(pattern, index) in getParseHint(message)!.hint.supportedPatterns"
+                      :key="index"
+                    >
+                      <code>{{ pattern }}</code>
+                    </li>
+                  </ul>
+                </div>
+              </template>
+              <template v-else>
+                <div
+                  v-if="isAssistantOrSystemMessage(message)"
+                  class="td-message-content td-message-content--markdown"
+                  v-html="renderMarkdown(message.content)"
+                ></div>
+                <div v-else class="td-message-content">{{ message.content }}</div>
+              </template>
               <div v-if="message.proposalId && message.messageType === 'proposal-reference'" class="td-message-proposal">
                 <span>Proposal: {{ message.proposalId }}</span>
                 <button
@@ -1054,6 +1128,82 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: var(--td-space-2);
+}
+
+.td-hint-card {
+  margin-top: var(--td-space-2);
+  border: 1px solid var(--td-color-primary, #3182ce);
+  border-radius: var(--td-radius-md);
+  padding: var(--td-space-3);
+  background: color-mix(in srgb, var(--td-surface-primary) 90%, #ebf4ff 10%);
+}
+
+.td-hint-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  margin-bottom: var(--td-space-2);
+}
+
+.td-hint-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--td-color-primary, #3182ce);
+  color: var(--td-text-inverse, #fff);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.td-hint-card__title {
+  font-size: var(--td-font-sm);
+  font-weight: 600;
+  color: var(--td-text-primary);
+}
+
+.td-hint-card__suggestion {
+  margin: 0 0 var(--td-space-2);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+}
+
+.td-hint-card__suggestion code {
+  font-family: monospace;
+  font-size: 0.9em;
+  background: var(--td-surface-tertiary);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-sm);
+  padding: 1px 4px;
+}
+
+.td-hint-card__actions {
+  display: flex;
+  gap: var(--td-space-2);
+  flex-wrap: wrap;
+}
+
+.td-hint-card__patterns {
+  margin: var(--td-space-2) 0 0;
+  padding-left: var(--td-space-4);
+  list-style: disc;
+}
+
+.td-hint-card__patterns li {
+  margin-bottom: var(--td-space-1);
+  font-size: var(--td-font-sm);
+}
+
+.td-hint-card__patterns code {
+  font-family: monospace;
+  font-size: 0.9em;
+  background: var(--td-surface-tertiary);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-sm);
+  padding: 1px 4px;
 }
 
 @media (max-width: 900px) {
