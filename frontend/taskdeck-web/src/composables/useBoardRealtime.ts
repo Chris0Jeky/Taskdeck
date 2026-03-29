@@ -11,7 +11,12 @@ import { getToken } from '../utils/tokenStorage'
 const BOARD_MUTATION_EVENT = 'boardMutation'
 const BOARD_PRESENCE_EVENT = 'boardPresence'
 const RECONNECT_DELAYS_MS = [0, 2000, 5000, 10000]
-const FALLBACK_POLL_INTERVAL_MS = 15000
+const FALLBACK_POLL_INTERVAL_MS = 30000
+// Coalesce rapid burst events so the board is not re-fetched on every
+// individual mutation when multiple events arrive in quick succession (e.g.
+// bulk import, automation runs).  300 ms is imperceptible to users but
+// prevents the ~3 req/s thrash observed with rapid SignalR event bursts.
+const MUTATION_DEBOUNCE_MS = 300
 
 function resolveHubUrl(): string {
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
@@ -43,6 +48,7 @@ export function createBoardRealtimeController(
   let editingCardId: string | null = null
   let fallbackTimer: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
+  let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   const stopFallbackPolling = () => {
     if (!fallbackTimer) {
@@ -62,17 +68,36 @@ export function createBoardRealtimeController(
     }, FALLBACK_POLL_INTERVAL_MS)
   }
 
-  const handleBoardMutation = async (event: BoardRealtimeEvent) => {
-    if (!subscribedBoardId || event.boardId !== subscribedBoardId || refreshInFlight) {
+  const cancelMutationDebounce = () => {
+    if (mutationDebounceTimer !== null) {
+      clearTimeout(mutationDebounceTimer)
+      mutationDebounceTimer = null
+    }
+  }
+
+  const handleBoardMutation = (event: BoardRealtimeEvent) => {
+    if (!subscribedBoardId || event.boardId !== subscribedBoardId) {
       return
     }
 
-    refreshInFlight = true
-    try {
-      await options.fetchBoard(subscribedBoardId)
-    } finally {
-      refreshInFlight = false
-    }
+    // Debounce: cancel any pending refresh scheduled by a prior burst event.
+    cancelMutationDebounce()
+
+    mutationDebounceTimer = setTimeout(() => {
+      mutationDebounceTimer = null
+
+      // Skip if a refresh is already in-flight (started by a previous debounced
+      // call that hasn't resolved yet).
+      if (refreshInFlight || !subscribedBoardId) {
+        return
+      }
+
+      const boardId = subscribedBoardId
+      refreshInFlight = true
+      void options.fetchBoard(boardId).finally(() => {
+        refreshInFlight = false
+      })
+    }, MUTATION_DEBOUNCE_MS)
   }
 
   const handleBoardPresence = (snapshot: BoardPresenceSnapshot) => {
@@ -124,6 +149,10 @@ export function createBoardRealtimeController(
   }
 
   const joinBoard = async (boardId: string) => {
+    // Cancel any debounced mutation fetch from the previous board so it cannot
+    // fire against the newly-subscribed boardId after subscribedBoardId changes.
+    cancelMutationDebounce()
+
     const hubConnection = ensureConnection()
 
     if (hubConnection.state === HubConnectionState.Disconnected) {
@@ -166,6 +195,7 @@ export function createBoardRealtimeController(
 
   const stop = async () => {
     stopFallbackPolling()
+    cancelMutationDebounce()
     editingCardId = null
 
     if (!connection) {
