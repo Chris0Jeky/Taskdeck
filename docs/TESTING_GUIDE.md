@@ -604,6 +604,19 @@ Recommended execution pairing:
 - automated: API + frontend unit + E2E capture loop (`#210` delivered, retained as active regression path)
 - manual: capture friction/trust checks in `docs/MANUAL_TEST_CHECKLIST.md`
 
+## Incident Rehearsals
+
+Manual incident rehearsals complement automated tests by validating diagnosis and recovery workflows against realistic failure conditions. Rehearsals are scheduled monthly (lightweight, ~30 min) and quarterly (deep drill, ~2 hours).
+
+Key resources:
+- `docs/ops/INCIDENT_REHEARSAL_CADENCE.md` -- schedule, rotation, and process
+- `docs/ops/rehearsal-scenarios/` -- scenario templates (health degradation, telemetry gaps, deployment failures)
+- `docs/ops/EVIDENCE_TEMPLATE.md` -- evidence package format
+- `docs/ops/REHEARSAL_BACKOFF_RULES.md` -- how rehearsal findings become tracked issues
+- `docs/ops/rehearsals/` -- completed rehearsal evidence packages
+
+Rehearsals are distinct from the automated failure-injection drill suite (`docs/ops/FAILURE_INJECTION_DRILLS.md`). Drills are scripted and CI-runnable; rehearsals are human-driven and focus on diagnosis speed, tooling gaps, and recovery muscle memory.
+
 ## Development Sandbox Mode
 
 For local development only, authorization bypass can be enabled via:

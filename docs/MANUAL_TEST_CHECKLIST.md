@@ -463,3 +463,14 @@ Summary scope:
 4. True-missing vs cross-user denial indistinguishability (B-90 to B-96)
 5. Error payload contract verification for auth/validation/sandbox paths (B-100 to B-110)
 6. Advanced controller families: ops/logs/users/abuse/llm-quota/agents/knowledge/webhooks/external-imports (B-130 to B-175)
+
+---
+
+## Incident Rehearsals
+
+For operational failure diagnosis and recovery validation beyond functional testing, see the incident rehearsal program:
+
+- `docs/ops/INCIDENT_REHEARSAL_CADENCE.md` -- schedule and rotation
+- `docs/ops/rehearsal-scenarios/` -- scenario templates
+- `docs/ops/EVIDENCE_TEMPLATE.md` -- evidence package format
+- `docs/ops/rehearsals/` -- completed rehearsal evidence
