@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 # drill-containment.sh — Kill switch containment drill for non-prod environments
 #
-# Purpose: Validate that the operator can activate and deactivate kill switches
-#          at all scopes (global, surface, identity), and confirm that LLM surfaces
-#          correctly refuse requests when killed while non-LLM surfaces remain operational.
+# Purpose: Validate the currently shipped kill-switch containment paths:
+#          - GET kill switch status
+#          - identity scope only when target == authenticated caller
+#          - config-level global kill guidance
+#          while confirming non-LLM surfaces remain operational.
 #
 # Prerequisites:
 #   - A running non-prod Taskdeck API instance
 #   - TASKDECK_API: base URL of the API (e.g., http://localhost:5000)
 #   - OPERATOR_TOKEN: valid JWT for an authenticated operator session
-#   - DRILL_USER_ID: GUID of a test user to use for identity-scoped drill
+#   - DRILL_USER_ID: GUID of the authenticated caller represented by OPERATOR_TOKEN
 #
 # Usage:
 #   export TASKDECK_API=http://localhost:5000
 #   export OPERATOR_TOKEN="<jwt>"
-#   export DRILL_USER_ID="<test-user-guid>"
+#   export DRILL_USER_ID="<caller-user-guid>"
 #   bash scripts/security/drill-containment.sh
 #
 # Linked: docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md (Section 7)
@@ -69,7 +71,7 @@ echo "============================================"
 echo " Kill Switch Containment Drill"
 echo " Drill ID:  $DRILL_ID"
 echo " Target:    $TASKDECK_API"
-echo " Test User: $DRILL_USER_ID"
+echo " Caller/User: $DRILL_USER_ID"
 echo " Time:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "============================================"
 echo ""
@@ -83,7 +85,7 @@ KS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
 check_result "GET kill switch status" "200" "$KS_HTTP"
 
 # --- Step 2: Activate identity-scoped kill switch ---
-log_step "Step 2: Activate identity-scoped kill switch for test user"
+log_step "Step 2: Activate identity-scoped kill switch for the authenticated caller"
 
 KS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
     -X POST "$TASKDECK_API/api/llm/killswitch" \
@@ -94,7 +96,7 @@ check_result "Activate identity kill switch" "200" "$KS_HTTP"
 
 # Verify it shows in status
 KS_BODY=$(curl -s "$TASKDECK_API/api/llm/killswitch" -H "$AUTH_HEADER")
-if echo "$KS_BODY" | grep -q "$DRILL_USER_ID"; then
+if echo "$KS_BODY" | grep -Fq "$DRILL_USER_ID"; then
     log_pass "Identity kill switch visible in status"
     PASS_COUNT=$((PASS_COUNT + 1))
 else

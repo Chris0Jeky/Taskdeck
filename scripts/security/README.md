@@ -7,7 +7,7 @@ Executable drill scripts for managed-key incident response readiness. These scri
 | Script | Purpose |
 |---|---|
 | `drill-key-rotation.sh` | Validate provider API key rotation procedure |
-| `drill-containment.sh` | Validate kill switch activation/deactivation at all scopes |
+| `drill-containment.sh` | Validate current kill-switch readiness (status endpoint, caller-scoped identity path, config-level global kill guidance) |
 | `drill-spend-runaway.sh` | Validate spend detection and containment readiness |
 
 ## Prerequisites
@@ -15,14 +15,14 @@ Executable drill scripts for managed-key incident response readiness. These scri
 - A running non-prod Taskdeck API instance
 - `TASKDECK_API` environment variable set to the API base URL
 - `OPERATOR_TOKEN` environment variable set to a valid JWT
-- `DRILL_USER_ID` (containment drill only) set to a test user GUID
+- `DRILL_USER_ID` (containment drill only) set to the authenticated caller GUID carried by `OPERATOR_TOKEN`
 
 ## Usage
 
 ```bash
 export TASKDECK_API=http://localhost:5000
 export OPERATOR_TOKEN="<jwt>"
-export DRILL_USER_ID="<test-user-guid>"
+export DRILL_USER_ID="<caller-user-guid>"
 
 bash scripts/security/drill-key-rotation.sh
 bash scripts/security/drill-containment.sh

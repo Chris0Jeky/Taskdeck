@@ -69,7 +69,7 @@ Scope: any Taskdeck deployment where the platform operator holds and manages LLM
 
 Stops all LLM-dependent surfaces (chat, capture triage, queue processing) while preserving non-LLM board operations.
 
-**API path** (requires authenticated operator session):
+**API path**:
 ```bash
 curl -X POST "$TASKDECK_API/api/llm/killswitch" \
   -H "Authorization: Bearer $OPERATOR_TOKEN" \
@@ -77,7 +77,7 @@ curl -X POST "$TASKDECK_API/api/llm/killswitch" \
   -d '{"scope": 0, "target": null, "enabled": true, "reason": "SEC incident containment — [INCIDENT_ID]"}'
 ```
 
-Note: Global/Surface kill switch currently requires admin privileges (returns 403 for non-admin users). Until the admin role system is implemented, use config-level override:
+Note: the current API does not allow operators to activate `Global` or `Surface` scopes. `POST /api/llm/killswitch` returns `403` for those scopes until an admin/operator role path exists. Use the config-level override instead:
 
 **Config-level kill switch** (restart required):
 ```bash
@@ -95,7 +95,7 @@ curl "$TASKDECK_API/api/llm/killswitch" \
 
 ### 2.2. Quarantine Specific Actor (Class 1C)
 
-If the abuse is traced to a specific user, apply identity-scoped kill switch before (or instead of) global kill:
+If the abuse is traced to the currently authenticated user, you can apply an identity-scoped kill switch through the API:
 
 ```bash
 curl -X POST "$TASKDECK_API/api/llm/killswitch" \
@@ -104,9 +104,11 @@ curl -X POST "$TASKDECK_API/api/llm/killswitch" \
   -d '{"scope": 2, "target": "<USER_GUID>", "enabled": true, "reason": "Quarantined — abuse investigation [INCIDENT_ID]"}'
 ```
 
+Current limitation: the API only permits `Identity` scope when `target` matches the authenticated caller's own user ID. It cannot quarantine an arbitrary third-party abusive actor yet. For a real abusive-user incident, use the config-level global kill path in Section 2.1 while investigating.
+
 ### 2.3. Quarantine Specific Surface (Class 1B, 1C)
 
-If abuse is concentrated on a single LLM surface (e.g., chat vs. capture triage):
+Surface-scoped API quarantine is planned but not operator-executable today. If abuse is concentrated on a single LLM surface (for example chat vs. capture triage), document the target surface for follow-through and use the config-level global kill path until admin/operator scope support exists.
 
 ```bash
 curl -X POST "$TASKDECK_API/api/llm/killswitch" \
@@ -114,6 +116,8 @@ curl -X POST "$TASKDECK_API/api/llm/killswitch" \
   -H "Content-Type: application/json" \
   -d '{"scope": 1, "target": "<SURFACE_NAME>", "enabled": true, "reason": "Surface quarantine — [INCIDENT_ID]"}'
 ```
+
+Expected current result: `403 Forbidden`.
 
 Valid surface names are defined in `LlmSurface` enum (check backend source for current values).
 
@@ -187,7 +191,7 @@ Before lifting containment, collect and preserve the following evidence for post
 
 ```bash
 # Export usage summary for incident window
-curl "$TASKDECK_API/api/llm/quota/usage?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z" \
+curl "$TASKDECK_API/api/llm/quota/usage?from=<START_TIME_UTC>&to=<END_TIME_UTC>" \
   -H "Authorization: Bearer $OPERATOR_TOKEN" > incident_usage.json
 
 # Export kill switch state
@@ -226,10 +230,10 @@ curl "$TASKDECK_API/api/llm/chat/health?probe=true" \
 # Must return "verified" status
 ```
 
-**Stage 2: Lift kill switch for a single test user**
+**Stage 2: Lift kill switch for the same authenticated test user**
 ```bash
-# If global kill is active, switch to surface-level or keep global
-# and remove identity kill for a specific test user
+# Identity-scope removal only works when the target matches the caller.
+# If global kill is active, keep using the config-level path from Section 2.1.
 curl -X POST "$TASKDECK_API/api/llm/killswitch" \
   -H "Authorization: Bearer $OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
@@ -243,10 +247,8 @@ curl -X POST "$TASKDECK_API/api/llm/killswitch" \
 
 **Stage 4: Lift global kill switch**
 ```bash
-curl -X POST "$TASKDECK_API/api/llm/killswitch" \
-  -H "Authorization: Bearer $OPERATOR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"scope": 0, "target": null, "enabled": false, "reason": "Recovery complete — [INCIDENT_ID]"}'
+export LlmKillSwitch__GlobalKill=false
+# Restart API hosts
 ```
 
 **Stage 5: Monitor for 24 hours**
@@ -357,8 +359,8 @@ Operational readiness drills should be run quarterly in non-production environme
 ### Drill Success Criteria
 
 - Key rotation drill: new key is active, old key is revoked, health probe returns `verified`, no request failures during rotation window
-- Kill switch drill: global kill activates and deactivates correctly, surface/identity scoping works, LLM surfaces correctly refuse requests when killed, non-LLM surfaces remain operational
-- Spend runaway drill: quota usage endpoint correctly reports consumption, kill switch can be activated before budget ceiling is breached
+- Kill switch drill: kill-switch status is readable, caller-scoped identity toggles succeed, config-level global kill guidance is validated, and non-LLM surfaces remain operational
+- Spend runaway drill: quota usage endpoint correctly reports consumption and the operator can identify the correct containment path before budget ceiling is breached
 
 ---
 
