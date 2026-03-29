@@ -73,7 +73,7 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         var queue = payload.GetProperty("checks").GetProperty("queue");
         queue.GetProperty("depth").GetInt32().Should().Be(0);
-        queue.GetProperty("captureDepth").GetInt32().Should().BeGreaterOrEqualTo(3);
-        queue.GetProperty("totalDepth").GetInt32().Should().BeGreaterOrEqualTo(3);
+        queue.GetProperty("captureDepth").GetInt32().Should().BeGreaterThanOrEqualTo(3);
+        queue.GetProperty("totalDepth").GetInt32().Should().BeGreaterThanOrEqualTo(3);
     }
 }
