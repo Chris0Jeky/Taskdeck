@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Taskdeck.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Taskdeck.Domain\Taskdeck.Domain.csproj" />
     <ProjectReference Include="..\Taskdeck.Application\Taskdeck.Application.csproj" />
   </ItemGroup>

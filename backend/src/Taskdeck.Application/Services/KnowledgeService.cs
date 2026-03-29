@@ -87,6 +87,9 @@ public class KnowledgeService : IKnowledgeService
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+            // Sync the FTS index after the document update is committed
+            await _searchService.UpdateFtsIndexAsync(document.Id, dto.Title, dto.Content, cancellationToken);
+
             return Result.Success(MapToDto(document));
         }
         catch (DomainException ex)
