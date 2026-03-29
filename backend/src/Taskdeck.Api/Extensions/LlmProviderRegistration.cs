@@ -1,3 +1,4 @@
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Extensions;
@@ -15,6 +16,18 @@ public static class LlmProviderRegistration
         services.AddSingleton(llmKillSwitchSettings);
         services.AddScoped<ILlmQuotaService, LlmQuotaService>();
         services.AddSingleton<ILlmKillSwitchService, LlmKillSwitchService>();
+
+        // Abuse detection settings, shared state (singleton), and service (scoped to access ILlmUsageRecordRepository)
+        var abuseDetectionSettings = configuration.GetSection("AbuseDetection").Get<AbuseDetectionSettings>() ?? new AbuseDetectionSettings();
+        services.AddSingleton(abuseDetectionSettings);
+        services.AddSingleton<AbuseDetectionState>();
+        services.AddScoped<IAbuseDetectionService>(sp =>
+        {
+            var settings = sp.GetRequiredService<AbuseDetectionSettings>();
+            var state = sp.GetRequiredService<AbuseDetectionState>();
+            var usageRecords = sp.GetService<ILlmUsageRecordRepository>();
+            return new AbuseDetectionService(settings, state, usageRecords);
+        });
 
         // LLM provider settings and deterministic provider selection policy
         var llmProviderSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();

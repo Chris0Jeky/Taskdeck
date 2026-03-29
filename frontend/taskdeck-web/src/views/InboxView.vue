@@ -7,11 +7,13 @@ import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
 import { registerEscapeHandler } from '../composables/useEscapeStack'
 import { useVirtualList } from '../composables/useVirtualList'
+import { usePerformanceMark } from '../composables/usePerformanceMark'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
 const captureStore = useCaptureStore()
 const router = useRouter()
 const route = useRoute()
+const inboxLoadPerf = usePerformanceMark('inbox-load')
 const selectedItemId = ref<string | null>(null)
 const hashLoadFailedItemId = ref<string | null>(null)
 const activeItemIndex = ref(0)
@@ -86,6 +88,7 @@ function sourceLabel(source: CaptureSourceValue): string {
 }
 
 async function loadInbox() {
+  inboxLoadPerf.start()
   try {
     await captureStore.fetchItems({
       limit: 200,
@@ -96,6 +99,7 @@ async function loadInbox() {
   }
 
   await openItemFromHash()
+  inboxLoadPerf.end()
 }
 
 async function openItemFromList(item: CaptureItemSummary, index: number) {

@@ -10,13 +10,26 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IStarterPackManifestValidator _manifestValidator;
+    private readonly StarterPackConflictDetector _conflictDetector;
+    private readonly StarterPackIdempotencyChecker _idempotencyChecker;
 
     public StarterPackApplyService(
         IUnitOfWork unitOfWork,
         IStarterPackManifestValidator manifestValidator)
+        : this(unitOfWork, manifestValidator, new StarterPackConflictDetector(), new StarterPackIdempotencyChecker())
+    {
+    }
+
+    public StarterPackApplyService(
+        IUnitOfWork unitOfWork,
+        IStarterPackManifestValidator manifestValidator,
+        StarterPackConflictDetector conflictDetector,
+        StarterPackIdempotencyChecker idempotencyChecker)
     {
         _unitOfWork = unitOfWork;
         _manifestValidator = manifestValidator;
+        _conflictDetector = conflictDetector;
+        _idempotencyChecker = idempotencyChecker;
     }
 
     public async Task<Result<StarterPackApplyResultDto>> ApplyToBoardAsync(
@@ -63,316 +76,37 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
 
         var manifest = validationResult.Manifest!;
 
-        var actions = new List<StarterPackApplyActionDto>();
-        var conflicts = new List<StarterPackApplyConflictDto>();
-
-        var referencedLabelNames = manifest.Labels
-            .Select(label => label.Name)
-            .Concat(manifest.SeedCards.SelectMany(seedCard => seedCard.Labels))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var existingLabelGroupsByName = board.Labels
-            .GroupBy(label => label.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        foreach (var duplicateLabelGroup in existingLabelGroupsByName.Where(group =>
-                     group.Count() > 1 && referencedLabelNames.Contains(group.Key)))
-        {
-            var existingColors = string.Join(", ",
-                duplicateLabelGroup
-                    .Select(label => label.ColorHex)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(color => color, StringComparer.OrdinalIgnoreCase));
-
-            conflicts.Add(new StarterPackApplyConflictDto(
-                "ExistingLabelNameConflict",
-                "$.board.labels",
-                $"Board already contains duplicate label name '{duplicateLabelGroup.Key}'. Resolve duplicate names before applying starter packs.",
-                existingColors,
-                duplicateLabelGroup.Key));
-        }
-
-        var existingLabelsByName = existingLabelGroupsByName
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-
-        var referencedColumnNames = manifest.Columns
-            .Select(column => column.Name)
-            .Concat(manifest.SeedCards.Select(seedCard => seedCard.ColumnName))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var referencedColumnPositions = manifest.Columns
-            .Select(column => column.Position)
-            .ToHashSet();
-
-        var existingColumnGroupsByName = board.Columns
-            .GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        foreach (var duplicateColumnNameGroup in existingColumnGroupsByName.Where(group =>
-                     group.Count() > 1 && referencedColumnNames.Contains(group.Key)))
-        {
-            var existingDefinitions = string.Join("; ",
-                duplicateColumnNameGroup
-                    .Select(column => DescribeColumn(column.Position, column.WipLimit))
-                    .OrderBy(definition => definition, StringComparer.Ordinal));
-
-            conflicts.Add(new StarterPackApplyConflictDto(
-                "ExistingColumnNameConflict",
-                "$.board.columns",
-                $"Board already contains duplicate column name '{duplicateColumnNameGroup.Key}'. Resolve duplicate names before applying starter packs.",
-                existingDefinitions,
-                duplicateColumnNameGroup.Key));
-        }
-
-        var existingColumnsByName = existingColumnGroupsByName
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-
-        var existingColumnGroupsByPosition = board.Columns
-            .GroupBy(column => column.Position)
-            .ToList();
-        foreach (var duplicateColumnPositionGroup in existingColumnGroupsByPosition.Where(group =>
-                     group.Count() > 1 && referencedColumnPositions.Contains(group.Key)))
-        {
-            var existingNames = string.Join(", ",
-                duplicateColumnPositionGroup
-                    .Select(column => column.Name)
-                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
-
-            conflicts.Add(new StarterPackApplyConflictDto(
-                "ExistingColumnPositionConflict",
-                "$.board.columns",
-                $"Board already contains multiple columns at position '{duplicateColumnPositionGroup.Key}'. Resolve duplicate positions before applying starter packs.",
-                existingNames,
-                duplicateColumnPositionGroup.Key.ToString()));
-        }
-
-        var existingColumnsByPosition = existingColumnGroupsByPosition
-            .ToDictionary(group => group.Key, group => group.First());
-
-        var plannedLabels = new List<StarterPackLabelDto>();
-        var plannedLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        var plannedColumns = new List<StarterPackColumnDto>();
-        var plannedColumnsByName = new Dictionary<string, StarterPackColumnDto>(StringComparer.OrdinalIgnoreCase);
-        var plannedColumnsByPosition = new Dictionary<int, StarterPackColumnDto>();
-
-        for (var index = 0; index < manifest.Labels.Count; index++)
-        {
-            var label = manifest.Labels[index];
-
-            if (existingLabelsByName.TryGetValue(label.Name, out var existingLabel))
-            {
-                if (string.Equals(existingLabel.ColorHex, label.Color, StringComparison.OrdinalIgnoreCase))
-                {
-                    actions.Add(new StarterPackApplyActionDto(
-                        "label",
-                        "skip",
-                        label.Name,
-                        "Label already exists with the same color."));
-                }
-                else
-                {
-                    conflicts.Add(new StarterPackApplyConflictDto(
-                        "LabelColorConflict",
-                        $"$.labels[{index}].color",
-                        $"Label '{label.Name}' already exists with a different color.",
-                        existingLabel.ColorHex,
-                        label.Color));
-                }
-
-                continue;
-            }
-
-            plannedLabels.Add(label);
-            plannedLabelNames.Add(label.Name);
-            actions.Add(new StarterPackApplyActionDto(
-                "label",
-                "create",
-                label.Name,
-                "Label will be created."));
-        }
-
-        for (var index = 0; index < manifest.Columns.Count; index++)
-        {
-            var column = manifest.Columns[index];
-
-            if (existingColumnsByName.TryGetValue(column.Name, out var existingColumn))
-            {
-                if (existingColumn.Position == column.Position &&
-                    Nullable.Equals(existingColumn.WipLimit, column.WipLimit))
-                {
-                    actions.Add(new StarterPackApplyActionDto(
-                        "column",
-                        "skip",
-                        column.Name,
-                        "Column already exists with the same definition."));
-                }
-                else
-                {
-                    conflicts.Add(new StarterPackApplyConflictDto(
-                        "ColumnDefinitionConflict",
-                        $"$.columns[{index}]",
-                        $"Column '{column.Name}' already exists with a different definition.",
-                        DescribeColumn(existingColumn.Position, existingColumn.WipLimit),
-                        DescribeColumn(column.Position, column.WipLimit)));
-                }
-
-                continue;
-            }
-
-            if (existingColumnsByPosition.TryGetValue(column.Position, out var occupyingColumn))
-            {
-                conflicts.Add(new StarterPackApplyConflictDto(
-                    "ColumnPositionConflict",
-                    $"$.columns[{index}].position",
-                    $"Column position '{column.Position}' is already occupied by '{occupyingColumn.Name}'.",
-                    occupyingColumn.Name,
-                    column.Name));
-                continue;
-            }
-
-            if (plannedColumnsByPosition.TryGetValue(column.Position, out var plannedOccupyingColumn))
-            {
-                conflicts.Add(new StarterPackApplyConflictDto(
-                    "ColumnPositionConflict",
-                    $"$.columns[{index}].position",
-                    $"Column position '{column.Position}' is already reserved by '{plannedOccupyingColumn.Name}'.",
-                    plannedOccupyingColumn.Name,
-                    column.Name));
-                continue;
-            }
-
-            plannedColumns.Add(column);
-            plannedColumnsByName[column.Name] = column;
-            plannedColumnsByPosition[column.Position] = column;
-            actions.Add(new StarterPackApplyActionDto(
-                "column",
-                "create",
-                column.Name,
-                "Column will be created."));
-        }
-
-        var resolvableColumnNames = new HashSet<string>(existingColumnsByName.Keys, StringComparer.OrdinalIgnoreCase);
-        foreach (var columnName in plannedColumnsByName.Keys)
-        {
-            resolvableColumnNames.Add(columnName);
-        }
-
-        var resolvableLabelNames = new HashSet<string>(existingLabelsByName.Keys, StringComparer.OrdinalIgnoreCase);
-        foreach (var labelName in plannedLabelNames)
-        {
-            resolvableLabelNames.Add(labelName);
-        }
-
-        var plannedSeedCards = new List<PlannedSeedCard>();
-        for (var index = 0; index < manifest.SeedCards.Count; index++)
-        {
-            var seedCard = manifest.SeedCards[index];
-            var hasConflict = false;
-
-            if (!resolvableColumnNames.Contains(seedCard.ColumnName))
-            {
-                conflicts.Add(new StarterPackApplyConflictDto(
-                    "SeedCardColumnConflict",
-                    $"$.seedCards[{index}].columnName",
-                    $"Seed card '{seedCard.Title}' references column '{seedCard.ColumnName}' that cannot be resolved.",
-                    null,
-                    seedCard.ColumnName,
-                    StarterPackConflictSeverity.Warning));
-                hasConflict = true;
-            }
-
-            var deduplicatedLabelNames = new List<string>();
-            var seenLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (var labelIndex = 0; labelIndex < seedCard.Labels.Count; labelIndex++)
-            {
-                var labelName = seedCard.Labels[labelIndex];
-                if (!seenLabelNames.Add(labelName))
-                {
-                    continue;
-                }
-
-                deduplicatedLabelNames.Add(labelName);
-                if (!resolvableLabelNames.Contains(labelName))
-                {
-                    conflicts.Add(new StarterPackApplyConflictDto(
-                        "SeedCardLabelConflict",
-                        $"$.seedCards[{index}].labels[{labelIndex}]",
-                        $"Seed card '{seedCard.Title}' references label '{labelName}' that cannot be resolved.",
-                        null,
-                        labelName,
-                        StarterPackConflictSeverity.Warning));
-                    hasConflict = true;
-                }
-            }
-
-            if (hasConflict)
-            {
-                actions.Add(new StarterPackApplyActionDto(
-                    "seedCard",
-                    "skip",
-                    $"{seedCard.Title} @ {seedCard.ColumnName}",
-                    "Seed card references unresolved column or label metadata."));
-                continue;
-            }
-
-            if (existingColumnsByName.TryGetValue(seedCard.ColumnName, out var existingColumn) &&
-                board.Cards.Any(card =>
-                    card.ColumnId == existingColumn.Id &&
-                    string.Equals(card.Title, seedCard.Title, StringComparison.OrdinalIgnoreCase)))
-            {
-                conflicts.Add(new StarterPackApplyConflictDto(
-                    "SeedCardAlreadyExistsConflict",
-                    $"$.seedCards[{index}]",
-                    $"Seed card '{seedCard.Title}' already exists in column '{seedCard.ColumnName}' and will be skipped.",
-                    $"{seedCard.Title} @ {seedCard.ColumnName}",
-                    null,
-                    StarterPackConflictSeverity.Warning));
-                actions.Add(new StarterPackApplyActionDto(
-                    "seedCard",
-                    "skip",
-                    $"{seedCard.Title} @ {seedCard.ColumnName}",
-                    "Seed card already exists in the target column."));
-                continue;
-            }
-
-            if (plannedSeedCards.Any(candidate =>
-                string.Equals(candidate.ColumnName, seedCard.ColumnName, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(candidate.SeedCard.Title, seedCard.Title, StringComparison.OrdinalIgnoreCase)))
-            {
-                conflicts.Add(new StarterPackApplyConflictDto(
-                    "SeedCardDuplicateInManifestConflict",
-                    $"$.seedCards[{index}]",
-                    $"Seed card '{seedCard.Title}' is duplicated in column '{seedCard.ColumnName}' and will be skipped.",
-                    $"{seedCard.Title} @ {seedCard.ColumnName}",
-                    $"{seedCard.Title} @ {seedCard.ColumnName}",
-                    StarterPackConflictSeverity.Warning));
-                actions.Add(new StarterPackApplyActionDto(
-                    "seedCard",
-                    "skip",
-                    $"{seedCard.Title} @ {seedCard.ColumnName}",
-                    "Duplicate seed card in manifest apply plan."));
-                continue;
-            }
-
-            plannedSeedCards.Add(new PlannedSeedCard(seedCard, seedCard.ColumnName, deduplicatedLabelNames));
-            actions.Add(new StarterPackApplyActionDto(
-                "seedCard",
-                "create",
-                $"{seedCard.Title} @ {seedCard.ColumnName}",
-                "Seed card will be created."));
-        }
+        var conflictReport = _conflictDetector.DetectConflicts(board, manifest);
+        var plannedSeedCards = _idempotencyChecker.Check(board, manifest, conflictReport);
 
         var preview = new StarterPackApplyResultDto(
             board.Id,
             manifest.PackId,
             dto.DryRun,
             false,
-            actions,
-            conflicts);
+            conflictReport.Actions,
+            conflictReport.Conflicts);
 
         if (dto.DryRun || preview.HasBlockingConflicts)
         {
             return Result.Success(preview);
         }
 
+        return await ApplyPlanAsync(
+            board,
+            conflictReport,
+            plannedSeedCards,
+            preview,
+            cancellationToken);
+    }
+
+    private async Task<Result<StarterPackApplyResultDto>> ApplyPlanAsync(
+        Board board,
+        StarterPackConflictReport conflictReport,
+        List<StarterPackIdempotencyChecker.PlannedSeedCard> plannedSeedCards,
+        StarterPackApplyResultDto preview,
+        CancellationToken cancellationToken)
+    {
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         try
@@ -383,7 +117,7 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                 labelsByName[label.Name] = label;
             }
 
-            foreach (var plannedLabel in plannedLabels)
+            foreach (var plannedLabel in conflictReport.PlannedLabels)
             {
                 var label = new Label(board.Id, plannedLabel.Name, plannedLabel.Color);
                 await _unitOfWork.Labels.AddAsync(label, cancellationToken);
@@ -396,7 +130,7 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                 columnsByName[column.Name] = column;
             }
 
-            foreach (var plannedColumn in plannedColumns)
+            foreach (var plannedColumn in conflictReport.PlannedColumns)
             {
                 var column = new Column(board.Id, plannedColumn.Name, plannedColumn.Position, plannedColumn.WipLimit);
                 await _unitOfWork.Columns.AddAsync(column, cancellationToken);
@@ -407,7 +141,7 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                 column => column.Id,
                 column => column.Cards.Any() ? column.Cards.Max(card => card.Position) + 1 : 0);
 
-            foreach (var plannedColumn in plannedColumns)
+            foreach (var plannedColumn in conflictReport.PlannedColumns)
             {
                 if (columnsByName.TryGetValue(plannedColumn.Name, out var column))
                 {
@@ -491,14 +225,4 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
 
         return $"Manifest validation failed: {string.Join("; ", topErrors)}{suffix}";
     }
-
-    private static string DescribeColumn(int position, int? wipLimit)
-    {
-        return $"position={position}, wipLimit={(wipLimit.HasValue ? wipLimit.Value.ToString() : "null")}";
-    }
-
-    private sealed record PlannedSeedCard(
-        StarterPackSeedCardDto SeedCard,
-        string ColumnName,
-        List<string> LabelNames);
 }

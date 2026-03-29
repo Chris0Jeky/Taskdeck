@@ -2,6 +2,7 @@
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useCaptureStore } from '../../store/captureStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { usePerformanceMark } from '../../composables/usePerformanceMark'
 
 const props = defineProps<{
   boardId?: string | null
@@ -19,7 +20,10 @@ const text = ref('')
 const saving = ref(false)
 const inlineError = ref<string | null>(null)
 const textInput = ref<HTMLTextAreaElement | null>(null)
+const modalOpenPerf = usePerformanceMark('modal-open')
 let unregisterEscapeHandler: (() => void) | null = null
+
+modalOpenPerf.start()
 
 function requestClose() {
   if (saving.value) {
@@ -69,6 +73,7 @@ onMounted(async () => {
   unregisterEscapeHandler = registerEscapeHandler(requestClose)
   await nextTick()
   textInput.value?.focus()
+  modalOpenPerf.end()
 })
 
 onUnmounted(() => {

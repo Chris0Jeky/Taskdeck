@@ -19,6 +19,11 @@ public class KnowledgeDocumentRepository : Repository<KnowledgeDocument>, IKnowl
         int offset = 0,
         CancellationToken cancellationToken = default)
     {
+        if (_context.Database.IsSqlite())
+        {
+            return await GetByUserIdSqliteAsync(userId, boardId, includeArchived, limit, offset, cancellationToken);
+        }
+
         var query = _dbSet.Where(d => d.UserId == userId);
 
         if (!includeArchived)
@@ -41,6 +46,23 @@ public class KnowledgeDocumentRepository : Repository<KnowledgeDocument>, IKnowl
         int offset = 0,
         CancellationToken cancellationToken = default)
     {
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL.
+            if (includeArchived)
+            {
+                return await _dbSet
+                    .FromSqlInterpolated(
+                        $"SELECT * FROM KnowledgeDocuments WHERE BoardId = {boardId} ORDER BY UpdatedAt DESC LIMIT {limit} OFFSET {offset}")
+                    .ToListAsync(cancellationToken);
+            }
+
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM KnowledgeDocuments WHERE BoardId = {boardId} AND IsArchived = 0 ORDER BY UpdatedAt DESC LIMIT {limit} OFFSET {offset}")
+                .ToListAsync(cancellationToken);
+        }
+
         var query = _dbSet.Where(d => d.BoardId == boardId);
 
         if (!includeArchived)
@@ -50,6 +72,45 @@ public class KnowledgeDocumentRepository : Repository<KnowledgeDocument>, IKnowl
             .OrderByDescending(d => d.UpdatedAt)
             .Skip(offset)
             .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IEnumerable<KnowledgeDocument>> GetByUserIdSqliteAsync(
+        Guid userId,
+        Guid? boardId,
+        bool includeArchived,
+        int limit,
+        int offset,
+        CancellationToken cancellationToken)
+    {
+        // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL.
+        if (boardId.HasValue && !includeArchived)
+        {
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM KnowledgeDocuments WHERE UserId = {userId} AND BoardId = {boardId.Value} AND IsArchived = 0 ORDER BY UpdatedAt DESC LIMIT {limit} OFFSET {offset}")
+                .ToListAsync(cancellationToken);
+        }
+
+        if (boardId.HasValue)
+        {
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM KnowledgeDocuments WHERE UserId = {userId} AND BoardId = {boardId.Value} ORDER BY UpdatedAt DESC LIMIT {limit} OFFSET {offset}")
+                .ToListAsync(cancellationToken);
+        }
+
+        if (!includeArchived)
+        {
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM KnowledgeDocuments WHERE UserId = {userId} AND IsArchived = 0 ORDER BY UpdatedAt DESC LIMIT {limit} OFFSET {offset}")
+                .ToListAsync(cancellationToken);
+        }
+
+        return await _dbSet
+            .FromSqlInterpolated(
+                $"SELECT * FROM KnowledgeDocuments WHERE UserId = {userId} ORDER BY UpdatedAt DESC LIMIT {limit} OFFSET {offset}")
             .ToListAsync(cancellationToken);
     }
 }

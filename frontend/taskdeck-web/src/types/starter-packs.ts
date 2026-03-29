@@ -84,3 +84,14 @@ export interface StarterPackCatalogEntry {
   highlights: string[]
   manifest: StarterPackManifest
 }
+
+export interface ManifestValidationError {
+  path: string
+  message: string
+}
+
+export interface ValidateManifestResult {
+  isValid: boolean
+  manifest: StarterPackManifest | null
+  errors: ManifestValidationError[]
+}

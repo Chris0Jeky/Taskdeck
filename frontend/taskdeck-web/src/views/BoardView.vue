@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
 import { useBoardKeyboardNav } from '../composables/useBoardKeyboardNav'
+import { usePerformanceMark } from '../composables/usePerformanceMark'
 import BoardToolbar from '../components/board/BoardToolbar.vue'
 import BoardActionRail from '../components/board/BoardActionRail.vue'
 import BoardCanvas from '../components/board/BoardCanvas.vue'
@@ -29,6 +30,9 @@ const showKeyboardHelp = ref(false)
 const showFilterPanel = ref(false)
 const showBoardCaptureModal = ref(false)
 const presenceMembers = ref<BoardPresenceMember[]>([])
+
+const boardLoadPerf = usePerformanceMark('board-load')
+
 
 const boardId = ref(route.params.id as string)
 const realtime = createBoardRealtimeController({
@@ -78,6 +82,7 @@ const {
 } = useBoardKeyboardNav(sortedColumns)
 
 onMounted(async () => {
+  boardLoadPerf.start()
   try {
     presenceMembers.value = []
     boardStore.setBoardPresenceMembers([])
@@ -86,6 +91,8 @@ onMounted(async () => {
     await realtime.start(boardId.value)
   } catch (error) {
     console.error('Failed to load board:', error)
+  } finally {
+    boardLoadPerf.end()
   }
 })
 
