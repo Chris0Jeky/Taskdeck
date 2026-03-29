@@ -49,6 +49,16 @@ export async function attachSessionToPage(page: Page, auth: AuthResult): Promise
   await page.addInitScript((initPayload: { token: string; session: { userId: string; username: string; email: string } }) => {
     localStorage.setItem('taskdeck_token', initPayload.token)
     localStorage.setItem('taskdeck_session', JSON.stringify(initPayload.session))
+    // Enable all feature flags so E2E tests can reach gated routes
+    localStorage.setItem('taskdeck_feature_flags', JSON.stringify({
+      newShell: true,
+      newAuth: true,
+      newAccess: true,
+      newActivity: true,
+      newOps: true,
+      newAutomation: true,
+      newArchive: true,
+    }))
   }, payload)
 }
 
