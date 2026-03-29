@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import TdDropdown from '../../../components/ui/TdDropdown.vue'
 
 const escapeHandlers: Array<() => void> = []
@@ -19,6 +20,7 @@ vi.mock('../../../composables/useEscapeStack', () => ({
 describe('TdDropdown', () => {
   beforeEach(() => {
     escapeHandlers.splice(0, escapeHandlers.length)
+    document.body.innerHTML = ''
   })
 
   it('renders trigger slot', () => {
@@ -77,5 +79,27 @@ describe('TdDropdown', () => {
     expect(escapeHandlers.length).toBe(1)
     await wrapper.setProps({ open: false })
     expect(escapeHandlers.length).toBe(0)
+  })
+
+  it('restores focus to the previously active element when unmounted while open', async () => {
+    const trigger = document.createElement('button')
+    document.body.appendChild(trigger)
+    trigger.focus()
+
+    const wrapper = mount(TdDropdown, {
+      props: { open: true },
+      slots: {
+        trigger: '<button type="button">Open</button>',
+        default: '<button type="button">Item</button>',
+      },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+    expect(document.activeElement).not.toBe(trigger)
+
+    wrapper.unmount()
+
+    expect(document.activeElement).toBe(trigger)
   })
 })

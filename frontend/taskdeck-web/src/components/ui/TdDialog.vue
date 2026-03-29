@@ -87,6 +87,8 @@ watch(
 onUnmounted(() => {
   unregisterEscape?.()
   unregisterEscape = null
+  previouslyFocusedElement?.focus()
+  previouslyFocusedElement = null
 })
 </script>
 

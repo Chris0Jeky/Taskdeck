@@ -63,6 +63,8 @@ onUnmounted(() => {
   unregisterEscape?.()
   unregisterEscape = null
   document.removeEventListener('click', handleClickOutside, true)
+  previouslyFocusedElement?.focus()
+  previouslyFocusedElement = null
 })
 </script>
 
