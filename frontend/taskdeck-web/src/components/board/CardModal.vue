@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, computed, watch } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
+import TdDialog from '../ui/TdDialog.vue'
 import type { Card, CardCaptureProvenance, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
 import { normalizeProposalStatus } from '../../utils/automation'
@@ -37,6 +38,8 @@ const captureProvenance = ref<CardCaptureProvenance | null>(null)
 const captureProvenanceError = ref<string | null>(null)
 const loadingCaptureProvenance = ref(false)
 const loadedCaptureProvenanceCardId = ref<string | null>(null)
+const showDeleteConfirm = ref(false)
+const isDeleting = ref(false)
 
 const comments = computed<CardComment[]>(() => boardStore.getCardComments(props.card.id))
 const topLevelComments = computed(() => comments.value.filter(comment => !comment.parentCommentId))
@@ -158,15 +161,25 @@ async function handleSave() {
   }
 }
 
-async function handleDelete() {
-  if (!confirm(`Are you sure you want to delete "${props.card.title}"?`)) return
+function handleDeleteClick() {
+  showDeleteConfirm.value = true
+}
 
+function handleDeleteCancel() {
+  showDeleteConfirm.value = false
+}
+
+async function handleDeleteConfirm() {
+  if (isDeleting.value) return
+  isDeleting.value = true
   try {
     await boardStore.deleteCard(props.card.boardId, props.card.id)
+    showDeleteConfirm.value = false
     emit('updated')
     emit('close')
   } catch (error) {
     console.error('Failed to delete card:', error)
+    isDeleting.value = false
   }
 }
 
@@ -593,7 +606,7 @@ onBeforeUnmount(() => {
         <!-- Actions -->
         <div class="mt-6 flex items-center justify-between">
           <button
-            @click="handleDelete"
+            @click="handleDeleteClick"
             type="button"
             class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-300 rounded-md transition-colors"
           >
@@ -620,4 +633,32 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </div>
+
+  <!-- Delete Confirmation Dialog -->
+  <TdDialog
+    :open="showDeleteConfirm"
+    title="Delete Card"
+    :description="`Are you sure you want to delete &quot;${card.title}&quot;? This action cannot be undone.`"
+    :close-on-backdrop="!isDeleting"
+    @close="handleDeleteCancel"
+  >
+    <template #footer>
+      <button
+        type="button"
+        :disabled="isDeleting"
+        class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        @click="handleDeleteCancel"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        :disabled="isDeleting"
+        class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 border border-transparent rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        @click="handleDeleteConfirm"
+      >
+        {{ isDeleting ? 'Deleting…' : 'Delete' }}
+      </button>
+    </template>
+  </TdDialog>
 </template>
