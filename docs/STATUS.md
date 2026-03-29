@@ -506,6 +506,24 @@ Recent follow-through (2026-02-24):
 - `#257` expanded `ApiErrorContractApiTests` with representative `400/401/403/404/409` coverage in one suite
 - representative error-path tests now assert `X-Request-Id` echo behavior alongside stable JSON error-contract shape assertions
 
+## Future Testing and Hardening Strategy Analysis (2026-03-29)
+
+TST-08 (`#143`) delivered a gap analysis of the current testing/hardening posture across MCP integrations, deployment/container runtime, operational reliability, and security checks.
+
+Analysis record:
+- `docs/analysis/2026-03-29_testing-hardening-strategy.md`
+
+Key findings:
+- Current posture is strong (1400+ automated tests, comprehensive CI topology, established security baselines)
+- Highest-ROI gaps are CI automation of existing manual validation (MCP, Terraform, drills, container runtime) and supply-chain security scanning (SAST, secrets, image CVEs)
+- 15 proposed follow-up issues across 4 priority tiers with acceptance criteria and execution sequencing
+
+Proposed issue summary:
+- Priority I (SEC-20 to SEC-22): SAST, secret scanning, container image scanning
+- Priority II (SEC-23, OPS-21 to OPS-24): dependency blocking gate, container smoke, drill/MCP/Terraform CI wiring
+- Priority III (TST-27 to TST-29, SEC-24): repository tests, view tests, router tests, DAST
+- Priority IV (TST-30, TST-31, OPS-25, SEC-25): OpenAPI snapshots, shutdown tests, CSP reporting, HTTP client tests
+
 ## Outreach CRM Deferred Expansion Track (2026-02-23)
 
 New in-review outreach CRM planning docs were added under:
