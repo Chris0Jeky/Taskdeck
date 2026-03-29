@@ -224,4 +224,60 @@ onUnmounted(() => {
   background: var(--td-color-error-light);
   color: var(--td-color-error);
 }
+
+/* ─── Mobile: full-screen capture ─── */
+@media (max-width: 640px) {
+  .td-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .td-capture-modal {
+    width: 100%;
+    height: 100%;
+    max-height: 100vh;
+    max-height: 100dvh; /* iOS dynamic viewport — avoids browser chrome overlap */
+    border-radius: 0;
+    padding: var(--td-space-4);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .td-capture-modal__header h2 {
+    font-size: var(--td-font-lg);
+  }
+
+  .td-capture-modal__close {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--td-font-lg);
+  }
+
+  .td-capture-modal__input {
+    flex: 1;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    min-height: 200px;
+    resize: none;
+  }
+
+  .td-capture-modal__actions {
+    flex-direction: column-reverse;
+    gap: var(--td-space-3);
+  }
+
+  .td-capture-modal__actions .td-btn {
+    width: 100%;
+    min-height: 48px;
+    font-size: var(--td-font-base);
+    justify-content: center;
+  }
+
+  .td-capture-modal__hint {
+    font-size: var(--td-font-sm);
+    line-height: 1.5;
+  }
+}
 </style>

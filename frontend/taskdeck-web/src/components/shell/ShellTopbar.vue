@@ -257,4 +257,10 @@ function handleWorkspaceModeChange(event: Event) {
     justify-content: space-between;
   }
 }
+
+@media (max-width: 640px) {
+  .td-topbar {
+    display: none;
+  }
+}
 </style>

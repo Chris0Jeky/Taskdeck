@@ -723,4 +723,66 @@ onActivated(refreshHomeSummary)
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 640px) {
+  .td-home {
+    gap: var(--td-space-4);
+  }
+
+  .td-home__hero {
+    padding: var(--td-space-4);
+    gap: var(--td-space-4);
+    border-radius: var(--td-radius-lg);
+  }
+
+  .td-home__hero-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .td-home__hero-actions .td-btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .td-home__onboarding-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .td-home__onboarding-actions {
+    flex-direction: column;
+  }
+
+  .td-home__onboarding-actions .td-btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .td-home-step {
+    min-height: 44px;
+  }
+
+  .td-home__grid {
+    gap: var(--td-space-3);
+  }
+
+  /* stats inherit 1fr from 768px breakpoint — single column on mobile */
+
+  .td-home-action {
+    min-height: 44px;
+    padding: var(--td-space-3) var(--td-space-4);
+  }
+
+  .td-home-board {
+    min-height: 44px;
+    padding: var(--td-space-3) var(--td-space-4);
+  }
+
+  .td-home__subtitle {
+    font-size: var(--td-font-sm);
+    line-height: 1.5;
+  }
+}
 </style>
