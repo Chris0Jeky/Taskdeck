@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -13,6 +15,7 @@ using AuthenticationService = Taskdeck.Application.Services.AuthenticationServic
 namespace Taskdeck.Api.Controllers;
 
 public record ChangePasswordRequest(Guid UserId, string CurrentPassword, string NewPassword);
+public record ExchangeCodeRequest(string Code);
 
 [ApiController]
 [Route("api/auth")]
@@ -20,6 +23,10 @@ public class AuthController : ControllerBase
 {
     private readonly AuthenticationService _authService;
     private readonly GitHubOAuthSettings _gitHubOAuthSettings;
+
+    // Short-lived, single-use authorization codes to avoid exposing JWT in URLs.
+    // Key: code, Value: (token, expiry). Codes expire after 60 seconds.
+    private static readonly ConcurrentDictionary<string, (AuthResultDto Result, DateTimeOffset Expiry)> _authCodes = new();
 
     public AuthController(AuthenticationService authService, GitHubOAuthSettings gitHubOAuthSettings)
     {
@@ -140,14 +147,38 @@ public class AuthController : ControllerBase
         // Sign out the temporary cookie used during the OAuth handshake
         await HttpContext.SignOutAsync("GitHub");
 
-        // Redirect to frontend with the JWT token
+        // Security: Do NOT put the JWT in the URL. Use a short-lived, single-use
+        // authorization code that the frontend exchanges via POST.
+        var code = GenerateAuthCode();
+        _authCodes[code] = (result.Value, DateTimeOffset.UtcNow.AddSeconds(60));
+        CleanupExpiredCodes();
+
         var safeReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && IsLocalUrl(returnUrl)
             ? returnUrl
             : "/";
 
         var separator = safeReturnUrl.Contains('?') ? "&" : "?";
-        var encodedToken = Uri.EscapeDataString(result.Value.Token);
-        return Redirect($"{safeReturnUrl}{separator}token={encodedToken}");
+        return Redirect($"{safeReturnUrl}{separator}oauth_code={Uri.EscapeDataString(code)}");
+    }
+
+    /// <summary>
+    /// Exchanges a short-lived OAuth authorization code for a JWT token.
+    /// The code is single-use and expires after 60 seconds.
+    /// </summary>
+    [HttpPost("github/exchange")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    public IActionResult ExchangeCode([FromBody] ExchangeCodeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Code is required"));
+
+        if (!_authCodes.TryRemove(request.Code, out var entry))
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
+
+        if (DateTimeOffset.UtcNow > entry.Expiry)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Code has expired"));
+
+        return Ok(entry.Result);
     }
 
     /// <summary>
@@ -162,12 +193,28 @@ public class AuthController : ControllerBase
         });
     }
 
-    private bool IsLocalUrl(string url)
+    private static bool IsLocalUrl(string url)
     {
         // Only allow relative URLs (starts with / but not //)
         return !string.IsNullOrWhiteSpace(url)
                && url.StartsWith('/')
                && !url.StartsWith("//")
                && !url.StartsWith("/\\");
+    }
+
+    private static string GenerateAuthCode()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
+    }
+
+    private static void CleanupExpiredCodes()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var kvp in _authCodes)
+        {
+            if (now > kvp.Value.Expiry)
+                _authCodes.TryRemove(kvp.Key, out _);
+        }
     }
 }
