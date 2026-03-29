@@ -326,7 +326,7 @@ public sealed class StarterPackSchemaValidator
         return knownTemplateIds;
     }
 
-    internal static List<T> NormalizeCollection<T>(
+    public static List<T> NormalizeCollection<T>(
         List<T>? collection,
         string path,
         string fieldName,
@@ -341,7 +341,7 @@ public sealed class StarterPackSchemaValidator
         return [];
     }
 
-    internal static bool IsSlug(string? value)
+    public static bool IsSlug(string? value)
     {
         return !string.IsNullOrWhiteSpace(value) && SlugRegex.IsMatch(value);
     }

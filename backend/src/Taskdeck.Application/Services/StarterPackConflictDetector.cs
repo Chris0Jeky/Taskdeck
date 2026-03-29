@@ -229,7 +229,7 @@ public sealed class StarterPackConflictDetector
             resolvableLabelNames);
     }
 
-    internal static string DescribeColumn(int position, int? wipLimit)
+    public static string DescribeColumn(int position, int? wipLimit)
     {
         return $"position={position}, wipLimit={(wipLimit.HasValue ? wipLimit.Value.ToString() : "null")}";
     }
