@@ -178,9 +178,9 @@ To verify no real secrets are present in committed files, run:
 ```bash
 # Check that all secret-shaped values in config templates are empty or placeholder
 grep -rn "ApiKey\|SecretKey\|JWT_SECRET\|GITHUB_PAT" \
-  appsettings.json deploy/.env.example .env.example \
+  appsettings.json appsettings.Development.json deploy/.env.example .env.example \
   --include="*.json" --include="*.example" \
-  | grep -v '""' | grep -v "=\s*$" | grep -v "ChangeMe" | grep -v "example"
+  | grep -v '""' | grep -v "=\s*$" | grep -v "ChangeMe" | grep -v "example" | grep -v "Dev-only marker value"
 ```
 
 An empty result confirms no real secrets are committed. This check can be added to CI as a pre-merge gate.
