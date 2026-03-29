@@ -61,16 +61,13 @@ public static class LlmInstructionExtractionPrompt
 
         try
         {
-            // Strip markdown code fences if present (LLMs sometimes wrap JSON)
+            // Extract JSON object using brace-matching instead of fragile markdown stripping.
+            // This handles code fences with or without a newline after the language tag.
             var trimmed = responseBody.Trim();
-            if (trimmed.StartsWith("```", StringComparison.Ordinal))
-            {
-                var firstNewline = trimmed.IndexOf('\n');
-                if (firstNewline >= 0)
-                    trimmed = trimmed[(firstNewline + 1)..];
-                if (trimmed.EndsWith("```", StringComparison.Ordinal))
-                    trimmed = trimmed[..^3].TrimEnd();
-            }
+            var firstBrace = trimmed.IndexOf('{');
+            var lastBrace = trimmed.LastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace)
+                trimmed = trimmed[firstBrace..(lastBrace + 1)];
 
             using var doc = JsonDocument.Parse(trimmed);
             var root = doc.RootElement;

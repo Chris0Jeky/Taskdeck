@@ -193,6 +193,60 @@ public class LlmInstructionExtractionPromptTests
     }
 
     [Fact]
+    public void TryParseStructuredResponse_ShouldHandleCodeFenceWithoutNewlineAfterLanguageTag()
+    {
+        // This is the edge case the old regex-based stripping would fail on
+        var json = "```json{\"reply\":\"Done.\",\"actionable\":true,\"instructions\":[\"create card 'Test'\"]}```";
+
+        var result = LlmInstructionExtractionPrompt.TryParseStructuredResponse(
+            json, out var reply, out var actionable, out var instructions);
+
+        result.Should().BeTrue();
+        reply.Should().Be("Done.");
+        actionable.Should().BeTrue();
+        instructions.Should().ContainSingle().Which.Should().Be("create card 'Test'");
+    }
+
+    [Fact]
+    public void TryParseStructuredResponse_ShouldHandleCodeFenceWithoutLanguageSpecifier()
+    {
+        var json = """
+            ```
+            {
+              "reply": "Here you go.",
+              "actionable": false,
+              "instructions": []
+            }
+            ```
+            """;
+
+        var result = LlmInstructionExtractionPrompt.TryParseStructuredResponse(
+            json, out var reply, out var actionable, out var instructions);
+
+        result.Should().BeTrue();
+        reply.Should().Be("Here you go.");
+        actionable.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryParseStructuredResponse_ShouldHandleJsonWithSurroundingText()
+    {
+        var json = """
+            Here is the result:
+            {"reply": "Card created.", "actionable": true, "instructions": ["create card 'Demo'"]}
+            Hope that helps!
+            """;
+
+        var result = LlmInstructionExtractionPrompt.TryParseStructuredResponse(
+            json, out var reply, out var actionable, out var instructions);
+
+        result.Should().BeTrue();
+        reply.Should().Be("Card created.");
+        actionable.Should().BeTrue();
+        instructions.Should().ContainSingle().Which.Should().Be("create card 'Demo'");
+    }
+
+    [Fact]
     public void SystemPrompt_ShouldContainRequiredInstructionPatterns()
     {
         LlmInstructionExtractionPrompt.SystemPrompt.Should().Contain("create card");
