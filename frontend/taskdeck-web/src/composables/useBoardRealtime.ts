@@ -68,16 +68,20 @@ export function createBoardRealtimeController(
     }, FALLBACK_POLL_INTERVAL_MS)
   }
 
+  const cancelMutationDebounce = () => {
+    if (mutationDebounceTimer !== null) {
+      clearTimeout(mutationDebounceTimer)
+      mutationDebounceTimer = null
+    }
+  }
+
   const handleBoardMutation = (event: BoardRealtimeEvent) => {
     if (!subscribedBoardId || event.boardId !== subscribedBoardId) {
       return
     }
 
     // Debounce: cancel any pending refresh scheduled by a prior burst event.
-    if (mutationDebounceTimer !== null) {
-      clearTimeout(mutationDebounceTimer)
-      mutationDebounceTimer = null
-    }
+    cancelMutationDebounce()
 
     mutationDebounceTimer = setTimeout(() => {
       mutationDebounceTimer = null
@@ -145,6 +149,10 @@ export function createBoardRealtimeController(
   }
 
   const joinBoard = async (boardId: string) => {
+    // Cancel any debounced mutation fetch from the previous board so it cannot
+    // fire against the newly-subscribed boardId after subscribedBoardId changes.
+    cancelMutationDebounce()
+
     const hubConnection = ensureConnection()
 
     if (hubConnection.state === HubConnectionState.Disconnected) {
@@ -187,10 +195,7 @@ export function createBoardRealtimeController(
 
   const stop = async () => {
     stopFallbackPolling()
-    if (mutationDebounceTimer !== null) {
-      clearTimeout(mutationDebounceTimer)
-      mutationDebounceTimer = null
-    }
+    cancelMutationDebounce()
     editingCardId = null
 
     if (!connection) {

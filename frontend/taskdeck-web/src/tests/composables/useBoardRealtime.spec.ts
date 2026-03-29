@@ -209,6 +209,30 @@ describe('createBoardRealtimeController', () => {
     expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-2')
   })
 
+  it('cancels a pending debounce timer when switching boards', async () => {
+    // Regression: a board-A mutation event with a debounce timer pending must
+    // not fire fetchBoard after subscribedBoardId has advanced to board-B.
+    vi.useFakeTimers()
+    const fetchBoard = vi.fn(async () => undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+
+    // A mutation event for board-1 starts the 300 ms debounce timer.
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+
+    // Switch to board-2 before the timer fires — must discard the pending timer.
+    await controller.switchBoard('board-2')
+
+    // Advance past the original debounce window.
+    await vi.advanceTimersByTimeAsync(300)
+
+    // fetchBoard must not have been called at all; the stale timer was cancelled.
+    expect(fetchBoard).not.toHaveBeenCalled()
+
+    await controller.stop()
+  })
+
   it('falls back to polling when websocket connection cannot start', async () => {
     vi.useFakeTimers()
     const fetchBoard = vi.fn(async () => undefined)
