@@ -6,7 +6,7 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class LlmIntentClassifierTests
 {
-    #region Card Creation — Current Supported Patterns
+    #region Card Creation — Exact Patterns (Backward Compatibility)
 
     [Theory]
     [InlineData("create card \"test\"")]
@@ -33,7 +33,35 @@ public class LlmIntentClassifierTests
 
     #endregion
 
-    #region Card Operations — Current Supported Patterns
+    #region Card Creation — Natural Language Patterns (New)
+
+    [Theory]
+    [InlineData("can you create new onboarding tasks for people who aren't technical?")]
+    [InlineData("create some tasks for the onboarding process")]
+    [InlineData("could you make me a few cards for the backlog?")]
+    [InlineData("generate tasks for the release checklist")]
+    [InlineData("please add these items: meeting notes, code review, deployment")]
+    [InlineData("I need three new cards for the sprint")]
+    [InlineData("create tasks for onboarding")]
+    [InlineData("create three cards for deployment")]
+    [InlineData("add several tasks to the board")]
+    [InlineData("create a new onboarding task")]
+    [InlineData("generate a card for this feature")]
+    [InlineData("build out some tasks for the release")]
+    [InlineData("prepare a task for code review")]
+    [InlineData("set up a few cards for the sprint")]
+    public void Classify_CardCreation_ShouldDetect_NaturalLanguage(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeTrue(
+            because: $"'{message}' expresses card creation intent");
+        actionIntent.Should().Be("card.create");
+    }
+
+    #endregion
+
+    #region Card Operations — Exact Patterns (Backward Compatibility)
 
     [Fact]
     public void Classify_MoveCard_ShouldDetect()
@@ -56,19 +84,17 @@ public class LlmIntentClassifierTests
     }
 
     /// <summary>
-    /// Documents a classifier ordering bug: "remove card" contains the substring
-    /// "move card", so the move-card check fires first and returns card.move
-    /// instead of card.archive. See #571 for fix.
+    /// Fixed: "remove card" now correctly classifies as card.archive
+    /// because archive/delete/remove are checked before move.
     /// </summary>
     [Fact]
-    public void Classify_RemoveCard_MatchesMoveCardDueToSubstringOrdering()
+    public void Classify_RemoveCard_ShouldClassifyAsArchive()
     {
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify("remove card abc123");
 
         isActionable.Should().BeTrue();
-        // Bug: "remove card" contains "move card" as substring, so card.move fires first
-        actionIntent.Should().Be("card.move",
-            because: "substring 'move card' appears inside 'remove card' — classifier ordering bug tracked in #571");
+        actionIntent.Should().Be("card.archive",
+            because: "archive/delete/remove checks now run before move checks");
     }
 
     [Theory]
@@ -85,7 +111,7 @@ public class LlmIntentClassifierTests
 
     #endregion
 
-    #region Board Operations — Current Supported Patterns
+    #region Board Operations — Exact Patterns (Backward Compatibility)
 
     [Theory]
     [InlineData("create board")]
@@ -123,21 +149,18 @@ public class LlmIntentClassifierTests
 
     #endregion
 
-    #region Non-Actionable — Should Return False
+    #region Board Operations — Natural Language (New)
 
     [Theory]
-    [InlineData("what is the weather today?")]
-    [InlineData("tell me about project management")]
-    [InlineData("how does taskdeck work?")]
-    [InlineData("explain the board layout")]
-    [InlineData("")]
-    [InlineData("hello")]
-    public void Classify_NonActionable_ShouldReturnFalse(string message)
+    [InlineData("set up a project board for Q2 planning")]
+    [InlineData("build out the sprint board with planning items")]
+    public void Classify_BoardCreation_ShouldDetect_NaturalLanguage(string message)
     {
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
 
-        isActionable.Should().BeFalse();
-        actionIntent.Should().BeNull();
+        isActionable.Should().BeTrue(
+            because: $"'{message}' expresses board creation intent");
+        actionIntent.Should().Be("board.create");
     }
 
     #endregion
@@ -222,100 +245,139 @@ public class LlmIntentClassifierTests
 
     #region Known Gaps — Natural Language Misses (Documents #570/#571)
 
-    /// <summary>
-    /// These tests document the current NLP gap where natural language phrasing
-    /// that expresses card creation intent is NOT detected by the classifier.
-    /// When #571 (improved classifier) is implemented, these should be updated
-    /// to assert IsActionable == true.
-    /// </summary>
     [Theory]
-    [InlineData("can you create new onboarding tasks for people who aren't technical?")]
-    // Note: "I need three new cards for the sprint" is NOT here because
-    // "new cards" contains "new card" as substring — it DOES match card.create.
-    // This is accidental correctness from substring matching, not intentional NLP.
-    [InlineData("set up a project board for Q2 planning")]
-    [InlineData("please add these items: meeting notes, code review, deployment")]
-    [InlineData("create some tasks for the onboarding process")]
-    [InlineData("could you make me a few cards for the backlog?")]
-    [InlineData("generate tasks for the release checklist")]
-    [InlineData("build out the sprint board with planning items")]
-    public void Classify_NaturalLanguage_CurrentlyMisses_CardCreationIntent(string message)
+    [InlineData("don't create task yet, just explain")]
+    [InlineData("do not create a card until I approve")]
+    [InlineData("don't add task please")]
+    [InlineData("never create tasks automatically")]
+    [InlineData("cancel the add task operation")]
+    public void Classify_Negation_ShouldReturnFalse(string message)
     {
-        // Documents current behavior: these natural language phrases are NOT detected
-        // See #570 and #571 for the improvement plan
         var (isActionable, _) = LlmIntentClassifier.Classify(message);
 
         isActionable.Should().BeFalse(
-            because: $"current classifier uses exact substring matching and misses natural phrasing: '{message}'. " +
-                     "This documents a known gap tracked in #570/#571.");
+            because: $"'{message}' contains a negation that should suppress the intent");
     }
 
     /// <summary>
-    /// Documents cases where words are present but not adjacent,
-    /// causing the substring matcher to miss them.
+    /// "stop creating cards" is non-actionable, but NOT because negation catches it.
+    /// The gerund "creating" doesn't match \bcreate\b in either the negation or
+    /// positive patterns. This documents a known gap: gerund forms are invisible
+    /// to both negation and classification.
     /// </summary>
-    [Theory]
-    [InlineData("create a new onboarding task")]      // "create" + gap + "task" — not "create task"
-    [InlineData("create three cards for deployment")]  // "create" + gap + "cards" — not "create card"
-    [InlineData("add several tasks to the board")]     // "add" + gap + "tasks" — not "add task"
-    public void Classify_WordGap_CurrentlyMisses(string message)
+    [Fact]
+    public void Classify_GerundForm_IsNonActionable_ButNotDueToNegation()
     {
-        // "create" and "task" are both present but not adjacent
-        // Current classifier requires exact substrings like "create task"
-        var (isActionable, _) = LlmIntentClassifier.Classify(message);
+        var (isActionable, _) = LlmIntentClassifier.Classify("stop creating cards");
 
-        // Note: some of these may currently match depending on exact wording.
-        // The point is to document the fragility of substring matching.
-        // If this test fails because the classifier DID match, that's fine —
-        // update the test to reflect reality.
-        if (!isActionable)
-        {
-            isActionable.Should().BeFalse(
-                because: "documents word-gap limitation in substring matching");
-        }
-    }
-
-    /// <summary>
-    /// Documents potential false positives where the classifier triggers
-    /// on keywords in non-actionable context.
-    /// </summary>
-    [Theory]
-    [InlineData("how do I create a card in Jira?")]           // Asking about another tool
-    [InlineData("don't create task yet, just explain")]        // Negation
-    [InlineData("I deleted the create card button by accident")] // Past tense / UI reference
-    public void Classify_FalsePositives_CurrentBehavior(string message)
-    {
-        // These SHOULD ideally be non-actionable but may trigger due to keyword presence
-        // Documents the false-positive gap tracked in #571
-        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
-
-        // Just document what happens — don't assert a specific expectation
-        // because these are edge cases that will be addressed in #571
-        if (isActionable)
-        {
-            // False positive: classifier triggered on keywords in non-actionable context
-            actionIntent.Should().NotBeNull(
-                because: "if actionable, intent should be set");
-        }
+        isActionable.Should().BeFalse(
+            because: "gerund 'creating' does not match \\bcreate\\b — neither negation nor positive patterns fire");
     }
 
     #endregion
 
-    #region Accidental Matches — Work Due to Substring Overlap
+    #region Negative Context — Questions About Other Tools
+
+    [Theory]
+    [InlineData("how do I create a card in Jira?")]
+    [InlineData("how can I add a task in Trello?")]
+    [InlineData("where do I create cards in Asana?")]
+    public void Classify_OtherToolQuestions_ShouldReturnFalse(string message)
+    {
+        var (isActionable, _) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeFalse(
+            because: $"'{message}' is a question about another tool, not a Taskdeck action");
+    }
 
     /// <summary>
-    /// These match by accident because the plural form contains the singular
-    /// as a substring (e.g., "new cards" contains "new card").
+    /// Commands (not questions) mentioning other tools should still classify,
+    /// because the user might be saying "create a card like I do in Jira".
     /// </summary>
     [Theory]
-    [InlineData("I need three new cards for the sprint")]  // "new cards" contains "new card"
-    [InlineData("create tasks for onboarding")]             // "create task" is in "create tasks"
-    public void Classify_AccidentalSubstringMatches_CurrentlyWork(string message)
+    [InlineData("create a card similar to what I have in Jira")]
+    [InlineData("add task, I used to do this in Trello")]
+    public void Classify_CommandsMentioningOtherTools_ShouldStillMatch(string message)
     {
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
 
-        isActionable.Should().BeTrue();
+        isActionable.Should().BeTrue(
+            because: $"'{message}' is a command, not a question about another tool");
         actionIntent.Should().Be("card.create");
+    }
+
+    #endregion
+
+    #region Non-Actionable — Should Return False
+
+    [Theory]
+    [InlineData("what is the weather today?")]
+    [InlineData("tell me about project management")]
+    [InlineData("how does taskdeck work?")]
+    [InlineData("explain the board layout")]
+    [InlineData("")]
+    [InlineData("hello")]
+    [InlineData("   ")]
+    public void Classify_NonActionable_ShouldReturnFalse(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeFalse();
+        actionIntent.Should().BeNull();
+    }
+
+    #endregion
+
+    #region Edge Cases
+
+    /// <summary>
+    /// Known false positive: "I deleted the create card button by accident"
+    /// contains the literal substring "create card", so it matches card.create.
+    /// Fixing this would require POS tagging or context analysis beyond keyword matching.
+    /// </summary>
+    [Fact]
+    public void Classify_PastTenseNarrative_IsKnownFalsePositive()
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(
+            "I deleted the create card button by accident");
+
+        isActionable.Should().BeTrue(
+            because: "substring 'create card' appears literally — known false positive");
+        actionIntent.Should().Be("card.create");
+    }
+
+    [Fact]
+    public void Classify_NullInput_ShouldReturnFalse()
+    {
+        // null is not valid for the parameter type, but whitespace-only is
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify("   \t  ");
+
+        isActionable.Should().BeFalse();
+        actionIntent.Should().BeNull();
+    }
+
+    [Fact]
+    public void Classify_VeryLongInput_ShouldNotHang()
+    {
+        // Ensure regex doesn't catastrophically backtrack on long input
+        var longMessage = "please " + string.Join(" ", Enumerable.Repeat("very", 200)) + " create a task for me";
+
+        // Should complete without timeout; may or may not match depending on word count limit
+        var (isActionable, _) = LlmIntentClassifier.Classify(longMessage);
+
+        // We just verify it completes without throwing
+        _ = isActionable;
+    }
+
+    [Fact]
+    public void Classify_MixedIntents_FirstMatchWins()
+    {
+        // "archive" is checked before "move" and "create"
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify("archive card and create task");
+
+        isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.archive",
+            because: "archive is checked before create in the classification order");
     }
 
     #endregion
@@ -326,11 +388,77 @@ public class LlmIntentClassifierTests
     [InlineData("CREATE CARD \"test\"")]
     [InlineData("Create Card \"test\"")]
     [InlineData("cReAtE cArD \"test\"")]
+    [InlineData("GENERATE TASKS for release")]
+    [InlineData("Build Some Tasks for sprint")]
     public void Classify_ShouldBeCaseInsensitive(string message)
     {
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
 
         isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.create");
+    }
+
+    #endregion
+
+    #region Plural Forms
+
+    [Theory]
+    [InlineData("create cards for the team")]
+    [InlineData("add tasks to the board")]
+    [InlineData("new items for sprint planning")]
+    [InlineData("make cards for each milestone")]
+    public void Classify_PluralForms_ShouldMatchCardCreate(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.create");
+    }
+
+    [Theory]
+    [InlineData("delete cards from the archive")]
+    [InlineData("remove tasks that are done")]
+    public void Classify_PluralForms_ShouldMatchCardArchive(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.archive");
+    }
+
+    #endregion
+
+    #region Broader Verb Coverage
+
+    [Theory]
+    [InlineData("generate a task for deployment")]
+    [InlineData("build a card for the feature")]
+    [InlineData("prepare tasks for the meeting")]
+    [InlineData("set up items for review")]
+    public void Classify_BroaderVerbs_ShouldMatchCardCreate(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeTrue();
+        actionIntent.Should().Be("card.create");
+    }
+
+    #endregion
+
+    #region Word-Distance Matching
+
+    [Theory]
+    [InlineData("create a new onboarding task")]
+    [InlineData("create three cards for deployment")]
+    [InlineData("add several tasks to the board")]
+    [InlineData("make me a couple of cards")]
+    [InlineData("generate some important tasks")]
+    public void Classify_WordGap_ShouldNowMatch(string message)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(message);
+
+        isActionable.Should().BeTrue(
+            because: $"'{message}' has verb and noun with words in between");
         actionIntent.Should().Be("card.create");
     }
 
