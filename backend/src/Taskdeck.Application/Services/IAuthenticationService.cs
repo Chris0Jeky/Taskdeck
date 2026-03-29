@@ -13,4 +13,5 @@ public interface IAuthenticationService
     Task<Result<AuthResultDto>> RegisterAsync(CreateUserDto dto);
     Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword);
     Task<Result<UserDto>> ValidateTokenAsync(string token);
+    Task<Result<AuthResultDto>> ExternalLoginAsync(ExternalLoginDto dto);
 }

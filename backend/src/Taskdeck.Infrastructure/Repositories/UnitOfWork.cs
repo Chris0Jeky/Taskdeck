@@ -36,7 +36,8 @@ public class UnitOfWork : IUnitOfWork
         IAgentProfileRepository agentProfiles,
         IAgentRunRepository agentRuns,
         IKnowledgeDocumentRepository knowledgeDocuments,
-        IKnowledgeChunkRepository knowledgeChunks)
+        IKnowledgeChunkRepository knowledgeChunks,
+        IExternalLoginRepository externalLogins)
     {
         _context = context;
         Boards = boards;
@@ -63,6 +64,7 @@ public class UnitOfWork : IUnitOfWork
         AgentRuns = agentRuns;
         KnowledgeDocuments = knowledgeDocuments;
         KnowledgeChunks = knowledgeChunks;
+        ExternalLogins = externalLogins;
     }
 
     public IBoardRepository Boards { get; }
@@ -89,6 +91,7 @@ public class UnitOfWork : IUnitOfWork
     public IAgentRunRepository AgentRuns { get; }
     public IKnowledgeDocumentRepository KnowledgeDocuments { get; }
     public IKnowledgeChunkRepository KnowledgeChunks { get; }
+    public IExternalLoginRepository ExternalLogins { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

@@ -115,6 +115,99 @@ public class AuthenticationService : IAuthenticationService
         }
     }
 
+    public async Task<Result<AuthResultDto>> ExternalLoginAsync(ExternalLoginDto dto)
+    {
+        try
+        {
+            if (!TryValidateJwtSettings(out var jwtValidationError))
+                return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, jwtValidationError);
+
+            if (string.IsNullOrWhiteSpace(dto.Provider))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Provider is required");
+
+            if (string.IsNullOrWhiteSpace(dto.ProviderUserId))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Provider user ID is required");
+
+            if (string.IsNullOrWhiteSpace(dto.Email))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Email is required");
+
+            if (string.IsNullOrWhiteSpace(dto.Username))
+                return Result.Failure<AuthResultDto>(ErrorCodes.ValidationError, "Username is required");
+
+            // Check if an external login already exists for this provider+userId
+            var existingLogin = await _unitOfWork.ExternalLogins.GetByProviderAsync(dto.Provider, dto.ProviderUserId);
+            if (existingLogin != null)
+            {
+                // Existing linked account — update profile and issue token
+                var existingUser = await _unitOfWork.Users.GetByIdAsync(existingLogin.UserId);
+                if (existingUser == null)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.NotFound, "Linked user account not found");
+
+                if (!existingUser.IsActive)
+                    return Result.Failure<AuthResultDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+                existingLogin.UpdateProfile(dto.DisplayName, dto.AvatarUrl);
+                await _unitOfWork.SaveChangesAsync();
+
+                var token = GenerateJwtToken(existingUser);
+                return Result.Success(new AuthResultDto(token, MapToDto(existingUser)));
+            }
+
+            // Security: Do NOT auto-link by email. An attacker could create a GitHub
+            // account with the same email as an existing Taskdeck user and take over
+            // their account, because GitHub does not guarantee email verification.
+            // Instead, always create a new account for unlinked external logins.
+
+            // New user — create account with a random unusable password hash
+            var normalizedEmail = dto.Email.Trim();
+            var normalizedUsername = dto.Username.Trim();
+
+            // If an account with this email already exists, generate a unique email
+            // to avoid conflicts. The user can link accounts manually later.
+            var candidateEmail = normalizedEmail;
+            if (await _unitOfWork.Users.GetByEmailAsync(candidateEmail) != null)
+            {
+                candidateEmail = $"{dto.Provider.ToLowerInvariant()}-{dto.ProviderUserId}@external.taskdeck.local";
+            }
+
+            // Ensure username uniqueness — append suffix if needed (capped to prevent DoS)
+            var candidateUsername = normalizedUsername;
+            var suffix = 0;
+            const int maxUsernameSuffixAttempts = 100;
+            while (await _unitOfWork.Users.GetByUsernameAsync(candidateUsername) != null)
+            {
+                suffix++;
+                if (suffix > maxUsernameSuffixAttempts)
+                {
+                    candidateUsername = $"{normalizedUsername}-{Guid.NewGuid():N}".Substring(0, 50);
+                    break;
+                }
+                candidateUsername = $"{normalizedUsername}{suffix}";
+            }
+
+            var randomPassword = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString());
+            var newUser = new User(candidateUsername, candidateEmail, randomPassword);
+
+            await _unitOfWork.Users.AddAsync(newUser);
+
+            var newExternalLogin = new ExternalLogin(newUser.Id, dto.Provider, dto.ProviderUserId, dto.DisplayName, dto.AvatarUrl);
+            await _unitOfWork.ExternalLogins.AddAsync(newExternalLogin);
+            await _unitOfWork.SaveChangesAsync();
+
+            var newToken = GenerateJwtToken(newUser);
+            return Result.Success(new AuthResultDto(newToken, MapToDto(newUser)));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<AuthResultDto>(ex.ErrorCode, ex.Message);
+        }
+        catch (Exception)
+        {
+            // Do not expose internal details in error messages
+            return Result.Failure<AuthResultDto>(ErrorCodes.UnexpectedError, "External login failed due to an unexpected error");
+        }
+    }
+
     public async Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
     {
         try
