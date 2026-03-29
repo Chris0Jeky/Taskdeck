@@ -265,7 +265,7 @@ onUnmounted(() => {
 
   .td-content {
     padding: var(--td-space-4);
-    overflow-x: hidden;
+    overflow-x: hidden; /* mobile safeguard — prevents horizontal scroll from wide content */
   }
 }
 </style>
