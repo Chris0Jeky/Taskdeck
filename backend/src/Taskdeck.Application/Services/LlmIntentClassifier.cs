@@ -130,17 +130,6 @@ public static class LlmIntentClassifier
 
     private static bool MatchesCardCreate(string lower)
     {
-        // Exact substring matches (backward compatible)
-        if (lower.Contains("create card") || lower.Contains("add card")
-            || lower.Contains("create a card") || lower.Contains("add a card")
-            || lower.Contains("create task") || lower.Contains("add task")
-            || lower.Contains("create a task") || lower.Contains("add a task")
-            || lower.Contains("new card") || lower.Contains("new task")
-            || lower.Contains("make a card") || lower.Contains("make a task")
-            || lower.Contains("make card") || lower.Contains("make task"))
-            return true;
-
-        // Regex-based natural language matching
         try
         {
             if (CardCreatePattern.IsMatch(lower))
@@ -158,9 +147,6 @@ public static class LlmIntentClassifier
 
     private static bool MatchesCardMove(string lower)
     {
-        if (lower.Contains("move card") || lower.Contains("move task"))
-            return true;
-
         try
         {
             if (CardMovePattern.IsMatch(lower))
@@ -173,11 +159,6 @@ public static class LlmIntentClassifier
 
     private static bool MatchesCardArchive(string lower)
     {
-        if (lower.Contains("archive card") || lower.Contains("delete card")
-            || lower.Contains("remove card") || lower.Contains("archive task")
-            || lower.Contains("delete task") || lower.Contains("remove task"))
-            return true;
-
         try
         {
             if (CardArchivePattern.IsMatch(lower))
@@ -190,11 +171,6 @@ public static class LlmIntentClassifier
 
     private static bool MatchesCardUpdate(string lower)
     {
-        if (lower.Contains("update card") || lower.Contains("edit card")
-            || lower.Contains("rename card") || lower.Contains("update task")
-            || lower.Contains("edit task") || lower.Contains("rename task"))
-            return true;
-
         try
         {
             if (CardUpdatePattern.IsMatch(lower))
@@ -207,10 +183,6 @@ public static class LlmIntentClassifier
 
     private static bool MatchesBoardCreate(string lower)
     {
-        if (lower.Contains("create board") || lower.Contains("add board")
-            || lower.Contains("new board"))
-            return true;
-
         try
         {
             if (BoardCreatePattern.IsMatch(lower))
@@ -223,9 +195,6 @@ public static class LlmIntentClassifier
 
     private static bool MatchesBoardRename(string lower)
     {
-        if (lower.Contains("rename board"))
-            return true;
-
         try
         {
             if (BoardRenamePattern.IsMatch(lower))
@@ -238,12 +207,6 @@ public static class LlmIntentClassifier
 
     private static bool MatchesReorder(string lower)
     {
-        if (lower.Contains("reorder cards") || lower.Contains("reorder column")
-            || lower.Contains("reorder columns") || lower.Contains("reorder board")
-            || lower.Contains("sort cards") || lower.Contains("sort column")
-            || lower.Contains("sort columns") || lower.Contains("sort board"))
-            return true;
-
         try
         {
             if (ReorderPattern.IsMatch(lower))
