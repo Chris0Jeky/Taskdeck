@@ -50,7 +50,7 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
             sql += " ORDER BY rank LIMIT {3}";
 
             var resultsWithBoard = await _context.Database
-                .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), boardId.Value.ToString(), limit)
+                .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString().ToUpperInvariant(), boardId.Value.ToString().ToUpperInvariant(), limit)
                 .ToListAsync(cancellationToken);
 
             return resultsWithBoard.Select(MapRowToDto).Where(r => r.DocumentId != Guid.Empty);
@@ -59,10 +59,38 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
         sql += " ORDER BY rank LIMIT {2}";
 
         var results = await _context.Database
-            .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString(), limit)
+            .SqlQueryRaw<KnowledgeSearchRow>(sql, sanitizedQuery, userId.ToString().ToUpperInvariant(), limit)
             .ToListAsync(cancellationToken);
 
         return results.Select(MapRowToDto).Where(r => r.DocumentId != Guid.Empty);
+    }
+
+    public async Task UpdateFtsIndexAsync(
+        Guid documentId,
+        string title,
+        string content,
+        CancellationToken cancellationToken = default)
+    {
+        // Delete old FTS entry and insert new one
+        await _context.Database.ExecuteSqlRawAsync(
+            "DELETE FROM KnowledgeDocumentsFts WHERE document_id = {0}",
+            new object[] { documentId.ToString().ToUpperInvariant() },
+            cancellationToken);
+
+        await _context.Database.ExecuteSqlRawAsync(
+            "INSERT INTO KnowledgeDocumentsFts(title, content, document_id) VALUES ({0}, {1}, {2})",
+            new object[] { title, content, documentId.ToString().ToUpperInvariant() },
+            cancellationToken);
+    }
+
+    public async Task DeleteFtsIndexAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        await _context.Database.ExecuteSqlRawAsync(
+            "DELETE FROM KnowledgeDocumentsFts WHERE document_id = {0}",
+            new object[] { documentId.ToString().ToUpperInvariant() },
+            cancellationToken);
     }
 
     internal static string SanitizeFtsQuery(string query)
@@ -95,8 +123,8 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
         if (!string.IsNullOrEmpty(row.BoardId) && Guid.TryParse(row.BoardId, out var parsedBoardId))
             boardId = parsedBoardId;
 
-        var sourceType = Enum.TryParse<KnowledgeSourceType>(row.SourceType?.ToString(), out var parsed)
-            ? parsed
+        var sourceType = row.SourceType.HasValue && Enum.IsDefined(typeof(KnowledgeSourceType), row.SourceType.Value)
+            ? (KnowledgeSourceType)row.SourceType.Value
             : KnowledgeSourceType.Manual;
 
         var documentId = Guid.TryParse(row.DocumentId, out var parsedDocId)
@@ -127,7 +155,7 @@ internal class KnowledgeSearchRow
     public string Snippet { get; set; } = string.Empty;
     public double Rank { get; set; }
     public string? BoardId { get; set; }
-    public string? SourceType { get; set; }
+    public int? SourceType { get; set; }
     public string? Tags { get; set; }
     public string CreatedAt { get; set; } = string.Empty;
 }

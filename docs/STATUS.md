@@ -424,14 +424,14 @@ Documentation baseline for this track:
 
 ## Managed-Key Abuse-Control Track (2026-02-23)
 
-To capture the security and operational risk of letting users consume model calls via a platform-managed provider key, a dedicated control wave was seeded. Identity attribution foundation is now delivered via `#236`; remaining controls stay in this wave:
+To capture the security and operational risk of letting users consume model calls via a platform-managed provider key, a dedicated control wave was seeded. Identity attribution foundation is now delivered via `#236`; user-facing usage policy is now delivered via `#240`. Remaining controls stay in this wave:
 
 - `#235` tracker: managed-key threat model and control sequencing
-- `#236` identity attribution contract for managed-key requests (`Priority II`)
+- `#236` identity attribution contract for managed-key requests (`Priority II`) -- delivered
 - `#237` quota/budget/kill-switch guardrails (`Priority II`)
 - `#238` abuse detection + automated containment (`Priority III`)
 - `#239` incident response + key rotation drills (`Priority III`)
-- `#240` user-facing fair-use and abuse consequence policy (`Priority III`)
+- `#240` user-facing fair-use and abuse consequence policy (`Priority III`) -- delivered: `docs/security/MANAGED_KEY_USAGE_POLICY.md`
 
 ## Frontend Premium UI Wave (2026-02-23)
 
@@ -636,7 +636,7 @@ Security and identity:
 
 Automation and data:
 - active LLM provider policy supports explicit mock vs live-provider switching (`OpenAI`/`Gemini`) with safe defaults for development/test environments
-- managed-key shared-token controls are partially shipped: identity attribution baseline is delivered (`#236`); remaining quota/abuse/incident/policy follow-through is tracked in `#235`, `#237`, `#238`, `#239`, and `#240`
+- managed-key shared-token controls are partially shipped: identity attribution baseline is delivered (`#236`), user-facing usage policy is delivered (`#240`, `docs/security/MANAGED_KEY_USAGE_POLICY.md`); remaining quota/abuse/incident follow-through is tracked in `#235`, `#237`, `#238`, and `#239`
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible

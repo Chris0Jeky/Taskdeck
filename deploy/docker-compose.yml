@@ -16,6 +16,10 @@ services:
       Jwt__Issuer: ${TASKDECK_JWT_ISSUER:-Taskdeck}
       Jwt__Audience: ${TASKDECK_JWT_AUDIENCE:-TaskdeckUsers}
       Jwt__ExpirationMinutes: ${TASKDECK_JWT_EXPIRATION_MINUTES:-1440}
+      Llm__EnableLiveProviders: ${TASKDECK_LLM_ENABLE_LIVE_PROVIDERS:-false}
+      Llm__Provider: ${TASKDECK_LLM_PROVIDER:-Mock}
+      Llm__OpenAi__ApiKey: ${TASKDECK_LLM_OPENAI_API_KEY:-}
+      Llm__Gemini__ApiKey: ${TASKDECK_LLM_GEMINI_API_KEY:-}
       DevelopmentSandbox__Enabled: "false"
     volumes:
       - taskdeck-db:/app/data
