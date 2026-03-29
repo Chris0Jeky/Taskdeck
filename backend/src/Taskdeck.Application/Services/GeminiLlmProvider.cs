@@ -38,13 +38,25 @@ public class GeminiLlmProvider : ILlmProvider
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
             message.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
+            var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
+            var allMessages = new List<object>
+            {
+                new
+                {
+                    role = "user",
+                    parts = new[] { new { text = systemPrompt } }
+                }
+            };
+            allMessages.AddRange(request.Messages.Select(MapMessage));
+
             message.Content = JsonContent.Create(new
             {
-                contents = request.Messages.Select(MapMessage).ToArray(),
+                contents = allMessages.ToArray(),
                 generationConfig = new
                 {
                     temperature = request.Temperature,
-                    maxOutputTokens = request.MaxTokens
+                    maxOutputTokens = request.MaxTokens,
+                    responseMimeType = "application/json"
                 }
             });
 
@@ -65,6 +77,25 @@ public class GeminiLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.", GetConfiguredModelOrDefault());
             }
 
+            // Try to parse structured instruction extraction from the LLM response
+            if (LlmInstructionExtractionPrompt.TryParseStructuredResponse(
+                    content,
+                    out var structuredReply,
+                    out var structuredActionable,
+                    out var structuredInstructions))
+            {
+                return new LlmCompletionResult(
+                    structuredReply,
+                    tokensUsed,
+                    structuredActionable,
+                    structuredActionable ? "llm.extracted" : null,
+                    "Gemini",
+                    GetConfiguredModelOrDefault(),
+                    Instructions: structuredInstructions.Count > 0 ? structuredInstructions : null);
+            }
+
+            // Fallback to static classifier when structured parse fails
+            _logger.LogDebug("Gemini response was not structured JSON; falling back to static classifier.");
             var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
             return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "Gemini", GetConfiguredModelOrDefault());
         }
