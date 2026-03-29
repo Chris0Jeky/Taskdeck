@@ -103,7 +103,7 @@ public class LlmQuotaApiTests : IClassFixture<TestWebApplicationFactory>
         var json = JsonSerializer.Deserialize<JsonElement>(body);
         json.TryGetProperty("globalKilled", out _).Should().BeTrue();
         json.TryGetProperty("entries", out var entries).Should().BeTrue();
-        entries.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+        entries.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
     }
 
     [Fact]

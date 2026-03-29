@@ -102,12 +102,8 @@ public static class ApiTestHarness
         }
         catch (JsonException ex)
         {
-            Execute.Assertion.FailWith(
-                "Expected a JSON error contract body for {0}, but parsing failed: {1}. Body: {2}",
-                expectedStatus,
-                ex.Message,
-                rawBody);
-            return;
+            throw new XunitException(
+                $"Expected a JSON error contract body for {expectedStatus}, but parsing failed: {ex.Message}. Body: {rawBody}");
         }
 
         payload.ValueKind.Should().Be(JsonValueKind.Object);

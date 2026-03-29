@@ -134,7 +134,7 @@ public class OpsCliApiTests : IClassFixture<TestWebApplicationFactory>
             var payload = await response.Content.ReadFromJsonAsync<CommandRunDto>();
             payload.Should().NotBeNull();
             payload!.CorrelationId.Should().NotBe(invalidCorrelationId);
-            payload.CorrelationId.Length.Should().BeLessOrEqualTo(100);
+            payload.CorrelationId.Length.Should().BeLessThanOrEqualTo(100);
 
             response.Headers.TryGetValues("X-Request-Id", out var responseRequestIds).Should().BeTrue();
             responseRequestIds!.Single().Should().Be(payload.CorrelationId);

@@ -98,7 +98,7 @@ public class ArchiveApiTests : IClassFixture<TestWebApplicationFactory>
 
         var items = await response.Content.ReadFromJsonAsync<List<ArchiveItemDto>>();
         items.Should().NotBeNull();
-        items!.Count.Should().BeLessOrEqualTo(5);
+        items!.Count.Should().BeLessThanOrEqualTo(5);
     }
 
     [Fact]

@@ -306,9 +306,9 @@ public class LlmUsageRecordingIntegrationTests : IClassFixture<TestWebApplicatio
         var usage = await usageResponse.Content.ReadFromJsonAsync<JsonElement>();
 
         usage.GetProperty("totalRequests").GetInt64().Should().Be(messageCount);
-        usage.GetProperty("totalTokens").GetInt64().Should().BeGreaterOrEqualTo(0);
-        usage.GetProperty("totalInputTokens").GetInt64().Should().BeGreaterOrEqualTo(0);
-        usage.GetProperty("totalOutputTokens").GetInt64().Should().BeGreaterOrEqualTo(0);
+        usage.GetProperty("totalTokens").GetInt64().Should().BeGreaterThanOrEqualTo(0);
+        usage.GetProperty("totalInputTokens").GetInt64().Should().BeGreaterThanOrEqualTo(0);
+        usage.GetProperty("totalOutputTokens").GetInt64().Should().BeGreaterThanOrEqualTo(0);
 
         // Verify window boundaries are present
         usage.TryGetProperty("windowStart", out _).Should().BeTrue();
@@ -342,7 +342,7 @@ public class LlmUsageRecordingIntegrationTests : IClassFixture<TestWebApplicatio
         afterResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var after = await afterResponse.Content.ReadFromJsonAsync<JsonElement>();
         after.GetProperty("requestsThisHour").GetInt64().Should().Be(1);
-        after.GetProperty("tokensUsedToday").GetInt64().Should().BeGreaterOrEqualTo(0);
+        after.GetProperty("tokensUsedToday").GetInt64().Should().BeGreaterThanOrEqualTo(0);
     }
 }
 
