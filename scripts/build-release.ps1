@@ -40,6 +40,10 @@ $FrontendDir  = Join-Path $RepoRoot "frontend\taskdeck-web"
 $FrontendDist = Join-Path $FrontendDir "dist"
 
 $ApiProject  = Join-Path $RepoRoot "backend\src\Taskdeck.Api\Taskdeck.Api.csproj"
+# NOTE: PKG-01 (#533) must be merged before UseStaticFiles / wwwroot serving is configured
+# in the .NET API (Program.cs / PipelineConfiguration.cs). Until that PR lands, the published
+# binary will NOT serve the SPA — it will return 404 for the frontend routes. Do not ship
+# a release artifact built from main until PKG-01 is merged.
 $Wwwroot     = Join-Path $RepoRoot "backend\src\Taskdeck.Api\wwwroot"
 
 $OutputBase  = Join-Path $RepoRoot "artifacts\publish"
@@ -111,12 +115,11 @@ function Build-Frontend {
 function Copy-ToWwwroot {
     Write-Step "Step 2/3 - Copying dist/ -> wwwroot/..."
 
-    if (-not (Test-Path $Wwwroot)) {
-        New-Item -ItemType Directory -Path $Wwwroot -Force | Out-Null
-    } else {
-        # Clear previous contents so stale files don't accumulate
-        Get-ChildItem -Path $Wwwroot | Remove-Item -Recurse -Force
+    # Wipe and recreate to avoid stale files accumulating across builds
+    if (Test-Path $Wwwroot) {
+        Remove-Item -Path $Wwwroot -Recurse -Force
     }
+    New-Item -ItemType Directory -Path $Wwwroot -Force | Out-Null
 
     Copy-Item -Path "$FrontendDist\*" -Destination $Wwwroot -Recurse -Force
     Write-Step "Copied to wwwroot: $Wwwroot"
@@ -133,6 +136,9 @@ function Publish-Backend {
         Write-Fatal "API project file not found: $ApiProject"
     }
 
+    # TRIM WARNING: PublishTrimmed=true can silently break reflection-heavy code paths
+    # (EF Core migrations, ASP.NET DI conventions, System.Text.Json, SignalR).
+    # Validate the trimmed artifact with a smoke test before shipping.
     & dotnet publish $ApiProject `
         -c Release `
         -r $Rid `
