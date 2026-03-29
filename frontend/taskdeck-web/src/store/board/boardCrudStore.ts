@@ -7,8 +7,21 @@ import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
+// Minimum gap between board-list fetches.  Multiple views (BoardsListView,
+// ActivityView, ReviewView, etc.) can call fetchBoards on mount in quick
+// succession; the throttle guard prevents duplicate network round-trips.
+const FETCH_BOARDS_THROTTLE_MS = 5000
+
 export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
+  let lastFetchBoardsAt = 0
+
   async function fetchBoards(search?: string, includeArchived = false) {
+    const now = Date.now()
+    // Allow forced refreshes (search/archive filter changes) to bypass throttle.
+    const isFilteredRequest = !!search || includeArchived
+    if (!isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
+      return
+    }
     if (helpers.isDemoMode) {
       state.loading.value = true
       state.error.value = null
@@ -21,6 +34,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       state.loading.value = true
       state.error.value = null
       const freshBoards = await boardsApi.getBoards(search, includeArchived)
+      lastFetchBoardsAt = Date.now()
       state.boards.value = freshBoards
 
       // Preserve selection guard: only update activeBoardId if there is no
