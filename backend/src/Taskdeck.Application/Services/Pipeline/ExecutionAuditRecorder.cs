@@ -46,7 +46,7 @@ public class ExecutionAuditRecorder
         await _unitOfWork.AuditLogs.AddAsync(auditLog, cancellationToken);
     }
 
-    internal static (string EntityType, Guid EntityId) ResolveAuditEntity(ProposalOperationDto operation, ProposalDto proposal)
+    public static (string EntityType, Guid EntityId) ResolveAuditEntity(ProposalOperationDto operation, ProposalDto proposal)
     {
         if (!string.IsNullOrWhiteSpace(operation.TargetId) && Guid.TryParse(operation.TargetId, out var targetId))
             return (operation.TargetType, targetId);
@@ -69,7 +69,7 @@ public class ExecutionAuditRecorder
         return ("automation-proposal", proposal.Id);
     }
 
-    internal static string BuildAuditChanges(ProposalOperationDto operation, ProposalDto proposal)
+    public static string BuildAuditChanges(ProposalOperationDto operation, ProposalDto proposal)
     {
         var parameterPreview = operation.Parameters.Length <= 500
             ? operation.Parameters
