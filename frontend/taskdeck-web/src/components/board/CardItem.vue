@@ -41,6 +41,14 @@ function handleDragEnd() {
   emit('dragend')
 }
 
+function handleDragHandleMouseDown() {
+  // Clear any active text selection so the browser initiates a card drag
+  // instead of treating the interaction as a text-drag. Without this, a prior
+  // text selection inside the card prevents the drag handle from working until
+  // the selection is cleared by clicking elsewhere. Fixes #515.
+  window.getSelection()?.removeAllRanges()
+}
+
 function formatDate(dateString: string | null): string {
   if (!dateString) return ''
   const date = new Date(dateString)
@@ -79,6 +87,7 @@ function isOverdue(dateString: string | null): boolean {
       title="Drag Card"
       aria-label="Drag Card"
       @click.stop
+      @mousedown="handleDragHandleMouseDown"
     >
       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
@@ -194,6 +203,14 @@ function isOverdue(dateString: string | null): boolean {
 
 .td-board-card:hover .td-board-card__indicator {
   opacity: 1;
+}
+
+/* ── Drag handle — prevent text-selection interference with drag ── */
+.td-card-drag-handle {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 /* ── Drag handle label ── */

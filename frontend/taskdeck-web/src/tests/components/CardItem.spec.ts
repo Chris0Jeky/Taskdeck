@@ -72,3 +72,41 @@ describe('CardItem drag guardrails', () => {
     expect(wrapper.emitted('dragstart')).toEqual([[card]])
   })
 })
+
+describe('CardItem drag handle — text selection clearing', () => {
+  it('clears an active text selection when the drag handle is mousedown-ed', async () => {
+    const card = createCard()
+    const wrapper = mount(CardItem, { props: { card } })
+
+    // Build a real DOM range over the card title text and add it to the selection
+    const selection = window.getSelection()
+    if (!selection) return // JSDOM always provides getSelection; guard for type safety
+
+    const titleEl = wrapper.get('.td-board-card__title').element
+    const range = document.createRange()
+    range.selectNodeContents(titleEl)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    expect(selection.toString()).toBe(card.title)
+
+    // Trigger mousedown on the drag handle
+    await wrapper.get('[data-action="drag-card-handle"]').trigger('mousedown')
+
+    // Selection must be cleared
+    expect(selection.toString()).toBe('')
+  })
+
+  it('does not throw when getSelection returns null', async () => {
+    vi.stubGlobal('getSelection', () => null)
+
+    const wrapper = mount(CardItem, {
+      props: { card: createCard() },
+    })
+
+    await expect(
+      wrapper.get('[data-action="drag-card-handle"]').trigger('mousedown'),
+    ).resolves.not.toThrow()
+
+    vi.unstubAllGlobals()
+  })
+})
