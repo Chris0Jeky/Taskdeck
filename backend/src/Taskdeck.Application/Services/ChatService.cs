@@ -235,7 +235,6 @@ public class ChatService : IChatService
                             ? llmResult.Instructions
                             : new List<string> { dto.Content };
 
-                        Result<ProposalDto>? firstSuccess = null;
                         Result<ProposalDto>? lastFailure = null;
                         var proposalIds = new List<Guid>();
 
@@ -251,7 +250,6 @@ public class ChatService : IChatService
 
                             if (proposalResult.IsSuccess)
                             {
-                                firstSuccess ??= proposalResult;
                                 proposalIds.Add(proposalResult.Value.Id);
                             }
                             else
