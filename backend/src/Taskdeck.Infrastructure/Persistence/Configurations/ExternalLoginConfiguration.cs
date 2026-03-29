@@ -35,6 +35,12 @@ public class ExternalLoginConfiguration : IEntityTypeConfiguration<ExternalLogin
         builder.Property(e => e.UpdatedAt)
             .IsRequired();
 
+        // Foreign key to Users with cascading delete
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(e => e.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         // Unique constraint: one external login per provider+providerUserId
         builder.HasIndex(e => new { e.Provider, e.ProviderUserId })
             .IsUnique();
