@@ -13,6 +13,9 @@
  *
  * This pack is NOT part of required CI. It is intended for local operator audits,
  * pre-release sanity checks, and visual debugging sessions.
+ *
+ * Gated behind TASKDECK_RUN_AUDIT=1. The npm script sets this automatically:
+ *   npm run test:e2e:audit:headed
  */
 
 import { expect, test } from '@playwright/test'
@@ -25,6 +28,8 @@ import {
   waitForCardWithTitle,
   waitForProposalCreated,
 } from './support/captureFlow'
+
+const runAudit = parseTrueishEnv(process.env.TASKDECK_RUN_AUDIT)
 
 test.use({
   screenshot: 'on',
@@ -41,6 +46,7 @@ test.beforeEach(async ({ page, request }) => {
 })
 
 test.describe('Core loop: Home -> Inbox/Capture -> Review -> Board', () => {
+  test.skip(!runAudit, 'Set TASKDECK_RUN_AUDIT=1 or use npm run test:e2e:audit:headed')
   test('full capture-triage-review-apply loop with screenshots', async ({ page, request }, testInfo) => {
     // Step 1: Home landing
     await page.goto('/workspace/home')
@@ -131,6 +137,8 @@ test.describe('Core loop: Home -> Inbox/Capture -> Review -> Board', () => {
 })
 
 test.describe('Advanced checks', () => {
+  test.skip(!runAudit, 'Set TASKDECK_RUN_AUDIT=1 or use npm run test:e2e:audit:headed')
+
   test('command palette search navigates to inbox', async ({ page }, testInfo) => {
     await page.goto('/workspace/boards')
     await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
@@ -218,6 +226,7 @@ test.describe('Advanced checks', () => {
 })
 
 test.describe('Live LLM provider probe', () => {
+  test.skip(!runAudit, 'Set TASKDECK_RUN_AUDIT=1 or use npm run test:e2e:audit:headed')
   test.skip(
     !parseTrueishEnv(process.env.TASKDECK_RUN_LIVE_LLM_TESTS),
     'Set TASKDECK_RUN_LIVE_LLM_TESTS=1 to run the opt-in live-provider probe.',

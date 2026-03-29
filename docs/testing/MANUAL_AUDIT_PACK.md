@@ -64,7 +64,7 @@ Screenshots are saved as `01-home.png`, `02-inbox-with-capture.png`, etc. in the
 
 ## CI Exclusion
 
-The `manual-audit.spec.ts` file is listed in `playwright.config.ts` under `testIgnore`, so `npm run test:e2e` (the default CI command) skips it. The dedicated `npm run test:e2e:audit:headed` script explicitly targets the file, bypassing `testIgnore`.
+All tests in `manual-audit.spec.ts` are gated behind `TASKDECK_RUN_AUDIT=1`. When `npm run test:e2e` runs in CI, the env var is unset and all audit tests are skipped. The dedicated `npm run test:e2e:audit:headed` script sets the env var automatically.
 
 ## Configuration
 

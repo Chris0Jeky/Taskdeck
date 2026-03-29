@@ -41,7 +41,6 @@ for (const [index, origin] of backendCorsOrigins.entries()) {
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testIgnore: ['**/manual-audit.spec.ts'],
   forbidOnly: !!process.env.CI,
   fullyParallel: false,
   workers: process.env.CI ? 1 : undefined,
