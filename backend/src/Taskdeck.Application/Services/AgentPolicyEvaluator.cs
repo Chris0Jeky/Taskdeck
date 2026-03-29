@@ -126,7 +126,7 @@ public sealed class AgentPolicyEvaluator : IAgentPolicyEvaluator
 
         try
         {
-            var doc = JsonDocument.Parse(policyJson);
+            using var doc = JsonDocument.Parse(policyJson);
             var root = doc.RootElement;
 
             var allowedTools = new List<string>();
