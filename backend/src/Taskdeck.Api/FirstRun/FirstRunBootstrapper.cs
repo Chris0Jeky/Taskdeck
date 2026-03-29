@@ -204,27 +204,17 @@ public static class FirstRunBootstrapper
     private static string ExtractDataSource(string connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
+            return string.Empty;
+
+        try
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+            return builder.DataSource;
+        }
+        catch (ArgumentException)
         {
             return string.Empty;
         }
-
-        foreach (var part in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var eq = part.IndexOf('=', StringComparison.Ordinal);
-            if (eq < 0)
-            {
-                continue;
-            }
-
-            var key = part[..eq].Trim();
-            if (key.Equals("Data Source", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("DataSource", StringComparison.OrdinalIgnoreCase))
-            {
-                return part[(eq + 1)..].Trim();
-            }
-        }
-
-        return string.Empty;
     }
 
     private static void PersistConnectionString(string connectionString)
