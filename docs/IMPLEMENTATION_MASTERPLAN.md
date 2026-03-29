@@ -647,22 +647,69 @@ These continue in parallel where they protect trust, performance, or operator po
 
 ## Release Framing
 
-- `R1` novice-first beta:
-  - `Home`
-  - `Today`
-  - `Review`
-  - onboarding/help coherence
-  - readable proposals
-  - board-centered action rails
+### Platform Release Plan (2026-03-29)
+
+The release plan now spans packaging, cloud, mobile, and collaboration — not just feature milestones.
+Strategy documents: `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar docs.
+Master tracker: `#531`.
+
+- `v0.1.0` **First Light** (target: Week 1-2):
+  - P0 blocker fixes (`#508`, `#509`)
+  - self-contained single-file executable (Windows + Linux + macOS)
+  - auto-config (JWT, DB path, browser launch)
+  - GitHub Release with cross-platform downloads
+  - polished README with demo GIF
+  - 90-second demo video
+  - packaging wave: `#532` → `#533`, `#534`, `#535`, `#536`
+  - GTM wave: `#544` → `#545`, `#546`
+
+- `v0.2.0` **Open Doors** (target: Week 3-5):
+  - hosted cloud instance on Railway/Render (`#537` → `#538`)
+  - GitHub OAuth login (`#539`)
+  - custom domain and TLS
+  - Show HN, Reddit, Dev.to launch
+  - landing page on custom domain
+
+- `v0.3.0` **In Your Pocket** (target: Week 6-9):
+  - PWA manifest + service worker (`#540` → `#541`, `#542`)
+  - mobile-responsive CSS for core flows (`#543`)
+  - bottom tab navigation for mobile
+  - touch-optimized capture modal
+  - mobile board view (card list)
+  - web push notifications
+
+- `v0.4.0` **Bring Friends** (target: Week 10-14):
+  - board sharing with permission levels
+  - workspace invitations
+  - email notification delivery
+  - activity feed per board
+
+- `v0.5.0` **Power Up** (target: Week 15-20):
+  - platform installers (Inno Setup, DMG, AppImage)
+  - package manager listings (winget, Homebrew, Snap)
+  - Google Play listing (TWA/Capacitor)
+  - PostgreSQL backend option for cloud
+  - free/pro tier limits and billing
+
+- `v1.0.0` **Generally Available** (target: Month 6-8):
+  - Apple App Store listing (via Capacitor)
+  - workspace/team/organization model
+  - local + cloud sync (API-based)
+  - optional Tauri 2.0 native desktop shell
+  - agent substrate (inspectable runs, bounded templates)
+
+### Feature Milestones (Original)
+
+- `R1` novice-first beta (largely delivered — maps to v0.1.0/v0.2.0):
+  - `Home`, `Today`, `Review`, onboarding/help coherence
+  - readable proposals, board-centered action rails
   - no raw-ID requirements in common flows
-- `R2` agent foundation alpha:
-  - `AgentProfile`
-  - `AgentRun`
-  - `AgentRunEvent`
+- `R2` agent foundation alpha (maps to v1.0.0+):
+  - `AgentProfile`, `AgentRun`, `AgentRunEvent`
   - tool registry and policy evaluator (delivered in AGT-02)
   - first bounded template (delivered: `InboxTriageAssistant`)
   - inspectable run detail
-- `R3` knowledge/integrations alpha:
+- `R3` knowledge/integrations alpha (post-v1.0.0):
   - `KnowledgeDocument` / `KnowledgeChunk`
   - SQLite FTS search
   - integrations registry
@@ -729,6 +776,19 @@ These continue in parallel where they protect trust, performance, or operator po
   - `#337` tool registry, policy evaluator, and first bounded template (delivered)
   - `#339` knowledge document + SQLite FTS foundation
 - Reuse-before-duplicate anchors for this later wave: `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, `#328`
+
+### Platform Expansion Wave (2026-03-29 — Priority II)
+
+Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents.
+
+- Master strategy tracker: `#531`
+- Packaging and distribution wave: `#532` → `#533` (SPA serving), `#534` (build script), `#535` (release workflow), `#536` (first-run config)
+- Cloud and collaboration wave: `#537` → `#538` (cloud deploy), `#539` (GitHub OAuth)
+- Mobile platform wave: `#540` → `#541` (PWA manifest), `#542` (service worker), `#543` (mobile responsive)
+- Market adoption and GTM wave: `#544` → `#545` (README polish), `#546` (demo video), `#547` (LICENSE)
+- Cross-cutting: `#548` (legal/privacy), `#549` (analytics/error tracking), `#550` (brand/domain)
+- Reuse anchors: `#95` (PWA readiness), `#87` (mobile E2E), `#111` (cloud topology), `#105` (SignalR scale-out), `#216` (GTM execution), `#341` (telemetry)
+- Execution order: `v0.1.0` packaging → `v0.2.0` cloud → `v0.3.0` mobile → `v0.4.0` collab → `v0.5.0` maturity → `v1.0.0` GA
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
