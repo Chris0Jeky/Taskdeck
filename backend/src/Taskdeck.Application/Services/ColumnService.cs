@@ -1,4 +1,4 @@
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -98,11 +98,11 @@ public class ColumnService
     private static string BuildColumnChangeSummary(UpdateColumnDto dto, string oldName, int? oldWipLimit, int oldPosition)
     {
         var parts = new List<string>();
-        if (dto.Name != null)
+        if (dto.Name != null && dto.Name != oldName)
             parts.Add($"Name: '{oldName}' -> '{dto.Name}'");
-        if (dto.WipLimit.HasValue)
+        if (dto.WipLimit.HasValue && dto.WipLimit.Value != oldWipLimit)
             parts.Add($"WipLimit: {oldWipLimit?.ToString() ?? "none"} -> {dto.WipLimit.Value}");
-        if (dto.Position.HasValue)
+        if (dto.Position.HasValue && dto.Position.Value != oldPosition)
             parts.Add($"Position: {oldPosition} -> {dto.Position.Value}");
         return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }

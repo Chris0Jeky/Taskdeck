@@ -1,4 +1,4 @@
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -88,9 +88,9 @@ public class LabelService
     private static string BuildLabelChangeSummary(UpdateLabelDto dto, string oldName, string oldColorHex)
     {
         var parts = new List<string>();
-        if (dto.Name != null)
+        if (dto.Name != null && dto.Name != oldName)
             parts.Add($"Name: '{oldName}' -> '{dto.Name}'");
-        if (dto.ColorHex != null)
+        if (dto.ColorHex != null && dto.ColorHex != oldColorHex)
             parts.Add($"Color: '{oldColorHex}' -> '{dto.ColorHex}'");
         return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }

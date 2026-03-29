@@ -1,4 +1,4 @@
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -175,14 +175,19 @@ public class CardService
         List<Guid> oldLabelIds)
     {
         var parts = new List<string>();
-        if (dto.Title != null)
+        if (dto.Title != null && dto.Title != oldTitle)
             parts.Add($"Title: '{oldTitle}' -> '{dto.Title}'");
-        if (dto.Description != null)
+        if (dto.Description != null && dto.Description != oldDescription)
             parts.Add("Description changed");
-        if (dto.DueDate.HasValue)
+        if (dto.DueDate.HasValue && dto.DueDate.Value != oldDueDate)
             parts.Add($"DueDate: '{oldDueDate?.ToString("O") ?? "none"}' -> '{dto.DueDate.Value:O}'");
         if (dto.IsBlocked.HasValue && dto.IsBlocked.Value != oldIsBlocked)
-            parts.Add(dto.IsBlocked.Value ? $"Blocked: {dto.BlockReason ?? "no reason"}" : "Unblocked");
+        {
+            if (dto.IsBlocked.Value && !string.IsNullOrEmpty(dto.BlockReason) && !oldIsBlocked)
+                parts.Add($"Blocked: {dto.BlockReason}");
+            else if (!dto.IsBlocked.Value && oldIsBlocked)
+                parts.Add("Unblocked");
+        }
         if (dto.LabelIds != null)
         {
             var newLabelIds = dto.LabelIds.OrderBy(id => id).ToList();

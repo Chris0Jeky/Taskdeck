@@ -1,4 +1,4 @@
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -194,7 +194,7 @@ public class BoardService
             if (dto.IsArchived == true)
                 await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: changeSummary);
             else if (dto.IsArchived == false)
-                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: changeSummary);
+                await SafeLogAsync("board", board.Id, AuditAction.Unarchived, changes: changeSummary);
             else
                 await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: changeSummary);
             return Result.Success(MapToDto(board));
@@ -208,9 +208,9 @@ public class BoardService
     private static string BuildBoardChangeSummary(UpdateBoardDto dto, string oldName, string? oldDescription, bool oldIsArchived)
     {
         var parts = new List<string>();
-        if (dto.Name != null)
+        if (dto.Name != null && dto.Name != oldName)
             parts.Add($"Name: '{oldName}' -> '{dto.Name}'");
-        if (dto.Description != null)
+        if (dto.Description != null && dto.Description != oldDescription)
             parts.Add($"Description changed");
         if (dto.IsArchived.HasValue && dto.IsArchived.Value != oldIsArchived)
             parts.Add(dto.IsArchived.Value ? "Archived" : "Unarchived");
