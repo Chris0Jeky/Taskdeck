@@ -21,6 +21,7 @@ const router = useRouter()
 // Form state
 const name = ref('')
 const description = ref('')
+const lifecycleActionInProgress = ref(false)
 
 // Watch for board changes
 watch(() => props.board, (newBoard) => {
@@ -30,9 +31,12 @@ watch(() => props.board, (newBoard) => {
   }
 }, { immediate: true })
 
-const lifecycleActionLabel = computed(() => (
-  props.board.isArchived ? 'Restore Board' : 'Move to Archive'
-))
+const lifecycleActionLabel = computed(() => {
+  if (lifecycleActionInProgress.value) {
+    return props.board.isArchived ? 'Restoring...' : 'Archiving...'
+  }
+  return props.board.isArchived ? 'Restore Board' : 'Move to Archive'
+})
 
 const lifecycleActionButtonClass = computed(() => (
   props.board.isArchived
@@ -80,21 +84,31 @@ async function handleLifecycleTransition() {
     return
   }
 
+  lifecycleActionInProgress.value = true
+
   try {
     if (shouldArchive) {
+      // Navigate away BEFORE clearing board state to prevent the mounted
+      // BoardView from re-rendering every computed (columns, cards, filters)
+      // as each piece of state is set to null/empty.  This was the root cause
+      // of the ~30-second freeze reported in #519 — sequential reactive
+      // mutations cascaded through dozens of watchers while the view was
+      // still mounted.
+      emit('updated')
+      emit('close')
+      await router.push('/boards')
+
+      // Run the store mutation after navigation so the old BoardView is
+      // already unmounted and its reactive subscriptions are torn down.
       await boardStore.deleteBoard(props.board.id)
     } else {
       await boardStore.updateBoard(props.board.id, { isArchived: false })
-    }
-
-    emit('updated')
-    emit('close')
-
-    if (shouldArchive) {
-      router.push('/boards')
+      emit('updated')
+      emit('close')
     }
   } catch (error) {
     console.error('Failed to update board lifecycle state:', error)
+    lifecycleActionInProgress.value = false
   }
 }
 
@@ -188,6 +202,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
           <button
             @click="handleLifecycleTransition"
             type="button"
+            :disabled="lifecycleActionInProgress"
             :class="lifecycleActionButtonClass"
           >
             {{ lifecycleActionLabel }}
