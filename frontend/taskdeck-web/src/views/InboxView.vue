@@ -997,6 +997,7 @@ onUnmounted(() => {
 
   .td-inbox__list-panel {
     max-height: 50vh;
+    max-height: 50dvh; /* dynamic viewport — adjusts for mobile browser chrome */
   }
 
   .td-inbox-row {
