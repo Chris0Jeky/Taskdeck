@@ -314,6 +314,24 @@ powershell -File ./scripts/deploy/Verify-TaskdeckDeploymentHardening.ps1 -Port 8
 Hardening matrix pass/fail criteria:
 - `docs/ops/DEPLOYMENT_HARDENING_MATRIX.md`
 
+## Failure-Injection Drills
+
+Repeatable failure-injection scenarios for deployment and MCP workflows:
+
+```bash
+bash scripts/drills/run-all-drills.sh        # local run
+bash scripts/drills/run-all-drills.sh --ci    # CI-compatible with machine-readable output
+```
+
+Scenarios covered:
+- Missing SQLite database at startup
+- Locked SQLite database at startup
+- Readiness-check timeout behavior
+- Invalid/expired MCP credentials
+- Reverse-proxy misconfiguration regression
+
+Drill documentation and recovery paths: `docs/ops/FAILURE_INJECTION_DRILLS.md`
+
 ## Terraform IaC Baseline Validation
 
 Static validation (no cloud apply required):
