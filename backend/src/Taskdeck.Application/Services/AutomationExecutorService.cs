@@ -5,7 +5,6 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
-using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -18,6 +17,7 @@ public class AutomationExecutorService : IAutomationExecutorService
     private readonly CardService _cardService;
     private readonly BoardService _boardService;
     private readonly ColumnService _columnService;
+    private readonly ExecutionAuditRecorder _auditRecorder;
     private readonly ILogger<AutomationExecutorService>? _logger;
 
     public AutomationExecutorService(
@@ -46,6 +46,7 @@ public class AutomationExecutorService : IAutomationExecutorService
         _cardService = cardService;
         _boardService = boardService;
         _columnService = columnService;
+        _auditRecorder = new ExecutionAuditRecorder(unitOfWork);
         _logger = logger;
     }
 
@@ -163,7 +164,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 }
 
                 // Create audit log for the operation
-                await CreateAuditLogAsync(operation, proposal, cancellationToken);
+                await _auditRecorder.RecordAsync(operation, proposal, cancellationToken);
             }
 
             if (failedOperation >= 0)
@@ -422,67 +423,6 @@ public class AutomationExecutorService : IAutomationExecutorService
         var result = await _columnService.UpdateColumnAsync(columnId, dto, cancellationToken);
         
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
-    }
-
-    private async Task CreateAuditLogAsync(ProposalOperationDto operation, ProposalDto proposal, CancellationToken cancellationToken)
-    {
-        var actionMap = new Dictionary<string, AuditAction>
-        {
-            { "create", AuditAction.Created },
-            { "update", AuditAction.Updated },
-            { "archive", AuditAction.Archived },
-            { "move", AuditAction.Moved },
-            { "reorder", AuditAction.Moved }
-        };
-
-        var auditAction = actionMap.ContainsKey(operation.ActionType.ToLowerInvariant()) 
-            ? actionMap[operation.ActionType.ToLowerInvariant()] 
-            : AuditAction.Updated;
-
-        var (entityType, entityId) = ResolveAuditEntity(operation, proposal);
-        var changes = BuildAuditChanges(operation, proposal);
-
-        var auditLog = new AuditLog(
-            entityType,
-            entityId,
-            auditAction,
-            proposal.RequestedByUserId,
-            changes
-        );
-
-        await _unitOfWork.AuditLogs.AddAsync(auditLog, cancellationToken);
-    }
-
-    private static (string EntityType, Guid EntityId) ResolveAuditEntity(ProposalOperationDto operation, ProposalDto proposal)
-    {
-        if (!string.IsNullOrWhiteSpace(operation.TargetId) && Guid.TryParse(operation.TargetId, out var targetId))
-            return (operation.TargetType, targetId);
-
-        if (OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out _))
-        {
-            if (OperationParameterParser.TryGetGuidFromParameters(parameters, "cardId", out var cardId))
-                return ("card", cardId);
-
-            if (OperationParameterParser.TryGetGuidFromParameters(parameters, "columnId", out var columnId))
-                return ("column", columnId);
-
-            if (OperationParameterParser.TryGetGuidFromParameters(parameters, "boardId", out var boardId))
-                return ("board", boardId);
-        }
-
-        if (proposal.BoardId.HasValue)
-            return ("board", proposal.BoardId.Value);
-
-        return ("automation-proposal", proposal.Id);
-    }
-
-    private static string BuildAuditChanges(ProposalOperationDto operation, ProposalDto proposal)
-    {
-        var parameterPreview = operation.Parameters.Length <= 500
-            ? operation.Parameters
-            : operation.Parameters[..500] + "...";
-
-        return $"Automation proposal {proposal.Id}, sequence {operation.Sequence}: {operation.ActionType} {operation.TargetType}. Parameters: {parameterPreview}";
     }
 
     private async Task<Result> SyncLinkedCaptureConversionAsync(ProposalDto proposal, CancellationToken cancellationToken)
