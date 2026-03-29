@@ -62,6 +62,10 @@ Screenshots are saved as `01-home.png`, `02-inbox-with-capture.png`, etc. in the
 - **Stakeholder demo recorder (`stakeholder-demo.spec.ts`)**: Requires seeded demo data, captures video, designed for external presentation. Opt-in via `TASKDECK_RUN_DEMO=1`.
 - **Manual audit pack (`npm run test:e2e:audit:headed`)**: Headed with slow motion (250ms), captures screenshots at each milestone, covers the full capture-review-board loop end-to-end. Designed for operator debugging and quick visual audits. No demo seed required.
 
+## CI Exclusion
+
+The `manual-audit.spec.ts` file is listed in `playwright.config.ts` under `testIgnore`, so `npm run test:e2e` (the default CI command) skips it. The dedicated `npm run test:e2e:audit:headed` script explicitly targets the file, bypassing `testIgnore`.
+
 ## Configuration
 
 The pack uses the standard `playwright.config.ts` with these test-level overrides:
