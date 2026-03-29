@@ -38,15 +38,34 @@ public class GeminiLlmProvider : ILlmProvider
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
             message.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
-            message.Content = JsonContent.Create(new
-            {
-                contents = request.Messages.Select(MapMessage).ToArray(),
-                generationConfig = new
+            var useInstructionExtraction = request.SystemPrompt is null;
+            var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
+
+            var generationConfig = useInstructionExtraction
+                ? (object)new
+                {
+                    temperature = request.Temperature,
+                    maxOutputTokens = request.MaxTokens,
+                    responseMimeType = "application/json"
+                }
+                : new
                 {
                     temperature = request.Temperature,
                     maxOutputTokens = request.MaxTokens
-                }
-            });
+                };
+
+            message.Content = !string.IsNullOrEmpty(systemPrompt)
+                ? JsonContent.Create(new
+                {
+                    contents = request.Messages.Select(MapMessage).ToArray(),
+                    generationConfig,
+                    system_instruction = new { parts = new[] { new { text = systemPrompt } } }
+                })
+                : JsonContent.Create(new
+                {
+                    contents = request.Messages.Select(MapMessage).ToArray(),
+                    generationConfig
+                });
 
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
@@ -65,6 +84,25 @@ public class GeminiLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.", GetConfiguredModelOrDefault());
             }
 
+            // Try to parse structured instruction extraction from the LLM response
+            if (LlmInstructionExtractionPrompt.TryParseStructuredResponse(
+                    content,
+                    out var structuredReply,
+                    out var structuredActionable,
+                    out var structuredInstructions))
+            {
+                return new LlmCompletionResult(
+                    structuredReply,
+                    tokensUsed,
+                    structuredActionable,
+                    structuredActionable ? "llm.extracted" : null,
+                    "Gemini",
+                    GetConfiguredModelOrDefault(),
+                    Instructions: structuredInstructions.Count > 0 ? structuredInstructions : null);
+            }
+
+            // Fallback to static classifier when structured parse fails
+            _logger.LogDebug("Gemini response was not structured JSON; falling back to static classifier.");
             var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
             return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "Gemini", GetConfiguredModelOrDefault());
         }
@@ -115,10 +153,12 @@ public class GeminiLlmProvider : ILlmProvider
 
         try
         {
+            // Pass empty SystemPrompt to opt out of instruction extraction / JSON mode for probes
             var probeRequest = new ChatCompletionRequest(
                 [new ChatCompletionMessage("user", "Reply with exactly: OK")],
                 MaxTokens: 4,
-                Temperature: 0);
+                Temperature: 0,
+                SystemPrompt: string.Empty);
 
             var result = await CompleteAsync(probeRequest, ct);
 
