@@ -92,7 +92,7 @@ function isOverdue(dateString: string | null): boolean {
       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
       </svg>
-      <span class="td-board-card__drag-label">Drag card</span>
+      <span class="td-board-card__drag-label td-board-card__drag-label--hidden">Drag card</span>
     </button>
 
     <!-- Blocked Badge -->
@@ -220,6 +220,22 @@ function isOverdue(dateString: string | null): boolean {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.2em;
+  transition: opacity var(--td-transition-fast);
+}
+
+/* Hide "Drag card" text by default; reveal only on drag-handle hover.
+   Use width/overflow collapse (not just opacity) so the invisible text
+   does not consume horizontal space in the flex button layout. */
+.td-board-card__drag-label--hidden {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.td-card-drag-handle:hover .td-board-card__drag-label--hidden {
+  opacity: 1;
+  width: auto;
+  overflow: visible;
 }
 
 /* ── Badge row ── */
