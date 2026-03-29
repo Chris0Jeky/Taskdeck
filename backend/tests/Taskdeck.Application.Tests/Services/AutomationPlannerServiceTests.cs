@@ -714,7 +714,7 @@ public class AutomationPlannerServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("Could not parse instruction");
+        result.ErrorMessage.Should().Contain("Could not parse instruction into a proposal.");
     }
 
     [Fact]
@@ -790,7 +790,7 @@ public class AutomationPlannerServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("Could not parse instruction");
+        result.ErrorMessage.Should().Contain("Could not parse instruction into a proposal.");
     }
 
     /// <summary>
@@ -829,6 +829,101 @@ public class AutomationPlannerServiceTests
         // not fail with the generic "Could not parse instruction" error
         result.ErrorMessage.Should().NotContain("Could not parse instruction",
             because: $"structured syntax '{instruction}' should be parseable");
+    }
+
+    #endregion
+
+    #region Parse Hint Tests
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnStructuredParseHint_ForUnrecognizedInstruction()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        // Act
+        var result = await _service.ParseInstructionAsync("please do something nice", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(AutomationPlannerService.ParseHintMarker);
+        result.ErrorMessage.Should().Contain("supportedPatterns");
+        result.ErrorMessage.Should().Contain("exampleInstruction");
+        result.ErrorMessage.Should().Contain("closestPattern");
+    }
+
+    [Theory]
+    [InlineData("add a new task for tomorrow", "create")]
+    [InlineData("move this card somewhere", "move")]
+    [InlineData("delete old stuff", "archive")]
+    [InlineData("change the card name", "update")]
+    [InlineData("restore the board", "unarchive")]
+    public void DetectIntent_ShouldIdentifyIntent_FromNaturalLanguage(string instruction, string expectedIntent)
+    {
+        // Act
+        var intent = AutomationPlannerService.DetectIntent(instruction);
+
+        // Assert
+        intent.Should().Be(expectedIntent);
+    }
+
+    [Fact]
+    public void DetectIntent_ShouldReturnNull_WhenNoIntentDetected()
+    {
+        var intent = AutomationPlannerService.DetectIntent("hello world");
+        intent.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("create", "create card")]
+    [InlineData("move", "move card")]
+    [InlineData("archive", "archive card")]
+    [InlineData("update", "update card")]
+    public void FindClosestPattern_ShouldReturnRelevantPattern_ForDetectedIntent(string intent, string expectedPatternPrefix)
+    {
+        // Act
+        var (pattern, _) = AutomationPlannerService.FindClosestPattern("some instruction text", intent);
+
+        // Assert
+        pattern.Should().StartWith(expectedPatternPrefix);
+    }
+
+    [Fact]
+    public void BuildParseHintMessage_ShouldContainMarkerAndValidJson()
+    {
+        // Act
+        var message = AutomationPlannerService.BuildParseHintMessage("create something");
+
+        // Assert
+        message.Should().Contain(AutomationPlannerService.ParseHintMarker);
+        var markerIndex = message.IndexOf(AutomationPlannerService.ParseHintMarker);
+        var jsonPart = message.Substring(markerIndex + AutomationPlannerService.ParseHintMarker.Length);
+
+        var hint = System.Text.Json.JsonSerializer.Deserialize<AutomationPlannerService.ParseHintPayload>(
+            jsonPart,
+            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+
+        hint.Should().NotBeNull();
+        hint!.SupportedPatterns.Should().NotBeEmpty();
+        hint.ExampleInstruction.Should().NotBeNullOrWhiteSpace();
+        hint.ClosestPattern.Should().NotBeNullOrWhiteSpace();
+        hint.DetectedIntent.Should().Be("create");
+    }
+
+    [Fact]
+    public void BuildParseHintMessage_ShouldHaveNullIntent_WhenNoIntentDetected()
+    {
+        var message = AutomationPlannerService.BuildParseHintMessage("hello world");
+        var markerIndex = message.IndexOf(AutomationPlannerService.ParseHintMarker);
+        var jsonPart = message.Substring(markerIndex + AutomationPlannerService.ParseHintMarker.Length);
+
+        var hint = System.Text.Json.JsonSerializer.Deserialize<AutomationPlannerService.ParseHintPayload>(
+            jsonPart,
+            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+
+        hint!.DetectedIntent.Should().BeNull();
     }
 
     #endregion
