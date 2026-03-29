@@ -1,7 +1,10 @@
 # Chat-to-Proposal NLP Gap Analysis
 
 **Date:** 2026-03-29
+**Last Updated:** 2026-03-29
 **Trigger:** Manual testing — user asked chat "can you create new onboarding tasks for people who aren't technical?" and received a parse failure error instead of a proposal.
+
+> **Status update (2026-03-29):** Tier 1 improvements and testing are now shipped via PRs #578–#582. See resolution notes inline below.
 
 ## Observed Behavior
 
@@ -15,14 +18,11 @@ The user's natural language request was not translatable into the regex-based in
 
 There is an architectural gap between three components in the chat-to-proposal pipeline:
 
-### 1. Intent Classifier (`LlmIntentClassifier.Classify`)
+### 1. Intent Classifier (`LlmIntentClassifier.Classify`) — ✓ IMPROVED
 
-A static keyword matcher that scans the raw user message for substrings like `"create task"`, `"new card"`, `"move card"`, etc. Returns `(IsActionable, ActionIntent)`.
+~~A static keyword matcher that scans the raw user message for substrings like `"create task"`, `"new card"`, `"move card"`, etc.~~ Now uses compiled regex patterns with word-distance matching (`(\w+\s+){0,5}` gaps), stemming/plurals (`tasks?`, `cards?`), broader verb coverage ("set up", "build", "make", "generate"), and negative context filtering for negations ("don't create") and other-tool questions ("how do I create a card in Jira?"). Returns `(IsActionable, ActionIntent)`.
 
-**Problem:** Brittle substring matching. The message "can you create new onboarding tasks for people who aren't technical?" does NOT match any pattern because:
-- `"create task"` requires those two words adjacent — `"create new oboarding tasks"` has words between them
-- `"new task"` fails for the same reason (plural `"tasks"` with preceding adjective)
-- No fuzzy matching, stemming, or word-distance tolerance
+**Resolved (PR #579):** The classifier now matches "can you create new onboarding tasks for people who aren't technical?" as `card.create`. Null input returns `(false, null)` instead of throwing. Substring ordering bug fixed ("remove card" correctly classified as `card.archive`). 86 unit tests cover all patterns. Redundant `Contains()` fallbacks removed.
 
 ### 2. Instruction Parser (`AutomationPlannerService.ParseInstructionAsync`)
 
@@ -75,8 +75,8 @@ User message (natural language)
 - "how do I create a card in Jira?" (asking about a different tool) → triggers `card.create`
 - "don't create task yet, just tell me about it" → triggers `card.create`
 
-### B2. Substring ordering bug
-- "remove card abc123" → classified as `card.move` (not `card.archive`) because `"move card"` is a substring of `"remove card"` and is checked first in the classifier's if-chain. This is a priority-ordering bug where `remove` is misclassified.
+### B2. Substring ordering bug — ✓ RESOLVED
+- ~~"remove card abc123" → classified as `card.move` (not `card.archive`)~~ Fixed in PR #579 — archive patterns now checked before move patterns; "remove card" correctly classifies as `card.archive`.
 
 ### C. Parser failures on detected intent
 - Even when intent IS detected, parser fails unless user writes exact syntax
@@ -95,13 +95,13 @@ User message (natural language)
 
 ## Improvement Ideas
 
-### Tier 1: Quick wins (no LLM changes)
+### Tier 1: Quick wins (no LLM changes) — ✓ SHIPPED
 
-1. **Improve intent classifier coverage** — Add stemming, word-distance tolerance, regex-based matching instead of substring. Handle plurals (`tasks` → `task`), word gaps (`create ... task`), and common phrasings.
+1. **✓ Improve intent classifier coverage (PR #579)** — Shipped: compiled regex with word-distance tolerance, stemming/plurals, broader verbs, negative context filtering. 86 unit tests.
 
-2. **Better error UX** — When parsing fails, show the user the expected format with examples and offer a "rephrase as command" helper in the UI rather than a raw error dump.
+2. **✓ Better error UX (PR #582)** — Shipped: structured `[PARSE_HINT]` JSON payloads with `supportedPatterns` array, `closestPattern`, `exampleInstruction`, and `detectedIntent`; frontend hint card with "try this instead" button that pre-fills chat input; collapsible pattern list.
 
-3. **Frontend instruction builder** — Add a structured command palette / form UI that lets users build instructions visually instead of typing natural language.
+3. **Frontend instruction builder** — Not yet started. Add a structured command palette / form UI that lets users build instructions visually instead of typing natural language.
 
 ### Tier 2: LLM-assisted instruction extraction
 
@@ -119,10 +119,10 @@ User message (natural language)
 
 9. **Board-context-aware prompting** — Include current board columns, card titles, and labels in the LLM system prompt so it can generate contextually valid instructions (e.g., knowing which columns exist).
 
-## Testing Considerations
+## Testing Considerations — ✓ SHIPPED (PR #580)
 
-- **Unit tests for classifier edge cases** — Document current gaps with failing-by-design tests that prove the classifier misses natural language
-- **Integration tests for ChatService proposal flow** — Verify the end-to-end path from natural language → classifier → parser → error/success
+- **✓ Unit tests for classifier edge cases** — 86 tests in `LlmIntentClassifierTests.cs` covering all current patterns, natural language, negation, other-tool questions, edge cases (null, empty, long input, special chars)
+- **✓ Integration tests for ChatService proposal flow** — 28 tests in `ChatServiceTests.cs` covering structured syntax → proposal creation, natural language → classifier miss, explicit request → parser failure, and graceful error paths
 - **Mock provider is sufficient for most tests** — The classifier behavior is identical across all providers
 - **Live LLM tests would require** provider configuration and are better suited for manual/E2E testing with `TASKDECK_LLM_PROVIDER=OpenAI` env var
 

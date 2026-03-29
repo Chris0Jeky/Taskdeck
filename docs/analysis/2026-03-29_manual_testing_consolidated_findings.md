@@ -203,15 +203,17 @@ The most critical findings are:
 
 ---
 
-### OBS-2: Activity view defaults to an archived board
+### OBS-2: Activity view defaults to an archived board ✓ RESOLVED
 **Surface:** `/workspace/activity`
 **Detail:** The board dropdown pre-selects the first board alphabetically, which may be "calendar (Archived)". This shows "No board activity yet" as the cold state. Default should be the most-recently-active non-archived board.
+**Resolution:** Fixed in PR #581 — board selector now sorts non-archived first, then by most-recently-updated descending.
 
 ---
 
-### OBS-3: Activity view shows no history for boards with real mutations
+### OBS-3: Activity view shows no history for boards with real mutations ✓ RESOLVED
 **Surface:** `/workspace/activity`
 **Detail:** Boards with confirmed mutations (column creates, card adds/moves/edits, label assigns) show "No board activity yet". Either audit events aren't being recorded for these operations, or the board-history fetch has a scoping bug.
+**Resolution:** Fixed in PR #581 — audit logging wired for all board/card/column/label mutations via `IHistoryService.LogActionAsync` with `SafeLogAsync` resilience wrapper to prevent audit failures from crashing mutations.
 
 ---
 
@@ -350,7 +352,7 @@ On `mousedown` on the drag handle, call `window.getSelection()?.removeAllRanges(
 
 **BUG-M4 (chat markdown):** Add a markdown-to-HTML renderer (e.g., `marked` or `markdown-it`) to the chat message renderer component.
 
-**BUG-M5 (archive 30s freeze):** Profile the archive action. Likely a synchronous DOM mutation or an un-awaited SignalR broadcast. Move archive board response handling to async/non-blocking.
+**BUG-M5 (archive 30s freeze):** ✓ RESOLVED in PR #578. Root cause: sequential reactive mutations in `deleteBoard()` while BoardView was still mounted caused cascading Vue reactive flushes. Fix: navigate away before clearing state, reorder mutations in `boardCrudStore`, add `finally` block for loading state reset.
 
 **BUG-M6 (no restore toast):** Add a success toast in the archive store's `restoreBoard` action, matching the pattern used in `createBoard`.
 
@@ -359,8 +361,8 @@ On `mousedown` on the drag handle, call `window.getSelection()?.removeAllRanges(
 - BUG-L1: Trim card title before toast interpolation.
 - BUG-L2: Hide "DRAG CARD" text on non-hover; show only on `:hover` of the drag handle zone.
 - OBS-1: Show label color swatch in card modal label picker.
-- OBS-2: Default activity view to most-recently-active non-archived board.
-- OBS-3: Investigate audit event recording — ensure board mutations emit audit entries.
+- ~~OBS-2: Default activity view to most-recently-active non-archived board.~~ ✓ Fixed in PR #581
+- ~~OBS-3: Investigate audit event recording — ensure board mutations emit audit entries.~~ ✓ Fixed in PR #581
 - OBS-4: Route-guard Ops Console (and other feature-flagged surfaces) so direct URL access is also gated.
 - OBS-5: Add a tooltip to "PRECISION MODE ACTIVE" explaining its meaning and how to disable it.
 
