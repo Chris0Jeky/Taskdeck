@@ -4,7 +4,7 @@
   "description": "Local-first execution workspace for developers. Near-zero-friction capture with review-first automation.",
   "start_url": "/workspace/home",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "theme_color": "#131313",
   "background_color": "#131313",
   "lang": "en",
