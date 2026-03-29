@@ -140,6 +140,11 @@ export function cardMatchesSavedViewFilter(card: Card, filter: SavedViewFilter):
 
     switch (filter.dueDateFilter) {
       case 'overdue': {
+        // A card is overdue when its due date is strictly before today.
+        // Note: The Card type has no completion/done status field; cards live
+        // in board columns and "done" is a column-level concept.  Callers that
+        // need to exclude completed cards should pre-filter by column before
+        // invoking this function.
         if (!card.dueDate) return false
         const dueDay = toUTCDateOnly(new Date(card.dueDate))
         if (dueDay >= today) return false
@@ -249,7 +254,8 @@ export const useSavedViewStore = defineStore('savedViews', () => {
             v !== null &&
             typeof (v as Record<string, unknown>).id === 'string' &&
             typeof (v as Record<string, unknown>).name === 'string' &&
-            typeof (v as Record<string, unknown>).filter === 'object',
+            typeof (v as Record<string, unknown>).filter === 'object' &&
+            (v as Record<string, unknown>).filter !== null,
         )
         .map((v: Record<string, unknown>) => ({
           id: v.id as string,
