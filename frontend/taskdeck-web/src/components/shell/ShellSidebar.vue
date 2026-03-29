@@ -234,7 +234,10 @@ defineExpose({
     <div class="td-sidebar__header">
       <div v-if="!sidebarCollapsed" class="td-sidebar__brand">
         <span class="td-sidebar__title">Taskdeck</span>
-        <span class="td-sidebar__subtitle">Precision Mode Active</span>
+        <span
+          class="td-sidebar__subtitle"
+          title="Precision Mode: the workspace operates with guided automation — all proposals require explicit review before applying to the board. Change this in Preferences."
+        >Precision Mode Active</span>
       </div>
       <button
         class="td-sidebar__toggle"
