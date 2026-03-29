@@ -77,6 +77,16 @@ Other DB files in the repo are per-purpose:
 - `backend/tests/**/taskdeck.db` — backend test databases (created by test runs)
 - `taskdeck.db` at repo root — created when the backend is started from the repo root (e.g. `dotnet run --project backend/src/Taskdeck.Api/...`). Safe to delete when the backend is stopped and your active dev DB is `backend/src/Taskdeck.Api/taskdeck.db`.
 
+## Managed-Key Mode Disclosure
+
+When running demos with a platform-managed LLM provider key (any configuration where `Llm__Provider` is set to `OpenAI` or `Gemini` with a shared key), presenters should be aware:
+
+- User chat messages and capture content are sent to the configured third-party provider
+- Per-user quota limits apply (default: 60 requests/hour, 100K tokens/day)
+- Operator kill switches can throttle or block LLM access per user, per surface, or globally
+
+Full policy details: `docs/security/MANAGED_KEY_USAGE_POLICY.md`
+
 ## Runtime Preconditions
 
 - Demo scripts are local-safe by default. They target `http://localhost:5000/api` unless you override `TASKDECK_API_BASE_URL` or `TASKDECK_E2E_API_BASE_URL`.
