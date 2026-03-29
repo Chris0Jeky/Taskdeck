@@ -79,7 +79,7 @@ public class AuthController : ControllerBase
             return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, "GitHub OAuth is not configured"));
 
         // Validate returnUrl to prevent open redirect
-        if (!string.IsNullOrWhiteSpace(returnUrl) && !IsLocalUrl(returnUrl))
+        if (!string.IsNullOrWhiteSpace(returnUrl) && !Url.IsLocalUrl(returnUrl))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Invalid return URL"));
 
         var properties = new Microsoft.AspNetCore.Authentication.AuthenticationProperties
@@ -153,7 +153,7 @@ public class AuthController : ControllerBase
         _authCodes[code] = (result.Value, DateTimeOffset.UtcNow.AddSeconds(60));
         CleanupExpiredCodes();
 
-        var safeReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && IsLocalUrl(returnUrl)
+        var safeReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)
             ? returnUrl
             : "/";
 
@@ -191,15 +191,6 @@ public class AuthController : ControllerBase
         {
             GitHub = _gitHubOAuthSettings.IsConfigured
         });
-    }
-
-    private static bool IsLocalUrl(string url)
-    {
-        // Only allow relative URLs (starts with / but not //)
-        return !string.IsNullOrWhiteSpace(url)
-               && url.StartsWith('/')
-               && !url.StartsWith("//")
-               && !url.StartsWith("/\\");
     }
 
     private static string GenerateAuthCode()
