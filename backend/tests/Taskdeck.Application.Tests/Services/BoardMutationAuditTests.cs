@@ -337,5 +337,61 @@ public class BoardMutationAuditTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task CreateCard_AuditFailure_DoesNotCrashMutation()
+    {
+        // Arrange - history service throws an infrastructure exception
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var dto = new CreateCardDto(board.Id, column.Id, "Card", null, null, null);
+
+        var failingHistoryService = new Mock<IHistoryService>();
+        failingHistoryService
+            .Setup(h => h.LogActionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(),
+                It.IsAny<Guid?>(), It.IsAny<string?>()))
+            .ThrowsAsync(new InvalidOperationException("DB disk full"));
+
+        var service = new CardService(_unitOfWorkMock.Object, realtimeNotifier: null, historyService: failingHistoryService.Object);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default)).ReturnsAsync(column);
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), default))
+            .ReturnsAsync((Card c, CancellationToken ct) => c);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(It.IsAny<Guid>(), default))
+            .ReturnsAsync((Guid id, CancellationToken ct) =>
+                TestDataBuilder.CreateCard(board.Id, column.Id, dto.Title));
+
+        // Act - should not throw even though audit logging fails
+        var result = await service.CreateCardAsync(dto);
+
+        // Assert - mutation still succeeds; audit failure is swallowed
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpdateBoard_WithArchiveFlag_RecordsArchivedAction()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        var dto = new UpdateBoardDto(null, null, true);
+        var service = new BoardService(
+            _unitOfWorkMock.Object,
+            authorizationService: null,
+            realtimeNotifier: null,
+            historyService: _historyServiceMock.Object);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+
+        // Act
+        var result = await service.UpdateBoardAsync(board.Id, dto);
+
+        // Assert - should record Archived, not Updated
+        result.IsSuccess.Should().BeTrue();
+        _historyServiceMock.Verify(
+            h => h.LogActionAsync("board", board.Id, AuditAction.Archived, null, It.Is<string?>(s => s != null && s.Contains("name="))),
+            Times.Once);
+    }
+
     #endregion
 }

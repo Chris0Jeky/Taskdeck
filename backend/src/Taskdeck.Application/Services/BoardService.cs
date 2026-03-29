@@ -31,6 +31,13 @@ public class BoardService
         _historyService = historyService;
     }
 
+    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+    {
+        if (_historyService == null) return;
+        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
+        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
+    }
+
     public async Task<Result<BoardDto>> CreateBoardAsync(CreateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
     {
         if (actingUserId == Guid.Empty)
@@ -143,8 +150,7 @@ public class BoardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "created", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (_historyService != null)
-                await _historyService.LogActionAsync("board", board.Id, AuditAction.Created, ownerId, $"name={board.Name}");
+            await SafeLogAsync("board", board.Id, AuditAction.Created, ownerId, $"name={board.Name}");
 
             return Result.Success(MapToDto(board));
         }
@@ -177,8 +183,12 @@ public class BoardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "updated", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (_historyService != null)
-                await _historyService.LogActionAsync("board", board.Id, AuditAction.Updated);
+            if (dto.IsArchived == true)
+                await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
+            else if (dto.IsArchived == false)
+                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: $"unarchived; name={board.Name}");
+            else
+                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: $"name={board.Name}");
             return Result.Success(MapToDto(board));
         }
         catch (DomainException ex)
@@ -207,8 +217,7 @@ public class BoardService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
             cancellationToken);
-        if (_historyService != null)
-            await _historyService.LogActionAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
+        await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
         return Result.Success();
     }
 

@@ -25,6 +25,13 @@ public class CardService
         _historyService = historyService;
     }
 
+    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+    {
+        if (_historyService == null) return;
+        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
+        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
+    }
+
     public async Task<Result<CardDto>> CreateCardAsync(CreateCardDto dto, CancellationToken cancellationToken = default)
     {
         return await CreateCardAsync(dto, cardId: null, cancellationToken);
@@ -76,8 +83,7 @@ public class CardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (_historyService != null)
-                await _historyService.LogActionAsync("card", card.Id, AuditAction.Created, changes: $"title={card.Title}");
+            await SafeLogAsync("card", card.Id, AuditAction.Created, changes: $"title={card.Title}");
 
             var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
             return Result.Success(MapToDto(createdCard!));
@@ -138,8 +144,7 @@ public class CardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "updated", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (_historyService != null)
-                await _historyService.LogActionAsync("card", card.Id, AuditAction.Updated, actorUserId);
+            await SafeLogAsync("card", card.Id, AuditAction.Updated, actorUserId);
 
             var updatedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(updatedCard!));
@@ -219,8 +224,7 @@ public class CardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "moved", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (_historyService != null)
-                await _historyService.LogActionAsync("card", card.Id, AuditAction.Moved, changes: $"target_column={dto.TargetColumnId}; position={dto.TargetPosition}");
+            await SafeLogAsync("card", card.Id, AuditAction.Moved, changes: $"target_column={dto.TargetColumnId}; position={dto.TargetPosition}");
 
             var movedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(movedCard!));
@@ -307,8 +311,7 @@ public class CardService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(card.BoardId, "card", "deleted", card.Id, DateTimeOffset.UtcNow),
             cancellationToken);
-        if (_historyService != null)
-            await _historyService.LogActionAsync("card", card.Id, AuditAction.Deleted, changes: $"title={card.Title}");
+        await SafeLogAsync("card", card.Id, AuditAction.Deleted, changes: $"title={card.Title}");
 
         return Result.Success();
     }

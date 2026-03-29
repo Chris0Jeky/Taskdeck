@@ -25,6 +25,13 @@ public class LabelService
         _historyService = historyService;
     }
 
+    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+    {
+        if (_historyService == null) return;
+        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
+        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
+    }
+
     public async Task<Result<LabelDto>> CreateLabelAsync(CreateLabelDto dto, CancellationToken cancellationToken = default)
     {
         try
@@ -39,8 +46,7 @@ public class LabelService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "created", label.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (_historyService != null)
-                await _historyService.LogActionAsync("label", label.Id, AuditAction.Created, changes: $"name={label.Name}");
+            await SafeLogAsync("label", label.Id, AuditAction.Created, changes: $"name={label.Name}");
 
             return Result.Success(MapToDto(label));
         }
@@ -63,8 +69,7 @@ public class LabelService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "updated", label.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            if (_historyService != null)
-                await _historyService.LogActionAsync("label", label.Id, AuditAction.Updated);
+            await SafeLogAsync("label", label.Id, AuditAction.Updated);
 
             return Result.Success(MapToDto(label));
         }
@@ -100,8 +105,7 @@ public class LabelService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(label.BoardId, "label", "deleted", label.Id, DateTimeOffset.UtcNow),
             cancellationToken);
-        if (_historyService != null)
-            await _historyService.LogActionAsync("label", label.Id, AuditAction.Deleted, changes: $"name={label.Name}");
+        await SafeLogAsync("label", label.Id, AuditAction.Deleted, changes: $"name={label.Name}");
 
         return Result.Success();
     }
