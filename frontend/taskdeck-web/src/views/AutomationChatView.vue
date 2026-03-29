@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
-import type { ChatProviderHealth, ChatSession } from '../types/chat'
+import type { ChatProviderHealth, ChatMessage, ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
 import { normalizeChatRole } from '../utils/chat'
 import { getErrorDisplay } from '../composables/useErrorMapper'
@@ -12,6 +14,18 @@ import InputAssistField from '../components/common/InputAssistField.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
 import type { InputAssistOption } from '../utils/inputAssist'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
+
+function isAssistantOrSystemMessage(message: ChatMessage): boolean {
+  const role = normalizeChatRole(message.role)
+  return role === 'Assistant' || role === 'System'
+}
+
+function renderMarkdown(content: string): string {
+  if (!content) {
+    return ''
+  }
+  return DOMPurify.sanitize(marked.parse(content) as string)
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -563,7 +577,12 @@ watch(
               <div v-if="message.messageType === 'degraded'" class="td-message-degraded-warning">
                 Degraded response{{ message.degradedReason ? `: ${message.degradedReason}` : '' }}
               </div>
-              <div class="td-message-content">{{ message.content }}</div>
+              <div
+                v-if="isAssistantOrSystemMessage(message)"
+                class="td-message-content td-message-content--markdown"
+                v-html="renderMarkdown(message.content)"
+              ></div>
+              <div v-else class="td-message-content">{{ message.content }}</div>
               <div v-if="message.proposalId && message.messageType === 'proposal-reference'" class="td-message-proposal">
                 <span>Proposal: {{ message.proposalId }}</span>
                 <button
@@ -825,6 +844,94 @@ watch(
 .td-message-content {
   white-space: pre-wrap;
   font-size: var(--td-font-sm);
+}
+
+.td-message-content--markdown {
+  white-space: normal;
+}
+
+.td-message-content--markdown :deep(p) {
+  margin: 0 0 var(--td-space-2);
+}
+
+.td-message-content--markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.td-message-content--markdown :deep(h1),
+.td-message-content--markdown :deep(h2),
+.td-message-content--markdown :deep(h3),
+.td-message-content--markdown :deep(h4),
+.td-message-content--markdown :deep(h5),
+.td-message-content--markdown :deep(h6) {
+  margin: var(--td-space-2) 0 var(--td-space-1);
+  font-weight: 700;
+  color: var(--td-text-primary);
+}
+
+.td-message-content--markdown :deep(h1) { font-size: var(--td-font-xl); }
+.td-message-content--markdown :deep(h2) { font-size: var(--td-font-lg); }
+.td-message-content--markdown :deep(h3) { font-size: var(--td-font-base); }
+
+.td-message-content--markdown :deep(ul),
+.td-message-content--markdown :deep(ol) {
+  margin: 0 0 var(--td-space-2);
+  padding-left: var(--td-space-4);
+}
+
+.td-message-content--markdown :deep(li) {
+  margin-bottom: var(--td-space-1);
+}
+
+.td-message-content--markdown :deep(code) {
+  font-family: monospace;
+  font-size: 0.9em;
+  background: var(--td-surface-tertiary);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-sm);
+  padding: 1px 4px;
+}
+
+.td-message-content--markdown :deep(pre) {
+  background: var(--td-surface-tertiary);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  padding: var(--td-space-2) var(--td-space-3);
+  overflow-x: auto;
+  margin: 0 0 var(--td-space-2);
+}
+
+.td-message-content--markdown :deep(pre code) {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--td-font-sm);
+}
+
+.td-message-content--markdown :deep(strong) {
+  font-weight: 700;
+}
+
+.td-message-content--markdown :deep(em) {
+  font-style: italic;
+}
+
+.td-message-content--markdown :deep(blockquote) {
+  border-left: 3px solid var(--td-border-default);
+  margin: 0 0 var(--td-space-2);
+  padding-left: var(--td-space-3);
+  color: var(--td-text-secondary);
+}
+
+.td-message-content--markdown :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--td-border-default);
+  margin: var(--td-space-2) 0;
+}
+
+.td-message-content--markdown :deep(a) {
+  color: var(--td-color-primary);
+  text-decoration: underline;
 }
 
 .td-message--degraded {
