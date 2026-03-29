@@ -69,7 +69,14 @@ export function useActivityQuery() {
 
   const boardOptions = computed<SelectorOption[]>(() => {
     return [...boards.boards]
-      .sort((left, right) => left.name.localeCompare(right.name))
+      .sort((left, right) => {
+        // Non-archived boards first
+        if (left.isArchived !== right.isArchived) {
+          return left.isArchived ? 1 : -1
+        }
+        // Within same archived status, most-recently-updated first
+        return right.updatedAt.localeCompare(left.updatedAt)
+      })
       .map((board) => ({
         id: board.id,
         label: board.isArchived ? `${board.name} (Archived)` : board.name,
