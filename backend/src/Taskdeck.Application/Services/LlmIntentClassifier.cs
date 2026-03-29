@@ -9,7 +9,7 @@ public static class LlmIntentClassifier
 
     // Negative context patterns — suppress matches in these contexts
     private static readonly Regex NegationPattern = new(
-        @"\b(don'?t|do not|never|stop|cancel|undo|avoid)\b.*\b(create|add|make|move|archive|delete|remove|update|edit|rename|generate|build|set up|prepare)\b",
+        @"\b(don'?t|do not|never|stop|cancel|undo|avoid)\b(\s+\w+){0,6}\s+\b(create|add|make|move|archive|delete|remove|update|edit|rename|generate|build|set up|prepare)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
@@ -35,9 +35,9 @@ public static class LlmIntentClassifier
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
-    // Card move — "move" + optional words + "card/task"
+    // Card move — "move" + optional words + "card/task", or "move" + card/task context + "to"
     private static readonly Regex CardMovePattern = new(
-        @"\bmove\b(\s+\w+){0,4}\s+\b(cards?|tasks?)\b|\bmove\b.*\bto\b",
+        @"\bmove\b(\s+\w+){0,4}\s+\b(cards?|tasks?)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
