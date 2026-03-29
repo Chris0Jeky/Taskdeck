@@ -179,6 +179,7 @@ async function handleDeleteConfirm() {
     emit('close')
   } catch (error) {
     console.error('Failed to delete card:', error)
+  } finally {
     isDeleting.value = false
   }
 }
