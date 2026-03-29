@@ -12,6 +12,7 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService? _authorizationService;
+    private readonly RestorePlanner _restorePlanner;
 
     public ArchiveRecoveryService(
         IUnitOfWork unitOfWork,
@@ -19,6 +20,7 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
+        _restorePlanner = new RestorePlanner(unitOfWork, authorizationService);
     }
 
     public async Task<Result<ArchiveItemDto>> CreateArchiveItemAsync(
@@ -359,39 +361,16 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
     {
         try
         {
-            // 1. Get archive item
-            var archiveItem = await _unitOfWork.ArchiveItems.GetByIdAsync(id, cancellationToken);
-            if (archiveItem == null)
-                return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Archive item with ID {id} not found");
+            // 1. Plan the restore (lookup, validation, permissions, target board)
+            var planResult = await _restorePlanner.PlanRestoreAsync(id, dto, restoredByUserId, cancellationToken);
+            if (!planResult.IsSuccess)
+                return Result.Failure<RestoreResult>(planResult.ErrorCode, planResult.ErrorMessage);
 
-            if (archiveItem.RestoreStatus != RestoreStatus.Available)
-                return Result.Failure<RestoreResult>(
-                    ErrorCodes.InvalidOperation, 
-                    $"Cannot restore archive item with status {archiveItem.RestoreStatus}");
+            var plan = planResult.Value;
+            var archiveItem = plan.ArchiveItem;
+            var targetBoardId = plan.TargetBoardId;
 
-            // 2. Determine target board
-            var targetBoardId = dto.TargetBoardId ?? archiveItem.BoardId;
-
-            // 3. Check permissions
-            if (_authorizationService != null)
-            {
-                var canWriteResult = await _authorizationService.CanWriteBoardAsync(restoredByUserId, targetBoardId);
-                if (!canWriteResult.IsSuccess)
-                {
-                    return Result.Failure<RestoreResult>(
-                        canWriteResult.ErrorCode,
-                        canWriteResult.ErrorMessage);
-                }
-
-                if (!canWriteResult.Value)
-                {
-                    return Result.Failure<RestoreResult>(
-                        ErrorCodes.Forbidden, 
-                        "User does not have permission to restore to target board");
-                }
-            }
-
-            // 4. Validate and restore based on entity type
+            // 2. Execute restore based on entity type
             Result<RestoreResult> restoreResult;
             switch (archiveItem.EntityType)
             {
@@ -399,40 +378,24 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
                     restoreResult = await RestoreBoardAsync(archiveItem, dto, restoredByUserId, cancellationToken);
                     break;
                 case "column":
-                {
-                    var targetBoard = await _unitOfWork.Boards.GetByIdAsync(targetBoardId, cancellationToken);
-                    if (targetBoard == null)
-                        return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Target board with ID {targetBoardId} not found");
-                    if (targetBoard.IsArchived)
-                        return Result.Failure<RestoreResult>(ErrorCodes.InvalidOperation, "Cannot restore to an archived board");
-
                     restoreResult = await RestoreColumnAsync(archiveItem, targetBoardId, dto, restoredByUserId, cancellationToken);
                     break;
-                }
                 case "card":
-                {
-                    var targetBoard = await _unitOfWork.Boards.GetByIdAsync(targetBoardId, cancellationToken);
-                    if (targetBoard == null)
-                        return Result.Failure<RestoreResult>(ErrorCodes.NotFound, $"Target board with ID {targetBoardId} not found");
-                    if (targetBoard.IsArchived)
-                        return Result.Failure<RestoreResult>(ErrorCodes.InvalidOperation, "Cannot restore to an archived board");
-
                     restoreResult = await RestoreCardAsync(archiveItem, targetBoardId, dto, restoredByUserId, cancellationToken);
                     break;
-                }
                 default:
                     return Result.Failure<RestoreResult>(
-                        ErrorCodes.ValidationError, 
+                        ErrorCodes.ValidationError,
                         $"Unknown entity type: {archiveItem.EntityType}");
             }
 
             if (!restoreResult.IsSuccess)
                 return restoreResult;
 
-            // 6. Mark archive item as restored
+            // 3. Mark archive item as restored
             archiveItem.MarkAsRestored(restoredByUserId);
 
-            // 7. Create audit log
+            // 4. Create audit log
             var auditLog = new AuditLog(
                 "ArchiveItem",
                 archiveItem.Id,
@@ -453,7 +416,7 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
         catch (Exception ex)
         {
             return Result.Failure<RestoreResult>(
-                ErrorCodes.UnexpectedError, 
+                ErrorCodes.UnexpectedError,
                 $"Failed to restore archive item: {ex.Message}");
         }
     }
