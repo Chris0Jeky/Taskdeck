@@ -12,12 +12,18 @@
 name: Release Desktop
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to build (e.g. v0.2.0). Defaults to current ref."
+        required: false
+        type: string
   push:
     tags:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -126,6 +132,15 @@ jobs:
         run: |
           mkdir -p publish/${{ matrix.rid }}/wwwroot
           cp -r frontend-dist/* publish/${{ matrix.rid }}/wwwroot/
+
+      - name: Verify frontend assets present
+        shell: bash
+        run: |
+          if [ ! -f "publish/${{ matrix.rid }}/wwwroot/index.html" ]; then
+            echo "::error::Frontend dist missing index.html — build may have failed silently"
+            exit 1
+          fi
+          echo "Frontend assets verified ($(find publish/${{ matrix.rid }}/wwwroot -type f | wc -l) files)"
 
       - name: Determine version tag
         id: version
