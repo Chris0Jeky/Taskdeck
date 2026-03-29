@@ -122,7 +122,7 @@ public static class AuthenticationRegistration
                         var response = await context.Backchannel.SendAsync(request, context.HttpContext.RequestAborted);
                         response.EnsureSuccessStatusCode();
 
-                        var user = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                        using var user = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                         context.RunClaimActions(user.RootElement);
                     }
                 };
