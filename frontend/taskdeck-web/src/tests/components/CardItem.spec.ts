@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CardItem from '../../components/board/CardItem.vue'
 import type { Card } from '../../types/board'
@@ -70,5 +70,40 @@ describe('CardItem drag guardrails', () => {
 
     expect(setData).toHaveBeenCalledWith('text/plain', card.id)
     expect(wrapper.emitted('dragstart')).toEqual([[card]])
+  })
+})
+
+describe('CardItem drag handle — text selection clearing', () => {
+  let removeAllRanges: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    removeAllRanges = vi.fn()
+    vi.stubGlobal('getSelection', () => ({ removeAllRanges }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('calls removeAllRanges on drag handle mousedown to clear prior text selection', async () => {
+    const wrapper = mount(CardItem, {
+      props: { card: createCard() },
+    })
+
+    await wrapper.get('[data-action="drag-card-handle"]').trigger('mousedown')
+
+    expect(removeAllRanges).toHaveBeenCalledOnce()
+  })
+
+  it('does not throw when getSelection returns null', async () => {
+    vi.stubGlobal('getSelection', () => null)
+
+    const wrapper = mount(CardItem, {
+      props: { card: createCard() },
+    })
+
+    await expect(
+      wrapper.get('[data-action="drag-card-handle"]').trigger('mousedown'),
+    ).resolves.not.toThrow()
   })
 })
