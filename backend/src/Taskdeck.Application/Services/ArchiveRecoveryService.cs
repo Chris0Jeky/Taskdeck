@@ -477,24 +477,11 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
             var existingBoards = await _unitOfWork.Boards.SearchAsync(snapshot.Name, includeArchived: false, cancellationToken);
             var conflictExists = existingBoards.Any(b => b.Name == snapshot.Name);
 
-            string resolvedName = snapshot.Name;
-            if (conflictExists)
-            {
-                if (dto.ConflictStrategy == ConflictStrategy.Fail)
-                {
-                    return Result.Failure<RestoreResult>(
-                        ErrorCodes.Conflict, 
-                        $"A board with name '{snapshot.Name}' already exists");
-                }
-                else if (dto.ConflictStrategy == ConflictStrategy.Rename)
-                {
-                    resolvedName = $"{snapshot.Name} (Restored)";
-                }
-                else if (dto.ConflictStrategy == ConflictStrategy.AppendSuffix)
-                {
-                    resolvedName = $"{snapshot.Name} - {DateTime.UtcNow:yyyyMMdd-HHmmss}";
-                }
-            }
+            var nameResult = ArchiveConflictDetector.ResolveName(
+                snapshot.Name, conflictExists, dto.ConflictStrategy, "board");
+            if (!nameResult.IsSuccess)
+                return Result.Failure<RestoreResult>(nameResult.ErrorCode, nameResult.ErrorMessage);
+            var resolvedName = nameResult.Value;
 
             // For InPlace mode, unarchive existing board if it's archived
             if (dto.RestoreMode == RestoreMode.InPlace)
@@ -556,24 +543,11 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
             // Check for naming conflicts
             var conflictExists = board.Columns.Any(c => c.Name == snapshot.Name);
 
-            string resolvedName = snapshot.Name;
-            if (conflictExists)
-            {
-                if (dto.ConflictStrategy == ConflictStrategy.Fail)
-                {
-                    return Result.Failure<RestoreResult>(
-                        ErrorCodes.Conflict, 
-                        $"A column with name '{snapshot.Name}' already exists");
-                }
-                else if (dto.ConflictStrategy == ConflictStrategy.Rename)
-                {
-                    resolvedName = $"{snapshot.Name} (Restored)";
-                }
-                else if (dto.ConflictStrategy == ConflictStrategy.AppendSuffix)
-                {
-                    resolvedName = $"{snapshot.Name} - {DateTime.UtcNow:yyyyMMdd-HHmmss}";
-                }
-            }
+            var nameResult = ArchiveConflictDetector.ResolveName(
+                snapshot.Name, conflictExists, dto.ConflictStrategy, "column");
+            if (!nameResult.IsSuccess)
+                return Result.Failure<RestoreResult>(nameResult.ErrorCode, nameResult.ErrorMessage);
+            var resolvedName = nameResult.Value;
 
             // Determine position (add to end)
             var maxPosition = board.Columns.Any() ? board.Columns.Max(c => c.Position) : -1;
@@ -650,24 +624,11 @@ public class ArchiveRecoveryService : IArchiveRecoveryService
             var existingCards = columnWithCards.Cards.ToList();
             var conflictExists = existingCards.Any(c => c.Title == snapshot.Title);
 
-            string resolvedTitle = snapshot.Title;
-            if (conflictExists)
-            {
-                if (dto.ConflictStrategy == ConflictStrategy.Fail)
-                {
-                    return Result.Failure<RestoreResult>(
-                        ErrorCodes.Conflict, 
-                        $"A card with title '{snapshot.Title}' already exists in the target column");
-                }
-                else if (dto.ConflictStrategy == ConflictStrategy.Rename)
-                {
-                    resolvedTitle = $"{snapshot.Title} (Restored)";
-                }
-                else if (dto.ConflictStrategy == ConflictStrategy.AppendSuffix)
-                {
-                    resolvedTitle = $"{snapshot.Title} - {DateTime.UtcNow:yyyyMMdd-HHmmss}";
-                }
-            }
+            var nameResult = ArchiveConflictDetector.ResolveName(
+                snapshot.Title, conflictExists, dto.ConflictStrategy, "card");
+            if (!nameResult.IsSuccess)
+                return Result.Failure<RestoreResult>(nameResult.ErrorCode, nameResult.ErrorMessage);
+            var resolvedTitle = nameResult.Value;
 
             // Determine position (add to bottom)
             var maxPosition = existingCards.Any() ? existingCards.Max(c => c.Position) : -1;
