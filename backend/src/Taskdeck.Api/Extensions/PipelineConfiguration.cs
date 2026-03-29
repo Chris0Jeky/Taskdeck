@@ -55,8 +55,32 @@ public static class PipelineConfiguration
         // ensuring CSP, X-Frame-Options, and other headers are applied to SPA assets including index.html.
         // UseDefaultFiles must precede UseStaticFiles so that requests to "/" map to index.html.
         // Directory listing is disabled by default (no DirectoryBrowser registered).
+        //
+        // Cache-control strategy (PKG-01 AC: "SPA assets served with appropriate cache headers"):
+        //   - Versioned/hashed assets (Vite output under /assets/): max-age=1 year + immutable.
+        //     Safe because Vite appends a content hash to each filename — stale content is impossible.
+        //   - All other files (including index.html): no-cache so the browser always revalidates,
+        //     ensuring users pick up new deployments immediately.
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            OnPrepareResponse = ctx =>
+            {
+                var path = ctx.Context.Request.Path.Value ?? string.Empty;
+                var headers = ctx.Context.Response.Headers;
+
+                if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Vite hashes these filenames — safe to cache indefinitely.
+                    headers["Cache-Control"] = "public, max-age=31536000, immutable";
+                }
+                else
+                {
+                    // index.html and other non-versioned files: revalidate on every request.
+                    headers["Cache-Control"] = "no-cache";
+                }
+            }
+        });
 
         app.UseAuthentication();
         if (rateLimitingSettings.Enabled)
