@@ -23,11 +23,12 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-4">
+  <div class="td-board-toolbar">
+    <div class="td-board-toolbar__left">
       <button
         @click="$emit('back')"
-        class="text-on-surface/60 hover:text-on-surface transition-colors"
+        class="td-board-toolbar__back-btn"
+        aria-label="Back to boards"
       >
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
@@ -40,59 +41,59 @@ defineEmits<{
       </button>
       <div>
         <div class="flex flex-wrap items-center gap-2">
-          <h1 class="text-2xl font-bold text-on-surface">
+          <h1 class="td-board-toolbar__title">
             {{ boardName }}
           </h1>
           <span
             v-if="isDemoBoard"
-            class="inline-flex items-center rounded-full border border-primary-container/30 bg-primary-container/10 px-2 py-0.5 text-xs font-semibold text-primary"
+            class="td-board-toolbar__demo-badge"
           >
             Demo board
           </span>
         </div>
-        <p v-if="boardDescription" class="text-sm text-on-surface/60">
+        <p v-if="boardDescription" class="td-board-toolbar__description">
           {{ boardDescription }}
         </p>
-        <div class="mt-2 flex flex-wrap items-center gap-2">
-          <span class="text-xs font-semibold uppercase tracking-wide text-on-surface/60">Live</span>
+        <div class="td-board-toolbar__presence">
+          <span class="td-board-toolbar__presence-label">Live</span>
           <span
             v-if="presenceMembers.length === 0"
-            class="inline-flex items-center rounded-full bg-surface-container-highest px-2 py-0.5 text-xs text-on-surface/60"
+            class="td-board-toolbar__presence-empty"
           >
             No active collaborators
           </span>
           <span
             v-for="member in presenceMembers"
             :key="member.userId"
-            class="inline-flex items-center gap-1 rounded-full bg-primary-container/10 px-2 py-0.5 text-xs text-primary"
+            class="td-board-toolbar__presence-member"
             data-presence-user
           >
             <span>{{ member.displayName || member.userId.slice(0, 8) }}</span>
-            <span v-if="member.editingCardId" class="font-medium text-[var(--td-color-warning)]">(editing)</span>
+            <span v-if="member.editingCardId" class="td-board-toolbar__presence-editing">(editing)</span>
           </span>
         </div>
       </div>
     </div>
 
-    <div class="flex items-center gap-2">
+    <div class="td-board-toolbar__actions">
       <button
         @click="$emit('toggleFilter')"
         :class="[
-          'p-2 border border-outline-variant/15 rounded-lg transition-colors',
-          showFilterPanel ? 'bg-primary-container/20 text-primary border-primary-container' : 'text-on-surface/60 hover:bg-surface-bright'
+          'td-board-toolbar__icon-btn',
+          showFilterPanel ? 'td-board-toolbar__icon-btn--active' : ''
         ]"
         title="Filter Cards (Press f)"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
         </svg>
-        <span v-if="filteredCardCount < totalCardCount" class="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary-container text-[10px] font-bold text-on-primary-container">
+        <span v-if="filteredCardCount < totalCardCount" class="td-board-toolbar__filter-count">
           {{ filteredCardCount }}
         </span>
       </button>
       <button
         @click="$emit('showKeyboardHelp')"
-        class="p-2 text-on-surface/60 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
+        class="td-board-toolbar__icon-btn"
         title="Keyboard Shortcuts (Press ?)"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -101,7 +102,7 @@ defineEmits<{
       </button>
       <button
         @click="$emit('showLabelManager')"
-        class="px-4 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
+        class="td-board-toolbar__text-btn"
         title="Manage Labels"
       >
         <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,7 +112,7 @@ defineEmits<{
       </button>
       <button
         @click="$emit('showStarterPackCatalog')"
-        class="px-4 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
+        class="td-board-toolbar__text-btn"
         title="Browse Starter Packs"
       >
         <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -121,7 +122,7 @@ defineEmits<{
       </button>
       <button
         @click="$emit('showBoardSettings')"
-        class="px-4 py-2 text-sm font-medium text-on-surface/70 hover:bg-surface-bright border border-outline-variant/15 rounded-lg transition-colors"
+        class="td-board-toolbar__icon-btn"
         title="Board Settings"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -131,10 +132,212 @@ defineEmits<{
       </button>
       <button
         @click="$emit('toggleColumnForm')"
-        class="px-4 py-2 bg-primary-container text-on-primary-container rounded-lg hover:brightness-110 transition-colors"
+        class="td-board-toolbar__primary-btn"
       >
         + Add Column
       </button>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ── Board Toolbar — token-based layout ── */
+.td-board-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--td-space-4);
+}
+
+.td-board-toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-5);
+}
+
+/* ── Back button ── */
+.td-board-toolbar__back-btn {
+  color: var(--td-text-tertiary);
+  transition: color var(--td-transition-fast);
+}
+
+.td-board-toolbar__back-btn:hover {
+  color: var(--td-text-primary);
+}
+
+.td-board-toolbar__back-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+  border-radius: var(--td-radius-md);
+}
+
+/* ── Board title ── */
+.td-board-toolbar__title {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: var(--td-font-2xl);
+  font-weight: 800;
+  color: var(--td-text-primary);
+  letter-spacing: -0.02em;
+}
+
+/* ── Demo badge ── */
+.td-board-toolbar__demo-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid var(--td-color-primary-light);
+  background: var(--td-color-ember-dim);
+  padding: 1px var(--td-space-2);
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  color: var(--td-color-primary);
+}
+
+/* ── Description ── */
+.td-board-toolbar__description {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-muted);
+  margin-top: var(--td-space-1);
+}
+
+/* ── Presence ── */
+.td-board-toolbar__presence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--td-space-2);
+  margin-top: var(--td-space-3);
+}
+
+.td-board-toolbar__presence-label {
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--td-text-tertiary);
+}
+
+.td-board-toolbar__presence-empty {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  background: var(--td-surface-container-highest);
+  padding: 1px var(--td-space-2);
+  font-size: var(--td-font-xs);
+  color: var(--td-text-tertiary);
+}
+
+.td-board-toolbar__presence-member {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--td-space-1);
+  border-radius: 9999px;
+  background: var(--td-color-ember-dim);
+  padding: 1px var(--td-space-2);
+  font-size: var(--td-font-xs);
+  color: var(--td-color-primary);
+}
+
+.td-board-toolbar__presence-editing {
+  font-weight: 500;
+  color: var(--td-color-warning);
+}
+
+/* ── Actions row ── */
+.td-board-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+}
+
+/* ── Icon button (filter, help, settings) ── */
+.td-board-toolbar__icon-btn {
+  position: relative;
+  padding: var(--td-space-2);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  color: var(--td-text-tertiary);
+  transition:
+    background-color var(--td-transition-fast),
+    color var(--td-transition-fast),
+    border-color var(--td-transition-fast);
+}
+
+.td-board-toolbar__icon-btn:hover {
+  background: var(--td-surface-bright);
+  color: var(--td-text-secondary);
+}
+
+.td-board-toolbar__icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+.td-board-toolbar__icon-btn--active {
+  background: var(--td-color-ember-dim);
+  color: var(--td-color-primary);
+  border-color: var(--td-color-primary);
+}
+
+/* ── Filter count indicator ── */
+.td-board-toolbar__filter-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  height: 1.25rem;
+  width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--td-color-primary);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--td-text-inverse);
+}
+
+/* ── Text button (Labels, Starter Packs) ── */
+.td-board-toolbar__text-btn {
+  padding: var(--td-space-2) var(--td-space-5);
+  font-size: var(--td-font-sm);
+  font-weight: 500;
+  color: var(--td-text-muted);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  transition:
+    background-color var(--td-transition-fast),
+    color var(--td-transition-fast);
+}
+
+.td-board-toolbar__text-btn:hover {
+  background: var(--td-surface-bright);
+  color: var(--td-text-primary);
+}
+
+.td-board-toolbar__text-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+/* ── Primary action button ── */
+.td-board-toolbar__primary-btn {
+  padding: var(--td-space-2) var(--td-space-5);
+  font-size: var(--td-font-sm);
+  font-weight: 600;
+  background: var(--td-color-primary);
+  color: var(--td-text-inverse);
+  border-radius: var(--td-radius-lg);
+  transition:
+    background-color var(--td-transition-fast),
+    filter var(--td-transition-fast);
+}
+
+.td-board-toolbar__primary-btn:hover {
+  background: var(--td-color-primary-hover);
+}
+
+.td-board-toolbar__primary-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+</style>
