@@ -83,7 +83,7 @@ const mockAuditStore = reactive({
 })
 
 const mockBoardStore = reactive({
-  boards: [] as Array<{ id: string; name: string; isArchived: boolean }>,
+  boards: [] as Array<{ id: string; name: string; isArchived: boolean; updatedAt: string }>,
   currentBoard: null as null | { id: string; columns: Array<{ id: string; name: string; position: number }> },
   currentBoardCards: [] as Array<{ id: string; title: string; columnId: string; position: number }>,
   currentBoardLabels: [] as Array<{ id: string; name: string }>,
@@ -169,8 +169,8 @@ describe('useActivityQuery composable', () => {
 
     mockBoardStore.fetchBoards.mockImplementation(async () => {
       mockBoardStore.boards = [
-        { id: 'board-1', name: 'Alpha', isArchived: false },
-        { id: 'board-2', name: 'Beta', isArchived: false },
+        { id: 'board-1', name: 'Alpha', isArchived: false, updatedAt: '2025-01-10T00:00:00Z' },
+        { id: 'board-2', name: 'Beta', isArchived: false, updatedAt: '2025-01-15T00:00:00Z' },
       ]
     })
     mockBoardStore.fetchBoard.mockResolvedValue(undefined)
@@ -181,20 +181,21 @@ describe('useActivityQuery composable', () => {
     expect(query.viewMode.value).toBe('board')
   })
 
-  it('computes boardOptions sorted by name', async () => {
+  it('computes boardOptions sorted by most-recently-updated non-archived first', async () => {
     const { query } = mountWithQuery()
     await query.initialize()
     await tick()
 
     expect(query.boardOptions.value).toHaveLength(2)
-    expect(query.boardOptions.value[0]!.label).toBe('Alpha')
-    expect(query.boardOptions.value[1]!.label).toBe('Beta')
+    // Beta has a later updatedAt so appears first
+    expect(query.boardOptions.value[0]!.label).toBe('Beta')
+    expect(query.boardOptions.value[1]!.label).toBe('Alpha')
   })
 
   it('marks archived boards in label', async () => {
     mockBoardStore.fetchBoards.mockImplementation(async () => {
       mockBoardStore.boards = [
-        { id: 'board-1', name: 'Done', isArchived: true },
+        { id: 'board-1', name: 'Done', isArchived: true, updatedAt: '2025-01-10T00:00:00Z' },
       ]
     })
 
@@ -211,7 +212,31 @@ describe('useActivityQuery composable', () => {
     await tick()
 
     expect(query.canFetch.value).toBe(true)
-    expect(query.selectedBoardId.value).toBe('board-1')
+    // Defaults to most-recently-updated board
+    expect(query.selectedBoardId.value).toBe('board-2')
+  })
+
+  it('sorts archived boards after non-archived and defaults to most-recently-active', async () => {
+    mockBoardStore.fetchBoards.mockImplementation(async () => {
+      mockBoardStore.boards = [
+        { id: 'board-a', name: 'Archived Recent', isArchived: true, updatedAt: '2025-01-20T00:00:00Z' },
+        { id: 'board-b', name: 'Active Old', isArchived: false, updatedAt: '2025-01-05T00:00:00Z' },
+        { id: 'board-c', name: 'Active Recent', isArchived: false, updatedAt: '2025-01-15T00:00:00Z' },
+      ]
+    })
+
+    const { query } = mountWithQuery()
+    await query.initialize()
+    await tick()
+
+    // Non-archived boards first, ordered by most-recently-updated
+    expect(query.boardOptions.value[0]!.id).toBe('board-c')
+    expect(query.boardOptions.value[1]!.id).toBe('board-b')
+    expect(query.boardOptions.value[2]!.id).toBe('board-a')
+    expect(query.boardOptions.value[2]!.label).toContain('(Archived)')
+
+    // Default selection should be the most-recently-active non-archived board
+    expect(query.selectedBoardId.value).toBe('board-c')
   })
 
   it('canFetch is false in entity mode without entity selected', async () => {
@@ -245,7 +270,8 @@ describe('useActivityQuery composable', () => {
     await query.initialize()
     await tick()
 
-    expect(query.selectedIdForCopy.value).toBe('board-1')
+    // Defaults to most-recently-updated board
+    expect(query.selectedIdForCopy.value).toBe('board-2')
   })
 
   it('selectedIdForCopy returns user ID in user mode', async () => {
