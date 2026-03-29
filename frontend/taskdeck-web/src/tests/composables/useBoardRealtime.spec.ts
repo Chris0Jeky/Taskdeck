@@ -120,23 +120,57 @@ describe('createBoardRealtimeController', () => {
   })
 
   it('refreshes board when matching board mutation event arrives', async () => {
+    vi.useFakeTimers()
     const fetchBoard = vi.fn(async () => undefined)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
-    await callbacks.boardMutation?.({ boardId: 'board-1' })
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+
+    // The handler debounces the refresh — advance past the debounce window.
+    await vi.advanceTimersByTimeAsync(300)
 
     expect(fetchBoard).toHaveBeenCalledWith('board-1')
+    vi.useRealTimers()
   })
 
   it('ignores mutation events for other boards', async () => {
+    vi.useFakeTimers()
     const fetchBoard = vi.fn(async () => undefined)
     const controller = createBoardRealtimeController({ fetchBoard })
 
     await controller.start('board-1')
-    await callbacks.boardMutation?.({ boardId: 'board-2' })
+    callbacks.boardMutation?.({ boardId: 'board-2' })
+
+    // Advance past the debounce window to confirm nothing fires.
+    await vi.advanceTimersByTimeAsync(300)
 
     expect(fetchBoard).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('coalesces rapid burst mutation events into a single fetchBoard call', async () => {
+    vi.useFakeTimers()
+    const fetchBoard = vi.fn(async () => undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+
+    // Fire three mutation events in rapid succession (within the debounce window).
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+
+    // Before the debounce window closes, fetchBoard should not have been called.
+    expect(fetchBoard).not.toHaveBeenCalled()
+
+    // Advance past the debounce — only one fetch should fire for the burst.
+    await vi.advanceTimersByTimeAsync(300)
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+    expect(fetchBoard).toHaveBeenCalledWith('board-1')
+
+    vi.useRealTimers()
+    await controller.stop()
   })
 
   it('emits presence snapshots for the currently subscribed board', async () => {
@@ -183,7 +217,7 @@ describe('createBoardRealtimeController', () => {
     const controller = createBoardRealtimeController({ fetchBoard })
     await controller.start('board-1')
 
-    await vi.advanceTimersByTimeAsync(15000)
+    await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledWith('board-1')
 
     await controller.stop()
@@ -207,7 +241,7 @@ describe('createBoardRealtimeController', () => {
     await controller.start('board-1')
     await controller.setEditingCard('card-1')
     await callbacks.reconnecting?.()
-    await vi.advanceTimersByTimeAsync(15000)
+    await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledWith('board-1')
 
     fetchBoard.mockClear()
@@ -215,7 +249,7 @@ describe('createBoardRealtimeController', () => {
     expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-1')
     expect(mockConnection.invoke).toHaveBeenCalledWith('SetEditingCard', 'board-1', 'card-1')
 
-    await vi.advanceTimersByTimeAsync(15000)
+    await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).not.toHaveBeenCalled()
 
     await controller.stop()
