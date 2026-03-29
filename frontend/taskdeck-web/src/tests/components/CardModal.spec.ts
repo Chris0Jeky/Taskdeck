@@ -290,50 +290,59 @@ describe('CardModal', () => {
     expect((saveButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('should show delete confirmation before deleting', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
-
+  it('should show delete confirmation dialog before deleting', async () => {
     const wrapper = mount(CardModal, {
       props: {
         card,
         isOpen: true,
         labels,
       },
+      attachTo: document.body,
     })
 
     const deleteButton = wrapper
       .findAll('button')
       .find((btn) => btn.text().includes('Delete Card'))
     await deleteButton?.trigger('click')
+    await wrapper.vm.$nextTick()
 
-    expect(confirmSpy).toHaveBeenCalled()
+    // Dialog should now be open; deleteCard must NOT have been called yet
     expect(mockStore.deleteCard).not.toHaveBeenCalled()
+    // The confirmation dialog should be visible in the DOM
+    expect(document.querySelector('.td-dialog')).not.toBeNull()
 
-    confirmSpy.mockRestore()
+    wrapper.unmount()
   })
 
-  it('should call deleteCard when deletion is confirmed', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-
+  it('should call deleteCard when deletion is confirmed in dialog', async () => {
     const wrapper = mount(CardModal, {
       props: {
         card,
         isOpen: true,
         labels,
       },
+      attachTo: document.body,
     })
 
+    // Open the confirmation dialog
     const deleteButton = wrapper
       .findAll('button')
       .find((btn) => btn.text().includes('Delete Card'))
     await deleteButton?.trigger('click')
+    await wrapper.vm.$nextTick()
 
+    // Click the "Delete" confirm button inside the dialog
+    const confirmButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+      (btn) => btn.textContent?.trim() === 'Delete',
+    )
+    confirmButton?.click()
+    await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
     expect(mockStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1')
     expect(wrapper.emitted('close')).toBeTruthy()
 
-    confirmSpy.mockRestore()
+    wrapper.unmount()
   })
 
   it('should handle label selection', async () => {
