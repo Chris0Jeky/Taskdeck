@@ -729,6 +729,7 @@ describe('boardStore', () => {
     })
 
     it('preserves activeBoardId across fetchBoards when selected board still exists', async () => {
+      vi.useFakeTimers()
       // First load — sets selection to boardA (first item)
       vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA, boardB])
       await store.fetchBoards()
@@ -737,35 +738,49 @@ describe('boardStore', () => {
       // User selects boardB
       store.activeBoardId = 'board-b'
 
+      // Advance past throttle window so the next fetchBoards is not suppressed.
+      vi.advanceTimersByTime(6000)
+
       // Poll cycle returns boards in a different order — boardB is still present
       vi.mocked(boardsApi.getBoards).mockResolvedValue([boardB, boardA])
       await store.fetchBoards()
 
       // Selection must NOT flip back to boardB (now first) or boardA
       expect(store.activeBoardId).toBe('board-b')
+      vi.useRealTimers()
     })
 
     it('falls back to first board when the selected board is removed from the list', async () => {
+      vi.useFakeTimers()
       vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA, boardB])
       await store.fetchBoards()
       store.activeBoardId = 'board-b'
+
+      // Advance past throttle window so the next fetchBoards is not suppressed.
+      vi.advanceTimersByTime(6000)
 
       // boardB has been deleted on the server
       vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA])
       await store.fetchBoards()
 
       expect(store.activeBoardId).toBe('board-a')
+      vi.useRealTimers()
     })
 
     it('sets activeBoardId to null when no boards remain after refresh', async () => {
+      vi.useFakeTimers()
       vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA])
       await store.fetchBoards()
       store.activeBoardId = 'board-a'
+
+      // Advance past throttle window so the next fetchBoards is not suppressed.
+      vi.advanceTimersByTime(6000)
 
       vi.mocked(boardsApi.getBoards).mockResolvedValue([])
       await store.fetchBoards()
 
       expect(store.activeBoardId).toBeNull()
+      vi.useRealTimers()
     })
 
     it('clears activeBoardId when the active board is deleted', async () => {
