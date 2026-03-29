@@ -162,6 +162,17 @@ onUnmounted(() => {
     />
 
     <div class="td-main-container">
+      <div class="td-mobile-topbar">
+        <button
+          class="td-mobile-topbar__hamburger"
+          aria-label="Open navigation menu"
+          @click="sidebarRef?.toggleMobileMenu()"
+        >
+          <span class="material-symbols-outlined">menu</span>
+        </button>
+        <span class="td-mobile-topbar__title">Taskdeck</span>
+      </div>
+
       <ShellTopbar @open-command-palette="openCommandPalette" />
 
       <main class="td-content" role="main">
@@ -210,5 +221,51 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: var(--td-space-8);
   background: var(--td-surface-base);
+}
+
+/* ─── Mobile top bar (hamburger) ─── */
+.td-mobile-topbar {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .td-mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--td-space-3);
+    padding: var(--td-space-3) var(--td-space-4);
+    background: var(--td-surface-container);
+    border-bottom: 1px solid var(--td-border-ghost);
+  }
+
+  .td-mobile-topbar__hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: none;
+    background: transparent;
+    color: var(--td-text-primary);
+    cursor: pointer;
+    border-radius: var(--td-radius-md);
+  }
+
+  .td-mobile-topbar__hamburger:hover {
+    background: var(--td-surface-container-high);
+  }
+
+  .td-mobile-topbar__title {
+    font-family: 'Manrope', system-ui, sans-serif;
+    font-size: var(--td-font-lg);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--td-text-primary);
+  }
+
+  .td-content {
+    padding: var(--td-space-4);
+    overflow-x: hidden;
+  }
 }
 </style>

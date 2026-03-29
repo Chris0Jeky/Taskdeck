@@ -33,6 +33,15 @@ const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 
 const sidebarCollapsed = ref(false)
+const mobileOpen = ref(false)
+
+function closeMobileMenu() {
+  mobileOpen.value = false
+}
+
+function toggleMobileMenu() {
+  mobileOpen.value = !mobileOpen.value
+}
 
 const navCatalog: NavItem[] = [
   {
@@ -221,13 +230,21 @@ function toggleSidebar() {
  */
 defineExpose({
   availableNavItems,
+  mobileOpen,
+  toggleMobileMenu,
+  closeMobileMenu,
 })
 </script>
 
 <template>
+  <div
+    v-if="mobileOpen"
+    class="td-sidebar-overlay"
+    @click="closeMobileMenu"
+  />
   <aside
     class="td-sidebar"
-    :class="{ 'td-sidebar--collapsed': sidebarCollapsed }"
+    :class="{ 'td-sidebar--collapsed': sidebarCollapsed, 'td-sidebar--mobile-open': mobileOpen }"
     role="navigation"
     aria-label="Main navigation"
   >
@@ -253,6 +270,7 @@ defineExpose({
         class="td-nav-item"
         :class="{ 'td-nav-item--active': isActiveRoute(item.path) }"
         :aria-current="isActiveRoute(item.path) ? 'page' : undefined"
+        @click="closeMobileMenu"
       >
         <span class="td-nav-item__icon">{{ item.icon }}</span>
         <span v-if="!sidebarCollapsed" class="td-nav-item__label">{{ item.label }}</span>
@@ -272,6 +290,7 @@ defineExpose({
           class="td-nav-item td-nav-item--secondary"
           :class="{ 'td-nav-item--active': isActiveRoute(item.path) }"
           :aria-current="isActiveRoute(item.path) ? 'page' : undefined"
+          @click="closeMobileMenu"
         >
           <span class="td-nav-item__icon">{{ item.icon }}</span>
           <span v-if="!sidebarCollapsed" class="td-nav-item__label">{{ item.label }}</span>
@@ -489,5 +508,39 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+
+/* ─── Mobile overlay ─── */
+.td-sidebar-overlay {
+  display: none;
+}
+
+/* ─── Mobile: sidebar off-canvas ─── */
+@media (max-width: 640px) {
+  .td-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 50;
+  }
+
+  .td-sidebar--mobile-open {
+    transform: translateX(0);
+  }
+
+  .td-sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 45;
+  }
+
+  .td-nav-item {
+    min-height: 44px;
+  }
 }
 </style>
