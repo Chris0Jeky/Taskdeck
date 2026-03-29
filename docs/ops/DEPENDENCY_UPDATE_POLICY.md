@@ -42,7 +42,7 @@ Taskdeck uses **GitHub Dependabot** for automated dependency update PRs across t
 ### Security updates
 
 - Dependabot security updates are enabled by default on GitHub and create PRs independently of the weekly schedule.
-- Security PRs are clearly distinguishable by the `security` label automatically applied by GitHub and the security advisory reference in the PR body.
+- Security PRs are clearly distinguishable by the security advisory reference in the PR body and `[security]` prefix in the PR title. GitHub may also auto-apply a `security` label if one exists in the repo.
 - Security updates follow the severity-based SLA targets defined below.
 
 ### Lock-file-only updates
