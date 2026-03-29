@@ -85,14 +85,20 @@ KS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
 check_result "GET kill switch status" "200" "$KS_HTTP"
 
 # --- Step 2: Activate identity-scoped kill switch ---
-log_step "Step 2: Activate identity-scoped kill switch for the authenticated caller"
+# SCOPE LIMITATION: The identity-scope test below only verifies the caller-self
+# case (DRILL_USER_ID must equal the user represented by OPERATOR_TOKEN).
+# Arbitrary third-party user quarantine via the API is NOT supported today and
+# returns 403. Full operator-initiated identity quarantine of an abusive actor
+# is Future/unimplemented — use config-level global kill (see Step 4 / Section
+# 2.1 of the runbook) for real abusive-user incidents.
+log_step "Step 2: Activate identity-scoped kill switch for the authenticated caller (caller-self only)"
 
 KS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
     -X POST "$TASKDECK_API/api/llm/killswitch" \
     -H "$AUTH_HEADER" \
     -H "Content-Type: application/json" \
     -d "{\"scope\": 2, \"target\": \"$DRILL_USER_ID\", \"enabled\": true, \"reason\": \"Containment drill $DRILL_ID\"}")
-check_result "Activate identity kill switch" "200" "$KS_HTTP"
+check_result "Activate identity kill switch (caller-self)" "200" "$KS_HTTP"
 
 # Verify it shows in status
 KS_BODY=$(curl -s "$TASKDECK_API/api/llm/killswitch" -H "$AUTH_HEADER")
@@ -105,14 +111,14 @@ else
 fi
 
 # --- Step 3: Deactivate identity-scoped kill switch ---
-log_step "Step 3: Deactivate identity-scoped kill switch"
+log_step "Step 3: Deactivate identity-scoped kill switch (caller-self only)"
 
 KS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
     -X POST "$TASKDECK_API/api/llm/killswitch" \
     -H "$AUTH_HEADER" \
     -H "Content-Type: application/json" \
     -d "{\"scope\": 2, \"target\": \"$DRILL_USER_ID\", \"enabled\": false, \"reason\": \"Drill cleanup $DRILL_ID\"}")
-check_result "Deactivate identity kill switch" "200" "$KS_HTTP"
+check_result "Deactivate identity kill switch (caller-self)" "200" "$KS_HTTP"
 
 # --- Step 4: Test global kill switch via config ---
 log_step "Step 4: Global kill switch (config-level)"

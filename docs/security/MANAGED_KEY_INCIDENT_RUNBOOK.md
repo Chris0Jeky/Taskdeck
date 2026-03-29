@@ -95,16 +95,20 @@ curl "$TASKDECK_API/api/llm/killswitch" \
 
 ### 2.2. Quarantine Specific Actor (Class 1C)
 
-If the abuse is traced to the currently authenticated user, you can apply an identity-scoped kill switch through the API:
+> **Implementation status**: Operator-initiated identity quarantine for an **arbitrary abusive user** is **Future — not yet implemented**. The API only permits `Identity` scope when `target` matches the authenticated caller's own user ID. Any attempt to quarantine a third-party user via this API returns `403 Forbidden`.
+>
+> For a real abusive-user incident today, use the config-level **global kill path in Section 2.1** while investigating. The procedure below only applies when the abusive actor is the same user who is currently authenticated (e.g., a self-test or drill scenario).
+
+If the abuse is traced to the currently authenticated user (caller-self only), you can apply an identity-scoped kill switch through the API:
 
 ```bash
 curl -X POST "$TASKDECK_API/api/llm/killswitch" \
   -H "Authorization: Bearer $OPERATOR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"scope": 2, "target": "<USER_GUID>", "enabled": true, "reason": "Quarantined — abuse investigation [INCIDENT_ID]"}'
+  -d '{"scope": 2, "target": "<CALLER_USER_GUID>", "enabled": true, "reason": "Quarantined — abuse investigation [INCIDENT_ID]"}'
 ```
 
-Current limitation: the API only permits `Identity` scope when `target` matches the authenticated caller's own user ID. It cannot quarantine an arbitrary third-party abusive actor yet. For a real abusive-user incident, use the config-level global kill path in Section 2.1 while investigating.
+Note: `<CALLER_USER_GUID>` must be the GUID of the user represented by `OPERATOR_TOKEN`. Supplying any other user's GUID returns `403 Forbidden`. Full operator-initiated identity quarantine of an arbitrary third-party actor is not available via the live API and must be tracked as a future capability.
 
 ### 2.3. Quarantine Specific Surface (Class 1B, 1C)
 
@@ -359,7 +363,7 @@ Operational readiness drills should be run quarterly in non-production environme
 ### Drill Success Criteria
 
 - Key rotation drill: new key is active, old key is revoked, health probe returns `verified`, no request failures during rotation window
-- Kill switch drill: kill-switch status is readable, caller-scoped identity toggles succeed, config-level global kill guidance is validated, and non-LLM surfaces remain operational
+- Kill switch drill: kill-switch status is readable, caller-scoped identity toggles succeed (caller-self only; arbitrary-user quarantine is Future/unimplemented), config-level global kill guidance is validated, and non-LLM surfaces remain operational. "All scopes" containment readiness in this context reflects the config-level global disable path, not a live API identity-scoped operator quarantine of an arbitrary user.
 - Spend runaway drill: quota usage endpoint correctly reports consumption and the operator can identify the correct containment path before budget ceiling is breached
 
 ---
