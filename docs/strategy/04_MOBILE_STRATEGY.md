@@ -43,7 +43,7 @@ The thesis is "near-zero-friction capture." But capture happens everywhere — a
 - Near-zero additional maintenance burden
 
 **Cons:**
-- iOS Safari has PWA limitations (no background sync, limited push notifications pre-iOS 16.4, but push is now supported since iOS 16.4)
+- iOS Safari has PWA limitations (no background sync, limited push notifications pre-iOS 16.4, but push is now supported since iOS 16.4). **iOS 26 improvement:** Sites added to Home Screen now default to standalone display mode (no Safari chrome), making PWAs feel native without requiring the user to manually "Add to Home Screen" from the share menu.
 - No native share sheet integration (limited to Web Share API)
 - No home screen widget support
 - App-like feel requires careful CSS/UX work
@@ -219,6 +219,7 @@ The #1 mobile use case. Must be <3 seconds from unlock to captured.
 1. **From app:** Tap center (+) button → text input → send → done
 2. **From notification:** Long-press notification → "Quick capture" action → text input → send
 3. **From share sheet (Capacitor only):** Share text from any app → Taskdeck capture → done
+   - **PWA alternative (Android):** Register as a [Web Share Target](https://developer.chrome.com/articles/web-share-target/) in the manifest so users can share text/URLs from any Android app directly into Taskdeck capture — no Capacitor needed.
 4. **From home screen shortcut:** "Quick Capture" shortcut icon → opens directly to capture modal
 
 ### 4.4 Review on Mobile
@@ -317,7 +318,11 @@ export default defineConfig({
 })
 ```
 
-### 5.3 Offline Strategy
+### 5.3 Client-Side SQLite for Offline Data
+
+For full offline data access beyond service worker caching, use **[wa-sqlite](https://github.com/nicbarker/nicbarker.github.io) with OPFS (Origin Private File System)** as the client-side SQLite engine. wa-sqlite runs SQLite compiled to WASM and persists data to the browser's OPFS storage, enabling true offline-first data queries. Notion uses this approach for its offline mode. This enables offline board reads and capture queue without network — not just cached API responses.
+
+### 5.4 Offline Strategy
 
 | Data | Caching Strategy | Rationale |
 |------|-----------------|-----------|
@@ -327,7 +332,7 @@ export default defineConfig({
 | Images/assets | Cache-first | Static, rarely change |
 | API responses | Network-first, short TTL cache | Balance freshness vs offline |
 
-### 5.4 Push Notifications (PWA)
+### 5.5 Push Notifications (PWA)
 
 Since iOS 16.4 (March 2023), PWAs support Web Push on iOS. This covers:
 - "New proposal ready for review"
@@ -454,6 +459,7 @@ Implementation: Web Push API + VAPID keys + backend notification service (alread
 | Apple rejects Capacitor app | Low-Medium | Medium | Don't submit until UX is genuinely mobile-native |
 | Performance on mid-range Android | Medium | Medium | Bundle size budget, lazy loading, code splitting |
 | Push notification setup complexity | Low | Low | Use existing notification service, add web push endpoint |
+| EU PWA degradation (Apple DMA) | Medium | Medium | Apple's DMA compliance in the EU degraded PWA standalone mode — no push notifications, no full-screen in some configurations. Test EU behavior separately; consider Capacitor wrapper for EU iOS users if PWA limitations are blocking. |
 
 ---
 
