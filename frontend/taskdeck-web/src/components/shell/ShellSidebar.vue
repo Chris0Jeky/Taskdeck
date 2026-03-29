@@ -313,7 +313,7 @@ defineExpose({
   flex-direction: column;
   transition: width var(--td-transition-smooth);
   flex-shrink: 0;
-  box-shadow: 40px 0 60px -15px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--td-shadow-lg);
   z-index: 40;
 }
 
@@ -325,19 +325,19 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--td-space-5) var(--td-space-5);
+  padding: var(--td-space-5);
   min-height: var(--td-topbar-height);
 }
 
 .td-sidebar__brand {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--td-space-1);
 }
 
 .td-sidebar__title {
   font-family: 'Manrope', system-ui, sans-serif;
-  font-size: 1.375rem;
+  font-size: var(--td-font-xl);
   font-weight: 800;
   letter-spacing: -0.04em;
   color: var(--td-text-primary);
@@ -346,7 +346,7 @@ defineExpose({
 
 .td-sidebar__subtitle {
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 8px;
+  font-size: var(--td-font-xs);
   font-weight: 700;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -359,11 +359,18 @@ defineExpose({
   color: var(--td-text-tertiary);
   cursor: pointer;
   padding: var(--td-space-2);
-  transition: color var(--td-transition-fast);
+  border-radius: var(--td-radius-md);
+  transition: color var(--td-transition-fast), background var(--td-transition-fast);
 }
 
 .td-sidebar__toggle:hover {
   color: var(--td-color-ember);
+  background: var(--td-surface-container-high);
+}
+
+.td-sidebar__toggle:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
 }
 
 .td-sidebar__nav {
@@ -384,7 +391,7 @@ defineExpose({
 .td-sidebar__section-label {
   padding: var(--td-space-4) var(--td-space-5);
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: var(--td-font-xs);
   font-weight: 700;
   color: var(--td-text-tertiary);
   letter-spacing: 0.2em;
@@ -398,14 +405,14 @@ defineExpose({
   padding: var(--td-space-4) var(--td-space-5);
   color: var(--td-text-tertiary);
   text-decoration: none;
-  transition: all 200ms ease;
+  transition: all var(--td-transition-normal);
   cursor: pointer;
   border: none;
   background: transparent;
   width: 100%;
   text-align: left;
   font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: var(--td-font-xs);
   font-weight: 400;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -421,8 +428,13 @@ defineExpose({
   transform: translateX(2px);
 }
 
+.td-nav-item:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
+}
+
 .td-nav-item--active {
-  background: linear-gradient(to right, rgba(255, 77, 77, 0.1), transparent);
+  background: linear-gradient(to right, var(--td-color-ember-dim), transparent);
   border-left: 4px solid var(--td-color-ember);
   color: var(--td-color-ember);
   font-weight: 700;
@@ -445,7 +457,7 @@ defineExpose({
 }
 
 .td-nav-item__icon {
-  font-size: 14px;
+  font-size: var(--td-font-base);
   flex-shrink: 0;
   width: 20px;
   text-align: center;
@@ -460,11 +472,11 @@ defineExpose({
   margin-left: auto;
   min-width: 18px;
   height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--td-color-ember, #ff4d4d);
-  color: #fff;
-  font-size: 10px;
+  padding: 0 var(--td-space-2);
+  border-radius: 9999px;
+  background: var(--td-color-ember);
+  color: var(--td-text-inverse);
+  font-size: var(--td-font-xs);
   font-weight: 700;
   line-height: 18px;
   text-align: center;
@@ -473,7 +485,7 @@ defineExpose({
 
 .td-sidebar__footer {
   padding: var(--td-space-3);
-  border-top: 1px solid rgba(91, 64, 62, 0.1);
+  border-top: 1px solid var(--td-border-ghost);
   display: flex;
   flex-direction: column;
   gap: 1px;
