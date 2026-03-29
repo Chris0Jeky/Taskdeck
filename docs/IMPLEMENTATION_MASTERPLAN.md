@@ -455,6 +455,33 @@ Delivered in the latest cycle:
 100. TST-08 manual validation slice B — authz policy, cross-user isolation, and API error contracts (`#131`):
     - added `docs/testing/manual-validation-b-authz-contracts.md` with 175 step-indexed checks (B-01 to B-175) covering all 28 controllers
     - two-user fixture setup with curl-based bootstrap script; covers unauthenticated denial, cross-user board isolation, error payload contract verification
+101. AppShell premium reskin delivery (PR `#499`):
+    - shell sidebar, topbar, command palette, and keyboard help components reskinned from hardcoded Tailwind/rgba values to `--td-*` design token system
+    - added focus-visible accessibility rings throughout shell layer and glass morphism effects for visual coherence
+    - no behavior changes; purely CSS/token-based styling refactor
+102. Board/card surface polish delivery (PR `#501`):
+    - board canvas, toolbar, action rail, column lanes, and card components reskinned to design token system
+    - standardized card visual states (hover, focus, selected, disabled, dragging) with token-based styling
+    - fixed combined selected+focus-visible keyboard nav specificity conflict; replaced hardcoded font sizes with token references
+103. AGT-02 tool registry, policy evaluator, and first bounded template delivery (`#337`, PR `#502`):
+    - added domain primitives: `ToolScope`/`ToolRiskLevel` enums, `ITaskdeckTool`/`ITaskdeckToolRegistry` interfaces, `PolicyDecision` value object (AllowDirect/AllowWithReview/Deny factories)
+    - added `TaskdeckToolRegistry` (thread-safe ConcurrentDictionary, duplicate rejection, scope filtering) and `AgentPolicyEvaluator` (allowlist enforcement, risk-level gating with review-first defaults)
+    - added `InboxTriageAssistant` bounded template: gathers pending inbox items, routes through policy evaluator, creates proposals (never direct board mutations)
+    - DI registration: singleton tool registry with `inbox.triage` pre-registered, scoped policy evaluator and triage assistant
+    - 42 backend tests across registry, policy evaluation, and inbox triage assistant suites
+104. Demo director reporting, assertions, presets, and soak mode delivery (`#331`, PR `#500`):
+    - added named preset system (`demo-director-presets.mjs`) for common demo modes with override merging and runtime registration
+    - added trace assertion utilities (`demo-trace-assertions.mjs`) for exact/structural comparison plus step ordering validation
+    - added HTML report generator (`demo-report-html.mjs`) with inline styles, trace tables, pass/fail badges, and embedded base64 screenshots
+    - added soak mode (`demo-soak.mjs`) for long-run director scenario loops with configurable iteration counts, cooldown, and cumulative metrics
+    - 63 frontend tests covering presets, assertions, reports, soak mode, and integration pipeline
+105. Incident rehearsal and recovery program delivery (`#150`, PR `#503`):
+    - added `docs/ops/INCIDENT_REHEARSAL_CADENCE.md` with monthly lightweight + quarterly deep drill schedule and rotation model
+    - added `docs/ops/EVIDENCE_TEMPLATE.md` for standardized rehearsal outcome format with ISO 8601 timeline and bidirectional issue linking
+    - added `docs/ops/REHEARSAL_BACKOFF_RULES.md` with finding-to-issue workflow, severity labels (P1–P4), and SLA expectations
+    - added 4 rehearsal scenario templates (degraded-api-health, missing-telemetry-signal, mcp-server-startup-regression, deployment-readiness-failure)
+    - added first execution evidence at `docs/ops/rehearsals/2026-03-29_degraded-api-health.md`
+    - cross-linked from `TESTING_GUIDE.md` and `MANUAL_TEST_CHECKLIST.md`
 
 ## Current Planning Pivot (2026-03-07)
 
@@ -581,9 +608,14 @@ Exit Criteria:
 
 Focus:
 - add `AgentProfile`, `AgentRun`, and `AgentRunEvent` as first-class runtime primitives
-- add a tool registry abstraction and policy evaluator
-- add inspectable run traces and a first bounded agent template
+- ~~add a tool registry abstraction and policy evaluator~~ (delivered in AGT-02, `#337`)
+- ~~add a first bounded agent template~~ (delivered: `InboxTriageAssistant` in AGT-02)
+- add inspectable run traces
 - expose agent mode views only after the substrate is real
+
+Current status:
+- tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
+- remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
 Exit Criteria:
 - runs are first-class and inspectable
@@ -608,7 +640,7 @@ Exit Criteria:
 These continue in parallel where they protect trust, performance, or operator posture, but they should not outrun Horizon A through C product legibility work:
 
 - managed-key LLM control plane and abuse controls: `#235`, `#237` (pending), `#238` (operator tooling groundwork delivered; live-traffic wiring pending), `#239` (delivered), `#240` (delivered)
-- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations now delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets
+- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling
 - long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
 - platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
 - deferred outreach CRM expansion: `#262` to `#268`
@@ -627,8 +659,8 @@ These continue in parallel where they protect trust, performance, or operator po
   - `AgentProfile`
   - `AgentRun`
   - `AgentRunEvent`
-  - tool registry and policy evaluator
-  - first bounded template
+  - tool registry and policy evaluator (delivered in AGT-02)
+  - first bounded template (delivered: `InboxTriageAssistant`)
   - inspectable run detail
 - `R3` knowledge/integrations alpha:
   - `KnowledgeDocument` / `KnowledgeChunk`
@@ -689,12 +721,12 @@ These continue in parallel where they protect trust, performance, or operator po
 - Seeded secondary MVP follow-through wave (lower priority than Wave P):
   - `#329` tracker
   - `#330` in-app demoability and live attention cues
-  - `#331` demo director reporting/assertions/presets/soak
+  - `#331` demo director reporting/assertions/presets/soak (delivered)
   - `#332` replay-from-trace and scenario-authoring follow-through
 - Seeded expanded-blueprint architecture wave (future agent/knowledge/release-gate follow-through):
   - `#335` tracker
   - `#336` agent profile/run/event foundation
-  - `#337` tool registry, policy evaluator, and first bounded template
+  - `#337` tool registry, policy evaluator, and first bounded template (delivered)
   - `#339` knowledge document + SQLite FTS foundation
 - Reuse-before-duplicate anchors for this later wave: `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, `#328`
 

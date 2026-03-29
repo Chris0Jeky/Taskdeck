@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-26
+Last Updated: 2026-03-29
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,28 +10,22 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-03-06)
+## Current Verified Totals (2026-03-29)
 
-- Backend: 962/962 passing
-  - Domain: 122
-  - Application: 519
-  - API integration: 309
+- Backend: 1483/1483 passing
+  - Domain: 293
+  - Application: 786
+  - API integration: 392
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 478/478 passing
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): 24/24 passing
-- Combined automated total: 1464/1464 passing
+- Frontend unit: 1102/1102 passing (120 test files)
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): default required lane passing
+- Combined automated total: 2585+ passing (backend 1483 + frontend unit 1102 + E2E)
 
 Verification note:
-- backend totals were re-verified on 2026-03-06 via `dotnet test backend/Taskdeck.sln -c Release -m:1` with live providers forced off and `Llm__Provider=Mock`
-- frontend unit/build totals were re-verified on 2026-03-06 via `npm run lint`, `npx vitest --run`, `npm run typecheck`, and `npm run build`
-- frontend E2E totals were re-verified on 2026-03-06 with `npx playwright test --reporter=line` using Playwright frontend port auto-fallback (`5173` -> `4173` -> `5001`) and deterministic runner/worker convergence (`24/24` passing; `stakeholder-demo.spec.ts` remains opt-in and is skipped by default)
-- demo director smoke was re-verified on 2026-03-06 via `npm run demo:director:smoke` against the isolated `taskdeck.demo.ci.db` path
-
-2026-03-26 audit note:
-- the published 2026-03-06 API integration and Playwright totals are now known stale relative to the headed manual audit
-- the audit observed `322` API integration tests passing and a full Playwright run of `29 passed`, `1 failed`, `1 skipped` before the new opt-in `live-llm.spec.ts` landed in this branch
-- refresh the top-line totals on the next deliberate full-suite recertification rather than continuing to treat the 2026-03-06 counts as current
+- backend totals were re-verified on 2026-03-29 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
+- frontend unit totals were re-verified on 2026-03-29 via `npx vitest --run`
+- significant test growth since 2026-03-06 due to TST-CODEX wave (PRs #436–#448), knowledge service tests (PR #456), AGT-02 tool registry/policy/triage tests (PR #502), demo director presets/assertions/report/soak tests (PR #500), and adversarial review fixes
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 

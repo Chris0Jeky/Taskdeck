@@ -70,6 +70,7 @@ Direction guardrails (explicit):
   - `ArchiveRecoveryService` (decomposed into `ArchiveConflictDetector`, `RestorePlanner`, `RestoreExecutor`)
   - `StarterPackManifestValidator` decomposed into `StarterPackSchemaValidator`, `StarterPackSemanticValidator`, `StarterPackConflictDetector`, `StarterPackIdempotencyChecker`
   - `AbuseDetectionService` with `AbuseActor`/`AbuseEvent` domain entities and a 4-state containment model (Observe → Suspicious → Restricted → Blocked); operator kill-switch API groundwork for SEC-18
+  - agent tool registry substrate (AGT-02): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces with `ToolScope`/`ToolRiskLevel` classification, `PolicyDecision` value object, `AgentPolicyEvaluator` (allowlist + risk-level gating, review-first default), `InboxTriageAssistant` bounded template (proposal-only, never direct board mutation), singleton registry with scoped evaluation
   - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI`/`Gemini` behind explicit gates with config validation fallback)
   - `NotificationService` with per-user preference filtering and deduplication safeguards
   - outbound webhook integration baseline: board-scoped webhook subscriptions (endpoint + event filters + secret rotation/revocation), mutation-event delivery queueing, and signed delivery worker retries/dead-letter transitions
@@ -114,6 +115,8 @@ Direction guardrails (explicit):
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
   - shared UI primitives foundation (UI-02): 15 TdButton/TdInput/TdDialog/TdDropdown/TdTooltip/TdBadge/etc. primitives built on Reka UI via shadcn-vue ownership model with WAI-ARIA keyboard foundation; stack decision documented in `docs/analysis/ui-primitive-stack-decision-spike.md`
+  - appshell premium reskin: shell sidebar, topbar, command palette, and keyboard help components now use `--td-*` design token system with focus-visible accessibility rings and glass morphism effects
+  - board/card surface polish: board canvas, toolbar, action rail, column lanes, and card components now use design-token-based styling with standardized interactive states and accessibility focus rings
   - centralized JWT token storage abstraction (`utils/tokenStorage.ts`) with base64url + JSON payload validation, `isValidJwtStructure` guard, and `clearAll` helper; session-token storage ADR at `docs/analysis/session-token-storage-adr.md`
   - CSP hardening: removed `unsafe-inline` from `script-src` in security headers middleware; OWASP baseline doc updated
   - performance instrumentation composable (`usePerformanceMark`) with `PERF_BUDGETS` constants; 7 latency thresholds documented in `docs/PERFORMANCE_BUDGETS.md`; 16 workspace route views converted to lazy `() => import()` for initial bundle reduction
@@ -124,6 +127,10 @@ Direction guardrails (explicit):
   - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation, now bounded on reruns so canonical seeded captures, queue samples, chat evidence, comments, and Ops logs are reused instead of appended indefinitely
   - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `frontend/taskdeck-web/scripts/demo-run.mjs`, `frontend/taskdeck-web/scripts/demo-autopilot.mjs`, `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`, `frontend/taskdeck-web/scripts/scenarios-json/*`, and `frontend/taskdeck-web/scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
   - `frontend/taskdeck-web/scripts/demo-director.mjs` + `frontend/taskdeck-web/scripts/demo-snapshot.mjs` with `npm run demo:director` and `npm run demo:snapshot` for one-command orchestration and artifact capture (`run-summary.json`, `trace.ndjson`, `snapshot.json`, screenshots, logs)
+  - `frontend/taskdeck-web/scripts/demo-director-presets.mjs` for named preset scenarios (happy-path-capture, review-approve-flow, error-recovery-demo, soak-baseline) with override merging and runtime registration
+  - `frontend/taskdeck-web/scripts/demo-trace-assertions.mjs` for exact and structural trace comparison plus step ordering and error detection assertions
+  - `frontend/taskdeck-web/scripts/demo-report-html.mjs` for self-contained HTML report generation with inline styles, trace tables, pass/fail badges, and embedded base64 screenshots
+  - `frontend/taskdeck-web/scripts/demo-soak.mjs` for long-run director scenario loops with configurable iteration counts, cooldown, and cumulative metrics tracking
   - full Playwright-backed demos now auto-enable a live LLM provider when LLM steps are enabled and usable demo keys are present, preferring Gemini by default for long/manual runs while preserving explicit mock opt-out
   - non-demo Playwright backend startup now stays pinned to deterministic `Mock` mode by default even when local shell env exports live-provider keys; demo-only overrides still take precedence when explicitly enabled
   - when demo-specific live-provider overrides need to be injected, Playwright now disables existing-server reuse by default so full demos do not silently stick to an older mock backend unless the operator explicitly forces reuse
@@ -321,6 +328,41 @@ Headed manual-audit Playwright pack (`#369`):
 Manual validation checklists (`#130`, `#131`):
 - Slice A (`#130`): 22 step-indexed scenarios (A-01 to A-22) in `docs/testing/manual-validation-a-workspace-board-ux.md` covering workspace shell, board lifecycle, keyboard UX, and escape behavior stack
 - Slice B (`#131`): 175 step-indexed checks (B-01 to B-175) in `docs/testing/manual-validation-b-authz-contracts.md` covering all 28 controllers with two-user isolation matrix
+
+## Post-Merge Wave 2 (2026-03-29)
+
+AppShell premium reskin (`#499`):
+- Shell sidebar, topbar, command palette, and keyboard help components reskinned from hardcoded Tailwind/rgba values to `--td-*` design token system
+- Added focus-visible accessibility rings throughout shell layer
+- Glass morphism and smooth transitions for premium visual feel
+
+Board/card surface polish (`#501`):
+- Board canvas, toolbar, action rail, column lanes, and card components reskinned to design token system
+- Standardized card visual states (hover, focus, selected, disabled, dragging) with token-based styling
+- Fixed combined selected+focus-visible keyboard navigation specificity conflict
+- Replaced hardcoded font sizes with token references in filter count badges
+
+AGT-02 tool registry, policy evaluator, and first bounded template (`#337`, PR `#502`):
+- Added domain primitives: `ToolScope`, `ToolRiskLevel` enums, `ITaskdeckTool`, `ITaskdeckToolRegistry` interfaces, `PolicyDecision` value object
+- Added `TaskdeckToolRegistry` (thread-safe in-memory registry), `AgentPolicyEvaluator` (allowlist + risk-level gating), and `InboxTriageAssistant` (bounded template that creates proposals, never direct board mutations)
+- DI registration: singleton tool registry with `inbox.triage` pre-registered, scoped policy evaluator and triage assistant
+- Default policy is review-first for all risk levels; auto-apply is opt-in only for low-risk tools
+- 42 backend tests covering registry, policy evaluation, and inbox triage assistant
+
+Demo director reporting, assertions, presets, and soak mode (`#331`, PR `#500`):
+- Added `demo-director-presets.mjs` with named preset system for common demo modes (happy-path-capture, review-approve-flow, error-recovery-demo, soak-baseline)
+- Added `demo-trace-assertions.mjs` for exact and structural trace comparison
+- Added `demo-report-html.mjs` for self-contained HTML report generation with embedded screenshots
+- Added `demo-soak.mjs` for long-run director scenario loops with cumulative metrics
+- 63 frontend tests covering presets, assertions, reports, soak mode, and integration
+
+Incident rehearsal and recovery program (`#150`, PR `#503`):
+- Added `docs/ops/INCIDENT_REHEARSAL_CADENCE.md` (monthly lightweight + quarterly deep drill schedule)
+- Added `docs/ops/EVIDENCE_TEMPLATE.md` (standardized rehearsal outcome format)
+- Added `docs/ops/REHEARSAL_BACKOFF_RULES.md` (finding-to-issue workflow with severity SLAs)
+- Added 4 rehearsal scenario templates: degraded-api-health, missing-telemetry-signal, mcp-server-startup-regression, deployment-readiness-failure
+- Added first execution evidence: `docs/ops/rehearsals/2026-03-29_degraded-api-health.md`
+- Cross-linked from `TESTING_GUIDE.md` and `MANUAL_TEST_CHECKLIST.md`
 
 ## MVP Expansion Planning Integration (2026-03-07)
 
@@ -567,7 +609,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-03-06 (backend + frontend unit/build + frontend E2E + demo smoke refreshed); counts below are the last full-suite recertification — additional test coverage was added in PRs #436–#471 (TST-CODEX wave + knowledge service + BoardView/ActivityView decomposition) so actual totals are higher
+Verification Date: 2026-03-29 (backend + frontend unit recertified after PRs #436–#503 merge wave)
 
 ### Backend (Executed)
 
@@ -575,12 +617,12 @@ Command:
 - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
-- Domain: 122/122 passing
-- Application: 519/519 passing
-- API integration: 309/309 passing
+- Domain: 293/293 passing
+- Application: 786/786 passing
+- API integration: 392/392 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 962/962 passing
+- Backend Total: 1483/1483 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -591,7 +633,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 478/478 passing
+- Frontend unit: 1102/1102 passing (120 test files)
 - Typecheck: passing
 - Production build: passing
 
@@ -622,7 +664,7 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): 1464/1464 passing
+- Combined automated total (backend + frontend unit/build + default frontend E2E): 2585+ passing (backend 1483 + frontend unit 1102 + E2E)
 
 ## CI Status
 
@@ -695,7 +737,7 @@ Automation and data:
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
 - capture inbox pipeline and canonical docs promotion are now shipped (`#200` to `#211`); logging redaction follow-through is delivered in `#212`, and remaining capture-linked scalability follow-through is tracked in `#213`
-- premium UI foundations and reskin wave are not yet implemented; tracked in `#242` to `#251` with reused dependencies `#154`, `#88`, `#92`, and `#213`
+- premium UI foundations are delivered (`#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets); appshell premium reskin (`#499`) and board/card surface polish (`#501`) are now shipped with design-token-based styling across shell sidebar/topbar/command-palette/keyboard-help and board canvas/toolbar/action-rail/column-lane/card components; remaining premium UI items are tracked in `#244`, `#246` to `#249`, and optional `#251`
 - testing-harness wave guardrails are shipped through `#255` to `#260`; follow-up improvements now belong to normal hardening work rather than the original wave
 - outreach CRM deferred expansion is not shipped; tracked in `#262` to `#268` with reuse links to delivered `#75` (import adapters) plus `#77` and `#175`
 
@@ -716,7 +758,7 @@ Observability and scalability:
 UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
 - primary product gap is now telemetry and release-gate follow-through rather than missing route teaching: the product legibility wave has shipped the main shell, route guidance, docs baseline, and the first-run smoke guardrail, while `#341` carries the remaining telemetry/release-gate framing
-- review/proposal flow is functional but still system-shaped; readable proposal summaries, stronger deep links, and board-centered return paths remain next-cycle work
+- review/proposal flow now includes readable proposal summaries, impact/risk/source cues, affected-entity headlines, board-centered action rails, and deep links across inbox/review/chat/notifications/provenance (delivered in `#326`); remaining polish is incremental rather than structural
 - `docs/START_HERE.md`, `docs/USER_MANUAL.md`, `docs/manual/*`, and the new product help guides now complement the shipped `Home` / `Today` onboarding path and key-route contextual help with a navigation-shaped help-center stack; the first-run smoke and launch-criteria guardrail is now delivered in `#328`, while broader telemetry and release-gate follow-through stays tracked in `#341`
 
 Security/compliance hardening backlog added from research cross-check:
