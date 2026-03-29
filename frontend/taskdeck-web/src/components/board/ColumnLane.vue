@@ -232,11 +232,7 @@ function handleCardDragOver(event: DragEvent) {
         @click="openCardForm"
         :disabled="isWipLimitAtOrExceeded"
         :title="isWipLimitAtOrExceeded ? `WIP limit of ${column.wipLimit} reached` : 'Add a card'"
-        :aria-disabled="isWipLimitAtOrExceeded"
-        :class="[
-          'td-column-lane__add-card-btn',
-          isWipLimitAtOrExceeded ? 'td-column-lane__add-card-btn--disabled' : '',
-        ]"
+        class="td-column-lane__add-card-btn"
       >
         <span>+</span>
         <span>Add Card</span>
@@ -448,7 +444,6 @@ function handleCardDragOver(event: DragEvent) {
   box-shadow: var(--td-focus-ring);
 }
 
-.td-column-lane__add-card-btn--disabled,
 .td-column-lane__add-card-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
