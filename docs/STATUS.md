@@ -24,7 +24,7 @@ Rebranding thesis (2026-02-23):
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
-- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture; degraded provider responses are now structurally distinct (`messageType: "degraded"` + `degradedReason`) and the health endpoint supports opt-in probe verification (`?probe=true`)
+- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture; degraded provider responses are now structurally distinct (`messageType: "degraded"` + `degradedReason`) and the health endpoint supports opt-in probe verification (`?probe=true`); **known gap**: chat-to-proposal pipeline uses static keyword matching for intent detection and regex-based instruction parsing — natural language requests fail to produce proposals (`#570`); all three providers share the same brittle `LlmIntentClassifier` and none leverage the LLM for instruction extraction; improvement plan spans classifier hardening (`#571`), error UX (`#572`), LLM-assisted extraction (`#573`), multi-instruction support (`#574`), board-context prompting (`#575`), and conversational refinement (`#576`); test coverage added in `#577`; analysis at `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 - managed-key shared-token abuse-control strategy is now explicitly seeded in `#235` to `#240` before broad external exposure
 - testing-harness guardrail expansion from `#254` to `#260` is shipped; remaining work is normal follow-up hardening rather than the original wave
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
@@ -619,12 +619,12 @@ Command:
 - `dotnet test backend/Taskdeck.sln -c Release -m:1`
 
 Result:
-- Domain: 293/293 passing
-- Application: 786/786 passing
-- API integration: 392/392 passing
+- Domain: 306/306 passing
+- Application: 868/868 passing
+- API integration: 407/407 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 1483/1483 passing
+- Backend Total: 1593/1593 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -666,7 +666,7 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): 2585+ passing (backend 1483 + frontend unit 1102 + E2E)
+- Combined automated total (backend + frontend unit/build + default frontend E2E): 2695+ passing (backend 1593 + frontend unit 1102 + E2E)
 
 ## CI Status
 
