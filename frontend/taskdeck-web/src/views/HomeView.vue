@@ -768,9 +768,7 @@ onActivated(refreshHomeSummary)
     gap: var(--td-space-3);
   }
 
-  .td-home-card__stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  /* stats inherit 1fr from 768px breakpoint — single column on mobile */
 
   .td-home-action {
     min-height: 44px;
