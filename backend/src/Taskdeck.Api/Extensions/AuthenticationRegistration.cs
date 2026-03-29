@@ -1,10 +1,7 @@
-using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.IdentityModel.Tokens;
 using Taskdeck.Api.Contracts;
@@ -111,21 +108,8 @@ public static class AuthenticationRegistration
                 options.ClaimActions.MapJsonKey("urn:github:login", "login");
                 options.ClaimActions.MapJsonKey("urn:github:avatar", "avatar_url");
 
-                options.Events = new OAuthEvents
-                {
-                    OnCreatingTicket = async context =>
-                    {
-                        var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
-                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
-                        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-                        var response = await context.Backchannel.SendAsync(request, context.HttpContext.RequestAborted);
-                        response.EnsureSuccessStatusCode();
-
-                        using var user = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                        context.RunClaimActions(user.RootElement);
-                    }
-                };
+                // OAuthHandler fetches UserInformationEndpoint automatically
+                // and applies ClaimActions — no custom OnCreatingTicket needed.
             });
         }
 
