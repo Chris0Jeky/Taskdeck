@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
+import { usePerformanceMark } from '../composables/usePerformanceMark'
 import ColumnLane from '../components/board/ColumnLane.vue'
 import BoardSettingsModal from '../components/board/BoardSettingsModal.vue'
 import LabelManagerModal from '../components/board/LabelManagerModal.vue'
@@ -38,6 +39,8 @@ const presenceMembers = ref<BoardPresenceMember[]>([])
 const selectedCardId = ref<string | null>(null)
 const selectedColumnIndex = ref<number>(0)
 
+const boardLoadPerf = usePerformanceMark('board-load')
+
 const boardId = ref(route.params.id as string)
 const realtime = createBoardRealtimeController({
   fetchBoard: async (id: string) => {
@@ -61,6 +64,7 @@ const sortedColumns = computed(() => {
 const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(boardStore.currentBoard?.name))
 
 onMounted(async () => {
+  boardLoadPerf.start()
   try {
     presenceMembers.value = []
     boardStore.setBoardPresenceMembers([])
@@ -69,6 +73,8 @@ onMounted(async () => {
     await realtime.start(boardId.value)
   } catch (error) {
     console.error('Failed to load board:', error)
+  } finally {
+    boardLoadPerf.end()
   }
 })
 

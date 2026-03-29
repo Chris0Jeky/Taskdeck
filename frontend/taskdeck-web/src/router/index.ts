@@ -1,24 +1,28 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import BoardsListView from '../views/BoardsListView.vue'
-import BoardView from '../views/BoardView.vue'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
-import ProfileSettingsView from '../views/ProfileSettingsView.vue'
-import BoardAccessView from '../views/BoardAccessView.vue'
-import ActivityView from '../views/ActivityView.vue'
-import AutomationQueueView from '../views/AutomationQueueView.vue'
-import AutomationChatView from '../views/AutomationChatView.vue'
-import OpsConsoleView from '../views/OpsConsoleView.vue'
-import ExportImportView from '../views/ExportImportView.vue'
-import ArchiveView from '../views/ArchiveView.vue'
-import NotificationInboxView from '../views/NotificationInboxView.vue'
-import NotificationPreferencesView from '../views/NotificationPreferencesView.vue'
-import InboxView from '../views/InboxView.vue'
-import HomeView from '../views/HomeView.vue'
-import TodayView from '../views/TodayView.vue'
-import ReviewView from '../views/ReviewView.vue'
 import { isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive } from '../utils/demoMode'
+import { usePerformanceMark } from '../composables/usePerformanceMark'
+
+// Lazy-loaded route components — keeps initial bundle small and speeds up
+// first-paint for login/register (the only eagerly-loaded views).
+const BoardsListView = () => import('../views/BoardsListView.vue')
+const BoardView = () => import('../views/BoardView.vue')
+const ProfileSettingsView = () => import('../views/ProfileSettingsView.vue')
+const BoardAccessView = () => import('../views/BoardAccessView.vue')
+const ActivityView = () => import('../views/ActivityView.vue')
+const AutomationQueueView = () => import('../views/AutomationQueueView.vue')
+const AutomationChatView = () => import('../views/AutomationChatView.vue')
+const OpsConsoleView = () => import('../views/OpsConsoleView.vue')
+const ExportImportView = () => import('../views/ExportImportView.vue')
+const ArchiveView = () => import('../views/ArchiveView.vue')
+const NotificationInboxView = () => import('../views/NotificationInboxView.vue')
+const NotificationPreferencesView = () => import('../views/NotificationPreferencesView.vue')
+const InboxView = () => import('../views/InboxView.vue')
+const HomeView = () => import('../views/HomeView.vue')
+const TodayView = () => import('../views/TodayView.vue')
+const ReviewView = () => import('../views/ReviewView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -219,8 +223,13 @@ const router = createRouter({
   ],
 })
 
+// Route-transition performance instrumentation
+const routePerf = usePerformanceMark('route-transition')
+
 // Navigation guard for auth
 router.beforeEach((to) => {
+  routePerf.start()
+
   const isPublic = to.meta.public === true
   const demoActive = isDemoMode && isDemoSessionActive()
   const token = localStorage.getItem('taskdeck_token')
@@ -239,6 +248,10 @@ router.beforeEach((to) => {
   if (isPublic && hasValidSession && (to.path === '/login' || to.path === '/register')) {
     return { path: '/workspace/home' }
   }
+})
+
+router.afterEach(() => {
+  routePerf.end()
 })
 
 export default router
