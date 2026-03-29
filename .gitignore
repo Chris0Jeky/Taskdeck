@@ -62,6 +62,9 @@ lerna-debug.log*
 
 # Claude Code local settings (personal overrides, not shared)
 .claude/settings.local.json
+
+# Auto-generated first-run config (contains JWT secret — never commit)
+appsettings.local.json
 *.swp
 *.swo
 *~
