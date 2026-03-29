@@ -26,7 +26,6 @@ Analyze gaps in the current hardening and testing posture across MCP integration
 **Gaps identified:**
 - **Infrastructure repository layer has no dedicated tests.** 26 repository classes in `Taskdeck.Infrastructure/Repositories/` have zero dedicated unit/integration tests. Repository behavior is only exercised transitively through API integration tests using `TestWebApplicationFactory`.
 - **No dedicated `DatabaseFileExportImportService` test coverage** for the SQLite file replacement/backup-restore fallback path at the infrastructure level.
-- **`SensitiveDataRedactor` has no dedicated test file** — redaction behavior is only covered transitively through logging integration tests.
 - **`AbuseDetectionService` live-traffic wiring is untested** — domain/service tests exist but the runtime event-to-detection pipeline is not yet wired or tested.
 - **Worker coverage is partial.** `OutboundWebhookDeliveryWorkerTests` and `ProposalHousekeepingWorkerTests` exist, but the main `LlmQueueWorker` and `WorkerHeartbeatWorker` lack dedicated test files (behavior is covered through service-level and integration tests only).
 
@@ -35,15 +34,15 @@ Analyze gaps in the current hardening and testing posture across MCP integration
 **What exists:**
 - API module tests: 19 spec files covering all 19 API modules (complete coverage)
 - Store tests: 10 stores with test files (including real + demo specs), covering all Pinia stores
-- Composable tests: baseline coverage for error mapper, escape-to-close, shortcut context, performance marks
-- Component tests: board components, views, utilities
+- Composable tests: 13 spec files covering error mapper, escape stack/close, shortcuts, performance marks, board drag-drop/keyboard-nav/realtime, activity query, virtual list, workspace help/onboarding
+- View tests: 14 spec files covering all primary views (HomeView, TodayView, InboxView, ReviewView, BoardView, ActivityView, ArchiveView, OpsConsoleView, etc.)
+- Component tests: 16 spec files covering board components (action rail, canvas, toolbar, dialog host), modals, cards, app shell, and UI primitives
 - E2E: 10 Playwright spec files covering smoke, automation-ops, capture-loop, first-run, concurrency, starter-pack fixtures, workspace-help, today-onboarding, live-llm (opt-in), stakeholder-demo (opt-in)
 - Last verified total: 478+ unit tests, 29+ E2E tests passing
 
 **Gaps identified:**
-- **View-level component tests are sparse.** Route-level pages (BoardView, InboxView, ReviewView, TodayView, HomeView) lack dedicated unit test files despite being the primary product surfaces.
 - **No dedicated tests for `router/` configuration** — route guards, redirect behavior, and workspace-mode routing logic are only tested transitively through E2E.
-- **Board sub-store (`store/board/`)** directory exists but dedicated test coverage is unclear relative to the main `boardStore.spec.ts`.
+- **Board sub-store modules (`store/board/`) lack individual test files.** 10 sub-modules (boardCrudStore, boardState, boardUiStore, cardStore, columnStore, labelStore, cardCommentStore, cardFilterStore, boardStoreHelpers) are exercised through the main `boardStore.spec.ts` but have no dedicated per-module tests for isolation.
 - **`http.ts` (base HTTP client)** has no dedicated test — interceptor behavior, token attachment, and error transformation are untested in isolation.
 
 ### 1.3 CI and Workflow Coverage
@@ -152,7 +151,7 @@ Analyze gaps in the current hardening and testing posture across MCP integration
 | 9 | Backend | Infrastructure repositories untested | Medium | Data access regressions caught only at integration level |
 | 10 | Security | No DAST scans | Medium | Runtime-only vulnerabilities (auth bypass, injection) missed |
 | 11 | Ops Reliability | No graceful shutdown test | Low-Medium | In-flight work lost on deploy/restart |
-| 12 | Frontend | View-level components untested | Low-Medium | Product surface regressions caught only in E2E |
+| 12 | Frontend | Board sub-store modules lack isolated tests | Low-Medium | Sub-module regressions caught only through aggregate store tests |
 | 13 | CI | No OpenAPI snapshot diff | Low | Breaking API changes merge without explicit review signal |
 | 14 | Frontend | No router guard tests | Low | Route protection regressions caught only in E2E |
 | 15 | Security | No CSP violation reporting | Low | Client-side policy violations invisible to operators |
@@ -257,14 +256,14 @@ Analyze gaps in the current hardening and testing posture across MCP integration
 **Priority label:** `Priority III`
 **ROI:** Medium — most repository behavior is transitively tested, but direct tests catch subtle query/mapping bugs earlier.
 
-#### TST-28: Frontend view-level component tests
-**Proposed issue title:** `TST-28: Add unit tests for primary view components`
+#### TST-28: Board sub-store module isolation tests
+**Proposed issue title:** `TST-28: Add isolation tests for board sub-store modules`
 **Acceptance criteria:**
-- Test files for `HomeView`, `TodayView`, `InboxView`, `ReviewView`, `BoardView` (post-decomposition)
-- Tests cover component mounting, key prop/store interactions, and conditional rendering
-- Tests do not duplicate E2E scope — focus on component isolation
+- Dedicated test files for high-traffic sub-stores: `cardStore`, `columnStore`, `labelStore`, `boardCrudStore`, `cardCommentStore`
+- Tests exercise module-specific logic (CRUD operations, filtering, state transitions) in isolation from the aggregate boardStore
+- Tests do not duplicate aggregate boardStore.spec.ts scope — focus on per-module edge cases
 **Priority label:** `Priority III`
-**ROI:** Medium — view tests provide faster feedback than E2E for rendering regressions.
+**ROI:** Medium — sub-module tests catch granular regressions faster than aggregate store tests.
 
 #### TST-29: Frontend router guard and redirect tests
 **Proposed issue title:** `TST-29: Add unit tests for router configuration and guards`
@@ -349,7 +348,7 @@ Phase 2 (Next sprint — aligns with Horizon F ops stream):
 
 Phase 3 (Following sprint — aligns with normal hardening backlog):
   TST-27 (Repo tests) ──── depends on nothing; can start earlier if capacity
-  TST-28 (View tests) ──── depends on nothing
+  TST-28 (Board sub-store) ── depends on nothing
   TST-29 (Router tests) ── depends on nothing
   SEC-24 (DAST) ────────── depends on OPS-21 (compose smoke must work first)
 
@@ -376,4 +375,4 @@ Phase 4 (Backlog — execute when higher priorities clear):
 
 The highest-ROI work is wiring existing scripts and adding standard security scanners to CI — most of the infrastructure already exists, and the effort is primarily workflow configuration rather than new test authoring.
 
-Test depth gaps (repositories, views, router) are real but lower-risk because transitive coverage through integration and E2E tests provides a safety net. These should follow the ratchet-up pattern established by the TST-CODEX wave.
+Test depth gaps (repositories, board sub-stores, router) are real but lower-risk because transitive coverage through integration and E2E tests provides a safety net. These should follow the ratchet-up pattern established by the TST-CODEX wave.

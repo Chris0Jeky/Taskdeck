@@ -521,7 +521,7 @@ Key findings:
 Proposed issue summary:
 - Priority I (SEC-20 to SEC-22): SAST, secret scanning, container image scanning
 - Priority II (SEC-23, OPS-21 to OPS-24): dependency blocking gate, container smoke, drill/MCP/Terraform CI wiring
-- Priority III (TST-27 to TST-29, SEC-24): repository tests, view tests, router tests, DAST
+- Priority III (TST-27 to TST-29, SEC-24): repository tests, board sub-store tests, router tests, DAST
 - Priority IV (TST-30, TST-31, OPS-25, SEC-25): OpenAPI snapshots, shutdown tests, CSP reporting, HTTP client tests
 
 ## Outreach CRM Deferred Expansion Track (2026-02-23)
