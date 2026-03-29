@@ -105,7 +105,7 @@ describe('ColumnLane — WIP limit enforcement', () => {
       expect(btn.attributes('disabled')).toBeUndefined()
     })
 
-    it('is disabled when column is exactly at WIP limit', () => {
+    it('is enabled when column is exactly at WIP limit (form opens; API enforces)', () => {
       const column = makeColumn({ wipLimit: 2 })
       const cards = [makeCard('c1'), makeCard('c2')]
       const wrapper = mount(ColumnLane, {
@@ -116,10 +116,10 @@ describe('ColumnLane — WIP limit enforcement', () => {
       })
 
       const btn = wrapper.find('[data-action="toggle-add-card"]')
-      expect(btn.attributes('disabled')).toBeDefined()
+      expect(btn.attributes('disabled')).toBeUndefined()
     })
 
-    it('is disabled when column is over WIP limit', () => {
+    it('is enabled when column is over WIP limit (form opens; API enforces)', () => {
       const column = makeColumn({ wipLimit: 1 })
       const cards = [makeCard('c1'), makeCard('c2')]
       const wrapper = mount(ColumnLane, {
@@ -130,10 +130,10 @@ describe('ColumnLane — WIP limit enforcement', () => {
       })
 
       const btn = wrapper.find('[data-action="toggle-add-card"]')
-      expect(btn.attributes('disabled')).toBeDefined()
+      expect(btn.attributes('disabled')).toBeUndefined()
     })
 
-    it('is disabled for WIP limit of 1 with one card', () => {
+    it('is enabled for WIP limit of 1 with one card (form opens; API enforces)', () => {
       const column = makeColumn({ wipLimit: 1 })
       const cards = [makeCard('c1')]
       const wrapper = mount(ColumnLane, {
@@ -144,38 +144,12 @@ describe('ColumnLane — WIP limit enforcement', () => {
       })
 
       const btn = wrapper.find('[data-action="toggle-add-card"]')
-      expect(btn.attributes('disabled')).toBeDefined()
+      expect(btn.attributes('disabled')).toBeUndefined()
     })
   })
 
-  describe('Add Card button click when WIP limit reached', () => {
-    it('shows a warning toast instead of opening the form', async () => {
-      const column = makeColumn({ wipLimit: 2 })
-      const cards = [makeCard('c1'), makeCard('c2')]
-      const wrapper = mount(ColumnLane, {
-        props: { ...defaultProps, column, cards },
-        global: {
-          stubs: { CardItem: true, CardModal: true, ColumnEditModal: true },
-        },
-      })
-
-      // Even though the button is disabled, guard the openCardForm path directly
-      // by calling it via the component's exposed behaviour when limit is at capacity
-      const toastStore = useToastStore()
-      const warningSpy = vi.spyOn(toastStore, 'warning')
-
-      // Manually invoke openCardForm to test the guard (simulates any path reaching it)
-      ;(wrapper.vm as any).openCardForm()
-      await wrapper.vm.$nextTick()
-
-      expect(warningSpy).toHaveBeenCalledWith(
-        expect.stringContaining('WIP limit')
-      )
-      // Form must NOT open
-      expect(wrapper.find('[data-action="add-card-form"]').exists()).toBe(false)
-    })
-
-    it('does not call boardStore.createCard when form is blocked', async () => {
+  describe('openCardForm always opens the form', () => {
+    it('opens the card form when WIP limit is at capacity', async () => {
       const column = makeColumn({ wipLimit: 2 })
       const cards = [makeCard('c1'), makeCard('c2')]
       const wrapper = mount(ColumnLane, {
@@ -188,7 +162,7 @@ describe('ColumnLane — WIP limit enforcement', () => {
       ;(wrapper.vm as any).openCardForm()
       await wrapper.vm.$nextTick()
 
-      expect(mockBoardStore.createCard).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-action="add-card-form"]').exists()).toBe(true)
     })
   })
 
