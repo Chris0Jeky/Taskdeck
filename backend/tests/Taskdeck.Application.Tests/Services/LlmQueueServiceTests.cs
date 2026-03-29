@@ -276,11 +276,11 @@ public class LlmQueueServiceTests
             new LlmRequest(userId, "voicenote", "payload text")
         };
 
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
+        _llmQueueRepoMock.Setup(r => r.GetByUserAndStatusAsync(userId, RequestStatus.Pending, default))
             .ReturnsAsync(requests);
 
         // Act
-        var result = await _service.GetQueueByStatusAsync(RequestStatus.Pending);
+        var result = await _service.GetQueueByStatusAsync(userId, RequestStatus.Pending);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -447,17 +447,17 @@ public class LlmQueueServiceTests
         var completedRequests = new List<LlmRequest>();
         var failedRequests = new List<LlmRequest>();
 
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Pending, default))
-            .ReturnsAsync(pendingRequests);
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Processing, default))
-            .ReturnsAsync(processingRequests);
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Completed, default))
-            .ReturnsAsync(completedRequests);
-        _llmQueueRepoMock.Setup(r => r.GetByStatusAsync(RequestStatus.Failed, default))
-            .ReturnsAsync(failedRequests);
+        _llmQueueRepoMock.Setup(r => r.GetStatusCountsByUserAsync(userId, default))
+            .ReturnsAsync(new Dictionary<RequestStatus, int>
+            {
+                { RequestStatus.Pending, pendingRequests.Count },
+                { RequestStatus.Processing, processingRequests.Count },
+                { RequestStatus.Completed, completedRequests.Count },
+                { RequestStatus.Failed, failedRequests.Count },
+            });
 
         // Act
-        var result = await _service.GetQueueStatsAsync();
+        var result = await _service.GetQueueStatsAsync(userId);
 
         // Assert
         result.IsSuccess.Should().BeTrue();

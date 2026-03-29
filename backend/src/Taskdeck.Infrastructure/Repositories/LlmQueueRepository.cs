@@ -140,6 +140,36 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default)
+    {
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.LlmRequests
+                .FromSqlInterpolated($"SELECT * FROM LlmRequests WHERE UserId = {userId} AND Status = {(int)status} ORDER BY CreatedAt DESC")
+                .AsNoTracking()
+                .Include(lr => lr.User)
+                .Include(lr => lr.Board)
+                .ToListAsync(cancellationToken);
+        }
+
+        return await _context.LlmRequests
+            .AsNoTracking()
+            .Include(lr => lr.User)
+            .Include(lr => lr.Board)
+            .Where(lr => lr.UserId == userId && lr.Status == status)
+            .OrderByDescending(lr => lr.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await _context.LlmRequests
+            .Where(r => r.UserId == userId)
+            .GroupBy(r => r.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Status, g => g.Count, cancellationToken);
+    }
+
     public async Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
     {
         if (_context.Database.IsSqlite())

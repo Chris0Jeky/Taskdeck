@@ -12,8 +12,8 @@ public interface ILlmQueueService
 {
     Task<Result<LlmRequestDto>> AddToQueueAsync(Guid userId, CreateLlmRequestDto dto);
     Task<Result<IEnumerable<LlmRequestDto>>> GetUserQueueAsync(Guid userId);
-    Task<Result<IEnumerable<LlmRequestDto>>> GetQueueByStatusAsync(RequestStatus status);
+    Task<Result<IEnumerable<LlmRequestDto>>> GetQueueByStatusAsync(Guid userId, RequestStatus status);
     Task<Result> CancelRequestAsync(Guid requestId, Guid userId);
     Task<Result<LlmRequestDto>> ProcessNextRequestAsync();
-    Task<Result<QueueStatsDto>> GetQueueStatsAsync();
+    Task<Result<QueueStatsDto>> GetQueueStatsAsync(Guid userId);
 }

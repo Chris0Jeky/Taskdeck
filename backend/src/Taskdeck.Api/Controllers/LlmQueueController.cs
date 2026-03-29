@@ -49,12 +49,15 @@ public class LlmQueueController : AuthenticatedControllerBase
     [HttpGet("status/{status}")]
     public async Task<IActionResult> GetByStatus(string status)
     {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
         if (!Enum.TryParse<RequestStatus>(status, true, out var parsedStatus) || !Enum.IsDefined(parsedStatus))
             return BadRequest(new ApiErrorResponse(
                 ErrorCodes.ValidationError,
                 $"Invalid status value: {status}"));
 
-        var result = await _llmQueueService.GetQueueByStatusAsync(parsedStatus);
+        var result = await _llmQueueService.GetQueueByStatusAsync(userId, parsedStatus);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -79,7 +82,10 @@ public class LlmQueueController : AuthenticatedControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetQueueStats()
     {
-        var result = await _llmQueueService.GetQueueStatsAsync();
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _llmQueueService.GetQueueStatsAsync(userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }
