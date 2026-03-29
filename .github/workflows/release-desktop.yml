@@ -214,10 +214,10 @@ jobs:
           ls -la
           echo ""
           echo "=== SHA256 checksums ==="
-          cat *.sha256
+          cat ./*.sha256
           echo ""
           echo "=== Verifying checksums ==="
-          sha256sum -c *.sha256
+          sha256sum -c ./*.sha256
 
       - name: Determine version tag
         id: version
