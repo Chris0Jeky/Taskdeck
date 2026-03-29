@@ -44,17 +44,19 @@ public static class PipelineConfiguration
             app.UseForwardedHeaders(forwardedHeadersOptions);
         }
 
-        // SPA static file serving: serve Vue build output from wwwroot/.
-        // UseDefaultFiles must precede UseStaticFiles so that requests to "/" map to index.html.
-        // UseStaticFiles serves assets (JS, CSS, images) with no auth gate — intentional for a public SPA shell.
-        // Directory listing is disabled by default in ASP.NET Core (StaticFileOptions has no directory-browser wired in).
-        app.UseDefaultFiles();
-        app.UseStaticFiles();
-
         app.UseCors("AllowFrontend");
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<UnhandledExceptionMiddleware>();
         app.UseMiddleware<SecurityHeadersMiddleware>();
+
+        // SPA static file serving: serve Vue build output from wwwroot/.
+        // Placed after security-headers middleware so that the OnStarting callback registered by
+        // SecurityHeadersMiddleware is already in scope when UseStaticFiles short-circuits the pipeline,
+        // ensuring CSP, X-Frame-Options, and other headers are applied to SPA assets including index.html.
+        // UseDefaultFiles must precede UseStaticFiles so that requests to "/" map to index.html.
+        // Directory listing is disabled by default (no DirectoryBrowser registered).
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
 
         app.UseAuthentication();
         if (rateLimitingSettings.Enabled)
