@@ -40,13 +40,17 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task AuthEndpoints_ShouldRecoverAfterWindowReset()
     {
+        // Use a 3-second window so CI slowness cannot reset the window between the
+        // setup request and the throttle probe — one permit is consumed by the first
+        // SendInvalidLoginAsync call and the window must stay active long enough for
+        // SendInvalidLoginUntilThrottledAsync to observe the 429.
         using var factory = CreateFactoryWithRateLimits(
             authPermitLimit: 1,
-            authWindowSeconds: 1);
+            authWindowSeconds: 3);
         using var client = factory.CreateClient();
 
         (await SendInvalidLoginAsync(client)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        var throttled = await SendInvalidLoginUntilThrottledAsync(client);
+        var throttled = await SendInvalidLoginUntilThrottledAsync(client, maxAttempts: 15);
         var retryAfterSeconds = await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);
         using var recovered = await SendInvalidLoginUntilRecoveredAsync(client, retryAfterSeconds);
         recovered.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
