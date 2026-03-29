@@ -139,6 +139,15 @@ Reusable GitHub Actions workflows under `.github/workflows/`. `ci-required.yml` 
 - `docs/MCP_TOOLING_GUIDE.md` — MCP tool selection rules
 - `AGENTS.md` — full contributor protocol
 
+## Worktree Isolation for Parallel Agents
+
+When launching subagents with `isolation: "worktree"`, follow the protocol in `docs/WORKTREE_AGENT_PROTOCOL.md`. Key rules:
+- NEVER include absolute paths to the main checkout in worktree agent prompts
+- First agent action: run the inline worktree guard from the protocol
+- All file paths must use the exported `$WT_PROJECT_DIR` variable
+- Shell state does not persist between Bash tool calls — agents must use absolute paths
+- After agents complete, verify main checkout is still clean on the default branch
+
 ## Windows Notes
 
 - If `git` resolves to Cygwin or fails with signal errors, use `C:\Program Files\Git\cmd\git.exe` explicitly.
