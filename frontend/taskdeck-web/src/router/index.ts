@@ -5,6 +5,18 @@ import { isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive } from '../utils/demoMode'
 import * as tokenStorage from '../utils/tokenStorage'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
+import { useFeatureFlagStore } from '../store/featureFlagStore'
+import type { FeatureFlags } from '../types/feature-flags'
+
+// Augment vue-router's RouteMeta so that `requiresFlag` is type-safe throughout.
+declare module 'vue-router' {
+  interface RouteMeta {
+    public?: boolean
+    requiresShell?: boolean
+    automationSurface?: string
+    requiresFlag?: keyof FeatureFlags
+  }
+}
 
 // Lazy-loaded route components — keeps initial bundle small and speeds up
 // first-paint for login/register (the only eagerly-loaded views).
@@ -92,25 +104,25 @@ const router = createRouter({
       path: '/workspace/activity',
       name: 'workspace-activity',
       component: ActivityView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newActivity' },
     },
     {
       path: '/workspace/activity/board/:boardId',
       name: 'workspace-activity-board',
       component: ActivityView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newActivity' },
     },
     {
       path: '/workspace/activity/entity/:entityType/:entityId',
       name: 'workspace-activity-entity',
       component: ActivityView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newActivity' },
     },
     {
       path: '/workspace/activity/user',
       name: 'workspace-activity-user',
       component: ActivityView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newActivity' },
     },
     {
       path: '/workspace/activity/user/:userId',
@@ -130,13 +142,13 @@ const router = createRouter({
       path: '/workspace/automations/queue',
       name: 'workspace-automations-queue',
       component: AutomationQueueView,
-      meta: { requiresShell: true, automationSurface: 'queue' },
+      meta: { requiresShell: true, automationSurface: 'queue', requiresFlag: 'newAutomation' },
     },
     {
       path: '/workspace/review',
       name: 'workspace-review',
       component: ReviewView,
-      meta: { requiresShell: true, automationSurface: 'review' },
+      meta: { requiresShell: true, automationSurface: 'review', requiresFlag: 'newAutomation' },
     },
     {
       path: '/workspace/automations/proposals',
@@ -150,7 +162,7 @@ const router = createRouter({
       path: '/workspace/automations/chat',
       name: 'workspace-automations-chat',
       component: AutomationChatView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newAutomation' },
     },
 
     // Ops routes
@@ -158,19 +170,19 @@ const router = createRouter({
       path: '/workspace/ops/cli',
       name: 'workspace-ops-cli',
       component: OpsConsoleView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newOps' },
     },
     {
       path: '/workspace/ops/endpoints',
       name: 'workspace-ops-endpoints',
       component: OpsConsoleView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newOps' },
     },
     {
       path: '/workspace/ops/logs',
       name: 'workspace-ops-logs',
       component: OpsConsoleView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newOps' },
     },
 
     // Settings routes
@@ -178,7 +190,7 @@ const router = createRouter({
       path: '/workspace/settings/profile',
       name: 'workspace-settings-profile',
       component: ProfileSettingsView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newAuth' },
     },
     {
       path: '/workspace/settings/access/:boardId?',
@@ -187,7 +199,7 @@ const router = createRouter({
       props: (route) => ({
         boardId: typeof route.params.boardId === 'string' ? route.params.boardId : null,
       }),
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newAccess' },
     },
     {
       path: '/workspace/settings/export-import',
@@ -207,7 +219,7 @@ const router = createRouter({
       path: '/workspace/archive',
       name: 'workspace-archive',
       component: ArchiveView,
-      meta: { requiresShell: true },
+      meta: { requiresShell: true, requiresFlag: 'newArchive' },
     },
     {
       path: '/workspace/inbox',
@@ -227,7 +239,7 @@ const router = createRouter({
 // Route-transition performance instrumentation
 const routePerf = usePerformanceMark('route-transition')
 
-// Navigation guard for auth
+// Navigation guard for auth and feature flags
 router.beforeEach((to) => {
   routePerf.start()
 
@@ -247,6 +259,19 @@ router.beforeEach((to) => {
 
   if (isPublic && hasValidSession && (to.path === '/login' || to.path === '/register')) {
     return { path: '/workspace/home' }
+  }
+
+  // Feature-flag gate: block direct URL access to flagged routes when the flag
+  // is disabled. The store is read synchronously from localStorage on first
+  // access so the guard works correctly on hard refresh before App.vue mounts.
+  const requiredFlag = to.meta.requiresFlag
+  if (requiredFlag !== undefined) {
+    const featureFlags = useFeatureFlagStore()
+    // Restore from localStorage in case App.vue hasn't mounted yet (direct nav).
+    featureFlags.restore()
+    if (!featureFlags.isEnabled(requiredFlag)) {
+      return { path: '/workspace/home' }
+    }
   }
 })
 
