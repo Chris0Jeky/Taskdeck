@@ -10,6 +10,7 @@ export const workspaceHelpTopics = [
   'board',
   'activity-selectors',
   'board-access-selectors',
+  'saved-views',
 ] as const
 
 export type WorkspaceHelpTopic = typeof workspaceHelpTopics[number]
