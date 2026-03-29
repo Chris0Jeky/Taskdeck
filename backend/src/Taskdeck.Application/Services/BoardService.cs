@@ -168,6 +168,11 @@ public class BoardService
             if (board == null)
                 return Result.Failure<BoardDto>(ErrorCodes.NotFound, $"Board with ID {id} not found");
 
+            // Capture pre-mutation state for change summary
+            var oldName = board.Name;
+            var oldDescription = board.Description;
+            var oldIsArchived = board.IsArchived;
+
             if (dto.Name != null || dto.Description != null)
                 board.Update(dto.Name, dto.Description);
 
@@ -183,18 +188,33 @@ public class BoardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(board.Id, "board", "updated", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+
+            var changeSummary = BuildBoardChangeSummary(dto, oldName, oldDescription, oldIsArchived);
+
             if (dto.IsArchived == true)
-                await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
+                await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: changeSummary);
             else if (dto.IsArchived == false)
-                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: $"unarchived; name={board.Name}");
+                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: changeSummary);
             else
-                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: $"name={board.Name}");
+                await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: changeSummary);
             return Result.Success(MapToDto(board));
         }
         catch (DomainException ex)
         {
             return Result.Failure<BoardDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    private static string BuildBoardChangeSummary(UpdateBoardDto dto, string oldName, string? oldDescription, bool oldIsArchived)
+    {
+        var parts = new List<string>();
+        if (dto.Name != null)
+            parts.Add($"Name: '{oldName}' -> '{dto.Name}'");
+        if (dto.Description != null)
+            parts.Add($"Description changed");
+        if (dto.IsArchived.HasValue && dto.IsArchived.Value != oldIsArchived)
+            parts.Add(dto.IsArchived.Value ? "Archived" : "Unarchived");
+        return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }
 
     public async Task<Result<BoardDto>> GetBoardByIdAsync(Guid id, CancellationToken cancellationToken = default)
