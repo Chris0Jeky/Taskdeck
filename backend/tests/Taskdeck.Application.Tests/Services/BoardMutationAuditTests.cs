@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -544,4 +544,79 @@ public class BoardMutationAuditTests
     }
 
     #endregion
+
+    [Fact]
+    public async Task UpdateBoard_WithUnarchiveFlag_RecordsUnarchivedAction()
+    {
+        // Arrange - board starts archived
+        var board = TestDataBuilder.CreateBoard(isArchived: true);
+        var dto = new UpdateBoardDto(null, null, false);
+        var service = new BoardService(
+            _unitOfWorkMock.Object,
+            authorizationService: null,
+            realtimeNotifier: null,
+            historyService: _historyServiceMock.Object);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+
+        // Act
+        var result = await service.UpdateBoardAsync(board.Id, dto);
+
+        // Assert - should record Unarchived, not Updated
+        result.IsSuccess.Should().BeTrue();
+        _historyServiceMock.Verify(
+            h => h.LogActionAsync("board", board.Id, AuditAction.Unarchived, null,
+                It.Is<string?>(s => s != null && s.Contains("Unarchived"))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateCard_WithSameTitle_DoesNotLogTitleChange()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Card", "Desc");
+        // Send the same title value
+        var dto = new UpdateCardDto("Card", null, null, null, null, null, null);
+        var service = new CardService(_unitOfWorkMock.Object, realtimeNotifier: null, historyService: _historyServiceMock.Object);
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+
+        // Act
+        var result = await service.UpdateCardAsync(card.Id, dto);
+
+        // Assert - same title should not be logged as a change
+        result.IsSuccess.Should().BeTrue();
+        _historyServiceMock.Verify(
+            h => h.LogActionAsync("card", card.Id, AuditAction.Updated, It.IsAny<Guid?>(),
+                It.Is<string?>(s => s != null && s.Contains("no fields changed"))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateCard_BlockWithoutReason_DoesNotLogBlocked()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Card", "Desc");
+        // IsBlocked=true but no block reason
+        var dto = new UpdateCardDto(null, null, null, true, null, null, null);
+        var service = new CardService(_unitOfWorkMock.Object, realtimeNotifier: null, historyService: _historyServiceMock.Object);
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+
+        // Act
+        var result = await service.UpdateCardAsync(card.Id, dto);
+
+        // Assert - block without reason should not log "Blocked"
+        result.IsSuccess.Should().BeTrue();
+        _historyServiceMock.Verify(
+            h => h.LogActionAsync("card", card.Id, AuditAction.Updated, It.IsAny<Guid?>(),
+                It.Is<string?>(s => s != null && !s.Contains("Blocked"))),
+            Times.Once);
+    }
 }
