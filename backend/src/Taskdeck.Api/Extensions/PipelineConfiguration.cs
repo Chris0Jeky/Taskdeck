@@ -44,6 +44,13 @@ public static class PipelineConfiguration
             app.UseForwardedHeaders(forwardedHeadersOptions);
         }
 
+        // SPA static file serving: serve Vue build output from wwwroot/.
+        // UseDefaultFiles must precede UseStaticFiles so that requests to "/" map to index.html.
+        // UseStaticFiles serves assets (JS, CSS, images) with no auth gate — intentional for a public SPA shell.
+        // Directory listing is disabled by default in ASP.NET Core (StaticFileOptions has no directory-browser wired in).
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
+
         app.UseCors("AllowFrontend");
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<UnhandledExceptionMiddleware>();
@@ -58,6 +65,11 @@ public static class PipelineConfiguration
 
         app.MapControllers();
         app.MapHub<BoardsHub>("/hubs/boards");
+
+        // SPA fallback: any route not matched by a controller or hub endpoint returns index.html,
+        // enabling Vue Router's client-side navigation. API (/api/*) and hub (/hubs/*) routes
+        // are matched above and never reach this fallback.
+        app.MapFallbackToFile("index.html");
 
         return app;
     }
