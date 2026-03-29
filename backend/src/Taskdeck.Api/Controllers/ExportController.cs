@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -84,10 +85,12 @@ public class ExportController : AuthenticatedControllerBase
 
     [HttpPost("import/database")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> ImportDatabase([FromForm] IFormFile? file)
+    public async Task<IActionResult> ImportDatabase([FromForm] DatabaseImportRequest request)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
+
+        var file = request.File;
 
         if (file is null)
         {
