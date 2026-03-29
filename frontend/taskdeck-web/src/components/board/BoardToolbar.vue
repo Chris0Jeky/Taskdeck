@@ -291,7 +291,7 @@ defineEmits<{
   justify-content: center;
   border-radius: 9999px;
   background: var(--td-color-primary);
-  font-size: 10px;
+  font-size: var(--td-font-xs);
   font-weight: 700;
   color: var(--td-text-inverse);
 }
