@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-03-09
+Last Updated: 2026-03-29
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -428,6 +428,23 @@ Slice checks:
    - apply the same pack twice and verify no duplicates
    - execute a known conflict path and verify dry-run conflict report with no mutation
 
+## P. Workspace Shell, Board Lifecycle, and Keyboard UX (Slice A)
+
+Status:
+- active; detailed step-indexed checklist in `docs/testing/manual-validation-a-workspace-board-ux.md`
+
+Goal:
+- validate workspace shell navigation, board CRUD lifecycle, keyboard navigation model, escape behavior stack, drag handle safety, and filter panel UX
+
+Scope (22 scenarios, A-01 through A-22):
+1. Auth flows: registration, login, auth guard redirect (A-01 to A-03)
+2. Shell navigation: sidebar routes, command palette, keyboard shortcuts help, quick capture modal, logout (A-04 to A-08)
+3. Board lifecycle: creation, rename, archive/unarchive, action rail (A-09 to A-12)
+4. Board operations: columns, cards, labels, filter panel (A-13 to A-16)
+5. Keyboard UX: vim-style board navigation, escape behavior stack (board and shell), drag handle safety (A-17 to A-20)
+6. Today view and onboarding: agenda, dismiss/replay persistence (A-21 to A-22)
+
+Reference: `docs/testing/manual-validation-a-workspace-board-ux.md` for full step tables, evidence guidance, automation candidates, and defect filing template.
 ## P. Authz Policy, Cross-User Isolation, and API Error Contracts (Slice B, `#131`)
 
 Status:
