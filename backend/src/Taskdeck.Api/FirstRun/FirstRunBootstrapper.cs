@@ -174,7 +174,7 @@ public static class FirstRunBootstrapper
 
         // Write into the local config file so the value is picked up by
         // AddInfrastructure later in the startup pipeline.
-        PersistConnectionString(resolvedConnectionString);
+        PersistValue("ConnectionStrings", "DefaultConnection", resolvedConnectionString);
 
         if (configuration is IConfigurationRoot root)
         {
@@ -217,40 +217,6 @@ public static class FirstRunBootstrapper
         }
     }
 
-    private static void PersistConnectionString(string connectionString)
-    {
-        var path = LocalConfigPath;
-
-        JsonObject root;
-        if (File.Exists(path))
-        {
-            try
-            {
-                var existing = File.ReadAllText(path);
-                root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
-            }
-            catch
-            {
-                root = new JsonObject();
-            }
-        }
-        else
-        {
-            root = new JsonObject();
-        }
-
-        if (root["ConnectionStrings"] is not JsonObject connStrings)
-        {
-            connStrings = new JsonObject();
-            root["ConnectionStrings"] = connStrings;
-        }
-
-        connStrings["DefaultConnection"] = connectionString;
-
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        File.WriteAllText(path, root.ToJsonString(options));
-    }
-
     private static void PersistValue(string section, string key, string value)
     {
         var path = LocalConfigPath;
@@ -263,8 +229,13 @@ public static class FirstRunBootstrapper
                 var existing = File.ReadAllText(path);
                 root = JsonNode.Parse(existing)?.AsObject() ?? new JsonObject();
             }
-            catch
+            catch (Exception ex)
             {
+                // Logger is not available at this pre-DI stage; warn to stderr and start fresh
+                // rather than silently discarding the corrupt file.
+                Console.Error.WriteLine(
+                    $"[FirstRun] WARNING: {path} contains invalid JSON and will be overwritten. " +
+                    $"Details: {ex.Message}");
                 root = new JsonObject();
             }
         }
