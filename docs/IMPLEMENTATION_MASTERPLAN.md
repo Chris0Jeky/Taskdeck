@@ -434,6 +434,11 @@ Delivered in the latest cycle:
    - ArchiveRecovery decomposition: `ArchiveRecoveryService` → `ArchiveConflictDetector` + `RestorePlanner` + `RestoreExecutor`
    - AutomationExecutor decomposition: `AutomationExecutorService` → `OperationParameterParser` + `ExecutionAuditRecorder` + `OperationHandlerRegistry`
    - Deploy/MCP failure injection drills: 5 shell drill scripts + `run-all-drills.sh` orchestrator in `scripts/drills/`
+95. OPS-18 dependency update automation and security triage workflow (`#148`):
+   - added `.github/dependabot.yml` with weekly update schedules for NuGet (`/backend`), npm (`/frontend/taskdeck-web`), and GitHub Actions (`/`) ecosystems
+   - minor/patch updates grouped per ecosystem; major NuGet/npm updates arrive as individual PRs; GitHub Actions updates fully grouped
+   - added `docs/ops/DEPENDENCY_UPDATE_POLICY.md` with update categories, PR verification expectations, severity-based triage SLAs, escalation procedures, and policy boundaries
+   - security triage workflow aligns with existing `docs/security/SECURITY_DEPENDENCY_VULNERABILITY_POLICY.md` severity policy; no auto-merge enabled
 
 ## Current Planning Pivot (2026-03-07)
 
