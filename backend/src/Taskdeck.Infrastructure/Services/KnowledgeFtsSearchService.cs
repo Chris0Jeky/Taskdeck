@@ -95,8 +95,8 @@ public class KnowledgeFtsSearchService : IKnowledgeSearchService
         if (!string.IsNullOrEmpty(row.BoardId) && Guid.TryParse(row.BoardId, out var parsedBoardId))
             boardId = parsedBoardId;
 
-        var sourceType = Enum.TryParse<KnowledgeSourceType>(row.SourceType?.ToString(), out var parsed)
-            ? parsed
+        var sourceType = row.SourceType.HasValue && Enum.IsDefined(typeof(KnowledgeSourceType), row.SourceType.Value)
+            ? (KnowledgeSourceType)row.SourceType.Value
             : KnowledgeSourceType.Manual;
 
         var documentId = Guid.TryParse(row.DocumentId, out var parsedDocId)
@@ -127,7 +127,7 @@ internal class KnowledgeSearchRow
     public string Snippet { get; set; } = string.Empty;
     public double Rank { get; set; }
     public string? BoardId { get; set; }
-    public string? SourceType { get; set; }
+    public int? SourceType { get; set; }
     public string? Tags { get; set; }
     public string CreatedAt { get; set; } = string.Empty;
 }
