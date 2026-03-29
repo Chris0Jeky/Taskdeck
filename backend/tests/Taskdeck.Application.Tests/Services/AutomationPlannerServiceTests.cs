@@ -766,4 +766,70 @@ public class AutomationPlannerServiceTests
     }
 
     #endregion
+
+    #region NLP Gap Tests — Documents #570 (Natural Language Parse Failures)
+
+    /// <summary>
+    /// Documents that natural language requests fail to parse even though
+    /// they clearly express card creation intent. These are the exact kind of
+    /// messages that come through from chat when the classifier triggers or
+    /// when RequestProposal is explicitly set.
+    /// </summary>
+    [Theory]
+    [InlineData("can you create new onboarding tasks for people who aren't technical?")]
+    [InlineData("I need three new cards for the sprint")]
+    [InlineData("please add these items: meeting notes, code review, deployment")]
+    [InlineData("create some tasks for the release checklist")]
+    [InlineData("make cards for: laptop setup, email creation, building access")]
+    public async Task ParseInstruction_NaturalLanguage_ShouldFailWithParseError(string instruction)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        var result = await _service.ParseInstructionAsync(instruction, userId, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Could not parse instruction");
+    }
+
+    /// <summary>
+    /// Verifies that the exact structured syntax works fine — contrast with
+    /// the natural language tests above to show the gap.
+    /// </summary>
+    [Theory]
+    [InlineData("create card \"Onboarding for non-technical roles\"")]
+    [InlineData("create card 'Sprint planning task'")]
+    [InlineData("archive board")]
+    [InlineData("unarchive board")]
+    [InlineData("rename board to \"Q2 Sprint Board\"")]
+    public async Task ParseInstruction_StructuredSyntax_ShouldSucceedOrProgressPastParsing(string instruction)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
+
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { column });
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                Guid.NewGuid(), ProposalSourceType.Manual, null, boardId, userId,
+                ProposalStatus.PendingReview, RiskLevel.Low, instruction, null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTime.UtcNow.AddDays(1),
+                null, null, null, null, Guid.NewGuid().ToString(),
+                new List<ProposalOperationDto>())));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _service.ParseInstructionAsync(instruction, userId, boardId);
+
+        // These should either succeed (parse + create proposal) or at least
+        // not fail with the generic "Could not parse instruction" error
+        result.ErrorMessage.Should().NotContain("Could not parse instruction",
+            because: $"structured syntax '{instruction}' should be parseable");
+    }
+
+    #endregion
 }
