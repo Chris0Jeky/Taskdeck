@@ -3,6 +3,15 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
 
+const mockSessionStore = reactive({
+  userId: 'user-abc',
+  username: 'alice',
+})
+
+vi.mock('../../store/sessionStore', () => ({
+  useSessionStore: () => mockSessionStore,
+}))
+
 const routerMock = vi.hoisted(() => ({
   push: vi.fn(),
 }))
@@ -122,6 +131,8 @@ describe('BoardView', () => {
     vi.clearAllMocks()
     localStorage.clear()
     routeMock.params.id = 'board-1'
+    mockSessionStore.userId = 'user-abc'
+    mockSessionStore.username = 'alice'
     mockBoardStore.currentBoard = {
       id: 'board-1',
       name: 'Ops Board',
@@ -227,5 +238,30 @@ describe('BoardView', () => {
     await waitForUi()
 
     expect(addCardToggleMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('seeds presence with the current user immediately on mount so the panel never flickers to empty', async () => {
+    // Verify setBoardPresenceMembers is called with the current user before
+    // fetchBoard and realtime.start resolve — no empty-state window (#523).
+    mountView()
+    await waitForUi()
+
+    const firstCall = mockBoardStore.setBoardPresenceMembers.mock.calls[0]
+    expect(firstCall).toBeDefined()
+    expect(firstCall[0]).toEqual([
+      { userId: 'user-abc', displayName: 'alice', editingCardId: null },
+    ])
+  })
+
+  it('seeds presence with empty array when no user session is active', async () => {
+    mockSessionStore.userId = null as unknown as string
+    mockSessionStore.username = null as unknown as string
+
+    mountView()
+    await waitForUi()
+
+    const firstCall = mockBoardStore.setBoardPresenceMembers.mock.calls[0]
+    expect(firstCall).toBeDefined()
+    expect(firstCall[0]).toEqual([])
   })
 })
