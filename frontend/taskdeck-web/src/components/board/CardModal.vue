@@ -426,8 +426,8 @@ onBeforeUnmount(() => {
                 />
                 <!-- Color swatch always visible so users can identify labels before selecting -->
                 <span
-                  class="inline-block w-3 h-3 rounded-full flex-shrink-0"
-                  :style="{ backgroundColor: label.colorHex }"
+                  class="inline-block w-3 h-3 rounded-full flex-shrink-0 bg-outline-variant"
+                  :style="label.colorHex ? { backgroundColor: label.colorHex } : {}"
                   aria-hidden="true"
                 />
                 <span>{{ label.name }}</span>

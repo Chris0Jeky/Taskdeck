@@ -206,13 +206,19 @@ function isOverdue(dateString: string | null): boolean {
   transition: opacity var(--td-transition-fast);
 }
 
-/* Hide "Drag card" text by default; reveal only on drag-handle hover */
+/* Hide "Drag card" text by default; reveal only on drag-handle hover.
+   Use width/overflow collapse (not just opacity) so the invisible text
+   does not consume horizontal space in the flex button layout. */
 .td-board-card__drag-label--hidden {
   opacity: 0;
+  width: 0;
+  overflow: hidden;
 }
 
 .td-card-drag-handle:hover .td-board-card__drag-label--hidden {
   opacity: 1;
+  width: auto;
+  overflow: visible;
 }
 
 /* ── Badge row ── */
