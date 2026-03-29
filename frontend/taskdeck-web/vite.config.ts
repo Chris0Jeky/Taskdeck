@@ -17,7 +17,8 @@ export default defineConfig({
         globIgnores: ['icons/**'],
         // Clean stale caches on SW activation
         cleanupOutdatedCaches: true,
-        // NetworkFirst for API calls with 5-minute cache TTL fallback
+        // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
+        // retain cached responses. Fresh data is always preferred when online.
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\//i,
@@ -25,7 +26,7 @@ export default defineConfig({
             options: {
               cacheName: 'taskdeck-api-cache',
               expiration: {
-                maxAgeSeconds: 5 * 60, // 5 minutes
+                maxAgeSeconds: 24 * 60 * 60, // 1 day
                 maxEntries: 100,
               },
               networkTimeoutSeconds: 10,
