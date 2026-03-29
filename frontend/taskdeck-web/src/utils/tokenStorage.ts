@@ -1,3 +1,5 @@
+import { parseJwtPayload } from './jwt'
+
 /**
  * Centralized token and session storage abstraction.
  *
@@ -35,7 +37,11 @@ export function isValidJwtStructure(token: string): boolean {
 
   // Each part must be non-empty and contain only base64url characters
   const base64urlPattern = /^[A-Za-z0-9_-]+$/
-  return parts.every(part => part.length > 0 && base64urlPattern.test(part))
+  if (!parts.every(part => part.length > 0 && base64urlPattern.test(part))) {
+    return false
+  }
+
+  return parseJwtPayload(token) !== null
 }
 
 /**

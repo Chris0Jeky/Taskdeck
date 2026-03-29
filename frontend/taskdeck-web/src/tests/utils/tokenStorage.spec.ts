@@ -56,6 +56,10 @@ describe('isValidJwtStructure', () => {
     expect(isValidJwtStructure('header.pay=load.sig')).toBe(false)
   })
 
+  it('rejects tokens whose payload does not decode into JSON', () => {
+    expect(isValidJwtStructure('aaa.bbb.ccc')).toBe(false)
+  })
+
   it('rejects tokens exceeding maximum length', () => {
     const longPart = 'a'.repeat(2000)
     expect(isValidJwtStructure(`${longPart}.${longPart}.${longPart}`)).toBe(false)
@@ -142,6 +146,12 @@ describe('token storage operations', () => {
 
   it('getToken removes and returns null for a corrupted stored value', () => {
     localStorage.setItem('taskdeck_token', 'corrupted-value')
+    expect(getToken()).toBeNull()
+    expect(localStorage.getItem('taskdeck_token')).toBeNull()
+  })
+
+  it('getToken removes a malformed three-segment token whose payload is not JSON', () => {
+    localStorage.setItem('taskdeck_token', 'aaa.bbb.ccc')
     expect(getToken()).toBeNull()
     expect(localStorage.getItem('taskdeck_token')).toBeNull()
   })
