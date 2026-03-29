@@ -191,3 +191,7 @@ Rebranding/thesis alignment inputs:
 - Open or pick a GitHub issue before larger changes.
 - Keep PRs scoped and include verification evidence.
 - For contribution guidance and repo rules, see `AGENTS.md`.
+
+## License
+
+Taskdeck is released under the [MIT License](LICENSE).
