@@ -4,6 +4,9 @@ public static class LlmIntentClassifier
 {
     public static (bool IsActionable, string? ActionIntent) Classify(string message)
     {
+        if (string.IsNullOrWhiteSpace(message))
+            return (false, null);
+
         var lower = message.ToLowerInvariant();
 
         // Card creation — explicit commands and natural language
