@@ -58,14 +58,19 @@ function isOverdue(dateString: string | null): boolean {
     draggable="false"
     :data-card-id="card.id"
     :class="[
-      'group rounded-lg p-3 shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.4)] transition-all cursor-pointer border-[0.5px] relative',
-      isSelected ? 'border-primary-container ring-4 ring-primary-container/30 shadow-xl bg-primary-container/10 scale-105' : 'bg-surface-container-low border-outline-variant/15',
-      isDragging ? 'opacity-50 scale-95' : ''
+      'td-board-card group relative cursor-pointer',
+      isSelected ? 'td-board-card--selected' : '',
+      isDragging ? 'td-board-card--dragging' : ''
     ]"
+    tabindex="0"
+    :aria-selected="isSelected"
     @click.stop="emit('click', card)"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
   >
+    <!-- Ember leading-edge indicator -->
+    <span class="td-board-card__indicator" aria-hidden="true" />
+
     <button
       type="button"
       data-action="drag-card-handle"
@@ -78,12 +83,12 @@ function isOverdue(dateString: string | null): boolean {
       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
       </svg>
-      <span class="text-[11px] font-semibold uppercase tracking-[0.2em] font-label">Drag card</span>
+      <span class="td-board-card__drag-label">Drag card</span>
     </button>
 
     <!-- Blocked Badge -->
-    <div v-if="card.isBlocked" class="mb-2">
-      <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-ember/10 text-ember text-xs rounded">
+    <div v-if="card.isBlocked" class="td-board-card__badge-row">
+      <span class="td-board-card__badge td-board-card__badge--blocked">
         <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd" />
         </svg>
@@ -92,19 +97,19 @@ function isOverdue(dateString: string | null): boolean {
     </div>
 
     <!-- Card Title -->
-    <h4 class="text-sm font-bold font-body text-on-surface group-hover:text-primary min-w-0 break-words mb-2 transition-colors">{{ card.title }}</h4>
+    <h4 class="td-board-card__title">{{ card.title }}</h4>
 
     <!-- Card Description (if exists) -->
-    <p v-if="card.description" class="text-xs text-on-surface/60 mb-2 line-clamp-2">
+    <p v-if="card.description" class="td-board-card__description">
       {{ card.description }}
     </p>
 
     <!-- Labels -->
-    <div v-if="card.labels.length > 0" class="flex flex-wrap gap-1 mb-2">
+    <div v-if="card.labels.length > 0" class="td-board-card__labels">
       <span
         v-for="label in card.labels"
         :key="label.id"
-        class="px-2 py-0.5 text-[9px] uppercase font-label tracking-[0.2em] rounded text-white font-medium"
+        class="td-board-card__label"
         :style="{ backgroundColor: label.colorHex }"
       >
         {{ label.name }}
@@ -112,7 +117,7 @@ function isOverdue(dateString: string | null): boolean {
     </div>
 
     <!-- Due Date -->
-    <div v-if="card.dueDate" class="flex items-center gap-1 text-xs" :class="isOverdue(card.dueDate) ? 'text-ember' : 'text-on-surface/60'">
+    <div v-if="card.dueDate" :class="['td-board-card__due', isOverdue(card.dueDate) ? 'td-board-card__due--overdue' : '']">
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
@@ -123,21 +128,153 @@ function isOverdue(dateString: string | null): boolean {
 </template>
 
 <style scoped>
-/* 2px left ember indicator on hover */
-div[data-card-id]::before {
-  content: '';
+/* ── Board Card — token-based visual states ── */
+.td-board-card {
+  position: relative;
+  border-radius: var(--td-radius-lg);
+  padding: var(--td-space-4);
+  background: var(--td-surface-container-low);
+  border: 0.5px solid var(--td-border-ghost);
+  box-shadow: var(--td-shadow-sm);
+  transition:
+    background-color var(--td-transition-fast),
+    border-color var(--td-transition-fast),
+    box-shadow var(--td-transition-fast),
+    transform var(--td-transition-fast),
+    opacity var(--td-transition-fast);
+}
+
+.td-board-card:hover {
+  background: var(--td-surface-container);
+  border-color: var(--td-border-default);
+  box-shadow: var(--td-shadow-md);
+}
+
+.td-board-card:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+/* Selected state */
+.td-board-card--selected {
+  border-color: var(--td-border-ember);
+  box-shadow: var(--td-shadow-md), 0 0 0 2px rgba(255, 83, 82, 0.2);
+  background: var(--td-color-ember-dim);
+}
+
+.td-board-card--selected:hover {
+  box-shadow: var(--td-shadow-lg), 0 0 0 2px rgba(255, 83, 82, 0.25);
+}
+
+/* Dragging state */
+.td-board-card--dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+}
+
+/* ── Ember leading-edge indicator ── */
+.td-board-card__indicator {
   position: absolute;
   left: 0;
-  top: 8px;
-  bottom: 8px;
+  top: var(--td-space-4);
+  bottom: var(--td-space-4);
   width: 2px;
   border-radius: 1px;
   background-color: var(--td-color-ember-glow);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--td-transition-fast);
 }
 
-div[data-card-id]:hover::before {
+.td-board-card:hover .td-board-card__indicator {
   opacity: 1;
+}
+
+/* ── Drag handle label ── */
+.td-board-card__drag-label {
+  font-size: var(--td-font-xs);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+/* ── Badge row ── */
+.td-board-card__badge-row {
+  margin-bottom: var(--td-space-3);
+}
+
+.td-board-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--td-space-1);
+  padding: 1px var(--td-space-2);
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  border-radius: 9999px;
+}
+
+.td-board-card__badge--blocked {
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+/* ── Title — highest in hierarchy ── */
+.td-board-card__title {
+  font-size: var(--td-font-base);
+  font-weight: 700;
+  font-family: 'Manrope', system-ui, sans-serif;
+  color: var(--td-text-primary);
+  min-width: 0;
+  overflow-wrap: break-word;
+  margin-bottom: var(--td-space-3);
+  transition: color var(--td-transition-fast);
+}
+
+.td-board-card:hover .td-board-card__title {
+  color: var(--td-color-primary);
+}
+
+/* ── Description — secondary text ── */
+.td-board-card__description {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-muted);
+  margin-bottom: var(--td-space-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
+}
+
+/* ── Labels ── */
+.td-board-card__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-1);
+  margin-bottom: var(--td-space-3);
+}
+
+.td-board-card__label {
+  padding: 1px var(--td-space-2);
+  font-size: var(--td-font-xs);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  border-radius: var(--td-radius-sm);
+  color: white;
+}
+
+/* ── Due date — tertiary metadata ── */
+.td-board-card__due {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-1);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-tertiary);
+}
+
+.td-board-card__due--overdue {
+  color: var(--td-color-error);
 }
 </style>
