@@ -83,6 +83,19 @@ const sortedMessages = computed(() => {
   ))
 })
 
+const parseHintsByMessageId = computed(() => {
+  const map = new Map<string, ParsedHintMessage>()
+  for (const message of sortedMessages.value) {
+    if (message.messageType === 'parse-hint') {
+      const hint = extractParseHint(message.content)
+      if (hint) {
+        map.set(message.id, hint)
+      }
+    }
+  }
+  return map
+})
+
 const selectedSessionBoardName = computed(() => {
   const boardId = selectedSession.value?.boardId?.trim()
   if (!boardId) {
@@ -415,10 +428,7 @@ function pushToReview(hash?: string) {
 }
 
 function getParseHint(message: ChatMessage): ParsedHintMessage | null {
-  if (message.messageType !== 'parse-hint') {
-    return null
-  }
-  return extractParseHint(message.content)
+  return parseHintsByMessageId.value.get(message.id) ?? null
 }
 
 function toggleHintPatterns(messageId: string) {
