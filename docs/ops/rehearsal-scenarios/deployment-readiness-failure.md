@@ -34,14 +34,14 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 
 ### Option B: Invalid Database Path
 
-Override the database connection string to point to a non-writable path inside the container:
+Override the database connection string to point to a non-writable path inside the container. The compose file sets `ConnectionStrings__DefaultConnection` directly, so override it at the shell level:
 
 ```bash
-# Start with an invalid DB path
-TASKDECK_DB_PATH="/readonly/taskdeck.db" \
+# Start with an invalid DB path (overrides the compose-file value)
+ConnectionStrings__DefaultConnection="Data Source=/readonly/taskdeck.db" \
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
 
-# Or override via environment in docker-compose.override.yml
+# Or add the override in a docker-compose.override.yml environment block
 ```
 
 ### Option C: Port Conflict on Proxy
