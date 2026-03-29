@@ -1,5 +1,6 @@
 using Taskdeck.Api.Realtime;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Agents;
 
 namespace Taskdeck.Api.Extensions;
 
@@ -50,6 +51,15 @@ public static class ApplicationServiceRegistration
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
+
+        // Agent tool registry (singleton — populated once at startup, read concurrently)
+        var toolRegistry = new TaskdeckToolRegistry();
+        toolRegistry.RegisterTool(InboxTriageAssistant.GetToolDefinition());
+        services.AddSingleton<ITaskdeckToolRegistry>(toolRegistry);
+
+        // Agent policy evaluator and inbox triage assistant
+        services.AddScoped<IAgentPolicyEvaluator, AgentPolicyEvaluator>();
+        services.AddScoped<InboxTriageAssistant>();
 
         return services;
     }
