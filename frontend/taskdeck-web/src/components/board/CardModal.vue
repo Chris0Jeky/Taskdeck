@@ -40,6 +40,9 @@ const loadingCaptureProvenance = ref(false)
 const loadedCaptureProvenanceCardId = ref<string | null>(null)
 const showDeleteConfirm = ref(false)
 const isDeleting = ref(false)
+const deleteConfirmDescription = computed(
+  () => `Are you sure you want to delete "${props.card.title}"? This action cannot be undone.`
+)
 
 const comments = computed<CardComment[]>(() => boardStore.getCardComments(props.card.id))
 const topLevelComments = computed(() => comments.value.filter(comment => !comment.parentCommentId))
@@ -639,7 +642,7 @@ onBeforeUnmount(() => {
   <TdDialog
     :open="showDeleteConfirm"
     title="Delete Card"
-    :description="`Are you sure you want to delete &quot;${card.title}&quot;? This action cannot be undone.`"
+    :description="deleteConfirmDescription"
     :close-on-backdrop="!isDeleting"
     @close="handleDeleteCancel"
   >
