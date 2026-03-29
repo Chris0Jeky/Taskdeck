@@ -124,7 +124,7 @@ export function generateHtmlReport({ runSummary, traceEvents, screenshots }) {
           .map(
             (s) =>
               `<div class="screenshot"><h4>${escapeHtml(s.name)}</h4>` +
-              `<img src="${s.dataUrl}" alt="${escapeHtml(s.name)}" /></div>`,
+              `<img src="${escapeHtml(s.dataUrl)}" alt="${escapeHtml(s.name)}" /></div>`,
           )
           .join('\n')
 

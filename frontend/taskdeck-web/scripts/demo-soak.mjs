@@ -131,11 +131,17 @@ export function buildSoakSummary(startedAt, endedAt, iterations) {
   const failCount = totalRuns - passCount
   const passRate = totalRuns > 0 ? Math.round((passCount / totalRuns) * 10000) / 100 : 0
 
-  const durations = iterations.map((r) => r.durationMs)
-  const totalDurationMs = durations.reduce((sum, d) => sum + d, 0)
+  let totalDurationMs = 0
+  let minIterationMs = totalRuns > 0 ? Infinity : 0
+  let maxIterationMs = 0
+  for (const r of iterations) {
+    totalDurationMs += r.durationMs
+    if (r.durationMs < minIterationMs) minIterationMs = r.durationMs
+    if (r.durationMs > maxIterationMs) maxIterationMs = r.durationMs
+  }
+  // Normalize Infinity to 0 when there are no runs
+  if (minIterationMs === Infinity) minIterationMs = 0
   const avgIterationMs = totalRuns > 0 ? Math.round(totalDurationMs / totalRuns) : 0
-  const minIterationMs = durations.length > 0 ? Math.min(...durations) : 0
-  const maxIterationMs = durations.length > 0 ? Math.max(...durations) : 0
   const timingDriftMs = maxIterationMs - minIterationMs
 
   return {
