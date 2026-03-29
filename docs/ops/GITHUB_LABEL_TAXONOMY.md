@@ -44,6 +44,10 @@ Note:
   - Background worker runtime behavior, queue processing, retry semantics, and worker observability.
 - `performance`
   - Latency, throughput, responsiveness, and resource-efficiency improvements across API, worker, and frontend surfaces.
+- `dependencies`
+  - Dependency version updates managed by Dependabot or manual dependency hygiene.
+- `ci`
+  - CI/CD pipeline, workflow, and build infrastructure changes.
 
 ## Priority Labels
 

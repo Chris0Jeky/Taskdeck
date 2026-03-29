@@ -1,0 +1,77 @@
+# Dependabot configuration for automated dependency updates
+# Policy: docs/ops/DEPENDENCY_UPDATE_POLICY.md
+# Linked issue: #148 (OPS-18)
+
+version: 2
+
+updates:
+  # --- NuGet (backend .NET) ---
+  - package-ecosystem: nuget
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 10
+    reviewers:
+      - jekyt
+    labels:
+      - dependencies
+      - backend
+    groups:
+      # Group minor/patch updates together to reduce PR noise
+      dotnet-minor-patch:
+        update-types:
+          - minor
+          - patch
+    # Let major versions come as individual PRs for explicit review
+    commit-message:
+      prefix: "deps(nuget)"
+
+  # --- npm (frontend) ---
+  - package-ecosystem: npm
+    directory: /frontend/taskdeck-web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 10
+    reviewers:
+      - jekyt
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      # Group minor/patch updates together
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "deps(npm)"
+
+  # --- GitHub Actions ---
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 5
+    reviewers:
+      - jekyt
+    labels:
+      - dependencies
+      - ci
+    groups:
+      # Group all Actions updates together since they are low-risk
+      actions-all:
+        update-types:
+          - major
+          - minor
+          - patch
+    commit-message:
+      prefix: "deps(actions)"
