@@ -28,7 +28,7 @@ describe('FilterPanel', () => {
         }
       })
 
-      const panel = wrapper.find('.bg-white')
+      const panel = wrapper.find('.bg-surface-container-low')
       expect(panel.exists()).toBe(true)
       expect(panel.attributes('style')).toContain('display: none;')
     })
@@ -42,7 +42,7 @@ describe('FilterPanel', () => {
         }
       })
 
-      expect(wrapper.find('.bg-white').exists()).toBe(true)
+      expect(wrapper.find('.bg-surface-container-low').exists()).toBe(true)
       expect(wrapper.text()).toContain('Filter Cards')
     })
 
@@ -136,11 +136,11 @@ describe('FilterPanel', () => {
 
       await wrapper.setProps({ isOpen: false })
       expect(searchInput.element.value).toBe('bug fix')
-      expect(wrapper.find('.bg-white').attributes('style')).toContain('display: none;')
+      expect(wrapper.find('.bg-surface-container-low').attributes('style')).toContain('display: none;')
 
       await wrapper.setProps({ isOpen: true })
       expect(searchInput.element.value).toBe('bug fix')
-      expect(wrapper.find('.bg-white').attributes('style') ?? '').not.toContain('display: none;')
+      expect(wrapper.find('.bg-surface-container-low').attributes('style') ?? '').not.toContain('display: none;')
     })
   })
 

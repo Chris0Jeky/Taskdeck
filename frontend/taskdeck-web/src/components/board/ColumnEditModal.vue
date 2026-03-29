@@ -89,13 +89,13 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
     <!-- Modal -->
     <div class="flex min-h-full items-center justify-center p-4">
-      <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6" @click.stop>
+      <div class="relative bg-surface-container rounded-lg shadow-xl max-w-md w-full p-6 border border-outline-variant/30" @click.stop>
         <!-- Header -->
         <div class="flex items-start justify-between mb-4">
-          <h2 class="text-2xl font-semibold text-gray-900">Edit Column</h2>
+          <h2 class="text-2xl font-semibold text-on-surface">Edit Column</h2>
           <button
             @click="handleClose"
-            class="text-gray-400 hover:text-gray-600 transition-colors"
+            class="text-on-surface-variant hover:text-on-surface transition-colors"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -107,7 +107,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
         <div class="space-y-4">
           <!-- Name -->
           <div>
-            <label for="column-name" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="column-name" class="block text-sm font-medium text-on-surface-variant mb-1">
               Column Name *
             </label>
             <input
@@ -115,26 +115,26 @@ useEscapeToClose(() => props.isOpen, handleClose)
               v-model="name"
               type="text"
               required
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="To Do"
             />
           </div>
 
           <!-- WIP Limit -->
-          <div class="border border-gray-200 rounded-md p-4">
+          <div class="border border-outline-variant/30 rounded-md p-4">
             <div class="flex items-center mb-2">
               <input
                 id="column-has-wip-limit"
                 v-model="hasWipLimit"
                 type="checkbox"
-                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
               />
-              <label for="column-has-wip-limit" class="ml-2 text-sm font-medium text-gray-700">
+              <label for="column-has-wip-limit" class="ml-2 text-sm font-medium text-on-surface-variant">
                 Set WIP limit
               </label>
             </div>
             <div v-if="hasWipLimit">
-              <label for="wip-limit" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="wip-limit" class="block text-sm font-medium text-on-surface-variant mb-1">
                 Maximum cards in column *
               </label>
               <input
@@ -143,21 +143,21 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 type="number"
                 min="1"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                 placeholder="e.g., 3"
               />
-              <p class="mt-1 text-xs text-gray-500">
+              <p class="mt-1 text-xs text-on-surface-variant">
                 Limits work-in-progress to help maintain focus. You'll be warned when adding more cards than this limit.
               </p>
             </div>
           </div>
 
           <!-- Column Info -->
-          <div class="bg-gray-50 rounded-md p-3">
-            <div class="text-sm text-gray-700 space-y-1">
+          <div class="bg-surface-container-low rounded-md p-3 border border-outline-variant/20">
+            <div class="text-sm text-on-surface space-y-1">
               <p><span class="font-medium">Position:</span> {{ column.position + 1 }}</p>
               <p><span class="font-medium">Cards:</span> {{ column.cardCount }}</p>
-              <p class="text-xs text-gray-500 mt-2">Created: {{ new Date(column.createdAt).toLocaleString() }}</p>
+              <p class="text-xs text-on-surface-variant mt-2">Created: {{ new Date(column.createdAt).toLocaleString() }}</p>
             </div>
           </div>
         </div>
@@ -168,7 +168,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
             @click="handleDelete"
             type="button"
             :class="[
-              'px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-300 rounded-md transition-colors',
+              'px-4 py-2 text-sm font-medium text-error hover:text-error/80 hover:bg-error/10 border border-error/40 rounded-md transition-colors',
               column.cardCount > 0 ? 'opacity-50' : ''
             ]"
           >
@@ -178,7 +178,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
             <button
               @click="handleClose"
               type="button"
-              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-md transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
             >
               Cancel
             </button>
@@ -186,7 +186,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
               @click="handleSave"
               :disabled="!isFormValid()"
               type="button"
-              class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
             >
               Save Changes
             </button>
