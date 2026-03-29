@@ -165,11 +165,11 @@ describe('demo soak mode', () => {
     })
 
     it('respects maxDurationMs to stop early', async () => {
-      let iteration = 0
+      let _iteration = 0
       const summary = await runSoak(
         { maxIterations: 1000, maxDurationMs: 100, cooldownMs: 0 },
         async () => {
-          iteration++
+          _iteration++
           // Simulate some work
           await new Promise((resolve) => setTimeout(resolve, 30))
           return { pass: true, eventCount: 1 }
