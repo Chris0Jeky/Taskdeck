@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-27
+Last Updated: 2026-03-29
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -408,6 +408,32 @@ Delivered in the latest cycle:
    - standardized throttle response contract (`429` + `ApiErrorResponse`) with deterministic retry diagnostics headers (`Retry-After`, `X-RateLimit-Policy`)
    - published operator tuning guidance and safe defaults in `docs/security/RATE_LIMITING_POLICY.md` with regression coverage for burst, reset-window recovery, and cross-user boundary behavior
    - follow-through hardening now supports trusted forwarded-header processing via explicit proxy/network allowlists and configurable forwarded-hop depth (`ForwardedHeaders:ForwardLimit`), while preserving no-trust defaults when allowlists are unset and documenting emergency/rollback plus proxy-topology smoke checks
+90. TST-CODEX-01 to TST-CODEX-15 unit test coverage wave (`#415`–`#429`, PRs `#436`–`#448`):
+   - added frontend API/composable/store tests and backend domain entity/application service/API tests across 13 PRs
+   - adversarial review fixes for tautological assertions, missing guard branches, modifier-key coverage, and edge-case gaps
+91. Hotspot refactor and maintenance wave (PRs `#453`–`#456`):
+   - AGT-01 follow-up: `AgentRunRepository` now uses pure LINQ (removed `FromSqlInterpolated` raw-SQL SQLite branch)
+   - KNOW-01 follow-up: `KnowledgeChunkRepository` uses `ExecuteDeleteAsync`; FTS service uses uppercase GUID comparison, `int?` source-type, application-managed FTS sync via `UpdateFtsIndexAsync`/`DeleteFtsIndexAsync`, and `SanitizeFtsQuery` helper
+   - UI-01 follow-up: `design-tokens.css` accent colors DRY-refactored to `--_td-light-accent` variables
+   - TST-26 knowledge service test coverage: 32 new backend tests across chunk content, FTS sanitize, authorization, and API integration suites; EF Core migration with proper Designer snapshot; SQLite DateTimeOffset ORDER BY fix; FTS5 trigger-removal migration
+92. Security hardening wave (PRs `#457`–`#460`, `#466`):
+   - UI-03 primitive stack decision spike: `docs/analysis/ui-primitive-stack-decision-spike.md` selecting shadcn-vue (Reka UI base, copy-paste ownership, WAI-ARIA foundation)
+   - DOC-05 / SEC-17 managed-key usage policy: `docs/security/MANAGED_KEY_USAGE_POLICY.md` with fair-use limits, prohibited patterns, and enforcement ladder
+   - SEC-10 secrets/config management baseline: `docs/security/SECRETS_MANAGEMENT_BASELINE.md` with secret inventory + rotation runbooks; `deploy/docker-compose.yml` wired with LLM provider env vars
+   - SEC-19 incident response runbook + drills: `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md` + `scripts/drills/` (5 failure-injection scripts + orchestrator); corrected identity-scope quarantine accuracy in self-review
+   - SEC-12 session-token storage hardening: centralized `utils/tokenStorage.ts` abstraction with `isValidJwtStructure` JSON-payload validation; tokenStorage migration across router/sessionStore; CSP `unsafe-inline` removed from `script-src`; session-token ADR at `docs/analysis/session-token-storage-adr.md`
+93. Frontend foundations wave (PRs `#461`–`#464`):
+   - ActivityView decomposition: ~735 → ~117 lines via `useActivityQuery` + `ActivitySelector` + `ActivityResults`
+   - PERF-08 latency budgets: `usePerformanceMark` composable; 16 lazy route imports; `docs/PERFORMANCE_BUDGETS.md` with 7 thresholds
+   - BoardView decomposition: ~771 → ~270 lines via `useBoardDragDrop` + `useBoardKeyboardNav` + 4 extracted components; `usePerformanceMark` integrated for board-load instrumentation
+   - UI-02 shared primitives foundation: 15 TdButton/TdInput/TdDialog/TdDropdown/TdTooltip/TdBadge/etc. components built on shadcn-vue/Reka UI with WAI-ARIA baseline
+94. Feature and security follow-through wave (PRs `#465`–`#471`):
+   - OUT-01 JSON manifest import tab: `StarterPackCatalogModal` gains JSON paste/file-upload with validate→dry-run→apply flow
+   - StarterPack service decomposition: `StarterPackManifestValidator` split into 4 focused validators/checkers
+   - SEC-18 abuse detection operator tooling + domain groundwork: `AbuseActor`/`AbuseEvent` entities, `AbuseDetectionService` with 4-state model; operator evaluation/quarantine API; live-traffic wiring is a follow-up slice
+   - ArchiveRecovery decomposition: `ArchiveRecoveryService` → `ArchiveConflictDetector` + `RestorePlanner` + `RestoreExecutor`
+   - AutomationExecutor decomposition: `AutomationExecutorService` → `OperationParameterParser` + `ExecutionAuditRecorder` + `OperationHandlerRegistry`
+   - Deploy/MCP failure injection drills: 5 shell drill scripts + `run-all-drills.sh` orchestrator in `scripts/drills/`
 
 ## Current Planning Pivot (2026-03-07)
 
@@ -560,8 +586,8 @@ Exit Criteria:
 
 These continue in parallel where they protect trust, performance, or operator posture, but they should not outrun Horizon A through C product legibility work:
 
-- managed-key LLM control plane and abuse controls: `#235`, `#237`, `#238`, `#239`, `#240`
-- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`)
+- managed-key LLM control plane and abuse controls: `#235`, `#237` (pending), `#238` (operator tooling groundwork delivered; live-traffic wiring pending), `#239` (delivered), `#240` (delivered)
+- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations now delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets
 - long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
 - platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
 - deferred outreach CRM expansion: `#262` to `#268`
@@ -636,8 +662,8 @@ These continue in parallel where they protect trust, performance, or operator po
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
 - Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110`, `#156`, `#212` (delivered), `#238`, `#239`, `#240`
-- Frontend premium UI foundations wave: `#242`, `#243`, `#244`, `#245`, `#246`, `#247`, `#248`, `#249`, `#250`
+- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
+- Frontend premium UI foundations wave: `#242`, `#243` (UI-02 shared primitives delivered), `#244`, `#245` (UI-03 stack spike delivered), `#246`, `#247`, `#248`, `#249`, `#250` (PERF-08 delivered)
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 - Seeded secondary MVP follow-through wave (lower priority than Wave P):
   - `#329` tracker
@@ -666,9 +692,9 @@ These continue in parallel where they protect trust, performance, or operator po
 - Optional premium UI documentation/component tooling: `#251`
 - Developer/user docs maturity: `#99`, `#216`, `#217`
 - Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
-- Outreach CRM deferred expansion wave: `#262` to `#268`
+- Outreach CRM deferred expansion wave: `#262` to `#268` (`#263` OUT-01 JSON manifest import delivered)
 - Outreach CRM wave reused dependencies: `#75` (delivered import adapters), `#77` (analytics), `#175` (starter-pack catalog expansion)
-- Codebase maintainability hotspot refactors (analysis wave): `#158`, `#159`, `#160`, `#161`, `#162`, `#163`, `#164`, `#165`, `#166`, `#167`
+- Codebase maintainability hotspot refactors (analysis wave): `#158`, `#159`, `#160`, `#161`, `#162`, `#163`, `#164`, `#165`, `#166`, `#167` — ActivityView, BoardView, StarterPackManifestValidator, ArchiveRecoveryService, and AutomationExecutorService decompositions are now delivered; remaining issues in this wave cover other hotspots not yet addressed
 
 ### Priority V (Meta/Historical)
 
@@ -879,11 +905,12 @@ Immediate hardening landed in this context:
 4. Continue the seeded novice-first shell tranche from `#322`, using the shipped `#320` home/workspace-mode foundation rather than reopening it.
 5. Keep the docs/help/testing tranche synchronized with the shipped Wave P core (`#320`, `#322`, `#324`, `#326`, `#96`, `#100`): keep the now-delivered `#328` smoke contract aligned to the shipped first-run loop, and route broader telemetry/release-gate follow-through to `#341`.
 6. Keep the delivered testing-harness wave (`#254` to `#260`) in maintenance mode and route any new guardrail expansion through normal follow-up issues while keeping aligned existing seeds `#89`, `#90`, `#106`, and `#168`.
-7. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` -> `#238` / `#239` / `#240`.
-8. Start frontend premium UI wave with foundations-first ordering: `#243` -> `#245` -> `#244` -> (`#246`, `#247`, `#249`), then interaction/performance hardening `#248`, `#250`; keep reused dependencies `#154`, `#88`, `#92`, and `#213` synchronized with the productization wave.
+7. Continue managed-key control-plane and abuse follow-through in dependency order: `#235` -> `#237` (quota/kill-switch, not yet started) -> SEC-18 live-traffic wiring follow-up; `#238`/`#239`/`#240` operator tooling and policy groundwork are now delivered.
+8. Continue frontend premium UI wave from the delivered foundations: shared primitives (UI-02), PERF-08 budgets, and the stack decision spike (UI-03) are done; next is `#246` (token system audit), `#247` (component reskin pass), and `#248`/`#249`/`#250` interaction/accessibility hardening.
 9. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
+12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave and knowledge service tests added significant coverage since that certification.
 
 ## Documentation Operating Model
 Active docs:

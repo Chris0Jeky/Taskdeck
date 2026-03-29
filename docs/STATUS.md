@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-28
+Last Updated: 2026-03-29
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -66,8 +66,10 @@ Direction guardrails (explicit):
   - request correlation middleware (`X-Request-Id`) with response echo and log scope propagation
   - development CORS origin policy keeps localhost defaults (`http://localhost:5173`, `http://localhost:5174`), adds fallback localhost dev ports (`http://localhost:4173`, `http://localhost:5001`), and supports additive `Cors:DevelopmentAllowedOrigins` config overrides
 - Implemented automation stack:
-  - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService`
-  - `ArchiveRecoveryService`
+  - `AutomationProposalService`, `AutomationPlannerService`, `AutomationPolicyEngine`, `AutomationExecutorService` (decomposed into `OperationParameterParser`, `ExecutionAuditRecorder`, `OperationHandlerRegistry`)
+  - `ArchiveRecoveryService` (decomposed into `ArchiveConflictDetector`, `RestorePlanner`, `RestoreExecutor`)
+  - `StarterPackManifestValidator` decomposed into `StarterPackSchemaValidator`, `StarterPackSemanticValidator`, `StarterPackConflictDetector`, `StarterPackIdempotencyChecker`
+  - `AbuseDetectionService` with `AbuseActor`/`AbuseEvent` domain entities and a 4-state containment model (Observe → Suspicious → Restricted → Blocked); operator kill-switch API groundwork for SEC-18
   - `ChatService` + deterministic `ILlmProvider` selection policy (`Mock` default; `OpenAI`/`Gemini` behind explicit gates with config validation fallback)
   - `NotificationService` with per-user preference filtering and deduplication safeguards
   - outbound webhook integration baseline: board-scoped webhook subscriptions (endpoint + event filters + secret rotation/revocation), mutation-event delivery queueing, and signed delivery worker retries/dead-letter transitions
@@ -111,6 +113,13 @@ Direction guardrails (explicit):
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
 - Cross-cutting UI infrastructure:
   - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
+  - shared UI primitives foundation (UI-02): 15 TdButton/TdInput/TdDialog/TdDropdown/TdTooltip/TdBadge/etc. primitives built on Reka UI via shadcn-vue ownership model with WAI-ARIA keyboard foundation; stack decision documented in `docs/analysis/ui-primitive-stack-decision-spike.md`
+  - centralized JWT token storage abstraction (`utils/tokenStorage.ts`) with base64url + JSON payload validation, `isValidJwtStructure` guard, and `clearAll` helper; session-token storage ADR at `docs/analysis/session-token-storage-adr.md`
+  - CSP hardening: removed `unsafe-inline` from `script-src` in security headers middleware; OWASP baseline doc updated
+  - performance instrumentation composable (`usePerformanceMark`) with `PERF_BUDGETS` constants; 7 latency thresholds documented in `docs/PERFORMANCE_BUDGETS.md`; 16 workspace route views converted to lazy `() => import()` for initial bundle reduction
+- Large view decompositions (hotspot refactor wave):
+  - `ActivityView.vue` decomposed from ~735 → ~117 lines via `useActivityQuery` composable + `ActivitySelector` + `ActivityResults` components
+  - `BoardView.vue` decomposed from ~771 → ~270 lines via `useBoardDragDrop` + `useBoardKeyboardNav` composables + `BoardToolbar` + `BoardActionRail` + `BoardCanvas` + `BoardDialogHost` components
 - Demo baseline (migration batches A + B + C + D + E delivered):
   - `frontend/taskdeck-web/scripts/demo-seed.mjs` + `npm run demo:seed` for first-run seeded workspace generation, now bounded on reruns so canonical seeded captures, queue samples, chat evidence, comments, and Ops logs are reused instead of appended indefinitely
   - `frontend/taskdeck-web/scripts/demo-lib.mjs`, `frontend/taskdeck-web/scripts/demo-run.mjs`, `frontend/taskdeck-web/scripts/demo-autopilot.mjs`, `frontend/taskdeck-web/scripts/scenario-json-runner.mjs`, `frontend/taskdeck-web/scripts/scenarios-json/*`, and `frontend/taskdeck-web/scripts/scenarios/*` (compatibility path) for reusable scripted scenario/autopilot harness flows
@@ -429,9 +438,9 @@ To capture the security and operational risk of letting users consume model call
 
 - `#235` tracker: managed-key threat model and control sequencing
 - `#236` identity attribution contract for managed-key requests (`Priority II`) -- delivered
-- `#237` quota/budget/kill-switch guardrails (`Priority II`)
-- `#238` abuse detection + automated containment (`Priority III`)
-- `#239` incident response + key rotation drills (`Priority III`)
+- `#237` quota/budget/kill-switch guardrails (`Priority II`) -- pending
+- `#238` SEC-18 abuse detection + automated containment (`Priority III`) -- **operator tooling + domain groundwork delivered**: `AbuseActor`/`AbuseEvent` entities, `AbuseDetectionService` (4-state Observe→Suspicious→Restricted→Blocked model), operator evaluation/quarantine/unquarantine/block API; live-traffic automated containment wiring is a follow-up slice
+- `#239` SEC-19 incident response + key rotation drills (`Priority III`) -- **delivered**: `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md` + `docs/security/SECRETS_MANAGEMENT_BASELINE.md` + `scripts/drills/` (5 failure-injection drill scripts + orchestrator)
 - `#240` user-facing fair-use and abuse consequence policy (`Priority III`) -- delivered: `docs/security/MANAGED_KEY_USAGE_POLICY.md`
 
 ## Frontend Premium UI Wave (2026-02-23)
@@ -521,7 +530,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-03-06 (backend + frontend unit/build + frontend E2E + demo smoke refreshed)
+Verification Date: 2026-03-06 (backend + frontend unit/build + frontend E2E + demo smoke refreshed); counts below are the last full-suite recertification — additional test coverage was added in PRs #436–#471 (TST-CODEX wave + knowledge service + BoardView/ActivityView decomposition) so actual totals are higher
 
 ### Backend (Executed)
 
@@ -637,7 +646,7 @@ Security and identity:
 
 Automation and data:
 - active LLM provider policy supports explicit mock vs live-provider switching (`OpenAI`/`Gemini`) with safe defaults for development/test environments
-- managed-key shared-token controls are partially shipped: identity attribution baseline is delivered (`#236`), user-facing usage policy is delivered (`#240`, `docs/security/MANAGED_KEY_USAGE_POLICY.md`); remaining quota/abuse/incident follow-through is tracked in `#235`, `#237`, `#238`, and `#239`
+- managed-key shared-token controls are now more broadly shipped: identity attribution baseline (`#236`), user-facing usage policy (`#240`, `docs/security/MANAGED_KEY_USAGE_POLICY.md`), secrets/config management baseline (SEC-10, `docs/security/SECRETS_MANAGEMENT_BASELINE.md`), incident runbook + drill scripts (SEC-19, `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md` + `scripts/drills/`), and abuse detection domain groundwork + operator API (`#238` SEC-18, `AbuseActor`/`AbuseEvent`/`AbuseDetectionService` with 4-state model) are all delivered; remaining automated live-traffic containment and quota enforcement remain tracked in `#237` (kill-switch budget guardrails) and the SEC-18 follow-through slice for live wiring
 - planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
 - database import is file-replacement based and can fail when the SQLite file is actively locked by other operations; run imports during quiescent windows when possible
@@ -759,6 +768,25 @@ Security/compliance hardening backlog added from research cross-check:
 - Seeded testing-harness wave issues (`#254` to `#260`) and updated in-review extraction records with duplicate prevention notes.
 - Seeded outreach CRM deferred-wave issues (`#262` to `#268`) and reconciled overlapping scope into existing issues (`#75`, `#77`, `#175`, `#107`).
 - Delivered TST-CODEX-01 to TST-CODEX-15 unit test coverage wave (`#415` to `#429`, PRs `#436` to `#448`): added frontend API/composable/store tests and backend domain entity/application service/API tests across 13 PRs, with adversarial review fixes for tautological assertions, missing guard branches, modifier-key coverage, and edge-case gaps.
+- Delivered AGT-01 follow-up (PR `#453`): removed `FromSqlInterpolated` raw-SQL SQLite branch from `AgentRunRepository`; now uses pure LINQ path for all agent-run queries.
+- Delivered KNOW-01 follow-up (PR `#454`): `KnowledgeChunkRepository.DeleteByDocumentIdAsync` now uses `ExecuteDeleteAsync` for a single-roundtrip server-side delete; `KnowledgeFtsSearchService` GUID lookups use `.ToUpperInvariant()` to match EF Core uppercase storage; `SourceType` column typed as `int?`; application-managed FTS sync via `UpdateFtsIndexAsync`/`DeleteFtsIndexAsync` replaces broken trigger pattern; `SanitizeFtsQuery` internal method added for FTS5 query safety.
+- Delivered UI-01 follow-up (PR `#455`): DRY accent-color refactor in `design-tokens.css` — 9 hardcoded hex values replaced with `--_td-light-accent` and `--_td-light-accent-hover` CSS variables; single source of truth for the primary action accent.
+- Delivered TST-26 knowledge service tests (PR `#456`): 32 new backend tests across `KnowledgeServiceChunkContentTests`, `KnowledgeFtsSearchServiceSanitizeTests`, `KnowledgeServiceAuthorizationTests`, and `KnowledgeApiTests`; includes EF Core migration with proper Designer snapshot, SQLite DateTimeOffset ORDER BY fix via `FromSqlInterpolated`, and FTS5 trigger-removal migration.
+- Delivered UI-03 primitive stack decision spike (PR `#457`): `docs/analysis/ui-primitive-stack-decision-spike.md` documents the selection of shadcn-vue over Reka UI direct and Headless UI across 6 evaluation criteria (component count, ARIA baseline, copy-paste ownership, accessibility maturity, Vue 3 compatibility, ecosystem trajectory).
+- Delivered DOC-05 / SEC-17 managed-key usage policy (PR `#458`): `docs/security/MANAGED_KEY_USAGE_POLICY.md` — user-facing fair-use limits, prohibited patterns (scraping, bulk operations, key extraction), enforcement ladder (warn → restrict → suspend → ban), and appeals process; linked from active security docs.
+- Delivered SEC-10 secrets and configuration management baseline (PR `#459`): `docs/security/SECRETS_MANAGEMENT_BASELINE.md` with secret inventory, per-environment storage model, and rotation runbooks; `deploy/docker-compose.yml` updated to wire `Llm__EnableLiveProviders`, `Llm__Provider`, `Llm__OpenAi__ApiKey`, and `Llm__Gemini__ApiKey` env vars through to the API container.
+- Delivered SEC-19 incident response drills (PR `#460`): `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md` covering 4-stage incident lifecycle (detect → contain → eradicate → recover) with identity-scope quarantine accuracy note (caller-self only); `scripts/drills/` with 5 failure-injection drill scripts (`drill-api-auth-failure.sh`, `drill-api-rate-limit-exhaustion.sh`, `drill-budget-threshold-breach.sh`, `drill-mcp-config-validation.sh`, `drill-provider-degradation.sh`) and `run-all-drills.sh` orchestrator.
+- Delivered ActivityView decomposition (PR `#461`): `ActivityView.vue` reduced from ~735 → ~117 lines via extracted `useActivityQuery` composable (API fetching/filtering state), `ActivitySelector.vue` (board/entity/user picker UI), and `ActivityResults.vue` (result list rendering); unit + component tests added for each piece.
+- Delivered PERF-08 frontend latency budgets (PR `#462`): `usePerformanceMark` composable with `performance.mark()`/`performance.measure()` API and reactive `duration`/`overBudget` refs; `PERF_BUDGETS` constants; 16 workspace route views converted to lazy `() => import()` for route splitting; `docs/PERFORMANCE_BUDGETS.md` with 7 documented latency thresholds; CaptureModal instrumented.
+- Delivered BoardView decomposition (PR `#463`): `BoardView.vue` reduced from ~771 → ~270 lines via `useBoardDragDrop` (column/card DnD logic), `useBoardKeyboardNav` (j/k/h/l keyboard selection), `BoardToolbar.vue` (header, presence, filter, settings actions), `BoardActionRail.vue` (board-context action strip), `BoardCanvas.vue` (column DnD scaffold + ColumnLane), `BoardDialogHost.vue` (all modal/overlay hosting); unit + component tests added.
+- Delivered UI-02 shared UI primitives foundation (PR `#464`): 15 shared primitive components in `src/components/ui/` — `TdButton`, `TdIconButton`, `TdInput`, `TdTextarea`, `TdSelect`, `TdFieldWrapper`, `TdDialog`, `TdDropdown`, `TdPopover`, `TdTooltip`, `TdToast`, `TdInlineAlert`, `TdSkeleton`, `TdSpinner`, `TdBadge`, `TdTag`, `TdEmptyState`; built on Reka UI via shadcn-vue copy-paste ownership; WAI-ARIA keyboard foundation throughout.
+- Delivered OUT-01 JSON manifest import tab (PR `#465`): `StarterPackCatalogModal.vue` gains a JSON Import tab with paste/file-upload, validate→dry-run→apply flow; JSON payload parsed against the v1 manifest schema with actionable error display before apply.
+- Delivered SEC-12 session-token storage hardening (PR `#466`): `utils/tokenStorage.ts` centralizes all JWT token/session key access behind `getToken`/`setToken`/`clearAll`; `isValidJwtStructure` validates base64url segment count AND decodes the payload as JSON (rejecting structurally invalid tokens like `aaa.bbb.ccc`); `router/index.ts` and `sessionStore` migrated to tokenStorage abstraction; CSP `unsafe-inline` removed from `script-src`; OWASP baseline doc updated with CSP note; session-token storage ADR at `docs/analysis/session-token-storage-adr.md`.
+- Delivered StarterPack service decomposition (PR `#467`): `StarterPackManifestValidator` extracted into `StarterPackSchemaValidator` (structure/field/collection validation), `StarterPackSemanticValidator` (content/cross-reference constraints), `StarterPackConflictDetector` (dry-run board-state conflict detection), and `StarterPackIdempotencyChecker` (re-apply idempotency logic); duplicate null-collection validation bug fixed in self-review.
+- Delivered SEC-18 abuse detection operator tooling + domain groundwork (PR `#468`): `AbuseActor.cs` + `AbuseEvent.cs` domain entities with 4-state containment model (Observe → Suspicious → Restricted → Blocked); `AbuseDetectionService` with signal evaluation, state-machine transitions, operator quarantine/unquarantine/block/list API groundwork; live-traffic wiring is an explicit follow-up slice.
+- Delivered ArchiveRecovery service decomposition (PR `#469`): `ArchiveRecoveryService` extracted into `ArchiveConflictDetector` (pre-restore board-name/column/label conflict detection), `RestorePlanner` (produces ordered restore operations), and `RestoreExecutor` (applies restore operations transactionally).
+- Delivered AutomationExecutor pipeline decomposition (PR `#470`): `AutomationExecutorService` extracted into `OperationParameterParser` (type-safe parameter extraction), `ExecutionAuditRecorder` (per-operation audit emission), and `OperationHandlerRegistry` (handler dispatch table); each piece unit-tested independently.
+- Delivered deploy/MCP failure injection drills (PR `#471`): `scripts/drills/` with 5 shell scripts covering API auth failure, rate-limit exhaustion, budget threshold breach, MCP config validation/unknown-server handling, and provider degradation scenarios; `run-all-drills.sh` orchestrator with pass/fail summary; corrected drill-mcp scope to config validation (not credential injection) in self-review.
 
 ## Canonical Documentation Policy
 
