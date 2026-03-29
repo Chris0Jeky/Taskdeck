@@ -83,9 +83,9 @@ public class LlmQueueService : ILlmQueueService
         return Result.Success(requests.Select(MapToDto));
     }
 
-    public async Task<Result<IEnumerable<LlmRequestDto>>> GetQueueByStatusAsync(RequestStatus status)
+    public async Task<Result<IEnumerable<LlmRequestDto>>> GetQueueByStatusAsync(Guid userId, RequestStatus status)
     {
-        var requests = await _unitOfWork.LlmQueue.GetByStatusAsync(status);
+        var requests = await _unitOfWork.LlmQueue.GetByUserAndStatusAsync(userId, status);
         return Result.Success(requests.Select(MapToDto));
     }
 
@@ -134,12 +134,12 @@ public class LlmQueueService : ILlmQueueService
         }
     }
 
-    public async Task<Result<QueueStatsDto>> GetQueueStatsAsync()
+    public async Task<Result<QueueStatsDto>> GetQueueStatsAsync(Guid userId)
     {
-        var pending = await _unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Pending);
-        var processing = await _unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Processing);
-        var completed = await _unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Completed);
-        var failed = await _unitOfWork.LlmQueue.GetByStatusAsync(RequestStatus.Failed);
+        var pending = await _unitOfWork.LlmQueue.GetByUserAndStatusAsync(userId, RequestStatus.Pending);
+        var processing = await _unitOfWork.LlmQueue.GetByUserAndStatusAsync(userId, RequestStatus.Processing);
+        var completed = await _unitOfWork.LlmQueue.GetByUserAndStatusAsync(userId, RequestStatus.Completed);
+        var failed = await _unitOfWork.LlmQueue.GetByUserAndStatusAsync(userId, RequestStatus.Failed);
 
         var stats = new QueueStatsDto(
             pending.Count(),
