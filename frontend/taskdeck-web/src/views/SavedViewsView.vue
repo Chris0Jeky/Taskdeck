@@ -74,8 +74,10 @@ async function loadAllCards() {
     const cardPromises = boardStore.boards
       .filter((b) => !b.isArchived)
       .map((board) => cardsApi.getCards(board.id))
-    const results = await Promise.all(cardPromises)
-    allCards.value = results.flat()
+    const results = await Promise.allSettled(cardPromises)
+    allCards.value = results
+      .filter((r): r is PromiseFulfilledResult<Card[]> => r.status === 'fulfilled')
+      .flatMap((r) => r.value)
   } catch {
     // Board store handles its own errors
   } finally {
