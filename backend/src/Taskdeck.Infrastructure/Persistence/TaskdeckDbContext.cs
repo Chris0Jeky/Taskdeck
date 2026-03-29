@@ -38,6 +38,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<AgentRunEvent> AgentRunEvents => Set<AgentRunEvent>();
     public DbSet<KnowledgeDocument> KnowledgeDocuments => Set<KnowledgeDocument>();
     public DbSet<KnowledgeChunk> KnowledgeChunks => Set<KnowledgeChunk>();
+    public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
