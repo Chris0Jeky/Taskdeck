@@ -28,10 +28,33 @@ export interface SavedView {
   createdAt: string
 }
 
+// ── Helpers ──
+
+/** Strip time component and return UTC-midnight for date-only comparisons.
+ *  Using UTC throughout avoids local-timezone midnight-boundary mismatches
+ *  when card.dueDate arrives as an ISO/UTC string. */
+function toUTCDateOnly(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+}
+
+/** Today as UTC midnight */
+function todayUTC(): Date {
+  return toUTCDateOnly(new Date())
+}
+
+/** Stable timestamp for built-in default views (avoids changing on every reload) */
+const DEFAULT_VIEW_CREATED_AT = '2024-01-01T00:00:00.000Z'
+
+const DEFAULT_FILTER: SavedViewFilter = {
+  searchText: '',
+  labelNames: [],
+  dueDateFilter: 'all',
+  showBlockedOnly: false,
+}
+
 // ── Default starter views ──
 
 function createDefaultViews(): SavedView[] {
-  const now = new Date().toISOString()
   return [
     {
       id: 'default-blocked',
@@ -44,7 +67,7 @@ function createDefaultViews(): SavedView[] {
         showBlockedOnly: true,
       },
       isDefault: true,
-      createdAt: now,
+      createdAt: DEFAULT_VIEW_CREATED_AT,
     },
     {
       id: 'default-due-week',
@@ -57,7 +80,7 @@ function createDefaultViews(): SavedView[] {
         showBlockedOnly: false,
       },
       isDefault: true,
-      createdAt: now,
+      createdAt: DEFAULT_VIEW_CREATED_AT,
     },
     {
       id: 'default-needs-review',
@@ -70,7 +93,7 @@ function createDefaultViews(): SavedView[] {
         showBlockedOnly: false,
       },
       isDefault: true,
-      createdAt: now,
+      createdAt: DEFAULT_VIEW_CREATED_AT,
     },
     {
       id: 'default-overdue',
@@ -83,7 +106,7 @@ function createDefaultViews(): SavedView[] {
         showBlockedOnly: false,
       },
       isDefault: true,
-      createdAt: now,
+      createdAt: DEFAULT_VIEW_CREATED_AT,
     },
   ]
 }
@@ -108,28 +131,30 @@ export function cardMatchesSavedViewFilter(card: Card, filter: SavedViewFilter):
     if (!hasMatchingLabel) return false
   }
 
-  // Due date filter
+  // Due date filter — all comparisons use UTC date-only to avoid
+  // timezone mismatches between local new Date() and ISO/UTC dueDate strings.
   if (filter.dueDateFilter !== 'all') {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const today = todayUTC()
     const weekFromNow = new Date(today)
-    weekFromNow.setDate(weekFromNow.getDate() + 7)
+    weekFromNow.setUTCDate(weekFromNow.getUTCDate() + 7)
 
     switch (filter.dueDateFilter) {
-      case 'overdue':
-        if (!card.dueDate || new Date(card.dueDate) >= today) return false
+      case 'overdue': {
+        if (!card.dueDate) return false
+        const dueDay = toUTCDateOnly(new Date(card.dueDate))
+        if (dueDay >= today) return false
         break
+      }
       case 'due-today': {
         if (!card.dueDate) return false
-        const dueDate = new Date(card.dueDate)
-        const dueDateDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
-        if (dueDateDay.getTime() !== today.getTime()) return false
+        const dueDay = toUTCDateOnly(new Date(card.dueDate))
+        if (dueDay.getTime() !== today.getTime()) return false
         break
       }
       case 'due-week': {
         if (!card.dueDate) return false
-        const due = new Date(card.dueDate)
-        if (due < today || due > weekFromNow) return false
+        const dueDay = toUTCDateOnly(new Date(card.dueDate))
+        if (dueDay < today || dueDay > weekFromNow) return false
         break
       }
       case 'no-date':
@@ -144,6 +169,40 @@ export function cardMatchesSavedViewFilter(card: Card, filter: SavedViewFilter):
   }
 
   return true
+}
+
+// ── Validation helpers ──
+
+/** Validate and normalize a filter object restored from localStorage,
+ *  applying defaults for any missing or invalid properties. */
+function normalizeFilter(raw: unknown): SavedViewFilter {
+  if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_FILTER }
+
+  const obj = raw as Record<string, unknown>
+  return {
+    searchText: typeof obj.searchText === 'string' ? obj.searchText : DEFAULT_FILTER.searchText,
+    labelNames:
+      Array.isArray(obj.labelNames) && obj.labelNames.every((n: unknown) => typeof n === 'string')
+        ? (obj.labelNames as string[])
+        : [...DEFAULT_FILTER.labelNames],
+    dueDateFilter: isValidDueDateFilter(obj.dueDateFilter)
+      ? obj.dueDateFilter
+      : DEFAULT_FILTER.dueDateFilter,
+    showBlockedOnly:
+      typeof obj.showBlockedOnly === 'boolean'
+        ? obj.showBlockedOnly
+        : DEFAULT_FILTER.showBlockedOnly,
+  }
+}
+
+function isValidDueDateFilter(value: unknown): value is SavedViewDueDateFilter {
+  return (
+    value === 'all' ||
+    value === 'overdue' ||
+    value === 'due-today' ||
+    value === 'due-week' ||
+    value === 'no-date'
+  )
 }
 
 // ── Store ──
@@ -183,18 +242,25 @@ export const useSavedViewStore = defineStore('savedViews', () => {
       if (!Array.isArray(parsed)) return
 
       const defaults = createDefaultViews()
-      const customViews: SavedView[] = parsed
+      const restoredViews: SavedView[] = parsed
         .filter(
-          (v: unknown): v is SavedView =>
+          (v: unknown): v is Record<string, unknown> =>
             typeof v === 'object' &&
             v !== null &&
-            typeof (v as SavedView).id === 'string' &&
-            typeof (v as SavedView).name === 'string' &&
-            typeof (v as SavedView).filter === 'object',
+            typeof (v as Record<string, unknown>).id === 'string' &&
+            typeof (v as Record<string, unknown>).name === 'string' &&
+            typeof (v as Record<string, unknown>).filter === 'object',
         )
-        .map((v: SavedView) => ({ ...v, isDefault: false }))
+        .map((v: Record<string, unknown>) => ({
+          id: v.id as string,
+          name: v.name as string,
+          icon: typeof v.icon === 'string' ? v.icon : '?',
+          filter: normalizeFilter(v.filter),
+          isDefault: false,
+          createdAt: typeof v.createdAt === 'string' ? v.createdAt : new Date().toISOString(),
+        }))
 
-      views.value = [...defaults, ...customViews]
+      views.value = [...defaults, ...restoredViews]
     } catch {
       // Invalid JSON — start fresh with defaults only
       views.value = createDefaultViews()

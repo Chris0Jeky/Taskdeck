@@ -73,6 +73,18 @@ describe('savedViewStore', () => {
       expect(overdue).toBeDefined()
       expect(overdue!.filter.dueDateFilter).toBe('overdue')
     })
+
+    it('should use stable timestamps for default views', () => {
+      const store1 = useSavedViewStore()
+      const ts1 = store1.defaultViews[0].createdAt
+
+      setActivePinia(createPinia())
+      const store2 = useSavedViewStore()
+      const ts2 = store2.defaultViews[0].createdAt
+
+      expect(ts1).toBe(ts2)
+      expect(ts1).toBe('2024-01-01T00:00:00.000Z')
+    })
   })
 
   describe('createView', () => {
@@ -227,6 +239,60 @@ describe('savedViewStore', () => {
         expect(defaults).toHaveLength(0)
       }
     })
+
+    it('should apply default filter values for missing properties on restore', () => {
+      // Store a view with a partial/corrupt filter object
+      const partial = [{
+        id: 'custom-partial',
+        name: 'Partial Filter',
+        icon: 'P',
+        filter: { searchText: 'hello' }, // missing labelNames, dueDateFilter, showBlockedOnly
+        isDefault: false,
+        createdAt: '2024-06-01T00:00:00.000Z',
+      }]
+      localStorage.setItem('taskdeck_saved_views', JSON.stringify(partial))
+
+      const store = useSavedViewStore()
+      const restored = store.customViews.find((v) => v.id === 'custom-partial')
+      expect(restored).toBeDefined()
+      expect(restored!.filter.searchText).toBe('hello')
+      expect(restored!.filter.labelNames).toEqual([])
+      expect(restored!.filter.dueDateFilter).toBe('all')
+      expect(restored!.filter.showBlockedOnly).toBe(false)
+    })
+
+    it('should apply default icon when icon is missing on restore', () => {
+      const noIcon = [{
+        id: 'custom-no-icon',
+        name: 'No Icon',
+        filter: { searchText: '', labelNames: [], dueDateFilter: 'all', showBlockedOnly: false },
+        isDefault: false,
+        createdAt: '2024-06-01T00:00:00.000Z',
+      }]
+      localStorage.setItem('taskdeck_saved_views', JSON.stringify(noIcon))
+
+      const store = useSavedViewStore()
+      const restored = store.customViews.find((v) => v.id === 'custom-no-icon')
+      expect(restored).toBeDefined()
+      expect(restored!.icon).toBe('?')
+    })
+
+    it('should reject invalid dueDateFilter values on restore', () => {
+      const badFilter = [{
+        id: 'custom-bad-filter',
+        name: 'Bad Filter',
+        icon: 'B',
+        filter: { searchText: '', labelNames: [], dueDateFilter: 'invalid-value', showBlockedOnly: false },
+        isDefault: false,
+        createdAt: '2024-06-01T00:00:00.000Z',
+      }]
+      localStorage.setItem('taskdeck_saved_views', JSON.stringify(badFilter))
+
+      const store = useSavedViewStore()
+      const restored = store.customViews.find((v) => v.id === 'custom-bad-filter')
+      expect(restored).toBeDefined()
+      expect(restored!.filter.dueDateFilter).toBe('all') // falls back to default
+    })
   })
 
   describe('filterCards', () => {
@@ -332,17 +398,35 @@ describe('cardMatchesSavedViewFilter', () => {
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
     })
 
-    it('should match overdue cards', () => {
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const card = createMockCard({ dueDate: yesterday.toISOString() })
+    it('should match overdue cards (UTC date in the past)', () => {
+      // Use a UTC date string that is clearly in the past
+      const twoDaysAgo = new Date()
+      twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2)
+      const card = createMockCard({ dueDate: twoDaysAgo.toISOString() })
       const filter = createBaseFilter({ dueDateFilter: 'overdue' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
     })
 
+    it('should not match cards without dueDate as overdue', () => {
+      const card = createMockCard({ dueDate: null })
+      const filter = createBaseFilter({ dueDateFilter: 'overdue' })
+      expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
+    })
+
+    it('should not match today as overdue', () => {
+      // A card due today (UTC midnight) should NOT be overdue
+      const now = new Date()
+      const todayMidnightUTC = new Date(Date.UTC(
+        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()
+      ))
+      const card = createMockCard({ dueDate: todayMidnightUTC.toISOString() })
+      const filter = createBaseFilter({ dueDateFilter: 'overdue' })
+      expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
+    })
+
     it('should not match future cards as overdue', () => {
       const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
       const card = createMockCard({ dueDate: tomorrow.toISOString() })
       const filter = createBaseFilter({ dueDateFilter: 'overdue' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
@@ -350,7 +434,7 @@ describe('cardMatchesSavedViewFilter', () => {
 
     it('should match cards due this week', () => {
       const threeDays = new Date()
-      threeDays.setDate(threeDays.getDate() + 3)
+      threeDays.setUTCDate(threeDays.getUTCDate() + 3)
       const card = createMockCard({ dueDate: threeDays.toISOString() })
       const filter = createBaseFilter({ dueDateFilter: 'due-week' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
@@ -358,7 +442,7 @@ describe('cardMatchesSavedViewFilter', () => {
 
     it('should not match cards due beyond this week', () => {
       const twoWeeks = new Date()
-      twoWeeks.setDate(twoWeeks.getDate() + 14)
+      twoWeeks.setUTCDate(twoWeeks.getUTCDate() + 14)
       const card = createMockCard({ dueDate: twoWeeks.toISOString() })
       const filter = createBaseFilter({ dueDateFilter: 'due-week' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
@@ -374,6 +458,16 @@ describe('cardMatchesSavedViewFilter', () => {
       const card = createMockCard({ dueDate: new Date().toISOString() })
       const filter = createBaseFilter({ dueDateFilter: 'no-date' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(false)
+    })
+
+    it('should match card due today for due-today filter', () => {
+      const now = new Date()
+      const todayMidnightUTC = new Date(Date.UTC(
+        now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0
+      ))
+      const card = createMockCard({ dueDate: todayMidnightUTC.toISOString() })
+      const filter = createBaseFilter({ dueDateFilter: 'due-today' })
+      expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
     })
   })
 
