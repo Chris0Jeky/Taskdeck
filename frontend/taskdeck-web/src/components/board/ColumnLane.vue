@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useToastStore } from '../../store/toastStore'
+import { getErrorDisplay } from '../../composables/useErrorMapper'
 import CardItem from './CardItem.vue'
 import CardModal from './CardModal.vue'
 import ColumnEditModal from './ColumnEditModal.vue'
@@ -21,12 +23,19 @@ const emit = defineEmits<{
 }>()
 
 const boardStore = useBoardStore()
+const toast = useToastStore()
 const newCardTitle = ref('')
 const showCardForm = ref(false)
 const selectedCard = ref<Card | null>(null)
 const showCardModal = ref(false)
 const showColumnEdit = ref(false)
 const isDragOver = ref(false)
+
+/** True when cards.length > wipLimit (already over limit) */
+const isWipLimitExceeded = computed(() => {
+  // Treat null or <= 0 as "no limit" — mirrors backend's SetWipLimit guard (must be > 0)
+  return props.column.wipLimit != null && props.column.wipLimit > 0 && props.cards.length > props.column.wipLimit
+})
 
 function handleCardClick(card: Card) {
   selectedCard.value = card
@@ -54,12 +63,10 @@ async function createCard() {
     newCardTitle.value = ''
     showCardForm.value = false
   } catch (error) {
+    const { message } = getErrorDisplay(error, 'Failed to create card')
+    toast.error(message)
     console.error('Failed to create card:', error)
   }
-}
-
-const isWipLimitExceeded = () => {
-  return props.column.wipLimit !== null && props.cards.length > props.column.wipLimit
 }
 
 function handleCardDragStart(card: Card) {
@@ -187,7 +194,7 @@ function handleCardDragOver(event: DragEvent) {
           </button>
           <span
             class="td-column-lane__count"
-            :class="isWipLimitExceeded() ? 'td-column-lane__count--exceeded' : ''"
+            :class="isWipLimitExceeded ? 'td-column-lane__count--exceeded' : ''"
           >
             {{ cards.length }}{{ column.wipLimit ? `/${column.wipLimit}` : '' }}
           </span>
@@ -204,13 +211,14 @@ function handleCardDragOver(event: DragEvent) {
         </div>
       </div>
 
-      <div v-if="isWipLimitExceeded()" class="td-column-lane__wip-warning">
+      <div v-if="isWipLimitExceeded" class="td-column-lane__wip-warning">
         WIP limit exceeded
       </div>
 
       <button
         data-action="toggle-add-card"
         @click="openCardForm"
+        title="Add a card"
         class="td-column-lane__add-card-btn"
       >
         <span>+</span>

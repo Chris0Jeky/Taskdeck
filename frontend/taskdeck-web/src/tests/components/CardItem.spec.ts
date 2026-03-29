@@ -21,6 +21,25 @@ function createCard(): Card {
   }
 }
 
+describe('CardItem — date display', () => {
+  it('renders formatted due date and overdue indicator when dueDate is in the past', () => {
+    const card = createCard()
+    card.dueDate = '2020-01-01T00:00:00.000Z' // definitely in the past
+    const wrapper = mount(CardItem, { props: { card } })
+    expect(wrapper.find('.td-board-card__due').exists()).toBe(true)
+    expect(wrapper.find('.td-board-card__due--overdue').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Overdue')
+  })
+
+  it('renders due date without overdue indicator when dueDate is in the future', () => {
+    const card = createCard()
+    card.dueDate = '2099-12-31T00:00:00.000Z'
+    const wrapper = mount(CardItem, { props: { card } })
+    expect(wrapper.find('.td-board-card__due').exists()).toBe(true)
+    expect(wrapper.find('.td-board-card__due--overdue').exists()).toBe(false)
+  })
+})
+
 describe('CardItem drag guardrails', () => {
   it('exposes an explicit enlarged drag handle control', () => {
     const wrapper = mount(CardItem, {
@@ -70,6 +89,13 @@ describe('CardItem drag guardrails', () => {
 
     expect(setData).toHaveBeenCalledWith('text/plain', card.id)
     expect(wrapper.emitted('dragstart')).toEqual([[card]])
+  })
+
+  it('emits dragend and clears dragging state on dragend', async () => {
+    const card = createCard()
+    const wrapper = mount(CardItem, { props: { card } })
+    await wrapper.get('[data-action="drag-card-handle"]').trigger('dragend')
+    expect(wrapper.emitted('dragend')).toHaveLength(1)
   })
 })
 
