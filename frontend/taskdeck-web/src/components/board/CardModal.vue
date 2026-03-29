@@ -285,13 +285,13 @@ onBeforeUnmount(() => {
 
     <!-- Modal -->
     <div class="flex min-h-full items-center justify-center p-4">
-      <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full p-6" @click.stop>
+      <div class="relative bg-surface-container rounded-lg shadow-xl max-w-2xl w-full p-6 border border-outline-variant/30" @click.stop>
         <!-- Header -->
         <div class="flex items-start justify-between mb-4">
-          <h2 class="text-2xl font-semibold text-gray-900">Edit Card</h2>
+          <h2 class="text-2xl font-semibold text-on-surface">Edit Card</h2>
           <button
             @click="handleClose"
-            class="text-gray-400 hover:text-gray-600 transition-colors"
+            class="text-on-surface-variant hover:text-on-surface transition-colors"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -303,7 +303,7 @@ onBeforeUnmount(() => {
         <div class="space-y-4">
           <!-- Title -->
           <div>
-            <label for="card-title" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="card-title" class="block text-sm font-medium text-on-surface-variant mb-1">
               Title *
             </label>
             <input
@@ -311,28 +311,28 @@ onBeforeUnmount(() => {
               v-model="title"
               type="text"
               required
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="Card title"
             />
           </div>
 
           <!-- Description -->
           <div>
-            <label for="card-description" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="card-description" class="block text-sm font-medium text-on-surface-variant mb-1">
               Description
             </label>
             <textarea
               id="card-description"
               v-model="description"
               rows="4"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="Add a more detailed description..."
             ></textarea>
           </div>
 
           <!-- Due Date -->
           <div>
-            <label for="card-due-date" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="card-due-date" class="block text-sm font-medium text-on-surface-variant mb-1">
               Due Date
             </label>
             <div class="flex gap-2">
@@ -340,38 +340,38 @@ onBeforeUnmount(() => {
                 id="card-due-date"
                 v-model="dueDate"
                 type="date"
-                class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="flex-1 px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
               <button
                 v-if="dueDate"
                 @click="clearDueDate"
                 type="button"
-                class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-md hover:bg-gray-50"
+                class="px-3 py-2 text-sm text-on-surface-variant hover:text-on-surface border border-outline-variant/40 rounded-md hover:bg-surface-container-high transition-colors"
               >
                 Clear
               </button>
             </div>
-            <p v-if="card.dueDate" class="mt-1 text-xs" :class="isOverdue ? 'text-red-600' : 'text-gray-500'">
+            <p v-if="card.dueDate" class="mt-1 text-xs" :class="isOverdue ? 'text-error' : 'text-on-surface-variant'">
               Current: {{ formattedDueDate }}
               <span v-if="isOverdue" class="font-medium">(Overdue)</span>
             </p>
           </div>
 
           <!-- Blocked Status -->
-          <div class="border border-gray-200 rounded-md p-4">
+          <div class="border border-outline-variant/30 rounded-md p-4">
             <div class="flex items-center mb-2">
               <input
                 id="card-is-blocked"
                 v-model="isBlocked"
                 type="checkbox"
-                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
               />
-              <label for="card-is-blocked" class="ml-2 text-sm font-medium text-gray-700">
+              <label for="card-is-blocked" class="ml-2 text-sm font-medium text-on-surface-variant">
                 Mark as blocked
               </label>
             </div>
             <div v-if="isBlocked">
-              <label for="card-block-reason" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="card-block-reason" class="block text-sm font-medium text-on-surface-variant mb-1">
                 Block Reason *
               </label>
               <textarea
@@ -379,7 +379,7 @@ onBeforeUnmount(() => {
                 v-model="blockReason"
                 rows="2"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                 placeholder="Why is this card blocked?"
               ></textarea>
             </div>
@@ -387,7 +387,7 @@ onBeforeUnmount(() => {
 
           <!-- Labels -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">
+            <label class="block text-sm font-medium text-on-surface-variant mb-2">
               Labels
             </label>
             <div v-if="labels.length > 0" class="flex flex-col gap-2">
@@ -396,8 +396,8 @@ onBeforeUnmount(() => {
                 :key="label.id"
                 class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer"
                 :class="selectedLabelIds.includes(label.id)
-                  ? 'text-white ring-2 ring-offset-2 ring-blue-500'
-                  : 'text-gray-700 bg-gray-100 hover:bg-gray-200'"
+                  ? 'text-white ring-2 ring-offset-2 ring-primary/50'
+                  : 'text-on-surface bg-surface-container-high hover:bg-surface-container-highest'"
                 :style="selectedLabelIds.includes(label.id) ? { backgroundColor: label.colorHex } : {}"
               >
                 <input
@@ -405,30 +405,30 @@ onBeforeUnmount(() => {
                   v-model="selectedLabelIds"
                   type="checkbox"
                   :value="label.id"
-                  class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  class="w-4 h-4 text-primary border-outline-variant rounded focus:ring-primary/50"
                 />
                 <span>{{ label.name }}</span>
               </label>
             </div>
-            <p v-else class="text-sm text-gray-500 italic">No labels available</p>
+            <p v-else class="text-sm text-on-surface-variant italic">No labels available</p>
           </div>
 
           <!-- Comments -->
-          <div class="pt-4 border-t border-gray-200 space-y-3">
-            <h3 class="text-sm font-semibold text-gray-800">Comments</h3>
+          <div class="pt-4 border-t border-outline-variant/30 space-y-3">
+            <h3 class="text-sm font-semibold text-on-surface">Comments</h3>
             <div class="space-y-2">
               <textarea
                 id="new-card-comment"
                 v-model="newCommentContent"
                 rows="2"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                 placeholder="Write a comment... Use @username to mention teammates."
               ></textarea>
               <div class="flex justify-end">
                 <button
                   id="add-card-comment"
                   type="button"
-                  class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+                  class="px-3 py-1.5 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
                   :disabled="newCommentContent.trim().length === 0"
                   @click="handleAddComment()"
                 >
@@ -437,7 +437,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div v-if="topLevelComments.length === 0" class="text-sm text-gray-500 italic">
+            <div v-if="topLevelComments.length === 0" class="text-sm text-on-surface-variant italic">
               No comments yet.
             </div>
 
@@ -445,11 +445,11 @@ onBeforeUnmount(() => {
               <div
                 v-for="comment in topLevelComments"
                 :key="comment.id"
-                class="border border-gray-200 rounded-md p-3 space-y-2"
+                class="border border-outline-variant/30 rounded-md p-3 space-y-2 bg-surface-container-low"
               >
                 <div class="flex items-start justify-between gap-2">
-                  <div class="text-xs text-gray-500">
-                    <span class="font-medium text-gray-700">{{ comment.authorUsername }}</span>
+                  <div class="text-xs text-on-surface-variant">
+                    <span class="font-medium text-on-surface">{{ comment.authorUsername }}</span>
                     <span class="mx-1">•</span>
                     <span>{{ new Date(comment.createdAt).toLocaleString() }}</span>
                     <span v-if="comment.editedAt" class="ml-1 italic">(edited)</span>
@@ -457,14 +457,14 @@ onBeforeUnmount(() => {
                   <div v-if="canEditComment(comment) && !comment.isDeleted" class="flex gap-2 text-xs">
                     <button
                       type="button"
-                      class="text-blue-600 hover:text-blue-700"
+                      class="text-primary hover:text-primary/80"
                       @click="handleStartEditComment(comment)"
                     >
                       Edit
                     </button>
                     <button
                       type="button"
-                      class="text-red-600 hover:text-red-700"
+                      class="text-error hover:text-error/80"
                       @click="handleDeleteComment(comment)"
                     >
                       Delete
@@ -476,19 +476,19 @@ onBeforeUnmount(() => {
                   <textarea
                     v-model="editingCommentContent"
                     rows="2"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
                   ></textarea>
                   <div class="flex justify-end gap-2">
                     <button
                       type="button"
-                      class="px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                      class="px-3 py-1.5 text-sm text-on-surface-variant border border-outline-variant/40 rounded-md hover:bg-surface-container-high transition-colors"
                       @click="handleCancelEditComment"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
-                      class="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+                      class="px-3 py-1.5 text-sm text-on-primary-container bg-primary-container rounded-md hover:brightness-110 disabled:opacity-40"
                       :disabled="editingCommentContent.trim().length === 0"
                       @click="handleSaveEditComment(comment.id)"
                     >
@@ -500,25 +500,25 @@ onBeforeUnmount(() => {
                 <p
                   v-else
                   class="text-sm whitespace-pre-wrap"
-                  :class="comment.isDeleted ? 'text-gray-400 italic' : 'text-gray-800'"
+                  :class="comment.isDeleted ? 'text-on-surface-variant italic' : 'text-on-surface'"
                 >
                   {{ comment.content }}
                 </p>
 
-                <div class="pl-3 border-l-2 border-gray-200 space-y-2">
+                <div class="pl-3 border-l-2 border-outline-variant/30 space-y-2">
                   <div
                     v-for="reply in getReplies(comment.id)"
                     :key="reply.id"
                     class="space-y-1"
                   >
-                    <div class="text-xs text-gray-500">
-                      <span class="font-medium text-gray-700">{{ reply.authorUsername }}</span>
+                    <div class="text-xs text-on-surface-variant">
+                      <span class="font-medium text-on-surface">{{ reply.authorUsername }}</span>
                       <span class="mx-1">•</span>
                       <span>{{ new Date(reply.createdAt).toLocaleString() }}</span>
                     </div>
                     <p
                       class="text-sm whitespace-pre-wrap"
-                      :class="reply.isDeleted ? 'text-gray-400 italic' : 'text-gray-800'"
+                      :class="reply.isDeleted ? 'text-on-surface-variant italic' : 'text-on-surface'"
                     >
                       {{ reply.content }}
                     </p>
@@ -528,13 +528,13 @@ onBeforeUnmount(() => {
                     <textarea
                       v-model="replyDraftByParent[comment.id]"
                       rows="2"
-                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                       placeholder="Reply..."
                     ></textarea>
                     <div class="flex justify-end">
                       <button
                         type="button"
-                        class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+                        class="px-3 py-1.5 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
                         :disabled="!(replyDraftByParent[comment.id] ?? '').trim().length"
                         @click="handleAddComment(comment.id)"
                       >
@@ -548,44 +548,44 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Metadata -->
-          <div class="pt-4 border-t border-gray-200">
-            <div class="text-xs text-gray-500 space-y-1">
+          <div class="pt-4 border-t border-outline-variant/30">
+            <div class="text-xs text-on-surface-variant space-y-1">
               <p>Created: {{ new Date(card.createdAt).toLocaleString() }}</p>
               <p>Last updated: {{ new Date(card.updatedAt).toLocaleString() }}</p>
             </div>
             <div class="mt-3 space-y-2">
-              <div v-if="loadingCaptureProvenance" class="text-xs text-gray-500">
+              <div v-if="loadingCaptureProvenance" class="text-xs text-on-surface-variant">
                 Loading capture provenance...
               </div>
-              <div v-else-if="captureProvenanceError" class="text-xs text-red-600" role="alert">
+              <div v-else-if="captureProvenanceError" class="text-xs text-error" role="alert">
                 {{ captureProvenanceError }}
               </div>
               <div v-else-if="captureProvenance" class="space-y-2">
                 <div class="flex flex-wrap items-center gap-2 text-xs">
-                  <span class="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold uppercase tracking-wide">
+                  <span class="px-2 py-1 rounded-full bg-primary/20 text-primary font-semibold uppercase tracking-wide">
                     Capture Origin
                   </span>
-                  <span class="text-gray-500">Proposal status: {{ proposalStatusLabel(captureProvenance.proposalStatus) }}</span>
+                  <span class="text-on-surface-variant">Proposal status: {{ proposalStatusLabel(captureProvenance.proposalStatus) }}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs">
                   <a
-                    class="px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    class="px-2 py-1 rounded-md border border-primary/30 text-primary hover:bg-primary/10"
                     :href="captureHref(captureProvenance.captureItemId)"
                   >
                     Open Capture
                   </a>
                   <a
-                    class="px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    class="px-2 py-1 rounded-md border border-primary/30 text-primary hover:bg-primary/10"
                     :href="proposalHref(captureProvenance.proposalId)"
                   >
                     Open Proposal
                   </a>
                 </div>
-                <p v-if="captureProvenance.triageRunId" class="text-xs text-gray-500">
+                <p v-if="captureProvenance.triageRunId" class="text-xs text-on-surface-variant">
                   Triage run: {{ captureProvenance.triageRunId }}
                 </p>
               </div>
-              <p v-else class="text-xs text-gray-500 italic">No capture provenance available.</p>
+              <p v-else class="text-xs text-on-surface-variant italic">No capture provenance available.</p>
             </div>
           </div>
         </div>
@@ -595,7 +595,7 @@ onBeforeUnmount(() => {
           <button
             @click="handleDelete"
             type="button"
-            class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-300 rounded-md transition-colors"
+            class="px-4 py-2 text-sm font-medium text-error hover:text-error/80 hover:bg-error/10 border border-error/40 rounded-md transition-colors"
           >
             Delete Card
           </button>
@@ -603,7 +603,7 @@ onBeforeUnmount(() => {
             <button
               @click="handleClose"
               type="button"
-              class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-md transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
             >
               Cancel
             </button>
@@ -611,7 +611,7 @@ onBeforeUnmount(() => {
               @click="handleSave"
               :disabled="!isFormValid"
               type="button"
-              class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+              class="px-4 py-2 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
             >
               Save Changes
             </button>
