@@ -760,6 +760,180 @@ public class ChatServiceTests
         _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
     }
 
+    #region Chat-to-Proposal Flow — Classifier → Parser Integration (#577)
+
+    /// <summary>
+    /// Full flow: structured syntax hits the LLM classifier (IsActionable=true),
+    /// then the planner parses successfully, yielding a proposal reference.
+    /// </summary>
+    [Fact]
+    public async Task SendMessageAsync_StructuredSyntax_ClassifierHit_ParserSuccess_ProposalCreated()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Full flow session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "I'll create that card.", 15, true, "card.create"));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), ProposalSourceType.Chat,
+                session.Id.ToString(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId, ProposalSourceType.Chat, null, boardId, userId,
+                ProposalStatus.PendingReview, RiskLevel.Low,
+                "create card 'Deploy script'", null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1), null, null, null, null,
+                "corr", new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card 'Deploy script'"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+        result.Value.Content.Should().Contain("Proposal created for review");
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                "create card 'Deploy script'", userId, boardId,
+                It.IsAny<CancellationToken>(), ProposalSourceType.Chat,
+                session.Id.ToString(), It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Natural language misses classifier (IsActionable=false), no RequestProposal set,
+    /// so the planner is never called — current behavior documents the gap.
+    /// </summary>
+    [Fact]
+    public async Task SendMessageAsync_NaturalLanguage_ClassifierMiss_NoPlannerCall()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Classifier miss session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "Sure, I can help with that.", 10, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("set up some tasks for the sprint"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("text");
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never,
+            "planner should not be called when classifier reports non-actionable and RequestProposal is false");
+    }
+
+    /// <summary>
+    /// Explicit RequestProposal with natural language — parser receives the raw
+    /// message and fails because it only understands structured syntax.
+    /// </summary>
+    [Fact]
+    public async Task SendMessageAsync_ExplicitRequestProposal_NaturalLanguage_ParserFailsGracefully()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Explicit NLP fail session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "I understand you want tasks.", 15, false, null));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(
+                ErrorCodes.ValidationError,
+                "Could not parse instruction. Supported patterns: 'create card \"title\"'..."));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(
+                "please create some tasks for the deployment checklist",
+                RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("Could not create the requested proposal");
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), ProposalSourceType.Chat,
+                session.Id.ToString(), It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Classifier detects actionable intent but parser fails on the raw message
+    /// (e.g., message says "create card for testing" but lacks quoted title).
+    /// Verifies the hint message is shown to the user.
+    /// </summary>
+    [Fact]
+    public async Task SendMessageAsync_ActionableClassification_ParserFails_ShowsParseHint()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Actionable parse fail", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "I'll help you create that.", 10, true, "card.create"));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(
+                ErrorCodes.ValidationError, "Could not parse instruction"));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card for testing without quotes"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("detected a task request but could not parse it");
+    }
+
+    #endregion
+
     #region NLP Gap Tests — Documents #570 (Chat-to-Proposal NLP Gap)
 
     /// <summary>
