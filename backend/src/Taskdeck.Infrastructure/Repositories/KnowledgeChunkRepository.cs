@@ -25,8 +25,8 @@ public class KnowledgeChunkRepository : Repository<KnowledgeChunk>, IKnowledgeCh
         Guid documentId,
         CancellationToken cancellationToken = default)
     {
-        await RelationalQueryableExtensions.ExecuteDeleteAsync(
-            _dbSet.Where(c => c.DocumentId == documentId),
-            cancellationToken);
+        await _dbSet
+            .Where(c => c.DocumentId == documentId)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }

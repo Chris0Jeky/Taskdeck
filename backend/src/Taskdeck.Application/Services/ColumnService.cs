@@ -2,6 +2,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -10,16 +11,25 @@ public class ColumnService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
+    private readonly IHistoryService? _historyService;
 
     public ColumnService(IUnitOfWork unitOfWork)
-        : this(unitOfWork, realtimeNotifier: null)
+        : this(unitOfWork, realtimeNotifier: null, historyService: null)
     {
     }
 
-    public ColumnService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null)
+    public ColumnService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null, IHistoryService? historyService = null)
     {
         _unitOfWork = unitOfWork;
         _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
+        _historyService = historyService;
+    }
+
+    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+    {
+        if (_historyService == null) return;
+        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
+        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
     }
 
     public async Task<Result<ColumnDto>> CreateColumnAsync(CreateColumnDto dto, CancellationToken cancellationToken = default)
@@ -45,6 +55,7 @@ public class ColumnService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "created", column.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            await SafeLogAsync("column", column.Id, AuditAction.Created, changes: $"name={column.Name}");
 
             return Result.Success(MapToDto(column));
         }
@@ -67,6 +78,7 @@ public class ColumnService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "updated", column.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            await SafeLogAsync("column", column.Id, AuditAction.Updated);
 
             return Result.Success(MapToDto(column));
         }
@@ -105,6 +117,7 @@ public class ColumnService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(column.BoardId, "column", "deleted", column.Id, DateTimeOffset.UtcNow),
             cancellationToken);
+        await SafeLogAsync("column", column.Id, AuditAction.Deleted, changes: $"name={column.Name}");
 
         return Result.Success();
     }
@@ -166,6 +179,7 @@ public class ColumnService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(boardId, "column", "reordered", null, DateTimeOffset.UtcNow),
                 cancellationToken);
+            await SafeLogAsync("column", boardId, AuditAction.Updated, changes: $"reordered; count={dto.ColumnIds.Count}");
 
             // Return reordered columns
             var reorderedColumns = dto.ColumnIds.Select(id => MapToDto(columnDict[id]));

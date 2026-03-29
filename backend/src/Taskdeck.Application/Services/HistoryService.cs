@@ -70,6 +70,12 @@ public class HistoryService : IHistoryService
         {
             return Result.Failure(ex.ErrorCode, ex.Message);
         }
+        catch (Exception)
+        {
+            // Audit logging is secondary to the mutation — never let infrastructure
+            // failures (e.g. DB full, concurrency) crash the calling operation.
+            return Result.Failure(ErrorCodes.UnexpectedError, $"Failed to persist audit log for {entityType}/{entityId}/{action}");
+        }
     }
 
     private static AuditLogDto MapToDto(AuditLog log)

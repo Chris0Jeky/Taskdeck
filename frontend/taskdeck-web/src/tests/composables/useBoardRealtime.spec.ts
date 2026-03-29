@@ -48,7 +48,7 @@ const mockBuilder = {
 }
 
 vi.mock('@microsoft/signalr', () => ({
-  HubConnectionBuilder: vi.fn(() => mockBuilder),
+  HubConnectionBuilder: vi.fn().mockImplementation(function () { return mockBuilder }),
   HubConnectionState: {
     Connected: 'Connected',
     Disconnected: 'Disconnected',

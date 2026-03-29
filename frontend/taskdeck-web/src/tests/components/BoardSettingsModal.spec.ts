@@ -215,8 +215,62 @@ describe('BoardSettingsModal', () => {
     expect(mockStore.deleteBoard).toHaveBeenCalledWith('board-1')
     expect(mockStore.updateBoard).not.toHaveBeenCalled()
     expect(wrapper.emitted('close')).toBeTruthy()
+    // Navigation happens before deleteBoard to prevent reactive cascade freeze (#519)
     expect(mockRouter.push).toHaveBeenCalledWith('/boards')
 
+    confirmSpy.mockRestore()
+  })
+
+  it('should navigate before deleting board to avoid reactive cascade freeze', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const callOrder: string[] = []
+    mockRouter.push.mockImplementation(async () => { callOrder.push('navigate') })
+    mockStore.deleteBoard.mockImplementation(async () => { callOrder.push('delete') })
+
+    const wrapper = mount(BoardSettingsModal, {
+      props: {
+        board,
+        isOpen: true,
+      },
+    })
+
+    const archiveButton = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Move to Archive'))
+    await archiveButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(callOrder).toEqual(['navigate', 'delete'])
+
+    confirmSpy.mockRestore()
+  })
+
+  it('should disable lifecycle button while action is in progress', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let resolvePush: () => void
+    mockRouter.push.mockReturnValue(new Promise<void>((resolve) => { resolvePush = resolve }))
+
+    const wrapper = mount(BoardSettingsModal, {
+      props: {
+        board,
+        isOpen: true,
+      },
+    })
+
+    const archiveButton = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Move to Archive'))
+    void archiveButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const buttonAfterClick = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Archiving...'))
+    expect(buttonAfterClick?.exists()).toBe(true)
+    expect((buttonAfterClick?.element as HTMLButtonElement).disabled).toBe(true)
+
+    resolvePush!()
     confirmSpy.mockRestore()
   })
 

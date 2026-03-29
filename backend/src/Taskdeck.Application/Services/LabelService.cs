@@ -2,6 +2,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -10,16 +11,25 @@ public class LabelService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
+    private readonly IHistoryService? _historyService;
 
     public LabelService(IUnitOfWork unitOfWork)
-        : this(unitOfWork, realtimeNotifier: null)
+        : this(unitOfWork, realtimeNotifier: null, historyService: null)
     {
     }
 
-    public LabelService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null)
+    public LabelService(IUnitOfWork unitOfWork, IBoardRealtimeNotifier? realtimeNotifier = null, IHistoryService? historyService = null)
     {
         _unitOfWork = unitOfWork;
         _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
+        _historyService = historyService;
+    }
+
+    private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
+    {
+        if (_historyService == null) return;
+        try { await _historyService.LogActionAsync(entityType, entityId, action, userId, changes); }
+        catch (Exception) { /* Audit is secondary — never crash the mutation */ }
     }
 
     public async Task<Result<LabelDto>> CreateLabelAsync(CreateLabelDto dto, CancellationToken cancellationToken = default)
@@ -36,6 +46,7 @@ public class LabelService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "created", label.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            await SafeLogAsync("label", label.Id, AuditAction.Created, changes: $"name={label.Name}");
 
             return Result.Success(MapToDto(label));
         }
@@ -58,6 +69,7 @@ public class LabelService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "updated", label.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
+            await SafeLogAsync("label", label.Id, AuditAction.Updated);
 
             return Result.Success(MapToDto(label));
         }
@@ -93,6 +105,7 @@ public class LabelService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(label.BoardId, "label", "deleted", label.Id, DateTimeOffset.UtcNow),
             cancellationToken);
+        await SafeLogAsync("label", label.Id, AuditAction.Deleted, changes: $"name={label.Name}");
 
         return Result.Success();
     }

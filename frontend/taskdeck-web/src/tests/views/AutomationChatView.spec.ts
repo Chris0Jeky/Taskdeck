@@ -556,6 +556,118 @@ describe('AutomationChatView', () => {
     expect(mocks.errorToast).toHaveBeenCalledWith('network down')
   })
 
+  it('renders a hint card for parse-hint messages with try-this-instead button', async () => {
+    const now = new Date().toISOString()
+    const hintPayload = JSON.stringify({
+      supportedPatterns: [
+        'create card "title"',
+        'move card {id} to column "name"',
+        'archive card {id}',
+      ],
+      exampleInstruction: 'create card "My new task"',
+      closestPattern: 'create card "title"',
+      detectedIntent: 'create',
+    })
+    const hintSession = {
+      id: 'session-hint',
+      userId: 'user-1',
+      boardId: 'board-1',
+      title: 'Hint test',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+      recentMessages: [
+        {
+          id: 'msg-hint',
+          sessionId: 'session-hint',
+          role: 'Assistant',
+          content: `Some LLM response\n\nCould not parse.\nCould not parse instruction into a proposal.[PARSE_HINT]${hintPayload}`,
+          messageType: 'parse-hint' as const,
+          proposalId: null,
+          tokenUsage: 10,
+          createdAt: now,
+        },
+      ],
+    }
+    mocks.getMySessions.mockResolvedValue([hintSession])
+    mocks.getSession.mockResolvedValue(hintSession)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    // Should show hint card
+    expect(wrapper.find('.td-hint-card').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Detected intent: create')
+    expect(wrapper.text()).toContain('create card "title"')
+
+    // Should have "Try this instead" button
+    const tryBtn = wrapper.findAll('button').find((b) => b.text().includes('Try this instead'))
+    expect(tryBtn).toBeTruthy()
+
+    // Click should pre-fill the message input
+    await tryBtn!.trigger('click')
+    const textarea = wrapper.find('textarea')
+    expect(textarea.element.value).toBe('create card "My new task"')
+  })
+
+  it('toggles the supported patterns list in a hint card', async () => {
+    const now = new Date().toISOString()
+    const hintPayload = JSON.stringify({
+      supportedPatterns: ['create card "title"', 'archive card {id}'],
+      exampleInstruction: 'create card "My task"',
+      closestPattern: 'create card "title"',
+      detectedIntent: null,
+    })
+    const hintSession = {
+      id: 'session-hint2',
+      userId: 'user-1',
+      boardId: 'board-1',
+      title: 'Toggle test',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+      recentMessages: [
+        {
+          id: 'msg-hint2',
+          sessionId: 'session-hint2',
+          role: 'Assistant',
+          content: `Response\nCould not parse instruction into a proposal.[PARSE_HINT]${hintPayload}`,
+          messageType: 'parse-hint' as const,
+          proposalId: null,
+          tokenUsage: 10,
+          createdAt: now,
+        },
+      ],
+    }
+    mocks.getMySessions.mockResolvedValue([hintSession])
+    mocks.getSession.mockResolvedValue(hintSession)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    // Patterns list should be hidden initially
+    expect(wrapper.find('.td-hint-card__patterns').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Could not detect intent')
+
+    // Click "Show all patterns"
+    const showBtn = wrapper.findAll('button').find((b) => b.text().includes('Show all patterns'))
+    expect(showBtn).toBeTruthy()
+    await showBtn!.trigger('click')
+    await waitForAsyncUi()
+
+    // Patterns should now be visible
+    expect(wrapper.find('.td-hint-card__patterns').exists()).toBe(true)
+    expect(wrapper.text()).toContain('archive card {id}')
+
+    // Click "Hide all patterns"
+    const hideBtn = wrapper.findAll('button').find((b) => b.text().includes('Hide all patterns'))
+    expect(hideBtn).toBeTruthy()
+    await hideBtn!.trigger('click')
+    await waitForAsyncUi()
+
+    expect(wrapper.find('.td-hint-card__patterns').exists()).toBe(false)
+  })
+
   it('surfaces provider-health loading failures explicitly', async () => {
     mocks.getHealth.mockRejectedValueOnce(new Error('health down'))
 

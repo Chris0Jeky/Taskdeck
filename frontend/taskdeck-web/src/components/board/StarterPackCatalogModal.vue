@@ -48,8 +48,6 @@ const importRunningPreview = ref(false)
 const importApplying = ref(false)
 const importErrorMessage = ref<string | null>(null)
 const importLatestResult = ref<StarterPackApplyResult | null>(null)
-const fileInputRef = ref<HTMLInputElement | null>(null)
-
 const filteredPacks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) {
@@ -887,7 +885,6 @@ useEscapeToClose(() => props.isOpen, handleClose)
               >
                 Upload file
                 <input
-                  ref="fileInputRef"
                   type="file"
                   accept=".json,application/json"
                   class="hidden"
