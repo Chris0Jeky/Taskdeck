@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full bleed background — platform will mask to its shape -->
+  <rect width="512" height="512" fill="#131313"/>
+  <!-- Content within safe zone: 20% inset = 102px each side, so 308x308 centred at 256,256 -->
+  <!-- Ember accent bar — fits within safe zone -->
+  <rect x="153" y="170" width="206" height="26" rx="8" fill="#ff4d4d"/>
+  <!-- Vertical stem — fits within safe zone -->
+  <rect x="243" y="170" width="26" height="172" rx="8" fill="#e5e2e1"/>
+  <!-- Ember spark dots within safe zone -->
+  <circle cx="340" cy="312" r="10" fill="#ff4d4d" opacity="0.8"/>
+  <circle cx="320" cy="328" r="6" fill="#ffb3ae" opacity="0.6"/>
+</svg>
