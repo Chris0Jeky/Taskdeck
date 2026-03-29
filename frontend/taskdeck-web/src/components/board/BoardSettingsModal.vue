@@ -108,6 +108,7 @@ async function handleLifecycleTransition() {
     }
   } catch (error) {
     console.error('Failed to update board lifecycle state:', error)
+  } finally {
     lifecycleActionInProgress.value = false
   }
 }

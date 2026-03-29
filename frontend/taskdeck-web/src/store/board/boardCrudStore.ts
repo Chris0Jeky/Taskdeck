@@ -139,11 +139,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       state.error.value = null
       await boardsApi.deleteBoard(boardId)
 
-      // Clear current board state in a single assignment to avoid cascading
-      // reactive updates.  Previously, each `.value = …` triggered its own
-      // flush cycle, which caused watchers/computed properties in mounted
-      // views (BoardView, BoardCanvas, etc.) to re-evaluate on every
-      // intermediate state — the root cause of the ~30 s freeze in #519.
+      // Clear detailed state for the current board before removing it from the
+      // main boards list. This prevents any watchers on the `boards` array
+      // from accidentally accessing stale detail state (like cards, labels, etc.)
+      // that belongs to the board being deleted. The primary performance fix
+      // for #519 is unmounting the BoardView before this action is called.
       const isCurrent = state.currentBoard.value?.id === boardId
       if (isCurrent) {
         state.currentBoard.value = null

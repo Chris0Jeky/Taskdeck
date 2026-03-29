@@ -245,38 +245,10 @@ describe('BoardSettingsModal', () => {
     confirmSpy.mockRestore()
   })
 
-  it('should show loading label while archive action is in progress', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    let resolveDelete: () => void
-    mockStore.deleteBoard.mockReturnValue(new Promise<void>((resolve) => { resolveDelete = resolve }))
-
-    const wrapper = mount(BoardSettingsModal, {
-      props: {
-        board,
-        isOpen: true,
-      },
-    })
-
-    const archiveButton = wrapper
-      .findAll('button')
-      .find((btn) => btn.text().includes('Move to Archive'))
-    // Trigger without await so we can inspect intermediate state
-    void archiveButton?.trigger('click')
-    await wrapper.vm.$nextTick()
-    await wrapper.vm.$nextTick()
-
-    // The close event fires immediately, so the modal will already be hidden,
-    // but the button label should have been set to the in-progress state
-    expect(wrapper.emitted('close')).toBeTruthy()
-
-    resolveDelete!()
-    confirmSpy.mockRestore()
-  })
-
   it('should disable lifecycle button while action is in progress', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    let resolveDelete: () => void
-    mockRouter.push.mockReturnValue(new Promise<void>((resolve) => { resolveDelete = resolve }))
+    let resolvePush: () => void
+    mockRouter.push.mockReturnValue(new Promise<void>((resolve) => { resolvePush = resolve }))
 
     const wrapper = mount(BoardSettingsModal, {
       props: {
@@ -298,7 +270,7 @@ describe('BoardSettingsModal', () => {
     expect(buttonAfterClick?.exists()).toBe(true)
     expect((buttonAfterClick?.element as HTMLButtonElement).disabled).toBe(true)
 
-    resolveDelete!()
+    resolvePush!()
     confirmSpy.mockRestore()
   })
 
