@@ -110,8 +110,9 @@ public class ExternalLoginTests
     }
 
     [Fact]
-    public async Task ExternalLoginAsync_ShouldLinkToExistingUser_WhenEmailMatchesExistingAccount()
+    public async Task ExternalLoginAsync_ShouldCreateNewUser_WhenEmailMatchesExistingAccount_NoAutoLink()
     {
+        // Security: Do NOT auto-link by email to prevent account takeover
         var service = CreateService();
         var existingUser = new User("local-user", "shared@example.com", BCrypt.Net.BCrypt.HashPassword("password"));
 
@@ -123,10 +124,23 @@ public class ExternalLoginTests
             .Setup(r => r.GetByEmailAsync("shared@example.com", default))
             .ReturnsAsync(existingUser);
 
-        ExternalLogin? capturedLogin = null;
+        // The generated email should be different from the existing user's
+        _userRepoMock
+            .Setup(r => r.GetByEmailAsync("github-99999@external.taskdeck.local", default))
+            .ReturnsAsync((User?)null);
+
+        _userRepoMock
+            .Setup(r => r.GetByUsernameAsync("github-user", default))
+            .ReturnsAsync((User?)null);
+
+        User? capturedUser = null;
+        _userRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<User>(), default))
+            .Callback<User, CancellationToken>((user, _) => capturedUser = user)
+            .ReturnsAsync((User user, CancellationToken _) => user);
+
         _externalLoginRepoMock
             .Setup(r => r.AddAsync(It.IsAny<ExternalLogin>(), default))
-            .Callback<ExternalLogin, CancellationToken>((login, _) => capturedLogin = login)
             .ReturnsAsync((ExternalLogin login, CancellationToken _) => login);
 
         var dto = new ExternalLoginDto(
@@ -138,14 +152,13 @@ public class ExternalLoginTests
         var result = await service.ExternalLoginAsync(dto);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.User.Id.Should().Be(existingUser.Id);
-        result.Value.User.Username.Should().Be("local-user");
+        // Should create a NEW user, not link to existing
+        capturedUser.Should().NotBeNull();
+        capturedUser!.Email.Should().Be("github-99999@external.taskdeck.local");
+        capturedUser.Username.Should().Be("github-user");
 
-        capturedLogin.Should().NotBeNull();
-        capturedLogin!.UserId.Should().Be(existingUser.Id);
-
-        // Should not create a new user
-        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Never);
+        // Should create a new user, not reuse existing
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Once);
     }
 
     [Fact]
@@ -222,8 +235,10 @@ public class ExternalLoginTests
     }
 
     [Fact]
-    public async Task ExternalLoginAsync_ShouldReturnForbidden_WhenEmailMatchedUserIsInactive()
+    public async Task ExternalLoginAsync_ShouldCreateNewUser_WhenEmailMatchedUserIsInactive_NoAutoLink()
     {
+        // Security: Even if email matches an inactive user, we create a new account
+        // rather than auto-linking (which would be a security risk)
         var service = CreateService();
         var inactiveUser = new User("local-user", "inactive@example.com", BCrypt.Net.BCrypt.HashPassword("password"));
         inactiveUser.Deactivate();
@@ -236,6 +251,18 @@ public class ExternalLoginTests
             .Setup(r => r.GetByEmailAsync("inactive@example.com", default))
             .ReturnsAsync(inactiveUser);
 
+        _userRepoMock
+            .Setup(r => r.GetByUsernameAsync("github-user", default))
+            .ReturnsAsync((User?)null);
+
+        _userRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<User>(), default))
+            .ReturnsAsync((User user, CancellationToken _) => user);
+
+        _externalLoginRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ExternalLogin>(), default))
+            .ReturnsAsync((ExternalLogin login, CancellationToken _) => login);
+
         var dto = new ExternalLoginDto(
             Provider: "GitHub",
             ProviderUserId: "77777",
@@ -244,8 +271,9 @@ public class ExternalLoginTests
 
         var result = await service.ExternalLoginAsync(dto);
 
-        result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        // Should succeed by creating a new account with a generated email
+        result.IsSuccess.Should().BeTrue();
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<User>(), default), Times.Once);
     }
 
     [Theory]
