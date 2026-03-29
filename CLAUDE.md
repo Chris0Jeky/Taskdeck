@@ -150,6 +150,7 @@ When launching subagents with `isolation: "worktree"`, follow the protocol in `d
 
 ## Windows Notes
 
-- If `git` resolves to Cygwin or fails with signal errors, use `C:\Program Files\Git\cmd\git.exe` explicitly.
+- Run `bash scripts/check-git-env.sh` to validate git resolution and index.lock state before a work session.
+- If `git` resolves to Cygwin or fails with signal errors, use `C:\Program Files\Git\cmd\git.exe` explicitly (or add `C:\Program Files\Git\cmd` to the front of `PATH`).
 - Do not chain commands with `&&` in PowerShell; use `;` and check `$LASTEXITCODE`.
-- If `.git/index.lock` blocks commits, check for active git processes before removing it.
+- If `.git/index.lock` blocks commits, check for active git processes before removing it. The `check-git-env.sh` script automates this check.

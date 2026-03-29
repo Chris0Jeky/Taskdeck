@@ -445,3 +445,21 @@ Scope (22 scenarios, A-01 through A-22):
 6. Today view and onboarding: agenda, dismiss/replay persistence (A-21 to A-22)
 
 Reference: `docs/testing/manual-validation-a-workspace-board-ux.md` for full step tables, evidence guidance, automation candidates, and defect filing template.
+## P. Authz Policy, Cross-User Isolation, and API Error Contracts (Slice B, `#131`)
+
+Status:
+- active; comprehensive two-user authz matrix covering all controller families
+
+Goal:
+- validate authorization enforcement, cross-user data isolation, and error payload contracts across all protected API surfaces
+
+Full checklist:
+- `docs/testing/manual-validation-b-authz-contracts.md`
+
+Summary scope:
+1. Unauthenticated access denial (401) on all `[Authorize]` controller families (B-01 to B-32)
+2. Cross-user board-scoped isolation: UserB cannot access UserA's boards/columns/cards/labels/comments/webhooks/starter-packs/exports/audit (B-40 to B-60)
+3. Cross-user non-board-scoped isolation: captures/chat/proposals/archive/notifications/queue/workspace return only the authenticated user's data (B-70 to B-81)
+4. True-missing vs cross-user denial indistinguishability (B-90 to B-96)
+5. Error payload contract verification for auth/validation/sandbox paths (B-100 to B-110)
+6. Advanced controller families: ops/logs/users/abuse/llm-quota/agents/knowledge/webhooks/external-imports (B-130 to B-175)

@@ -619,7 +619,14 @@ Release workflow: `.github/workflows/ci-release.yml`
 
 - release/tag/manual build verification (backend + frontend)
 - container image artifact/checksum lane reused from container baseline workflow
-- SBOM/provenance placeholder (follow-through: `#103`, `#106`, `#148`)
+- SBOM/provenance placeholder (follow-through: `#103`, `#106`)
+
+Dependency update automation: `.github/dependabot.yml`
+
+- weekly Dependabot PRs for NuGet, npm, and GitHub Actions ecosystems
+- minor/patch grouped; major NuGet/npm individual; Actions fully grouped
+- security updates follow severity-based triage SLAs in `docs/ops/DEPENDENCY_UPDATE_POLICY.md`
+- no auto-merge; all dependency PRs require human review and `ci-required.yml` gate pass
 
 Release/security deep workflow: `.github/workflows/release-security.yml`
 
