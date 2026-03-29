@@ -178,7 +178,8 @@ Provider runtime support does not replace managed-key control-plane requirements
 Continue tracked work in:
 
 - delivered baseline: `#236` (identity attribution contract)
-- remaining follow-through: `#235`, `#237`, `#238`, `#239`, `#240`
+- remaining follow-through: `#235`, `#237`, `#238`, `#240`
+- incident response runbook and drill scripts: `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md` (`#239`)
 
 ## References
 
