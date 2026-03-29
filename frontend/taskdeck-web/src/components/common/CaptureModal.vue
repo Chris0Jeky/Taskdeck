@@ -236,6 +236,7 @@ onUnmounted(() => {
     width: 100%;
     height: 100%;
     max-height: 100vh;
+    max-height: 100dvh; /* iOS dynamic viewport — avoids browser chrome overlap */
     border-radius: 0;
     padding: var(--td-space-4);
     display: flex;
