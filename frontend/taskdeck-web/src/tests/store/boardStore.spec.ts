@@ -698,4 +698,86 @@ describe('boardStore', () => {
       expect(store.loading).toBe(false)
     })
   })
+
+  describe('activeBoardId — preserveSelection guard', () => {
+    const boardA: Board = {
+      id: 'board-a',
+      name: 'Board A',
+      description: '',
+      isArchived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      columns: [],
+    }
+
+    const boardB: Board = {
+      id: 'board-b',
+      name: 'Board B',
+      description: '',
+      isArchived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      columns: [],
+    }
+
+    it('sets activeBoardId to first board on initial fetchBoards when no prior selection', async () => {
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA, boardB])
+
+      await store.fetchBoards()
+
+      expect(store.activeBoardId).toBe('board-a')
+    })
+
+    it('preserves activeBoardId across fetchBoards when selected board still exists', async () => {
+      // First load — sets selection to boardA (first item)
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA, boardB])
+      await store.fetchBoards()
+      expect(store.activeBoardId).toBe('board-a')
+
+      // User selects boardB
+      store.activeBoardId = 'board-b'
+
+      // Poll cycle returns boards in a different order — boardB is still present
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([boardB, boardA])
+      await store.fetchBoards()
+
+      // Selection must NOT flip back to boardB (now first) or boardA
+      expect(store.activeBoardId).toBe('board-b')
+    })
+
+    it('falls back to first board when the selected board is removed from the list', async () => {
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA, boardB])
+      await store.fetchBoards()
+      store.activeBoardId = 'board-b'
+
+      // boardB has been deleted on the server
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA])
+      await store.fetchBoards()
+
+      expect(store.activeBoardId).toBe('board-a')
+    })
+
+    it('sets activeBoardId to null when no boards remain after refresh', async () => {
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA])
+      await store.fetchBoards()
+      store.activeBoardId = 'board-a'
+
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([])
+      await store.fetchBoards()
+
+      expect(store.activeBoardId).toBeNull()
+    })
+
+    it('clears activeBoardId when the active board is deleted', async () => {
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([boardA, boardB])
+      await store.fetchBoards()
+      store.activeBoardId = 'board-a'
+
+      vi.mocked(boardsApi.deleteBoard).mockResolvedValue()
+      await store.deleteBoard('board-a')
+
+      // activeBoardId should fall back to the remaining board
+      expect(store.activeBoardId).toBe('board-b')
+    })
+  })
 })

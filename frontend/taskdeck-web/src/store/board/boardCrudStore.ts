@@ -20,7 +20,18 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     try {
       state.loading.value = true
       state.error.value = null
-      state.boards.value = await boardsApi.getBoards(search, includeArchived)
+      const freshBoards = await boardsApi.getBoards(search, includeArchived)
+      state.boards.value = freshBoards
+
+      // Preserve selection guard: only update activeBoardId if there is no
+      // current selection or the previously-selected board is no longer in the
+      // refreshed list (e.g. it was deleted). This prevents polling/subscription
+      // refreshes from resetting the user's active board to the first item.
+      const currentId = state.activeBoardId.value
+      const stillExists = currentId !== null && freshBoards.some((b) => b.id === currentId)
+      if (!stillExists) {
+        state.activeBoardId.value = freshBoards[0]?.id ?? null
+      }
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to fetch boards')
       throw e
@@ -116,6 +127,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
       // Remove from boards list
       state.boards.value = state.boards.value.filter((b) => b.id !== boardId)
+
+      // Clear activeBoardId if the deleted board was the active selection
+      if (state.activeBoardId.value === boardId) {
+        state.activeBoardId.value = state.boards.value[0]?.id ?? null
+      }
 
       // Clear current board if it's the one being deleted
       if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
