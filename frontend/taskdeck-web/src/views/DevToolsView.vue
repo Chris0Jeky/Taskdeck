@@ -64,7 +64,8 @@ function importTrace() {
       if (parsed.id && parsed.actions && Array.isArray(parsed.actions)) {
         completedTraces.value.push(parsed)
       }
-    } catch {
+    } catch (err) {
+      console.error('Failed to import trace:', err)
       traceError.value = 'Failed to import trace file.'
     }
   }
@@ -178,7 +179,8 @@ function importScenario() {
       } else {
         scenarioErrors.value = result.errors
       }
-    } catch {
+    } catch (err) {
+      console.error('Failed to import scenario:', err)
       scenarioErrors.value = [{ path: '', message: 'Failed to read file.' }]
     }
   }
@@ -584,9 +586,9 @@ function formatDuration(ms: number): string {
                 <label class="block text-xs text-zinc-400 mb-1">{{ key }}</label>
                 <input
                   :value="(step.params as unknown as Record<string, unknown>)[key]"
-                  type="text"
+                  :type="typeof (step.params as unknown as Record<string, unknown>)[key] === 'number' ? 'number' : 'text'"
                   class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-zinc-200"
-                  @input="(step.params as unknown as Record<string, unknown>)[key] = ($event.target as HTMLInputElement).value"
+                  @input="(step.params as unknown as Record<string, unknown>)[key] = typeof (step.params as unknown as Record<string, unknown>)[key] === 'number' ? Number(($event.target as HTMLInputElement).value) : ($event.target as HTMLInputElement).value"
                 />
               </div>
             </div>
