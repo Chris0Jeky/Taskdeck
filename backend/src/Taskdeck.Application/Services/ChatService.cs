@@ -217,12 +217,15 @@ public class ChatService : IChatService
                     messageType = "degraded";
                 }
 
-                if (llmResult.IsActionable && dto.RequestProposal)
+                var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
+
+                if (shouldAttemptProposal)
                 {
                     if (!session.BoardId.HasValue)
                     {
-                        messageType = "error";
-                        assistantContent = "Actionable instructions require a board-scoped chat session. Create a session with BoardId and retry.";
+                        // Surface a hint so the user knows why no proposal was created
+                        assistantContent = $"{llmResult.Content}\n\n(To act on this, open a board-scoped chat session.)";
+                        messageType = "status";
                     }
                     else
                     {
@@ -230,24 +233,29 @@ public class ChatService : IChatService
                             dto.Content,
                             userId,
                             session.BoardId,
-                            ct);
+                            ct,
+                            sourceType: ProposalSourceType.Chat,
+                            sourceReferenceId: session.Id.ToString());
 
                         if (proposalResult.IsSuccess)
                         {
                             messageType = "proposal-reference";
                             proposalId = proposalResult.Value.Id;
-                            assistantContent = $"{llmResult.Content}\n\nProposal created: {proposalResult.Value.Id}";
+                            assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
+                        }
+                        else if (llmResult.IsActionable)
+                        {
+                            // Planner could not parse an auto-detected actionable message — hint the user
+                            assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})";
+                            messageType = "status";
                         }
                         else
                         {
-                            messageType = "error";
-                            assistantContent = $"I could not create a proposal: {proposalResult.ErrorMessage}";
+                            // User explicitly requested proposal but planner failed — surface the error
+                            assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
+                            messageType = "status";
                         }
                     }
-                }
-                else if (llmResult.IsActionable)
-                {
-                    messageType = "status";
                 }
             }
 

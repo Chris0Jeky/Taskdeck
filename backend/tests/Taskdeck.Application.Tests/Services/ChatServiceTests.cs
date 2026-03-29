@@ -179,6 +179,216 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_ShouldAutoCreateProposal_WhenActionableIntentDetected_WithoutExplicitRequestProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Auto-proposal session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("I'll create that card for you.", 12, true, "card.create"));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(),
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId,
+                ProposalSourceType.Chat,
+                null,
+                boardId,
+                userId,
+                ProposalStatus.PendingReview,
+                RiskLevel.Low,
+                "create card",
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1),
+                null,
+                null,
+                null,
+                null,
+                "corr",
+                new List<ProposalOperationDto>())));
+
+        // RequestProposal defaults to false — proposals should still be created
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"My New Task\""),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+        result.Value.Content.Should().Contain("Proposal created for review");
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(),
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                ProposalSourceType.Chat,
+                session.Id.ToString(),
+                It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnStatusWithHint_WhenActionableButNoBoardScope()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("I can create that card.", 12, true, "card.create"));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"Test\""),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("board-scoped chat session");
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnStatusWithParseHint_WhenActionableButPlannerFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Parse fail session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("I can help with that.", 12, true, "card.create"));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Could not parse instruction"));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("do something with cards please"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("could not parse it into a proposal");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldTryPlanner_WhenRequestProposalExplicitButNotActionable()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Explicit request session", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Here is some info.", 12, false, null));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId,
+                ProposalSourceType.Chat,
+                null,
+                boardId,
+                userId,
+                ProposalStatus.PendingReview,
+                RiskLevel.Low,
+                "explicit request",
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1),
+                null,
+                null,
+                null,
+                null,
+                "corr",
+                new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"Explicit\"", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnStatusWithHint_WhenRequestProposalExplicitButPlannerFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Explicit request planner fail", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Here is some info.", 12, false, null));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Could not parse instruction"));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please do something with this", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("Could not create the requested proposal");
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldPersistDegradedReason_OnAssistantMessage()
     {
         var userId = Guid.NewGuid();

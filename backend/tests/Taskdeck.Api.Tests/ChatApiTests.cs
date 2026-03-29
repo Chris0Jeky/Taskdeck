@@ -34,6 +34,7 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
         session.Should().NotBeNull();
 
+        // Actionable messages now auto-create proposals without needing RequestProposal
         var sendMessageResponse = await _client.PostAsJsonAsync(
             $"/api/llm/chat/sessions/{session!.Id}/messages",
             new SendChatMessageDto("create card \"Backend task\""));
@@ -41,11 +42,13 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
         assistant.Should().NotBeNull();
-        assistant!.MessageType.Should().Be("status");
+        assistant!.MessageType.Should().Be("proposal-reference");
+        assistant.ProposalId.Should().NotBeNull();
 
+        // Explicitly requesting proposal should also work
         var actionableResponse = await _client.PostAsJsonAsync(
             $"/api/llm/chat/sessions/{session.Id}/messages",
-            new SendChatMessageDto("create card \"Backend task\"", RequestProposal: true));
+            new SendChatMessageDto("create card \"Backend task 2\"", RequestProposal: true));
 
         actionableResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var actionableAssistant = await actionableResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
