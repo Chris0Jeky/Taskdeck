@@ -111,6 +111,7 @@
 [data-theme="light"] {
   /* ── Internal accent aliases (single source for accent tweaks) ── */
   --_td-light-accent: #d93636;
+  --_td-light-accent-rgb: 217 54 54;
   --_td-light-accent-hover: #c12e2e;
 
   /* ── Surface Tiers (warm gray / cream) ── */
@@ -133,11 +134,11 @@
   /* ── Semantic Colors (deeper for contrast on light bg) ── */
   --td-color-primary: var(--_td-light-accent);
   --td-color-primary-hover: var(--_td-light-accent-hover);
-  --td-color-primary-light: rgba(217, 54, 54, 0.1);
+  --td-color-primary-light: rgb(var(--_td-light-accent-rgb) / 0.1);
 
   --td-color-ember: var(--_td-light-accent);
   --td-color-ember-glow: var(--_td-light-accent-hover);
-  --td-color-ember-dim: rgba(217, 54, 54, 0.07);
+  --td-color-ember-dim: rgb(var(--_td-light-accent-rgb) / 0.07);
 
   --td-color-success: #16a34a;
   --td-color-success-light: rgba(22, 163, 74, 0.1);
@@ -146,7 +147,7 @@
   --td-color-error: #dc2626;
   --td-color-error-light: rgba(220, 38, 38, 0.1);
   --td-color-info: var(--_td-light-accent);
-  --td-color-info-light: rgba(217, 54, 54, 0.08);
+  --td-color-info-light: rgb(var(--_td-light-accent-rgb) / 0.08);
 
   /* ── Border & Outline ── */
   --td-border-default: rgba(28, 25, 23, 0.12);
@@ -155,7 +156,7 @@
   --td-border-ember: var(--_td-light-accent-hover);
 
   /* ── Focus Ring ── */
-  --td-focus-ring: 0 0 0 2px var(--_td-light-accent), 0 0 0 4px rgba(217, 54, 54, 0.2);
+  --td-focus-ring: 0 0 0 2px var(--_td-light-accent), 0 0 0 4px rgb(var(--_td-light-accent-rgb) / 0.2);
   --td-focus-ring-error: 0 0 0 2px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.2);
 
   /* ── Elevation (softer for light surfaces) ── */
