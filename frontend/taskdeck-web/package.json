@@ -23,7 +23,7 @@
     "test:ui": "vitest --ui",
     "test:coverage": "node -e \"require('fs').mkdirSync('test-results',{recursive:true})\" && vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=./test-results/vitest.coverage.junit.xml",
     "test:e2e": "playwright test",
-    "test:e2e:audit:headed": "playwright test tests/e2e/automation-ops.spec.ts tests/e2e/capture-loop.spec.ts tests/e2e/live-llm.spec.ts --headed --reporter=line",
+    "test:e2e:audit:headed": "playwright test tests/e2e/manual-audit.spec.ts --headed --reporter=line",
     "test:e2e:concurrency": "playwright test tests/e2e/concurrency.spec.ts --reporter=line",
     "test:e2e:live-llm:headed": "playwright test tests/e2e/live-llm.spec.ts --headed --reporter=line",
     "test:e2e:headed": "playwright test --headed"
