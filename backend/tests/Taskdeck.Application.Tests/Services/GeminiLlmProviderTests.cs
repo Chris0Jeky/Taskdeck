@@ -297,7 +297,10 @@ public class GeminiLlmProviderTests
                 new(null!, "raw prompt")
             }));
 
-        capturedRoles.Should().ContainSingle().Which.Should().Be("user");
+        // First role is the system prompt injected by the provider (as user in Gemini), second is the user message
+        capturedRoles.Should().HaveCount(2);
+        capturedRoles[0].Should().Be("user"); // system prompt sent as user role in Gemini
+        capturedRoles[1].Should().Be("user");
     }
 
     [Fact]
