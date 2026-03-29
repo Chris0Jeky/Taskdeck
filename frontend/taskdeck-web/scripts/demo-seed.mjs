@@ -508,7 +508,6 @@ async function ensureUser({ username, email, password }) {
 
 async function waitFor(fn, { timeoutMs = 45000, intervalMs = 750, label = 'condition' } = {}) {
   const start = Date.now()
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const val = await fn()
     if (val) return val
