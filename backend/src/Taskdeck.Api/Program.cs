@@ -1,7 +1,19 @@
 using Taskdeck.Api.Extensions;
+using Taskdeck.Api.FirstRun;
 using Taskdeck.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ---- First-run bootstrap (must run before services are registered) ----------
+// Registers appsettings.local.json so previously generated secrets are loaded,
+// then generates a JWT secret if none is configured.
+builder.AddLocalConfigFile();
+using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+{
+    var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("FirstRun");
+    builder.RunFirstRunChecks(bootstrapLogger);
+}
+// -----------------------------------------------------------------------------
 
 // Add services to the container
 builder.Services.AddControllers();
@@ -45,10 +57,31 @@ builder.Services.AddTaskdeckCors(builder.Configuration, builder.Environment.IsDe
 // Add rate limiting
 builder.Services.AddTaskdeckRateLimiting(rateLimitingSettings);
 
+// Register first-run settings and service
+var firstRunSettings = builder.Configuration
+    .GetSection("FirstRun")
+    .Get<FirstRunSettings>() ?? new FirstRunSettings();
+builder.Services.AddSingleton(firstRunSettings);
+builder.Services.AddSingleton<FirstRunService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
 app.ConfigureTaskdeckPipeline(rateLimitingSettings);
+
+// Resolve DB path and log startup info, then optionally open the browser
+var appLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+appLifetime.ApplicationStarted.Register(() =>
+{
+    var fr = app.Services.GetRequiredService<FirstRunService>();
+    var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
+
+    var url = $"http://localhost:{firstRunSettings.Port}";
+    startupLogger.LogInformation("Taskdeck API is running at {Url}", url);
+    startupLogger.LogInformation("Swagger UI available at {SwaggerUrl}", $"{url}/swagger");
+
+    fr.TryOpenBrowser();
+});
 
 app.Run();
 
