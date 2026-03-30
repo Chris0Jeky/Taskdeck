@@ -27,6 +27,13 @@ function closeMoveMenu() {
   showMoveMenu.value = false
 }
 
+function handleMoveMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.stopPropagation()
+    closeMoveMenu()
+  }
+}
+
 function handleMoveTo(targetColumnId: string) {
   showMoveMenu.value = false
   emit('move-to', props.card, targetColumnId)
@@ -138,6 +145,7 @@ function isOverdue(dateString: string | null): boolean {
       role="menu"
       aria-label="Move card to column"
       @click.stop
+      @keydown="handleMoveMenuKeydown"
     >
       <div class="td-card-move-menu__header">Move to...</div>
       <button

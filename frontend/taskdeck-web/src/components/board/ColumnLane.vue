@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import { useToastStore } from '../../store/toastStore'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
@@ -162,6 +162,16 @@ async function handleCardMoveTo(card: Card, targetColumnId: string) {
     const targetCards = boardStore.cardsByColumn.get(targetColumnId) || []
     const targetPosition = targetCards.length
     await boardStore.moveCard(props.boardId, card.id, targetColumnId, targetPosition)
+
+    // Restore focus on the moved card in its new column
+    await nextTick()
+    const el = document.querySelector(
+      `[data-card-id="${card.id}"]`,
+    ) as HTMLElement | null
+    if (el) {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      el.focus()
+    }
   } catch (error) {
     console.error('Failed to move card:', error)
   }
