@@ -149,4 +149,154 @@ describe('CaptureModal', () => {
     })
     expect(wrapper.text()).toContain('This capture will stay linked to Support Board.')
   })
+
+  describe('transcript capture mode', () => {
+    it('renders mode tabs with Quick Capture active by default', () => {
+      const wrapper = mount(CaptureModal)
+
+      const tabs = wrapper.findAll('[role="tab"]')
+      expect(tabs).toHaveLength(2)
+      expect(tabs[0].text()).toBe('Quick Capture')
+      expect(tabs[1].text()).toBe('Transcript')
+      expect(tabs[0].attributes('aria-selected')).toBe('true')
+      expect(tabs[1].attributes('aria-selected')).toBe('false')
+    })
+
+    it('switches to transcript mode when Transcript tab is clicked', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      expect(transcriptTab.attributes('aria-selected')).toBe('true')
+      expect(wrapper.text()).toContain('Paste a meeting transcript')
+      expect(wrapper.find('.td-capture-modal__file-bar').exists()).toBe(true)
+    })
+
+    it('submits with TranscriptPaste source when text is pasted in transcript mode', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      const textarea = wrapper.get('.td-capture-modal__input--transcript')
+      await textarea.setValue('Speaker 1: Hello\nSpeaker 2: World')
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+
+      expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+        boardId: null,
+        text: 'Speaker 1: Hello\nSpeaker 2: World',
+        source: 'TranscriptPaste',
+      })
+    })
+
+    it('shows character count in transcript mode', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      const textarea = wrapper.get('.td-capture-modal__input--transcript')
+      await textarea.setValue('Some transcript text')
+      await waitForUi()
+
+      expect(wrapper.find('.td-capture-modal__char-count').exists()).toBe(true)
+      expect(wrapper.find('.td-capture-modal__char-count').text()).toContain('20')
+      expect(wrapper.find('.td-capture-modal__char-count').text()).toContain('51,200')
+    })
+
+    it('does not show character count in typed mode', () => {
+      const wrapper = mount(CaptureModal)
+
+      expect(wrapper.find('.td-capture-modal__char-count').exists()).toBe(false)
+    })
+
+    it('shows Upload .txt file button in transcript mode', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      const uploadBtn = wrapper.find('.td-capture-modal__file-bar .td-btn')
+      expect(uploadBtn.exists()).toBe(true)
+      expect(uploadBtn.text()).toBe('Upload .txt file')
+    })
+
+    it('validates empty text in transcript mode', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.text()).toContain('Capture text is required.')
+      expect(mockCaptureStore.createItem).not.toHaveBeenCalled()
+    })
+
+    it('disables tab switching while saving', async () => {
+      mockCaptureStore.createItem.mockImplementation(
+        () => new Promise(() => {
+          // Intentionally unresolved.
+        }))
+
+      const wrapper = mount(CaptureModal)
+      const textarea = wrapper.get('textarea')
+      await textarea.setValue('Saving...')
+      await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true })
+      await waitForUi()
+
+      const tabs = wrapper.findAll('[role="tab"]')
+      expect(tabs[1].attributes('disabled')).toBeDefined()
+    })
+
+    it('preserves board scope in transcript mode', async () => {
+      const wrapper = mount(CaptureModal, {
+        props: {
+          boardId: 'board-42',
+          boardName: 'Dev Board',
+        },
+      })
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      expect(wrapper.text()).toContain('This capture will stay linked to Dev Board.')
+
+      const textarea = wrapper.get('.td-capture-modal__input--transcript')
+      await textarea.setValue('Transcript for dev board')
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+
+      expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+        boardId: 'board-42',
+        text: 'Transcript for dev board',
+        source: 'TranscriptPaste',
+      })
+    })
+
+    it('clears inline error when switching modes', async () => {
+      const wrapper = mount(CaptureModal)
+
+      // Trigger validation error in typed mode
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+      expect(wrapper.text()).toContain('Capture text is required.')
+
+      // Switch to transcript mode
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      expect(wrapper.text()).not.toContain('Capture text is required.')
+    })
+  })
 })
