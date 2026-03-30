@@ -69,7 +69,7 @@ async function batchAction(action: 'triage' | 'ignore' | 'cancel') {
 function startEditSuggestion() {
   if (!selectedItem.value) return
   editedText.value = selectedItem.value.rawText
-  editedTitleHint.value = ''
+  editedTitleHint.value = selectedItem.value.titleHint ?? ''
   isEditingSuggestion.value = true
 }
 
