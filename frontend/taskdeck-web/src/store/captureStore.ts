@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { captureApi } from '../api/captureApi'
 import { isTriageTerminalStatus } from '../types/capture'
-import type { CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto } from '../types/capture'
+import type { BatchTriageAction, BatchTriageResult, CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto, UpdateCaptureSuggestionDto } from '../types/capture'
 import { useToastStore } from './toastStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import { isDemoMode, DemoModeError } from '../utils/demoMode'
@@ -315,6 +315,64 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  const batchBusy = ref(false)
+  const batchError = ref<string | null>(null)
+
+  async function batchTriage(itemIds: string[], action: BatchTriageAction): Promise<BatchTriageResult> {
+    guardDemoMutation()
+    try {
+      batchBusy.value = true
+      batchError.value = null
+      actionError.value = null
+
+      const batchItems = itemIds.map((id) => ({ itemId: id, action }))
+      const result = await captureApi.batchTriage(batchItems)
+
+      if (result.succeeded > 0) {
+        toast.success(`${result.succeeded} of ${result.total} items processed`)
+      }
+      if (result.failed > 0) {
+        const failedMessages = result.results
+          .filter((r) => !r.success)
+          .map((r) => r.errorMessage ?? 'Unknown error')
+          .slice(0, 3)
+          .join('; ')
+        toast.error(`${result.failed} item(s) failed: ${failedMessages}`)
+      }
+
+      // Refresh list to pick up status changes
+      await fetchItems()
+
+      return result
+    } catch (e: unknown) {
+      const message = getErrorDisplay(e, 'Failed to process batch triage').message
+      batchError.value = message
+      toast.error(message)
+      throw e
+    } finally {
+      batchBusy.value = false
+    }
+  }
+
+  async function updateSuggestion(itemId: string, dto: UpdateCaptureSuggestionDto): Promise<CaptureItem> {
+    guardDemoMutation()
+    try {
+      actionBusyItemId.value = itemId
+      actionError.value = null
+      const updated = await captureApi.updateSuggestion(itemId, dto)
+      cacheDetail(updated)
+      toast.success('Capture text updated')
+      return updated
+    } catch (e: unknown) {
+      const message = getErrorDisplay(e, 'Failed to update capture text').message
+      actionError.value = message
+      toast.error(message)
+      throw e
+    } finally {
+      actionBusyItemId.value = null
+    }
+  }
+
   return {
     items,
     detailById,
@@ -325,6 +383,8 @@ export const useCaptureStore = defineStore('capture', () => {
     detailError,
     actionError,
     hasItems,
+    batchBusy,
+    batchError,
     cacheDetail,
     fetchItems,
     fetchDetail,
@@ -335,5 +395,7 @@ export const useCaptureStore = defineStore('capture', () => {
     triageItem,
     triagePollingItemId,
     pollTriageCompletion,
+    batchTriage,
+    updateSuggestion,
   }
 })

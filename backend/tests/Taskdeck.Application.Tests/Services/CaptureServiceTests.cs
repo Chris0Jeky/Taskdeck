@@ -661,4 +661,198 @@ public class CaptureServiceTests
         result.ErrorMessage.Should().Contain(CaptureStatus.Converted.ToString());
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
+
+    // ── BatchTriageAsync ──
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldReturnValidationError_WhenEmptyList()
+    {
+        var userId = Guid.NewGuid();
+        var request = new BatchTriageRequestDto(new List<BatchTriageItemActionDto>());
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldReturnValidationError_WhenInvalidAction()
+    {
+        var userId = Guid.NewGuid();
+        var request = new BatchTriageRequestDto(new List<BatchTriageItemActionDto>
+        {
+            new(Guid.NewGuid(), "invalid_action")
+        });
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("invalid_action");
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldReturnValidationError_WhenDuplicateIds()
+    {
+        var userId = Guid.NewGuid();
+        var duplicateId = Guid.NewGuid();
+        var request = new BatchTriageRequestDto(new List<BatchTriageItemActionDto>
+        {
+            new(duplicateId, "triage"),
+            new(duplicateId, "ignore")
+        });
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Duplicate");
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldProcessMultipleItems_WithPartialFailure()
+    {
+        var userId = Guid.NewGuid();
+        var item1 = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture 1");
+        var item2Id = Guid.NewGuid(); // Non-existent item
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item1.Id, default))
+            .ReturnsAsync(item1);
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item2Id, default))
+            .ReturnsAsync((LlmRequest?)null);
+
+        var request = new BatchTriageRequestDto(new List<BatchTriageItemActionDto>
+        {
+            new(item1.Id, "triage"),
+            new(item2Id, "triage")
+        });
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Total.Should().Be(2);
+        result.Value.Succeeded.Should().Be(1);
+        result.Value.Failed.Should().Be(1);
+        result.Value.Results.Should().HaveCount(2);
+
+        result.Value.Results[0].ItemId.Should().Be(item1.Id);
+        result.Value.Results[0].Success.Should().BeTrue();
+
+        result.Value.Results[1].ItemId.Should().Be(item2Id);
+        result.Value.Results[1].Success.Should().BeFalse();
+        result.Value.Results[1].ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldSupportIgnoreAction()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture to ignore");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var request = new BatchTriageRequestDto(new List<BatchTriageItemActionDto>
+        {
+            new(item.Id, "ignore")
+        });
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Succeeded.Should().Be(1);
+        result.Value.Failed.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldReturnValidationError_WhenBatchTooLarge()
+    {
+        var userId = Guid.NewGuid();
+        var items = Enumerable.Range(0, 51)
+            .Select(i => new BatchTriageItemActionDto(Guid.NewGuid(), "triage"))
+            .ToList();
+        var request = new BatchTriageRequestDto(items);
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("50");
+    }
+
+    // ── UpdateSuggestionAsync ──
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldUpdateTextForNewItem()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.Typed, "original text")));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var dto = new UpdateCaptureSuggestionDto("edited text", "New Title");
+        var result = await _service.UpdateSuggestionAsync(userId, item.Id, dto);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.RawText.Should().Be("edited text");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldRejectEmptyText()
+    {
+        var userId = Guid.NewGuid();
+        var dto = new UpdateCaptureSuggestionDto("   ");
+
+        var result = await _service.UpdateSuggestionAsync(userId, Guid.NewGuid(), dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldRejectForbiddenUser()
+    {
+        var ownerId = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var item = new LlmRequest(ownerId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.Typed, "original")));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(callerId, item.Id, new UpdateCaptureSuggestionDto("edited"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldRejectTriagingItem()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.Typed, "original")));
+        item.MarkAsProcessing();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(userId, item.Id, new UpdateCaptureSuggestionDto("edited"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+    }
 }

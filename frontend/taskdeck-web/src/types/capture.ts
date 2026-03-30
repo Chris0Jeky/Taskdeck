@@ -80,3 +80,29 @@ export interface CaptureTriageEnqueueResult {
   status: CaptureStatusValue
   alreadyTriaging: boolean
 }
+
+export type BatchTriageAction = 'triage' | 'ignore' | 'cancel'
+
+export interface BatchTriageItemAction {
+  itemId: string
+  action: BatchTriageAction
+}
+
+export interface BatchTriageItemResult {
+  itemId: string
+  success: boolean
+  errorCode?: string | null
+  errorMessage?: string | null
+}
+
+export interface BatchTriageResult {
+  total: number
+  succeeded: number
+  failed: number
+  results: BatchTriageItemResult[]
+}
+
+export interface UpdateCaptureSuggestionDto {
+  text: string
+  titleHint?: string | null
+}

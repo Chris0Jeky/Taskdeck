@@ -109,6 +109,27 @@ const mockCaptureStore = reactive({
   triageItem: vi.fn<(itemId: string) => Promise<void>>(),
   triagePollingItemId: null as string | null,
   pollTriageCompletion: vi.fn<(itemId: string) => () => void>(),
+  batchBusy: false,
+  batchError: null as string | null,
+  batchTriage: vi.fn<(itemIds: string[], action: string) => Promise<{
+    total: number
+    succeeded: number
+    failed: number
+    results: Array<{ itemId: string; success: boolean; errorCode?: string | null; errorMessage?: string | null }>
+  }>>(),
+  updateSuggestion: vi.fn<(itemId: string, dto: { text: string; titleHint?: string | null }) => Promise<{
+    id: string
+    userId: string
+    boardId: string | null
+    status: string | number
+    source: string | number
+    textExcerpt: string
+    rawText: string
+    createdAt: string
+    processedAt: string | null
+    retryCount: number
+    provenance?: unknown
+  }>>(),
 })
 
 vi.mock('../../store/captureStore', () => ({
@@ -274,6 +295,28 @@ describe('InboxView', () => {
     mockCaptureStore.triageItem.mockResolvedValue(undefined)
     mockCaptureStore.triagePollingItemId = null
     mockCaptureStore.pollTriageCompletion.mockImplementation(() => () => {})
+    mockCaptureStore.batchBusy = false
+    mockCaptureStore.batchError = null
+    mockCaptureStore.batchTriage.mockResolvedValue({
+      total: 0, succeeded: 0, failed: 0, results: [],
+    })
+    mockCaptureStore.updateSuggestion.mockImplementation(async (itemId: string, dto: { text: string; titleHint?: string | null }) => {
+      const detail = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'New' as const,
+        source: 'Typed' as const,
+        textExcerpt: dto.text.slice(0, 200),
+        rawText: dto.text,
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+      mockCaptureStore.detailById[itemId] = detail
+      return detail
+    })
     routerMocks.push.mockReset()
     routerMocks.replace.mockReset()
     routerMocks.replace.mockResolvedValue(undefined)
@@ -987,5 +1030,198 @@ describe('InboxView', () => {
 
     expect(mockCaptureStore.fetchDetail).toHaveBeenLastCalledWith('capture-1', { forceRefresh: true })
     expect(wrapper.text()).toContain('Capture Detail')
+  })
+
+  // ── Batch selection tests ──
+
+  it('renders checkboxes for each inbox item', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const checkboxes = wrapper.findAll('[data-testid="inbox-item-checkbox"]')
+    expect(checkboxes.length).toBe(2)
+  })
+
+  it('shows batch action bar when items are selected', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
+
+    const checkboxes = wrapper.findAll('[data-testid="inbox-item-checkbox"]')
+    await checkboxes[0]?.trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('1 selected')
+  })
+
+  it('select-all toggles all items', async () => {
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const selectAll = wrapper.find('[data-testid="select-all"] input')
+    await selectAll.trigger('change')
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('2 selected')
+
+    await selectAll.trigger('change')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
+  })
+
+  it('batch triage action calls store with selected ids', async () => {
+    mockCaptureStore.batchTriage.mockResolvedValue({
+      total: 2, succeeded: 2, failed: 0, results: [
+        { itemId: 'capture-1', success: true },
+        { itemId: 'capture-2', success: true },
+      ],
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const selectAll = wrapper.find('[data-testid="select-all"] input')
+    await selectAll.trigger('change')
+    await waitForUi()
+
+    const triageBatchBtn = wrapper.find('[data-testid="batch-action-bar"]')
+      .findAll('button').find((b) => b.text().includes('Triage'))
+    await triageBatchBtn?.trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(
+      expect.arrayContaining(['capture-1', 'capture-2']),
+      'triage',
+    )
+  })
+
+  it('clears selection after successful batch action', async () => {
+    mockCaptureStore.batchTriage.mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0, results: [
+        { itemId: 'capture-1', success: true },
+      ],
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    const checkboxes = wrapper.findAll('[data-testid="inbox-item-checkbox"]')
+    await checkboxes[0]?.trigger('click')
+    await waitForUi()
+
+    const ignoreBatchBtn = wrapper.find('[data-testid="batch-action-bar"]')
+      .findAll('button').find((b) => b.text().includes('Ignore'))
+    await ignoreBatchBtn?.trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['capture-1'], 'ignore')
+    expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
+  })
+
+  // ── Suggestion editing tests ──
+
+  it('shows edit button for new items in detail view', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Editable text',
+        rawText: 'Full editable text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    const editBtn = wrapper.find('[data-testid="suggestion-edit-btn"]')
+    expect(editBtn.exists()).toBe(true)
+  })
+
+  it('enters editing mode and saves updated text', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Editable text',
+        rawText: 'Full editable text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    await wrapper.get('[data-testid="suggestion-edit-btn"]').trigger('click')
+    await waitForUi()
+
+    const textarea = wrapper.find('[data-testid="suggestion-edit-textarea"]')
+    expect(textarea.exists()).toBe(true)
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('Full editable text')
+
+    await textarea.setValue('Updated capture text')
+    await wrapper.get('[data-testid="suggestion-save-btn"]').trigger('click')
+    await waitForUi()
+
+    expect(mockCaptureStore.updateSuggestion).toHaveBeenCalledWith('capture-1', {
+      text: 'Updated capture text',
+      titleHint: null,
+    })
+  })
+
+  it('cancels editing without saving', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'Editable text',
+        rawText: 'Full editable text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    await wrapper.get('[data-testid="suggestion-edit-btn"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="suggestion-cancel-btn"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(false)
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
   })
 })
