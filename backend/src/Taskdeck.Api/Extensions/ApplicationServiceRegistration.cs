@@ -37,6 +37,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
         services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
         services.AddScoped<IOpsCliService, OpsCliService>();
+        services.AddScoped<IBoardContextBuilder, BoardContextBuilder>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ILogQueryService, LogQueryService>();
         services.AddScoped<INotificationService, NotificationService>();
