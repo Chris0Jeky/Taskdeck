@@ -1,0 +1,250 @@
+# =============================================================================
+# Reusable SBOM and Release Provenance
+#
+# Generates CycloneDX SBOMs for backend (.NET) and frontend (npm) dependencies,
+# plus a build provenance manifest capturing build environment metadata.
+#
+# Implements: OPS-11 (#103)
+# =============================================================================
+
+name: Reusable SBOM and Provenance
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        required: false
+        type: string
+        default: 8.0.x
+      node-version:
+        required: false
+        type: string
+        default: 24.13.1
+      artifact-name:
+        required: false
+        type: string
+        default: sbom-provenance-artifacts
+      retention-days:
+        required: false
+        type: number
+        default: 90
+      fail-on-error:
+        description: Fail the workflow if SBOM generation encounters errors
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  sbom-provenance:
+    name: SBOM and Provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+      SBOM_DIR: ${{ github.workspace }}/artifacts/sbom-provenance
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Create output directory
+        run: mkdir -p "$SBOM_DIR"
+
+      - name: Restore backend dependencies
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Install CycloneDX .NET tool
+        run: dotnet tool install --global CycloneDX
+
+      - name: Generate backend SBOM (CycloneDX)
+        id: backend_sbom
+        shell: bash
+        run: |
+          set +e
+          dotnet CycloneDX backend/Taskdeck.sln \
+            --output "$SBOM_DIR" \
+            --filename backend-sbom.json \
+            --json \
+            --include-project-references \
+            --set-type application \
+            --set-name "Taskdeck-Backend" \
+            --set-version "${{ github.ref_name }}" 2> "$SBOM_DIR/backend-sbom.stderr"
+          exit_code=$?
+          printf '%s' "$exit_code" > "$SBOM_DIR/backend-sbom.exitcode"
+          if [ "$exit_code" -ne 0 ]; then
+            echo "::warning::Backend SBOM generation exited with code $exit_code"
+          else
+            echo "Backend SBOM generated successfully"
+          fi
+          exit "$exit_code"
+        continue-on-error: true
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Generate frontend SBOM (CycloneDX)
+        id: frontend_sbom
+        shell: bash
+        run: |
+          set +e
+          npx --yes @cyclonedx/cyclonedx-npm \
+            --output-file "$SBOM_DIR/frontend-sbom.json" \
+            --spec-version 1.5 \
+            --output-reproducible \
+            --omit dev \
+            --mc-type application \
+            frontend/taskdeck-web 2> "$SBOM_DIR/frontend-sbom.stderr"
+          exit_code=$?
+          printf '%s' "$exit_code" > "$SBOM_DIR/frontend-sbom.exitcode"
+          if [ "$exit_code" -ne 0 ]; then
+            echo "::warning::Frontend SBOM generation exited with code $exit_code"
+          else
+            echo "Frontend SBOM generated successfully"
+          fi
+          exit "$exit_code"
+        continue-on-error: true
+
+      - name: Generate build provenance manifest
+        shell: bash
+        run: |
+          cat > "$SBOM_DIR/build-provenance.json" <<PROVENANCE_EOF
+          {
+            "_type": "https://slsa.dev/provenance/v1",
+            "subject": [
+              {
+                "name": "Taskdeck",
+                "version": "${{ github.ref_name }}"
+              }
+            ],
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "predicate": {
+              "buildDefinition": {
+                "buildType": "https://github.com/${{ github.repository }}/blob/main/.github/workflows/reusable-sbom-provenance.yml",
+                "resolvedDependencies": [
+                  {
+                    "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                    "digest": {
+                      "sha1": "${{ github.sha }}"
+                    }
+                  }
+                ]
+              },
+              "runDetails": {
+                "builder": {
+                  "id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                },
+                "metadata": {
+                  "invocationId": "${{ github.run_id }}/${{ github.run_attempt }}",
+                  "startedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                },
+                "byproducts": [
+                  {
+                    "name": "backend-sbom.json",
+                    "mediaType": "application/vnd.cyclonedx+json"
+                  },
+                  {
+                    "name": "frontend-sbom.json",
+                    "mediaType": "application/vnd.cyclonedx+json"
+                  }
+                ]
+              }
+            },
+            "buildMetadata": {
+              "repository": "${{ github.repository }}",
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}",
+              "workflow": "${{ github.workflow }}",
+              "runId": "${{ github.run_id }}",
+              "runNumber": "${{ github.run_number }}",
+              "runAttempt": "${{ github.run_attempt }}",
+              "actor": "${{ github.actor }}",
+              "eventName": "${{ github.event_name }}",
+              "runner": {
+                "os": "ubuntu-latest",
+                "arch": "x64"
+              },
+              "tools": {
+                "dotnetVersion": "${{ inputs.dotnet-version }}",
+                "nodeVersion": "${{ inputs.node-version }}",
+                "cyclonedxDotnet": "latest",
+                "cyclonedxNpm": "latest"
+              }
+            }
+          }
+          PROVENANCE_EOF
+
+      - name: Generate artifact checksums
+        shell: bash
+        run: |
+          cd "$SBOM_DIR"
+          sha256sum *.json > checksums.sha256 2>/dev/null || true
+          echo "Checksums:"
+          cat checksums.sha256
+
+      - name: Write SBOM summary
+        shell: bash
+        run: |
+          backend_exit=$(cat "$SBOM_DIR/backend-sbom.exitcode" 2>/dev/null || echo "N/A")
+          frontend_exit=$(cat "$SBOM_DIR/frontend-sbom.exitcode" 2>/dev/null || echo "N/A")
+
+          backend_status="passed"
+          frontend_status="passed"
+          if [ "$backend_exit" != "0" ]; then backend_status="failed (exit $backend_exit)"; fi
+          if [ "$frontend_exit" != "0" ]; then frontend_status="failed (exit $frontend_exit)"; fi
+
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ## SBOM and Release Provenance
+
+          | Artifact | Format | Status |
+          |----------|--------|--------|
+          | Backend SBOM | CycloneDX JSON | $backend_status |
+          | Frontend SBOM | CycloneDX JSON | $frontend_status |
+          | Build Provenance | SLSA v1 JSON | generated |
+          | Checksums | SHA-256 | generated |
+
+          **Ref:** \`${{ github.ref }}\` | **SHA:** \`${{ github.sha }}\` | **Run:** \`${{ github.run_id }}\`
+
+          Artifacts are uploaded as \`${{ inputs.artifact-name }}\` with ${{ inputs.retention-days }}-day retention.
+
+          Policy: see \`docs/ops/SBOM_RELEASE_PROVENANCE.md\`
+          EOF
+
+      - name: Enforce SBOM generation success
+        if: inputs.fail-on-error
+        shell: bash
+        run: |
+          backend_exit=$(cat "$SBOM_DIR/backend-sbom.exitcode" 2>/dev/null || echo "1")
+          frontend_exit=$(cat "$SBOM_DIR/frontend-sbom.exitcode" 2>/dev/null || echo "1")
+          if [ "$backend_exit" != "0" ] || [ "$frontend_exit" != "0" ]; then
+            echo "::error::SBOM generation failed. Backend exit: $backend_exit, Frontend exit: $frontend_exit"
+            echo "Review stderr artifacts for details."
+            exit 1
+          fi
+
+      - name: Upload SBOM and provenance artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ env.SBOM_DIR }}
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention-days }}
