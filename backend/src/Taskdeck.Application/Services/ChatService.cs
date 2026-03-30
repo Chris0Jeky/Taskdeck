@@ -242,56 +242,55 @@ public class ChatService : IChatService
                             ? llmResult.Instructions
                             : new List<string> { dto.Content };
 
-                        Result<ProposalDto>? lastFailure = null;
-                        var proposalIds = new List<Guid>();
-
-                        foreach (var instruction in instructionsToParse)
+                        // Use batch parsing for multiple instructions to create a single
+                        // atomic proposal. For single instructions, use the original
+                        // single-instruction parser for backward compatibility.
+                        Result<ProposalDto>? proposalResult;
+                        if (instructionsToParse.Count > 1)
                         {
-                            var proposalResult = await _automationPlanner.ParseInstructionAsync(
-                                instruction,
+                            proposalResult = await _automationPlanner.ParseBatchInstructionAsync(
+                                instructionsToParse,
                                 userId,
                                 session.BoardId,
                                 ct,
                                 sourceType: ProposalSourceType.Chat,
                                 sourceReferenceId: session.Id.ToString());
-
-                            if (proposalResult.IsSuccess)
-                            {
-                                proposalIds.Add(proposalResult.Value.Id);
-                            }
-                            else
-                            {
-                                lastFailure ??= proposalResult;
-                            }
+                        }
+                        else
+                        {
+                            proposalResult = await _automationPlanner.ParseInstructionAsync(
+                                instructionsToParse[0],
+                                userId,
+                                session.BoardId,
+                                ct,
+                                sourceType: ProposalSourceType.Chat,
+                                sourceReferenceId: session.Id.ToString());
                         }
 
-                        if (proposalIds.Count > 0)
+                        if (proposalResult.IsSuccess)
                         {
                             messageType = "proposal-reference";
-                            proposalId = proposalIds[0];
-                            var idList = string.Join(", ", proposalIds);
-                            assistantContent = proposalIds.Count == 1
-                                ? $"{llmResult.Content}\n\nProposal created for review: {idList}"
-                                : $"{llmResult.Content}\n\n{proposalIds.Count} proposals created for review: {idList}";
+                            proposalId = proposalResult.Value.Id;
+                            assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
                         }
-                        else if (lastFailure != null)
+                        else
                         {
-                            if (lastFailure.ErrorMessage?.Contains(AutomationPlannerService.ParseHintMarker) == true)
+                            if (proposalResult.ErrorMessage?.Contains(AutomationPlannerService.ParseHintMarker) == true)
                             {
                                 var hintContext = llmResult.IsActionable
                                     ? "I detected a task request but could not parse it into a proposal."
                                     : "Could not create the requested proposal.";
-                                assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{lastFailure.ErrorMessage}";
+                                assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{proposalResult.ErrorMessage}";
                                 messageType = "parse-hint";
                             }
                             else if (llmResult.IsActionable)
                             {
-                                assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {lastFailure.ErrorMessage})";
+                                assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})";
                                 messageType = "status";
                             }
                             else
                             {
-                                assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {lastFailure.ErrorMessage})";
+                                assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
                                 messageType = "status";
                             }
                         }
