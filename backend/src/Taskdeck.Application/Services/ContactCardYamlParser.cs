@@ -16,6 +16,25 @@ public static class ContactCardYamlParser
 {
     private const string FrontMatterDelimiter = "---";
 
+    private static readonly IDeserializer Deserializer = new DeserializerBuilder()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
+        .Build();
+
+    private static readonly ISerializer YamlSerializer = new SerializerBuilder()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .Build();
+
+    private static readonly HashSet<string> ValidTiers =
+        new(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
+
+    private static readonly HashSet<string> ValidStatuses =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "cold", "warm", "active", "referral", "interviewing", "closed"
+        };
+
     /// <summary>
     /// Result of parsing a card description that may contain YAML front matter.
     /// </summary>
@@ -53,8 +72,7 @@ public static class ContactCardYamlParser
 
         try
         {
-            var deserializer = BuildDeserializer();
-            var frontMatter = deserializer.Deserialize<ContactCardFrontMatter>(yamlBlock);
+            var frontMatter = Deserializer.Deserialize<ContactCardFrontMatter>(yamlBlock);
 
             if (frontMatter is null)
             {
@@ -84,8 +102,7 @@ public static class ContactCardYamlParser
     {
         ArgumentNullException.ThrowIfNull(frontMatter);
 
-        var serializer = BuildSerializer();
-        var yaml = serializer.Serialize(frontMatter).TrimEnd();
+        var yaml = YamlSerializer.Serialize(frontMatter).TrimEnd();
 
         var parts = new List<string>
         {
@@ -116,17 +133,12 @@ public static class ContactCardYamlParser
             errors.Add($"Unsupported front matter type '{fm.Type}'. Expected 'contact'.");
         }
 
-        var validTiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
-        if (!string.IsNullOrEmpty(fm.RelationshipTier) && !validTiers.Contains(fm.RelationshipTier))
+        if (!string.IsNullOrEmpty(fm.RelationshipTier) && !ValidTiers.Contains(fm.RelationshipTier))
         {
             errors.Add($"Invalid relationship_tier '{fm.RelationshipTier}'. Expected one of: A, B, C.");
         }
 
-        var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "cold", "warm", "active", "referral", "interviewing", "closed"
-        };
-        if (!string.IsNullOrEmpty(fm.Status) && !validStatuses.Contains(fm.Status))
+        if (!string.IsNullOrEmpty(fm.Status) && !ValidStatuses.Contains(fm.Status))
         {
             errors.Add($"Invalid status '{fm.Status}'. Expected one of: cold, warm, active, referral, interviewing, closed.");
         }
@@ -204,21 +216,5 @@ public static class ContactCardYamlParser
             : string.Empty;
 
         return (yamlBlock, body, null);
-    }
-
-    private static IDeserializer BuildDeserializer()
-    {
-        return new DeserializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .IgnoreUnmatchedProperties()
-            .Build();
-    }
-
-    private static ISerializer BuildSerializer()
-    {
-        return new SerializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
-            .Build();
     }
 }
