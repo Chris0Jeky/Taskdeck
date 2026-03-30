@@ -175,7 +175,7 @@ onUnmounted(() => {
 
       <ShellTopbar @open-command-palette="openCommandPalette" />
 
-      <main class="td-content" role="main">
+      <main id="td-main-content" class="td-content">
         <router-view />
       </main>
     </div>
