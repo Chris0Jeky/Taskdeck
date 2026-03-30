@@ -49,6 +49,7 @@ defineEmits<{
           :cards="cardsByColumn.get(column.id) || []"
           :labels="labels"
           :board-id="boardId"
+          :all-columns="sortedColumns"
           :dragged-card="draggedCard"
           :selected-card-id="selectedCardId"
           @card-drag-start="$emit('cardDragStart', $event)"
