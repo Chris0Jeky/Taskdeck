@@ -21,6 +21,79 @@ const activeItemIndex = ref(0)
 const showCaptureModal = ref(false)
 let stopTriagePolling: (() => void) | null = null
 
+// Batch selection state
+const selectedIds = ref<Set<string>>(new Set())
+const isEditingSuggestion = ref(false)
+const editedText = ref('')
+const editedTitleHint = ref('')
+
+const hasSelection = computed(() => selectedIds.value.size > 0)
+const selectionCount = computed(() => selectedIds.value.size)
+const allSelected = computed(() =>
+  items.value.length > 0 && selectedIds.value.size === items.value.length
+)
+
+function toggleItemSelection(itemId: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(itemId)) {
+    next.delete(itemId)
+  } else {
+    next.add(itemId)
+  }
+  selectedIds.value = next
+}
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(items.value.map((i) => i.id))
+  }
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+async function batchAction(action: 'triage' | 'ignore' | 'cancel') {
+  if (selectedIds.value.size === 0) return
+  const ids = Array.from(selectedIds.value)
+  try {
+    await captureStore.batchTriage(ids, action)
+    clearSelection()
+  } catch {
+    // Store handles toast
+  }
+}
+
+function startEditSuggestion() {
+  if (!selectedItem.value) return
+  editedText.value = selectedItem.value.rawText
+  editedTitleHint.value = ''
+  isEditingSuggestion.value = true
+}
+
+function cancelEditSuggestion() {
+  isEditingSuggestion.value = false
+  editedText.value = ''
+  editedTitleHint.value = ''
+}
+
+async function saveEditedSuggestion() {
+  if (!selectedItemId.value || !editedText.value.trim()) return
+  try {
+    await captureStore.updateSuggestion(selectedItemId.value, {
+      text: editedText.value.trim(),
+      titleHint: editedTitleHint.value.trim() || null,
+    })
+    isEditingSuggestion.value = false
+    editedText.value = ''
+    editedTitleHint.value = ''
+  } catch {
+    // Store handles toast
+  }
+}
+
 function openCaptureModal() {
   showCaptureModal.value = true
 }
@@ -468,6 +541,11 @@ watch(selectedItemId, (itemId, _, onCleanup) => {
     stopTriagePolling = null
   }
 
+  // Reset editing state when switching items
+  isEditingSuggestion.value = false
+  editedText.value = ''
+  editedTitleHint.value = ''
+
   if (!itemId) {
     return
   }
@@ -528,8 +606,50 @@ onUnmounted(() => {
     <div class="td-inbox__layout">
       <section class="td-inbox__list-panel">
         <div class="td-inbox__list-header">
-          <h2>Items</h2>
+          <div class="td-inbox__list-header-left">
+            <label v-if="items.length > 0" class="td-inbox__select-all" data-testid="select-all">
+              <input
+                type="checkbox"
+                :checked="allSelected"
+                :indeterminate="hasSelection && !allSelected"
+                @change="toggleSelectAll"
+              />
+              <span v-if="hasSelection">{{ selectionCount }} selected</span>
+              <span v-else>Select all</span>
+            </label>
+            <h2 v-if="!hasSelection">Items</h2>
+          </div>
           <span class="td-inbox__count">{{ items.length }}</span>
+        </div>
+
+        <div v-if="hasSelection" class="td-inbox__batch-bar" data-testid="batch-action-bar">
+          <button
+            class="td-btn td-btn--primary td-btn--sm"
+            :disabled="captureStore.batchBusy"
+            @click="batchAction('triage')"
+          >
+            {{ captureStore.batchBusy ? 'Processing...' : `Triage (${selectionCount})` }}
+          </button>
+          <button
+            class="td-btn td-btn--danger td-btn--sm"
+            :disabled="captureStore.batchBusy"
+            @click="batchAction('ignore')"
+          >
+            {{ captureStore.batchBusy ? 'Processing...' : `Ignore (${selectionCount})` }}
+          </button>
+          <button
+            class="td-btn td-btn--secondary td-btn--sm"
+            :disabled="captureStore.batchBusy"
+            @click="batchAction('cancel')"
+          >
+            {{ captureStore.batchBusy ? 'Processing...' : `Cancel (${selectionCount})` }}
+          </button>
+          <button
+            class="td-btn td-btn--ghost td-btn--sm"
+            @click="clearSelection"
+          >
+            Clear
+          </button>
         </div>
 
         <div
@@ -596,6 +716,13 @@ onUnmounted(() => {
                     @click="openItemFromList(items[virtualRow.index]!, virtualRow.index)"
                   >
                     <div class="td-inbox-row__head">
+                      <input
+                        type="checkbox"
+                        class="td-inbox-row__checkbox"
+                        data-testid="inbox-item-checkbox"
+                        :checked="selectedIds.has(items[virtualRow.index]!.id)"
+                        @click.stop="toggleItemSelection(items[virtualRow.index]!.id)"
+                      />
                       <span class="td-status-chip">{{ statusLabel(items[virtualRow.index]!.status) }}</span>
                       <span class="td-meta-chip">{{ sourceLabel(items[virtualRow.index]!.source) }}</span>
                     </div>
@@ -647,7 +774,52 @@ onUnmounted(() => {
             <div v-if="captureStore.loadingDetail" class="td-placeholder td-placeholder--detail-loading">
               Loading detail...
             </div>
-            <pre v-else class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
+            <template v-else-if="isEditingSuggestion">
+              <label class="td-inbox-detail__edit-label">Capture Text</label>
+              <textarea
+                v-model="editedText"
+                class="td-inbox-detail__edit-textarea"
+                data-testid="suggestion-edit-textarea"
+                rows="12"
+                placeholder="Edit the capture text before triage..."
+              />
+              <label class="td-inbox-detail__edit-label">Title Hint (optional)</label>
+              <input
+                v-model="editedTitleHint"
+                class="td-inbox-detail__edit-input"
+                data-testid="suggestion-edit-title"
+                type="text"
+                placeholder="Short title for the resulting card..."
+              />
+              <div class="td-inbox-detail__edit-actions">
+                <button
+                  class="td-btn td-btn--primary td-btn--sm"
+                  data-testid="suggestion-save-btn"
+                  :disabled="!editedText.trim() || captureStore.actionBusyItemId === selectedItem.id"
+                  @click="saveEditedSuggestion"
+                >
+                  {{ captureStore.actionBusyItemId === selectedItem.id ? 'Saving...' : 'Save' }}
+                </button>
+                <button
+                  class="td-btn td-btn--ghost td-btn--sm"
+                  data-testid="suggestion-cancel-btn"
+                  @click="cancelEditSuggestion"
+                >
+                  Cancel
+                </button>
+              </div>
+            </template>
+            <template v-else>
+              <pre class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
+              <button
+                v-if="canMutateSelection(selectedItem.status)"
+                class="td-btn td-btn--secondary td-btn--sm td-inbox-detail__edit-btn"
+                data-testid="suggestion-edit-btn"
+                @click="startEditSuggestion"
+              >
+                Edit Text
+              </button>
+            </template>
           </div>
 
           <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link">
@@ -775,6 +947,34 @@ onUnmounted(() => {
   border-bottom: 0.5px solid var(--td-border-default);
 }
 
+.td-inbox__list-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+}
+
+.td-inbox__select-all {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+  cursor: pointer;
+}
+
+.td-inbox__select-all input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.td-inbox__batch-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  padding: var(--td-space-2) var(--td-space-4);
+  background: var(--td-surface-container-highest, #2a2a2a);
+  border-bottom: 0.5px solid var(--td-border-default);
+}
+
 .td-inbox__list-header h2 {
   font-family: 'Manrope', system-ui, sans-serif;
   color: var(--td-text-primary);
@@ -852,6 +1052,11 @@ onUnmounted(() => {
   color: var(--td-text-secondary);
 }
 
+.td-inbox-row__checkbox {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .td-inbox-row__excerpt {
   color: var(--td-text-primary);
   margin-bottom: var(--td-space-2);
@@ -919,6 +1124,59 @@ onUnmounted(() => {
   font-size: var(--td-font-sm);
   line-height: 1.45;
   color: var(--td-text-primary);
+}
+
+.td-inbox-detail__edit-btn {
+  margin-top: var(--td-space-2);
+}
+
+.td-inbox-detail__edit-label {
+  display: block;
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+  margin-bottom: var(--td-space-1);
+  font-weight: 600;
+}
+
+.td-inbox-detail__edit-textarea {
+  width: 100%;
+  min-height: 240px;
+  background: var(--td-surface-lowest, #0e0e0e);
+  border: 0.5px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  padding: var(--td-space-3);
+  font-size: var(--td-font-sm);
+  line-height: 1.45;
+  color: var(--td-text-primary);
+  resize: vertical;
+  font-family: inherit;
+  margin-bottom: var(--td-space-3);
+}
+
+.td-inbox-detail__edit-textarea:focus {
+  outline: none;
+  border-color: var(--td-color-ember, #ff4d4d);
+}
+
+.td-inbox-detail__edit-input {
+  width: 100%;
+  background: var(--td-surface-lowest, #0e0e0e);
+  border: 0.5px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  padding: var(--td-space-2) var(--td-space-3);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-primary);
+  margin-bottom: var(--td-space-3);
+}
+
+.td-inbox-detail__edit-input:focus {
+  outline: none;
+  border-color: var(--td-color-ember, #ff4d4d);
+}
+
+.td-inbox-detail__edit-actions {
+  display: flex;
+  gap: var(--td-space-2);
 }
 
 .td-inbox-detail__actions {
