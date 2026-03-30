@@ -562,9 +562,11 @@ onUnmounted(() => {
 
           <div
             v-if="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError"
+            role="presentation"
             :style="{ height: `${virtualTotalSize}px`, width: '100%', position: 'relative' }"
           >
             <div
+              role="presentation"
               :style="{
                 position: 'absolute',
                 top: 0,
@@ -578,6 +580,7 @@ onUnmounted(() => {
                 :key="String(virtualRow.key)"
                 :data-index="virtualRow.index"
                 ref="virtualItemEls"
+                role="presentation"
               >
                 <template v-if="items[virtualRow.index]">
                   <div
