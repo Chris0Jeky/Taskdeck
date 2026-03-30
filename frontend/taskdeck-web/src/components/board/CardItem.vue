@@ -1,19 +1,36 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { Card } from '../../types/board'
+import type { Card, Column } from '../../types/board'
 
 const props = defineProps<{
   card: Card
   isSelected?: boolean
+  columns?: Column[]
 }>()
 
 const emit = defineEmits<{
   (e: 'click', card: Card): void
   (e: 'dragstart', card: Card): void
   (e: 'dragend'): void
+  (e: 'move-to', card: Card, targetColumnId: string): void
 }>()
 
 const isDragging = ref(false)
+const showMoveMenu = ref(false)
+
+function toggleMoveMenu(event: Event) {
+  event.stopPropagation()
+  showMoveMenu.value = !showMoveMenu.value
+}
+
+function closeMoveMenu() {
+  showMoveMenu.value = false
+}
+
+function handleMoveTo(targetColumnId: string) {
+  showMoveMenu.value = false
+  emit('move-to', props.card, targetColumnId)
+}
 
 function isDragHandleTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-action="drag-card-handle"]') !== null
@@ -79,21 +96,75 @@ function isOverdue(dateString: string | null): boolean {
     <!-- Ember leading-edge indicator -->
     <span class="td-board-card__indicator" aria-hidden="true" />
 
-    <button
-      type="button"
-      data-action="drag-card-handle"
-      draggable="true"
-      class="td-card-drag-handle -mx-2 -mt-1 mb-2 flex min-h-10 w-[calc(100%+1rem)] items-center justify-center gap-2 rounded-md px-3 py-2 text-on-surface/60 hover:bg-surface-bright hover:text-on-surface/70 cursor-grab active:cursor-grabbing"
-      title="Drag Card"
-      aria-label="Drag Card"
+    <!-- Card action bar: drag handle + move menu trigger -->
+    <div class="td-board-card__action-bar">
+      <button
+        type="button"
+        data-action="drag-card-handle"
+        draggable="true"
+        class="td-card-drag-handle flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-on-surface/60 hover:bg-surface-bright hover:text-on-surface/70 cursor-grab active:cursor-grabbing"
+        title="Drag Card"
+        aria-label="Drag Card"
+        @click.stop
+        @mousedown="handleDragHandleMouseDown"
+      >
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
+        </svg>
+        <span class="td-board-card__drag-label td-board-card__drag-label--hidden">Drag card</span>
+      </button>
+
+      <button
+        v-if="columns && columns.length > 1"
+        type="button"
+        data-action="card-move-menu-trigger"
+        class="td-card-move-btn flex items-center justify-center rounded-md px-2 py-2 text-on-surface/60 hover:bg-surface-bright hover:text-on-surface/70"
+        title="Move to column..."
+        aria-label="Move to column"
+        aria-haspopup="true"
+        :aria-expanded="showMoveMenu"
+        @click="toggleMoveMenu"
+      >
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Move-to column menu -->
+    <div
+      v-if="showMoveMenu && columns"
+      class="td-card-move-menu"
+      role="menu"
+      aria-label="Move card to column"
       @click.stop
-      @mousedown="handleDragHandleMouseDown"
     >
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" />
-      </svg>
-      <span class="td-board-card__drag-label td-board-card__drag-label--hidden">Drag card</span>
-    </button>
+      <div class="td-card-move-menu__header">Move to...</div>
+      <button
+        v-for="col in columns"
+        :key="col.id"
+        role="menuitem"
+        :disabled="col.id === card.columnId"
+        :class="[
+          'td-card-move-menu__item',
+          col.id === card.columnId ? 'td-card-move-menu__item--current' : ''
+        ]"
+        @click="handleMoveTo(col.id)"
+      >
+        <span class="td-card-move-menu__dot" aria-hidden="true" />
+        {{ col.name }}
+        <span v-if="col.id === card.columnId" class="td-card-move-menu__badge">(current)</span>
+      </button>
+    </div>
+
+    <!-- Click-away overlay to close move menu -->
+    <Teleport to="body">
+      <div
+        v-if="showMoveMenu"
+        class="fixed inset-0 z-40"
+        @click="closeMoveMenu"
+      />
+    </Teleport>
 
     <!-- Blocked Badge -->
     <div v-if="card.isBlocked" class="td-board-card__badge-row">
@@ -203,6 +274,91 @@ function isOverdue(dateString: string | null): boolean {
 
 .td-board-card:hover .td-board-card__indicator {
   opacity: 1;
+}
+
+/* ── Action bar (drag handle + move button) ── */
+.td-board-card__action-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-1);
+  margin: -0.5rem -0.5rem var(--td-space-2) -0.5rem;
+}
+
+/* ── Move button ── */
+.td-card-move-btn {
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  flex-shrink: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.td-card-move-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+/* ── Move-to menu ── */
+.td-card-move-menu {
+  position: relative;
+  z-index: 50;
+  margin-bottom: var(--td-space-2);
+  background: var(--td-surface-container);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-lg);
+  box-shadow: var(--td-shadow-lg);
+  padding: var(--td-space-2) 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.td-card-move-menu__header {
+  padding: var(--td-space-2) var(--td-space-4);
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--td-text-tertiary);
+}
+
+.td-card-move-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  width: 100%;
+  padding: var(--td-space-2) var(--td-space-4);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-primary);
+  text-align: left;
+  transition: background-color var(--td-transition-fast);
+}
+
+.td-card-move-menu__item:hover:not(:disabled) {
+  background: var(--td-surface-bright);
+}
+
+.td-card-move-menu__item:focus-visible {
+  outline: none;
+  box-shadow: var(--td-focus-ring);
+}
+
+.td-card-move-menu__item--current {
+  color: var(--td-text-tertiary);
+  cursor: default;
+}
+
+.td-card-move-menu__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--td-color-ember-glow);
+  flex-shrink: 0;
+}
+
+.td-card-move-menu__badge {
+  font-size: var(--td-font-xs);
+  color: var(--td-text-tertiary);
+  margin-left: auto;
 }
 
 /* ── Drag handle — prevent text-selection interference with drag ── */
