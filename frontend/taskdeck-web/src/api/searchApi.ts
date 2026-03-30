@@ -23,10 +23,10 @@ export interface GlobalSearchResult {
 }
 
 export const searchApi = {
-  async search(query: string): Promise<GlobalSearchResult> {
+  async search(query: string, signal?: AbortSignal): Promise<GlobalSearchResult> {
     const params = new URLSearchParams()
     params.append('q', query)
-    const { data } = await http.get<GlobalSearchResult>(`/search?${params}`)
+    const { data } = await http.get<GlobalSearchResult>(`/search?${params}`, { signal })
     return data
   },
 }

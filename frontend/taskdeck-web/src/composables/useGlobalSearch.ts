@@ -55,7 +55,7 @@ export function useGlobalSearch(debounceMs = 250) {
     error.value = null
 
     try {
-      const result = await searchApi.search(searchQuery.trim())
+      const result = await searchApi.search(searchQuery.trim(), abortController.signal)
       boards.value = result.boards
       cards.value = result.cards
     } catch (err: unknown) {
