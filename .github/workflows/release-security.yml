@@ -1,8 +1,9 @@
 # =============================================================================
-# Release Security — deep dependency inventory and vulnerability signal lane.
-# Runs on tag push, release publish, and manual dispatch.
+# Release Security — deep dependency inventory, vulnerability signal, and SBOM
+# generation lane. Runs on tag push, release publish, and manual dispatch.
 # For lighter release build verification, see ci-release.yml.
 # Topology context documented in ci-required.yml header.
+# SBOM/provenance: OPS-11 (#103) via reusable-sbom-provenance.yml
 # =============================================================================
 
 name: Release Security
@@ -126,8 +127,9 @@ jobs:
           - container image artifact generation and checksum output via reusable container workflow
 
           Planned follow-through:
-          - OPS-11 (`#103`): SBOM/provenance generation and attestation policy hardening
           - SEC-09 (`#106`) / OPS-17 (`#148`): dependency vulnerability policy + automation tightening
+
+          SBOM and provenance artifacts are generated in the `sbom-provenance` job.
           EOF
 
       - name: Upload dependency and security artifacts
@@ -137,6 +139,13 @@ jobs:
           name: release-security-artifacts
           path: /tmp/release-security
           if-no-files-found: ignore
+
+  sbom-provenance:
+    name: SBOM and Release Provenance
+    uses: ./.github/workflows/reusable-sbom-provenance.yml
+    with:
+      artifact-name: release-security-sbom-provenance
+      retention-days: 90
 
   container-images:
     name: Container Image Artifacts

@@ -37,11 +37,12 @@
 #
 #   ci-release.yml           release lane (tag/release/manual)
 #     ├── release build verification (backend + frontend)
-#     ├── SBOM/provenance placeholder (follow-through: #103, #106, #148)
+#     ├── reusable-sbom-provenance.yml  (CycloneDX SBOM + SLSA provenance, #103)
 #     └── reusable-container-images.yml
 #
 #   release-security.yml     release security deep scan (tag/release/manual)
 #     ├── dependency inventory + vulnerability scan + enforcement
+#     ├── reusable-sbom-provenance.yml  (CycloneDX SBOM + SLSA provenance, #103)
 #     └── reusable-container-images.yml
 #
 #   pages-frontend.yml       GitHub Pages deploy (main push, frontend paths)
