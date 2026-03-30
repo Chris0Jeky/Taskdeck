@@ -149,6 +149,58 @@ describe('useBoardKeyboardNav', () => {
     expect(nav.selectedCardId.value).toBeNull()
   })
 
+  describe('openSelectedCard', () => {
+    it('selects the first card and clicks its DOM element when no card is selected', () => {
+      const mockElement = {
+        scrollIntoView: vi.fn(),
+        click: vi.fn(),
+      } as unknown as HTMLElement
+
+      const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
+
+      const nav = useBoardKeyboardNav(sortedColumns)
+      nav.selectedCardId.value = null
+      nav.openSelectedCard()
+
+      // Should have selected card-1 (first in column)
+      expect(nav.selectedCardId.value).toBe('card-1')
+      expect(querySpy).toHaveBeenCalledWith('[data-card-id="card-1"]')
+      expect(mockElement.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+      expect(mockElement.click).toHaveBeenCalled()
+
+      querySpy.mockRestore()
+    })
+
+    it('clicks the DOM element for an already-selected card', () => {
+      const mockElement = {
+        scrollIntoView: vi.fn(),
+        click: vi.fn(),
+      } as unknown as HTMLElement
+
+      const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
+
+      const nav = useBoardKeyboardNav(sortedColumns)
+      nav.selectedCardId.value = 'card-2'
+      nav.openSelectedCard()
+
+      expect(querySpy).toHaveBeenCalledWith('[data-card-id="card-2"]')
+      expect(mockElement.click).toHaveBeenCalled()
+
+      querySpy.mockRestore()
+    })
+
+    it('does nothing when the card element is not in the DOM', () => {
+      const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(null)
+
+      const nav = useBoardKeyboardNav(sortedColumns)
+      nav.selectedCardId.value = 'card-1'
+      // Should not throw
+      nav.openSelectedCard()
+
+      querySpy.mockRestore()
+    })
+  })
+
   describe('moveCardToNextColumn', () => {
     beforeEach(() => {
       moveCard.mockReset()
@@ -317,6 +369,45 @@ describe('useBoardKeyboardNav', () => {
 
       // Should not throw
       await expect(nav.moveCardToNextColumn()).resolves.not.toThrow()
+    })
+  })
+
+  describe('focusSelectedCard (via move operations)', () => {
+    beforeEach(() => {
+      moveCard.mockReset()
+      moveCard.mockResolvedValue(undefined)
+    })
+
+    it('scrolls and focuses the card element after a successful move', async () => {
+      const mockElement = {
+        scrollIntoView: vi.fn(),
+        focus: vi.fn(),
+      } as unknown as HTMLElement
+
+      const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(mockElement)
+
+      const nav = useBoardKeyboardNav(sortedColumns, () => 'board-1')
+      nav.selectedCardId.value = 'card-1'
+      nav.selectedColumnIndex.value = 0
+
+      await nav.moveCardToNextColumn()
+
+      expect(mockElement.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+      expect(mockElement.focus).toHaveBeenCalled()
+
+      querySpy.mockRestore()
+    })
+
+    it('does not throw when the card element is absent after move', async () => {
+      const querySpy = vi.spyOn(document, 'querySelector').mockReturnValue(null)
+
+      const nav = useBoardKeyboardNav(sortedColumns, () => 'board-1')
+      nav.selectedCardId.value = 'card-1'
+      nav.selectedColumnIndex.value = 0
+
+      await expect(nav.moveCardToNextColumn()).resolves.not.toThrow()
+
+      querySpy.mockRestore()
     })
   })
 })

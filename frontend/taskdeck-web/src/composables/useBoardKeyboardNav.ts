@@ -159,10 +159,10 @@ export function useBoardKeyboardNav(
   }
 
   /**
-   * Move the currently selected card to the next column (right).
-   * The card is placed at the end of the target column.
+   * Shared logic for moving the selected card to an adjacent column.
+   * Private helper — not exported.
    */
-  async function moveCardToNextColumn() {
+  async function moveCardToAdjacentColumn(direction: 'next' | 'previous') {
     if (!boardId) return
     const columns = sortedColumns.value
     if (columns.length === 0) return
@@ -171,22 +171,26 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const nextColIndex = selectedColumnIndex.value + 1
-    if (nextColIndex >= columns.length) return
+    const targetColIndex =
+      direction === 'next'
+        ? selectedColumnIndex.value + 1
+        : selectedColumnIndex.value - 1
 
-    const nextColumn = columns[nextColIndex]
-    if (!nextColumn) return
+    if (targetColIndex < 0 || targetColIndex >= columns.length) return
+
+    const targetColumn = columns[targetColIndex]
+    if (!targetColumn) return
 
     const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
     const card = cards.find((c) => c.id === selectedCardId.value)
     if (!card) return
 
-    const targetCards = boardStore.cardsByColumn.get(nextColumn.id) || []
+    const targetCards = boardStore.cardsByColumn.get(targetColumn.id) || []
     const targetPosition = targetCards.length
 
     try {
-      await boardStore.moveCard(boardId(), card.id, nextColumn.id, targetPosition)
-      selectedColumnIndex.value = nextColIndex
+      await boardStore.moveCard(boardId(), card.id, targetColumn.id, targetPosition)
+      selectedColumnIndex.value = targetColIndex
       await focusSelectedCard()
     } catch {
       // moveCard already surfaces toast errors via the store
@@ -194,10 +198,26 @@ export function useBoardKeyboardNav(
   }
 
   /**
+   * Move the currently selected card to the next column (right).
+   * The card is placed at the end of the target column.
+   */
+  async function moveCardToNextColumn() {
+    await moveCardToAdjacentColumn('next')
+  }
+
+  /**
    * Move the currently selected card to the previous column (left).
    * The card is placed at the end of the target column.
    */
   async function moveCardToPreviousColumn() {
+    await moveCardToAdjacentColumn('previous')
+  }
+
+  /**
+   * Shared logic for reordering the selected card within its current column.
+   * Private helper — not exported.
+   */
+  async function reorderCard(direction: 'up' | 'down') {
     if (!boardId) return
     const columns = sortedColumns.value
     if (columns.length === 0) return
@@ -206,22 +226,25 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const prevColIndex = selectedColumnIndex.value - 1
-    if (prevColIndex < 0) return
-
-    const prevColumn = columns[prevColIndex]
-    if (!prevColumn) return
-
     const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
-    const card = cards.find((c) => c.id === selectedCardId.value)
+    const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
+
+    if (direction === 'up') {
+      if (cardIndex <= 0) return // already at top or not found
+    } else {
+      if (cardIndex === -1 || cardIndex >= cards.length - 1) return // already at bottom or not found
+    }
+
+    const card = cards[cardIndex]
     if (!card) return
 
-    const targetCards = boardStore.cardsByColumn.get(prevColumn.id) || []
-    const targetPosition = targetCards.length
+    const targetPosition =
+      direction === 'up'
+        ? cards[cardIndex - 1]!.position
+        : cards[cardIndex + 1]!.position
 
     try {
-      await boardStore.moveCard(boardId(), card.id, prevColumn.id, targetPosition)
-      selectedColumnIndex.value = prevColIndex
+      await boardStore.moveCard(boardId(), card.id, currentColumn.id, targetPosition)
       await focusSelectedCard()
     } catch {
       // moveCard already surfaces toast errors via the store
@@ -232,58 +255,14 @@ export function useBoardKeyboardNav(
    * Reorder the selected card up (lower position) within its current column.
    */
   async function moveCardUp() {
-    if (!boardId) return
-    const columns = sortedColumns.value
-    if (columns.length === 0) return
-    if (!selectedCardId.value) return
-
-    const currentColumn = columns[selectedColumnIndex.value]
-    if (!currentColumn) return
-
-    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
-    const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
-    if (cardIndex <= 0) return // already at top or not found
-
-    const card = cards[cardIndex]
-    if (!card) return
-
-    const targetPosition = cards[cardIndex - 1]!.position
-
-    try {
-      await boardStore.moveCard(boardId(), card.id, currentColumn.id, targetPosition)
-      await focusSelectedCard()
-    } catch {
-      // moveCard already surfaces toast errors via the store
-    }
+    await reorderCard('up')
   }
 
   /**
    * Reorder the selected card down (higher position) within its current column.
    */
   async function moveCardDown() {
-    if (!boardId) return
-    const columns = sortedColumns.value
-    if (columns.length === 0) return
-    if (!selectedCardId.value) return
-
-    const currentColumn = columns[selectedColumnIndex.value]
-    if (!currentColumn) return
-
-    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
-    const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
-    if (cardIndex === -1 || cardIndex >= cards.length - 1) return // already at bottom or not found
-
-    const card = cards[cardIndex]
-    if (!card) return
-
-    const targetPosition = cards[cardIndex + 1]!.position
-
-    try {
-      await boardStore.moveCard(boardId(), card.id, currentColumn.id, targetPosition)
-      await focusSelectedCard()
-    } catch {
-      // moveCard already surfaces toast errors via the store
-    }
+    await reorderCard('down')
   }
 
   function resetSelection() {
