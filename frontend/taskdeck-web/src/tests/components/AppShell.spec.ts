@@ -346,7 +346,7 @@ describe('AppShell workspace navigation and command palette', () => {
     const input = wrapper.get('.td-command-palette__input')
     expect(input.attributes('role')).toBe('combobox')
     expect(input.attributes('aria-controls')).toBe('td-command-palette-listbox')
-    expect(input.attributes('aria-activedescendant')).toBe('td-command-option-0')
+    expect(input.attributes('aria-activedescendant')).toBe('td-palette-option-0')
 
     const listbox = wrapper.get('#td-command-palette-listbox')
     expect(listbox.attributes('role')).toBe('listbox')
@@ -359,7 +359,7 @@ describe('AppShell workspace navigation and command palette', () => {
 
     options = wrapper.findAll('[role="option"]')
     expect(options[1].attributes('aria-selected')).toBe('true')
-    expect(wrapper.get('.td-command-palette__input').attributes('aria-activedescendant')).toBe('td-command-option-1')
+    expect(wrapper.get('.td-command-palette__input').attributes('aria-activedescendant')).toBe('td-palette-option-1')
   })
 
   it('closes only the top-most escape surface first', async () => {
