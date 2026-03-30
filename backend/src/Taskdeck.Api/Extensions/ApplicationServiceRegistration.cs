@@ -42,6 +42,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IKnowledgeService, KnowledgeService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IStarterPackManifestValidator, StarterPackManifestValidator>();
         services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
         services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();

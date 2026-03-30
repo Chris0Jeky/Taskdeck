@@ -114,4 +114,26 @@ public class CardRepository : Repository<Card>, ICardRepository
                 .ThenInclude(cl => cl.Label)
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
+
+    public async Task<IEnumerable<Card>> SearchAcrossBoardsAsync(
+        IEnumerable<Guid> boardIds,
+        string searchText,
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        var materializedBoardIds = boardIds.Distinct().ToList();
+        if (materializedBoardIds.Count == 0 || string.IsNullOrWhiteSpace(searchText))
+            return [];
+
+        return await _dbSet
+            .AsNoTracking()
+            .Where(c => materializedBoardIds.Contains(c.BoardId))
+            .Where(c => c.Title.Contains(searchText) || c.Description.Contains(searchText))
+            .Include(c => c.Board)
+            .Include(c => c.Column)
+            .OrderBy(c => c.BoardId)
+                .ThenBy(c => c.Position)
+            .Take(maxResults)
+            .ToListAsync(cancellationToken);
+    }
 }

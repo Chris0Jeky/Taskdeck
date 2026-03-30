@@ -10,4 +10,5 @@ public interface ICardRepository : IRepository<Card>
     Task<IEnumerable<Card>> GetByColumnIdAsync(Guid columnId, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> SearchAsync(Guid boardId, string? searchText, Guid? labelId, Guid? columnId, CancellationToken cancellationToken = default);
     Task<Card?> GetByIdWithLabelsAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IEnumerable<Card>> SearchAcrossBoardsAsync(IEnumerable<Guid> boardIds, string searchText, int maxResults, CancellationToken cancellationToken = default);
 }
