@@ -79,7 +79,6 @@ const boardCount = computed(() => searchBoards.value.length)
 const cardCount = computed(() => searchCards.value.length)
 
 const hasQuery = computed(() => commandQuery.value.trim().length >= 2)
-const hasSearchResults = computed(() => boardCount.value > 0 || cardCount.value > 0)
 
 const activeItemId = computed(() => {
   if (allPaletteItems.value.length === 0) {
