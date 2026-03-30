@@ -35,6 +35,7 @@ public static class CaptureRequestContract
     public const string RequestTypeV1 = "inbox.capture.v1";
     public const int CurrentSchemaVersion = 1;
     public const int MaxRawTextLength = 20_000;
+    public const int MaxTranscriptTextLength = 51_200;
     public const int MaxTitleHintLength = 240;
     public const int MaxExternalRefLength = 2_048;
     public const int MaxPromptVersionLength = 64;
@@ -170,11 +171,12 @@ public static class CaptureRequestContract
             return Result.Failure<CapturePayloadV1>(ErrorCodes.ValidationError, "Capture text cannot be empty");
         }
 
-        if (payload.Text.Length > MaxRawTextLength)
+        var effectiveMaxLength = IsTranscriptSource(payload.Source) ? MaxTranscriptTextLength : MaxRawTextLength;
+        if (payload.Text.Length > effectiveMaxLength)
         {
             return Result.Failure<CapturePayloadV1>(
                 ErrorCodes.ValidationError,
-                $"Capture text cannot exceed {MaxRawTextLength} characters");
+                $"Capture text cannot exceed {effectiveMaxLength} characters");
         }
 
         if (payload.TitleHint?.Length > MaxTitleHintLength)
@@ -417,6 +419,11 @@ public static class CaptureRequestContract
         }
 
         return Result.Success();
+    }
+
+    public static bool IsTranscriptSource(CaptureSource source)
+    {
+        return source is CaptureSource.TranscriptPaste or CaptureSource.TranscriptFile;
     }
 
     private static bool IsSupportedSourceSurface(string sourceSurface)
