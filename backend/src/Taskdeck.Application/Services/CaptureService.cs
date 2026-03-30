@@ -404,7 +404,7 @@ public class CaptureService : ICaptureService
             currentPayload.Version,
             currentPayload.Source,
             dto.Text,
-            null,
+            currentPayload.ClientCreatedAt,
             dto.TitleHint ?? currentPayload.TitleHint,
             currentPayload.ExternalRef,
             currentPayload.Provenance);
