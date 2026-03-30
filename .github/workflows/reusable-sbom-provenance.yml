@@ -192,7 +192,7 @@ jobs:
         shell: bash
         run: |
           cd "$SBOM_DIR"
-          sha256sum *.json > checksums.sha256 2>/dev/null || true
+          sha256sum ./*.json > checksums.sha256 2>/dev/null || true
           echo "Checksums:"
           cat checksums.sha256
 
