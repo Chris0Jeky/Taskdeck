@@ -75,7 +75,7 @@ export default [
   {
     files: ['**/*.vue'],
     rules: {
-      // Warn-level for rules that may need gradual remediation
+      // Warn-level for rules that need gradual remediation across the codebase
       'vuejs-accessibility/click-events-have-key-events': 'warn',
       'vuejs-accessibility/interactive-supports-focus': 'warn',
       // Allow mouseenter without focus equivalent (visual enhancement only)
@@ -84,6 +84,12 @@ export default [
       'vuejs-accessibility/form-control-has-label': 'warn',
       // label-has-for requires explicit for/id binding — warn during rollout
       'vuejs-accessibility/label-has-for': 'warn',
+      // Div/span click handlers are common in Vue component patterns — warn for gradual migration
+      'vuejs-accessibility/no-static-element-interactions': 'warn',
+      // Autofocus is intentional in modals and command palettes for UX
+      'vuejs-accessibility/no-autofocus': 'warn',
+      // Redundant roles (e.g. role="list" on <ul>) are harmless — warn only
+      'vuejs-accessibility/no-redundant-roles': 'warn',
     },
   },
 
