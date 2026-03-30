@@ -53,6 +53,15 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsync($"/api/capture/items/{itemId}/triage", null));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsJsonAsync("/api/capture/items/batch-triage",
+                new BatchTriageRequestDto(new List<BatchTriageItemActionDto>
+                    { new(Guid.NewGuid(), "triage") })));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PutAsJsonAsync($"/api/capture/items/{itemId}/suggestion",
+                new UpdateCaptureSuggestionDto("edited")));
     }
 
     [Fact]
@@ -513,6 +522,140 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
         var response = await outsiderClient.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
         await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task BatchTriage_ShouldTriageMultipleItems()
+    {
+        await AuthenticateAsAsync("capture-batch-triage");
+
+        var create1 = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "batch item 1"));
+        create1.StatusCode.Should().Be(HttpStatusCode.Created);
+        var item1 = await create1.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        var create2 = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "batch item 2"));
+        create2.StatusCode.Should().Be(HttpStatusCode.Created);
+        var item2 = await create2.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/capture/items/batch-triage",
+            new BatchTriageRequestDto(new List<BatchTriageItemActionDto>
+            {
+                new(item1!.Id, "triage"),
+                new(item2!.Id, "ignore")
+            }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<BatchTriageResultDto>();
+        result.Should().NotBeNull();
+        result!.Total.Should().Be(2);
+        result.Succeeded.Should().Be(2);
+        result.Failed.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task BatchTriage_ShouldReturnPartialSuccess_WhenSomeItemsFail()
+    {
+        await AuthenticateAsAsync("capture-batch-partial");
+
+        var create1 = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "batch partial item 1"));
+        create1.StatusCode.Should().Be(HttpStatusCode.Created);
+        var item1 = await create1.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/capture/items/batch-triage",
+            new BatchTriageRequestDto(new List<BatchTriageItemActionDto>
+            {
+                new(item1!.Id, "triage"),
+                new(Guid.NewGuid(), "triage")
+            }));
+
+        response.StatusCode.Should().Be((HttpStatusCode)207);
+        var result = await response.Content.ReadFromJsonAsync<BatchTriageResultDto>();
+        result.Should().NotBeNull();
+        result!.Total.Should().Be(2);
+        result.Succeeded.Should().Be(1);
+        result.Failed.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task BatchTriage_ShouldReturnBadRequest_WhenEmptyItems()
+    {
+        await AuthenticateAsAsync("capture-batch-empty");
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/capture/items/batch-triage",
+            new BatchTriageRequestDto(new List<BatchTriageItemActionDto>()));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
+    public async Task UpdateSuggestion_ShouldUpdateCaptureText()
+    {
+        await AuthenticateAsAsync("capture-edit-suggestion");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "original text for editing"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("edited text with improvements", "New Title"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+        updated.Should().NotBeNull();
+        updated!.RawText.Should().Be("edited text with improvements");
+    }
+
+    [Fact]
+    public async Task UpdateSuggestion_ShouldReturnForbidden_WhenItemBelongsToDifferentUser()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "capture-edit-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "capture-edit-outsider");
+
+        var createResponse = await ownerClient.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "owner edit payload"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        var response = await outsiderClient.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("hacked text"));
+        await ApiTestHarness.AssertForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestion_ShouldReturnConflict_WhenItemIsTriaging()
+    {
+        await AuthenticateAsAsync("capture-edit-conflict");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "triaging edit payload"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("edited while triaging"));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Conflict, "Conflict");
     }
 
     private async Task AuthenticateAsAsync(string stem)
