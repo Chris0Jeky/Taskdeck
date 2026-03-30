@@ -1,5 +1,7 @@
+using System.Reflection;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.OpenApi;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.FirstRun;
 using Taskdeck.Infrastructure;
@@ -21,7 +23,52 @@ using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Taskdeck API",
+        Version = "v1",
+        Description = "Local-first execution workspace API. Provides board management, capture pipeline, "
+            + "chat-to-proposal automation, webhook integrations, and review-first governance.",
+        Contact = new OpenApiContact
+        {
+            Name = "Taskdeck Contributors",
+            Url = new Uri("https://github.com/Chris0Jeky/Taskdeck")
+        },
+        License = new OpenApiLicense
+        {
+            Name = "MIT"
+        }
+    });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. "
+            + "Enter your token in the text input below. Example: 'eyJhbGci...'",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT"
+    });
+
+    options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecuritySchemeReference("Bearer"),
+            new List<string>()
+        }
+    });
+
+    // Include XML comments from the API project
+    var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
+    if (File.Exists(xmlPath))
+    {
+        options.IncludeXmlComments(xmlPath);
+    }
+});
 
 // Bind configuration settings (observability, rate limiting, security headers, JWT, etc.)
 builder.Services.AddTaskdeckSettings(

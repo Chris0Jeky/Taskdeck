@@ -1,0 +1,66 @@
+name: Reusable Developer Portal
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version used for OpenAPI generation
+        required: false
+        default: "8.0.x"
+        type: string
+      node-version:
+        description: Node.js version used for Redoc CLI
+        required: false
+        default: "24.x"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  developer-portal:
+    name: Generate Developer Portal
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Generate OpenAPI spec
+        shell: pwsh
+        run: ./scripts/ci/generate-openapi-artifact.ps1 -OutputPath "artifacts/openapi/taskdeck-api.json"
+
+      - name: Generate Redoc static HTML
+        run: |
+          npx @redocly/cli build-docs artifacts/openapi/taskdeck-api.json \
+            --output artifacts/developer-portal/index.html \
+            --title "Taskdeck API Reference"
+
+      - name: Copy integration docs
+        run: |
+          cp -r docs/api/ artifacts/developer-portal/guides/
+
+      - name: Upload developer portal artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: developer-portal
+          path: artifacts/developer-portal/
+          if-no-files-found: warn
