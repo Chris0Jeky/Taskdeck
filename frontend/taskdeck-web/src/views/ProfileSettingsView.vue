@@ -74,6 +74,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
   newOps: 'Ops Console',
   newAutomation: 'Automation & Queue',
   newArchive: 'Archive & Export/Import',
+  devTools: 'Dev Tools (Internal)',
 }
 </script>
 

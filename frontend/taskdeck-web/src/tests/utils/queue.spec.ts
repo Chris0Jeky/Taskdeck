@@ -15,6 +15,10 @@ describe('queue utils', () => {
     expect(normalizeQueueStatus('unknown' as QueueStatusValue)).toBe('Pending')
   })
 
+  it('falls back to Pending for out-of-range numeric status', () => {
+    expect(normalizeQueueStatus(99 as QueueStatusValue)).toBe('Pending')
+  })
+
   it('normalizes request status field', () => {
     const request: QueueRequest = {
       id: 'r1',

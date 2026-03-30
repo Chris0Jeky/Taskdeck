@@ -6,6 +6,7 @@ export interface FeatureFlags {
   newOps: boolean
   newAutomation: boolean
   newArchive: boolean
+  devTools: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -18,4 +19,5 @@ export const defaultFeatureFlags: FeatureFlags = {
   newActivity: false,
   newOps: false,
   newArchive: false,
+  devTools: false,
 }

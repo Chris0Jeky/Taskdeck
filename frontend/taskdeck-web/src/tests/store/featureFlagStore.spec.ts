@@ -66,6 +66,15 @@ describe('featureFlagStore', () => {
         expect(store.isEnabled(key)).toBe(defaultFeatureFlags[key])
       }
     })
+
+    it('should use defaults when no flags are saved in localStorage', () => {
+      // localStorage is clear from beforeEach
+      store.restore()
+
+      for (const key of Object.keys(defaultFeatureFlags) as (keyof typeof defaultFeatureFlags)[]) {
+        expect(store.isEnabled(key)).toBe(defaultFeatureFlags[key])
+      }
+    })
   })
 
   describe('allEnabled', () => {
