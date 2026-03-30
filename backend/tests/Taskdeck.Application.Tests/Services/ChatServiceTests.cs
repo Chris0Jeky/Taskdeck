@@ -1005,12 +1005,11 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_ShouldCreateMultipleProposals_WhenMultipleInstructionsExtracted()
+    public async Task SendMessageAsync_ShouldCreateBatchProposal_WhenMultipleInstructionsExtracted()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
-        var proposalId1 = Guid.NewGuid();
-        var proposalId2 = Guid.NewGuid();
+        var batchProposalId = Guid.NewGuid();
         var session = new ChatSession(userId, "Multi-instruction session", boardId);
 
         _chatSessionRepoMock
@@ -1029,33 +1028,19 @@ public class ChatServiceTests
                     "create card 'Read docs'"
                 }));
 
+        // Multiple instructions now use ParseBatchInstructionAsync for atomic proposal
         _plannerMock
-            .Setup(p => p.ParseInstructionAsync(
-                "create card 'Setup environment'",
+            .Setup(p => p.ParseBatchInstructionAsync(
+                It.Is<IReadOnlyList<string>>(list => list.Count == 2),
                 userId,
                 boardId,
                 It.IsAny<CancellationToken>(),
                 It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(), It.IsAny<string?>()))
             .ReturnsAsync(Result.Success(new ProposalDto(
-                proposalId1, ProposalSourceType.Chat, null, boardId, userId,
+                batchProposalId, ProposalSourceType.Chat, null, boardId, userId,
                 ProposalStatus.PendingReview, RiskLevel.Low,
-                "create card", null, null,
-                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
-                DateTime.UtcNow.AddHours(1), null, null, null, null,
-                "corr", new List<ProposalOperationDto>())));
-        _plannerMock
-            .Setup(p => p.ParseInstructionAsync(
-                "create card 'Read docs'",
-                userId,
-                boardId,
-                It.IsAny<CancellationToken>(),
-                It.IsAny<ProposalSourceType>(),
-                It.IsAny<string?>(), It.IsAny<string?>()))
-            .ReturnsAsync(Result.Success(new ProposalDto(
-                proposalId2, ProposalSourceType.Chat, null, boardId, userId,
-                ProposalStatus.PendingReview, RiskLevel.Low,
-                "create card", null, null,
+                "Batch: 2 operations", null, null,
                 DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
                 DateTime.UtcNow.AddHours(1), null, null, null, null,
                 "corr", new List<ProposalOperationDto>())));
@@ -1068,7 +1053,19 @@ public class ChatServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("proposal-reference");
-        result.Value.Content.Should().Contain("2 proposals created");
+        result.Value.ProposalId.Should().Be(batchProposalId);
+        result.Value.Content.Should().Contain("Proposal created for review");
+
+        // Verify batch method was called, not individual parsing
+        _plannerMock.Verify(
+            p => p.ParseBatchInstructionAsync(
+                It.Is<IReadOnlyList<string>>(list => list.Count == 2),
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Once);
     }
 
     [Fact]

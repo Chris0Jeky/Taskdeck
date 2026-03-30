@@ -199,7 +199,7 @@ export async function waitFor(fn, { label = 'condition', timeoutMs = 30_000, int
 
 export async function ensureUser(api, { username, email, password }) {
   const loginBody = { usernameOrEmail: username, password }
-  let loginError = null
+  let loginError
   try {
     return await api.post('/auth/login', { body: loginBody })
   } catch (err) {

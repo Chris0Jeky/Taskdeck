@@ -32,6 +32,7 @@ public class ChatService : IChatService
     private readonly IAuthorizationService? _authorizationService;
     private readonly ILlmQuotaService? _quotaService;
     private readonly ILlmKillSwitchService? _killSwitchService;
+    private readonly IBoardContextBuilder? _boardContextBuilder;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -42,7 +43,8 @@ public class ChatService : IChatService
         INotificationService? notificationService = null,
         IAuthorizationService? authorizationService = null,
         ILlmQuotaService? quotaService = null,
-        ILlmKillSwitchService? killSwitchService = null)
+        ILlmKillSwitchService? killSwitchService = null,
+        IBoardContextBuilder? boardContextBuilder = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -53,6 +55,7 @@ public class ChatService : IChatService
         _authorizationService = authorizationService;
         _quotaService = quotaService;
         _killSwitchService = killSwitchService;
+        _boardContextBuilder = boardContextBuilder;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -191,9 +194,13 @@ public class ChatService : IChatService
                     .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
                     .ToList();
 
+                // Build board context for board-scoped sessions
+                var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
                 var completionRequest = new ChatCompletionRequest(
                     chatMessages,
-                    Attribution: BuildAttribution(session, userId));
+                    Attribution: BuildAttribution(session, userId),
+                    BoardContext: boardContext);
                 var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
@@ -235,56 +242,55 @@ public class ChatService : IChatService
                             ? llmResult.Instructions
                             : new List<string> { dto.Content };
 
-                        Result<ProposalDto>? lastFailure = null;
-                        var proposalIds = new List<Guid>();
-
-                        foreach (var instruction in instructionsToParse)
+                        // Use batch parsing for multiple instructions to create a single
+                        // atomic proposal. For single instructions, use the original
+                        // single-instruction parser for backward compatibility.
+                        Result<ProposalDto>? proposalResult;
+                        if (instructionsToParse.Count > 1)
                         {
-                            var proposalResult = await _automationPlanner.ParseInstructionAsync(
-                                instruction,
+                            proposalResult = await _automationPlanner.ParseBatchInstructionAsync(
+                                instructionsToParse,
                                 userId,
                                 session.BoardId,
                                 ct,
                                 sourceType: ProposalSourceType.Chat,
                                 sourceReferenceId: session.Id.ToString());
-
-                            if (proposalResult.IsSuccess)
-                            {
-                                proposalIds.Add(proposalResult.Value.Id);
-                            }
-                            else
-                            {
-                                lastFailure ??= proposalResult;
-                            }
+                        }
+                        else
+                        {
+                            proposalResult = await _automationPlanner.ParseInstructionAsync(
+                                instructionsToParse[0],
+                                userId,
+                                session.BoardId,
+                                ct,
+                                sourceType: ProposalSourceType.Chat,
+                                sourceReferenceId: session.Id.ToString());
                         }
 
-                        if (proposalIds.Count > 0)
+                        if (proposalResult.IsSuccess)
                         {
                             messageType = "proposal-reference";
-                            proposalId = proposalIds[0];
-                            var idList = string.Join(", ", proposalIds);
-                            assistantContent = proposalIds.Count == 1
-                                ? $"{llmResult.Content}\n\nProposal created for review: {idList}"
-                                : $"{llmResult.Content}\n\n{proposalIds.Count} proposals created for review: {idList}";
+                            proposalId = proposalResult.Value.Id;
+                            assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
                         }
-                        else if (lastFailure != null)
+                        else
                         {
-                            if (lastFailure.ErrorMessage?.Contains(AutomationPlannerService.ParseHintMarker) == true)
+                            if (proposalResult.ErrorMessage?.Contains(AutomationPlannerService.ParseHintMarker) == true)
                             {
                                 var hintContext = llmResult.IsActionable
                                     ? "I detected a task request but could not parse it into a proposal."
                                     : "Could not create the requested proposal.";
-                                assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{lastFailure.ErrorMessage}";
+                                assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{proposalResult.ErrorMessage}";
                                 messageType = "parse-hint";
                             }
                             else if (llmResult.IsActionable)
                             {
-                                assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {lastFailure.ErrorMessage})";
+                                assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})";
                                 messageType = "status";
                             }
                             else
                             {
-                                assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {lastFailure.ErrorMessage})";
+                                assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
                                 messageType = "status";
                             }
                         }
@@ -345,9 +351,13 @@ public class ChatService : IChatService
             .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
             .ToList();
 
+        // Build board context for board-scoped sessions
+        var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
         var request = new ChatCompletionRequest(
             chatMessages,
-            Attribution: BuildAttribution(session, userId));
+            Attribution: BuildAttribution(session, userId),
+            BoardContext: boardContext);
 
         // TODO: Streaming responses cannot record usage because token counts are
         // not available until the stream completes. Implement post-stream usage
@@ -362,6 +372,12 @@ public class ChatService : IChatService
     {
         var normalized = content.ToLowerInvariant();
         return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
+    }
+
+    private async Task<string?> BuildBoardContextForSessionAsync(ChatSession session, CancellationToken ct)
+    {
+        if (_boardContextBuilder == null || session.BoardId == null) return null;
+        return await _boardContextBuilder.BuildContextAsync(session.BoardId.Value, ct);
     }
 
     private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)

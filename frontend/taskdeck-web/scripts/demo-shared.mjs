@@ -29,7 +29,7 @@ export function assertSafeLocalApiTarget(
   try {
     hostname = getHostname(apiBaseUrl)
   } catch (err) {
-    throw new Error(`Invalid API base URL "${apiBaseUrl}". ${err?.message || err}`)
+    throw new Error(`Invalid API base URL "${apiBaseUrl}". ${err?.message || err}`, { cause: err })
   }
 
   if (isLocalHostname(hostname) || allowNonLocal) {

@@ -44,6 +44,7 @@ function makeCard(id: string, position = 0): Card {
 const defaultProps = {
   boardId: 'board-1',
   labels: [] as Label[],
+  allColumns: [] as Column[],
   draggedCard: null,
   selectedCardId: null,
 }
@@ -303,5 +304,175 @@ describe('ColumnLane — card modal', () => {
 
     expect((wrapper.vm as any).selectedCard).toBeNull()
     expect((wrapper.vm as any).showCardModal).toBe(false)
+  })
+})
+
+describe('ColumnLane — handleCardMoveTo', () => {
+  let mockBoardStore: any
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockBoardStore = {
+      createCard: vi.fn().mockResolvedValue({}),
+      moveCard: vi.fn().mockResolvedValue({}),
+      cardsByColumn: new Map<string, Card[]>(),
+    }
+    vi.mocked(useBoardStore).mockReturnValue(mockBoardStore as any)
+  })
+
+  it('calls moveCard and moves the card to the target column', async () => {
+    const column = makeColumn({ id: 'col-1' })
+    const targetColumn = makeColumn({ id: 'col-2', name: 'Done' })
+    const card = makeCard('c1')
+    // No cards yet in target column
+    mockBoardStore.cardsByColumn.set('col-2', [])
+
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [card], allColumns: [column, targetColumn] },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    await (wrapper.vm as any).handleCardMoveTo(card, 'col-2')
+
+    expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'c1', 'col-2', 0)
+  })
+
+  it('does nothing when card is already in the target column', async () => {
+    const column = makeColumn({ id: 'col-1' })
+    const card = makeCard('c1') // columnId is 'col-1'
+
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [card] },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    await (wrapper.vm as any).handleCardMoveTo(card, 'col-1')
+
+    expect(mockBoardStore.moveCard).not.toHaveBeenCalled()
+  })
+
+  it('handles moveCard errors without throwing', async () => {
+    const column = makeColumn({ id: 'col-1' })
+    const card = makeCard('c1')
+    mockBoardStore.moveCard.mockRejectedValue(new Error('Network error'))
+    mockBoardStore.cardsByColumn.set('col-2', [])
+
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [card] },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    await expect(
+      (wrapper.vm as any).handleCardMoveTo(card, 'col-2')
+    ).resolves.not.toThrow()
+  })
+
+  it('places the card at the end of a non-empty target column', async () => {
+    const column = makeColumn({ id: 'col-1' })
+    const card = makeCard('c1')
+    const existingCard = makeCard('existing', 0)
+    mockBoardStore.cardsByColumn.set('col-2', [existingCard])
+
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [card] },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    await (wrapper.vm as any).handleCardMoveTo(card, 'col-2')
+
+    expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'c1', 'col-2', 1)
+  })
+})
+
+describe('ColumnLane — drag and drop', () => {
+  let mockBoardStore: any
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mockBoardStore = {
+      createCard: vi.fn().mockResolvedValue({}),
+      moveCard: vi.fn().mockResolvedValue({}),
+      cardsByColumn: new Map<string, Card[]>(),
+    }
+    vi.mocked(useBoardStore).mockReturnValue(mockBoardStore as any)
+  })
+
+  it('handleDrop moves the dragged card to this column at the end', async () => {
+    const column = makeColumn({ id: 'col-2' })
+    const draggedCard = makeCard('drag-1')
+    draggedCard.columnId = 'col-1' // from a different column
+
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [], draggedCard },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    const fakeEvent = {
+      preventDefault: vi.fn(),
+      dataTransfer: null,
+    } as unknown as DragEvent
+
+    await (wrapper.vm as any).handleDrop(fakeEvent)
+
+    expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'drag-1', 'col-2', 0)
+  })
+
+  it('handleDrop does nothing when draggedCard is null', async () => {
+    const column = makeColumn()
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [], draggedCard: null },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    const fakeEvent = { preventDefault: vi.fn() } as unknown as DragEvent
+    await (wrapper.vm as any).handleDrop(fakeEvent)
+
+    expect(mockBoardStore.moveCard).not.toHaveBeenCalled()
+  })
+
+  it('handleDrop does nothing when dropping card in same column', async () => {
+    const column = makeColumn({ id: 'col-1' })
+    const draggedCard = makeCard('drag-1') // columnId is col-1
+
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [draggedCard], draggedCard },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    const fakeEvent = { preventDefault: vi.fn() } as unknown as DragEvent
+    await (wrapper.vm as any).handleDrop(fakeEvent)
+
+    expect(mockBoardStore.moveCard).not.toHaveBeenCalled()
+  })
+
+  it('handleDragOver sets isDragOver when card is from another column', () => {
+    const column = makeColumn({ id: 'col-2' })
+    const draggedCard = makeCard('drag-1')
+    draggedCard.columnId = 'col-1'
+
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [], draggedCard },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    const fakeEvent = {
+      preventDefault: vi.fn(),
+      dataTransfer: { dropEffect: '' },
+    } as unknown as DragEvent
+    ;(wrapper.vm as any).handleDragOver(fakeEvent)
+
+    expect((wrapper.vm as any).isDragOver).toBe(true)
+  })
+
+  it('handleDragLeave clears isDragOver', () => {
+    const column = makeColumn()
+    const wrapper = mount(ColumnLane, {
+      props: { ...defaultProps, column, cards: [] },
+      global: { stubs: { CardItem: true, CardModal: true, ColumnEditModal: true } },
+    })
+
+    ;(wrapper.vm as any).isDragOver = true
+    ;(wrapper.vm as any).handleDragLeave()
+    expect((wrapper.vm as any).isDragOver).toBe(false)
   })
 })

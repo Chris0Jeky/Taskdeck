@@ -17,8 +17,13 @@ namespace Taskdeck.Api.Controllers;
 public record ChangePasswordRequest(Guid UserId, string CurrentPassword, string NewPassword);
 public record ExchangeCodeRequest(string Code);
 
+/// <summary>
+/// Authentication endpoints — register, login, change password, and GitHub OAuth flow.
+/// All endpoints return a JWT token on successful authentication.
+/// </summary>
 [ApiController]
 [Route("api/auth")]
+[Produces("application/json")]
 public class AuthController : ControllerBase
 {
     private readonly AuthenticationService _authService;
@@ -34,9 +39,20 @@ public class AuthController : ControllerBase
         _gitHubOAuthSettings = gitHubOAuthSettings;
     }
 
+    /// <summary>
+    /// Authenticate with username/email and password. Returns a JWT token.
+    /// </summary>
+    /// <param name="dto">Login credentials.</param>
+    /// <returns>JWT token and user profile.</returns>
+    /// <response code="200">Login successful — JWT token returned.</response>
+    /// <response code="401">Invalid credentials.</response>
+    /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("login")]
     [SuppressModelStateValidation]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Login([FromBody] LoginDto? dto)
     {
         if (dto is null
@@ -52,16 +68,39 @@ public class AuthController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    /// <summary>
+    /// Register a new user account. Returns a JWT token.
+    /// </summary>
+    /// <param name="dto">Registration details: username, email, password.</param>
+    /// <returns>JWT token and user profile.</returns>
+    /// <response code="200">Registration successful — JWT token returned.</response>
+    /// <response code="400">Validation error (e.g., duplicate username/email).</response>
+    /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("register")]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Register([FromBody] CreateUserDto dto)
     {
         var result = await _authService.RegisterAsync(dto);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    /// <summary>
+    /// Change the password for an existing user.
+    /// </summary>
+    /// <param name="request">Current and new password.</param>
+    /// <response code="204">Password changed successfully.</response>
+    /// <response code="400">Validation error.</response>
+    /// <response code="401">Current password is incorrect.</response>
+    /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("change-password")]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         var result = await _authService.ChangePasswordAsync(request.UserId, request.CurrentPassword, request.NewPassword);

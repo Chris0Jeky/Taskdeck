@@ -422,4 +422,136 @@ public class CaptureRequestContractTests
 
         sanitized.Should().Be("unknown");
     }
+
+    [Fact]
+    public void IsTranscriptSource_ShouldReturnTrue_ForTranscriptPaste()
+    {
+        CaptureRequestContract.IsTranscriptSource(CaptureSource.TranscriptPaste).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsTranscriptSource_ShouldReturnTrue_ForTranscriptFile()
+    {
+        CaptureRequestContract.IsTranscriptSource(CaptureSource.TranscriptFile).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(CaptureSource.Typed)]
+    [InlineData(CaptureSource.Paste)]
+    [InlineData(CaptureSource.Import)]
+    [InlineData(CaptureSource.Voice)]
+    [InlineData(CaptureSource.MeetingIntegration)]
+    public void IsTranscriptSource_ShouldReturnFalse_ForNonTranscriptSources(CaptureSource source)
+    {
+        CaptureRequestContract.IsTranscriptSource(source).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ValidatePayload_ShouldAllowLargerText_ForTranscriptPasteSource()
+    {
+        var textLength = CaptureRequestContract.MaxRawTextLength + 1;
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.TranscriptPaste,
+            new string('t', textLength));
+
+        var result = CaptureRequestContract.ValidatePayload(payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Text.Should().HaveLength(textLength);
+    }
+
+    [Fact]
+    public void ValidatePayload_ShouldAllowLargerText_ForTranscriptFileSource()
+    {
+        var textLength = CaptureRequestContract.MaxRawTextLength + 1;
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.TranscriptFile,
+            new string('t', textLength));
+
+        var result = CaptureRequestContract.ValidatePayload(payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Text.Should().HaveLength(textLength);
+    }
+
+    [Fact]
+    public void ValidatePayload_ShouldFail_WhenTranscriptTextExceedsTranscriptMaxLength()
+    {
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.TranscriptPaste,
+            new string('t', CaptureRequestContract.MaxTranscriptTextLength + 1));
+
+        var result = CaptureRequestContract.ValidatePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("cannot exceed");
+        result.ErrorMessage.Should().Contain(CaptureRequestContract.MaxTranscriptTextLength.ToString());
+    }
+
+    [Fact]
+    public void ValidatePayload_ShouldAcceptTranscriptTextAtExactMaxLength()
+    {
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.TranscriptFile,
+            new string('t', CaptureRequestContract.MaxTranscriptTextLength));
+
+        var result = CaptureRequestContract.ValidatePayload(payload);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldParseTranscriptFileSource()
+    {
+        var payload = """
+                      {
+                        "version": 1,
+                        "source": "transcriptFile",
+                        "text": "meeting transcript content"
+                      }
+                      """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Source.Should().Be(CaptureSource.TranscriptFile);
+        result.Value.Text.Should().Be("meeting transcript content");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldParseTranscriptFileSourceAsNumeric()
+    {
+        var payload = """
+                      {
+                        "version": 1,
+                        "source": 6,
+                        "text": "meeting transcript content"
+                      }
+                      """;
+
+        var result = CaptureRequestContract.ParsePayload(payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Source.Should().Be(CaptureSource.TranscriptFile);
+    }
+
+    [Fact]
+    public void ValidatePayload_ShouldEnforceStandardLimit_ForNonTranscriptSources()
+    {
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            new string('x', CaptureRequestContract.MaxRawTextLength + 1));
+
+        var result = CaptureRequestContract.ValidatePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(CaptureRequestContract.MaxRawTextLength.ToString());
+    }
 }

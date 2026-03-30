@@ -91,8 +91,12 @@ const {
   selectPreviousColumn,
   openSelectedCard,
   createCardInSelectedColumn,
+  moveCardToNextColumn,
+  moveCardToPreviousColumn,
+  moveCardUp,
+  moveCardDown,
   resetSelection,
-} = useBoardKeyboardNav(sortedColumns)
+} = useBoardKeyboardNav(sortedColumns, () => boardId.value)
 
 function applyPresenceSeed() {
   const seed = currentUserPresenceSeed()
@@ -262,16 +266,25 @@ function closeOpenUi() {
 }
 
 // Setup keyboard shortcuts
+// Card movement shortcuts (Alt+Arrow) are listed before plain Arrow navigation
+// so the modifier-qualified binding matches first. Plain arrow navigation
+// explicitly sets `alt: false` to avoid firing when Alt is held.
 useKeyboardShortcuts([
+  // Card movement (Alt + Arrow keys)
+  { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn },
+  { key: 'ArrowLeft', alt: true, description: 'Move card to previous column', action: moveCardToPreviousColumn },
+  { key: 'ArrowUp', alt: true, description: 'Move card up in column', action: moveCardUp },
+  { key: 'ArrowDown', alt: true, description: 'Move card down in column', action: moveCardDown },
+
   // Navigation
   { key: 'j', description: 'Next card', action: selectNextCard },
-  { key: 'ArrowDown', description: 'Next card', action: selectNextCard },
+  { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard },
   { key: 'k', description: 'Previous card', action: selectPreviousCard },
-  { key: 'ArrowUp', description: 'Previous card', action: selectPreviousCard },
+  { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard },
   { key: 'h', description: 'Previous column', action: selectPreviousColumn },
-  { key: 'ArrowLeft', description: 'Previous column', action: selectPreviousColumn },
+  { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn },
   { key: 'l', description: 'Next column', action: selectNextColumn },
-  { key: 'ArrowRight', description: 'Next column', action: selectNextColumn },
+  { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn },
 
   // Actions
   { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
