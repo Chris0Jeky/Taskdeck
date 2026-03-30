@@ -44,7 +44,6 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Column>());
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -66,7 +65,9 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col1, col2, col3 });
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col1.Id, default)).ReturnsAsync(Array.Empty<Card>());
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col2.Id, default)).ReturnsAsync(Array.Empty<Card>());
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col3.Id, default)).ReturnsAsync(Array.Empty<Card>());
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -93,7 +94,7 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col });
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card1, card2 });
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(colId, default)).ReturnsAsync(new[] { card1, card2 });
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -113,7 +114,6 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Column>());
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { label1, label2 });
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -137,7 +137,7 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col });
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(cards);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(colId, default)).ReturnsAsync(cards);
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -160,28 +160,25 @@ public class BoardContextBuilderTests
             .Select(i => new Column(boardId, $"Column {i} with a long name for testing", i))
             .ToList();
 
-        var cards = new List<Card>();
-        foreach (var col in columns)
-        {
-            for (int j = 0; j < 10; j++)
-            {
-                cards.Add(new Card(boardId, col.Id, $"A card with a fairly long title in column {col.Name} number {j}"));
-            }
-        }
-
         var labels = Enumerable.Range(0, 20)
             .Select(i => new Label(boardId, $"Label-{i}", "#FF0000"))
             .ToList();
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(columns);
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(cards);
+        foreach (var col in columns)
+        {
+            var colCards = Enumerable.Range(0, 10)
+                .Select(j => new Card(boardId, col.Id, $"A card with a fairly long title in column {col.Name} number {j}"))
+                .ToList();
+            _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col.Id, default)).ReturnsAsync(colCards);
+        }
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(labels);
 
         var result = await _builder.BuildContextAsync(boardId);
 
-        // Must stay within budget (with small overflow for truncation marker)
-        result!.Length.Should().BeLessThanOrEqualTo(BoardContextBuilder.MaxContextCharacters + 20);
+        // Must stay strictly within budget (truncation marker is included in the limit)
+        result!.Length.Should().BeLessThanOrEqualTo(BoardContextBuilder.MaxContextCharacters);
     }
 
     [Fact]
@@ -192,7 +189,6 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Column>());
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -208,7 +204,6 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Column>());
-        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);

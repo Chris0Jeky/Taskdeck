@@ -38,9 +38,6 @@ public class BoardContextBuilder : IBoardContextBuilder
             .OrderBy(c => c.Position)
             .ToList();
 
-        var cards = (await _unitOfWork.Cards.GetByBoardIdAsync(boardId, ct))
-            .ToList();
-
         var labels = (await _unitOfWork.Labels.GetByBoardIdAsync(boardId, ct))
             .ToList();
 
@@ -55,11 +52,11 @@ public class BoardContextBuilder : IBoardContextBuilder
             {
                 sb.Append("  - ").Append(column.Name).Append(" (position ").Append(column.Position).AppendLine(")");
 
-                var columnCards = cards
-                    .Where(c => c.ColumnId == column.Id)
+                // Fetch cards per column from DB with limit applied at the query level
+                // to avoid loading all board cards into memory.
+                var columnCards = (await _unitOfWork.Cards.GetByColumnIdAsync(column.Id, ct))
                     .OrderByDescending(c => c.UpdatedAt)
-                    .Take(MaxCardsPerColumn)
-                    .ToList();
+                    .Take(MaxCardsPerColumn);
 
                 foreach (var card in columnCards)
                 {
@@ -79,11 +76,12 @@ public class BoardContextBuilder : IBoardContextBuilder
             sb.Append("Labels: ").AppendLine(string.Join(", ", labels.Select(l => l.Name)));
         }
 
-        // Truncate to budget if needed
+        // Truncate to budget strictly: set length to budget minus marker, then append marker.
         if (sb.Length > MaxContextCharacters)
         {
-            sb.Length = MaxContextCharacters;
-            sb.AppendLine("...(truncated)");
+            const string marker = "...(truncated)";
+            sb.Length = Math.Max(0, MaxContextCharacters - marker.Length);
+            sb.Append(marker);
         }
 
         return sb.ToString();

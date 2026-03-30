@@ -195,11 +195,7 @@ public class ChatService : IChatService
                     .ToList();
 
                 // Build board context for board-scoped sessions
-                string? boardContext = null;
-                if (session.BoardId.HasValue && _boardContextBuilder != null)
-                {
-                    boardContext = await _boardContextBuilder.BuildContextAsync(session.BoardId.Value, ct);
-                }
+                var boardContext = await BuildBoardContextForSessionAsync(session, ct);
 
                 var completionRequest = new ChatCompletionRequest(
                     chatMessages,
@@ -357,11 +353,7 @@ public class ChatService : IChatService
             .ToList();
 
         // Build board context for board-scoped sessions
-        string? boardContext = null;
-        if (session.BoardId.HasValue && _boardContextBuilder != null)
-        {
-            boardContext = await _boardContextBuilder.BuildContextAsync(session.BoardId.Value, ct);
-        }
+        var boardContext = await BuildBoardContextForSessionAsync(session, ct);
 
         var request = new ChatCompletionRequest(
             chatMessages,
@@ -381,6 +373,12 @@ public class ChatService : IChatService
     {
         var normalized = content.ToLowerInvariant();
         return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
+    }
+
+    private async Task<string?> BuildBoardContextForSessionAsync(ChatSession session, CancellationToken ct)
+    {
+        if (_boardContextBuilder == null || session.BoardId == null) return null;
+        return await _boardContextBuilder.BuildContextAsync(session.BoardId.Value, ct);
     }
 
     private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)

@@ -186,15 +186,10 @@ public class OpenAiLlmProvider : ILlmProvider
         // is provided. Probe requests and other special calls pass SystemPrompt = ""
         // to opt out of instruction extraction.
         var useInstructionExtraction = request.SystemPrompt is null;
-        var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
+        var baseSystemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
 
         // Append board context when available so the LLM knows the board's structure
-        if (!string.IsNullOrEmpty(request.BoardContext))
-        {
-            systemPrompt = string.IsNullOrEmpty(systemPrompt)
-                ? request.BoardContext
-                : $"{systemPrompt}\n\n{request.BoardContext}";
-        }
+        var systemPrompt = LlmSystemPromptBuilder.BuildEffectiveSystemPrompt(baseSystemPrompt, request.BoardContext);
 
         if (!string.IsNullOrEmpty(systemPrompt))
         {
