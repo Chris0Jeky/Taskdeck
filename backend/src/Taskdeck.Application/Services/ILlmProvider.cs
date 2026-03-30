@@ -13,7 +13,8 @@ public record ChatCompletionRequest(
     int MaxTokens = 1024,
     double Temperature = 0.7,
     LlmRequestAttribution? Attribution = null,
-    string? SystemPrompt = null
+    string? SystemPrompt = null,
+    string? BoardContext = null
 );
 
 public record ChatCompletionMessage(string Role, string Content);
