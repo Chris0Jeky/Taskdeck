@@ -1,12 +1,16 @@
-import { ref, type ComputedRef } from 'vue'
+import { ref, nextTick, type ComputedRef } from 'vue'
 import { useBoardStore } from '../store/boardStore'
 import type { Column } from '../types/board'
 
 /**
  * Composable encapsulating card/column keyboard navigation state and actions
- * for the board view.
+ * for the board view. Also provides keyboard-driven card movement between
+ * columns (Alt+Left/Right) and reordering within a column (Alt+Up/Down).
  */
-export function useBoardKeyboardNav(sortedColumns: ComputedRef<Column[]>) {
+export function useBoardKeyboardNav(
+  sortedColumns: ComputedRef<Column[]>,
+  boardId?: () => string,
+) {
   const boardStore = useBoardStore()
 
   const selectedCardId = ref<string | null>(null)
@@ -138,6 +142,150 @@ export function useBoardKeyboardNav(sortedColumns: ComputedRef<Column[]>) {
     }, 0)
   }
 
+  /**
+   * Focus the card element matching selectedCardId in the DOM after a move.
+   * Uses nextTick so the DOM has time to update after the store mutation.
+   */
+  async function focusSelectedCard() {
+    await nextTick()
+    if (!selectedCardId.value) return
+    const el = document.querySelector(
+      `[data-card-id="${selectedCardId.value}"]`,
+    ) as HTMLElement | null
+    if (el) {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      el.focus()
+    }
+  }
+
+  /**
+   * Move the currently selected card to the next column (right).
+   * The card is placed at the end of the target column.
+   */
+  async function moveCardToNextColumn() {
+    if (!boardId) return
+    const columns = sortedColumns.value
+    if (columns.length === 0) return
+    if (!selectedCardId.value) return
+
+    const currentColumn = columns[selectedColumnIndex.value]
+    if (!currentColumn) return
+
+    const nextColIndex = selectedColumnIndex.value + 1
+    if (nextColIndex >= columns.length) return
+
+    const nextColumn = columns[nextColIndex]
+    if (!nextColumn) return
+
+    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const card = cards.find((c) => c.id === selectedCardId.value)
+    if (!card) return
+
+    const targetCards = boardStore.cardsByColumn.get(nextColumn.id) || []
+    const targetPosition = targetCards.length
+
+    try {
+      await boardStore.moveCard(boardId(), card.id, nextColumn.id, targetPosition)
+      selectedColumnIndex.value = nextColIndex
+      await focusSelectedCard()
+    } catch {
+      // moveCard already surfaces toast errors via the store
+    }
+  }
+
+  /**
+   * Move the currently selected card to the previous column (left).
+   * The card is placed at the end of the target column.
+   */
+  async function moveCardToPreviousColumn() {
+    if (!boardId) return
+    const columns = sortedColumns.value
+    if (columns.length === 0) return
+    if (!selectedCardId.value) return
+
+    const currentColumn = columns[selectedColumnIndex.value]
+    if (!currentColumn) return
+
+    const prevColIndex = selectedColumnIndex.value - 1
+    if (prevColIndex < 0) return
+
+    const prevColumn = columns[prevColIndex]
+    if (!prevColumn) return
+
+    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const card = cards.find((c) => c.id === selectedCardId.value)
+    if (!card) return
+
+    const targetCards = boardStore.cardsByColumn.get(prevColumn.id) || []
+    const targetPosition = targetCards.length
+
+    try {
+      await boardStore.moveCard(boardId(), card.id, prevColumn.id, targetPosition)
+      selectedColumnIndex.value = prevColIndex
+      await focusSelectedCard()
+    } catch {
+      // moveCard already surfaces toast errors via the store
+    }
+  }
+
+  /**
+   * Reorder the selected card up (lower position) within its current column.
+   */
+  async function moveCardUp() {
+    if (!boardId) return
+    const columns = sortedColumns.value
+    if (columns.length === 0) return
+    if (!selectedCardId.value) return
+
+    const currentColumn = columns[selectedColumnIndex.value]
+    if (!currentColumn) return
+
+    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
+    if (cardIndex <= 0) return // already at top or not found
+
+    const card = cards[cardIndex]
+    if (!card) return
+
+    const targetPosition = cards[cardIndex - 1]!.position
+
+    try {
+      await boardStore.moveCard(boardId(), card.id, currentColumn.id, targetPosition)
+      await focusSelectedCard()
+    } catch {
+      // moveCard already surfaces toast errors via the store
+    }
+  }
+
+  /**
+   * Reorder the selected card down (higher position) within its current column.
+   */
+  async function moveCardDown() {
+    if (!boardId) return
+    const columns = sortedColumns.value
+    if (columns.length === 0) return
+    if (!selectedCardId.value) return
+
+    const currentColumn = columns[selectedColumnIndex.value]
+    if (!currentColumn) return
+
+    const cards = boardStore.cardsByColumn.get(currentColumn.id) || []
+    const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
+    if (cardIndex === -1 || cardIndex >= cards.length - 1) return // already at bottom or not found
+
+    const card = cards[cardIndex]
+    if (!card) return
+
+    const targetPosition = cards[cardIndex + 1]!.position
+
+    try {
+      await boardStore.moveCard(boardId(), card.id, currentColumn.id, targetPosition)
+      await focusSelectedCard()
+    } catch {
+      // moveCard already surfaces toast errors via the store
+    }
+  }
+
   function resetSelection() {
     selectedCardId.value = null
     selectedColumnIndex.value = 0
@@ -152,6 +300,10 @@ export function useBoardKeyboardNav(sortedColumns: ComputedRef<Column[]>) {
     selectPreviousColumn,
     openSelectedCard,
     createCardInSelectedColumn,
+    moveCardToNextColumn,
+    moveCardToPreviousColumn,
+    moveCardUp,
+    moveCardDown,
     resetSelection,
   }
 }
