@@ -36,15 +36,14 @@ public class AutomationProposalPropertyTests
             });
     }
 
-    [Property(MaxTest = MaxTests)]
-    public Property EmptyUserId_AlwaysThrows()
+    [Fact]
+    public void EmptyUserId_AlwaysThrows()
     {
         var act = () => new AutomationProposal(
             ProposalSourceType.Queue, Guid.Empty, "Valid summary",
             RiskLevel.Low, Guid.NewGuid().ToString());
         act.Should().Throw<DomainException>()
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
-        return true.ToProperty();
     }
 
     [Property(MaxTest = MaxTests)]
@@ -180,26 +179,24 @@ public class AutomationProposalPropertyTests
             });
     }
 
-    [Property(MaxTest = MaxTests)]
-    public Property MarkAsApplied_OnlyFromApproved()
+    [Fact]
+    public void MarkAsApplied_OnlyFromApproved()
     {
         var proposal = CreatePendingProposal();
         proposal.Approve(Guid.NewGuid());
         proposal.MarkAsApplied();
         proposal.Status.Should().Be(ProposalStatus.Applied);
         proposal.AppliedAt.Should().NotBeNull();
-        return true.ToProperty();
     }
 
-    [Property(MaxTest = MaxTests)]
-    public Property MarkAsFailed_OnlyFromApproved()
+    [Fact]
+    public void MarkAsFailed_OnlyFromApproved()
     {
         var proposal = CreatePendingProposal();
         proposal.Approve(Guid.NewGuid());
         proposal.MarkAsFailed("Something went wrong");
         proposal.Status.Should().Be(ProposalStatus.Failed);
         proposal.FailureReason.Should().Be("Something went wrong");
-        return true.ToProperty();
     }
 
     [Property(MaxTest = MaxTests)]
@@ -217,14 +214,13 @@ public class AutomationProposalPropertyTests
             });
     }
 
-    [Property(MaxTest = MaxTests)]
-    public Property MarkAsApplied_FromPending_AlwaysThrows()
+    [Fact]
+    public void MarkAsApplied_FromPending_AlwaysThrows()
     {
         var proposal = CreatePendingProposal();
         var act = () => proposal.MarkAsApplied();
         act.Should().Throw<DomainException>()
             .Where(e => e.ErrorCode == ErrorCodes.InvalidOperation);
-        return true.ToProperty();
     }
 
     private static AutomationProposal CreatePendingProposal(RiskLevel riskLevel = RiskLevel.Low)
