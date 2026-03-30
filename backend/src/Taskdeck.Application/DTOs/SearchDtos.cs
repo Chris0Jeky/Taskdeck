@@ -19,5 +19,5 @@ public record SearchCardHitDto(
     Guid ColumnId,
     string ColumnName,
     string Title,
-    string Description
+    string? Description
 );
