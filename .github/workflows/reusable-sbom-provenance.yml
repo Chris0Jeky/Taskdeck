@@ -77,6 +77,8 @@ jobs:
       - name: Generate backend SBOM (CycloneDX)
         id: backend_sbom
         shell: bash
+        env:
+          SBOM_VERSION: ${{ github.ref_name }}
         run: |
           set +e
           dotnet CycloneDX backend/Taskdeck.sln \
@@ -86,7 +88,7 @@ jobs:
             --include-project-references \
             --set-type application \
             --set-name "Taskdeck-Backend" \
-            --set-version "${{ github.ref_name }}" 2> "$SBOM_DIR/backend-sbom.stderr"
+            --set-version "$SBOM_VERSION" 2> "$SBOM_DIR/backend-sbom.stderr"
           exit_code=$?
           printf '%s' "$exit_code" > "$SBOM_DIR/backend-sbom.exitcode"
           if [ "$exit_code" -ne 0 ]; then
@@ -198,6 +200,12 @@ jobs:
 
       - name: Write SBOM summary
         shell: bash
+        env:
+          SUMMARY_REF: ${{ github.ref }}
+          SUMMARY_SHA: ${{ github.sha }}
+          SUMMARY_RUN_ID: ${{ github.run_id }}
+          SUMMARY_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+          SUMMARY_RETENTION: ${{ inputs.retention-days }}
         run: |
           backend_exit=$(cat "$SBOM_DIR/backend-sbom.exitcode" 2>/dev/null || echo "N/A")
           frontend_exit=$(cat "$SBOM_DIR/frontend-sbom.exitcode" 2>/dev/null || echo "N/A")
@@ -217,9 +225,9 @@ jobs:
           | Build Provenance | SLSA v1 JSON | generated |
           | Checksums | SHA-256 | generated |
 
-          **Ref:** \`${{ github.ref }}\` | **SHA:** \`${{ github.sha }}\` | **Run:** \`${{ github.run_id }}\`
+          **Ref:** \`$SUMMARY_REF\` | **SHA:** \`$SUMMARY_SHA\` | **Run:** \`$SUMMARY_RUN_ID\`
 
-          Artifacts are uploaded as \`${{ inputs.artifact-name }}\` with ${{ inputs.retention-days }}-day retention.
+          Artifacts are uploaded as \`$SUMMARY_ARTIFACT_NAME\` with $SUMMARY_RETENTION-day retention.
 
           Policy: see \`docs/ops/SBOM_RELEASE_PROVENANCE.md\`
           EOF
