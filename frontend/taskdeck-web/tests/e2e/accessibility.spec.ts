@@ -74,15 +74,16 @@ test('Review view has no WCAG 2.1 AA violations', async ({ page }) => {
 
 test('Boards list view has no WCAG 2.1 AA violations', async ({ page }) => {
   await page.goto('/workspace/boards')
-  await expect(page.getByRole('heading', { name: 'Boards' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Boards', exact: true }).first()).toBeVisible()
   await expectNoAxeViolations(page, 'BoardsListView')
 })
 
 test('Login view has no WCAG 2.1 AA violations', async ({ page }) => {
-  // Login is a public page — clear session first
+  // Login is a public page — clear session and navigate
   await page.context().clearCookies()
-  await page.evaluate(() => localStorage.clear())
   await page.goto('/login')
+  await page.evaluate(() => localStorage.clear())
+  await page.reload()
   await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible()
   await expectNoAxeViolations(page, 'LoginView')
 })
