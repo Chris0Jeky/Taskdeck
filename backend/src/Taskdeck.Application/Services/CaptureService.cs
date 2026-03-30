@@ -375,6 +375,14 @@ public class CaptureService : ICaptureService
         if (string.IsNullOrWhiteSpace(dto.Text))
             return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError, "Text cannot be empty");
 
+        if (dto.Text.Length > CaptureRequestContract.MaxRawTextLength)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
+                $"Text exceeds maximum length of {CaptureRequestContract.MaxRawTextLength} characters");
+
+        if (dto.TitleHint != null && dto.TitleHint.Length > CaptureRequestContract.MaxTitleHintLength)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
+                $"Title hint exceeds maximum length of {CaptureRequestContract.MaxTitleHintLength} characters");
+
         var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
         if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
             return Result.Failure<CaptureItemDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");

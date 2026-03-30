@@ -454,6 +454,19 @@ function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
 
 const canTriageSelection = canMutateSelection
 
+function canEditSuggestion(status: CaptureStatusValue | undefined): boolean {
+  if (status === undefined) {
+    return false
+  }
+
+  return status === 0 ||
+    status === 'New' ||
+    status === 2 ||
+    status === 'Triaged' ||
+    status === 6 ||
+    status === 'Failed'
+}
+
 function triageButtonLabel(status: CaptureStatusValue | undefined): string {
   if (status === undefined) {
     return 'Start Triage'
@@ -812,7 +825,7 @@ onUnmounted(() => {
             <template v-else>
               <pre class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
               <button
-                v-if="canMutateSelection(selectedItem.status)"
+                v-if="canEditSuggestion(selectedItem.status)"
                 class="td-btn td-btn--secondary td-btn--sm td-inbox-detail__edit-btn"
                 data-testid="suggestion-edit-btn"
                 @click="startEditSuggestion"
