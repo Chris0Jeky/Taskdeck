@@ -14,4 +14,19 @@ public interface IAutomationPlannerService
         ProposalSourceType sourceType = ProposalSourceType.Manual,
         string? sourceReferenceId = null,
         string? correlationId = null);
+
+    /// <summary>
+    /// Parses multiple instructions into a single multi-operation proposal.
+    /// Each instruction is parsed independently and all resulting operations
+    /// are combined into one proposal for atomic review/approve/reject.
+    /// Batch size is bounded at <see cref="AutomationPlannerService.MaxBatchSize"/> operations.
+    /// </summary>
+    Task<Result<ProposalDto>> ParseBatchInstructionAsync(
+        IReadOnlyList<string> instructions,
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default,
+        ProposalSourceType sourceType = ProposalSourceType.Manual,
+        string? sourceReferenceId = null,
+        string? correlationId = null);
 }
