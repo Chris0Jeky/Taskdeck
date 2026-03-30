@@ -491,7 +491,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="td-inbox">
+  <div class="td-inbox" role="region" aria-label="Capture inbox">
     <header class="td-inbox__header">
       <div>
         <h1 class="td-page-title">Inbox</h1>
@@ -609,7 +609,7 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <section class="td-inbox__detail-panel">
+      <section class="td-inbox__detail-panel" aria-label="Capture item detail" aria-live="polite">
         <div
           v-if="hashLoadFailedItemId && !selectedItemId"
           class="td-placeholder td-placeholder--detail"
@@ -818,6 +818,11 @@ onUnmounted(() => {
   cursor: pointer;
   transition: background var(--td-transition-fast, 120ms) ease,
               border-color var(--td-transition-fast, 120ms) ease;
+}
+
+.td-inbox-row:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
 }
 
 .td-inbox-row--active {
