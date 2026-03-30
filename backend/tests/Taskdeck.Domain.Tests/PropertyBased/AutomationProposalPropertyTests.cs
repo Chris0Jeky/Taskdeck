@@ -3,6 +3,7 @@ using FsCheck;
 using FsCheck.Xunit;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
+using Xunit;
 
 namespace Taskdeck.Domain.Tests.PropertyBased;
 
