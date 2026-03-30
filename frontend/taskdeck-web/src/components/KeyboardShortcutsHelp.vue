@@ -38,6 +38,15 @@ const categories: ShortcutCategory[] = [
     ]
   },
   {
+    title: 'Card Movement',
+    shortcuts: [
+      { keys: ['Alt + ArrowRight'], description: 'Move card to next column' },
+      { keys: ['Alt + ArrowLeft'], description: 'Move card to previous column' },
+      { keys: ['Alt + ArrowUp'], description: 'Move card up in column' },
+      { keys: ['Alt + ArrowDown'], description: 'Move card down in column' },
+    ]
+  },
+  {
     title: 'Actions',
     shortcuts: [
       { keys: ['Enter'], description: 'Open selected card' },
