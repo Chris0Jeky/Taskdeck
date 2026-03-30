@@ -23,10 +23,9 @@ export interface GlobalSearchResult {
 }
 
 export const searchApi = {
-  async search(query: string, maxResults = 20): Promise<GlobalSearchResult> {
+  async search(query: string): Promise<GlobalSearchResult> {
     const params = new URLSearchParams()
     params.append('q', query)
-    if (maxResults !== 20) params.append('maxResults', String(maxResults))
     const { data } = await http.get<GlobalSearchResult>(`/search?${params}`)
     return data
   },

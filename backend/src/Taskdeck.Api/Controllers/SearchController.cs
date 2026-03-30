@@ -21,13 +21,12 @@ public class SearchController : AuthenticatedControllerBase
     [HttpGet]
     public async Task<IActionResult> Search(
         [FromQuery] string? q,
-        [FromQuery] int maxResults = 20,
         CancellationToken cancellationToken = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _searchService.SearchAsync(userId, q ?? string.Empty, maxResults, cancellationToken);
+        var result = await _searchService.SearchAsync(userId, q ?? string.Empty, cancellationToken: cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }
