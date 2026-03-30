@@ -97,7 +97,9 @@ onUnmounted(() => {
         <span v-if="props.boardName">This capture will stay linked to {{ props.boardName }}.</span>
       </p>
 
+      <label for="td-capture-text" class="sr-only">Capture text</label>
       <textarea
+        id="td-capture-text"
         ref="textInput"
         v-model="text"
         class="td-capture-modal__input"
