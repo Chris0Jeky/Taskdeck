@@ -125,72 +125,70 @@ jobs:
 
       - name: Generate build provenance manifest
         shell: bash
+        env:
+          PROVENANCE_REF_NAME: ${{ github.ref_name }}
+          PROVENANCE_REPO: ${{ github.repository }}
+          PROVENANCE_REF: ${{ github.ref }}
+          PROVENANCE_SHA: ${{ github.sha }}
+          PROVENANCE_WORKFLOW: ${{ github.workflow }}
+          PROVENANCE_RUN_ID: ${{ github.run_id }}
+          PROVENANCE_RUN_NUMBER: ${{ github.run_number }}
+          PROVENANCE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          PROVENANCE_ACTOR: ${{ github.actor }}
+          PROVENANCE_EVENT: ${{ github.event_name }}
+          PROVENANCE_DOTNET: ${{ inputs.dotnet-version }}
+          PROVENANCE_NODE: ${{ inputs.node-version }}
         run: |
-          cat > "$SBOM_DIR/build-provenance.json" <<PROVENANCE_EOF
-          {
-            "_type": "https://slsa.dev/provenance/v1",
-            "subject": [
-              {
-                "name": "Taskdeck",
-                "version": "${{ github.ref_name }}"
-              }
-            ],
-            "predicateType": "https://slsa.dev/provenance/v1",
-            "predicate": {
-              "buildDefinition": {
-                "buildType": "https://github.com/${{ github.repository }}/blob/main/.github/workflows/reusable-sbom-provenance.yml",
-                "resolvedDependencies": [
-                  {
-                    "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
-                    "digest": {
-                      "sha1": "${{ github.sha }}"
-                    }
-                  }
-                ]
+          node -e "
+          const provenance = {
+            _type: 'https://slsa.dev/provenance/v1',
+            subject: [{ name: 'Taskdeck', version: process.env.PROVENANCE_REF_NAME }],
+            predicateType: 'https://slsa.dev/provenance/v1',
+            predicate: {
+              buildDefinition: {
+                buildType: 'https://github.com/' + process.env.PROVENANCE_REPO + '/blob/main/.github/workflows/reusable-sbom-provenance.yml',
+                resolvedDependencies: [{
+                  uri: 'git+https://github.com/' + process.env.PROVENANCE_REPO + '@' + process.env.PROVENANCE_REF,
+                  digest: { sha1: process.env.PROVENANCE_SHA }
+                }]
               },
-              "runDetails": {
-                "builder": {
-                  "id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              runDetails: {
+                builder: { id: 'https://github.com/' + process.env.PROVENANCE_REPO + '/actions/runs/' + process.env.PROVENANCE_RUN_ID },
+                metadata: {
+                  invocationId: process.env.PROVENANCE_RUN_ID + '/' + process.env.PROVENANCE_RUN_ATTEMPT,
+                  startedOn: new Date().toISOString()
                 },
-                "metadata": {
-                  "invocationId": "${{ github.run_id }}/${{ github.run_attempt }}",
-                  "startedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                },
-                "byproducts": [
-                  {
-                    "name": "backend-sbom.json",
-                    "mediaType": "application/vnd.cyclonedx+json"
-                  },
-                  {
-                    "name": "frontend-sbom.json",
-                    "mediaType": "application/vnd.cyclonedx+json"
-                  }
+                byproducts: [
+                  { name: 'backend-sbom.json', mediaType: 'application/vnd.cyclonedx+json' },
+                  { name: 'frontend-sbom.json', mediaType: 'application/vnd.cyclonedx+json' }
                 ]
               }
             },
-            "buildMetadata": {
-              "repository": "${{ github.repository }}",
-              "ref": "${{ github.ref }}",
-              "sha": "${{ github.sha }}",
-              "workflow": "${{ github.workflow }}",
-              "runId": "${{ github.run_id }}",
-              "runNumber": "${{ github.run_number }}",
-              "runAttempt": "${{ github.run_attempt }}",
-              "actor": "${{ github.actor }}",
-              "eventName": "${{ github.event_name }}",
-              "runner": {
-                "os": "ubuntu-latest",
-                "arch": "x64"
-              },
-              "tools": {
-                "dotnetVersion": "${{ inputs.dotnet-version }}",
-                "nodeVersion": "${{ inputs.node-version }}",
-                "cyclonedxDotnet": "latest",
-                "cyclonedxNpm": "latest"
+            buildMetadata: {
+              repository: process.env.PROVENANCE_REPO,
+              ref: process.env.PROVENANCE_REF,
+              sha: process.env.PROVENANCE_SHA,
+              workflow: process.env.PROVENANCE_WORKFLOW,
+              runId: process.env.PROVENANCE_RUN_ID,
+              runNumber: process.env.PROVENANCE_RUN_NUMBER,
+              runAttempt: process.env.PROVENANCE_RUN_ATTEMPT,
+              actor: process.env.PROVENANCE_ACTOR,
+              eventName: process.env.PROVENANCE_EVENT,
+              runner: { os: 'ubuntu-latest', arch: 'x64' },
+              tools: {
+                dotnetVersion: process.env.PROVENANCE_DOTNET,
+                nodeVersion: process.env.PROVENANCE_NODE,
+                cyclonedxDotnet: 'latest',
+                cyclonedxNpm: 'latest'
               }
             }
-          }
-          PROVENANCE_EOF
+          };
+          require('fs').writeFileSync(
+            process.env.SBOM_DIR + '/build-provenance.json',
+            JSON.stringify(provenance, null, 2) + '\n'
+          );
+          console.log('Build provenance manifest generated');
+          "
 
       - name: Generate artifact checksums
         shell: bash
