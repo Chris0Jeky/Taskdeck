@@ -420,4 +420,34 @@ public class ContactCardYamlParserTests
         var errors = ContactCardYamlParser.Validate(fm);
         errors.Should().BeEmpty();
     }
+
+    [Fact]
+    public void Validate_InvalidLastTouchAtFormat_ReturnsError()
+    {
+        var fm = new ContactCardFrontMatter { LastTouchAt = "not-a-date" };
+        var errors = ContactCardYamlParser.Validate(fm);
+        errors.Should().ContainSingle()
+            .Which.Should().Contain("last_touch_at");
+    }
+
+    [Fact]
+    public void Validate_InvalidNextTouchAtFormat_ReturnsError()
+    {
+        var fm = new ContactCardFrontMatter { NextTouchAt = "next-week" };
+        var errors = ContactCardYamlParser.Validate(fm);
+        errors.Should().ContainSingle()
+            .Which.Should().Contain("next_touch_at");
+    }
+
+    [Fact]
+    public void Validate_ValidIso8601Dates_NoErrors()
+    {
+        var fm = new ContactCardFrontMatter
+        {
+            LastTouchAt = "2024-03-15",
+            NextTouchAt = "2024-04-01"
+        };
+        var errors = ContactCardYamlParser.Validate(fm);
+        errors.Should().BeEmpty();
+    }
 }

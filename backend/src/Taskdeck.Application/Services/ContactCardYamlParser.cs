@@ -143,6 +143,16 @@ public static class ContactCardYamlParser
             errors.Add($"Invalid status '{fm.Status}'. Expected one of: cold, warm, active, referral, interviewing, closed.");
         }
 
+        if (!string.IsNullOrEmpty(fm.LastTouchAt) && !DateOnly.TryParse(fm.LastTouchAt, out _))
+        {
+            errors.Add($"Invalid last_touch_at format '{fm.LastTouchAt}'. Expected ISO 8601 date (YYYY-MM-DD).");
+        }
+
+        if (!string.IsNullOrEmpty(fm.NextTouchAt) && !DateOnly.TryParse(fm.NextTouchAt, out _))
+        {
+            errors.Add($"Invalid next_touch_at format '{fm.NextTouchAt}'. Expected ISO 8601 date (YYYY-MM-DD).");
+        }
+
         return errors;
     }
 
