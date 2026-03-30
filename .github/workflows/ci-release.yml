@@ -1,10 +1,10 @@
 # =============================================================================
-# CI Release — release lane for SBOM/provenance placeholder and container
+# CI Release — release lane for SBOM/provenance generation and container
 # build verification. Complements release-security.yml with a lighter-weight
 # build-verification pass suitable for tag/release automation.
 #
+# SBOM/provenance: implemented in OPS-11 (#103) via reusable-sbom-provenance.yml
 # Follow-through:
-#   - OPS-11 (#103): SBOM/provenance generation and attestation policy
 #   - SEC-09 (#106) / OPS-17 (#148): dependency vulnerability policy + automation
 # =============================================================================
 
@@ -76,14 +76,15 @@ jobs:
           - Backend: restore + build (Release) passed
           - Frontend: npm ci + vite build passed
 
-          ### SBOM / Provenance (placeholder)
-
-          SBOM generation and provenance attestation are not yet wired.
-          Follow-through tracked in:
-          - `#103` OPS-11 SBOM/provenance workflow
-          - `#106` SEC-09 dependency vulnerability policy
-          - `#148` OPS-17 dependency update automation
+          SBOM and provenance artifacts are generated in the `sbom-provenance` job.
           EOF
+
+  sbom-provenance:
+    name: SBOM and Release Provenance
+    uses: ./.github/workflows/reusable-sbom-provenance.yml
+    with:
+      artifact-name: release-sbom-provenance
+      retention-days: 90
 
   container-images:
     name: Container Image Artifacts
