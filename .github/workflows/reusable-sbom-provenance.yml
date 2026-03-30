@@ -109,10 +109,8 @@ jobs:
           npx --yes @cyclonedx/cyclonedx-npm \
             --output-file "$SBOM_DIR/frontend-sbom.json" \
             --spec-version 1.5 \
-            --output-reproducible \
             --omit dev \
-            --mc-type application \
-            frontend/taskdeck-web 2> "$SBOM_DIR/frontend-sbom.stderr"
+            --package-dir frontend/taskdeck-web 2> "$SBOM_DIR/frontend-sbom.stderr"
           exit_code=$?
           printf '%s' "$exit_code" > "$SBOM_DIR/frontend-sbom.exitcode"
           if [ "$exit_code" -ne 0 ]; then
