@@ -84,6 +84,17 @@ function handleCommandActivate(item: CommandItem) {
   closeCommandPalette()
 }
 
+function handleNavigateToBoard(boardId: string) {
+  void router.push(`/workspace/boards/${boardId}`)
+  closeCommandPalette()
+}
+
+function handleNavigateToCard(boardId: string, _cardId: string) {
+  // Navigate to the board containing the card
+  void router.push(`/workspace/boards/${boardId}`)
+  closeCommandPalette()
+}
+
 // ── Keyboard shortcuts ──
 
 function isTextEntryTarget(target: EventTarget | null): boolean {
@@ -185,6 +196,8 @@ onUnmounted(() => {
       :items="commandItems"
       @close="closeCommandPalette"
       @activate="handleCommandActivate"
+      @navigate-to-board="handleNavigateToBoard"
+      @navigate-to-card="handleNavigateToCard"
     />
 
     <ShellKeyboardHelp
