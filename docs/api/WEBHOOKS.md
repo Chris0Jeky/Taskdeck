@@ -109,26 +109,44 @@ Payloads are delivered as JSON via HTTP POST:
 }
 ```
 
+## Delivery headers
+
+Every webhook delivery includes these custom headers:
+
+| Header | Description |
+|--------|-------------|
+| `X-Taskdeck-Webhook-Delivery-Id` | Unique delivery identifier (GUID) |
+| `X-Taskdeck-Webhook-Subscription-Id` | The subscription that triggered this delivery |
+| `X-Taskdeck-Webhook-Event` | The event type (e.g., `card.created`) |
+| `X-Taskdeck-Webhook-Timestamp` | Unix epoch seconds when the delivery was signed |
+| `X-Taskdeck-Webhook-Signature` | `sha256={hex-encoded HMAC}` for payload verification |
+
 ## Signature verification
 
-Every delivery includes an `X-Taskdeck-Signature` header containing an HMAC-SHA256 signature of the request body.
+The `X-Taskdeck-Webhook-Signature` header contains a `sha256=` prefixed HMAC-SHA256 signature. The canonical signing string is `{timestamp}.{payload}` where `{timestamp}` is the Unix epoch seconds from the `X-Taskdeck-Webhook-Timestamp` header and `{payload}` is the raw request body.
 
 ### Verification algorithm
 
-1. Read the raw request body as UTF-8 bytes.
-2. Compute HMAC-SHA256 using your signing secret as the key.
-3. Hex-encode the result.
-4. Compare with the `X-Taskdeck-Signature` header value using constant-time comparison.
+1. Extract the `X-Taskdeck-Webhook-Timestamp` header value.
+2. Extract the hex signature from `X-Taskdeck-Webhook-Signature` (strip the `sha256=` prefix).
+3. Build the canonical string: `{timestamp}.{rawBody}`.
+4. Compute HMAC-SHA256 of the canonical string using your signing secret as the key.
+5. Hex-encode the result (lowercase).
+6. Compare with the extracted signature using constant-time comparison.
 
 ### Example: Node.js verification
 
 ```javascript
 const crypto = require('crypto');
 
-function verifySignature(rawBody, signature, secret) {
+function verifySignature(rawBody, timestampHeader, signatureHeader, secret) {
+  // Strip the "sha256=" prefix
+  const signature = signatureHeader.replace('sha256=', '');
+  // Build the canonical signing string
+  const canonical = `${timestampHeader}.${rawBody}`;
   const expected = crypto
     .createHmac('sha256', secret)
-    .update(rawBody, 'utf8')
+    .update(canonical, 'utf8')
     .digest('hex');
 
   return crypto.timingSafeEqual(
@@ -139,15 +157,16 @@ function verifySignature(rawBody, signature, secret) {
 
 // In your webhook handler:
 app.post('/hooks/taskdeck', (req, res) => {
-  const signature = req.headers['x-taskdeck-signature'];
+  const signature = req.headers['x-taskdeck-webhook-signature'];
+  const timestamp = req.headers['x-taskdeck-webhook-timestamp'];
   const rawBody = req.rawBody; // ensure you capture the raw body
 
-  if (!verifySignature(rawBody, signature, process.env.TASKDECK_WEBHOOK_SECRET)) {
+  if (!verifySignature(rawBody, timestamp, signature, process.env.TASKDECK_WEBHOOK_SECRET)) {
     return res.status(401).send('Invalid signature');
   }
 
   const event = JSON.parse(rawBody);
-  console.log(`Received ${event.eventType} for board ${event.boardId}`);
+  console.log(`Received ${req.headers['x-taskdeck-webhook-event']} event`);
   res.status(200).send('OK');
 });
 ```
@@ -158,10 +177,14 @@ app.post('/hooks/taskdeck', (req, res) => {
 import hmac
 import hashlib
 
-def verify_signature(raw_body: bytes, signature: str, secret: str) -> bool:
+def verify_signature(raw_body: str, timestamp: str, signature_header: str, secret: str) -> bool:
+    # Strip the "sha256=" prefix
+    signature = signature_header.removeprefix("sha256=")
+    # Build the canonical signing string
+    canonical = f"{timestamp}.{raw_body}"
     expected = hmac.new(
         secret.encode('utf-8'),
-        raw_body,
+        canonical.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
@@ -173,10 +196,14 @@ def verify_signature(raw_body: bytes, signature: str, secret: str) -> bool:
 using System.Security.Cryptography;
 using System.Text;
 
-bool VerifySignature(string rawBody, string signature, string secret)
+bool VerifySignature(string rawBody, string timestamp, string signatureHeader, string secret)
 {
+    // Strip the "sha256=" prefix
+    var signature = signatureHeader.Replace("sha256=", "");
+    // Build the canonical signing string
+    var canonical = $"{timestamp}.{rawBody}";
     using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-    var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(rawBody));
+    var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(canonical));
     var expected = Convert.ToHexString(hash).ToLowerInvariant();
     return CryptographicOperations.FixedTimeEquals(
         Encoding.UTF8.GetBytes(expected),
@@ -189,11 +216,12 @@ bool VerifySignature(string rawBody, string signature, string secret)
 - Successful delivery: endpoint returns `2xx` status.
 - Retry on failure: deliveries are retried with exponential backoff.
 - Dead-letter: after exhausting retries, the delivery is moved to dead-letter state for manual inspection.
-- Timeout: the webhook delivery worker waits up to 30 seconds for a response.
+- Localhost endpoints: HTTP is only allowed for localhost endpoints when explicitly configured; all other endpoints must use HTTPS.
 
 ## Security considerations
 
-- Always verify the `X-Taskdeck-Signature` header before processing payloads.
-- Use HTTPS endpoints only.
+- Always verify the `X-Taskdeck-Webhook-Signature` header before processing payloads.
+- Check the `X-Taskdeck-Webhook-Timestamp` to reject stale deliveries (replay protection).
+- Use HTTPS endpoints only (HTTP is only allowed for localhost in development).
 - Rotate secrets periodically and immediately if compromise is suspected.
 - Respond with `200 OK` quickly; process the event asynchronously if needed.
