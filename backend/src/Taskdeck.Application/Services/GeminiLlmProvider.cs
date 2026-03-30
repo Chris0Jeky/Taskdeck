@@ -39,7 +39,10 @@ public class GeminiLlmProvider : ILlmProvider
             message.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             var useInstructionExtraction = request.SystemPrompt is null;
-            var systemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
+            var baseSystemPrompt = request.SystemPrompt ?? LlmInstructionExtractionPrompt.SystemPrompt;
+
+            // Append board context when available so the LLM knows the board's structure
+            var systemPrompt = LlmSystemPromptBuilder.BuildEffectiveSystemPrompt(baseSystemPrompt, request.BoardContext);
 
             var generationConfig = useInstructionExtraction
                 ? (object)new

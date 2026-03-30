@@ -32,6 +32,7 @@ public class ChatService : IChatService
     private readonly IAuthorizationService? _authorizationService;
     private readonly ILlmQuotaService? _quotaService;
     private readonly ILlmKillSwitchService? _killSwitchService;
+    private readonly IBoardContextBuilder? _boardContextBuilder;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -42,7 +43,8 @@ public class ChatService : IChatService
         INotificationService? notificationService = null,
         IAuthorizationService? authorizationService = null,
         ILlmQuotaService? quotaService = null,
-        ILlmKillSwitchService? killSwitchService = null)
+        ILlmKillSwitchService? killSwitchService = null,
+        IBoardContextBuilder? boardContextBuilder = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -53,6 +55,7 @@ public class ChatService : IChatService
         _authorizationService = authorizationService;
         _quotaService = quotaService;
         _killSwitchService = killSwitchService;
+        _boardContextBuilder = boardContextBuilder;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -191,9 +194,13 @@ public class ChatService : IChatService
                     .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
                     .ToList();
 
+                // Build board context for board-scoped sessions
+                var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
                 var completionRequest = new ChatCompletionRequest(
                     chatMessages,
-                    Attribution: BuildAttribution(session, userId));
+                    Attribution: BuildAttribution(session, userId),
+                    BoardContext: boardContext);
                 var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
@@ -345,9 +352,13 @@ public class ChatService : IChatService
             .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
             .ToList();
 
+        // Build board context for board-scoped sessions
+        var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
         var request = new ChatCompletionRequest(
             chatMessages,
-            Attribution: BuildAttribution(session, userId));
+            Attribution: BuildAttribution(session, userId),
+            BoardContext: boardContext);
 
         // TODO: Streaming responses cannot record usage because token counts are
         // not available until the stream completes. Implement post-stream usage
@@ -362,6 +373,12 @@ public class ChatService : IChatService
     {
         var normalized = content.ToLowerInvariant();
         return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
+    }
+
+    private async Task<string?> BuildBoardContextForSessionAsync(ChatSession session, CancellationToken ct)
+    {
+        if (_boardContextBuilder == null || session.BoardId == null) return null;
+        return await _boardContextBuilder.BuildContextAsync(session.BoardId.Value, ct);
     }
 
     private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)
