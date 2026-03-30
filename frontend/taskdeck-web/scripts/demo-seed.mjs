@@ -465,7 +465,7 @@ async function ensureDemoBoard(spec, boards, token) {
 
 async function ensureUser({ username, email, password }) {
   const loginBody = { usernameOrEmail: username, password }
-  let loginError = null
+  let loginError
 
   try {
     return await http('POST', '/auth/login', { body: loginBody })
@@ -491,7 +491,8 @@ async function ensureUser({ username, email, password }) {
       `Failed to login as "${username}" and could not register it. ` +
         `The user may already exist with a different password.\n` +
         `Set TASKDECK_DEMO_PASSWORD / TASKDECK_COLLAB_PASSWORD (or legacy TASKDECK_DEMO_COLLAB_PASS), or delete the user from the dev DB.\n\n` +
-        `${err?.message || err}`
+        `${err?.message || err}`,
+      { cause: err }
     )
   }
 
@@ -501,7 +502,8 @@ async function ensureUser({ username, email, password }) {
     const registerStatus = getHttpStatus(err)
     throw new Error(
       `Registered "${username}" but follow-up login failed${registerStatus ? ` (${registerStatus})` : ''}.\n\n` +
-        `${err?.message || err}`
+        `${err?.message || err}`,
+      { cause: err }
     )
   }
 }
@@ -595,7 +597,7 @@ async function ensureCollaboratorEditorAccess(boardId, token, collaboratorUserId
       accesses = await http('GET', `/boards/${boardId}/access`, { token })
       existingAccess = (accesses || []).find((entry) => idsMatch(entry?.userId, collaboratorUserId))
       if (!existingAccess) {
-        throw new Error('Board access conflict reported but collaborator access entry was not found.')
+        throw new Error('Board access conflict reported but collaborator access entry was not found.', { cause: err })
       }
     }
   }
@@ -835,7 +837,6 @@ async function ensureChatSeed(boardId, token) {
       token,
       body: { title: SEEDED_CHAT.sessionTitle, boardId },
     })
-    sessionDetail = session
     hasSeededMessage = false
     seededProposalIds = []
   }

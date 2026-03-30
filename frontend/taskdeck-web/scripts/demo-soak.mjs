@@ -178,9 +178,9 @@ export async function runSoak(config, runFn) {
   let iteration = 0
   while (shouldContinueSoak(iteration, Date.now() - soakStartTime, validated)) {
     const iterStart = Date.now()
-    let status = 'pass'
+    let status
     let eventCount = 0
-    let error = null
+    let error
 
     try {
       const result = await runFn(iteration)

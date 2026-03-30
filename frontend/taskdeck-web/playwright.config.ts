@@ -179,6 +179,7 @@ function parseFrontendBaseUrl(rawFrontendBaseUrl: string): URL {
     const reason = error instanceof Error ? error.message : 'Invalid URL format.'
     throw new Error(
       `[e2e config] TASKDECK_E2E_FRONTEND_BASE_URL must be an absolute http URL (example: "http://localhost:${defaultFrontendPort}"). Received "${rawFrontendBaseUrl}". ${reason}`,
+      { cause: error },
     )
   }
 }
@@ -238,6 +239,7 @@ function parseApiBaseUrl(rawApiBaseUrl: string): URL {
     const reason = error instanceof Error ? error.message : 'Invalid URL format.'
     throw new Error(
       `[e2e config] TASKDECK_E2E_API_BASE_URL must be an absolute http URL with explicit port (example: "${defaultApiBaseUrl}"). Received "${rawApiBaseUrl}". ${reason}`,
+      { cause: error },
     )
   }
 }

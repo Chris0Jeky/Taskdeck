@@ -40,7 +40,7 @@
     "ws": "file:vendor/ws-7.5.10.tgz"
   },
   "devDependencies": {
-    "@eslint/js": "^9.0.0",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.56.1",
     "@types/dompurify": "^3.2.0",
     "@types/node": "^25.5.0",
