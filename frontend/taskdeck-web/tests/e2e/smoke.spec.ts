@@ -189,7 +189,7 @@ test('command palette search and enter should activate selected command', async 
   const palette = page.getByRole('dialog', { name: 'Command palette' })
   await expect(palette).toBeVisible()
 
-  const paletteInput = palette.getByPlaceholder('Type a command or search...')
+  const paletteInput = palette.getByPlaceholder('Type a command or search boards and cards...')
   await expect(paletteInput).toBeFocused()
 
   await paletteInput.fill('inbox')
@@ -224,7 +224,7 @@ test('command palette capture action should save item and route to inbox', async
   const palette = page.getByRole('dialog', { name: 'Command palette' })
   await expect(palette).toBeVisible()
 
-  const paletteInput = palette.getByPlaceholder('Type a command or search...')
+  const paletteInput = palette.getByPlaceholder('Type a command or search boards and cards...')
   await expect(paletteInput).toBeFocused()
   await paletteInput.fill('new capture')
   await paletteInput.press('Enter')
