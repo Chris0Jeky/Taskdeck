@@ -50,3 +50,42 @@ public record CaptureTriageProposalResultDto(
     string PromptVersion,
     string Provider,
     string Model);
+
+/// <summary>
+/// Describes a single item action within a batch triage request.
+/// </summary>
+public record BatchTriageItemActionDto(
+    Guid ItemId,
+    string Action);
+
+/// <summary>
+/// Request payload for batch triage operations.
+/// Supported actions: "triage", "ignore", "cancel".
+/// </summary>
+public record BatchTriageRequestDto(
+    IReadOnlyList<BatchTriageItemActionDto> Items);
+
+/// <summary>
+/// Result for a single item within a batch triage operation.
+/// </summary>
+public record BatchTriageItemResultDto(
+    Guid ItemId,
+    bool Success,
+    string? ErrorCode = null,
+    string? ErrorMessage = null);
+
+/// <summary>
+/// Aggregate result of a batch triage operation.
+/// </summary>
+public record BatchTriageResultDto(
+    int Total,
+    int Succeeded,
+    int Failed,
+    IReadOnlyList<BatchTriageItemResultDto> Results);
+
+/// <summary>
+/// Request payload for editing the suggestion text of a capture item before triage.
+/// </summary>
+public record UpdateCaptureSuggestionDto(
+    string Text,
+    string? TitleHint = null);

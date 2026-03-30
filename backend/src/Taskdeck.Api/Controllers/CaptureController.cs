@@ -107,4 +107,36 @@ public class CaptureController : AuthenticatedControllerBase
         var result = await _captureService.EnqueueTriageAsync(userId, id, cancellationToken);
         return result.IsSuccess ? Accepted(result.Value) : result.ToErrorActionResult();
     }
+
+    [HttpPost("batch-triage")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    public async Task<IActionResult> BatchTriage([FromBody] BatchTriageRequestDto dto, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _captureService.BatchTriageAsync(userId, dto, cancellationToken);
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        var batchResult = result.Value;
+        if (batchResult.Failed > 0 && batchResult.Succeeded > 0)
+            return StatusCode(207, batchResult);
+
+        if (batchResult.Failed > 0 && batchResult.Succeeded == 0)
+            return UnprocessableEntity(batchResult);
+
+        return Ok(batchResult);
+    }
+
+    [HttpPut("{id:guid}/suggestion")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    public async Task<IActionResult> UpdateSuggestion(Guid id, [FromBody] UpdateCaptureSuggestionDto dto, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _captureService.UpdateSuggestionAsync(userId, id, dto, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
 }

@@ -34,4 +34,15 @@ public interface ICaptureService
         Guid userId,
         Guid itemId,
         CancellationToken cancellationToken = default);
+
+    Task<Result<BatchTriageResultDto>> BatchTriageAsync(
+        Guid userId,
+        BatchTriageRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<CaptureItemDto>> UpdateSuggestionAsync(
+        Guid userId,
+        Guid itemId,
+        UpdateCaptureSuggestionDto dto,
+        CancellationToken cancellationToken = default);
 }

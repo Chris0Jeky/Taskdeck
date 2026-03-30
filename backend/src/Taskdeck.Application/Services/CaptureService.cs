@@ -276,6 +276,137 @@ public class CaptureService : ICaptureService
         }
     }
 
+    private static readonly HashSet<string> ValidBatchActions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "triage", "ignore", "cancel"
+    };
+
+    private const int MaxBatchSize = 50;
+
+    public async Task<Result<BatchTriageResultDto>> BatchTriageAsync(
+        Guid userId,
+        BatchTriageRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<BatchTriageResultDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        if (request.Items == null || request.Items.Count == 0)
+            return Result.Failure<BatchTriageResultDto>(ErrorCodes.ValidationError, "At least one item is required");
+
+        if (request.Items.Count > MaxBatchSize)
+            return Result.Failure<BatchTriageResultDto>(ErrorCodes.ValidationError, $"Batch size cannot exceed {MaxBatchSize}");
+
+        var duplicateIds = request.Items
+            .GroupBy(i => i.ItemId)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        if (duplicateIds.Count > 0)
+            return Result.Failure<BatchTriageResultDto>(ErrorCodes.ValidationError, "Duplicate item IDs in batch request");
+
+        var invalidActions = request.Items
+            .Where(i => !ValidBatchActions.Contains(i.Action))
+            .ToList();
+        if (invalidActions.Count > 0)
+            return Result.Failure<BatchTriageResultDto>(ErrorCodes.ValidationError,
+                $"Invalid action(s): {string.Join(", ", invalidActions.Select(i => i.Action))}. Valid actions: triage, ignore, cancel");
+
+        var results = new List<BatchTriageItemResultDto>(request.Items.Count);
+
+        foreach (var itemAction in request.Items)
+        {
+            try
+            {
+                var actionResult = itemAction.Action.ToLowerInvariant() switch
+                {
+                    "triage" => await ExecuteBatchItemTriageAsync(userId, itemAction.ItemId, cancellationToken),
+                    "ignore" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
+                    "cancel" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
+                    _ => Result.Failure(ErrorCodes.ValidationError, $"Unknown action: {itemAction.Action}")
+                };
+
+                results.Add(new BatchTriageItemResultDto(
+                    itemAction.ItemId,
+                    actionResult.IsSuccess,
+                    actionResult.IsSuccess ? null : actionResult.ErrorCode,
+                    actionResult.IsSuccess ? null : actionResult.ErrorMessage));
+            }
+            catch (Exception)
+            {
+                results.Add(new BatchTriageItemResultDto(
+                    itemAction.ItemId,
+                    false,
+                    ErrorCodes.UnexpectedError,
+                    "An unexpected error occurred while processing this item"));
+            }
+        }
+
+        var succeeded = results.Count(r => r.Success);
+        var failed = results.Count(r => !r.Success);
+
+        return Result.Success(new BatchTriageResultDto(
+            results.Count,
+            succeeded,
+            failed,
+            results));
+    }
+
+    private async Task<Result> ExecuteBatchItemTriageAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        var triageResult = await EnqueueTriageAsync(userId, itemId, cancellationToken);
+        return triageResult.IsSuccess
+            ? Result.Success()
+            : Result.Failure(triageResult.ErrorCode, triageResult.ErrorMessage);
+    }
+
+    public async Task<Result<CaptureItemDto>> UpdateSuggestionAsync(
+        Guid userId,
+        Guid itemId,
+        UpdateCaptureSuggestionDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        if (string.IsNullOrWhiteSpace(dto.Text))
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError, "Text cannot be empty");
+
+        var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
+        if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            return Result.Failure<CaptureItemDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");
+
+        if (item.UserId != userId)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
+
+        var currentPayload = ParsePayload(item);
+        var currentStatus = ResolveCaptureStatus(item, currentPayload);
+
+        if (currentStatus != CaptureStatus.New && currentStatus != CaptureStatus.Failed &&
+            currentStatus != CaptureStatus.Triaged)
+        {
+            return Result.Failure<CaptureItemDto>(ErrorCodes.Conflict,
+                $"Capture item in status {currentStatus} cannot be edited");
+        }
+
+        var updatedPayload = new CapturePayloadV1(
+            currentPayload.Version,
+            currentPayload.Source,
+            dto.Text,
+            null,
+            dto.TitleHint ?? currentPayload.TitleHint,
+            currentPayload.ExternalRef,
+            currentPayload.Provenance);
+
+        item.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(MapToDetailDto(item, updatedPayload));
+    }
+
     private async Task<Result> CancelInternalAsync(
         Guid userId,
         Guid itemId,
