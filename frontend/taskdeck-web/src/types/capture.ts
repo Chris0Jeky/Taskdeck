@@ -33,6 +33,7 @@ export type CaptureSource =
   | 'Import'
   | 'Voice'
   | 'MeetingIntegration'
+  | 'TranscriptFile'
 
 export type CaptureSourceValue = CaptureSource | number
 

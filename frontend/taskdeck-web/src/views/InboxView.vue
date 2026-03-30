@@ -102,6 +102,7 @@ function sourceLabel(source: CaptureSourceValue): string {
   if (source === 3 || source === 'Import') return 'Import'
   if (source === 4 || source === 'Voice') return 'Voice'
   if (source === 5 || source === 'MeetingIntegration') return 'Meeting'
+  if (source === 6 || source === 'TranscriptFile') return 'Transcript (File)'
   return String(source)
 }
 
