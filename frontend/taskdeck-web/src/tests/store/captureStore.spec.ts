@@ -16,6 +16,8 @@ vi.mock('../../api/captureApi', () => ({
     ignoreItem: vi.fn(),
     cancelItem: vi.fn(),
     enqueueTriage: vi.fn(),
+    batchTriage: vi.fn(),
+    updateSuggestion: vi.fn(),
   },
 }))
 
@@ -748,5 +750,137 @@ describe('captureStore', () => {
 
     expect(toastMocks.error).toHaveBeenCalledTimes(1)
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
+  })
+
+  // ── Batch triage tests ──
+
+  it('sends batch triage request and refreshes list on success', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 2,
+      succeeded: 2,
+      failed: 0,
+      results: [
+        { itemId: 'c1', success: true },
+        { itemId: 'c2', success: true },
+      ],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+
+    const result = await store.batchTriage(['c1', 'c2'], 'triage')
+
+    expect(captureApi.batchTriage).toHaveBeenCalledWith([
+      { itemId: 'c1', action: 'triage' },
+      { itemId: 'c2', action: 'triage' },
+    ])
+    expect(result.succeeded).toBe(2)
+    expect(toastMocks.success).toHaveBeenCalledWith('2 of 2 items processed')
+    expect(captureApi.listItems).toHaveBeenCalled()
+  })
+
+  it('reports partial batch failures with error toast', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+      results: [
+        { itemId: 'c1', success: true },
+        { itemId: 'c2', success: false, errorCode: 'NotFound', errorMessage: 'Item not found' },
+      ],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+
+    const result = await store.batchTriage(['c1', 'c2'], 'ignore')
+
+    expect(result.failed).toBe(1)
+    expect(toastMocks.success).toHaveBeenCalledWith('1 of 2 items processed')
+    expect(toastMocks.error).toHaveBeenCalledWith(expect.stringContaining('1 item(s) failed'))
+  })
+
+  it('surfaces error when batch triage API call fails', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.batchTriage).mockRejectedValue(new Error('network'))
+
+    await expect(store.batchTriage(['c1'], 'triage')).rejects.toBeInstanceOf(Error)
+
+    expect(store.batchError).toBe('Failed to process batch triage')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to process batch triage')
+  })
+
+  it('tracks batchBusy state during batch operations', async () => {
+    const store = useCaptureStore()
+    let resolveBatch: ((value: unknown) => void) | null = null
+
+    vi.mocked(captureApi.batchTriage).mockImplementation(() => new Promise((resolve) => {
+      resolveBatch = resolve
+    }))
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+
+    const promise = store.batchTriage(['c1'], 'cancel')
+    expect(store.batchBusy).toBe(true)
+
+    resolveBatch?.({ total: 1, succeeded: 1, failed: 0, results: [{ itemId: 'c1', success: true }] })
+    await promise
+
+    expect(store.batchBusy).toBe(false)
+  })
+
+  // ── Suggestion editing tests ──
+
+  it('updates suggestion text and caches result', async () => {
+    const store = useCaptureStore()
+    const updated = {
+      id: 'c10',
+      userId: 'u1',
+      boardId: null,
+      status: 'New' as const,
+      source: 'Typed' as const,
+      textExcerpt: 'edited text',
+      rawText: 'edited full text',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
+    vi.mocked(captureApi.updateSuggestion).mockResolvedValue(updated)
+
+    const result = await store.updateSuggestion('c10', { text: 'edited full text' })
+
+    expect(captureApi.updateSuggestion).toHaveBeenCalledWith('c10', { text: 'edited full text' })
+    expect(result.rawText).toBe('edited full text')
+    expect(store.detailById.c10?.rawText).toBe('edited full text')
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture text updated')
+  })
+
+  it('surfaces error when suggestion update fails', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.updateSuggestion).mockRejectedValue(new Error('network'))
+
+    await expect(store.updateSuggestion('c11', { text: 'new text' })).rejects.toBeInstanceOf(Error)
+
+    expect(store.actionError).toBe('Failed to update capture text')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to update capture text')
+  })
+
+  it('tracks actionBusyItemId during suggestion update', async () => {
+    const store = useCaptureStore()
+    let resolveUpdate: ((value: unknown) => void) | null = null
+
+    vi.mocked(captureApi.updateSuggestion).mockImplementation(() => new Promise((resolve) => {
+      resolveUpdate = resolve
+    }))
+
+    const promise = store.updateSuggestion('c12', { text: 'updating' })
+    expect(store.actionBusyItemId).toBe('c12')
+
+    resolveUpdate?.({
+      id: 'c12', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+      textExcerpt: 'updating', rawText: 'updating',
+      createdAt: new Date().toISOString(), processedAt: null, retryCount: 0,
+    })
+    await promise
+
+    expect(store.actionBusyItemId).toBeNull()
   })
 })
