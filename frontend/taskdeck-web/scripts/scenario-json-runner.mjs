@@ -270,7 +270,7 @@ function collectScenarioAliases(scenario) {
 }
 
 export async function listJsonScenarioIds() {
-  let files = []
+  let files
   try {
     files = await fs.readdir(SCENARIO_DIR)
   } catch {
