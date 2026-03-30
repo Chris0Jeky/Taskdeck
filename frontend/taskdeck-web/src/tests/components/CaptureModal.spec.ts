@@ -298,5 +298,264 @@ describe('CaptureModal', () => {
 
       expect(wrapper.text()).not.toContain('Capture text is required.')
     })
+
+    it('rejects invalid file type and shows error', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      const pdfFile = new File(['pdf content'], 'document.pdf', { type: 'application/pdf' })
+      const fileInput = wrapper.find('input[type="file"]')
+      Object.defineProperty(fileInput.element, 'files', {
+        value: [pdfFile],
+        configurable: true,
+      })
+      await fileInput.trigger('change')
+      await waitForUi()
+
+      expect(wrapper.text()).toContain('Only .txt files are supported for transcript upload.')
+      expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(false)
+    })
+
+    it('rejects file exceeding size limit and shows error', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      // Create a file larger than MAX_TRANSCRIPT_LENGTH (51200 bytes)
+      const bigContent = 'x'.repeat(52_000)
+      const bigFile = new File([bigContent], 'big.txt', { type: 'text/plain' })
+      const fileInput = wrapper.find('input[type="file"]')
+      Object.defineProperty(fileInput.element, 'files', {
+        value: [bigFile],
+        configurable: true,
+      })
+      await fileInput.trigger('change')
+      await waitForUi()
+
+      expect(wrapper.text()).toContain('File is too large. Maximum size is 50KB.')
+      expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(false)
+    })
+
+    it('loads .txt file content via FileReader and shows file name', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      let capturedReader: FileReader | null = null
+      const OriginalFileReader = globalThis.FileReader
+      class MockFileReader extends EventTarget {
+        result: string | null = null
+        onload: ((event: ProgressEvent) => void) | null = null
+        onerror: ((event: ProgressEvent) => void) | null = null
+        readAsText() {
+          capturedReader = this as unknown as FileReader
+        }
+      }
+      globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+
+      try {
+        const txtFile = new File(['Speaker A: Hello\nSpeaker B: World'], 'meeting.txt', { type: 'text/plain' })
+        const fileInput = wrapper.find('input[type="file"]')
+        Object.defineProperty(fileInput.element, 'files', {
+          value: [txtFile],
+          configurable: true,
+        })
+        await fileInput.trigger('change')
+        await waitForUi()
+
+        // Simulate the FileReader onload
+        const reader = capturedReader as unknown as { result: string; onload: () => void }
+        reader.result = 'Speaker A: Hello\nSpeaker B: World'
+        reader.onload?.()
+        await waitForUi()
+
+        expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(true)
+        expect(wrapper.text()).toContain('meeting.txt')
+      } finally {
+        globalThis.FileReader = OriginalFileReader
+      }
+    })
+
+    it('shows error when FileReader fails to read file', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      let capturedReader: { onerror: (() => void) | null } | null = null
+      const OriginalFileReader = globalThis.FileReader
+      class MockFileReader extends EventTarget {
+        result: string | null = null
+        onload: (() => void) | null = null
+        onerror: (() => void) | null = null
+        readAsText() {
+          capturedReader = this as { onerror: (() => void) | null }
+        }
+      }
+      globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+
+      try {
+        const txtFile = new File(['content'], 'notes.txt', { type: 'text/plain' })
+        const fileInput = wrapper.find('input[type="file"]')
+        Object.defineProperty(fileInput.element, 'files', {
+          value: [txtFile],
+          configurable: true,
+        })
+        await fileInput.trigger('change')
+        await waitForUi()
+
+        capturedReader?.onerror?.()
+        await waitForUi()
+
+        expect(wrapper.text()).toContain('Failed to read file. Please try again.')
+      } finally {
+        globalThis.FileReader = OriginalFileReader
+      }
+    })
+
+    it('clears uploaded file when clear button is clicked', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      let capturedReader: { result: string; onload: (() => void) | null } | null = null
+      const OriginalFileReader = globalThis.FileReader
+      class MockFileReader extends EventTarget {
+        result: string | null = null
+        onload: (() => void) | null = null
+        onerror: (() => void) | null = null
+        readAsText() {
+          capturedReader = this as { result: string; onload: (() => void) | null }
+        }
+      }
+      globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+
+      try {
+        const txtFile = new File(['Transcript content'], 'transcript.txt', { type: 'text/plain' })
+        const fileInput = wrapper.find('input[type="file"]')
+        Object.defineProperty(fileInput.element, 'files', {
+          value: [txtFile],
+          configurable: true,
+        })
+        await fileInput.trigger('change')
+        await waitForUi()
+
+        if (capturedReader) {
+          capturedReader.result = 'Transcript content'
+          capturedReader.onload?.()
+        }
+        await waitForUi()
+
+        expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(true)
+
+        await wrapper.find('.td-capture-modal__file-clear').trigger('click')
+        await waitForUi()
+
+        expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(false)
+      } finally {
+        globalThis.FileReader = OriginalFileReader
+      }
+    })
+
+    it('shows error when transcript text is too long on submit', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      // Set text that is exactly over the 51200 character limit
+      const longText = 'a'.repeat(51_201)
+      const textarea = wrapper.get('.td-capture-modal__input--transcript')
+      await textarea.setValue(longText)
+
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.text()).toContain('Transcript text is too long.')
+      expect(mockCaptureStore.createItem).not.toHaveBeenCalled()
+    })
+
+    it('uses captureStore.actionError message when save fails', async () => {
+      mockCaptureStore.actionError = 'Backend is unavailable.'
+      mockCaptureStore.createItem.mockRejectedValue(new Error('Network error'))
+
+      const wrapper = mount(CaptureModal)
+      await wrapper.get('textarea').setValue('Some capture text')
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.text()).toContain('Backend is unavailable.')
+    })
+
+    it('falls back to generic error message when actionError is null on save failure', async () => {
+      mockCaptureStore.actionError = null
+      mockCaptureStore.createItem.mockRejectedValue(new Error('Network error'))
+
+      const wrapper = mount(CaptureModal)
+      await wrapper.get('textarea').setValue('Some capture text')
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.text()).toContain('Failed to save capture item.')
+    })
+
+    it('submits with TranscriptFile source after successful file upload', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      let capturedReader: { result: string; onload: (() => void) | null } | null = null
+      const OriginalFileReader = globalThis.FileReader
+      class MockFileReader extends EventTarget {
+        result: string | null = null
+        onload: (() => void) | null = null
+        onerror: (() => void) | null = null
+        readAsText() {
+          capturedReader = this as { result: string; onload: (() => void) | null }
+        }
+      }
+      globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+
+      try {
+        const txtFile = new File(['Meeting notes content'], 'meeting-notes.txt', { type: 'text/plain' })
+        const fileInput = wrapper.find('input[type="file"]')
+        Object.defineProperty(fileInput.element, 'files', {
+          value: [txtFile],
+          configurable: true,
+        })
+        await fileInput.trigger('change')
+        await waitForUi()
+
+        if (capturedReader) {
+          capturedReader.result = 'Meeting notes content'
+          capturedReader.onload?.()
+        }
+        await waitForUi()
+
+        await wrapper.get('button.td-btn--primary').trigger('click')
+        await waitForUi()
+
+        expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+          boardId: null,
+          text: 'Meeting notes content',
+          source: 'TranscriptFile',
+        })
+      } finally {
+        globalThis.FileReader = OriginalFileReader
+      }
+    })
   })
 })
