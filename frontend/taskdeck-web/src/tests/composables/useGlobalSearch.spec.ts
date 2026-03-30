@@ -76,7 +76,7 @@ describe('useGlobalSearch', () => {
     await vi.runAllTimersAsync()
     await nextTick()
 
-    expect(mockSearch).toHaveBeenCalledWith('test')
+    expect(mockSearch).toHaveBeenCalledWith('test', expect.any(AbortSignal))
     expect(boards.value).toEqual(mockSearchResult.boards)
     expect(cards.value).toEqual(mockSearchResult.cards)
   })
