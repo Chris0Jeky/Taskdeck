@@ -12,6 +12,19 @@ public class MockLlmProvider : ILlmProvider
 
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
 
+        // When actionable intent is detected, attempt to extract structured
+        // instructions from the natural language message. This bridges the gap
+        // between classification ("this is a card.create request") and parsing
+        // ("create card 'title'"). Without this, natural language like "create
+        // new onboarding tasks" would be passed raw to the regex parser and fail.
+        List<string>? instructions = null;
+        if (isActionable)
+        {
+            var extracted = NaturalLanguageInstructionExtractor.Extract(lastUserMessage, actionIntent);
+            if (extracted.Count > 0)
+                instructions = extracted;
+        }
+
         var content = isActionable
             ? $"I can help with that. I'll create a proposal to {actionIntent}."
             : $"Here's information about your request: {lastUserMessage.Trim()}";
@@ -22,7 +35,8 @@ public class MockLlmProvider : ILlmProvider
             IsActionable: isActionable,
             ActionIntent: actionIntent,
             Provider: "Mock",
-            Model: "mock-default"
+            Model: "mock-default",
+            Instructions: instructions
         ));
     }
 

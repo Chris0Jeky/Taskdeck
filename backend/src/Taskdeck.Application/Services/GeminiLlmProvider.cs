@@ -107,7 +107,14 @@ public class GeminiLlmProvider : ILlmProvider
             // Fallback to static classifier when structured parse fails
             _logger.LogDebug("Gemini response was not structured JSON; falling back to static classifier.");
             var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
-            return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "Gemini", GetConfiguredModelOrDefault());
+            List<string>? fallbackInstructions = null;
+            if (isActionable)
+            {
+                var extracted = NaturalLanguageInstructionExtractor.Extract(lastUserMessage, actionIntent);
+                if (extracted.Count > 0)
+                    fallbackInstructions = extracted;
+            }
+            return new LlmCompletionResult(content, tokensUsed, isActionable, actionIntent, "Gemini", GetConfiguredModelOrDefault(), Instructions: fallbackInstructions);
         }
         catch (OperationCanceledException)
         {
@@ -290,6 +297,17 @@ public class GeminiLlmProvider : ILlmProvider
     private static LlmCompletionResult BuildFallbackResult(string userMessage, string reason, string model)
     {
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
+
+        // When falling back to the static classifier, also extract structured
+        // instructions so the parser can handle natural language input.
+        List<string>? instructions = null;
+        if (isActionable)
+        {
+            var extracted = NaturalLanguageInstructionExtractor.Extract(userMessage, actionIntent);
+            if (extracted.Count > 0)
+                instructions = extracted;
+        }
+
         var content = isActionable
             ? $"I can help with that. I'll create a proposal to {actionIntent}. ({reason})"
             : $"I can help with that request. ({reason})";
@@ -302,7 +320,8 @@ public class GeminiLlmProvider : ILlmProvider
             Provider: "Gemini",
             Model: string.IsNullOrWhiteSpace(model) ? "gemini-unknown-model" : model.Trim(),
             IsDegraded: true,
-            DegradedReason: reason);
+            DegradedReason: reason,
+            Instructions: instructions);
     }
 
     private static int EstimateTokens(string text)
