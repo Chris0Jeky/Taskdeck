@@ -51,12 +51,6 @@ public static class NaturalLanguageInstructionExtractor
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
-    // Pattern to detect column reference without quotes (common phrasing)
-    private static readonly Regex ColumnNameUnquotedPattern = new(
-        @"(?:to|into)\s+(?:column\s+)(\w[\w\s]*\w)",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase,
-        RegexTimeout);
-
     /// <summary>
     /// Attempts to extract structured instructions from a natural language message
     /// given a detected action intent.
@@ -177,17 +171,8 @@ public static class NaturalLanguageInstructionExtractor
 
     private static List<string> ExtractBoardCreateInstructions(string message)
     {
-        // Try quoted board name
-        var quotedMatch = QuotedTitlePattern.Match(message);
-        if (quotedMatch.Success)
-        {
-            var name = quotedMatch.Groups[1].Value.Trim();
-            if (!string.IsNullOrWhiteSpace(name))
-                return new List<string> { $"create card \"{name}\"" };
-        }
-
         // Board creation doesn't have a direct parser pattern in AutomationPlannerService,
-        // so we can't produce a structured instruction for it yet
+        // so we can't produce a structured instruction for it yet.
         return new List<string>();
     }
 
