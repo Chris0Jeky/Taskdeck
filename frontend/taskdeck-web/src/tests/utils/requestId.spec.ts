@@ -29,4 +29,19 @@ describe('requestId utils', () => {
 
     expect(id.startsWith('req-')).toBe(true)
   })
+
+  it('uses crypto.randomUUID when no sources provided and crypto is available', () => {
+    const id = createRequestId()
+
+    // In test env, crypto.randomUUID is available so it returns a UUID
+    expect(typeof id).toBe('string')
+    expect(id.length).toBeGreaterThan(0)
+  })
+
+  it('uses default Date.now and Math.random when randomUUID is explicitly undefined', () => {
+    const id = createRequestId({ randomUUID: undefined })
+
+    expect(id.startsWith('req-')).toBe(true)
+    expect(id.length).toBeGreaterThan(4)
+  })
 })

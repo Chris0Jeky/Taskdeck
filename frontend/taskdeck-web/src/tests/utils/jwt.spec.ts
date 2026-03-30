@@ -33,4 +33,18 @@ describe('jwt utils', () => {
     const token = createToken({ sub: 'user-1' })
     expect(isTokenExpired(token)).toBe(false)
   })
+
+  it('returns null for token with no payload segment', () => {
+    expect(parseJwtPayload('header-only')).toBeNull()
+  })
+
+  it('returns ISO string for valid expiry', () => {
+    const token = createToken({ exp: 1893456000 })
+    const iso = getTokenExpiryIso(token)
+    expect(iso).toBe(new Date(1893456000 * 1000).toISOString())
+  })
+
+  it('returns null for malformed base64 payload', () => {
+    expect(parseJwtPayload('header.!!!invalid!!!.sig')).toBeNull()
+  })
 })

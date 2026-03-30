@@ -15,6 +15,10 @@ describe('roles utils', () => {
     expect(normalizeBoardRole('invalid' as BoardRoleValue)).toBe('Viewer')
   })
 
+  it('falls back to Viewer for out-of-range numeric role', () => {
+    expect(normalizeBoardRole(99 as BoardRoleValue)).toBe('Viewer')
+  })
+
   it('maps canonical role names to numeric role values', () => {
     expect(toBoardRoleValue('Editor')).toBe(2)
   })
