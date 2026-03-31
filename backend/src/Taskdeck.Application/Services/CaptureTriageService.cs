@@ -32,7 +32,7 @@ public class CaptureTriageService : ICaptureTriageService
         RegexOptions.Compiled);
 
     private static readonly Regex SemicolonDelimiterPattern = new(
-        @";\s*",
+        @";\s+",
         RegexOptions.Compiled);
 
     private readonly IUnitOfWork _unitOfWork;
