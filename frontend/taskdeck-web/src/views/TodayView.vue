@@ -296,7 +296,7 @@ onActivated(refreshTodaySummary)
           v-for="stat in activeStats"
           :key="stat.id"
           class="td-panel td-today-stat"
-          :class="{ 'td-today-stat--urgent': stat.id === 'review' || stat.id === 'overdue' }"
+          :class="{ 'td-today-stat--urgent': ['review', 'overdue', 'triage'].includes(stat.id) }"
         >
           <span class="td-today-stat__label">{{ stat.label }}</span>
           <span class="td-today-stat__value">{{ stat.value }}</span>
