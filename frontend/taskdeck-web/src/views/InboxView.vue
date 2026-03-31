@@ -856,13 +856,13 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-if="(selectedItem.status === 6 || selectedItem.status === 'Failed') && selectedItem.errorMessage"
+            v-if="selectedItem.status === 6 || selectedItem.status === 'Failed'"
             class="td-inbox-detail__error-banner"
             data-testid="capture-error-banner"
             role="alert"
           >
             <p class="td-inbox-detail__error-title">Triage failed</p>
-            <p class="td-inbox-detail__error-message">{{ selectedItem.errorMessage }}</p>
+            <p v-if="selectedItem.errorMessage" class="td-inbox-detail__error-message">{{ selectedItem.errorMessage }}</p>
             <p class="td-inbox-detail__error-hint">
               You can edit the text and retry, or ignore this capture if it is no longer needed.
             </p>
