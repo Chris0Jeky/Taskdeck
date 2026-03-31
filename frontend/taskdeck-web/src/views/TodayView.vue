@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
@@ -15,6 +15,11 @@ const workspace = useWorkspaceStore()
 const summary = computed(() => workspace.todaySummary)
 const onboarding = computed<WorkspaceOnboarding | null>(() => summary.value?.onboarding ?? workspace.onboarding)
 const recommendedActions = computed(() => summary.value?.recommendedActions ?? [])
+
+/** Number of agenda sections visible before "Show more" */
+const INITIAL_VISIBLE_SECTIONS = 3
+const showAllSections = ref(false)
+
 const stats = computed(() => {
   if (!summary.value) {
     return []
@@ -54,6 +59,10 @@ const stats = computed(() => {
   ]
 })
 
+/** Stats split into non-zero (full cards) and zero-count (compact chips). */
+const activeStats = computed(() => stats.value.filter(s => s.value > 0))
+const zeroStats = computed(() => stats.value.filter(s => s.value === 0))
+
 const agendaSections = computed(() => {
   if (!summary.value) {
     return []
@@ -67,6 +76,7 @@ const agendaSections = computed(() => {
       id: 'review',
       title: 'Review queue',
       count: reviewCount,
+      urgency: 'ember' as const,
       helper: 'Decide proposed changes before they hit a board.',
       route: '/workspace/review',
       items: [] as TodayAgendaCard[],
@@ -78,6 +88,7 @@ const agendaSections = computed(() => {
       id: 'capture',
       title: 'Capture triage',
       count: captureCount,
+      urgency: 'ember' as const,
       helper: 'Inbox captures that still need shaping before review.',
       route: '/workspace/inbox',
       items: [] as TodayAgendaCard[],
@@ -89,6 +100,7 @@ const agendaSections = computed(() => {
       id: 'overdue',
       title: 'Overdue cards',
       count: summary.value.summary.overdueCards,
+      urgency: 'ember' as const,
       helper: 'Start here when board work has already slipped.',
       route: null,
       items: summary.value.overdueCards,
@@ -98,6 +110,7 @@ const agendaSections = computed(() => {
       id: 'today',
       title: 'Due today',
       count: summary.value.summary.dueTodayCards,
+      urgency: 'neutral' as const,
       helper: 'Work with a due date landing today.',
       route: null,
       items: summary.value.dueTodayCards,
@@ -107,6 +120,7 @@ const agendaSections = computed(() => {
       id: 'blocked',
       title: 'Blocked cards',
       count: summary.value.summary.blockedCards,
+      urgency: 'neutral' as const,
       helper: 'Cards that need a dependency cleared or a decision made.',
       route: null,
       items: summary.value.blockedCards,
@@ -114,6 +128,22 @@ const agendaSections = computed(() => {
     },
   ]
 })
+
+/** Sections visible under progressive disclosure. */
+const visibleAgendaSections = computed(() => {
+  if (showAllSections.value) {
+    return agendaSections.value
+  }
+  return agendaSections.value.slice(0, INITIAL_VISIBLE_SECTIONS)
+})
+
+const hasHiddenSections = computed(
+  () => agendaSections.value.length > INITIAL_VISIBLE_SECTIONS && !showAllSections.value,
+)
+
+const hiddenSectionCount = computed(
+  () => agendaSections.value.length - INITIAL_VISIBLE_SECTIONS,
+)
 
 async function loadTodaySummary() {
   try {
@@ -261,26 +291,51 @@ onActivated(refreshTodaySummary)
         </div>
       </section>
 
-      <section class="td-today__stats" aria-label="Today statistics">
-        <article v-for="stat in stats" :key="stat.id" class="td-panel td-today-stat">
+      <section v-if="activeStats.length > 0" class="td-today__stats" aria-label="Today statistics">
+        <article
+          v-for="stat in activeStats"
+          :key="stat.id"
+          class="td-panel td-today-stat"
+          :class="{ 'td-today-stat--urgent': ['review', 'overdue', 'triage'].includes(stat.id) }"
+        >
           <span class="td-today-stat__label">{{ stat.label }}</span>
           <span class="td-today-stat__value">{{ stat.value }}</span>
           <span class="td-today-stat__helper">{{ stat.helper }}</span>
         </article>
       </section>
 
+      <div v-if="zeroStats.length > 0" class="td-today__zero-chips" aria-label="Zero-count statistics">
+        <span
+          v-for="stat in zeroStats"
+          :key="stat.id"
+          class="td-today-zero-chip"
+          :title="stat.helper"
+        >
+          {{ stat.label }}: 0
+        </span>
+      </div>
+
       <section class="td-today__agenda-grid" aria-label="Daily agenda sections">
         <article
-          v-for="section in agendaSections"
+          v-for="section in visibleAgendaSections"
           :key="section.id"
-          class="td-panel td-today-card"
+          :class="[
+            'td-panel',
+            'td-today-card',
+            `td-today-card--${section.urgency}`,
+          ]"
         >
           <div class="td-today__section-head">
             <div>
               <h2 class="td-section-title">{{ section.title }}</h2>
               <p class="td-section-desc">{{ section.helper }}</p>
             </div>
-            <span class="td-today-card__count">{{ section.count }}</span>
+            <span
+              :class="[
+                'td-today-card__count',
+                section.count === 0 ? 'td-today-card__count--zero' : '',
+              ]"
+            >{{ section.count }}</span>
           </div>
 
           <div v-if="section.items.length === 0" class="td-today-card__empty">
@@ -310,6 +365,15 @@ onActivated(refreshTodaySummary)
           </div>
         </article>
       </section>
+
+      <div v-if="hasHiddenSections" class="td-today__show-more">
+        <button
+          class="td-btn td-btn--secondary td-btn--sm"
+          @click="showAllSections = true"
+        >
+          Show {{ hiddenSectionCount }} more section{{ hiddenSectionCount === 1 ? '' : 's' }}
+        </button>
+      </div>
 
       <section class="td-panel td-today__recommended">
         <div class="td-today__section-head">
@@ -349,7 +413,7 @@ onActivated(refreshTodaySummary)
 .td-today {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-5);
+  gap: var(--td-space-6);
 }
 
 /* ── Hero panel ── */
@@ -474,7 +538,7 @@ onActivated(refreshTodaySummary)
 .td-today__stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--td-space-3);
+  gap: var(--td-space-5);
 }
 
 .td-today-stat {
@@ -511,12 +575,38 @@ onActivated(refreshTodaySummary)
   line-height: 1.5;
 }
 
+.td-today-stat--urgent {
+  border-left: 3px solid var(--td-color-ember);
+}
+
+/* ── Zero-count chip row ── */
+
+.td-today__zero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-2);
+}
+
+.td-today-zero-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--td-space-1) var(--td-space-3);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: var(--td-font-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--td-text-tertiary);
+  background: var(--td-surface-container);
+  border: 0.5px solid var(--td-border-ghost);
+  border-radius: var(--td-radius-pill, 999px);
+}
+
 /* ── Agenda grid ── */
 
 .td-today__agenda-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--td-space-4);
+  gap: var(--td-space-5);
 }
 
 .td-today-card {
@@ -527,6 +617,15 @@ onActivated(refreshTodaySummary)
   border: 0.5px solid var(--td-border-ghost);
   border-radius: var(--td-radius-lg);
   padding: var(--td-space-5);
+  border-left: 3px solid var(--td-border-ghost);
+}
+
+.td-today-card--ember {
+  border-left-color: var(--td-color-ember);
+}
+
+.td-today-card--neutral {
+  border-left-color: var(--td-text-tertiary);
 }
 
 .td-today-card__count {
@@ -544,6 +643,20 @@ onActivated(refreshTodaySummary)
   font-weight: 800;
   padding: 0 0.5rem;
   flex-shrink: 0;
+}
+
+.td-today-card__count--zero {
+  background: var(--td-surface-container);
+  border-color: var(--td-border-ghost);
+  color: var(--td-text-tertiary);
+}
+
+/* ── Show more button ── */
+
+.td-today__show-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--td-space-2) 0;
 }
 
 .td-today-card__empty {
