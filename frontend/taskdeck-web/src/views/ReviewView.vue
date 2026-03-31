@@ -45,6 +45,35 @@ const boardFilterInput = ref('')
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 const showCompleted = ref(false)
 
+// Per-proposal collapsible section state (Record<bool> for Vue reactivity)
+const expandedSections = ref<Record<string, Record<string, boolean>>>({})
+
+function isSectionExpanded(proposalId: string, section: string): boolean {
+  return !!expandedSections.value[proposalId]?.[section]
+}
+
+function toggleSection(proposalId: string, section: string) {
+  if (!expandedSections.value[proposalId]) {
+    expandedSections.value[proposalId] = {}
+  }
+  expandedSections.value[proposalId][section] = !expandedSections.value[proposalId][section]
+}
+
+// Per-proposal link dropdown state
+const openLinkDropdown = ref<string | null>(null)
+
+function toggleLinkDropdown(proposalId: string) {
+  openLinkDropdown.value = openLinkDropdown.value === proposalId ? null : proposalId
+}
+
+function closeLinkDropdown(event: FocusEvent) {
+  const nextFocus = event.relatedTarget as HTMLElement
+  if (nextFocus?.closest('.td-review-card__links-dropdown-wrapper')) {
+    return
+  }
+  openLinkDropdown.value = null
+}
+
 const completedStatuses = new Set(['Applied', 'Rejected', 'Failed', 'Expired', 'Dismissed'])
 
 const boardOptions = computed(() =>
@@ -391,13 +420,7 @@ function impactSummary(proposal: ApiProposal): string {
     || `${proposal.operations.length} planned change${proposal.operations.length === 1 ? '' : 's'}.`
 }
 
-function sourceCue(proposal: ApiProposal): string {
-  return proposal.presentation?.sourceCue || `Source: ${normalizeProposalSourceType(proposal.sourceType)}`
-}
-
-function riskCue(proposal: ApiProposal): string {
-  return proposal.presentation?.riskCue || `Risk: ${normalizeProposalRiskLevel(proposal.riskLevel)}`
-}
+// sourceCue and riskCue replaced by color-coded risk badge and inline meta display
 
 function operationHeadlines(proposal: ApiProposal): string[] {
   if (proposal.presentation?.operationHeadlines?.length) {
@@ -492,6 +515,15 @@ const statusLabels: Record<string, string> = {
 function reviewStatusLabel(status: ApiProposal['status']): string {
   const normalized = normalizeProposalStatus(status)
   return statusLabels[normalized] ?? normalized
+}
+
+function riskLevelClass(riskLevel: ApiProposal['riskLevel']): string {
+  const normalized = normalizeProposalRiskLevel(riskLevel)
+  if (normalized === 'Low') return 'td-risk--low'
+  if (normalized === 'Medium') return 'td-risk--medium'
+  if (normalized === 'High') return 'td-risk--high'
+  if (normalized === 'Critical') return 'td-risk--critical'
+  return 'td-risk--low'
 }
 
 async function loadBoardOptions() {
@@ -663,11 +695,14 @@ watch(
         :key="proposal.id"
         class="td-panel td-review-card"
       >
+        <!-- Always visible: title, status badge, risk level (color-coded), meta -->
         <div class="td-review-card__header">
           <div>
             <h2 class="td-review-card__title">{{ readableSummary(proposal) }}</h2>
             <div class="td-review-card__meta">
-              <span>Risk: {{ normalizeProposalRiskLevel(proposal.riskLevel) }}</span>
+              <span :class="['td-risk-badge', riskLevelClass(proposal.riskLevel)]">
+                {{ normalizeProposalRiskLevel(proposal.riskLevel) }} risk
+              </span>
               <span>Created: {{ formatDate(proposal.createdAt) }}</span>
               <span>Source: {{ normalizeProposalSourceType(proposal.sourceType) }}</span>
             </div>
@@ -677,44 +712,23 @@ watch(
           </span>
         </div>
 
+        <!-- Impact cue always visible -->
         <div class="td-review-card__presentation">
-          <p class="td-review-card__summary">{{ readableSummary(proposal) }}</p>
-          <div class="td-review-card__cues">
-            <span class="td-review-cue">{{ impactSummary(proposal) }}</span>
-            <span class="td-review-cue">{{ riskCue(proposal) }}</span>
-            <span class="td-review-cue">{{ sourceCue(proposal) }}</span>
-          </div>
+          <span class="td-review-cue">{{ impactSummary(proposal) }}</span>
         </div>
 
-        <div v-if="hasProvenanceContext(proposal)" class="td-review-card__provenance">
-          <span class="td-provenance-chip">Capture-linked</span>
-          <router-link class="td-btn td-btn--secondary td-btn--sm" :to="captureHrefForProposal(proposal)">
-            Open Capture
-          </router-link>
-          <router-link class="td-btn td-btn--secondary td-btn--sm" :to="proposalHref(proposal)">
-            Review Link
-          </router-link>
+        <!-- Collapsible: Affected cards (count badge, expandable) -->
+        <div v-if="affectedEntities(proposal).length > 0" class="td-review-card__collapsible">
           <button
-            v-if="proposal.boardId"
-            class="td-btn td-btn--secondary td-btn--sm"
-            @click="openBoard(proposal.boardId)"
+            class="td-review-card__collapse-toggle"
+            :aria-expanded="isSectionExpanded(proposal.id, 'entities')"
+            @click="toggleSection(proposal.id, 'entities')"
           >
-            Open Board
+            <span class="td-review-card__collapse-icon" aria-hidden="true" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'entities') }">&#9654;</span>
+            <span class="td-review-card__section-label">Affected cards</span>
+            <span class="td-review-card__count-badge">{{ affectedEntities(proposal).length }}</span>
           </button>
-          <span
-            v-if="proposal.correlationId.trim().length > 0"
-            class="td-review-card__provenance-meta"
-            :title="proposal.correlationId.trim()"
-            :aria-label="`Triage run: ${proposal.correlationId.trim()}`"
-            tabindex="0"
-          >
-            Triage run: {{ shortCorrelationId(proposal.correlationId) }}
-          </span>
-        </div>
-
-        <div v-if="affectedEntities(proposal).length > 0" class="td-review-card__entities">
-          <span class="td-review-card__section-label">Affected</span>
-          <div class="td-review-card__entity-list">
+          <div v-if="isSectionExpanded(proposal.id, 'entities')" class="td-review-card__entity-list">
             <span
               v-for="entity in affectedEntities(proposal)"
               :key="`${proposal.id}-${entity.entityType}-${entity.entityId ?? 'none'}`"
@@ -725,18 +739,96 @@ watch(
           </div>
         </div>
 
-        <div v-if="operationHeadlines(proposal).length > 0" class="td-review-card__operations">
-          <span class="td-review-card__section-label">Planned changes</span>
-          <ul class="td-review-card__operation-list">
-            <li
-              v-for="(headline, headlineIndex) in operationHeadlines(proposal)"
-              :key="`${proposal.id}-${headlineIndex}-${headline}`"
-            >
-              {{ headline }}
-            </li>
-          </ul>
+        <!-- Collapsible: Planned changes -->
+        <div v-if="operationHeadlines(proposal).length > 0" class="td-review-card__collapsible">
+          <button
+            class="td-review-card__collapse-toggle"
+            :aria-expanded="isSectionExpanded(proposal.id, 'operations')"
+            @click="toggleSection(proposal.id, 'operations')"
+          >
+            <span class="td-review-card__collapse-icon" aria-hidden="true" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'operations') }">&#9654;</span>
+            <span class="td-review-card__section-label">Planned changes</span>
+            <span class="td-review-card__count-badge">{{ operationHeadlines(proposal).length }}</span>
+          </button>
+          <div v-if="isSectionExpanded(proposal.id, 'operations')">
+            <ul class="td-review-card__operation-list">
+              <li
+                v-for="(headline, headlineIndex) in operationHeadlines(proposal)"
+                :key="`${proposal.id}-${headlineIndex}-${headline}`"
+              >
+                {{ headline }}
+              </li>
+            </ul>
+          </div>
         </div>
 
+        <!-- Collapsible: Provenance / Technical details -->
+        <div v-if="hasProvenanceContext(proposal)" class="td-review-card__collapsible">
+          <button
+            class="td-review-card__collapse-toggle"
+            :aria-expanded="isSectionExpanded(proposal.id, 'provenance')"
+            @click="toggleSection(proposal.id, 'provenance')"
+          >
+            <span class="td-review-card__collapse-icon" aria-hidden="true" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'provenance') }">&#9654;</span>
+            <span class="td-review-card__section-label">Technical details</span>
+            <span class="td-provenance-chip">Capture-linked</span>
+          </button>
+          <div v-if="isSectionExpanded(proposal.id, 'provenance')" class="td-review-card__provenance-content">
+            <span
+              v-if="proposal.correlationId.trim().length > 0"
+              class="td-review-card__provenance-meta"
+              :title="proposal.correlationId.trim()"
+              :aria-label="`Triage run: ${proposal.correlationId.trim()}`"
+              tabindex="0"
+            >
+              Triage run: {{ shortCorrelationId(proposal.correlationId) }}
+            </span>
+            <!-- Links dropdown -->
+            <div class="td-review-card__links-dropdown-wrapper">
+              <button
+                class="td-btn td-btn--secondary td-btn--sm"
+                :aria-expanded="openLinkDropdown === proposal.id"
+                @click="toggleLinkDropdown(proposal.id)"
+                @blur="closeLinkDropdown"
+              >
+                Links &#9662;
+              </button>
+              <div
+                v-if="openLinkDropdown === proposal.id"
+                class="td-review-card__links-dropdown"
+                role="menu"
+              >
+                <router-link
+                  class="td-review-card__links-dropdown-item"
+                  role="menuitem"
+                  :to="captureHrefForProposal(proposal)"
+                  @mousedown.prevent
+                >
+                  Open Capture
+                </router-link>
+                <router-link
+                  class="td-review-card__links-dropdown-item"
+                  role="menuitem"
+                  :to="proposalHref(proposal)"
+                  @mousedown.prevent
+                >
+                  Review Link
+                </router-link>
+                <button
+                  v-if="proposal.boardId"
+                  class="td-review-card__links-dropdown-item"
+                  role="menuitem"
+                  @mousedown.prevent
+                  @click="openBoard(proposal.boardId)"
+                >
+                  Open Board
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action buttons — always visible -->
         <div class="td-review-card__actions">
           <span
             v-if="normalizeProposalStatus(proposal.status) === 'PendingReview'"
@@ -943,18 +1035,6 @@ watch(
   gap: var(--td-space-2);
 }
 
-.td-review-card__summary {
-  margin: 0;
-  color: var(--td-text-primary);
-  line-height: 1.6;
-}
-
-.td-review-card__cues {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--td-space-2);
-}
-
 .td-review-cue {
   border-radius: var(--td-radius-pill, 999px);
   background: var(--td-surface-container-high);
@@ -963,6 +1043,129 @@ watch(
   font-size: var(--td-font-xs);
   font-weight: 600;
   padding: 0.25rem 0.625rem;
+}
+
+/* Risk level color-coded badges */
+.td-risk-badge {
+  border-radius: var(--td-radius-pill, 999px);
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  padding: 0.125rem 0.5rem;
+}
+
+.td-risk--low {
+  color: var(--td-color-success);
+  background: var(--td-color-success-light);
+}
+
+.td-risk--medium {
+  color: var(--td-color-warning);
+  background: var(--td-color-warning-light);
+}
+
+.td-risk--high {
+  color: var(--td-color-error);
+  background: var(--td-color-error-light);
+}
+
+.td-risk--critical {
+  color: var(--td-color-error);
+  background: var(--td-color-error-light);
+  border: 1px solid var(--td-color-error);
+}
+
+/* Collapsible sections */
+.td-review-card__collapsible {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+}
+
+.td-review-card__collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  background: none;
+  border: none;
+  padding: var(--td-space-1) 0;
+  cursor: pointer;
+  color: var(--td-text-primary);
+  font-family: inherit;
+  text-align: left;
+}
+
+.td-review-card__collapse-toggle:hover {
+  color: var(--td-color-primary);
+}
+
+.td-review-card__collapse-icon {
+  font-size: 0.625rem;
+  transition: transform 0.15s ease;
+  display: inline-block;
+  color: var(--td-text-secondary);
+}
+
+.td-review-card__collapse-icon--open {
+  transform: rotate(90deg);
+}
+
+.td-review-card__count-badge {
+  border-radius: var(--td-radius-pill, 999px);
+  background: var(--td-surface-container-highest);
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  padding: 0.0625rem 0.4375rem;
+  min-width: 1.25rem;
+  text-align: center;
+}
+
+/* Provenance content inside collapsible */
+.td-review-card__provenance-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-2);
+  align-items: center;
+  padding-left: calc(0.625rem + var(--td-space-2));
+}
+
+/* Links dropdown */
+.td-review-card__links-dropdown-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.td-review-card__links-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  min-width: 160px;
+  margin-top: var(--td-space-1);
+  padding: var(--td-space-1) 0;
+  background: var(--td-surface-container);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+}
+
+.td-review-card__links-dropdown-item {
+  display: block;
+  padding: var(--td-space-2) var(--td-space-3);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-primary);
+  text-decoration: none;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.td-review-card__links-dropdown-item:hover {
+  background: var(--td-surface-container-high);
 }
 
 .td-review-status {
@@ -999,13 +1202,6 @@ watch(
   background: var(--td-surface-container-high);
 }
 
-.td-review-card__provenance {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--td-space-2);
-  align-items: center;
-}
-
 .td-provenance-chip {
   border-radius: var(--td-radius-pill, 999px);
   background: var(--td-surface-container-high);
@@ -1019,13 +1215,6 @@ watch(
 .td-review-card__provenance-meta {
   font-size: var(--td-font-xs);
   color: var(--td-text-secondary);
-}
-
-.td-review-card__entities,
-.td-review-card__operations {
-  display: flex;
-  flex-direction: column;
-  gap: var(--td-space-2);
 }
 
 .td-review-card__section-label {
@@ -1177,15 +1366,17 @@ watch(
     padding: var(--td-space-2);
   }
 
-  .td-review-card__provenance {
+  .td-review-card__provenance-content {
     flex-direction: column;
     align-items: stretch;
+    padding-left: 0;
   }
 
-  .td-review-card__provenance .td-btn {
-    min-height: 44px;
-    justify-content: center;
-    text-align: center;
+  .td-review-card__links-dropdown {
+    position: static;
+    box-shadow: none;
+    border: 1px solid var(--td-border-default);
+    margin-top: var(--td-space-1);
   }
 
   .td-review-empty__actions {

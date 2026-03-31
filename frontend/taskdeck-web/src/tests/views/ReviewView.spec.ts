@@ -267,11 +267,26 @@ describe('ReviewView', () => {
     const { wrapper } = await mountAt('/workspace/review')
 
     expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200 })
+    // "Capture-linked" chip is visible on the collapsed toggle
     expect(wrapper.text()).toContain('Capture-linked')
+
+    // Expand the Technical details section to see provenance content
+    const provenanceToggle = wrapper.findAll('.td-review-card__collapse-toggle').find((btn) => btn.text().includes('Technical details'))
+    expect(provenanceToggle).toBeDefined()
+    await provenanceToggle!.trigger('click')
+    await wrapper.vm.$nextTick()
+
     expect(wrapper.text()).toContain('Triage run: a1b2c3d4...')
     expect(wrapper.text()).not.toContain(fullCorrelationId)
     const triageSpan = wrapper.find('.td-review-card__provenance-meta')
     expect(triageSpan.attributes('title')).toBe(fullCorrelationId)
+
+    // Open the Links dropdown to find provenance links
+    const linksBtn = wrapper.findAll('.td-btn--secondary').find((btn) => btn.text().includes('Links'))
+    expect(linksBtn).toBeDefined()
+    await linksBtn!.trigger('click')
+    await wrapper.vm.$nextTick()
+
     expect(wrapper.find('a[href="/workspace/inbox?boardId=board-1#capture-capture-99"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/workspace/review?boardId=board-1#proposal-proposal-99"]').exists()).toBe(true)
   })
@@ -286,6 +301,18 @@ describe('ReviewView', () => {
     ])
 
     const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
+
+    // Expand the Technical details section
+    const provenanceToggle = wrapper.findAll('.td-review-card__collapse-toggle').find((btn) => btn.text().includes('Technical details'))
+    expect(provenanceToggle).toBeDefined()
+    await provenanceToggle!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // Open the Links dropdown
+    const linksBtn = wrapper.findAll('.td-btn--secondary').find((btn) => btn.text().includes('Links'))
+    expect(linksBtn).toBeDefined()
+    await linksBtn!.trigger('click')
+    await wrapper.vm.$nextTick()
 
     expect(wrapper.find('a[href="/workspace/inbox?boardId=board-7#capture-capture-99"]').exists()).toBe(true)
   })
@@ -544,11 +571,23 @@ describe('ReviewView', () => {
 
     const { wrapper } = await mountAt('/workspace/review')
 
+    // Title and impact cue are always visible
     expect(wrapper.text()).toContain('Rename the support board and create a follow-up card.')
-    expect(wrapper.text()).toContain('Created from an automation chat session.')
+    expect(wrapper.text()).toContain('2 changes touching 2 target surfaces.')
+
+    // Affected cards are collapsed by default -- expand to verify
+    const entitiesToggle = wrapper.findAll('.td-review-card__collapse-toggle').find((btn) => btn.text().includes('Affected cards'))
+    expect(entitiesToggle).toBeDefined()
+    await entitiesToggle!.trigger('click')
+    await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Board board-12 · 1 change')
+
+    // Planned changes are collapsed by default -- expand to verify
+    const operationsToggle = wrapper.findAll('.td-review-card__collapse-toggle').find((btn) => btn.text().includes('Planned changes'))
+    expect(operationsToggle).toBeDefined()
+    await operationsToggle!.trigger('click')
+    await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Rename board "Support".')
-    expect(wrapper.text()).toContain('Open Board')
   })
 
   it('redirects legacy proposal routes to the canonical review route', async () => {
