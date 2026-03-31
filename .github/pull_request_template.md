@@ -19,6 +19,10 @@
 - [ ] Linked issue included (e.g., `Closes #123`)
 - [ ] Linked issue’s project item status reviewed (`Review` while this PR is open, `Done` when this PR is merged)
 
+## CI Workflow Validation
+
+- [ ] If this PR touches `.github/workflows/`, `deploy/`, `scripts/`, or `*.csproj` files: confirm CI Extended passed (auto-triggered on these paths)
+
 ## Risk Notes
 
 - Security impact:
