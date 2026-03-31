@@ -31,7 +31,7 @@ function renderMarkdown(content: string): string {
 function isTruncatedJson(content: string): boolean {
   if (!content) return false
   const trimmed = content.trim()
-  if (!trimmed.startsWith('{')) return false
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false
   try {
     JSON.parse(trimmed)
     return false

@@ -476,6 +476,9 @@ public class GeminiLlmProviderTests
     [InlineData("plain text response", false)]
     [InlineData("", false)]
     [InlineData("  { broken json", true)]
+    [InlineData("[{\"id\":1},", true)]
+    [InlineData("[\"complete\"]", false)]
+    [InlineData("  [ broken array", true)]
     public void LooksLikeTruncatedJson_ShouldDetectPartialJson(string input, bool expected)
     {
         GeminiLlmProvider.LooksLikeTruncatedJson(input).Should().Be(expected);

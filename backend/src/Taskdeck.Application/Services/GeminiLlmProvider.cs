@@ -372,7 +372,7 @@ public class GeminiLlmProvider : ILlmProvider
             return false;
 
         var trimmed = text.TrimStart();
-        if (!trimmed.StartsWith('{'))
+        if (!trimmed.StartsWith('{') && !trimmed.StartsWith('['))
             return false;
 
         try

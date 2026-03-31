@@ -668,6 +668,130 @@ describe('AutomationChatView', () => {
     expect(wrapper.find('.td-hint-card__patterns').exists()).toBe(false)
   })
 
+  it('shows truncation notice instead of raw JSON for truncated assistant messages', async () => {
+    const now = new Date().toISOString()
+    const truncatedSession = {
+      id: 'session-trunc',
+      userId: 'user-1',
+      boardId: null,
+      title: 'Truncation test',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+      recentMessages: [
+        {
+          id: 'msg-user',
+          sessionId: 'session-trunc',
+          role: 'User',
+          content: 'Tell me about the board',
+          messageType: 'text' as const,
+          proposalId: null,
+          tokenUsage: null,
+          createdAt: now,
+        },
+        {
+          id: 'msg-trunc',
+          sessionId: 'session-trunc',
+          role: 'Assistant',
+          content: '{"reply":"I understand your question about',
+          messageType: 'text' as const,
+          proposalId: null,
+          tokenUsage: 50,
+          createdAt: now,
+        },
+      ],
+    }
+    mocks.getMySessions.mockResolvedValue([truncatedSession])
+    mocks.getSession.mockResolvedValue(truncatedSession)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    const truncatedMsg = wrapper.find('.td-message-content--truncated')
+    expect(truncatedMsg.exists()).toBe(true)
+    expect(truncatedMsg.text()).toContain('This response was cut short')
+    expect(wrapper.text()).not.toContain('{"reply"')
+  })
+
+  it('shows truncation notice for degraded messages with truncated JSON content', async () => {
+    const now = new Date().toISOString()
+    const degradedTruncSession = {
+      id: 'session-deg-trunc',
+      userId: 'user-1',
+      boardId: null,
+      title: 'Degraded truncation test',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+      recentMessages: [
+        {
+          id: 'msg-user',
+          sessionId: 'session-deg-trunc',
+          role: 'User',
+          content: 'Hello',
+          messageType: 'text' as const,
+          proposalId: null,
+          tokenUsage: null,
+          createdAt: now,
+        },
+        {
+          id: 'msg-deg-trunc',
+          sessionId: 'session-deg-trunc',
+          role: 'Assistant',
+          content: '{"reply":"I understand',
+          messageType: 'degraded' as const,
+          proposalId: null,
+          tokenUsage: 10,
+          createdAt: now,
+          degradedReason: 'Response was truncated',
+        },
+      ],
+    }
+    mocks.getMySessions.mockResolvedValue([degradedTruncSession])
+    mocks.getSession.mockResolvedValue(degradedTruncSession)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('Degraded response: Response was truncated')
+    expect(wrapper.find('.td-message-content--truncated').exists()).toBe(true)
+    expect(wrapper.text()).toContain('This response was cut short')
+    expect(wrapper.text()).not.toContain('{"reply"')
+  })
+
+  it('detects truncated JSON arrays starting with [', async () => {
+    const now = new Date().toISOString()
+    const arrayTruncSession = {
+      id: 'session-arr-trunc',
+      userId: 'user-1',
+      boardId: null,
+      title: 'Array truncation test',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+      recentMessages: [
+        {
+          id: 'msg-arr-trunc',
+          sessionId: 'session-arr-trunc',
+          role: 'Assistant',
+          content: '[{"id":1,"name":"incomplete',
+          messageType: 'text' as const,
+          proposalId: null,
+          tokenUsage: 30,
+          createdAt: now,
+        },
+      ],
+    }
+    mocks.getMySessions.mockResolvedValue([arrayTruncSession])
+    mocks.getSession.mockResolvedValue(arrayTruncSession)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.find('.td-message-content--truncated').exists()).toBe(true)
+    expect(wrapper.text()).toContain('This response was cut short')
+  })
+
   it('surfaces provider-health loading failures explicitly', async () => {
     mocks.getHealth.mockRejectedValueOnce(new Error('health down'))
 
