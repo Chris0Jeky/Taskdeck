@@ -492,6 +492,7 @@ public class CaptureService : ICaptureService
             item.CreatedAt,
             item.ProcessedAt,
             item.RetryCount,
+            item.ErrorMessage,
             payload.Provenance);
     }
 

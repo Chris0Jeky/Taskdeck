@@ -58,6 +58,7 @@ export interface CaptureProvenance {
 export interface CaptureItem extends CaptureItemSummary {
   rawText: string
   retryCount: number
+  errorMessage?: string | null
   provenance?: CaptureProvenance | null
 }
 

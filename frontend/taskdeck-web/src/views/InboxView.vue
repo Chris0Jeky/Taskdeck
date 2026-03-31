@@ -499,6 +499,10 @@ function triageButtonLabel(status: CaptureStatusValue | undefined): string {
     return 'Converted'
   }
 
+  if (label === 'Failed') {
+    return 'Retry Triage'
+  }
+
   return 'Start Triage'
 }
 
@@ -849,6 +853,19 @@ onUnmounted(() => {
                 Edit Text
               </button>
             </template>
+          </div>
+
+          <div
+            v-if="selectedItem.status === 6 || selectedItem.status === 'Failed'"
+            class="td-inbox-detail__error-banner"
+            data-testid="capture-error-banner"
+            role="alert"
+          >
+            <p class="td-inbox-detail__error-title">Triage failed</p>
+            <p v-if="selectedItem.errorMessage" class="td-inbox-detail__error-message">{{ selectedItem.errorMessage }}</p>
+            <p class="td-inbox-detail__error-hint">
+              You can edit the text and retry, or ignore this capture if it is no longer needed.
+            </p>
           </div>
 
           <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link">
@@ -1254,6 +1271,40 @@ onUnmounted(() => {
   display: flex;
   gap: var(--td-space-2);
   justify-content: flex-end;
+}
+
+/* ─── Error banner (Failed captures) ─── */
+
+.td-inbox-detail__error-banner {
+  background: rgba(255, 77, 77, 0.08);
+  border: 0.5px solid rgba(255, 77, 77, 0.25);
+  border-radius: var(--td-radius-md);
+  padding: var(--td-space-3) var(--td-space-4);
+}
+
+.td-inbox-detail__error-title {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--td-color-ember, #ff4d4d);
+  margin: 0 0 var(--td-space-2) 0;
+  font-weight: 600;
+}
+
+.td-inbox-detail__error-message {
+  color: var(--td-text-primary);
+  font-size: var(--td-font-sm);
+  line-height: 1.5;
+  margin: 0 0 var(--td-space-2) 0;
+  word-break: break-word;
+}
+
+.td-inbox-detail__error-hint {
+  color: var(--td-text-tertiary);
+  font-size: var(--td-font-xs);
+  line-height: 1.5;
+  margin: 0;
 }
 
 .td-inbox-detail__proposal-link {
