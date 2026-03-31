@@ -131,6 +131,16 @@ public class AutomationProposal : Entity
         Touch();
     }
 
+    public void Dismiss()
+    {
+        if (Status != ProposalStatus.Applied && Status != ProposalStatus.Rejected
+            && Status != ProposalStatus.Failed && Status != ProposalStatus.Expired)
+            throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot dismiss proposal in status {Status}");
+
+        Status = ProposalStatus.Dismissed;
+        Touch();
+    }
+
     public void SetDiffPreview(string diffPreview)
     {
         if (Status != ProposalStatus.PendingReview)
@@ -164,7 +174,8 @@ public enum ProposalStatus
     Rejected,
     Applied,
     Failed,
-    Expired
+    Expired,
+    Dismissed
 }
 
 public enum RiskLevel

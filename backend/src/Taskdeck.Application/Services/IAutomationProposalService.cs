@@ -50,4 +50,9 @@ public interface IAutomationProposalService
     /// Gets the diff preview for a proposal.
     /// </summary>
     Task<Result<string>> GetProposalDiffAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Dismisses completed proposals (Applied, Rejected, Failed, Expired) so they no longer appear in the default review list.
+    /// </summary>
+    Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
 }

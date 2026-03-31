@@ -216,6 +216,53 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Dismisses completed proposals so they no longer appear in the default review list.
+    /// Accepts an array of proposal IDs; only proposals in terminal states (Applied, Rejected, Failed, Expired) will be dismissed.
+    /// </summary>
+    [HttpPost("dismiss")]
+    public async Task<IActionResult> DismissProposals(
+        [FromBody] DismissProposalsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        if (request.Ids is null || request.Ids.Count == 0)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "At least one proposal ID is required"));
+        }
+
+        if (request.Ids.Count > MaxProposalListLimit)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                $"Cannot dismiss more than {MaxProposalListLimit} proposals at once"));
+        }
+
+        // Verify the caller owns or has access to the proposals
+        var proposals = await _proposalService.GetProposalsAsync(
+            new ProposalFilterDto(null, null, callerUserId, null, MaxProposalListLimit),
+            cancellationToken);
+
+        if (!proposals.IsSuccess)
+            return proposals.ToErrorActionResult();
+
+        var ownedIds = proposals.Value.Select(p => p.Id).ToHashSet();
+        var unauthorizedIds = request.Ids.Where(id => !ownedIds.Contains(id)).ToList();
+        if (unauthorizedIds.Count > 0)
+        {
+            return Result.Failure(ErrorCodes.Forbidden, "You can only dismiss your own proposals.").ToErrorActionResult();
+        }
+
+        var result = await _proposalService.DismissProposalsAsync(request.Ids, cancellationToken);
+        return result.IsSuccess
+            ? Ok(new { dismissed = result.Value })
+            : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Gets a diff preview for a proposal showing what changes will be made.
     /// </summary>
     [HttpGet("{id}/diff")]
