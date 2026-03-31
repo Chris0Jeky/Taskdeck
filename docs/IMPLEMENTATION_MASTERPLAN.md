@@ -55,8 +55,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 1668+ passing (property-based and fuzz tests added via FsCheck)
-   - Frontend unit: 1174+ passing (123+ test files; batch triage, search, accessibility tests added)
+   - Backend: 1949+ passing (property-based and fuzz tests added via FsCheck)
+   - Frontend unit: 1444+ passing (132+ test files; batch triage, search, accessibility tests added)
    - Default Playwright regression lane: 24+ passing (accessibility axe-core E2E added; `stakeholder-demo.spec.ts` remains opt-in/skipped by default)
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -701,7 +701,7 @@ Exit Criteria:
 These continue in parallel where they protect trust, performance, or operator posture, but they should not outrun Horizon A through C product legibility work:
 
 - managed-key LLM control plane and abuse controls: `#235`, `#237` (pending), `#238` (operator tooling groundwork delivered; live-traffic wiring pending), `#239` (delivered), `#240` (delivered)
-- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling
+- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling; UX feedback wave 1 (`#628`) delivered: sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages (`#615`), review collapsible sections with risk color-coding (`#626`)
 - long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
 - platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
 - deferred outreach CRM expansion: `#262` to `#268`
