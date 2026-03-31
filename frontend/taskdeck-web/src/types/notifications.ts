@@ -1,3 +1,10 @@
+export type NotificationTypeName =
+  | 'Mention'
+  | 'Assignment'
+  | 'ProposalOutcome'
+  | 'BoardChange'
+  | 'System'
+
 export interface NotificationItem {
   id: string
   userId: string
@@ -12,6 +19,10 @@ export interface NotificationItem {
   readAt: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface MarkAllReadResponse {
+  markedCount: number
 }
 
 export interface NotificationQuery {

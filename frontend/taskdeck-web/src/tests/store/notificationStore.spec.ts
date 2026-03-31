@@ -12,6 +12,7 @@ vi.mock('../../api/notificationsApi', () => ({
   notificationsApi: {
     getNotifications: vi.fn(),
     markAsRead: vi.fn(),
+    markAllRead: vi.fn(),
     getPreferences: vi.fn(),
     updatePreferences: vi.fn(),
   },
@@ -152,6 +153,104 @@ describe('notificationStore', () => {
     expect(store.preferences?.mentionImmediateEnabled).toBe(false)
     expect(store.preferences?.mentionDigestEnabled).toBe(true)
     expect(toastMocks.success).toHaveBeenCalled()
+  })
+
+  it('marks all notifications as read in local state', async () => {
+    const store = useNotificationStore()
+    store.notifications = [
+      {
+        id: 'n1',
+        userId: 'u1',
+        boardId: null,
+        type: 'Mention',
+        cadence: 'Immediate',
+        title: 'First',
+        message: 'Message 1',
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'n2',
+        userId: 'u1',
+        boardId: null,
+        type: 'Mention',
+        cadence: 'Immediate',
+        title: 'Second',
+        message: 'Message 2',
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]
+
+    vi.mocked(notificationsApi.markAllRead).mockResolvedValue({ markedCount: 2 })
+
+    await store.markAllRead()
+
+    expect(store.notifications[0].isRead).toBe(true)
+    expect(store.notifications[1].isRead).toBe(true)
+    expect(notificationsApi.markAllRead).toHaveBeenCalledWith(undefined)
+  })
+
+  it('only marks board-scoped notifications when boardId provided', async () => {
+    const store = useNotificationStore()
+    store.notifications = [
+      {
+        id: 'n1',
+        userId: 'u1',
+        boardId: 'board-A',
+        type: 'ProposalOutcome',
+        cadence: 'Immediate',
+        title: 'First',
+        message: 'Message 1',
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'n2',
+        userId: 'u1',
+        boardId: 'board-B',
+        type: 'Mention',
+        cadence: 'Immediate',
+        title: 'Second',
+        message: 'Message 2',
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]
+
+    vi.mocked(notificationsApi.markAllRead).mockResolvedValue({ markedCount: 1 })
+
+    await store.markAllRead('board-A')
+
+    expect(store.notifications[0].isRead).toBe(true)
+    expect(store.notifications[1].isRead).toBe(false)
+    expect(notificationsApi.markAllRead).toHaveBeenCalledWith('board-A')
+  })
+
+  it('sets error when markAllRead fails', async () => {
+    const store = useNotificationStore()
+    vi.mocked(notificationsApi.markAllRead).mockRejectedValue(new Error('batch failed'))
+
+    await expect(store.markAllRead()).rejects.toBeInstanceOf(Error)
+
+    expect(store.error).toBe('Failed to mark all notifications as read')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to mark all notifications as read')
   })
 
   it('sets error and toasts when fetching notifications fails', async () => {

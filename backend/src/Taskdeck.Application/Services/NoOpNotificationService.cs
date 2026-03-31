@@ -28,6 +28,14 @@ public sealed class NoOpNotificationService : INotificationService
         return Task.FromResult(Result.Failure<NotificationDto>(ErrorCodes.NotFound, "Notification not found"));
     }
 
+    public Task<Result<int>> MarkAllAsReadAsync(
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Result.Success(0));
+    }
+
     public Task<Result<NotificationPreferenceDto>> GetPreferencesAsync(
         Guid userId,
         CancellationToken cancellationToken = default)

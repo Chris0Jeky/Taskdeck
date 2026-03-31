@@ -49,4 +49,20 @@ public class NotificationRepository : Repository<Notification>, INotificationRep
             n => n.UserId == userId && n.DeduplicationKey == deduplicationKey,
             cancellationToken);
     }
+
+    public async Task<IEnumerable<Notification>> GetUnreadByUserIdAsync(
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbSet
+            .Where(n => n.UserId == userId && !n.IsRead);
+
+        if (boardId.HasValue)
+        {
+            query = query.Where(n => n.BoardId == boardId.Value);
+        }
+
+        return await query.ToListAsync(cancellationToken);
+    }
 }

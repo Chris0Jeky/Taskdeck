@@ -49,6 +49,18 @@ public class NotificationsController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    [HttpPost("mark-all-read")]
+    public async Task<IActionResult> MarkAllAsRead(
+        [FromQuery] Guid? boardId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _notificationService.MarkAllAsReadAsync(userId, boardId, cancellationToken);
+        return result.IsSuccess ? Ok(new { markedCount = result.Value }) : result.ToErrorActionResult();
+    }
+
     [HttpGet("preferences")]
     public async Task<IActionResult> GetPreferences(CancellationToken cancellationToken = default)
     {

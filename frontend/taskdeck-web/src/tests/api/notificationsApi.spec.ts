@@ -39,6 +39,24 @@ describe('notificationsApi', () => {
     expect(http.post).toHaveBeenCalledWith('/notifications/n1/read')
   })
 
+  it('marks all notifications as read without board scope', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { markedCount: 5 } })
+
+    const result = await notificationsApi.markAllRead()
+
+    expect(http.post).toHaveBeenCalledWith('/notifications/mark-all-read')
+    expect(result.markedCount).toBe(5)
+  })
+
+  it('marks all notifications as read with board scope', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { markedCount: 3 } })
+
+    const result = await notificationsApi.markAllRead('board-42')
+
+    expect(http.post).toHaveBeenCalledWith('/notifications/mark-all-read?boardId=board-42')
+    expect(result.markedCount).toBe(3)
+  })
+
   it('updates preferences', async () => {
     vi.mocked(http.put).mockResolvedValue({ data: { userId: 'u1' } })
 

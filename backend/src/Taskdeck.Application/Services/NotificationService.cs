@@ -84,6 +84,43 @@ public class NotificationService : INotificationService
         return Result.Success(MapToDto(notification));
     }
 
+    public async Task<Result<int>> MarkAllAsReadAsync(
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<int>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        if (boardId.HasValue && _authorizationService is not null)
+        {
+            var boardPermission = await _authorizationService.CanReadBoardAsync(userId, boardId.Value);
+            if (!boardPermission.IsSuccess || !boardPermission.Value)
+            {
+                return Result.Failure<int>(
+                    ErrorCodes.Forbidden,
+                    "You do not have access to notifications for this board");
+            }
+        }
+
+        var unreadNotifications = await _unitOfWork.Notifications.GetUnreadByUserIdAsync(
+            userId, boardId, cancellationToken);
+
+        var count = 0;
+        foreach (var notification in unreadNotifications)
+        {
+            notification.MarkAsRead();
+            count++;
+        }
+
+        if (count > 0)
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        return Result.Success(count);
+    }
+
     public async Task<Result<NotificationPreferenceDto>> GetPreferencesAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
@@ -218,6 +255,8 @@ public class NotificationService : INotificationService
             NotificationType.Mention => preference.MentionImmediateEnabled,
             NotificationType.Assignment => preference.AssignmentImmediateEnabled,
             NotificationType.ProposalOutcome => preference.ProposalOutcomeImmediateEnabled,
+            NotificationType.BoardChange => true,
+            NotificationType.System => true,
             _ => false
         };
 
@@ -226,6 +265,8 @@ public class NotificationService : INotificationService
             NotificationType.Mention => preference.MentionDigestEnabled,
             NotificationType.Assignment => preference.AssignmentDigestEnabled,
             NotificationType.ProposalOutcome => preference.ProposalOutcomeDigestEnabled,
+            NotificationType.BoardChange => false,
+            NotificationType.System => false,
             _ => false
         };
 

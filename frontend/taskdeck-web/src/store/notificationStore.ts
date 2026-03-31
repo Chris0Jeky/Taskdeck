@@ -64,6 +64,27 @@ export const useNotificationStore = defineStore('notifications', () => {
     }
   }
 
+  async function markAllRead(boardId?: string) {
+    guardDemoMutation()
+    try {
+      const result = await notificationsApi.markAllRead(boardId)
+      notifications.value = notifications.value.map((item) => {
+        if (boardId && item.boardId !== boardId) return item
+        return {
+          ...item,
+          isRead: true,
+          readAt: item.readAt ?? new Date().toISOString(),
+        }
+      })
+      return result
+    } catch (e: unknown) {
+      const msg = getErrorDisplay(e, 'Failed to mark all notifications as read').message
+      error.value = msg
+      toast.error(msg)
+      throw e
+    }
+  }
+
   async function fetchPreferences() {
     if (isDemoMode) {
       loading.value = true
@@ -112,6 +133,7 @@ export const useNotificationStore = defineStore('notifications', () => {
     error,
     fetchNotifications,
     markAsRead,
+    markAllRead,
     fetchPreferences,
     updatePreferences,
   }

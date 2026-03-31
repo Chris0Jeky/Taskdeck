@@ -1,6 +1,7 @@
 import http from './http'
 import { buildQueryString } from '../utils/queryBuilder'
 import type {
+  MarkAllReadResponse,
   NotificationItem,
   NotificationPreference,
   NotificationQuery,
@@ -15,6 +16,12 @@ export const notificationsApi = {
 
   async markAsRead(notificationId: string): Promise<NotificationItem> {
     const { data } = await http.post<NotificationItem>(`/notifications/${encodeURIComponent(notificationId)}/read`)
+    return data
+  },
+
+  async markAllRead(boardId?: string): Promise<MarkAllReadResponse> {
+    const qs = boardId ? `?boardId=${encodeURIComponent(boardId)}` : ''
+    const { data } = await http.post<MarkAllReadResponse>(`/notifications/mark-all-read${qs}`)
     return data
   },
 

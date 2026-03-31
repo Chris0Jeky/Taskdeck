@@ -165,6 +165,66 @@ public class NotificationServiceTests
     }
 
     [Fact]
+    public async Task MarkAllAsReadAsync_ShouldMarkAllUnread_WhenNotificationsExist()
+    {
+        var userId = Guid.NewGuid();
+        var n1 = new Notification(userId, NotificationType.Mention, NotificationCadence.Immediate, "N1", "Message 1");
+        var n2 = new Notification(userId, NotificationType.Assignment, NotificationCadence.Immediate, "N2", "Message 2");
+
+        _notificationRepositoryMock
+            .Setup(r => r.GetUnreadByUserIdAsync(userId, null, default))
+            .ReturnsAsync(new[] { n1, n2 });
+
+        var result = await _service.MarkAllAsReadAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(2);
+        n1.IsRead.Should().BeTrue();
+        n2.IsRead.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkAllAsReadAsync_ShouldReturnZero_WhenNoUnreadNotifications()
+    {
+        var userId = Guid.NewGuid();
+        _notificationRepositoryMock
+            .Setup(r => r.GetUnreadByUserIdAsync(userId, null, default))
+            .ReturnsAsync(Array.Empty<Notification>());
+
+        var result = await _service.MarkAllAsReadAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task MarkAllAsReadAsync_ShouldReturnForbidden_WhenBoardAccessDenied()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.MarkAllAsReadAsync(userId, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task MarkAllAsReadAsync_ShouldReturnValidationError_WhenUserIdEmpty()
+    {
+        var result = await _service.MarkAllAsReadAsync(Guid.Empty);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public async Task PublishAsync_ShouldAvoidDuplicatesWithinSameUnitOfWork_WhenPreferenceIsNotPersistedYet()
     {
         var userId = Guid.NewGuid();
