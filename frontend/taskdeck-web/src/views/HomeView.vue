@@ -564,7 +564,7 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-action--primary:hover {
-  background: rgba(255, 77, 77, 0.18);
+  background: color-mix(in srgb, var(--td-color-ember) 18%, transparent);
   box-shadow: none;
 }
 
