@@ -129,11 +129,22 @@ Mock provider is default. OpenAI and Gemini supported behind config gates. See `
 
 Reusable GitHub Actions workflows under `.github/workflows/`. `ci-required.yml` is the gate for PRs. Nightly extended checks in `ci-nightly.yml`.
 
+## Architecture Decision Records (ADRs)
+
+ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template and conventions.
+
+**When to create an ADR**: Write one when a decision chooses between competing approaches, establishes a project-wide constraint, has hard-to-reverse consequences, or would surprise a future contributor. This includes technology selections, data model choices, security posture changes, automation safety boundaries, and strategic product pivots.
+
+**How to create an ADR**: Use the next available number (`ADR-NNNN`), follow the template (Context, Decision, Alternatives, Consequences, References), and add the entry to `docs/decisions/INDEX.md`. Mark status as `Proposed` until ratified, then `Accepted`.
+
+**Do not skip ADRs** for decisions that affect architecture, security posture, or cross-cutting conventions — even when the change is small, the reasoning matters for future contributors who weren't in the conversation.
+
 ## Key Docs
 
 - `docs/STATUS.md` — current shipped reality
 - `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery sequencing
 - `docs/GOLDEN_PRINCIPLES.md` — stable invariants
+- `docs/decisions/INDEX.md` — architecture decision records
 - `docs/TESTING_GUIDE.md` — test operations reference
 - `docs/ISSUE_EXECUTION_GUIDE.md` — dependency-aware issue execution order
 - `docs/MCP_TOOLING_GUIDE.md` — MCP tool selection rules
