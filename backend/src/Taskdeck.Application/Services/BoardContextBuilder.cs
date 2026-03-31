@@ -59,14 +59,16 @@ public class BoardContextBuilder : IBoardContextBuilder
             sb.Append("Columns: ").AppendLine(
                 string.Join(" → ", columns.Select(c => c.Name)));
 
+            // Single query for all board cards, grouped by column in memory (avoids N+1)
+            var cardsByColumn = (await _unitOfWork.Cards.GetByBoardIdAsync(boardId, ct))
+                .GroupBy(c => c.ColumnId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderByDescending(c => c.UpdatedAt).Take(MaxCardsPerColumn).ToList());
+
             foreach (var column in columns)
             {
-                var columnCards = (await _unitOfWork.Cards.GetByColumnIdAsync(column.Id, ct))
-                    .OrderByDescending(c => c.UpdatedAt)
-                    .Take(MaxCardsPerColumn)
-                    .ToList();
-
-                if (columnCards.Count == 0)
+                if (!cardsByColumn.TryGetValue(column.Id, out var columnCards) || columnCards.Count == 0)
                     continue;
 
                 sb.Append("Cards in \"").Append(column.Name).AppendLine("\":");
