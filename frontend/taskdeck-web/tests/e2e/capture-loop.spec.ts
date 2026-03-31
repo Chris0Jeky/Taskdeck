@@ -59,7 +59,7 @@ test('capture triage should create proposal and apply card with provenance links
 
   page.once('dialog', (dialog) => dialog.accept())
   await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
-  await expect(proposalCard.getByText('Applied')).toBeVisible()
+  await expect(proposalCard).not.toBeVisible()
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, checklistTaskTitle)
 

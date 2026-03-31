@@ -109,7 +109,7 @@ test.describe('Core loop: Home -> Inbox/Capture -> Review -> Board', () => {
     // Step 9: Apply proposal to board
     page.once('dialog', (dialog) => dialog.accept())
     await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
-    await expect(proposalCard.getByText('Applied')).toBeVisible()
+    await expect(proposalCard).not.toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('06-review-applied.png'), fullPage: true })
 
     // Step 10: Verify card on board
