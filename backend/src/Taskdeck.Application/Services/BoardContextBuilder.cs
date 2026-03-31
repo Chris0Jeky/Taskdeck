@@ -5,21 +5,27 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// Builds a bounded board context string suitable for inclusion in LLM system prompts.
-/// The context includes the board name, column names and positions, recent card titles
-/// per column, and label names. Enforces a token budget to prevent prompt bloat.
+/// The context includes the board name, column names and positions, card IDs and titles
+/// per column (with labels), and board-level label names.
+/// Enforces a token budget to prevent prompt bloat.
 /// </summary>
 public class BoardContextBuilder : IBoardContextBuilder
 {
     /// <summary>
     /// Approximate maximum character count for the board context string.
-    /// At ~4 chars per token, 500 tokens ≈ 2000 characters.
+    /// At ~4 chars per token, 1000 tokens ≈ 4000 characters.
     /// </summary>
-    internal const int MaxContextCharacters = 2000;
+    internal const int MaxContextCharacters = 4000;
 
     /// <summary>
-    /// Maximum number of card titles to include per column.
+    /// Maximum number of cards to include per column.
     /// </summary>
     internal const int MaxCardsPerColumn = 5;
+
+    /// <summary>
+    /// Number of characters used for the short card ID prefix (first N hex chars of GUID).
+    /// </summary>
+    internal const int ShortIdLength = 8;
 
     private readonly IUnitOfWork _unitOfWork;
 
@@ -41,26 +47,49 @@ public class BoardContextBuilder : IBoardContextBuilder
         var labels = (await _unitOfWork.Labels.GetByBoardIdAsync(boardId, ct))
             .ToList();
 
+        // Build a label lookup for card-level label display
+        var labelLookup = labels.ToDictionary(l => l.Id, l => l.Name);
+
         var sb = new StringBuilder();
         sb.AppendLine("## Current Board Context");
         sb.Append("Board: ").AppendLine(board.Name);
 
         if (columns.Count > 0)
         {
-            sb.AppendLine("Columns (in order):");
+            sb.Append("Columns: ").AppendLine(
+                string.Join(" → ", columns.Select(c => c.Name)));
+
+            // Single query for all board cards, grouped by column in memory (avoids N+1)
+            var cardsByColumn = (await _unitOfWork.Cards.GetByBoardIdAsync(boardId, ct))
+                .GroupBy(c => c.ColumnId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderByDescending(c => c.UpdatedAt).Take(MaxCardsPerColumn).ToList());
+
             foreach (var column in columns)
             {
-                sb.Append("  - ").Append(column.Name).Append(" (position ").Append(column.Position).AppendLine(")");
+                if (!cardsByColumn.TryGetValue(column.Id, out var columnCards) || columnCards.Count == 0)
+                    continue;
 
-                // Fetch cards per column from DB with limit applied at the query level
-                // to avoid loading all board cards into memory.
-                var columnCards = (await _unitOfWork.Cards.GetByColumnIdAsync(column.Id, ct))
-                    .OrderByDescending(c => c.UpdatedAt)
-                    .Take(MaxCardsPerColumn);
+                sb.Append("Cards in \"").Append(column.Name).AppendLine("\":");
 
                 foreach (var card in columnCards)
                 {
-                    sb.Append("    * ").AppendLine(card.Title);
+                    var shortId = FormatShortId(card.Id);
+                    sb.Append("  [").Append(shortId).Append("] ").Append(card.Title);
+
+                    // Append card-level labels if any
+                    var cardLabelNames = card.CardLabels
+                        .Where(cl => labelLookup.ContainsKey(cl.LabelId))
+                        .Select(cl => labelLookup[cl.LabelId])
+                        .ToList();
+
+                    if (cardLabelNames.Count > 0)
+                    {
+                        sb.Append(" [").Append(string.Join(", ", cardLabelNames)).Append(']');
+                    }
+
+                    sb.AppendLine();
 
                     if (sb.Length >= MaxContextCharacters)
                         break;
@@ -85,5 +114,14 @@ public class BoardContextBuilder : IBoardContextBuilder
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns the first <see cref="ShortIdLength"/> hex characters of a GUID,
+    /// without hyphens, for compact card identification in the context.
+    /// </summary>
+    internal static string FormatShortId(Guid id)
+    {
+        return id.ToString("N")[..ShortIdLength];
     }
 }

@@ -54,7 +54,7 @@ public class BoardContextBuilderTests
     }
 
     [Fact]
-    public async Task BuildContextAsync_IncludesColumnNamesAndPositions()
+    public async Task BuildContextAsync_IncludesColumnFlowLine()
     {
         var board = new Board("Dev Board", ownerId: Guid.NewGuid());
         var boardId = board.Id;
@@ -65,23 +65,16 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col1, col2, col3 });
-        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col1.Id, default)).ReturnsAsync(Array.Empty<Card>());
-        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col2.Id, default)).ReturnsAsync(Array.Empty<Card>());
-        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col3.Id, default)).ReturnsAsync(Array.Empty<Card>());
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Card>());
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
 
-        result.Should().Contain("To Do");
-        result.Should().Contain("In Progress");
-        result.Should().Contain("Done");
-        result.Should().Contain("position 0");
-        result.Should().Contain("position 1");
-        result.Should().Contain("position 2");
+        result.Should().Contain("Columns: To Do → In Progress → Done");
     }
 
     [Fact]
-    public async Task BuildContextAsync_IncludesCardTitlesUnderColumns()
+    public async Task BuildContextAsync_IncludesCardIdsAndTitlesUnderColumns()
     {
         var board = new Board("Dev Board", ownerId: Guid.NewGuid());
         var boardId = board.Id;
@@ -94,13 +87,22 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col });
-        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(colId, default)).ReturnsAsync(new[] { card1, card2 });
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card1, card2 });
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
 
         result.Should().Contain("Fix login bug");
         result.Should().Contain("Update README");
+
+        // Card IDs should appear as short hex prefixes in brackets
+        var shortId1 = BoardContextBuilder.FormatShortId(card1.Id);
+        var shortId2 = BoardContextBuilder.FormatShortId(card2.Id);
+        result.Should().Contain($"[{shortId1}]");
+        result.Should().Contain($"[{shortId2}]");
+
+        // Cards should appear under column heading
+        result.Should().Contain("Cards in \"To Do\":");
     }
 
     [Fact]
@@ -137,7 +139,7 @@ public class BoardContextBuilderTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col });
-        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(colId, default)).ReturnsAsync(cards);
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(cards);
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -164,15 +166,14 @@ public class BoardContextBuilderTests
             .Select(i => new Label(boardId, $"Label-{i}", "#FF0000"))
             .ToList();
 
+        var allCards = columns.SelectMany(col =>
+            Enumerable.Range(0, 10)
+                .Select(j => new Card(boardId, col.Id, $"A card with a fairly long title in column {col.Name} number {j}"))
+        ).ToList();
+
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(columns);
-        foreach (var col in columns)
-        {
-            var colCards = Enumerable.Range(0, 10)
-                .Select(j => new Card(boardId, col.Id, $"A card with a fairly long title in column {col.Name} number {j}"))
-                .ToList();
-            _cardRepoMock.Setup(r => r.GetByColumnIdAsync(col.Id, default)).ReturnsAsync(colCards);
-        }
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(allCards);
         _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(labels);
 
         var result = await _builder.BuildContextAsync(boardId);
@@ -208,6 +209,66 @@ public class BoardContextBuilderTests
 
         var result = await _builder.BuildContextAsync(boardId);
 
-        result.Should().NotContain("Columns (in order):");
+        result.Should().NotContain("Columns:");
+        result.Should().NotContain("Cards in");
+    }
+
+    [Fact]
+    public async Task BuildContextAsync_SkipsEmptyColumns()
+    {
+        var board = new Board("Dev Board", ownerId: Guid.NewGuid());
+        var boardId = board.Id;
+
+        var col1 = new Column(boardId, "Empty Column", 0);
+        var col2 = new Column(boardId, "Has Cards", 1);
+        var card = new Card(boardId, col2.Id, "A card");
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col1, col2 });
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
+        _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(Array.Empty<Label>());
+
+        var result = await _builder.BuildContextAsync(boardId);
+
+        result.Should().NotContain("Cards in \"Empty Column\"");
+        result.Should().Contain("Cards in \"Has Cards\"");
+    }
+
+    [Fact]
+    public void FormatShortId_ReturnsFirst8HexChars()
+    {
+        var id = Guid.Parse("abcdef12-3456-7890-abcd-ef1234567890");
+        var shortId = BoardContextBuilder.FormatShortId(id);
+
+        shortId.Should().Be("abcdef12");
+        shortId.Should().HaveLength(BoardContextBuilder.ShortIdLength);
+    }
+
+    [Fact]
+    public async Task BuildContextAsync_IncludesCardLabels()
+    {
+        var board = new Board("Dev Board", ownerId: Guid.NewGuid());
+        var boardId = board.Id;
+
+        var label = new Label(boardId, "Bug", "#FF0000");
+        var col = new Column(boardId, "To Do", 0);
+        var card = new Card(boardId, col.Id, "Fix crash");
+        card.AddLabel(new CardLabel(card.Id, label.Id));
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { col });
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
+        _labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { label });
+
+        var result = await _builder.BuildContextAsync(boardId);
+
+        result.Should().Contain("Fix crash [Bug]");
+    }
+
+    [Fact]
+    public async Task BuildContextAsync_BudgetIs4000()
+    {
+        // Verify the budget constant is 4000 chars
+        BoardContextBuilder.MaxContextCharacters.Should().Be(4000);
     }
 }
