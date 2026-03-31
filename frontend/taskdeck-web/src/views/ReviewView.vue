@@ -45,25 +45,18 @@ const boardFilterInput = ref('')
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 const showCompleted = ref(false)
 
-// Per-proposal collapsible section state
-const expandedSections = ref<Record<string, Set<string>>>({})
+// Per-proposal collapsible section state (Record<bool> for Vue reactivity)
+const expandedSections = ref<Record<string, Record<string, boolean>>>({})
 
 function isSectionExpanded(proposalId: string, section: string): boolean {
-  return expandedSections.value[proposalId]?.has(section) ?? false
+  return !!expandedSections.value[proposalId]?.[section]
 }
 
 function toggleSection(proposalId: string, section: string) {
   if (!expandedSections.value[proposalId]) {
-    expandedSections.value[proposalId] = new Set()
+    expandedSections.value[proposalId] = {}
   }
-  const sections = expandedSections.value[proposalId]
-  if (sections.has(section)) {
-    sections.delete(section)
-  } else {
-    sections.add(section)
-  }
-  // Trigger reactivity
-  expandedSections.value = { ...expandedSections.value }
+  expandedSections.value[proposalId][section] = !expandedSections.value[proposalId][section]
 }
 
 // Per-proposal link dropdown state
@@ -73,7 +66,11 @@ function toggleLinkDropdown(proposalId: string) {
   openLinkDropdown.value = openLinkDropdown.value === proposalId ? null : proposalId
 }
 
-function closeLinkDropdown() {
+function closeLinkDropdown(event: FocusEvent) {
+  const nextFocus = event.relatedTarget as HTMLElement
+  if (nextFocus?.closest('.td-review-card__links-dropdown-wrapper')) {
+    return
+  }
   openLinkDropdown.value = null
 }
 
@@ -727,7 +724,7 @@ watch(
             :aria-expanded="isSectionExpanded(proposal.id, 'entities')"
             @click="toggleSection(proposal.id, 'entities')"
           >
-            <span class="td-review-card__collapse-icon" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'entities') }">&#9654;</span>
+            <span class="td-review-card__collapse-icon" aria-hidden="true" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'entities') }">&#9654;</span>
             <span class="td-review-card__section-label">Affected cards</span>
             <span class="td-review-card__count-badge">{{ affectedEntities(proposal).length }}</span>
           </button>
@@ -749,7 +746,7 @@ watch(
             :aria-expanded="isSectionExpanded(proposal.id, 'operations')"
             @click="toggleSection(proposal.id, 'operations')"
           >
-            <span class="td-review-card__collapse-icon" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'operations') }">&#9654;</span>
+            <span class="td-review-card__collapse-icon" aria-hidden="true" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'operations') }">&#9654;</span>
             <span class="td-review-card__section-label">Planned changes</span>
             <span class="td-review-card__count-badge">{{ operationHeadlines(proposal).length }}</span>
           </button>
@@ -772,7 +769,7 @@ watch(
             :aria-expanded="isSectionExpanded(proposal.id, 'provenance')"
             @click="toggleSection(proposal.id, 'provenance')"
           >
-            <span class="td-review-card__collapse-icon" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'provenance') }">&#9654;</span>
+            <span class="td-review-card__collapse-icon" aria-hidden="true" :class="{ 'td-review-card__collapse-icon--open': isSectionExpanded(proposal.id, 'provenance') }">&#9654;</span>
             <span class="td-review-card__section-label">Technical details</span>
             <span class="td-provenance-chip">Capture-linked</span>
           </button>
