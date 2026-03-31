@@ -28,6 +28,20 @@ function renderMarkdown(content: string): string {
   return DOMPurify.sanitize(marked.parse(content, { async: false }))
 }
 
+function isTruncatedJson(content: string): boolean {
+  if (!content) return false
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{')) return false
+  try {
+    JSON.parse(trimmed)
+    return false
+  } catch {
+    return true
+  }
+}
+
+const truncationNotice = 'This response was cut short. Try a simpler question or rephrase.'
+
 const router = useRouter()
 const route = useRoute()
 const toast = useToastStore()
@@ -661,7 +675,13 @@ watch(
               </template>
               <template v-else>
                 <div
-                  v-if="isAssistantOrSystemMessage(message)"
+                  v-if="isAssistantOrSystemMessage(message) && isTruncatedJson(message.content)"
+                  class="td-message-content td-message-content--truncated"
+                >
+                  {{ truncationNotice }}
+                </div>
+                <div
+                  v-else-if="isAssistantOrSystemMessage(message)"
                   class="td-message-content td-message-content--markdown"
                   v-html="renderMarkdown(message.content)"
                 ></div>
@@ -928,6 +948,11 @@ watch(
 .td-message-content {
   white-space: pre-wrap;
   font-size: var(--td-font-sm);
+}
+
+.td-message-content--truncated {
+  color: var(--td-text-secondary);
+  font-style: italic;
 }
 
 .td-message-content--markdown {
