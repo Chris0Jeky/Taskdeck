@@ -102,9 +102,9 @@ public class GeminiLlmProvider : ILlmProvider
                     DegradedReason: "Response was truncated");
             }
 
-            // When JSON mode was requested but the response is not valid JSON,
-            // the output was likely truncated before the model could finish.
-            if (useInstructionExtraction && !IsValidJson(content))
+            // When JSON mode was requested and the response starts with '{' but
+            // does not parse as valid JSON, the output was likely truncated.
+            if (useInstructionExtraction && LooksLikeTruncatedJson(content))
             {
                 _logger.LogWarning("Gemini JSON-mode response is not valid JSON; treating as truncated.");
                 return new LlmCompletionResult(
@@ -362,19 +362,27 @@ public class GeminiLlmProvider : ILlmProvider
             Instructions: instructions);
     }
 
-    private static bool IsValidJson(string text)
+    /// <summary>
+    /// Returns true when <paramref name="text"/> starts with '{' but does not
+    /// parse as valid JSON — a strong signal the response was cut off mid-output.
+    /// </summary>
+    internal static bool LooksLikeTruncatedJson(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return false;
 
+        var trimmed = text.TrimStart();
+        if (!trimmed.StartsWith('{'))
+            return false;
+
         try
         {
-            using var doc = JsonDocument.Parse(text);
-            return true;
+            using var doc = JsonDocument.Parse(trimmed);
+            return false;
         }
         catch (JsonException)
         {
-            return false;
+            return true;
         }
     }
 
