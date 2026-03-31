@@ -558,13 +558,14 @@ onActivated(refreshHomeSummary)
 }
 
 .td-home-action--primary {
-  background: var(--td-color-ember-glow);
-  color: var(--td-text-inverse);
+  background: var(--td-color-ember-dim);
+  color: var(--td-text-primary);
+  border-left: 3px solid var(--td-color-ember);
 }
 
 .td-home-action--primary:hover {
-  background: var(--td-color-ember);
-  box-shadow: 0 0 20px rgba(255, 83, 82, 0.25);
+  background: rgba(255, 77, 77, 0.18);
+  box-shadow: none;
 }
 
 .td-home-action--secondary {
