@@ -88,7 +88,7 @@ async function markAsRead(notificationId: string) {
 async function markAllRead() {
   inlineError.value = null
   try {
-    await notifications.markAllRead(activeBoardId.value ?? undefined)
+    await notifications.markAllRead(activeBoardId.value || undefined)
   } catch (e: unknown) {
     inlineError.value = getErrorDisplay(e, notifications.error || 'Failed to mark all as read').message
   }
