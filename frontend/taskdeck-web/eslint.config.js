@@ -1,4 +1,5 @@
 import pluginVue from 'eslint-plugin-vue'
+import pluginVueA11y from 'eslint-plugin-vuejs-accessibility'
 import tsParser from '@typescript-eslint/parser'
 import tsPlugin from '@typescript-eslint/eslint-plugin'
 import eslint from '@eslint/js'
@@ -66,6 +67,29 @@ export default [
       'vue/html-self-closing': 'off',
       'vue/max-attributes-per-line': 'off',
       'vue/singleline-html-element-content-newline': 'off',
+    },
+  },
+
+  // Vue accessibility rules (WCAG compliance)
+  ...pluginVueA11y.configs['flat/recommended'],
+  {
+    files: ['**/*.vue'],
+    rules: {
+      // Warn-level for rules that need gradual remediation across the codebase
+      'vuejs-accessibility/click-events-have-key-events': 'warn',
+      'vuejs-accessibility/interactive-supports-focus': 'warn',
+      // Allow mouseenter without focus equivalent (visual enhancement only)
+      'vuejs-accessibility/mouse-events-have-key-events': 'warn',
+      // form-control-has-label is covered by our manual label audit
+      'vuejs-accessibility/form-control-has-label': 'warn',
+      // label-has-for requires explicit for/id binding — warn during rollout
+      'vuejs-accessibility/label-has-for': 'warn',
+      // Div/span click handlers are common in Vue component patterns — warn for gradual migration
+      'vuejs-accessibility/no-static-element-interactions': 'warn',
+      // Autofocus is intentional in modals and command palettes for UX
+      'vuejs-accessibility/no-autofocus': 'warn',
+      // Redundant roles (e.g. role="list" on <ul>) are harmless — warn only
+      'vuejs-accessibility/no-redundant-roles': 'warn',
     },
   },
 

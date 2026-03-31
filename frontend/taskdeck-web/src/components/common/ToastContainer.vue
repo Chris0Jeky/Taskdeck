@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-atomic="false" role="status">
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"
@@ -12,9 +12,10 @@
           'transition-all duration-300',
           toastClass(toast.type),
         ]"
+        :role="toast.type === 'error' ? 'alert' : undefined"
       >
         <!-- Icon -->
-        <div class="flex-shrink-0">
+        <div class="flex-shrink-0" aria-hidden="true">
           <svg
             v-if="toast.type === 'success'"
             class="w-5 h-5"

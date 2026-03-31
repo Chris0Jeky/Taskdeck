@@ -126,10 +126,10 @@ onActivated(refreshHomeSummary)
 </script>
 
 <template>
-  <div class="td-home">
+  <div class="td-home" role="region" aria-label="Home workspace">
     <header class="td-home__hero td-panel">
       <div class="td-home__hero-copy">
-        <span class="td-home__eyebrow">Workspace</span>
+        <span class="td-home__eyebrow" aria-hidden="true">Workspace</span>
         <h1 class="td-page-title">Home</h1>
         <p class="td-home__subtitle">
           Start with a note in Inbox, approve proposed changes in Review, then manage the work on a board.
@@ -214,7 +214,7 @@ onActivated(refreshHomeSummary)
         </template>
       </section>
 
-      <section class="td-home__grid">
+      <section class="td-home__grid" aria-label="Workspace overview">
         <article class="td-panel td-home-card">
           <div class="td-home-card__header">
             <h2 class="td-section-title">Needs attention</h2>
@@ -413,6 +413,11 @@ onActivated(refreshHomeSummary)
   border-color: rgba(91, 64, 62, 0.25);
 }
 
+.td-home-step:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
+}
+
 .td-home-step--complete {
   border-color: rgba(255, 77, 77, 0.2);
   background: rgba(255, 77, 77, 0.04);
@@ -573,6 +578,11 @@ onActivated(refreshHomeSummary)
   border-color: var(--td-border-default);
 }
 
+.td-home-action:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
+}
+
 .td-home-action__title {
   font-family: 'Manrope', system-ui, sans-serif;
   font-size: var(--td-font-sm);
@@ -669,6 +679,11 @@ onActivated(refreshHomeSummary)
 .td-home-board:hover {
   background: var(--td-surface-container-high);
   border-color: var(--td-border-default);
+}
+
+.td-home-board:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
 }
 
 .td-home-board__name {

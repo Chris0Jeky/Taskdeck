@@ -525,10 +525,10 @@ watch(
 </script>
 
 <template>
-  <div class="td-review">
+  <div class="td-review" role="region" aria-label="Proposal review">
     <header class="td-panel td-review__hero">
       <div class="td-review__hero-copy">
-        <span class="td-review__eyebrow">Review</span>
+        <span class="td-review__eyebrow" aria-hidden="true">Review</span>
         <h1 class="td-page-title">Review</h1>
         <p class="td-review__subtitle">
           Nothing changes on a board until you approve it here.
@@ -576,7 +576,7 @@ watch(
       </template>
     </WorkspaceHelpCallout>
 
-    <section class="td-review__summary">
+    <section class="td-review__summary" aria-label="Review statistics">
       <article v-for="card in summaryCards" :key="card.id" class="td-panel td-review-summary-card">
         <span class="td-review-summary-card__value">{{ card.value }}</span>
         <span class="td-review-summary-card__label">{{ card.label }}</span>
@@ -601,7 +601,7 @@ watch(
       </div>
     </section>
 
-    <section v-else class="td-review__list">
+    <section v-else class="td-review__list" aria-label="Proposals awaiting review">
       <article
         v-for="proposal in visibleProposals"
         :id="`proposal-${proposal.id}`"

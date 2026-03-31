@@ -345,7 +345,9 @@ useKeyboardShortcuts([
         <!-- Create Column Form -->
         <div v-if="showColumnForm" class="td-column-form">
           <form @submit.prevent="createColumn" class="td-column-form__row">
+            <label for="td-new-column-name" class="sr-only">Column name</label>
             <input
+              id="td-new-column-name"
               v-model="newColumnName"
               type="text"
               placeholder="Column name"
@@ -381,13 +383,15 @@ useKeyboardShortcuts([
     />
 
     <!-- Loading State -->
-    <div v-if="boardStore.loading && !boardStore.currentBoard" class="flex justify-center items-center py-12">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary-container"></div>
+    <div v-if="boardStore.loading && !boardStore.currentBoard" class="flex justify-center items-center py-12" aria-live="polite">
+      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary-container" role="status" aria-label="Loading board">
+        <span class="sr-only">Loading board...</span>
+      </div>
     </div>
 
     <!-- Error State -->
     <div v-else-if="boardStore.error" class="max-w-7xl mx-auto px-4 py-8">
-      <div class="bg-error-container/20 border border-error/20 rounded-lg p-4 text-error">
+      <div class="bg-error-container/20 border border-error/20 rounded-lg p-4 text-error" role="alert">
         {{ boardStore.error }}
       </div>
     </div>

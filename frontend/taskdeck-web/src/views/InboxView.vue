@@ -583,7 +583,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="td-inbox">
+  <div class="td-inbox" role="region" aria-label="Capture inbox">
     <header class="td-inbox__header">
       <div>
         <h1 class="td-page-title">Inbox</h1>
@@ -670,7 +670,7 @@ onUnmounted(() => {
           ref="parentRef"
           class="td-inbox__list"
           tabindex="0"
-          role="listbox"
+          :role="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError ? 'listbox' : undefined"
           aria-label="Inbox items"
           :aria-activedescendant="activeDescendantId"
           @keydown="handleKeydown"
@@ -696,9 +696,11 @@ onUnmounted(() => {
 
           <div
             v-if="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError"
+            role="presentation"
             :style="{ height: `${virtualTotalSize}px`, width: '100%', position: 'relative' }"
           >
             <div
+              role="presentation"
               :style="{
                 position: 'absolute',
                 top: 0,
@@ -712,6 +714,7 @@ onUnmounted(() => {
                 :key="String(virtualRow.key)"
                 :data-index="virtualRow.index"
                 ref="virtualItemEls"
+                role="presentation"
               >
                 <template v-if="items[virtualRow.index]">
                   <div
@@ -750,7 +753,7 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <section class="td-inbox__detail-panel">
+      <section class="td-inbox__detail-panel" aria-label="Capture item detail" aria-live="polite">
         <div
           v-if="hashLoadFailedItemId && !selectedItemId"
           class="td-placeholder td-placeholder--detail"
@@ -1032,6 +1035,11 @@ onUnmounted(() => {
   cursor: pointer;
   transition: background var(--td-transition-fast, 120ms) ease,
               border-color var(--td-transition-fast, 120ms) ease;
+}
+
+.td-inbox-row:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
 }
 
 .td-inbox-row--active {

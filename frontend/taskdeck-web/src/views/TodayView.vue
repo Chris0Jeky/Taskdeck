@@ -177,10 +177,10 @@ onActivated(refreshTodaySummary)
 </script>
 
 <template>
-  <div class="td-today">
+  <div class="td-today" role="region" aria-label="Today agenda">
     <header class="td-today__hero td-panel">
       <div class="td-today__hero-copy">
-        <span class="td-today__eyebrow">Daily Agenda</span>
+        <span class="td-today__eyebrow" aria-hidden="true">Daily Agenda</span>
         <h1 class="td-page-title">Today</h1>
         <p class="td-today__subtitle">
           See what needs a decision, what needs shaping, and what board work is due before the day gets away from you.
@@ -261,7 +261,7 @@ onActivated(refreshTodaySummary)
         </div>
       </section>
 
-      <section class="td-today__stats">
+      <section class="td-today__stats" aria-label="Today statistics">
         <article v-for="stat in stats" :key="stat.id" class="td-panel td-today-stat">
           <span class="td-today-stat__label">{{ stat.label }}</span>
           <span class="td-today-stat__value">{{ stat.value }}</span>
@@ -269,7 +269,7 @@ onActivated(refreshTodaySummary)
         </article>
       </section>
 
-      <section class="td-today__agenda-grid">
+      <section class="td-today__agenda-grid" aria-label="Daily agenda sections">
         <article
           v-for="section in agendaSections"
           :key="section.id"
@@ -437,6 +437,11 @@ onActivated(refreshTodaySummary)
   background: var(--td-surface-bright);
 }
 
+.td-today-step:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
+}
+
 .td-today-step--complete {
   border-color: rgba(74, 222, 128, 0.25);
   background: var(--td-color-success-light);
@@ -584,6 +589,12 @@ onActivated(refreshTodaySummary)
 .td-today-recommendation:hover {
   background: var(--td-surface-bright);
   border-left-color: var(--td-color-ember);
+}
+
+.td-today-item:focus-visible,
+.td-today-recommendation:focus-visible {
+  box-shadow: var(--td-focus-ring);
+  outline: none;
 }
 
 .td-today-item__title,
