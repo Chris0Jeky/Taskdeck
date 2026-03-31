@@ -20,6 +20,7 @@ public record CaptureItemDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? ProcessedAt,
     int RetryCount,
+    string? ErrorMessage = null,
     CaptureProvenanceV1? Provenance = null);
 
 public record CaptureItemSummaryDto(
