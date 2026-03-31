@@ -168,6 +168,17 @@ function statusLabel(status: CaptureStatusValue): string {
   return String(status)
 }
 
+function statusChipClass(status: CaptureStatusValue): string {
+  if (status === 0 || status === 'New') return 'td-status-chip--new'
+  if (status === 1 || status === 'Triaging') return 'td-status-chip--triaging'
+  if (status === 2 || status === 'Triaged') return 'td-status-chip--triaging'
+  if (status === 3 || status === 'ProposalCreated') return 'td-status-chip--triaging'
+  if (status === 4 || status === 'Converted') return 'td-status-chip--converted'
+  if (status === 5 || status === 'Ignored') return 'td-status-chip--ignored'
+  if (status === 6 || status === 'Failed') return 'td-status-chip--failed'
+  return ''
+}
+
 function sourceLabel(source: CaptureSourceValue): string {
   if (source === 0 || source === 'Typed') return 'Typed'
   if (source === 1 || source === 'Paste') return 'Paste'
@@ -724,6 +735,7 @@ onUnmounted(() => {
                     :data-capture-id="items[virtualRow.index]!.id"
                     :class="[
                       'td-inbox-row',
+                      virtualRow.index % 2 === 1 ? 'td-inbox-row--alt' : '',
                       virtualRow.index === activeItemIndex ? 'td-inbox-row--active' : '',
                       selectedItemId === items[virtualRow.index]!.id ? 'td-inbox-row--selected' : ''
                     ]"
@@ -740,7 +752,7 @@ onUnmounted(() => {
                         :checked="selectedIds.has(items[virtualRow.index]!.id)"
                         @click.stop="toggleItemSelection(items[virtualRow.index]!.id)"
                       />
-                      <span class="td-status-chip">{{ statusLabel(items[virtualRow.index]!.status) }}</span>
+                      <span :class="['td-status-chip', statusChipClass(items[virtualRow.index]!.status)]">{{ statusLabel(items[virtualRow.index]!.status) }}</span>
                       <span class="td-meta-chip">{{ sourceLabel(items[virtualRow.index]!.source) }}</span>
                     </div>
                     <p class="td-inbox-row__excerpt">{{ items[virtualRow.index]!.textExcerpt }}</p>
@@ -1037,6 +1049,10 @@ onUnmounted(() => {
               border-color var(--td-transition-fast, 120ms) ease;
 }
 
+.td-inbox-row--alt {
+  background: var(--td-surface-container-low, #1e1d1d);
+}
+
 .td-inbox-row:focus-visible {
   box-shadow: var(--td-focus-ring);
   outline: none;
@@ -1074,6 +1090,34 @@ onUnmounted(() => {
   color: var(--td-text-secondary);
 }
 
+.td-status-chip--failed {
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+  border-color: var(--td-color-error);
+}
+
+.td-status-chip--converted {
+  background: var(--td-color-success-light);
+  color: var(--td-color-success);
+  border-color: var(--td-color-success);
+}
+
+.td-status-chip--triaging {
+  background: var(--td-color-warning-light);
+  color: var(--td-color-warning);
+  border-color: var(--td-color-warning);
+}
+
+.td-status-chip--ignored {
+  /* Muted gray — inherits base chip styles, no override needed */
+}
+
+.td-status-chip--new {
+  background: var(--td-color-ember-dim);
+  color: var(--td-color-ember);
+  border-color: var(--td-color-ember);
+}
+
 .td-inbox-row__checkbox {
   cursor: pointer;
   flex-shrink: 0;
@@ -1083,7 +1127,12 @@ onUnmounted(() => {
   color: var(--td-text-primary);
   margin-bottom: var(--td-space-2);
   font-size: var(--td-font-sm);
+  font-weight: 400;
   line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .td-inbox-row__meta {
@@ -1338,7 +1387,7 @@ onUnmounted(() => {
     font-size: var(--td-font-sm);
     line-height: 1.5;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
