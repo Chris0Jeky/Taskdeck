@@ -23,7 +23,9 @@ async function expectNoAxeViolations(
 ) {
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    // color-contrast can be noisy with CSS custom properties that axe cannot resolve statically
+    // color-contrast is disabled because axe-core cannot statically resolve CSS custom
+    // properties (--td-* design tokens). Color contrast must be validated manually or
+    // via browser DevTools accessibility audit when design tokens change.
     .disableRules(['color-contrast'])
     .analyze()
 

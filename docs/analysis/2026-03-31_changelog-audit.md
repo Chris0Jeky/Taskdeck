@@ -188,7 +188,7 @@ Several commits landed directly on `main` after PR merges to fix issues discover
 ## Cross-Cutting Observations
 
 ### Velocity vs. Stability Trade-off
-30+ PRs in ~48 hours is extremely high velocity. The 16 post-merge fixes suggest some PRs would benefit from an additional CI validation pass before merge. Consider requiring the extended CI lane (`ci-extended.yml`) to pass for PRs that touch CI workflows.
+30+ PRs in ~48 hours is extremely high velocity. The 16 post-merge fixes suggest some PRs would benefit from an additional CI validation pass before merge. Tracked in `#608` (OPS-26): require `ci-extended` for workflow and infrastructure PRs.
 
 ### Chat Pipeline Maturity
 The chat-to-proposal pipeline has taken a major leap: NLP extraction, multi-instruction, and board context were the three biggest gaps. Only conversational refinement (#576) remains. The chat surface is approaching production readiness for the core use case.
@@ -203,4 +203,7 @@ The axe-core E2E tests are a significant addition. They create an automated regr
 Three new endpoints in one wave. The `/api/search` endpoint is the first cross-board query surface, which is architecturally significant — it's the first endpoint that aggregates data across the user's entire workspace rather than operating within a single board.
 
 ### Dependency Risk
-Four major-version NuGet bumps in one wave (Swashbuckle 6→10, Test SDK 17→18, xunit runner 2→3, identity tokens) is aggressive. Each individually is fine, but collectively they change a lot of the testing and API infrastructure simultaneously. If subtle regressions appear in test behavior or OpenAPI output, this wave is the likely source.
+Four major-version NuGet bumps in one wave (Swashbuckle 6→10, Test SDK 17→18, xunit runner 2→3, identity tokens) is aggressive. Each individually is fine, but collectively they change a lot of the testing and API infrastructure simultaneously. The Swashbuckle migration is functionally clean (no deprecated APIs) but the exported OpenAPI artifact is stale (last generated 2025-02-24). Tracked in `#609` (DOC-04): regenerate and validate OpenAPI spec artifact.
+
+### Search Scalability
+Global search has hard-coded limits (10 boards, 20 cards) so queries are bounded, but there's no cursor/offset pagination for paging through results. The `maxResults` API parameter is accepted but silently ignored. Fine for current scale, but tracked in `#610` (UX-16) for future growth.

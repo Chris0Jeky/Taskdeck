@@ -447,9 +447,14 @@ Dependency updates (PRs `#593`–`#600`):
 - `@types/node` 24.10.1 → 25.5.0
 - GitHub Actions group bump (5 updates)
 - `Microsoft.NET.Test.Sdk` 17.14.1 → 18.3.0
-- `Swashbuckle.AspNetCore` 6.9.0 → 10.1.7 (with OpenApi v2.x compatibility fix)
+- `Swashbuckle.AspNetCore` 6.9.0 → 10.1.7 (with OpenApi v2.x compatibility fix); exported OpenAPI artifact needs regeneration (`#609`)
 - `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` upgraded to 8.17.0
 - `xunit.runner.visualstudio` 2.8.2 → 3.1.5
+
+Follow-through issues seeded from changelog audit (`docs/analysis/2026-03-31_changelog-audit.md`):
+- `#608` OPS-26: require `ci-extended` pass for workflow and infrastructure PRs (`Priority II`)
+- `#609` DOC-04: regenerate and validate OpenAPI spec artifact after Swashbuckle 10 upgrade (`Priority III`)
+- `#610` UX-16: add cursor pagination to global search endpoint (`Priority IV`)
 
 ## MVP Expansion Planning Integration (2026-03-07)
 
