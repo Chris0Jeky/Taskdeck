@@ -2,7 +2,11 @@ namespace Taskdeck.Application.DTOs;
 
 public record GlobalSearchResultDto(
     List<SearchBoardHitDto> Boards,
-    List<SearchCardHitDto> Cards
+    List<SearchCardHitDto> Cards,
+    int TotalCardCount,
+    bool HasMoreCards,
+    int Offset,
+    int MaxResults
 );
 
 public record SearchBoardHitDto(

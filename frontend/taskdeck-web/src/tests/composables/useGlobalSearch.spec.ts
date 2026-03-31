@@ -17,6 +17,48 @@ const mockSearchResult = {
       description: 'Some description',
     },
   ],
+  totalCardCount: 1,
+  hasMoreCards: false,
+  offset: 0,
+  maxResults: 20,
+}
+
+const mockSearchResultWithMore = {
+  boards: [],
+  cards: [
+    {
+      id: 'c1',
+      boardId: 'b1',
+      boardName: 'My Board',
+      columnId: 'col1',
+      columnName: 'To Do',
+      title: 'Test Card',
+      description: 'Some description',
+    },
+  ],
+  totalCardCount: 25,
+  hasMoreCards: true,
+  offset: 0,
+  maxResults: 20,
+}
+
+const mockLoadMoreResult = {
+  boards: [],
+  cards: [
+    {
+      id: 'c2',
+      boardId: 'b1',
+      boardName: 'My Board',
+      columnId: 'col1',
+      columnName: 'To Do',
+      title: 'Another Card',
+      description: 'More description',
+    },
+  ],
+  totalCardCount: 25,
+  hasMoreCards: false,
+  offset: 1,
+  maxResults: 20,
 }
 
 vi.mock('../../api/searchApi', () => ({
@@ -40,12 +82,15 @@ describe('useGlobalSearch', () => {
   })
 
   it('starts with empty state', () => {
-    const { query, boards, cards, loading, error } = useGlobalSearch()
+    const { query, boards, cards, loading, error, totalCardCount, hasMoreCards, loadingMore } = useGlobalSearch()
     expect(query.value).toBe('')
     expect(boards.value).toEqual([])
     expect(cards.value).toEqual([])
     expect(loading.value).toBe(false)
     expect(error.value).toBeNull()
+    expect(totalCardCount.value).toBe(0)
+    expect(hasMoreCards.value).toBe(false)
+    expect(loadingMore.value).toBe(false)
   })
 
   it('does not search when query is shorter than 2 characters', async () => {
@@ -76,7 +121,10 @@ describe('useGlobalSearch', () => {
     await vi.runAllTimersAsync()
     await nextTick()
 
-    expect(mockSearch).toHaveBeenCalledWith('test', expect.any(AbortSignal))
+    expect(mockSearch).toHaveBeenCalledWith('test', expect.any(AbortSignal), {
+      maxResults: 20,
+      offset: 0,
+    })
     expect(boards.value).toEqual(mockSearchResult.boards)
     expect(cards.value).toEqual(mockSearchResult.cards)
   })
@@ -127,7 +175,7 @@ describe('useGlobalSearch', () => {
 
   it('resets all state on reset()', async () => {
     mockSearch.mockResolvedValue(mockSearchResult)
-    const { query, boards, cards, loading, error, reset } = useGlobalSearch(50)
+    const { query, boards, cards, loading, error, totalCardCount, hasMoreCards, loadingMore, reset } = useGlobalSearch(50)
 
     query.value = 'test'
     await nextTick()
@@ -144,6 +192,9 @@ describe('useGlobalSearch', () => {
     expect(cards.value).toEqual([])
     expect(loading.value).toBe(false)
     expect(error.value).toBeNull()
+    expect(totalCardCount.value).toBe(0)
+    expect(hasMoreCards.value).toBe(false)
+    expect(loadingMore.value).toBe(false)
   })
 
   it('clears results when query is cleared', async () => {
@@ -163,5 +214,75 @@ describe('useGlobalSearch', () => {
 
     expect(boards.value).toEqual([])
     expect(cards.value).toEqual([])
+  })
+
+  it('exposes pagination metadata from search response', async () => {
+    mockSearch.mockResolvedValue(mockSearchResultWithMore)
+    const { query, totalCardCount, hasMoreCards } = useGlobalSearch(50)
+
+    query.value = 'test'
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await vi.runAllTimersAsync()
+    await nextTick()
+
+    expect(totalCardCount.value).toBe(25)
+    expect(hasMoreCards.value).toBe(true)
+  })
+
+  it('loadMore appends cards and updates pagination state', async () => {
+    mockSearch.mockResolvedValueOnce(mockSearchResultWithMore)
+    const { query, cards, hasMoreCards, loadMore } = useGlobalSearch(50)
+
+    query.value = 'test'
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await vi.runAllTimersAsync()
+    await nextTick()
+
+    expect(cards.value).toHaveLength(1)
+    expect(hasMoreCards.value).toBe(true)
+
+    mockSearch.mockResolvedValueOnce(mockLoadMoreResult)
+    await loadMore()
+
+    expect(cards.value).toHaveLength(2)
+    expect(cards.value[1].id).toBe('c2')
+    expect(hasMoreCards.value).toBe(false)
+  })
+
+  it('loadMore does nothing when hasMoreCards is false', async () => {
+    mockSearch.mockResolvedValue(mockSearchResult)
+    const { query, loadMore } = useGlobalSearch(50)
+
+    query.value = 'test'
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await vi.runAllTimersAsync()
+    await nextTick()
+
+    const callCount = mockSearch.mock.calls.length
+    await loadMore()
+
+    // No additional call should have been made
+    expect(mockSearch.mock.calls.length).toBe(callCount)
+  })
+
+  it('loadMore passes correct offset', async () => {
+    mockSearch.mockResolvedValueOnce(mockSearchResultWithMore)
+    const { query, loadMore } = useGlobalSearch(50)
+
+    query.value = 'test'
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await vi.runAllTimersAsync()
+    await nextTick()
+
+    mockSearch.mockResolvedValueOnce(mockLoadMoreResult)
+    await loadMore()
+
+    // Second call should have offset = 1 (number of cards from first result)
+    const secondCall = mockSearch.mock.calls[1]
+    expect(secondCall[2]).toEqual(expect.objectContaining({ offset: 1 }))
   })
 })

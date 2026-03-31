@@ -35,7 +35,17 @@ const commandQuery = ref('')
 const selectedIndex = ref(0)
 const commandListboxId = 'td-command-palette-listbox'
 
-const { query: searchQuery, boards: searchBoards, cards: searchCards, loading: searchLoading, reset: resetSearch } = useGlobalSearch(200)
+const {
+  query: searchQuery,
+  boards: searchBoards,
+  cards: searchCards,
+  loading: searchLoading,
+  hasMoreCards,
+  loadingMore: searchLoadingMore,
+  totalCardCount,
+  reset: resetSearch,
+  loadMore: searchLoadMore,
+} = useGlobalSearch(200)
 
 // Filter command items locally
 const filteredCommandItems = computed(() => {
@@ -244,8 +254,18 @@ watch(allPaletteItems, (items) => {
             </div>
           </template>
 
-          <div v-if="searchLoading && hasQuery" class="td-command-palette__loading">
-            Searching...
+          <div v-if="hasMoreCards && hasQuery && !searchLoading" class="td-command-palette__load-more">
+            <button
+              class="td-command-palette__load-more-btn"
+              :disabled="searchLoadingMore"
+              @click="searchLoadMore()"
+            >
+              {{ searchLoadingMore ? 'Loading...' : `Load more cards (${searchCards.length} of ${totalCardCount})` }}
+            </button>
+          </div>
+
+          <div v-if="(searchLoading || searchLoadingMore) && hasQuery" class="td-command-palette__loading">
+            {{ searchLoadingMore ? 'Loading more...' : 'Searching...' }}
           </div>
 
           <div v-if="allPaletteItems.length === 0 && !searchLoading" class="td-command-palette__empty">
@@ -382,6 +402,34 @@ watch(allPaletteItems, (items) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.td-command-palette__load-more {
+  padding: var(--td-space-2) var(--td-space-4);
+  text-align: center;
+}
+
+.td-command-palette__load-more-btn {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: var(--td-font-xs);
+  letter-spacing: 0.05em;
+  color: var(--td-color-ember);
+  background: transparent;
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-sm);
+  padding: var(--td-space-2) var(--td-space-4);
+  cursor: pointer;
+  transition: all var(--td-transition-fast);
+}
+
+.td-command-palette__load-more-btn:hover:not(:disabled) {
+  background: var(--td-surface-bright);
+  border-color: var(--td-color-ember-glow);
+}
+
+.td-command-palette__load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .td-command-palette__loading {
