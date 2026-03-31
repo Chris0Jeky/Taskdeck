@@ -121,6 +121,16 @@ public class CardRepository : Repository<Card>, ICardRepository
         int maxResults,
         CancellationToken cancellationToken = default)
     {
+        return await SearchAcrossBoardsAsync(boardIds, searchText, maxResults, 0, cancellationToken);
+    }
+
+    public async Task<IEnumerable<Card>> SearchAcrossBoardsAsync(
+        IEnumerable<Guid> boardIds,
+        string searchText,
+        int maxResults,
+        int offset,
+        CancellationToken cancellationToken = default)
+    {
         var materializedBoardIds = boardIds.Distinct().ToList();
         if (materializedBoardIds.Count == 0 || string.IsNullOrWhiteSpace(searchText))
             return [];
@@ -133,7 +143,24 @@ public class CardRepository : Repository<Card>, ICardRepository
             .Include(c => c.Column)
             .OrderBy(c => c.BoardId)
                 .ThenBy(c => c.Position)
+            .Skip(offset)
             .Take(maxResults)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountSearchAcrossBoardsAsync(
+        IEnumerable<Guid> boardIds,
+        string searchText,
+        CancellationToken cancellationToken = default)
+    {
+        var materializedBoardIds = boardIds.Distinct().ToList();
+        if (materializedBoardIds.Count == 0 || string.IsNullOrWhiteSpace(searchText))
+            return 0;
+
+        return await _dbSet
+            .AsNoTracking()
+            .Where(c => materializedBoardIds.Contains(c.BoardId))
+            .Where(c => c.Title.Contains(searchText) || c.Description.Contains(searchText))
+            .CountAsync(cancellationToken);
     }
 }

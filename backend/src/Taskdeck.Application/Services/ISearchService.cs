@@ -9,5 +9,6 @@ public interface ISearchService
         Guid userId,
         string query,
         int maxResults = 20,
+        int offset = 0,
         CancellationToken cancellationToken = default);
 }
