@@ -1,6 +1,6 @@
 import type { ProposalRiskLevelValue, ProposalSourceTypeValue, ProposalStatusValue } from '../types/automation'
 
-const proposalStatusByIndex = ['PendingReview', 'Approved', 'Rejected', 'Applied', 'Failed', 'Expired'] as const
+const proposalStatusByIndex = ['PendingReview', 'Approved', 'Rejected', 'Applied', 'Failed', 'Expired', 'Dismissed'] as const
 const proposalSourceByIndex = ['Queue', 'Chat', 'Manual'] as const
 const proposalRiskByIndex = ['Low', 'Medium', 'High', 'Critical'] as const
 

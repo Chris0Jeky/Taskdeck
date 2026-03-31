@@ -1,6 +1,6 @@
 export type ProposalSourceType = 'Queue' | 'Chat' | 'Manual'
 export type ProposalSourceTypeValue = ProposalSourceType | number
-export type ProposalStatus = 'PendingReview' | 'Approved' | 'Rejected' | 'Applied' | 'Failed' | 'Expired'
+export type ProposalStatus = 'PendingReview' | 'Approved' | 'Rejected' | 'Applied' | 'Failed' | 'Expired' | 'Dismissed'
 export type ProposalStatusValue = ProposalStatus | number
 export type ProposalRiskLevel = 'Low' | 'Medium' | 'High' | 'Critical'
 export type ProposalRiskLevelValue = ProposalRiskLevel | number
