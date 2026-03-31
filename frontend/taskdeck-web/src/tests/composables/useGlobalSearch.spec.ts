@@ -232,7 +232,7 @@ describe('useGlobalSearch', () => {
 
   it('loadMore appends cards and updates pagination state', async () => {
     mockSearch.mockResolvedValueOnce(mockSearchResultWithMore)
-    const { query, cards, totalCardCount, hasMoreCards, loadMore } = useGlobalSearch(50)
+    const { query, cards, hasMoreCards, loadMore } = useGlobalSearch(50)
 
     query.value = 'test'
     await nextTick()
