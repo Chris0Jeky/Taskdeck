@@ -10,7 +10,7 @@ public interface ILlmProvider
 
 public record ChatCompletionRequest(
     List<ChatCompletionMessage> Messages,
-    int MaxTokens = 1024,
+    int MaxTokens = 2048,
     double Temperature = 0.7,
     LlmRequestAttribution? Attribution = null,
     string? SystemPrompt = null,
