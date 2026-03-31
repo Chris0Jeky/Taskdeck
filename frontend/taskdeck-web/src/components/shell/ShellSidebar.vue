@@ -361,6 +361,8 @@ defineExpose({
 <style scoped>
 .td-sidebar {
   width: var(--td-sidebar-width);
+  position: sticky;
+  top: 0;
   height: 100vh;
   height: 100dvh;
   background: var(--td-surface-container);
@@ -561,6 +563,7 @@ defineExpose({
     top: 0;
     left: 0;
     bottom: 0;
+    height: auto;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     z-index: 50;
