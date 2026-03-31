@@ -489,13 +489,13 @@ public class CaptureTriageServiceTests
         var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.OperationCount.Should().Be(4);
+        result.Value.OperationCount.Should().Be(3);
         createdProposal.Should().NotBeNull();
-        createdProposal!.Operations.Should().HaveCount(4);
-        createdProposal.Operations![0].Parameters.Should().Contain("ACME onboarding");
-        createdProposal.Operations[1].Parameters.Should().Contain("request ID documents");
-        createdProposal.Operations[2].Parameters.Should().Contain("send engagement letter");
-        createdProposal.Operations[3].Parameters.Should().Contain("schedule call");
+        createdProposal!.Operations.Should().HaveCount(3);
+        createdProposal.Operations![0].Parameters.Should().Contain("request ID documents");
+        createdProposal.Operations[0].Parameters.Should().Contain("ACME onboarding");
+        createdProposal.Operations[1].Parameters.Should().Contain("send engagement letter");
+        createdProposal.Operations[2].Parameters.Should().Contain("schedule call");
     }
 
     [Fact]
@@ -559,6 +559,100 @@ public class CaptureTriageServiceTests
         createdProposal.Should().NotBeNull();
         createdProposal!.Operations.Should().ContainSingle();
         createdProposal.Operations![0].Parameters.Should().Contain("Remember to check the deployment logs after lunch");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldIncludeContextHintInEvidence_ForDashSeparatedText()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "ACME Ltd - request documents - send letter - schedule call");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(3);
+        createdProposal.Should().NotBeNull();
+        // Title should be just the task, evidence should include context
+        createdProposal!.Operations![0].Parameters.Should().Contain("\"title\":\"request documents\"");
+        createdProposal.Operations[0].Parameters.Should().Contain("ACME Ltd: request documents");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldFallToSingleCard_WhenOnlyTwoDashSegments()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "fix the deployment bug - deploy to staging");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        // Two dash segments should not trigger context-hint splitting
+        // Falls through to single-sentence fallback
+        result.Value.OperationCount.Should().Be(1);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldNotSplitDashes_WhenStructuredBulletLinesExist()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        // Structured bullets take priority even if text also contains dashes
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "- Fix the deployment - it is broken\n- Update docs");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(2);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().HaveCount(2);
+        createdProposal.Operations![0].Parameters.Should().Contain("Fix the deployment");
+        createdProposal.Operations[1].Parameters.Should().Contain("Update docs");
     }
 
     private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)
