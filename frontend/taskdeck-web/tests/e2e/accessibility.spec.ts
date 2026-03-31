@@ -78,19 +78,16 @@ test('Boards list view has no WCAG 2.1 AA violations', async ({ page }) => {
   await expectNoAxeViolations(page, 'BoardsListView')
 })
 
-test('Login view has no WCAG 2.1 AA violations', async ({ page }) => {
-  // Login is a public page — tear down the session completely before
-  // navigating so the router guard doesn't redirect /login → /workspace/home
-  // and the SPA doesn't race with Playwright's goto.
-  await page.goto('/workspace/home')
-  await page.evaluate(() => localStorage.clear())
-  await page.context().clearCookies()
-  // Navigate to about:blank to kill the SPA before it reacts to the
-  // cleared session, avoiding net::ERR_ABORTED on the next goto.
-  await page.goto('about:blank')
+test('Login view has no WCAG 2.1 AA violations', async ({ browser, baseURL }) => {
+  // Login is a public page — use a fresh context so the addInitScript from
+  // beforeEach (which re-injects the auth token on every navigation) doesn't
+  // cause the router guard to redirect /login → /workspace/home.
+  const ctx = await browser.newContext({ baseURL })
+  const page = await ctx.newPage()
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible()
   await expectNoAxeViolations(page, 'LoginView')
+  await ctx.close()
 })
 
 test('skip-to-content link exists and targets main content', async ({ page }) => {
