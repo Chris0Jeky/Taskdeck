@@ -27,6 +27,10 @@ public class CaptureTriageService : ICaptureTriageService
         @"^\s*\d+[.)]\s+(.+?)\s*$",
         RegexOptions.Compiled);
 
+    private static readonly Regex InlineDelimiterPattern = new(
+        @"\s+-\s+|;",
+        RegexOptions.Compiled);
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
@@ -258,6 +262,35 @@ public class CaptureTriageService : ICaptureTriageService
             return candidates;
         }
 
+        // Try inline delimiters: " - " (space-dash-space) and ";"
+        var delimiterSegments = InlineDelimiterPattern.Split(rawText)
+            .Select(s => s.Trim())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        if (delimiterSegments.Count >= 2)
+        {
+            // First segment is context/title hint; remaining segments are tasks
+            foreach (var segment in delimiterSegments.Skip(1))
+            {
+                var normalized = NormalizeTaskTitle(segment);
+                if (!string.IsNullOrWhiteSpace(normalized) && seen.Add(normalized))
+                {
+                    candidates.Add(normalized);
+                    if (candidates.Count >= MaxExtractedTasks)
+                    {
+                        return candidates;
+                    }
+                }
+            }
+
+            if (candidates.Count > 0)
+            {
+                return candidates;
+            }
+        }
+
+        // Single-sentence fallback: create one card with the full text
         var fallback = NormalizeTaskTitle(rawText);
         if (!string.IsNullOrWhiteSpace(fallback))
         {
