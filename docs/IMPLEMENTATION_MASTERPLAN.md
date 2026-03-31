@@ -55,8 +55,8 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 1949+ passing (property-based and fuzz tests added via FsCheck)
-   - Frontend unit: 1444+ passing (132+ test files; batch triage, search, accessibility tests added)
+   - Backend: 1975+ passing (property-based and fuzz tests added via FsCheck)
+   - Frontend unit: 1491+ passing (134+ test files; batch triage, search, accessibility tests added)
    - Default Playwright regression lane: 24+ passing (accessibility axe-core E2E added; `stakeholder-demo.spec.ts` remains opt-in/skipped by default)
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
@@ -701,7 +701,7 @@ Exit Criteria:
 These continue in parallel where they protect trust, performance, or operator posture, but they should not outrun Horizon A through C product legibility work:
 
 - managed-key LLM control plane and abuse controls: `#235`, `#237` (pending), `#238` (operator tooling groundwork delivered; live-traffic wiring pending), `#239` (delivered), `#240` (delivered)
-- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling; UX feedback wave 1 (`#628`) delivered: sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages (`#615`), review collapsible sections with risk color-coding (`#626`)
+- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling; UX feedback wave 1 (`#628`) delivered: sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages (`#615`), review collapsible sections with risk color-coding (`#626`); wave 2 delivered: capture triage delimiters (`#614`), chat truncation (`#616`), notification type differentiation/grouping/batch actions (`#625`), search pagination (`#610`), CI-extended path triggers (`#608`)
 - long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
 - platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
 - deferred outreach CRM expansion: `#262` to `#268`
@@ -1105,10 +1105,10 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 8. Continue frontend premium UI wave from the delivered foundations: shared primitives (UI-02), PERF-08 budgets, and the stack decision spike (UI-03) are done; next is `#246` (token system audit), `#247` (component reskin pass), and `#248`/`#249`/`#250` interaction/accessibility hardening.
 9. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
 13. Continue the chat-to-proposal NLP gap (`#570`): Tier 1 delivered — classifier hardening (`#571`), error UX (`#572`), and integration tests (`#577`) are merged; next is LLM-assisted instruction extraction (`#573`) which requires real provider integration. Board-context prompting (`#575`) and conversational refinement (`#576`) remain Tier 3. Follow-up: enrich audit log entries with changed field details (`#583`).
-14. **UX feedback wave (2026-03-31)**: tracker at `#628`; 17 issues seeded from manual testing across review, inbox, today, home, board, notifications, and LLM chat. P1: capture triage natural-language handling (`#614`), chat truncation fix (`#616`). P2: review applied-item clearing (`#611`), starter pack dark theme (`#612`), review card action visibility (`#613`), capture error messages (`#615`), board context expansion (`#617`), board scrollbar (`#620`), today density (`#622`), inbox color tags (`#624`), notification differentiation (`#625`), review collapsible sections (`#626`), home softened color (`#627`). P3: card drag handle (`#621`), sidebar footer (`#623`). Strategic spikes: LLM tool-calling (`#618`), MCP server (`#619`). Full analysis at `docs/analysis/2026-03-31_manual_testing_ux_feedback.md`.
+14. **UX feedback wave (2026-03-31)**: tracker at `#628`; 17 issues seeded from manual testing. Wave 1 delivered 6 fixes (`#612`, `#615`, `#617`, `#621`, `#623`, `#626`). Wave 2 delivered 5 more: both P1 blockers closed — capture triage dash/semicolon delimiters with context hints (`#614`), chat array truncation detection (`#616`); P2 notification type differentiation, grouping, and batch mark-all-read (`#625`); P4 search cursor pagination (`#610`); ops CI-extended path triggers (`#608`). Remaining open: 1 P2 (`#613`), 2 P3 strategic spikes (`#618`, `#619`). Full analysis at `docs/analysis/2026-03-31_manual_testing_ux_feedback.md`.
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
-12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave, knowledge service tests, and 2026-03-29 NLP/audit/error-UX wave added significant coverage since that certification. Frontend is now at 1174 tests (123 files).
+12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave, knowledge service tests, and 2026-03-29 NLP/audit/error-UX wave added significant coverage since that certification. Frontend is now at 1491 tests (134 files).
 
 ## Documentation Operating Model
 Active docs:

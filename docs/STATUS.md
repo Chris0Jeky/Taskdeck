@@ -39,7 +39,8 @@ Current constraints are mostly hardening and consistency:
 - fresh-registration manual test (2026-03-29) surfaced 2 P0 blockers and 16 additional bugs/observations spanning data isolation, board stability, dark-mode theming, chat utility, and UX polish; full findings at `docs/analysis/2026-03-29_manual_testing_consolidated_findings.md`; P0 blockers: queue data not scoped to the authenticated user (`#508`), board auto-switching on multi-board accounts (`#509`); P1 issues tracked in `#510` through `#515`; P2/P3 in `#516` through `#524`; **no external user onboarding should occur until `#508` is resolved**; two bugs from this session now resolved: activity audit trail not recording board mutations (`#521`, fixed — audit logging wired for all board/card/column/label mutations with `SafeLogAsync` resilience wrapper), archive board 30-second freeze (`#519`, fixed — navigation before reactive state teardown prevents cascading re-renders)
 - platform expansion strategy (2026-03-29) now covers four strategic pillars: market adoption (`#544`), packaging/distribution (`#532`), cloud/collaboration (`#537`), and mobile platform (`#540`); master strategy tracker at `#531`; strategy documents at `docs/strategy/`; release versioning plan: `v0.1.0` (self-contained exe) → `v0.2.0` (hosted cloud) → `v0.3.0` (PWA/mobile) → `v0.4.0` (collaboration) → `v0.5.0` (platform maturity) → `v1.0.0` (GA)
 - hands-on UX testing (2026-03-31) surfaced 8 areas of feedback spanning review, inbox, today, home, board, notifications, and LLM chat; 2 P1 issues (capture triage fails on natural-language text `#614`, chat response truncation showing raw JSON `#616`), 11 P2 usability/visual-coherence issues (`#611`–`#613`, `#615`, `#617`, `#620`, `#622`, `#624`–`#627`), and 4 P3 polish/strategic items (`#618`–`#619`, `#621`, `#623`); tracker at `#628`; full analysis at `docs/analysis/2026-03-31_manual_testing_ux_feedback.md`; cross-cutting themes: progressive disclosure needed across review/today/notifications, semantic color vocabulary for status tags, capture pipeline needs LLM-assisted extraction, and chat needs tool-calling/function-calling architecture; LLM tool-calling spike (`#618`) and MCP server spike (`#619`) seeded for strategic planning
-- UX feedback wave 1 delivered (2026-03-31): 6 of 17 issues from `#628` resolved — sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages surfaced with retry hint (`#615`), board context expanded with card IDs for LLM chat (`#617`, N+1 query fixed), review proposal cards now use collapsible detail sections with risk color-coding and keyboard-accessible links dropdown (`#626`); remaining open: 2 P1 (`#614`, `#616`), 5 P2 (`#613`, `#620`, `#624`, `#625`, `#627`), 4 P3 (`#618`, `#619`)
+- UX feedback wave 1 delivered (2026-03-31): 6 of 17 issues from `#628` resolved — sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages surfaced with retry hint (`#615`), board context expanded with card IDs for LLM chat (`#617`, N+1 query fixed), review proposal cards now use collapsible detail sections with risk color-coding and keyboard-accessible links dropdown (`#626`)
+- UX feedback wave 2 delivered (2026-03-31): 5 additional issues resolved — both P1 blockers closed: capture triage now handles dash-separated (` - `) and semicolon-delimited text with first-segment context hints and single-sentence fallback (`#614`), chat JSON array truncation detection extended to `[`-started responses with degraded message UX (`#616`); P2: notification list now has type-colored left borders, type badges, smart same-type grouping, time-based section headers, and batch "Mark all read" with board-scoped optimistic update (`#625`); P4: global search endpoint now supports `maxResults`/`offset` pagination with `hasMore`/`totalCardCount` response fields and frontend "Load more" in command palette (`#610`); ops: `ci-extended.yml` now auto-triggers on `.csproj`/workflow/deploy/script changes, PR template and AGENTS.md updated (`#608`); remaining open from `#628`: 1 P2 (`#613`), 2 P3 strategic spikes (`#618`, `#619`)
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -712,11 +713,11 @@ Command:
 
 Result:
 - Domain: 357/357 passing
-- Application: 1167/1167 passing
+- Application: 1193/1193 passing
 - API integration: 413/413 passing
 - CLI contract: 4/4 passing
 - Architecture boundaries: 8/8 passing
-- Backend Total: 1949/1949 passing
+- Backend Total: 1975/1975 passing
 
 ### Frontend Unit + Build (Executed)
 
@@ -727,7 +728,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 1444/1444 passing (132 test files)
+- Frontend unit: 1491/1491 passing (134 test files)
 - Typecheck: passing
 - Production build: passing
 
