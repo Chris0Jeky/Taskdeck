@@ -289,7 +289,7 @@ function isOverdue(dateString: string | null): boolean {
   display: flex;
   align-items: center;
   gap: var(--td-space-1);
-  margin-bottom: var(--td-space-2);
+  margin: 0 -0.5rem var(--td-space-2) -0.5rem;
 }
 
 /* ── Move button ── */
