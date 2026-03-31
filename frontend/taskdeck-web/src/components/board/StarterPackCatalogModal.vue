@@ -166,23 +166,23 @@ const outcomeSummaryLabel = computed(() => {
 
 const outcomeSummaryToneClass = computed(() => {
   if (!latestResult.value) {
-    return 'bg-gray-100 text-gray-700'
+    return 'sp-tone-neutral'
   }
 
   if (hasBlockingConflicts.value) {
-    return 'bg-red-100 text-red-700'
+    return 'sp-tone-error'
   }
 
   const hasWarnings = warningConflictCount.value > 0 || actionSummary.value.skip > 0
   if (hasWarnings) {
-    return 'bg-amber-100 text-amber-800'
+    return 'sp-tone-warning'
   }
 
   if (latestResult.value.dryRun) {
-    return 'bg-blue-100 text-blue-700'
+    return 'sp-tone-info'
   }
 
-  return 'bg-green-100 text-green-700'
+  return 'sp-tone-success'
 })
 
 const shouldShowWarningCallout = computed(() => {
@@ -195,8 +195,8 @@ const shouldShowWarningCallout = computed(() => {
 
 function conflictSeverityBadgeClass(conflict: StarterPackApplyConflict): string {
   return normalizeConflictSeverity(conflict) === 'warning'
-    ? 'bg-amber-100 text-amber-800'
-    : 'bg-red-100 text-red-800'
+    ? 'sp-tone-warning'
+    : 'sp-tone-error'
 }
 
 function conflictSeverityLabel(conflict: StarterPackApplyConflict): string {
@@ -505,12 +505,12 @@ const importOutcomeSummaryLabel = computed(() => {
 })
 
 const importOutcomeSummaryToneClass = computed(() => {
-  if (!importLatestResult.value) return 'bg-gray-100 text-gray-700'
-  if (importHasBlockingConflicts.value) return 'bg-red-100 text-red-700'
+  if (!importLatestResult.value) return 'sp-tone-neutral'
+  if (importHasBlockingConflicts.value) return 'sp-tone-error'
   const hasWarnings = importWarningConflictCount.value > 0 || importActionSummary.value.skip > 0
-  if (hasWarnings) return 'bg-amber-100 text-amber-800'
-  if (importLatestResult.value.dryRun) return 'bg-blue-100 text-blue-700'
-  return 'bg-green-100 text-green-700'
+  if (hasWarnings) return 'sp-tone-warning'
+  if (importLatestResult.value.dryRun) return 'sp-tone-info'
+  return 'sp-tone-success'
 })
 
 async function runImportPreview() {
@@ -596,20 +596,20 @@ useEscapeToClose(() => props.isOpen, handleClose)
     class="fixed inset-0 z-50 overflow-y-auto"
     @click.self="handleClose"
   >
-    <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
+    <div class="sp-backdrop fixed inset-0 transition-opacity"></div>
 
     <div class="flex min-h-full items-center justify-center p-4">
-      <div class="relative max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-lg bg-white shadow-xl" @click.stop>
-        <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+      <div class="sp-panel relative max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-lg shadow-xl" @click.stop>
+        <div class="sp-header flex items-center justify-between px-6 py-4">
           <div>
-            <h2 class="text-2xl font-semibold text-gray-900">Starter Packs</h2>
-            <p class="text-sm text-gray-600">
+            <h2 class="sp-title text-2xl font-semibold">Starter Packs</h2>
+            <p class="sp-subtitle text-sm">
               Search templates, preview what will be created, then apply to this board.
             </p>
           </div>
           <button
             type="button"
-            class="text-gray-400 transition-colors hover:text-gray-600"
+            class="sp-close-btn transition-colors"
             @click="handleClose"
           >
             <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -618,14 +618,12 @@ useEscapeToClose(() => props.isOpen, handleClose)
           </button>
         </div>
 
-        <div class="flex border-b border-gray-200">
+        <div class="sp-tab-bar flex">
           <button
             type="button"
             :class="[
-              'px-6 py-2.5 text-sm font-medium transition-colors',
-              activeTab === 'catalog'
-                ? 'border-b-2 border-blue-500 text-blue-600'
-                : 'text-gray-500 hover:text-gray-700'
+              'sp-tab px-6 py-2.5 text-sm font-medium transition-colors',
+              activeTab === 'catalog' ? 'sp-tab--active' : ''
             ]"
             data-testid="tab-catalog"
             @click="activeTab = 'catalog'"
@@ -635,10 +633,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
           <button
             type="button"
             :class="[
-              'px-6 py-2.5 text-sm font-medium transition-colors',
-              activeTab === 'import'
-                ? 'border-b-2 border-blue-500 text-blue-600'
-                : 'text-gray-500 hover:text-gray-700'
+              'sp-tab px-6 py-2.5 text-sm font-medium transition-colors',
+              activeTab === 'import' ? 'sp-tab--active' : ''
             ]"
             data-testid="tab-import"
             @click="activeTab = 'import'"
@@ -648,8 +644,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
         </div>
 
         <div v-if="activeTab === 'catalog'" class="grid max-h-[calc(90vh-130px)] grid-cols-1 overflow-y-auto md:grid-cols-2">
-          <section class="border-b border-gray-200 p-6 md:border-b-0 md:border-r">
-            <label for="starter-pack-search" class="mb-2 block text-sm font-medium text-gray-700">
+          <section class="sp-section-border p-6">
+            <label for="starter-pack-search" class="sp-label mb-2 block text-sm font-medium">
               Search
             </label>
             <input
@@ -658,24 +654,24 @@ useEscapeToClose(() => props.isOpen, handleClose)
               type="text"
               placeholder="Search by name, tag, or purpose"
               :disabled="loadingCatalog || catalogLoadError !== null"
-              class="mb-4 w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="sp-input mb-4 w-full rounded-md px-3 py-2 focus:outline-none"
             />
 
-            <div v-if="loadingCatalog" class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-              <p class="text-sm font-medium text-gray-700">Loading starter packs...</p>
+            <div v-if="loadingCatalog" class="sp-empty-state rounded-md border border-dashed p-6 text-center">
+              <p class="sp-label text-sm font-medium">Loading starter packs...</p>
             </div>
 
-            <div v-else-if="catalogLoadError" class="rounded-md border border-red-200 bg-red-50 p-6 text-center">
-              <p class="text-sm font-medium text-red-700">{{ catalogLoadError }}</p>
+            <div v-else-if="catalogLoadError" class="sp-error-box rounded-md p-6 text-center">
+              <p class="text-sm font-medium">{{ catalogLoadError }}</p>
             </div>
 
-            <div v-else-if="catalogEntries.length === 0" class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-              <p class="text-sm font-medium text-gray-700">No starter packs are currently available.</p>
+            <div v-else-if="catalogEntries.length === 0" class="sp-empty-state rounded-md border border-dashed p-6 text-center">
+              <p class="sp-label text-sm font-medium">No starter packs are currently available.</p>
             </div>
 
-            <div v-else-if="filteredPacks.length === 0" class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-              <p class="text-sm font-medium text-gray-700">No starter packs match this search.</p>
-              <p class="mt-1 text-xs text-gray-500">Try another keyword to view available packs.</p>
+            <div v-else-if="filteredPacks.length === 0" class="sp-empty-state rounded-md border border-dashed p-6 text-center">
+              <p class="sp-label text-sm font-medium">No starter packs match this search.</p>
+              <p class="sp-muted mt-1 text-xs">Try another keyword to view available packs.</p>
             </div>
 
             <ul v-else class="space-y-3">
@@ -683,25 +679,25 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 <button
                   type="button"
                   :class="[
-                    'w-full rounded-lg border px-4 py-3 text-left transition-colors',
+                    'sp-pack-card w-full rounded-lg border px-4 py-3 text-left transition-colors',
                     selectedPack?.id === entry.id
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      ? 'sp-pack-card--selected'
+                      : ''
                   ]"
                   @click="selectPack(entry.id)"
                 >
                   <div class="flex items-center justify-between gap-3">
-                    <p class="text-sm font-semibold text-gray-900">{{ entry.title }}</p>
-                    <span class="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                    <p class="sp-text-primary text-sm font-semibold">{{ entry.title }}</p>
+                    <span class="sp-badge rounded px-2 py-0.5 text-xs font-medium">
                       {{ entry.manifest.packId }}
                     </span>
                   </div>
-                  <p class="mt-1 text-sm text-gray-600">{{ entry.summary }}</p>
+                  <p class="sp-text-secondary mt-1 text-sm">{{ entry.summary }}</p>
                   <div class="mt-2 flex flex-wrap gap-1">
                     <span
                       v-for="tag in entry.manifest.tags"
                       :key="`${entry.id}-${tag}`"
-                      class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                      class="sp-badge rounded px-2 py-0.5 text-xs"
                     >
                       #{{ tag }}
                     </span>
@@ -714,9 +710,9 @@ useEscapeToClose(() => props.isOpen, handleClose)
           <section class="p-6">
             <div v-if="selectedPack" class="space-y-5">
               <div>
-                <h3 class="text-xl font-semibold text-gray-900">{{ selectedPack.title }}</h3>
-                <p class="mt-1 text-sm text-gray-600">{{ selectedPack.manifest.description || selectedPack.summary }}</p>
-                <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <h3 class="sp-text-primary text-xl font-semibold">{{ selectedPack.title }}</h3>
+                <p class="sp-text-secondary mt-1 text-sm">{{ selectedPack.manifest.description || selectedPack.summary }}</p>
+                <div class="sp-text-secondary mt-3 grid grid-cols-2 gap-2 text-xs">
                   <p><span class="font-semibold">Columns:</span> {{ selectedPack.manifest.columns.length }}</p>
                   <p><span class="font-semibold">Labels:</span> {{ selectedPack.manifest.labels.length }}</p>
                   <p><span class="font-semibold">Templates:</span> {{ selectedPack.manifest.templates.length }}</p>
@@ -725,18 +721,18 @@ useEscapeToClose(() => props.isOpen, handleClose)
               </div>
 
               <div>
-                <p class="mb-2 text-sm font-semibold text-gray-800">Preview Highlights</p>
-                <ul class="list-disc space-y-1 pl-5 text-sm text-gray-700">
+                <p class="sp-text-primary mb-2 text-sm font-semibold">Preview Highlights</p>
+                <ul class="sp-text-secondary list-disc space-y-1 pl-5 text-sm">
                   <li v-for="highlight in selectedPack.highlights" :key="highlight">{{ highlight }}</li>
                 </ul>
               </div>
 
-              <div class="rounded-md border border-gray-200 bg-gray-50 p-4">
-                <p class="mb-2 text-sm font-semibold text-gray-800">Columns</p>
-                <div class="space-y-1 text-sm text-gray-700">
+              <div class="sp-inset-box rounded-md p-4">
+                <p class="sp-text-primary mb-2 text-sm font-semibold">Columns</p>
+                <div class="sp-text-secondary space-y-1 text-sm">
                   <p v-for="column in selectedPack.manifest.columns" :key="`${selectedPack.id}-${column.name}`">
                     {{ column.position }} - {{ column.name }}
-                    <span v-if="column.wipLimit !== null && column.wipLimit !== undefined" class="text-xs text-gray-500">
+                    <span v-if="column.wipLimit !== null && column.wipLimit !== undefined" class="sp-muted text-xs">
                       (WIP {{ column.wipLimit }})
                     </span>
                   </p>
@@ -747,7 +743,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 <button
                   type="button"
                   :disabled="runningPreview || applyingPack"
-                  class="rounded-md border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  class="sp-btn-secondary rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                   @click="runPreview"
                 >
                   {{ runningPreview ? 'Running preview...' : 'Preview (Dry Run)' }}
@@ -755,20 +751,20 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 <button
                   type="button"
                   :disabled="runningPreview || applyingPack"
-                  class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                  class="sp-btn-primary rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed"
                   @click="applyPack"
                 >
                   {{ applyingPack ? 'Applying...' : 'Apply Starter Pack' }}
                 </button>
               </div>
 
-              <div v-if="errorMessage" class="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div v-if="errorMessage" class="sp-error-box rounded-md p-3 text-sm">
                 {{ errorMessage }}
               </div>
 
-              <div v-if="hasPreviewResult && latestResult" class="rounded-md border border-gray-200 bg-white p-4">
+              <div v-if="hasPreviewResult && latestResult" class="sp-result-box rounded-md p-4">
                 <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p class="text-sm font-semibold text-gray-900">
+                  <p class="sp-text-primary text-sm font-semibold">
                     {{ latestResult.dryRun ? 'Dry-run Result' : 'Apply Result' }}
                   </p>
                   <span :class="['rounded px-2 py-1 text-xs font-medium', outcomeSummaryToneClass]">
@@ -776,17 +772,17 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   </span>
                 </div>
 
-                <div class="mb-3 flex flex-wrap gap-2 text-xs text-gray-700">
-                  <span class="rounded bg-green-100 px-2 py-1 font-medium text-green-700">
+                <div class="sp-text-secondary mb-3 flex flex-wrap gap-2 text-xs">
+                  <span class="sp-tone-success rounded px-2 py-1 font-medium">
                     {{ createActionLabel }}: {{ actionSummary.create }}
                   </span>
-                  <span class="rounded bg-gray-100 px-2 py-1 font-medium text-gray-700">
+                  <span class="sp-tone-neutral rounded px-2 py-1 font-medium">
                     Skipped: {{ actionSummary.skip }}
                   </span>
-                  <span class="rounded bg-red-100 px-2 py-1 font-medium text-red-700">
+                  <span class="sp-tone-error rounded px-2 py-1 font-medium">
                     Blocked: {{ blockingConflictCount }}
                   </span>
-                  <span class="rounded bg-amber-100 px-2 py-1 font-medium text-amber-800">
+                  <span class="sp-tone-warning rounded px-2 py-1 font-medium">
                     Warnings: {{ warningConflictCount }}
                   </span>
                 </div>
@@ -796,8 +792,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   :class="[
                     'mb-3 rounded-md border p-3 text-xs',
                     hasBlockingConflicts
-                      ? 'border-red-200 bg-red-50 text-red-800'
-                      : 'border-amber-200 bg-amber-50 text-amber-900'
+                      ? 'sp-callout-error'
+                      : 'sp-callout-warning'
                   ]"
                 >
                   <p class="font-semibold">
@@ -810,12 +806,12 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 </div>
 
                 <div v-if="latestResult.actions.length > 0" class="mb-3">
-                  <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">Actions</p>
-                  <ul class="max-h-36 space-y-1 overflow-y-auto rounded border border-gray-100 bg-gray-50 p-2 text-xs text-gray-700">
+                  <p class="sp-text-secondary mb-1 text-xs font-semibold uppercase tracking-wide">Actions</p>
+                  <ul class="sp-list-box max-h-36 space-y-1 overflow-y-auto rounded p-2 text-xs">
                     <li v-for="(action, index) in latestResult.actions" :key="`action-${index}-${action.key}`">
                       <span class="font-semibold">{{ action.operation }}</span>
                       {{ action.entityType }} - {{ action.key }}
-                      <span class="text-gray-500">({{ action.reason }})</span>
+                      <span class="sp-muted">({{ action.reason }})</span>
                     </li>
                   </ul>
                 </div>
@@ -824,7 +820,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   <p
                     :class="[
                       'mb-1 text-xs font-semibold uppercase tracking-wide',
-                      hasBlockingConflicts ? 'text-red-700' : 'text-amber-800'
+                      hasBlockingConflicts ? 'sp-text-error' : 'sp-text-warning'
                     ]"
                   >
                     Conflicts
@@ -833,8 +829,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
                     :class="[
                       'max-h-36 space-y-1 overflow-y-auto rounded p-2 text-xs',
                       hasBlockingConflicts
-                        ? 'border border-red-100 bg-red-50 text-red-800'
-                        : 'border border-amber-100 bg-amber-50 text-amber-900'
+                        ? 'sp-callout-error'
+                        : 'sp-callout-warning'
                     ]"
                   >
                     <li v-for="(conflict, index) in latestResult.conflicts" :key="`conflict-${index}-${conflict.code}`">
@@ -849,15 +845,15 @@ useEscapeToClose(() => props.isOpen, handleClose)
               </div>
             </div>
 
-            <div v-else class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-              <p class="text-sm text-gray-700">Select a starter pack to preview and apply.</p>
+            <div v-else class="sp-empty-state rounded-md border border-dashed p-6 text-center">
+              <p class="sp-text-secondary text-sm">Select a starter pack to preview and apply.</p>
             </div>
           </section>
         </div>
 
         <div v-if="activeTab === 'import'" class="grid max-h-[calc(90vh-130px)] grid-cols-1 overflow-y-auto md:grid-cols-2">
-          <section class="border-b border-gray-200 p-6 md:border-b-0 md:border-r">
-            <label for="import-json-textarea" class="mb-2 block text-sm font-medium text-gray-700">
+          <section class="sp-section-border p-6">
+            <label for="import-json-textarea" class="sp-label mb-2 block text-sm font-medium">
               Manifest JSON
             </label>
             <textarea
@@ -865,7 +861,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
               v-model="importJsonText"
               placeholder='Paste starter pack manifest JSON here, or use "Upload file" below...'
               rows="14"
-              class="mb-3 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="sp-input mb-3 w-full rounded-md px-3 py-2 font-mono text-xs focus:outline-none"
               data-testid="import-json-textarea"
               @input="clearImportFeedback()"
             ></textarea>
@@ -874,14 +870,14 @@ useEscapeToClose(() => props.isOpen, handleClose)
               <button
                 type="button"
                 :disabled="importValidating"
-                class="rounded-md border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                class="sp-btn-secondary rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                 data-testid="import-validate-btn"
                 @click="validateImportJson"
               >
                 {{ importValidating ? 'Validating...' : 'Validate' }}
               </button>
               <label
-                class="cursor-pointer rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                class="sp-btn-upload cursor-pointer rounded-md px-4 py-2 text-sm font-medium transition-colors"
               >
                 Upload file
                 <input
@@ -894,16 +890,16 @@ useEscapeToClose(() => props.isOpen, handleClose)
               </label>
             </div>
 
-            <div v-if="importValidationErrors.length > 0" class="mt-4 rounded-md border border-red-200 bg-red-50 p-3" data-testid="import-validation-errors">
-              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-red-700">Validation Errors</p>
-              <ul class="max-h-48 space-y-1 overflow-y-auto text-xs text-red-800">
+            <div v-if="importValidationErrors.length > 0" class="sp-error-box mt-4 rounded-md p-3" data-testid="import-validation-errors">
+              <p class="sp-text-error mb-2 text-xs font-semibold uppercase tracking-wide">Validation Errors</p>
+              <ul class="max-h-48 space-y-1 overflow-y-auto text-xs">
                 <li v-for="(err, index) in importValidationErrors" :key="`verr-${index}`">
                   <span class="font-semibold">{{ err.path }}</span> - {{ err.message }}
                 </li>
               </ul>
             </div>
 
-            <div v-if="importErrorMessage" class="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div v-if="importErrorMessage" class="sp-error-box mt-4 rounded-md p-3 text-sm">
               {{ importErrorMessage }}
             </div>
           </section>
@@ -911,9 +907,9 @@ useEscapeToClose(() => props.isOpen, handleClose)
           <section class="p-6">
             <div v-if="importHasValidManifest && importValidatedManifest" class="space-y-5">
               <div>
-                <h3 class="text-xl font-semibold text-gray-900">{{ importValidatedManifest.displayName }}</h3>
-                <p class="mt-1 text-sm text-gray-600">{{ importValidatedManifest.description || 'No description provided.' }}</p>
-                <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <h3 class="sp-text-primary text-xl font-semibold">{{ importValidatedManifest.displayName }}</h3>
+                <p class="sp-text-secondary mt-1 text-sm">{{ importValidatedManifest.description || 'No description provided.' }}</p>
+                <div class="sp-text-secondary mt-3 grid grid-cols-2 gap-2 text-xs">
                   <p><span class="font-semibold">Pack ID:</span> {{ importValidatedManifest.packId }}</p>
                   <p><span class="font-semibold">Schema:</span> {{ importValidatedManifest.schemaVersion }}</p>
                   <p><span class="font-semibold">Columns:</span> {{ importValidatedManifest.columns.length }}</p>
@@ -927,7 +923,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 <button
                   type="button"
                   :disabled="importRunningPreview || importApplying"
-                  class="rounded-md border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  class="sp-btn-secondary rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                   data-testid="import-preview-btn"
                   @click="runImportPreview"
                 >
@@ -936,7 +932,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 <button
                   type="button"
                   :disabled="importRunningPreview || importApplying"
-                  class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                  class="sp-btn-primary rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed"
                   data-testid="import-apply-btn"
                   @click="applyImportPack"
                 >
@@ -944,9 +940,9 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 </button>
               </div>
 
-              <div v-if="importHasPreviewResult && importLatestResult" class="rounded-md border border-gray-200 bg-white p-4" data-testid="import-result-panel">
+              <div v-if="importHasPreviewResult && importLatestResult" class="sp-result-box rounded-md p-4" data-testid="import-result-panel">
                 <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p class="text-sm font-semibold text-gray-900">
+                  <p class="sp-text-primary text-sm font-semibold">
                     {{ importLatestResult.dryRun ? 'Dry-run Result' : 'Apply Result' }}
                   </p>
                   <span :class="['rounded px-2 py-1 text-xs font-medium', importOutcomeSummaryToneClass]">
@@ -954,28 +950,28 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   </span>
                 </div>
 
-                <div class="mb-3 flex flex-wrap gap-2 text-xs text-gray-700">
-                  <span class="rounded bg-green-100 px-2 py-1 font-medium text-green-700">
+                <div class="sp-text-secondary mb-3 flex flex-wrap gap-2 text-xs">
+                  <span class="sp-tone-success rounded px-2 py-1 font-medium">
                     {{ importLatestResult.applied ? 'Applied' : 'Planned create' }}: {{ importActionSummary.create }}
                   </span>
-                  <span class="rounded bg-gray-100 px-2 py-1 font-medium text-gray-700">
+                  <span class="sp-tone-neutral rounded px-2 py-1 font-medium">
                     Skipped: {{ importActionSummary.skip }}
                   </span>
-                  <span class="rounded bg-red-100 px-2 py-1 font-medium text-red-700">
+                  <span class="sp-tone-error rounded px-2 py-1 font-medium">
                     Blocked: {{ importBlockingConflictCount }}
                   </span>
-                  <span class="rounded bg-amber-100 px-2 py-1 font-medium text-amber-800">
+                  <span class="sp-tone-warning rounded px-2 py-1 font-medium">
                     Warnings: {{ importWarningConflictCount }}
                   </span>
                 </div>
 
                 <div v-if="importLatestResult.actions.length > 0" class="mb-3">
-                  <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">Actions</p>
-                  <ul class="max-h-36 space-y-1 overflow-y-auto rounded border border-gray-100 bg-gray-50 p-2 text-xs text-gray-700">
+                  <p class="sp-text-secondary mb-1 text-xs font-semibold uppercase tracking-wide">Actions</p>
+                  <ul class="sp-list-box max-h-36 space-y-1 overflow-y-auto rounded p-2 text-xs">
                     <li v-for="(action, index) in importLatestResult.actions" :key="`import-action-${index}-${action.key}`">
                       <span class="font-semibold">{{ action.operation }}</span>
                       {{ action.entityType }} - {{ action.key }}
-                      <span class="text-gray-500">({{ action.reason }})</span>
+                      <span class="sp-muted">({{ action.reason }})</span>
                     </li>
                   </ul>
                 </div>
@@ -984,7 +980,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   <p
                     :class="[
                       'mb-1 text-xs font-semibold uppercase tracking-wide',
-                      importHasBlockingConflicts ? 'text-red-700' : 'text-amber-800'
+                      importHasBlockingConflicts ? 'sp-text-error' : 'sp-text-warning'
                     ]"
                   >
                     Conflicts
@@ -993,8 +989,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
                     :class="[
                       'max-h-36 space-y-1 overflow-y-auto rounded p-2 text-xs',
                       importHasBlockingConflicts
-                        ? 'border border-red-100 bg-red-50 text-red-800'
-                        : 'border border-amber-100 bg-amber-50 text-amber-900'
+                        ? 'sp-callout-error'
+                        : 'sp-callout-warning'
                     ]"
                   >
                     <li v-for="(conflict, index) in importLatestResult.conflicts" :key="`import-conflict-${index}-${conflict.code}`">
@@ -1009,8 +1005,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
               </div>
             </div>
 
-            <div v-else class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-              <p class="text-sm text-gray-700">Paste or upload manifest JSON, then validate to preview and apply.</p>
+            <div v-else class="sp-empty-state rounded-md border border-dashed p-6 text-center">
+              <p class="sp-text-secondary text-sm">Paste or upload manifest JSON, then validate to preview and apply.</p>
             </div>
           </section>
         </div>
@@ -1018,3 +1014,235 @@ useEscapeToClose(() => props.isOpen, handleClose)
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ── Backdrop ── */
+.sp-backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* ── Main panel ── */
+.sp-panel {
+  background: var(--td-surface-primary);
+  color: var(--td-text-primary);
+}
+
+/* ── Header ── */
+.sp-header {
+  border-bottom: 1px solid var(--td-border-default);
+}
+
+.sp-title {
+  color: var(--td-text-primary);
+}
+
+.sp-subtitle {
+  color: var(--td-text-secondary);
+}
+
+.sp-close-btn {
+  color: var(--td-text-tertiary);
+}
+
+.sp-close-btn:hover {
+  color: var(--td-text-secondary);
+}
+
+/* ── Tabs ── */
+.sp-tab-bar {
+  border-bottom: 1px solid var(--td-border-default);
+}
+
+.sp-tab {
+  color: var(--td-text-muted);
+}
+
+.sp-tab:hover {
+  color: var(--td-text-secondary);
+}
+
+.sp-tab--active {
+  color: var(--td-color-primary);
+  border-bottom: 2px solid var(--td-color-primary);
+}
+
+/* ── Section divider (left panel border) ── */
+.sp-section-border {
+  border-bottom: 1px solid var(--td-border-default);
+}
+
+@media (min-width: 768px) {
+  .sp-section-border {
+    border-bottom: none;
+    border-right: 1px solid var(--td-border-default);
+  }
+}
+
+/* ── Text hierarchy ── */
+.sp-text-primary {
+  color: var(--td-text-primary);
+}
+
+.sp-text-secondary {
+  color: var(--td-text-secondary);
+}
+
+.sp-muted {
+  color: var(--td-text-muted);
+}
+
+.sp-label {
+  color: var(--td-text-secondary);
+}
+
+.sp-text-error {
+  color: var(--td-color-error);
+}
+
+.sp-text-warning {
+  color: var(--td-color-warning);
+}
+
+/* ── Form inputs ── */
+.sp-input {
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-secondary);
+  color: var(--td-text-primary);
+}
+
+.sp-input:focus {
+  box-shadow: var(--td-focus-ring);
+}
+
+.sp-input::placeholder {
+  color: var(--td-text-tertiary);
+}
+
+/* ── Pack card (list item) ── */
+.sp-pack-card {
+  border-color: var(--td-border-default);
+  background: var(--td-surface-primary);
+}
+
+.sp-pack-card:hover {
+  border-color: var(--td-border-default);
+  background: var(--td-surface-tertiary);
+}
+
+.sp-pack-card--selected {
+  border-color: var(--td-color-primary);
+  background: var(--td-color-primary-light);
+}
+
+/* ── Badge (tag / pack-id chip) ── */
+.sp-badge {
+  background: var(--td-surface-tertiary);
+  color: var(--td-text-secondary);
+}
+
+/* ── Inset box (columns preview) ── */
+.sp-inset-box {
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-secondary);
+}
+
+/* ── Result box ── */
+.sp-result-box {
+  border: 1px solid var(--td-border-default);
+  background: var(--td-surface-primary);
+}
+
+/* ── List box (actions list) ── */
+.sp-list-box {
+  border: 1px solid var(--td-border-ghost);
+  background: var(--td-surface-secondary);
+  color: var(--td-text-secondary);
+}
+
+/* ── Empty state ── */
+.sp-empty-state {
+  border-color: var(--td-border-default);
+  background: var(--td-surface-secondary);
+}
+
+/* ── Error box ── */
+.sp-error-box {
+  border: 1px solid var(--td-color-error-light, var(--td-color-error));
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+/* ── Buttons ── */
+.sp-btn-primary {
+  background: var(--td-color-primary);
+  color: var(--td-text-inverse);
+}
+
+.sp-btn-primary:hover:not(:disabled) {
+  background: var(--td-color-primary-hover);
+}
+
+.sp-btn-primary:disabled {
+  background: var(--td-surface-bright);
+  color: var(--td-text-muted);
+}
+
+.sp-btn-secondary {
+  border: 1px solid var(--td-color-primary);
+  color: var(--td-color-primary);
+  background: transparent;
+}
+
+.sp-btn-secondary:hover:not(:disabled) {
+  background: var(--td-color-primary-light);
+}
+
+.sp-btn-upload {
+  border: 1px solid var(--td-border-default);
+  color: var(--td-text-secondary);
+  background: transparent;
+}
+
+.sp-btn-upload:hover {
+  background: var(--td-surface-tertiary);
+}
+
+/* ── Semantic tone badges (status indicators) ── */
+.sp-tone-neutral {
+  background: var(--td-surface-tertiary);
+  color: var(--td-text-secondary);
+}
+
+.sp-tone-success {
+  background: var(--td-color-success-light);
+  color: var(--td-color-success);
+}
+
+.sp-tone-error {
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+.sp-tone-warning {
+  background: var(--td-color-warning-light);
+  color: var(--td-color-warning);
+}
+
+.sp-tone-info {
+  background: var(--td-color-info-light);
+  color: var(--td-color-info);
+}
+
+/* ── Callout boxes (bordered status regions) ── */
+.sp-callout-error {
+  border: 1px solid var(--td-color-error-light, var(--td-color-error));
+  background: var(--td-color-error-light);
+  color: var(--td-color-error);
+}
+
+.sp-callout-warning {
+  border: 1px solid var(--td-color-warning-light, var(--td-color-warning));
+  background: var(--td-color-warning-light);
+  color: var(--td-color-warning);
+}
+</style>
