@@ -20,12 +20,26 @@ export interface SearchCardHit {
 export interface GlobalSearchResult {
   boards: SearchBoardHit[]
   cards: SearchCardHit[]
+  totalCardCount: number
+  hasMoreCards: boolean
+  offset: number
+  maxResults: number
 }
 
 export const searchApi = {
-  async search(query: string, signal?: AbortSignal): Promise<GlobalSearchResult> {
+  async search(
+    query: string,
+    signal?: AbortSignal,
+    options?: { maxResults?: number; offset?: number },
+  ): Promise<GlobalSearchResult> {
     const params = new URLSearchParams()
     params.append('q', query)
+    if (options?.maxResults !== undefined) {
+      params.append('maxResults', String(options.maxResults))
+    }
+    if (options?.offset !== undefined) {
+      params.append('offset', String(options.offset))
+    }
     const { data } = await http.get<GlobalSearchResult>(`/search?${params}`, { signal })
     return data
   },
