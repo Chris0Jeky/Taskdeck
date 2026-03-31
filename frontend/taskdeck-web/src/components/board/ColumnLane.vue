@@ -332,9 +332,8 @@ function handleCardDragOver(event: DragEvent) {
 <style scoped>
 /* ── Column Lane — token-based layout ── */
 .td-column-lane {
-  flex-shrink: 0;
   min-width: 16rem;
-  flex: 1;
+  flex: 1 0 16rem;
   max-width: 22rem;
   border-radius: var(--td-radius-lg);
   padding: var(--td-space-5);
