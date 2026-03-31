@@ -289,6 +289,38 @@ public class AutomationProposalService : IAutomationProposalService
         return Result.Success(generatedDiff);
     }
 
+    public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+            return Result.Success(0);
+
+        try
+        {
+            var proposals = await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken);
+            int dismissed = 0;
+
+            foreach (var proposal in proposals)
+            {
+                if (proposal.Status is ProposalStatus.Applied or ProposalStatus.Rejected
+                    or ProposalStatus.Failed or ProposalStatus.Expired)
+                {
+                    proposal.Dismiss();
+                    dismissed++;
+                }
+                // Skip proposals not in a dismissible terminal state
+            }
+
+            if (dismissed > 0)
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success(dismissed);
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<int>(ex.ErrorCode, ex.Message);
+        }
+    }
+
     private static ProposalDto MapToDto(AutomationProposal proposal)
     {
         return new ProposalDto(

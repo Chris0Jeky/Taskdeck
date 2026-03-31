@@ -40,4 +40,9 @@ export const automationApi = {
     const { data } = await http.get<{ diff: string }>(`/automation/proposals/${encodeURIComponent(id)}/diff`)
     return data.diff
   },
+
+  async dismissProposals(ids: string[]): Promise<{ dismissed: number }> {
+    const { data } = await http.post<{ dismissed: number }>('/automation/proposals/dismiss', { ids })
+    return data
+  },
 }

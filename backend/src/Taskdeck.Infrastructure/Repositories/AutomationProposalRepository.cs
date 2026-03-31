@@ -67,7 +67,6 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         }
 
         return await _dbSet
-            .AsNoTracking()
             .Where(proposal => uniqueIds.Contains(proposal.Id))
             .ToListAsync(cancellationToken);
     }

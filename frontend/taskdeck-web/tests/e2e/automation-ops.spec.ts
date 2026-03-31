@@ -130,5 +130,5 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
 
   page.once('dialog', (dialog) => dialog.accept())
   await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
-  await expect(proposalCard.getByText('Applied')).toBeVisible()
+  await expect(proposalCard).not.toBeVisible()
 })
