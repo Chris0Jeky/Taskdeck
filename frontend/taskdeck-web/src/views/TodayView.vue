@@ -291,7 +291,7 @@ onActivated(refreshTodaySummary)
         </div>
       </section>
 
-      <section class="td-today__stats" aria-label="Today statistics">
+      <section v-if="activeStats.length > 0" class="td-today__stats" aria-label="Today statistics">
         <article
           v-for="stat in activeStats"
           :key="stat.id"
