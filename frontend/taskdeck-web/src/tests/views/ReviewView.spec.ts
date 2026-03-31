@@ -237,12 +237,20 @@ describe('ReviewView', () => {
 
     const { wrapper } = await mountAt('/workspace/review')
 
+    // Actionable proposals visible by default
     expect(wrapper.text()).toContain('Review required')
     expect(wrapper.text()).toContain('Approved, ready to apply')
-    expect(wrapper.text()).toContain('Applied to board')
     expect(wrapper.text()).toContain('Approve for board')
     expect(wrapper.text()).toContain('Apply to board')
     expect(wrapper.text()).toContain('Changes stay in review until you approve them.')
+
+    // Applied proposals hidden by default (showCompleted is off)
+    expect(wrapper.text()).not.toContain('Applied to board')
+
+    // Toggle showCompleted on to reveal applied proposals
+    const toggle = wrapper.find('.td-review__toggle-input')
+    await toggle.setValue(true)
+    expect(wrapper.text()).toContain('Applied to board')
   })
 
   it('renders capture provenance and canonical review links', async () => {
