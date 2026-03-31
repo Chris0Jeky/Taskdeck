@@ -27,8 +27,12 @@ public class CaptureTriageService : ICaptureTriageService
         @"^\s*\d+[.)]\s+(.+?)\s*$",
         RegexOptions.Compiled);
 
-    private static readonly Regex InlineDelimiterPattern = new(
-        @"[^\S\n]+-[^\S\n]+|;\s+",
+    private static readonly Regex DashDelimiterPattern = new(
+        @"[^\S\n]+-[^\S\n]+",
+        RegexOptions.Compiled);
+
+    private static readonly Regex SemicolonDelimiterPattern = new(
+        @";\s+",
         RegexOptions.Compiled);
 
     private readonly IUnitOfWork _unitOfWork;
@@ -90,7 +94,7 @@ public class CaptureTriageService : ICaptureTriageService
                 "No columns found in board");
         }
 
-        var taskCandidates = ExtractTaskCandidates(payload.Text);
+        var (taskCandidates, contextHint) = ExtractTaskCandidates(payload.Text);
         if (taskCandidates.Count == 0)
         {
             return Result.Failure<CaptureTriageProposalResultDto>(
@@ -98,7 +102,7 @@ public class CaptureTriageService : ICaptureTriageService
                 "Capture text did not produce actionable triage items");
         }
 
-        var outputModel = BuildOutputModel(taskCandidates);
+        var outputModel = BuildOutputModel(taskCandidates, contextHint);
         var outputValidation = CaptureTriageOutputContract.Validate(outputModel);
         if (!outputValidation.IsSuccess)
         {
@@ -227,7 +231,7 @@ public class CaptureTriageService : ICaptureTriageService
         }
     }
 
-    private static List<string> ExtractTaskCandidates(string rawText)
+    private static (List<string> Tasks, string? ContextHint) ExtractTaskCandidates(string rawText)
     {
         var candidates = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -253,24 +257,25 @@ public class CaptureTriageService : ICaptureTriageService
             candidates.Add(normalized);
             if (candidates.Count >= MaxExtractedTasks)
             {
-                return candidates;
+                return (candidates, null);
             }
         }
 
         if (candidates.Count > 0)
         {
-            return candidates;
+            return (candidates, null);
         }
 
-        // Try inline delimiters: " - " (space-dash-space) and ";"
-        var delimiterSegments = InlineDelimiterPattern.Split(rawText)
+        // Try dash-separated: first segment is context hint, rest are tasks
+        var dashSegments = DashDelimiterPattern.Split(rawText)
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .ToList();
 
-        if (delimiterSegments.Count >= 2)
+        if (dashSegments.Count >= 3)
         {
-            foreach (var segment in delimiterSegments)
+            var contextHint = NormalizeTaskTitle(dashSegments[0]);
+            foreach (var segment in dashSegments.Skip(1))
             {
                 var normalized = NormalizeTaskTitle(segment);
                 if (!string.IsNullOrWhiteSpace(normalized) && seen.Add(normalized))
@@ -278,14 +283,41 @@ public class CaptureTriageService : ICaptureTriageService
                     candidates.Add(normalized);
                     if (candidates.Count >= MaxExtractedTasks)
                     {
-                        return candidates;
+                        return (candidates, contextHint);
                     }
                 }
             }
 
             if (candidates.Count > 0)
             {
-                return candidates;
+                return (candidates, contextHint);
+            }
+        }
+
+        // Try semicolons: all segments are equal tasks
+        var semicolonSegments = SemicolonDelimiterPattern.Split(rawText)
+            .Select(s => s.Trim())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        if (semicolonSegments.Count >= 2)
+        {
+            foreach (var segment in semicolonSegments)
+            {
+                var normalized = NormalizeTaskTitle(segment);
+                if (!string.IsNullOrWhiteSpace(normalized) && seen.Add(normalized))
+                {
+                    candidates.Add(normalized);
+                    if (candidates.Count >= MaxExtractedTasks)
+                    {
+                        return (candidates, null);
+                    }
+                }
+            }
+
+            if (candidates.Count > 0)
+            {
+                return (candidates, null);
             }
         }
 
@@ -296,7 +328,7 @@ public class CaptureTriageService : ICaptureTriageService
             candidates.Add(fallback);
         }
 
-        return candidates;
+        return (candidates, null);
     }
 
     private static string? TryExtractStructuredTask(string line)
@@ -392,11 +424,23 @@ public class CaptureTriageService : ICaptureTriageService
         return new Guid(bytes);
     }
 
-    private static CaptureTriageOutputV1 BuildOutputModel(IReadOnlyCollection<string> taskCandidates)
+    private static CaptureTriageOutputV1 BuildOutputModel(
+        IReadOnlyCollection<string> taskCandidates,
+        string? contextHint = null)
     {
+        var hasContext = !string.IsNullOrWhiteSpace(contextHint);
         var tasks = taskCandidates
             .Take(CaptureTriageOutputContract.MaxTasks)
-            .Select(task => new CaptureTriageTaskV1(task, task))
+            .Select(task =>
+            {
+                var evidence = hasContext ? $"{contextHint}: {task}" : task;
+                if (evidence.Length > CaptureTriageOutputContract.MaxTaskEvidenceLength)
+                {
+                    evidence = evidence[..CaptureTriageOutputContract.MaxTaskEvidenceLength].TrimEnd();
+                }
+
+                return new CaptureTriageTaskV1(task, evidence);
+            })
             .ToList();
 
         return new CaptureTriageOutputV1(
