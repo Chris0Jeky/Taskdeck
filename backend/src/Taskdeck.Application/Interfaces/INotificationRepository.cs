@@ -16,4 +16,9 @@ public interface INotificationRepository : IRepository<Notification>
         Guid userId,
         string deduplicationKey,
         CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<Notification>> GetUnreadByUserIdAsync(
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default);
 }

@@ -15,6 +15,11 @@ public interface INotificationService
         Guid notificationId,
         CancellationToken cancellationToken = default);
 
+    Task<Result<int>> MarkAllAsReadAsync(
+        Guid userId,
+        Guid? boardId = null,
+        CancellationToken cancellationToken = default);
+
     Task<Result<NotificationPreferenceDto>> GetPreferencesAsync(
         Guid userId,
         CancellationToken cancellationToken = default);

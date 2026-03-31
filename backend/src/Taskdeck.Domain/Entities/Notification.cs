@@ -94,7 +94,9 @@ public enum NotificationType
 {
     Mention,
     Assignment,
-    ProposalOutcome
+    ProposalOutcome,
+    BoardChange,
+    System
 }
 
 public enum NotificationCadence
