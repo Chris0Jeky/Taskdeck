@@ -361,6 +361,10 @@ defineExpose({
 <style scoped>
 .td-sidebar {
   width: var(--td-sidebar-width);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
   background: var(--td-surface-container);
   color: var(--td-text-primary);
   display: flex;
@@ -429,6 +433,7 @@ defineExpose({
 
 .td-sidebar__nav {
   flex: 1;
+  overflow-y: auto;
   padding-top: var(--td-space-5);
   display: flex;
   flex-direction: column;
@@ -538,6 +543,7 @@ defineExpose({
 }
 
 .td-sidebar__footer {
+  flex-shrink: 0;
   padding: var(--td-space-3);
   border-top: 1px solid var(--td-border-ghost);
   display: flex;
@@ -557,6 +563,7 @@ defineExpose({
     top: 0;
     left: 0;
     bottom: 0;
+    height: auto;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     z-index: 50;
