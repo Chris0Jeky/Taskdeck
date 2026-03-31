@@ -1125,7 +1125,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
 }
 
 .sp-pack-card:hover {
-  border-color: var(--td-border-ghost);
+  border-color: var(--td-border-default);
   background: var(--td-surface-tertiary);
 }
 
