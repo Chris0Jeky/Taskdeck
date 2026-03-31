@@ -735,6 +735,7 @@ onUnmounted(() => {
                     :data-capture-id="items[virtualRow.index]!.id"
                     :class="[
                       'td-inbox-row',
+                      virtualRow.index % 2 === 1 ? 'td-inbox-row--alt' : '',
                       virtualRow.index === activeItemIndex ? 'td-inbox-row--active' : '',
                       selectedItemId === items[virtualRow.index]!.id ? 'td-inbox-row--selected' : ''
                     ]"
@@ -1048,7 +1049,7 @@ onUnmounted(() => {
               border-color var(--td-transition-fast, 120ms) ease;
 }
 
-.td-inbox-row:nth-child(even) {
+.td-inbox-row--alt {
   background: var(--td-surface-container-low, #1e1d1d);
 }
 
