@@ -289,7 +289,7 @@ function isOverdue(dateString: string | null): boolean {
   display: flex;
   align-items: center;
   gap: var(--td-space-1);
-  margin: -0.5rem -0.5rem var(--td-space-2) -0.5rem;
+  margin: 0 -0.5rem var(--td-space-2) -0.5rem;
 }
 
 /* ── Move button ── */
@@ -388,18 +388,16 @@ function isOverdue(dateString: string | null): boolean {
 }
 
 /* Hide "Drag card" text by default; reveal only on drag-handle hover.
-   Use width/overflow collapse (not just opacity) so the invisible text
-   does not consume horizontal space in the flex button layout. */
+   Use visibility + opacity (not width collapse) so the text reserves its
+   horizontal space and avoids layout shift on hover. (#621) */
 .td-board-card__drag-label--hidden {
+  visibility: hidden;
   opacity: 0;
-  width: 0;
-  overflow: hidden;
 }
 
 .td-card-drag-handle:hover .td-board-card__drag-label--hidden {
+  visibility: visible;
   opacity: 1;
-  width: auto;
-  overflow: visible;
 }
 
 /* ── Badge row ── */
