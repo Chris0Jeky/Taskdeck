@@ -21,6 +21,7 @@ on:
       - frontend/**
       - deploy/**
       - scripts/**
+      - '**/*.csproj'
   workflow_dispatch:
 
 permissions:

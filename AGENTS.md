@@ -124,6 +124,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Pull requests: Provide a short summary, key implementation notes, and testing evidence
   (commands run, screenshots for UI changes). Link related issues/tasks where applicable.
 - Keep PRs focused and small when possible; prefer follow-up PRs for refactors or additional cleanup.
+- PRs touching CI workflows (`.github/workflows/`), infrastructure (`deploy/`, `scripts/`), or project files (`*.csproj`) auto-trigger CI Extended. Ensure CI Extended is green before merging these PRs.
 - For issue execution unless the user explicitly says otherwise: open the PR after verification is complete, then perform a deliberate reviewer-style pass on the PR diff/comments before handoff.
 
 ## Output expectations (after work)
