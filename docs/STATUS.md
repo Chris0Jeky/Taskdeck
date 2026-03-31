@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-03-29
+Last Updated: 2026-03-31
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -24,7 +24,7 @@ Rebranding thesis (2026-02-23):
 Current constraints are mostly hardening and consistency:
 - security and identity behavior is converging but still not uniform across all controller families
 - some UX/operator surfaces are functional but not yet keyboard-first or discoverability-first
-- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture; degraded provider responses are now structurally distinct (`messageType: "degraded"` + `degradedReason`) and the health endpoint supports opt-in probe verification (`?probe=true`); chat-to-proposal pipeline improvements delivered: `LlmIntentClassifier` now uses compiled regex patterns with word-distance matching, stemming/plurals, broader verb coverage, and negative context filtering for negations and other-tool questions (`#571`); parse failures now return structured hint payloads with closest-match suggestions and a frontend hint card with "try this instead" pre-fill (`#572`); dedicated classifier and chat-to-proposal integration test coverage added (`#577`); LLM-assisted instruction extraction now delivered (`#573`): OpenAI and Gemini providers request structured JSON output with a system prompt describing supported instruction patterns, parse the response into `LlmCompletionResult.Instructions`, and fall back to the static `LlmIntentClassifier` when structured parsing fails; `ChatService` iterates LLM-extracted instructions (supporting multiple proposals from a single message) and falls back to raw user message parsing when no instructions are extracted; Mock provider unchanged for deterministic test behavior; **remaining gap**: multi-instruction support (`#574`), board-context prompting (`#575`), and conversational refinement (`#576`) remain undelivered; analysis at `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
+- LLM flow now supports config-gated `OpenAI` and `Gemini` providers with deterministic `Mock` fallback for safe local/test posture; degraded provider responses are now structurally distinct (`messageType: "degraded"` + `degradedReason`) and the health endpoint supports opt-in probe verification (`?probe=true`); chat-to-proposal pipeline improvements delivered: `LlmIntentClassifier` now uses compiled regex patterns with word-distance matching, stemming/plurals, broader verb coverage, and negative context filtering for negations and other-tool questions (`#571`); parse failures now return structured hint payloads with closest-match suggestions and a frontend hint card with "try this instead" pre-fill (`#572`); dedicated classifier and chat-to-proposal integration test coverage added (`#577`); LLM-assisted instruction extraction now delivered (`#573`): OpenAI and Gemini providers request structured JSON output with a system prompt describing supported instruction patterns, parse the response into `LlmCompletionResult.Instructions`, and fall back to the static `LlmIntentClassifier` when structured parsing fails; `ChatService` iterates LLM-extracted instructions (supporting multiple proposals from a single message) and falls back to raw user message parsing when no instructions are extracted; Mock provider unchanged for deterministic test behavior; multi-instruction batch parsing now delivered (`#574`): `ParseBatchInstructionAsync` splits multiple natural-language instructions into individual planner calls, `ChatService` routes multi-instruction messages through batch parsing to generate multiple proposals from a single chat message; board-context LLM prompting now delivered (`#575`): `BoardContextBuilder` constructs bounded board context (columns, card titles, labels) and appends it to system prompts across OpenAI and Gemini providers via `LlmSystemPromptBuilder`; **remaining gap**: conversational refinement (`#576`) remains undelivered; analysis at `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 - managed-key shared-token abuse-control strategy is now explicitly seeded in `#235` to `#240` before broad external exposure
 - testing-harness guardrail expansion from `#254` to `#260` is shipped; remaining work is normal follow-up hardening rather than the original wave
 - MVP dogfooding flow now supports canonical checklist bootstrap in chat (proposal-first, board-scoped); broader template coverage remains future work
@@ -55,7 +55,7 @@ Direction guardrails (explicit):
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core + SQLite
 - Core controllers: boards, columns, cards, labels
-- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs
+- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
@@ -114,14 +114,18 @@ Direction guardrails (explicit):
   - archive listing and restore operations
   - notification inbox and per-user notification preference controls
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
+  - batch triage and suggestion editing for inbox artifacts
+  - keyboard card movement (Alt+Arrow) and move-to action menu on cards
 - Cross-cutting UI infrastructure:
-  - command palette, feature flags, correlation IDs, toasts, keyboard shortcuts
+  - command palette with global search (Ctrl+K): live cross-board search for boards and cards via `/api/search`, with 200ms debounced queries, abort-on-supersede, and keyboard-first grouped results navigation
+  - feature flags, correlation IDs, toasts, keyboard shortcuts
   - shared UI primitives foundation (UI-02): 15 TdButton/TdInput/TdDialog/TdDropdown/TdTooltip/TdBadge/etc. primitives built on Reka UI via shadcn-vue ownership model with WAI-ARIA keyboard foundation; stack decision documented in `docs/analysis/ui-primitive-stack-decision-spike.md`
   - appshell premium reskin: shell sidebar, topbar, command palette, and keyboard help components now use `--td-*` design token system with focus-visible accessibility rings and glass morphism effects
   - board/card surface polish: board canvas, toolbar, action rail, column lanes, and card components now use design-token-based styling with standardized interactive states and accessibility focus rings
   - centralized JWT token storage abstraction (`utils/tokenStorage.ts`) with base64url + JSON payload validation, `isValidJwtStructure` guard, and `clearAll` helper; session-token storage ADR at `docs/analysis/session-token-storage-adr.md`
   - CSP hardening: removed `unsafe-inline` from `script-src` in security headers middleware; OWASP baseline doc updated
   - performance instrumentation composable (`usePerformanceMark`) with `PERF_BUDGETS` constants; 7 latency thresholds documented in `docs/PERFORMANCE_BUDGETS.md`; 16 workspace route views converted to lazy `() => import()` for initial bundle reduction
+  - WCAG 2.1 AA accessibility baseline: skip-to-content link, `sr-only` utility, `eslint-plugin-vuejs-accessibility` rules, ARIA landmarks and roles across HomeView/TodayView/ReviewView/InboxView/CaptureModal/ToastContainer/BoardView, and Playwright axe-core E2E regression for 6 core views
 - Large view decompositions (hotspot refactor wave):
   - `ActivityView.vue` decomposed from ~735 → ~117 lines via `useActivityQuery` composable + `ActivitySelector` + `ActivityResults` components
   - `BoardView.vue` decomposed from ~771 → ~270 lines via `useBoardDragDrop` + `useBoardKeyboardNav` composables + `BoardToolbar` + `BoardActionRail` + `BoardCanvas` + `BoardDialogHost` components
@@ -194,7 +198,7 @@ Completed in Phase 4:
 - DEBT-03 database export/import (`#54`): sandbox-gated SQLite file export/import endpoints with payload signature/size validation and file-replacement rollback guardrails
 
 Remaining for Phase 4 completion:
-- UX/operator hardening for keyboard/accessibility/discoverability and escape-flow gaps
+- UX/operator hardening for remaining keyboard/accessibility/discoverability gaps (WCAG baseline now delivered, conversational refinement `#576` still open)
 - product-legibility hardening so the app teaches the `capture -> review -> board` loop without relying on demo scripts or internal docs
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
@@ -365,6 +369,87 @@ Incident rehearsal and recovery program (`#150`, PR `#503`):
 - Added 4 rehearsal scenario templates: degraded-api-health, missing-telemetry-signal, mcp-server-startup-regression, deployment-readiness-failure
 - Added first execution evidence: `docs/ops/rehearsals/2026-03-29_degraded-api-health.md`
 - Cross-linked from `TESTING_GUIDE.md` and `MANUAL_TEST_CHECKLIST.md`
+
+## Post-Merge Wave 3 (2026-03-30 to 2026-03-31)
+
+Chat-to-proposal NLP gap fix (`#570`, PR `#602`):
+- Added `NaturalLanguageInstructionExtractor` to bridge the intent classification-to-parsing gap: translates natural language into structured instructions the regex parser can consume
+- MockLlmProvider now produces `Instructions` when the classifier detects actionable intent
+- OpenAI and Gemini provider fallback paths also use the extractor when LLM-based JSON extraction fails
+- 38 unit tests for the extractor
+
+Multi-instruction batch parsing (`#574`, PR `#591`):
+- Added `ParseBatchInstructionAsync` to `IAutomationPlannerService` interface
+- `ChatService` now routes multi-instruction messages through batch parsing to generate multiple proposals from a single chat message
+- Backend + frontend tests for batch instruction parsing
+
+Board-context LLM prompting (`#575`, PR `#589`):
+- Added `BoardContextBuilder` to construct bounded board context (columns, card titles, labels) for LLM system prompts
+- Added `LlmSystemPromptBuilder` for centralized system prompt composition
+- OpenAI and Gemini providers now append board context to system prompts via the builder
+- Backend tests for board context builder and ChatService integration
+
+Board keyboard card movement (`#248`, PR `#590`):
+- Added Alt+Arrow keyboard shortcuts for card movement within and across columns in BoardView
+- Added move-to action menu on CardItem for click-based column moves
+- Card Movement section added to keyboard shortcuts help dialog
+- Frontend unit tests for keyboard movement and ColumnLane coverage
+
+Transcript capture source (`#218`, PR `#592`):
+- Added `TranscriptFile` capture source with transcript-specific size limits
+- Added transcript paste/file capture mode to CaptureModal frontend
+- Backend validation tests and frontend interaction tests
+
+Contact card YAML parser (`#264`, PR `#588`):
+- Added `ContactCardYamlParser` with parse/serialize and field validation for card-first outreach CRM use case
+- Added `ContactCardFrontMatter` model with `YamlDotNet` dependency
+- Static serializer/deserializer caching for performance
+- Backend unit tests
+
+Global search and quick-action launcher (`#93`, PR `#603`):
+- Added `SearchService` and `/api/search?q=` endpoint for cross-board search respecting authorization boundaries
+- Enhanced `ShellCommandPalette` (Ctrl+K) with live search results alongside command navigation
+- Added `searchApi` client, `useGlobalSearch` composable with 200ms debounce and abort-on-supersede
+- Grouped results display (Commands, Boards, Cards) with keyboard-first navigation
+- Frontend tests for composable and command palette search integration
+
+Developer portal and OpenAPI (`#99`, PR `#605`):
+- Added OpenAPI annotations (`[ProducesResponseType]`, XML doc summaries) to Boards, Cards, Columns, Capture, Chat, Auth, and Webhooks controllers
+- Enhanced Swagger configuration with API metadata, JWT Bearer security definition, and XML comment inclusion
+- Added developer portal docs (`docs/api/`): `QUICKSTART.md`, `AUTHENTICATION.md`, `BOARDS.md`, `CAPTURE.md`, `CHAT.md`, `WEBHOOKS.md`, `ERROR_CONTRACTS.md`
+- Added developer portal CI workflow and local OpenAPI export script
+
+SBOM and release provenance (`#103`, PR `#606`):
+- Added reusable workflow (`.github/workflows/reusable-sbom-provenance.yml`) for CycloneDX JSON SBOMs (backend + frontend) and SLSA v1-style provenance manifest
+- Wired into `ci-release.yml` (replacing placeholder) and `release-security.yml`
+- Added `docs/ops/SBOM_RELEASE_PROVENANCE.md` documentation
+- Updated dependency vulnerability policy to reference SBOM artifacts
+
+Batch triage and suggestion editing (`#220`, PR `#607`):
+- Added `POST /api/capture/items/batch-triage` endpoint with per-item actions (triage/ignore/cancel), 200/207/422 response semantics, and batch size limit (50)
+- Added `PUT /api/capture/items/{id}/suggestion` for editing capture text before triage with state-transition guards
+- Added multi-select checkboxes, select-all toggle, batch action bar, and inline suggestion editing in InboxView
+- Backend + frontend tests for batch triage and suggestion editing
+
+Property-based and fuzz testing pilot (`#89`, PR `#601`):
+- Added FsCheck property-based testing packages to Domain and Application test projects
+- Added property-based tests for Board, Card, Column, Label entity invariants and AutomationProposal state machine
+- Added fuzz tests for StarterPackManifestValidator, LlmIntentClassifier regex safety, and export/import DTO serialization roundtrip contracts
+
+Accessibility audit and WCAG remediation (`#92`, PR `#604`):
+- Added skip-to-content link, `sr-only` utility class, and `eslint-plugin-vuejs-accessibility` with tuned rules
+- WCAG improvements across BoardView, HomeView, TodayView, ReviewView, InboxView, CaptureModal, and ToastContainer
+- Added Playwright axe-core E2E tests for 6 core views (Home, Today, Inbox, Review, Boards, Login) plus skip-link test
+- `role=presentation` on virtual scroller wrappers in InboxView
+
+Dependency updates (PRs `#593`–`#600`):
+- `@eslint/js` 9.39.4 → 10.0.1 (with ESLint v10 rule violation fixes in demo scripts and playwright config)
+- `@types/node` 24.10.1 → 25.5.0
+- GitHub Actions group bump (5 updates)
+- `Microsoft.NET.Test.Sdk` 17.14.1 → 18.3.0
+- `Swashbuckle.AspNetCore` 6.9.0 → 10.1.7 (with OpenApi v2.x compatibility fix)
+- `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` upgraded to 8.17.0
+- `xunit.runner.visualstudio` 2.8.2 → 3.1.5
 
 ## MVP Expansion Planning Integration (2026-03-07)
 
@@ -611,7 +696,7 @@ Reconciliation record:
 
 ## Test Status (Executed)
 
-Verification Date: 2026-03-29 (backend + frontend unit recertified after PRs #436–#503 merge wave)
+Verification Date: 2026-03-31 (recertified after PRs #588–#607 merge wave)
 
 ### Backend (Executed)
 
@@ -688,6 +773,20 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 - label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`) for PRs that touch `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`
 - label/manual-triggered demo director smoke lane (`automation` label or `workflow_dispatch`) via `.github/workflows/reusable-demo-director-smoke.yml`; docs-only PRs still need manual dispatch because `ci-extended.yml` path filters do not watch `docs/**`
 - label/manual-triggered load/concurrency harness lane via `.github/workflows/reusable-load-concurrency-harness.yml`
+
+Release workflow: `.github/workflows/ci-release.yml`
+
+- SBOM/provenance generation via `.github/workflows/reusable-sbom-provenance.yml` (CycloneDX SBOMs for backend + frontend, SLSA v1-style provenance manifest)
+- Container image build/export artifacts
+
+Security workflow: `.github/workflows/release-security.yml`
+
+- Dependency inventory/vulnerability reporting
+- SBOM/provenance generation alongside existing security scans
+
+Developer portal workflow: `.github/workflows/reusable-developer-portal.yml`
+
+- OpenAPI spec export and developer portal generation
 
 Nightly workflow: `.github/workflows/ci-nightly.yml`
 

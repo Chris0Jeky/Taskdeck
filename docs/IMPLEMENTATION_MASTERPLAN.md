@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-29
+Last Updated: 2026-03-31
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -55,9 +55,9 @@ Delivered in the latest cycle:
    - request correlation middleware + Ops CLI correlation propagation
    - timing/result diagnostics for log query and automation execution paths
 7. Test surface expanded and verified:
-   - Backend: 1668 passing
-   - Frontend unit: 1174 passing (123 test files)
-   - Default Playwright regression lane: 24 passing (`stakeholder-demo.spec.ts` remains opt-in/skipped by default)
+   - Backend: 1668+ passing (property-based and fuzz tests added via FsCheck)
+   - Frontend unit: 1174+ passing (123+ test files; batch triage, search, accessibility tests added)
+   - Default Playwright regression lane: 24+ passing (accessibility axe-core E2E added; `stakeholder-demo.spec.ts` remains opt-in/skipped by default)
 8. Documentation consolidation retained:
    - active docs remain focused at `docs/` root
    - detail packs/audits archived under `docs/archive/2026-02-13_phase4-doc-consolidation/`
@@ -482,6 +482,67 @@ Delivered in the latest cycle:
     - added 4 rehearsal scenario templates (degraded-api-health, missing-telemetry-signal, mcp-server-startup-regression, deployment-readiness-failure)
     - added first execution evidence at `docs/ops/rehearsals/2026-03-29_degraded-api-health.md`
     - cross-linked from `TESTING_GUIDE.md` and `MANUAL_TEST_CHECKLIST.md`
+106. Chat-to-proposal NLP gap fix delivery (`#570`, PR `#602`):
+    - added `NaturalLanguageInstructionExtractor` to bridge intent classification-to-parsing gap (translates natural language into structured instructions the regex parser can consume)
+    - all three LLM providers (Mock, OpenAI, Gemini) now use the extractor as fallback when structured JSON extraction fails
+    - 38 unit tests for the extractor covering extraction patterns and edge cases
+107. Multi-instruction batch parsing delivery (`#574`, PR `#591`):
+    - added `ParseBatchInstructionAsync` to `IAutomationPlannerService` for splitting multiple natural-language instructions into individual planner calls
+    - `ChatService` now routes multi-instruction messages through batch parsing to generate multiple proposals from a single chat message
+    - backend + frontend tests for batch instruction parsing and ChatService integration
+108. Board-context LLM prompting delivery (`#575`, PR `#589`):
+    - added `BoardContextBuilder` to construct bounded board context (columns, card titles, labels) for LLM system prompts
+    - added `LlmSystemPromptBuilder` for centralized system prompt composition across providers
+    - OpenAI and Gemini providers now append board context via the builder; backend tests for builder and ChatService integration
+109. Board keyboard card movement delivery (`#248`, PR `#590`):
+    - added Alt+Arrow keyboard shortcuts for card movement within and across columns via `useBoardKeyboardNav` composable
+    - added move-to action menu on CardItem for click-based column moves with Escape handling and focus restoration
+    - extracted adjacent-column and reorder helpers from composable; added Card Movement section to keyboard help dialog
+    - frontend unit tests for keyboard movement, ColumnLane test prop fix, and coverage expansion
+110. Transcript capture source delivery (`#218`, PR `#592`):
+    - added `TranscriptFile` capture source with transcript-specific size limits to backend domain
+    - added transcript paste/file capture mode to CaptureModal frontend
+    - backend validation tests and frontend interaction tests
+111. Contact card YAML parser delivery (`#264`, PR `#588`):
+    - added `ContactCardYamlParser` with parse/serialize and field validation for card-first outreach CRM
+    - added `ContactCardFrontMatter` model with `YamlDotNet` dependency; static serializer/deserializer caching
+    - backend unit tests for parser
+112. Global search and quick-action launcher delivery (`#93`, PR `#603`):
+    - added `SearchService` and `GET /api/search?q=` endpoint for cross-board search respecting authorization boundaries
+    - enhanced `ShellCommandPalette` (Ctrl+K) with live search results (boards + cards) alongside command navigation
+    - added `searchApi` client, `useGlobalSearch` composable with 200ms debounce and abort-on-supersede
+    - frontend tests for composable and command palette search integration
+113. Developer portal and OpenAPI delivery (`#99`, PR `#605`):
+    - added OpenAPI annotations to 7 controllers (Boards, Cards, Columns, Capture, Chat, Auth, Webhooks) with `[ProducesResponseType]` and XML doc summaries
+    - enhanced Swagger configuration with API metadata, JWT Bearer security definition, and XML comment inclusion
+    - added developer portal docs (`docs/api/`): `QUICKSTART.md`, `AUTHENTICATION.md`, `BOARDS.md`, `CAPTURE.md`, `CHAT.md`, `WEBHOOKS.md`, `ERROR_CONTRACTS.md`
+    - added developer portal CI workflow and local OpenAPI export script
+114. SBOM and release provenance delivery (`#103`, PR `#606`):
+    - added reusable workflow for CycloneDX JSON SBOMs (backend + frontend) and SLSA v1-style build provenance manifest with SHA-256 checksums
+    - wired into `ci-release.yml` (replacing placeholder) and `release-security.yml`
+    - added documentation at `docs/ops/SBOM_RELEASE_PROVENANCE.md`; updated dependency vulnerability policy
+115. Batch triage and suggestion editing delivery (`#220`, PR `#607`):
+    - added `POST /api/capture/items/batch-triage` with per-item actions (triage/ignore/cancel), 200/207/422 response semantics, batch size limit (50), and duplicate ID rejection
+    - added `PUT /api/capture/items/{id}/suggestion` for editing capture text before triage with state-transition guards
+    - added multi-select checkboxes, select-all toggle, batch action bar, and inline suggestion editing in InboxView
+    - backend + frontend tests for batch triage and suggestion editing
+116. Property-based and fuzz testing pilot delivery (`#89`, PR `#601`):
+    - added FsCheck property-based testing packages to Domain and Application test projects
+    - added property-based tests for Board, Card, Column, Label entity invariants and AutomationProposal state machine invariants
+    - added fuzz tests for StarterPackManifestValidator input parsing, LlmIntentClassifier regex safety, and export/import DTO serialization roundtrip contracts
+117. Accessibility audit and WCAG remediation delivery (`#92`, PR `#604`):
+    - added accessibility foundation: skip-to-content link, `sr-only` utility class, `eslint-plugin-vuejs-accessibility` with tuned gradual-rollout rules
+    - WCAG improvements across BoardView, HomeView, TodayView, ReviewView, InboxView, CaptureModal, and ToastContainer (ARIA landmarks, roles, labels)
+    - added Playwright axe-core E2E tests for 6 core views (Home, Today, Inbox, Review, Boards, Login) plus skip-link verification
+    - `role=presentation` on virtual scroller wrappers for axe-core compliance
+118. Dependency update wave (PRs `#593`–`#600`):
+    - `@eslint/js` 9.39.4 → 10.0.1 (with ESLint v10 rule violation fixes)
+    - `@types/node` 24.10.1 → 25.5.0
+    - GitHub Actions group bump (5 updates)
+    - `Microsoft.NET.Test.Sdk` 17.14.1 → 18.3.0
+    - `Swashbuckle.AspNetCore` 6.9.0 → 10.1.7 (with OpenApi v2.x compatibility fix)
+    - `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` upgraded to 8.17.0
+    - `xunit.runner.visualstudio` 2.8.2 → 3.1.5
 
 ## Current Planning Pivot (2026-03-07)
 
