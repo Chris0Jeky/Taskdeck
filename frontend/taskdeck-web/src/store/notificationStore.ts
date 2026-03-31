@@ -68,11 +68,14 @@ export const useNotificationStore = defineStore('notifications', () => {
     guardDemoMutation()
     try {
       const result = await notificationsApi.markAllRead(boardId)
-      notifications.value = notifications.value.map((item) => ({
-        ...item,
-        isRead: true,
-        readAt: item.readAt ?? new Date().toISOString(),
-      }))
+      notifications.value = notifications.value.map((item) => {
+        if (boardId && item.boardId !== boardId) return item
+        return {
+          ...item,
+          isRead: true,
+          readAt: item.readAt ?? new Date().toISOString(),
+        }
+      })
       return result
     } catch (e: unknown) {
       const msg = getErrorDisplay(e, 'Failed to mark all notifications as read').message

@@ -199,6 +199,50 @@ describe('notificationStore', () => {
     expect(notificationsApi.markAllRead).toHaveBeenCalledWith(undefined)
   })
 
+  it('only marks board-scoped notifications when boardId provided', async () => {
+    const store = useNotificationStore()
+    store.notifications = [
+      {
+        id: 'n1',
+        userId: 'u1',
+        boardId: 'board-A',
+        type: 'ProposalOutcome',
+        cadence: 'Immediate',
+        title: 'First',
+        message: 'Message 1',
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'n2',
+        userId: 'u1',
+        boardId: 'board-B',
+        type: 'Mention',
+        cadence: 'Immediate',
+        title: 'Second',
+        message: 'Message 2',
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: false,
+        readAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]
+
+    vi.mocked(notificationsApi.markAllRead).mockResolvedValue({ markedCount: 1 })
+
+    await store.markAllRead('board-A')
+
+    expect(store.notifications[0].isRead).toBe(true)
+    expect(store.notifications[1].isRead).toBe(false)
+    expect(notificationsApi.markAllRead).toHaveBeenCalledWith('board-A')
+  })
+
   it('sets error when markAllRead fails', async () => {
     const store = useNotificationStore()
     vi.mocked(notificationsApi.markAllRead).mockRejectedValue(new Error('batch failed'))
