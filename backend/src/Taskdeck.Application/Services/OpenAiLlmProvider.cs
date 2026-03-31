@@ -52,10 +52,41 @@ public class OpenAiLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Live provider request failed.", GetConfiguredModelOrDefault());
             }
 
-            if (!TryParseResponse(body, out var content, out var tokensUsed))
+            if (!TryParseResponse(body, out var content, out var tokensUsed, out var finishReason))
             {
                 _logger.LogWarning("OpenAI completion response could not be parsed.");
                 return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.", GetConfiguredModelOrDefault());
+            }
+
+            // Detect truncation: OpenAI returns finish_reason "length" when the
+            // response was cut off by the max_tokens limit.
+            if (string.Equals(finishReason, "length", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("OpenAI response was truncated (finish_reason=length).");
+                return new LlmCompletionResult(
+                    content,
+                    tokensUsed,
+                    IsActionable: false,
+                    Provider: "OpenAI",
+                    Model: GetConfiguredModelOrDefault(),
+                    IsDegraded: true,
+                    DegradedReason: "Response was truncated");
+            }
+
+            // When JSON mode was requested but the response is not valid JSON,
+            // the output was likely truncated before the model could finish.
+            var useInstructionExtraction = request.SystemPrompt is null;
+            if (useInstructionExtraction && !IsValidJson(content))
+            {
+                _logger.LogWarning("OpenAI JSON-mode response is not valid JSON; treating as truncated.");
+                return new LlmCompletionResult(
+                    content,
+                    tokensUsed,
+                    IsActionable: false,
+                    Provider: "OpenAI",
+                    Model: GetConfiguredModelOrDefault(),
+                    IsDegraded: true,
+                    DegradedReason: "Response was truncated");
             }
 
             // Try to parse structured instruction extraction from the LLM response
@@ -227,10 +258,11 @@ public class OpenAiLlmProvider : ILlmProvider
         return payload;
     }
 
-    private static bool TryParseResponse(string responseBody, out string content, out int tokensUsed)
+    private static bool TryParseResponse(string responseBody, out string content, out int tokensUsed, out string? finishReason)
     {
         content = string.Empty;
         tokensUsed = 0;
+        finishReason = null;
 
         if (string.IsNullOrWhiteSpace(responseBody))
         {
@@ -257,6 +289,12 @@ public class OpenAiLlmProvider : ILlmProvider
             if (string.IsNullOrWhiteSpace(content))
             {
                 return false;
+            }
+
+            if (first.TryGetProperty("finish_reason", out var finishReasonElement) &&
+                finishReasonElement.ValueKind == JsonValueKind.String)
+            {
+                finishReason = finishReasonElement.GetString();
             }
 
             if (root.TryGetProperty("usage", out var usage) &&
@@ -306,6 +344,22 @@ public class OpenAiLlmProvider : ILlmProvider
             IsDegraded: true,
             DegradedReason: reason,
             Instructions: instructions);
+    }
+
+    private static bool IsValidJson(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static int EstimateTokens(string text)
