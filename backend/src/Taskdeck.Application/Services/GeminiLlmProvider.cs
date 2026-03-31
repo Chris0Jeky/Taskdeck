@@ -81,10 +81,40 @@ public class GeminiLlmProvider : ILlmProvider
                 return BuildFallbackResult(lastUserMessage, "Live provider request failed.", GetConfiguredModelOrDefault());
             }
 
-            if (!TryParseResponse(body, out var content, out var tokensUsed))
+            if (!TryParseResponse(body, out var content, out var tokensUsed, out var finishReason))
             {
                 _logger.LogWarning("Gemini completion response could not be parsed.");
                 return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.", GetConfiguredModelOrDefault());
+            }
+
+            // Detect truncation: Gemini returns finishReason "MAX_TOKENS" when the
+            // response was cut off by the maxOutputTokens limit.
+            if (string.Equals(finishReason, "MAX_TOKENS", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Gemini response was truncated (finishReason=MAX_TOKENS).");
+                return new LlmCompletionResult(
+                    content,
+                    tokensUsed,
+                    IsActionable: false,
+                    Provider: "Gemini",
+                    Model: GetConfiguredModelOrDefault(),
+                    IsDegraded: true,
+                    DegradedReason: "Response was truncated");
+            }
+
+            // When JSON mode was requested and the response starts with '{' but
+            // does not parse as valid JSON, the output was likely truncated.
+            if (useInstructionExtraction && LooksLikeTruncatedJson(content))
+            {
+                _logger.LogWarning("Gemini JSON-mode response is not valid JSON; treating as truncated.");
+                return new LlmCompletionResult(
+                    content,
+                    tokensUsed,
+                    IsActionable: false,
+                    Provider: "Gemini",
+                    Model: GetConfiguredModelOrDefault(),
+                    IsDegraded: true,
+                    DegradedReason: "Response was truncated");
             }
 
             // Try to parse structured instruction extraction from the LLM response
@@ -225,10 +255,11 @@ public class GeminiLlmProvider : ILlmProvider
         };
     }
 
-    private static bool TryParseResponse(string responseBody, out string content, out int tokensUsed)
+    private static bool TryParseResponse(string responseBody, out string content, out int tokensUsed, out string? finishReason)
     {
         content = string.Empty;
         tokensUsed = 0;
+        finishReason = null;
 
         if (string.IsNullOrWhiteSpace(responseBody))
         {
@@ -248,6 +279,13 @@ public class GeminiLlmProvider : ILlmProvider
             }
 
             var firstCandidate = candidates[0];
+
+            if (firstCandidate.TryGetProperty("finishReason", out var finishReasonElement) &&
+                finishReasonElement.ValueKind == JsonValueKind.String)
+            {
+                finishReason = finishReasonElement.GetString();
+            }
+
             if (!firstCandidate.TryGetProperty("content", out var candidateContent) ||
                 !candidateContent.TryGetProperty("parts", out var parts) ||
                 parts.ValueKind != JsonValueKind.Array ||
@@ -322,6 +360,30 @@ public class GeminiLlmProvider : ILlmProvider
             IsDegraded: true,
             DegradedReason: reason,
             Instructions: instructions);
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="text"/> starts with '{' but does not
+    /// parse as valid JSON — a strong signal the response was cut off mid-output.
+    /// </summary>
+    internal static bool LooksLikeTruncatedJson(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var trimmed = text.TrimStart();
+        if (!trimmed.StartsWith('{'))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            return false;
+        }
+        catch (JsonException)
+        {
+            return true;
+        }
     }
 
     private static int EstimateTokens(string text)

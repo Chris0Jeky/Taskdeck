@@ -269,6 +269,85 @@ public class OpenAiLlmProviderTests
         message.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
     }
 
+    [Fact]
+    public async Task CompleteAsync_ShouldReturnDegraded_WhenFinishReasonIsLength()
+    {
+        var settings = BuildSettings();
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": { "content": "partial response" },
+                          "finish_reason": "length"
+                        }
+                      ],
+                      "usage": { "total_tokens": 50 }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var provider = new OpenAiLlmProvider(new HttpClient(handler), settings, NullLogger<OpenAiLlmProvider>.Instance);
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "tell me something")],
+            SystemPrompt: string.Empty));
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Be("Response was truncated");
+        result.Content.Should().Be("partial response");
+        result.IsActionable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldReturnDegraded_WhenJsonModeResponseIsInvalidJson()
+    {
+        var settings = BuildSettings();
+        // Build a valid OpenAI response whose content value is truncated JSON.
+        // The inner content must be JSON-escaped so the outer envelope parses.
+        var truncatedContent = "{\\\"reply\\\":\\\"this is cut off";
+        var responseBody = $@"{{
+  ""choices"": [{{
+    ""message"": {{ ""content"": ""{truncatedContent}"" }},
+    ""finish_reason"": ""stop""
+  }}],
+  ""usage"": {{ ""total_tokens"": 50 }}
+}}";
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            };
+        });
+
+        var provider = new OpenAiLlmProvider(new HttpClient(handler), settings, NullLogger<OpenAiLlmProvider>.Instance);
+
+        // SystemPrompt defaults to null -> JSON mode is requested
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "tell me something")]));
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Be("Response was truncated");
+    }
+
+    [Theory]
+    [InlineData("{\"reply\":\"incomplete", true)]
+    [InlineData("{}", false)]
+    [InlineData("plain text response", false)]
+    [InlineData("", false)]
+    [InlineData("  { broken json", true)]
+    public void LooksLikeTruncatedJson_ShouldDetectPartialJson(string input, bool expected)
+    {
+        OpenAiLlmProvider.LooksLikeTruncatedJson(input).Should().Be(expected);
+    }
+
     private static LlmProviderSettings BuildSettings()
     {
         return new LlmProviderSettings

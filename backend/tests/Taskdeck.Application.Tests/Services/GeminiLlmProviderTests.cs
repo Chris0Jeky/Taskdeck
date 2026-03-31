@@ -432,6 +432,55 @@ public class GeminiLlmProviderTests
         hasSystemInstruction.Should().BeFalse("empty system prompt should not produce system_instruction field");
     }
 
+    [Fact]
+    public async Task CompleteAsync_ShouldReturnDegraded_WhenFinishReasonIsMaxTokens()
+    {
+        var settings = BuildSettings();
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "candidates": [
+                        {
+                          "content": {
+                            "parts": [{ "text": "partial response" }]
+                          },
+                          "finishReason": "MAX_TOKENS"
+                        }
+                      ],
+                      "usageMetadata": { "totalTokenCount": 50 }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var provider = new GeminiLlmProvider(new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "tell me something")],
+            SystemPrompt: string.Empty));
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Be("Response was truncated");
+        result.Content.Should().Be("partial response");
+        result.IsActionable.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("{\"reply\":\"incomplete", true)]
+    [InlineData("{}", false)]
+    [InlineData("plain text response", false)]
+    [InlineData("", false)]
+    [InlineData("  { broken json", true)]
+    public void LooksLikeTruncatedJson_ShouldDetectPartialJson(string input, bool expected)
+    {
+        GeminiLlmProvider.LooksLikeTruncatedJson(input).Should().Be(expected);
+    }
+
     private static LlmProviderSettings BuildSettings()
     {
         return new LlmProviderSettings
