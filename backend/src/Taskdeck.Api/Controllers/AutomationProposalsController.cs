@@ -241,19 +241,17 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 $"Cannot dismiss more than {MaxProposalListLimit} proposals at once"));
         }
 
-        // Verify the caller owns or has access to the proposals
-        var proposals = await _proposalService.GetProposalsAsync(
-            new ProposalFilterDto(null, null, callerUserId, null, MaxProposalListLimit),
-            cancellationToken);
-
-        if (!proposals.IsSuccess)
-            return proposals.ToErrorActionResult();
-
-        var ownedIds = proposals.Value.Select(p => p.Id).ToHashSet();
-        var unauthorizedIds = request.Ids.Where(id => !ownedIds.Contains(id)).ToList();
-        if (unauthorizedIds.Count > 0)
+        // Verify the caller owns each proposal being dismissed
+        foreach (var proposalId in request.Ids.Distinct())
         {
-            return Result.Failure(ErrorCodes.Forbidden, "You can only dismiss your own proposals.").ToErrorActionResult();
+            var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
+            if (!proposalResult.IsSuccess)
+                return proposalResult.ToErrorActionResult();
+
+            if (proposalResult.Value.RequestedByUserId != callerUserId)
+            {
+                return Result.Failure(ErrorCodes.Forbidden, "You can only dismiss your own proposals.").ToErrorActionResult();
+            }
         }
 
         var result = await _proposalService.DismissProposalsAsync(request.Ids, cancellationToken);

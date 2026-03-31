@@ -301,15 +301,13 @@ public class AutomationProposalService : IAutomationProposalService
 
             foreach (var proposal in proposals)
             {
-                try
+                if (proposal.Status is ProposalStatus.Applied or ProposalStatus.Rejected
+                    or ProposalStatus.Failed or ProposalStatus.Expired)
                 {
                     proposal.Dismiss();
                     dismissed++;
                 }
-                catch (DomainException)
-                {
-                    // Skip proposals that cannot be dismissed (e.g. still Pending/Approved)
-                }
+                // Skip proposals not in a dismissible terminal state
             }
 
             if (dismissed > 0)
