@@ -465,6 +465,100 @@ public class CaptureTriageServiceTests
         _llmProviderMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldSplitDashSeparatedText_IntoIndividualTasks()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "ACME onboarding - request ID documents - send engagement letter - schedule call");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(3);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().HaveCount(3);
+        createdProposal.Operations![0].Parameters.Should().Contain("request ID documents");
+        createdProposal.Operations[1].Parameters.Should().Contain("send engagement letter");
+        createdProposal.Operations[2].Parameters.Should().Contain("schedule call");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldSplitSemicolonSeparatedText_IntoIndividualTasks()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "Friday release prep; update changelog; tag version; notify stakeholders");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(3);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().HaveCount(3);
+        createdProposal.Operations![0].Parameters.Should().Contain("update changelog");
+        createdProposal.Operations[1].Parameters.Should().Contain("tag version");
+        createdProposal.Operations[2].Parameters.Should().Contain("notify stakeholders");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldCreateSingleCard_ForPlainSentenceWithoutDelimiters()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var board = new Board("Capture board", ownerId: userId);
+        var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
+
+        _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "Remember to check the deployment logs after lunch");
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(1);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().ContainSingle();
+        createdProposal.Operations![0].Parameters.Should().Contain("Remember to check the deployment logs after lunch");
+    }
+
     private static ProposalDto BuildProposalDto(Guid userId, Guid boardId, Guid captureId)
     {
         return new ProposalDto(
