@@ -43,6 +43,9 @@ const availableBoards = ref<Board[]>([])
 const loadingBoards = ref(false)
 const boardFilterInput = ref('')
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+const showCompleted = ref(false)
+
+const completedStatuses = new Set(['Applied', 'Rejected', 'Failed', 'Expired', 'Dismissed'])
 
 const boardOptions = computed(() =>
   buildInputAssistOptions(
@@ -71,7 +74,19 @@ function matchesActiveBoardFilter(boardId: string | null | undefined): boolean {
   return normalizedBoardId === activeBoardFilter.value.toLowerCase()
 }
 
-const visibleProposals = computed(() => proposals.value.filter((proposal) => matchesActiveBoardFilter(proposal.boardId)))
+const visibleProposals = computed(() =>
+  proposals.value.filter((proposal) => {
+    if (!matchesActiveBoardFilter(proposal.boardId)) return false
+
+    // Always hide dismissed proposals
+    if (normalizeProposalStatus(proposal.status) === 'Dismissed') return false
+
+    // When showCompleted is off, hide terminal-state proposals
+    if (!showCompleted.value && completedStatuses.has(normalizeProposalStatus(proposal.status))) return false
+
+    return true
+  }),
+)
 
 const summaryCards = computed<ReviewSummaryCard[]>(() => {
   let pendingReview = 0
@@ -471,6 +486,7 @@ const statusLabels: Record<string, string> = {
   Rejected: 'Rejected',
   Failed: 'Failed',
   Expired: 'Expired',
+  Dismissed: 'Dismissed',
 }
 
 function reviewStatusLabel(status: ApiProposal['status']): string {
@@ -496,6 +512,34 @@ function applyBoardFilter(boardId: string) {
     void router.push({ name: 'workspace-review', query: { boardId: trimmed } })
   } else {
     void router.push({ name: 'workspace-review' })
+  }
+}
+
+const dismissableProposalIds = computed(() =>
+  proposals.value
+    .filter((p) => {
+      const status = normalizeProposalStatus(p.status)
+      return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
+    })
+    .filter((p) => matchesActiveBoardFilter(p.boardId))
+    .map((p) => p.id),
+)
+
+async function handleDismissApplied() {
+  const ids = dismissableProposalIds.value
+  if (ids.length === 0) {
+    toast.info('No completed proposals to clear.')
+    return
+  }
+
+  try {
+    const result = await automationApi.dismissProposals(ids)
+    // Remove dismissed proposals from the local list
+    const dismissedSet = new Set(ids)
+    proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+    toast.success(`Cleared ${result.dismissed} completed proposal${result.dismissed === 1 ? '' : 's'}.`)
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to clear proposals').message)
   }
 }
 
@@ -552,6 +596,17 @@ watch(
       </div>
 
       <div class="td-review__hero-actions">
+        <label class="td-review__toggle">
+          <input v-model="showCompleted" type="checkbox" class="td-review__toggle-input" />
+          <span class="td-review__toggle-label">Show completed</span>
+        </label>
+        <button
+          class="td-btn td-btn--secondary"
+          :disabled="dismissableProposalIds.length === 0"
+          @click="handleDismissApplied"
+        >
+          Clear applied ({{ dismissableProposalIds.length }})
+        </button>
         <button class="td-btn td-btn--primary" :disabled="proposalsLoading" @click="loadProposals">
           {{ proposalsLoading ? 'Refreshing...' : 'Refresh Review' }}
         </button>
@@ -774,6 +829,29 @@ watch(
   flex-wrap: wrap;
   gap: var(--td-space-2);
   justify-content: flex-end;
+  align-items: center;
+}
+
+.td-review__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.td-review__toggle-input {
+  accent-color: var(--td-color-primary);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.td-review__toggle-label {
+  font-size: var(--td-font-sm);
+  font-weight: 600;
+  color: var(--td-text-secondary);
+  white-space: nowrap;
 }
 
 .td-review__summary {
