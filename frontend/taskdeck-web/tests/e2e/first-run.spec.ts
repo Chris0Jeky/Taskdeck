@@ -136,10 +136,13 @@ test('first-run path should guide home to capture to review to execute to board'
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 
-  // Toggle "Show completed" to reveal applied proposal and its Open Board button
+  // Toggle "Show completed" to reveal applied proposal and navigate to board
   await page.locator('.td-review__toggle-input').check()
   await expect(proposalCard).toBeVisible()
-  await proposalCard.getByRole('button', { name: 'Open Board' }).click()
+  // Open collapsed "Technical details" section, then "Links" dropdown, then "Open Board"
+  await proposalCard.getByRole('button', { name: /Technical details/ }).click()
+  await proposalCard.getByRole('button', { name: /Links/ }).click()
+  await proposalCard.getByRole('menuitem', { name: 'Open Board' }).click()
   await expect(page).toHaveURL(new RegExp(`/workspace/boards/${boardId}$`))
   const card = page.locator('[data-card-id]').filter({ hasText: createdCard.title }).first()
   await expect(card).toBeVisible()
