@@ -28,7 +28,7 @@ public class CaptureTriageService : ICaptureTriageService
         RegexOptions.Compiled);
 
     private static readonly Regex InlineDelimiterPattern = new(
-        @"\s+-\s+|;",
+        @"[^\S\n]+-[^\S\n]+|;\s+",
         RegexOptions.Compiled);
 
     private readonly IUnitOfWork _unitOfWork;
@@ -270,8 +270,7 @@ public class CaptureTriageService : ICaptureTriageService
 
         if (delimiterSegments.Count >= 2)
         {
-            // First segment is context/title hint; remaining segments are tasks
-            foreach (var segment in delimiterSegments.Skip(1))
+            foreach (var segment in delimiterSegments)
             {
                 var normalized = NormalizeTaskTitle(segment);
                 if (!string.IsNullOrWhiteSpace(normalized) && seen.Add(normalized))

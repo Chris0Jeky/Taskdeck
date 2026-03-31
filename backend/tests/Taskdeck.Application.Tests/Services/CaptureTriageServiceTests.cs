@@ -489,12 +489,13 @@ public class CaptureTriageServiceTests
         var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.OperationCount.Should().Be(3);
+        result.Value.OperationCount.Should().Be(4);
         createdProposal.Should().NotBeNull();
-        createdProposal!.Operations.Should().HaveCount(3);
-        createdProposal.Operations![0].Parameters.Should().Contain("request ID documents");
-        createdProposal.Operations[1].Parameters.Should().Contain("send engagement letter");
-        createdProposal.Operations[2].Parameters.Should().Contain("schedule call");
+        createdProposal!.Operations.Should().HaveCount(4);
+        createdProposal.Operations![0].Parameters.Should().Contain("ACME onboarding");
+        createdProposal.Operations[1].Parameters.Should().Contain("request ID documents");
+        createdProposal.Operations[2].Parameters.Should().Contain("send engagement letter");
+        createdProposal.Operations[3].Parameters.Should().Contain("schedule call");
     }
 
     [Fact]
@@ -521,12 +522,13 @@ public class CaptureTriageServiceTests
         var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.OperationCount.Should().Be(3);
+        result.Value.OperationCount.Should().Be(4);
         createdProposal.Should().NotBeNull();
-        createdProposal!.Operations.Should().HaveCount(3);
-        createdProposal.Operations![0].Parameters.Should().Contain("update changelog");
-        createdProposal.Operations[1].Parameters.Should().Contain("tag version");
-        createdProposal.Operations[2].Parameters.Should().Contain("notify stakeholders");
+        createdProposal!.Operations.Should().HaveCount(4);
+        createdProposal.Operations![0].Parameters.Should().Contain("Friday release prep");
+        createdProposal.Operations[1].Parameters.Should().Contain("update changelog");
+        createdProposal.Operations[2].Parameters.Should().Contain("tag version");
+        createdProposal.Operations[3].Parameters.Should().Contain("notify stakeholders");
     }
 
     [Fact]
