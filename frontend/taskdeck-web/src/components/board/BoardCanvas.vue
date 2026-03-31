@@ -84,8 +84,9 @@ defineEmits<{
 
 <style scoped>
 .td-board-canvas {
-  height: calc(100vh - 120px);
+  height: calc(100vh - 180px);
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .td-board-canvas__lanes {
