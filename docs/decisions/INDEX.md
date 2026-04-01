@@ -19,3 +19,5 @@
 | [0015](ADR-0015-starter-pack-idempotent-apply.md) | Starter Pack — Idempotent Apply with Conflict Detection | Accepted | 2026-02 |
 | [0016](ADR-0016-security-logging-redaction.md) | Security Logging Redaction for Sensitive Flows | Accepted | 2026-02-23 |
 | [0017](ADR-0017-agent-tool-registry-review-first.md) | Agent Tool Registry — Review-First by Default | Accepted | 2026-03 |
+| [0018](ADR-0018-llm-tool-calling-custom-over-semantic-kernel.md) | LLM Tool-Calling — Custom Implementation over Semantic Kernel | Accepted | 2026-04-01 |
+| [0019](ADR-0019-mcp-server-official-sdk-embedded-hosting.md) | MCP Server — Official SDK with Embedded Hosting | Accepted | 2026-04-01 |
