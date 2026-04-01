@@ -159,6 +159,237 @@ public class GeminiLlmProvider : ILlmProvider
         }
     }
 
+    public async Task<LlmToolCompletionResult> CompleteWithToolsAsync(
+        ChatCompletionRequest request,
+        IReadOnlyList<TaskdeckToolSchema> tools,
+        IReadOnlyList<ToolCallResult>? previousToolResults = null,
+        CancellationToken ct = default)
+    {
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var validationError))
+        {
+            _logger.LogWarning("Gemini provider configuration invalid for tool call: {Error}", validationError);
+            return new LlmToolCompletionResult(
+                Content: "I'm unable to process tool calls right now due to a configuration issue.",
+                TokensUsed: 0, Provider: "Gemini", Model: GetConfiguredModelOrDefault(),
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Live provider configuration is invalid.");
+        }
+
+        try
+        {
+            using var httpMessage = new HttpRequestMessage(HttpMethod.Post, BuildGenerateContentEndpoint());
+            httpMessage.Headers.TryAddWithoutValidation("x-goog-api-key", (_settings.Gemini?.ApiKey ?? string.Empty).Trim());
+            LlmRequestAttributionMapper.AddAttributionHeaders(httpMessage, request.Attribution);
+            httpMessage.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
+
+            using var response = await _httpClient.SendAsync(httpMessage, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Gemini tool-calling request failed with status code {StatusCode}.", (int)response.StatusCode);
+                return new LlmToolCompletionResult(
+                    Content: "I encountered an error while processing your request.",
+                    TokensUsed: 0, Provider: "Gemini", Model: GetConfiguredModelOrDefault(),
+                    ToolCalls: null, IsComplete: true, IsDegraded: true,
+                    DegradedReason: "Live provider request failed.");
+            }
+
+            return ParseToolCallingResponse(body);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Gemini tool-calling request failed. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
+            return new LlmToolCompletionResult(
+                Content: "I encountered an unexpected error while processing your request.",
+                TokensUsed: 0, Provider: "Gemini", Model: GetConfiguredModelOrDefault(),
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Live provider request errored.");
+        }
+    }
+
+    private object BuildToolCallingPayload(
+        ChatCompletionRequest request,
+        IReadOnlyList<TaskdeckToolSchema> tools,
+        IReadOnlyList<ToolCallResult>? previousToolResults)
+    {
+        var contents = new List<object>();
+
+        // Add conversation messages
+        contents.AddRange(request.Messages.Select(MapMessage));
+
+        // Add previous tool results as user-role functionResponse parts
+        if (previousToolResults is { Count: > 0 })
+        {
+            var responseParts = previousToolResults.Select(r =>
+            {
+                // Parse the tool result content as JSON, falling back to wrapping as text
+                object responsePayload;
+                try
+                {
+                    using var doc = JsonDocument.Parse(r.Content);
+                    responsePayload = doc.RootElement.Clone();
+                }
+                catch (JsonException)
+                {
+                    responsePayload = new { result = r.Content };
+                }
+
+                return (object)new
+                {
+                    functionResponse = new
+                    {
+                        name = r.ToolName,
+                        response = responsePayload
+                    }
+                };
+            }).ToArray();
+
+            contents.Add(new { role = "user", parts = responseParts });
+        }
+
+        // Convert tool schemas to Gemini functionDeclarations format
+        var functionDeclarations = tools.Select(t => new
+        {
+            name = t.Name,
+            description = t.Description,
+            parameters = t.ParametersSchema
+        }).ToArray();
+
+        var systemPrompt = request.SystemPrompt ?? ToolCallingSystemPrompt.Prompt;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["contents"] = contents.ToArray(),
+            ["tools"] = new[] { new { functionDeclarations } },
+            ["toolConfig"] = new { functionCallingConfig = new { mode = "AUTO" } },
+            ["generationConfig"] = new
+            {
+                temperature = request.Temperature,
+                maxOutputTokens = request.MaxTokens
+            }
+        };
+
+        if (!string.IsNullOrEmpty(systemPrompt))
+        {
+            payload["system_instruction"] = new { parts = new[] { new { text = systemPrompt } } };
+        }
+
+        return payload;
+    }
+
+    internal LlmToolCompletionResult ParseToolCallingResponse(string responseBody)
+    {
+        var model = GetConfiguredModelOrDefault();
+
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return new LlmToolCompletionResult(
+                Content: "Received empty response from provider.",
+                TokensUsed: 0, Provider: "Gemini", Model: model,
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Empty response.");
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(responseBody);
+            var root = json.RootElement;
+
+            if (!root.TryGetProperty("candidates", out var candidates) ||
+                candidates.ValueKind != JsonValueKind.Array || candidates.GetArrayLength() == 0)
+            {
+                return new LlmToolCompletionResult(
+                    Content: "Could not parse provider response.",
+                    TokensUsed: 0, Provider: "Gemini", Model: model,
+                    ToolCalls: null, IsComplete: true, IsDegraded: true,
+                    DegradedReason: "No candidates in response.");
+            }
+
+            var firstCandidate = candidates[0];
+            var tokensUsed = 0;
+            if (root.TryGetProperty("usageMetadata", out var usage) &&
+                usage.TryGetProperty("totalTokenCount", out var totalTokens) &&
+                totalTokens.TryGetInt32(out var parsedTokens))
+            {
+                tokensUsed = parsedTokens;
+            }
+
+            if (!firstCandidate.TryGetProperty("content", out var candidateContent) ||
+                !candidateContent.TryGetProperty("parts", out var parts) ||
+                parts.ValueKind != JsonValueKind.Array || parts.GetArrayLength() == 0)
+            {
+                return new LlmToolCompletionResult(
+                    Content: "Could not parse provider response parts.",
+                    TokensUsed: tokensUsed, Provider: "Gemini", Model: model,
+                    ToolCalls: null, IsComplete: true, IsDegraded: true,
+                    DegradedReason: "No parts in response.");
+            }
+
+            // Check for functionCall parts
+            var toolCalls = new List<ToolCallRequest>();
+            var textParts = new List<string>();
+
+            foreach (var part in parts.EnumerateArray())
+            {
+                if (part.TryGetProperty("functionCall", out var functionCall))
+                {
+                    var name = functionCall.TryGetProperty("name", out var nameEl)
+                        ? nameEl.GetString() ?? "" : "";
+                    var callId = functionCall.TryGetProperty("id", out var idEl)
+                        ? idEl.GetString() ?? $"gemini-{Guid.NewGuid():N}"[..16]
+                        : $"gemini-{Guid.NewGuid():N}"[..16];
+                    var args = functionCall.TryGetProperty("args", out var argsEl)
+                        ? argsEl.Clone()
+                        : JsonDocument.Parse("{}").RootElement.Clone();
+
+                    toolCalls.Add(new ToolCallRequest(callId, name, args));
+                }
+                else if (part.TryGetProperty("text", out var textEl))
+                {
+                    var text = textEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(text))
+                        textParts.Add(text);
+                }
+            }
+
+            if (toolCalls.Count > 0)
+            {
+                return new LlmToolCompletionResult(
+                    Content: null,
+                    TokensUsed: tokensUsed,
+                    Provider: "Gemini",
+                    Model: model,
+                    ToolCalls: toolCalls,
+                    IsComplete: false);
+            }
+
+            // No tool calls — final text response
+            var content = string.Join(Environment.NewLine, textParts).Trim();
+            return new LlmToolCompletionResult(
+                Content: content.Length > 0 ? content : "I processed your request.",
+                TokensUsed: tokensUsed,
+                Provider: "Gemini",
+                Model: model,
+                ToolCalls: null,
+                IsComplete: true);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning("Failed to parse Gemini tool-calling response: {Message}", ex.Message);
+            return new LlmToolCompletionResult(
+                Content: "Could not parse provider response.",
+                TokensUsed: 0, Provider: "Gemini", Model: model,
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Response parsing failed.");
+        }
+    }
+
     public async IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, [EnumeratorCancellation] CancellationToken ct = default)
     {
         var result = await CompleteAsync(request, ct);
