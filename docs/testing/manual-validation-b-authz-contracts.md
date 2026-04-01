@@ -1,6 +1,6 @@
 # Manual Validation Slice B: Authz Policy, Cross-User Isolation, and API Error Contracts
 
-Last Updated: 2026-03-29
+Last Updated: 2026-04-02
 
 Companion references:
 - `docs/MANUAL_TEST_CHECKLIST.md` (parent checklist)
@@ -162,6 +162,9 @@ Note: ASP.NET Core's JWT middleware may return a bare `401` without a JSON body 
 | B-30  | GET    | `/api/export/database`                          | 401             | Same                  |
 | B-31  | POST   | `/api/boards/{random-guid}/imports/external`    | 401             | Same                  |
 | B-32  | GET    | `/api/workspace/preferences`                    | 401             | Same                  |
+| B-33  | GET    | `/api/account/export`                           | 401             | Same                  |
+| B-34  | POST   | `/api/account/delete`                           | 401             | Same                  |
+| B-35  | GET    | `/api/metrics/boards/{random-guid}`             | 401             | Same                  |
 
 ### Curl template for unauthenticated checks
 
@@ -206,6 +209,7 @@ Document the actual behavior for each check. If the system returns `404` where `
 | B-58  | GET    | `/api/audit/boards/{BOARD_A}`                    | UserB   | 404      | Cannot view audit for foreign board |
 | B-59  | POST   | `/api/boards/{BOARD_A}/imports/external`         | UserB   | 403 or 404 | Cannot import into foreign board |
 | B-60  | GET    | `/api/boards/{BOARD_A}/cards/{CARD_A}/provenance`| UserB   | 404      | Cannot view card provenance on foreign board |
+| B-61  | GET    | `/api/metrics/boards/{BOARD_A}`                  | UserB   | 404      | Cannot view metrics for foreign board |
 
 ### Curl template for cross-user checks
 
@@ -308,6 +312,8 @@ Known `errorCode` values (from `ErrorCodes` in `Taskdeck.Domain.Exceptions`):
 | B-108 | `POST /api/boards/{BOARD_A}/columns` with empty name   | 400             | `ValidationError`     | `errorCode`+`message` present |
 | B-109 | `PATCH /api/boards/{BOARD_A}/cards/{CARD_A}` with `If-Match` stale ETag (if supported) | 409 | `Conflict` | `errorCode`+`message` present |
 | B-110 | `POST /api/auth/change-password` with wrong current password | 401 or 400 | `AuthenticationFailed` or `ValidationError` | `errorCode`+`message` present |
+| B-111 | `POST /api/account/delete` with wrong password              | 401 or 400 | `AuthenticationFailed` or `ValidationError` | `errorCode`+`message` present |
+| B-112 | `POST /api/account/delete` with correct password but wrong confirmation phrase | 400 | `ValidationError` | `errorCode`+`message` present |
 
 ### Curl template for error-contract checks
 
@@ -353,6 +359,7 @@ These endpoints are intentionally unauthenticated. Verify they remain accessible
 | B-121 | POST   | `/api/auth/register`     | 200 or 409      | Open registration              |
 | B-122 | GET    | `/health/live`           | 200             | Health probe, no auth          |
 | B-123 | GET    | `/health/ready`          | 200             | Readiness probe, no auth       |
+| B-124 | GET    | `/api/auth/providers`    | 200             | Provider discovery, no auth    |
 
 ---
 
@@ -428,6 +435,28 @@ These controllers have specialized auth or role requirements beyond standard boa
 | ID    | Method | Route                                                  | Token   | Expected | Notes                          |
 |-------|--------|--------------------------------------------------------|---------|----------|--------------------------------|
 | B-175 | POST   | `/api/boards/{BOARD_A}/imports/external`               | UserB   | 403 or 404 | Cannot import into foreign board |
+
+### Data Portability (`/api/account`) — SEC-08
+
+| ID    | Method | Route                        | Token   | Expected | Notes                          |
+|-------|--------|------------------------------|---------|----------|--------------------------------|
+| B-180 | GET    | `/api/account/export`        | UserA   | 200      | Returns only UserA's data      |
+| B-181 | GET    | `/api/account/export`        | UserB   | 200      | Returns only UserB's data (cross-user isolation) |
+| B-182 | POST   | `/api/account/delete`        | UserA   | 401/400  | Wrong password: rejected       |
+| B-183 | POST   | `/api/account/delete`        | UserA   | 400      | Wrong confirmation phrase: rejected |
+
+### Board Metrics (`/api/metrics`) — ANL-01
+
+| ID    | Method | Route                                  | Token   | Expected | Notes                          |
+|-------|--------|----------------------------------------|---------|----------|--------------------------------|
+| B-185 | GET    | `/api/metrics/boards/{BOARD_A}`        | UserA   | 200      | Owner can view own board metrics |
+| B-186 | GET    | `/api/metrics/boards/{BOARD_A}`        | UserB   | 404      | Cannot view foreign board metrics |
+
+### Auth Provider Discovery (`/api/auth/providers`)
+
+| ID    | Method | Route                        | Token   | Expected | Notes                          |
+|-------|--------|------------------------------|---------|----------|--------------------------------|
+| B-190 | GET    | `/api/auth/providers`        | No token| 200      | Intentionally unauthenticated; returns provider availability |
 
 ---
 
