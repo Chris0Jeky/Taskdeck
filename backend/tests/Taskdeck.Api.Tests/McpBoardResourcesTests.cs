@@ -154,6 +154,58 @@ public class McpBoardResourcesTests : IDisposable
         (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
     }
 
+    [Fact]
+    public async Task StdioUserContextProvider_WhenConfiguredIdDoesNotExistInDb_FallsBackToFirstUser()
+    {
+        // Arrange — configured GUID is valid but does not match any user in the database
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+        var realUser = new User("hank", "hank@example.com", "Password1!");
+        await uow.Users.AddAsync(realUser);
+        await uow.SaveChangesAsync();
+
+        var phantomId = Guid.NewGuid(); // does not exist in DB
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["McpServer:DefaultUserId"] = phantomId.ToString()
+            })
+            .Build();
+
+        // Act
+        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+
+        // Assert — should fall back to the real user, not return the phantom ID
+        var resolved = await provider.GetCurrentUserIdAsync();
+        resolved.Should().Be(realUser.Id, "phantom user ID should not be used; should fall back to first DB user");
+        resolved.Should().NotBe(phantomId);
+    }
+
+    [Fact]
+    public async Task StdioUserContextProvider_WhenConfiguredIdDoesNotExistAndNoUsers_Throws()
+    {
+        // Arrange — configured GUID doesn't exist, and DB has no users
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+        var phantomId = Guid.NewGuid();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["McpServer:DefaultUserId"] = phantomId.ToString()
+            })
+            .Build();
+
+        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+
+        // Act & Assert
+        var act = () => provider.GetCurrentUserIdAsync();
+        await act.Should().ThrowAsync<InvalidOperationException>()
+           .WithMessage("*no users found*");
+    }
+
     // ── BoardResources tests ──────────────────────────────────────────────────
 
     [Fact]
@@ -282,6 +334,55 @@ public class McpBoardResourcesTests : IDisposable
         var root = doc.RootElement;
         root.GetProperty("boards").GetArrayLength().Should().Be(0);
         root.GetProperty("totalCount").GetInt32().Should().Be(0);
+    }
+
+    // ── Multi-user authorization scoping tests ─────────────────────────────────
+
+    [Fact]
+    public async Task BoardResources_ListBoards_OnlyReturnsCurrentUserBoards()
+    {
+        // Arrange — two users, each with their own board
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var userAlice = new User("alice-scope", "alice-scope@example.com", "Password1!");
+        var userBob = new User("bob-scope", "bob-scope@example.com", "Password1!");
+        await uow.Users.AddAsync(userAlice);
+        await uow.Users.AddAsync(userBob);
+        await uow.SaveChangesAsync();
+
+        // Create a BoardService with AuthorizationService so ownership filtering is enforced.
+        var authService = new AuthorizationService(uow);
+        var boardService = new BoardService(uow, authService);
+
+        await boardService.CreateBoardAsync(new CreateBoardDto("Alice Board 1", null), userAlice.Id);
+        await boardService.CreateBoardAsync(new CreateBoardDto("Alice Board 2", null), userAlice.Id);
+        await boardService.CreateBoardAsync(new CreateBoardDto("Bob Board 1", null), userBob.Id);
+
+        // Act — list boards as Alice via MCP BoardResources
+        var aliceResources = new BoardResources(boardService, new FixedUserContextProvider(userAlice.Id));
+        var aliceJson = await aliceResources.ListBoards();
+
+        // Act — list boards as Bob via MCP BoardResources
+        var bobResources = new BoardResources(boardService, new FixedUserContextProvider(userBob.Id));
+        var bobJson = await bobResources.ListBoards();
+
+        // Assert — Alice sees only her 2 boards
+        using var aliceDoc = JsonDocument.Parse(aliceJson);
+        var aliceBoards = aliceDoc.RootElement.GetProperty("boards");
+        aliceBoards.GetArrayLength().Should().Be(2);
+        aliceDoc.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
+        foreach (var board in aliceBoards.EnumerateArray())
+        {
+            board.GetProperty("name").GetString().Should().StartWith("Alice Board");
+        }
+
+        // Assert — Bob sees only his 1 board
+        using var bobDoc = JsonDocument.Parse(bobJson);
+        var bobBoards = bobDoc.RootElement.GetProperty("boards");
+        bobBoards.GetArrayLength().Should().Be(1);
+        bobDoc.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        bobBoards[0].GetProperty("name").GetString().Should().Be("Bob Board 1");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
