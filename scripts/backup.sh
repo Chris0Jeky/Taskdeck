@@ -97,6 +97,21 @@ if [[ ! -f "$DB_PATH" ]]; then
     exit 1
 fi
 
+# Reject paths containing single quotes: sqlite3 dot-commands pass paths
+# as string literals delimited by single quotes; an embedded quote would
+# truncate or misroute the command. This is a deliberate hard stop — paths
+# with single quotes are unusual and the risk of silent data mishandling
+# outweighs the convenience of supporting them.
+if [[ "$DB_PATH" == *"'"* ]]; then
+    echo "ERROR: --db-path must not contain single-quote characters: $DB_PATH" >&2
+    exit 1
+fi
+
+if [[ "$OUTPUT_DIR" == *"'"* ]]; then
+    echo "ERROR: --output-dir must not contain single-quote characters: $OUTPUT_DIR" >&2
+    exit 1
+fi
+
 if ! [[ "$RETAIN" =~ ^[0-9]+$ ]] || [[ "$RETAIN" -lt 1 ]]; then
     echo "ERROR: --retain must be a positive integer (got: $RETAIN)" >&2
     exit 1

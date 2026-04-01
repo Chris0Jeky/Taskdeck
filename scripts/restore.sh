@@ -117,6 +117,18 @@ if [[ -z "$SAFETY_DIR" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Reject paths containing single quotes (sqlite3 dot-command safety)
+# ---------------------------------------------------------------------------
+if [[ "$BACKUP_FILE" == *"'"* ]]; then
+    echo "ERROR: --backup-file must not contain single-quote characters: $BACKUP_FILE" >&2
+    exit 1
+fi
+if [[ "$DB_PATH" == *"'"* ]]; then
+    echo "ERROR: --db-path must not contain single-quote characters: $DB_PATH" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Step 1: Verify backup is a valid SQLite database
 # ---------------------------------------------------------------------------
 echo "Verifying backup file: $BACKUP_FILE"
