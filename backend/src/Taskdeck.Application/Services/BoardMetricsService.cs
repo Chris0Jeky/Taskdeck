@@ -2,7 +2,6 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
-using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -64,14 +63,6 @@ public class BoardMetricsService : IBoardMetricsService
         {
             cards = cards.Where(c => c.CardLabels.Any(cl => cl.LabelId == query.LabelId.Value)).ToList();
         }
-
-        // Load audit logs for card moves within the date range
-        var auditLogs = (await _unitOfWork.AuditLogs.QueryAsync(
-            query.From,
-            query.To,
-            boardId: query.BoardId,
-            limit: 10000,
-            cancellationToken: cancellationToken)).ToList();
 
         // Determine the "done" column (rightmost by position)
         var doneColumn = columns.OrderByDescending(c => c.Position).FirstOrDefault();

@@ -16,7 +16,6 @@ public class BoardMetricsServiceTests
     private readonly Mock<IBoardRepository> _boardRepoMock;
     private readonly Mock<IColumnRepository> _columnRepoMock;
     private readonly Mock<ICardRepository> _cardRepoMock;
-    private readonly Mock<IAuditLogRepository> _auditRepoMock;
     private readonly Mock<IAuthorizationService> _authServiceMock;
     private readonly BoardMetricsService _service;
 
@@ -29,13 +28,11 @@ public class BoardMetricsServiceTests
         _boardRepoMock = new Mock<IBoardRepository>();
         _columnRepoMock = new Mock<IColumnRepository>();
         _cardRepoMock = new Mock<ICardRepository>();
-        _auditRepoMock = new Mock<IAuditLogRepository>();
         _authServiceMock = new Mock<IAuthorizationService>();
 
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
-        _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditRepoMock.Object);
 
         _authServiceMock
             .Setup(a => a.CanReadBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
@@ -256,13 +253,6 @@ public class BoardMetricsServiceTests
         _boardRepoMock.Setup(r => r.GetByIdAsync(_boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(_boardId, default)).ReturnsAsync(columns);
         _cardRepoMock.Setup(r => r.GetByBoardIdAsync(_boardId, default)).ReturnsAsync(cards);
-        _auditRepoMock
-            .Setup(r => r.QueryAsync(
-                It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(),
-                It.IsAny<Guid?>(), It.IsAny<Guid?>(),
-                It.IsAny<string?>(), It.IsAny<string?>(),
-                It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AuditLog>());
     }
 
     private Column CreateColumn(string name, int position, int? wipLimit = null)
