@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-03-29
+Last Updated: 2026-04-02
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -84,7 +84,7 @@ Manual-only checks (non-automatable in generic local script):
 
 1. Register new user from `/register`.
    - Expected: redirected/authenticated into workspace.
-   - **Data isolation check (fresh registration):** After registering, navigate to `/workspace/automation/queue`. Expected: 0 items. If items from previous dates appear, this is a P0 queue scoping failure (`#508`).
+   - **Data isolation check (fresh registration):** After registering, navigate to `/workspace/automation/queue`. Expected: 0 items. Queue scoping failure (`#508`) has been resolved; verify regression.
 2. Login with valid credentials from `/login`.
    - Expected: routed to `/workspace/home`.
 3. Attempt workspace route while logged out.
@@ -125,7 +125,7 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: `count/limit` indicator visible.
 8. Attempt to exceed WIP by adding/moving cards.
    - Expected: operation blocked with visible error feedback.
-   - **Known bug (`#517`):** As of 2026-03-29, the WIP limit is warning-only — the `+ Add Card` affordance is not disabled when the limit is exceeded. Check is marked failing until `#517` is resolved.
+   - WIP limit enforcement bug (`#517`) has been resolved; verify regression.
 
 9. Create card inline.
    - Expected: card appears in target column.
@@ -137,7 +137,7 @@ Manual-only checks (non-automatable in generic local script):
     - Expected: card relocates and counts update.
 13. Delete card from modal.
     - Expected: confirmation dialog shown first ("Delete this card? This cannot be undone."), then card removed on confirm.
-    - **Known bug (`#513`):** As of 2026-03-29, deletion is immediate with no confirmation dialog.
+    - Card deletion confirmation bug (`#513`) has been resolved; verify regression.
 
 14. Open label manager and perform create/update/delete.
     - Expected: label list and card chips reflect changes.
@@ -213,7 +213,114 @@ Manual-only checks (non-automatable in generic local script):
 4. Validate board archive/unarchive coherence against archive view.
    - Expected: archived boards are visible in `/workspace/archive` and can be restored there; restored boards return to default boards list.
 
-## H. Activity View
+## H. GitHub OAuth Login (CLD-03, `#539`)
+
+Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` in backend config). When not configured, the OAuth button should not appear.
+
+1. Navigate to `/login` with OAuth configured.
+   - Expected: "Sign in with GitHub" button visible alongside username/password form.
+2. Navigate to `/login` without OAuth configured (env vars absent).
+   - Expected: only username/password form visible; no GitHub button.
+3. Click "Sign in with GitHub".
+   - Expected: redirected to GitHub authorization page.
+4. Complete GitHub authorization (with a test GitHub account).
+   - Expected: redirected back to app with `oauth_code` query param, code exchanged, authenticated into workspace.
+5. Log out and log back in with the same GitHub account.
+   - Expected: existing linked account recognized, session restored.
+6. Verify `GET /api/auth/providers` without auth token.
+   - Expected: 200 with provider discovery payload indicating GitHub availability.
+
+## I. GDPR Data Portability and Account Deletion (SEC-08, `#83`)
+
+1. Log in as a user with boards, cards, captures, chat sessions, notifications, and audit history.
+2. Call `GET /api/account/export` with bearer token.
+   - Expected: JSON response with versioned payload (`v1.0`) containing all user-scoped data: boards, notifications, captures, proposals, chat sessions, audit trail, preferences.
+3. Verify the export contains only the requesting user's data (no cross-user leakage).
+4. Call `POST /api/account/delete` with wrong password.
+   - Expected: 401 or 400 — deletion rejected.
+5. Call `POST /api/account/delete` with correct password but wrong confirmation phrase.
+   - Expected: 400 — deletion rejected; error indicates exact phrase required.
+6. Call `POST /api/account/delete` with correct password and `"DELETE MY ACCOUNT"` confirmation.
+   - Expected: account deactivated, PII anonymized, audit references cleaned.
+7. Attempt to log in with the deleted account credentials.
+   - Expected: login rejected — account is deactivated.
+8. Verify audit trail contains `DataExported`, `AccountDeletionRequested`, `AccountAnonymized` actions.
+
+## J. Board Metrics Dashboard (ANL-01, `#77`)
+
+1. Open `/workspace/metrics` from sidebar navigation.
+   - Expected: metrics dashboard renders with board selector.
+2. Select a board with cards in multiple columns.
+   - Expected: metric charts/summaries render for the selected board.
+3. Adjust date range filter (e.g., last 7 days, last 30 days).
+   - Expected: metrics update to reflect the chosen period.
+4. Filter by label.
+   - Expected: metrics scoped to cards with the selected label.
+5. Switch to a different board.
+   - Expected: metrics reload for the new board context.
+6. Verify `GET /api/metrics/boards/{boardId}?from=&to=&labelId=` with bearer token.
+   - Expected: 200 with structured metrics payload.
+7. Verify unauthenticated access to metrics endpoint.
+   - Expected: 401.
+
+## K. MCP Server Validation (MCP-01, `#652`)
+
+Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
+
+1. Start API with `--mcp` flag: `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp`
+   - Expected: process starts in MCP stdio host mode (no HTTP listener).
+2. Configure `mcp.example.json` in Claude Code or Cursor as the MCP client config.
+3. From the MCP client, request `taskdeck://boards` resource.
+   - Expected: JSON listing of boards with id, name, columnCount, cardCount, isArchived, updatedAt fields.
+4. Verify board listing matches the user's boards (scoped by `StdioUserContextProvider` identity).
+5. Verify archived boards are included with `isArchived: true`.
+
+## L. LLM Tool-Calling Chat (LLM-06 Phase 1, `#649`)
+
+1. Open `/workspace/automations/chat` and create a board-scoped session.
+2. Send: "What columns does my board have?"
+   - Expected: response includes column names from the board context, driven by `list_board_columns` tool.
+3. Send: "What cards are in Backlog?" (or substitute actual column name).
+   - Expected: response includes card titles from the named column via `list_cards_in_column` tool.
+4. Send: "Show me details for card <card-title>".
+   - Expected: response includes card details (title, description, labels, due date) via `get_card_details` tool.
+5. Send: "Search for cards about authentication".
+   - Expected: response includes matching cards via `search_cards` tool.
+6. Send: "What labels are on this board?"
+   - Expected: response includes label names and colors via `get_board_labels` tool.
+7. Verify intermediate tool status messages appear (e.g., "Looking up cards...") via SignalR `ToolStatusEvent`.
+8. Verify multi-turn tool calling: ask a question that requires 2+ tool calls in sequence.
+   - Expected: orchestrator completes within 5 rounds and 60 seconds.
+9. With Mock provider: verify deterministic pattern-based dispatch produces predictable responses.
+
+## M. Backup and Restore DR Drill (OPS-08, `#86`)
+
+Prerequisite: scripts are in `scripts/backup.sh`, `scripts/restore.sh` (Unix) and `scripts/backup.ps1`, `scripts/restore.ps1` (Windows).
+
+1. Run backup script on a live database with existing data.
+   - Expected: timestamped backup file created, `PRAGMA integrity_check` passes, file permissions restricted (chmod 600 / restricted ACL).
+2. Verify backup includes WAL file when database is in WAL mode.
+3. Create 9 backups to test retention.
+   - Expected: only 7 most recent backups retained; oldest 2 cleaned up.
+4. Run restore script against a backup file.
+   - Expected: interactive confirmation prompt appears (unless `--yes` flag used), magic-bytes check passes, integrity check passes, safety copy of live DB created before overwrite.
+5. Run restore with `--yes` flag.
+   - Expected: confirmation prompt skipped.
+6. Run PowerShell equivalents on Windows and verify matching behavior.
+7. Execute the `backup-restore-drill` rehearsal scenario per `docs/ops/rehearsal-scenarios/backup-restore-drill.md`.
+
+## N. Review Card UX (UX-19, `#613`)
+
+1. Open `/workspace/review` with proposals present.
+   - Expected: proposal cards render with sticky action footer pinned at bottom.
+2. Verify card height is constrained — long proposal details do not produce unbounded card height.
+3. Verify action buttons (Approve, Reject) are visible without scrolling within the card.
+4. Click a proposal to expand collapsible detail sections.
+   - Expected: risk color-coding visible on detail sections.
+5. Verify the approve→apply two-step flow: approve first, then execute as a separate action.
+6. Verify keyboard-accessible links dropdown on proposal cards.
+
+## O. Activity View
 
 1. Open `/workspace/activity`.
    - Expected: view loads and allows mode selection (`board`, `entity`, `user`).
