@@ -35,8 +35,16 @@ if (args.Contains("--mcp"))
             // Infrastructure (DbContext, Repositories, UoW)
             services.AddInfrastructure(ctx.Configuration);
 
-            // Application services (BoardService, etc.)
-            services.AddApplicationServices();
+            // Register only the Application services needed by MCP resources.
+            // We deliberately skip web-only services (SignalR notifiers, workers,
+            // LLM providers, rate limiting, etc.) to keep the MCP host minimal.
+            services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
+                new Taskdeck.Application.Services.BoardService(
+                    sp.GetRequiredService<IUnitOfWork>(),
+                    sp.GetService<Taskdeck.Application.Services.IAuthorizationService>()));
+            services.AddScoped<Taskdeck.Application.Services.AuthorizationService>();
+            services.AddScoped<Taskdeck.Application.Services.IAuthorizationService>(
+                sp => sp.GetRequiredService<Taskdeck.Application.Services.AuthorizationService>());
 
             // Stdio identity: maps the OS process owner to the local default user.
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
