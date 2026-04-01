@@ -10,6 +10,8 @@ vi.mock('../../api/authApi', () => ({
     login: vi.fn(),
     register: vi.fn(),
     changePassword: vi.fn(),
+    getProviders: vi.fn(),
+    exchangeOAuthCode: vi.fn(),
   },
 }))
 
@@ -319,5 +321,31 @@ describe('sessionStore', () => {
 
   it('requireUserId throws when session is missing', () => {
     expect(() => store.requireUserId('queue operations')).toThrow('You must be logged in to use queue operations.')
+  })
+
+  describe('exchangeOAuthCode', () => {
+    it('sets session on successful OAuth code exchange', async () => {
+      const response = makeAuthResponse()
+      vi.mocked(authApi.exchangeOAuthCode).mockResolvedValue(response)
+
+      await store.exchangeOAuthCode('test-oauth-code')
+
+      expect(authApi.exchangeOAuthCode).toHaveBeenCalledWith('test-oauth-code')
+      expect(store.token).toBe(response.token)
+      expect(store.userId).toBe('user-1')
+      expect(store.username).toBe('testuser')
+      expect(store.isAuthenticated).toBe(true)
+      expect(store.error).toBeNull()
+    })
+
+    it('sets error on OAuth code exchange failure', async () => {
+      const err = { response: { data: { message: 'Invalid or expired code' } } }
+      vi.mocked(authApi.exchangeOAuthCode).mockRejectedValue(err)
+
+      await expect(store.exchangeOAuthCode('bad-code')).rejects.toEqual(err)
+
+      expect(store.error).toBe('Invalid or expired code')
+      expect(store.isAuthenticated).toBe(false)
+    })
   })
 })
