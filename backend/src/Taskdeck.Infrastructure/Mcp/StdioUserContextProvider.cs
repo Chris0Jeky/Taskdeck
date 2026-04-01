@@ -56,8 +56,19 @@ public class StdioUserContextProvider : IUserContextProvider
 
         if (_configuredUserId.HasValue)
         {
-            _resolvedUserId = _configuredUserId;
-            return _resolvedUserId;
+            // Verify the configured user actually exists in the database.
+            var exists = await _dbContext.Users
+                .AnyAsync(u => u.Id == _configuredUserId.Value, cancellationToken);
+
+            if (exists)
+            {
+                _resolvedUserId = _configuredUserId;
+                return _resolvedUserId;
+            }
+
+            _logger.LogWarning(
+                "MCP stdio: configured DefaultUserId {UserId} not found in database; falling back to first local user",
+                _configuredUserId.Value);
         }
 
         // Fall back to the first user in the database (single-user local-first scenario).
