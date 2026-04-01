@@ -50,6 +50,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
         services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
         services.AddScoped<IOutboundWebhookService, OutboundWebhookService>();
+        services.AddScoped<IDataExportService, DataExportService>();
+        services.AddScoped<IAccountDeletionService, AccountDeletionService>();
         services.AddScoped<IBoardMetricsService>(sp =>
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
