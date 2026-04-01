@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 
 namespace Taskdeck.Application.Services;
 
@@ -62,5 +63,69 @@ public class MockLlmProvider : ILlmProvider
     public Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
     {
         return Task.FromResult(new LlmHealthStatus(true, "Mock", Model: "mock-default", IsMock: true, IsProbed: true));
+    }
+
+    public Task<LlmToolCompletionResult> CompleteWithToolsAsync(
+        ChatCompletionRequest request,
+        IReadOnlyList<TaskdeckToolSchema> tools,
+        IReadOnlyList<ToolCallResult>? previousToolResults = null,
+        CancellationToken ct = default)
+    {
+        // If we have previous tool results, this is a follow-up round.
+        // Return a final text response summarizing the tool results.
+        if (previousToolResults is { Count: > 0 })
+        {
+            var summaryParts = new List<string>();
+            foreach (var result in previousToolResults)
+            {
+                summaryParts.Add($"[{result.ToolName}]: {TruncateForSummary(result.Content)}");
+            }
+
+            var summary = string.Join("; ", summaryParts);
+            var content = $"Based on the tool results, here is what I found: {summary}";
+
+            return Task.FromResult(new LlmToolCompletionResult(
+                Content: content,
+                TokensUsed: content.Length / 4,
+                Provider: "Mock",
+                Model: "mock-tool-v1",
+                ToolCalls: null,
+                IsComplete: true));
+        }
+
+        // First round: try to match user message to a tool call
+        var lastUserMessage = request.Messages
+            .LastOrDefault(m => m.Role.Equals("User", StringComparison.OrdinalIgnoreCase))
+            ?.Content ?? "";
+
+        var dispatched = MockToolCallDispatcher.TryDispatch(lastUserMessage);
+        if (dispatched != null)
+        {
+            return Task.FromResult(new LlmToolCompletionResult(
+                Content: null,
+                TokensUsed: lastUserMessage.Length / 4 + 30,
+                Provider: "Mock",
+                Model: "mock-tool-v1",
+                ToolCalls: new[] { dispatched },
+                IsComplete: false));
+        }
+
+        // No tool match — return a plain text response
+        var textContent = $"Here's information about your request: {lastUserMessage.Trim()}";
+        return Task.FromResult(new LlmToolCompletionResult(
+            Content: textContent,
+            TokensUsed: textContent.Length / 4,
+            Provider: "Mock",
+            Model: "mock-tool-v1",
+            ToolCalls: null,
+            IsComplete: true));
+    }
+
+    private static string TruncateForSummary(string content)
+    {
+        const int maxLength = 200;
+        if (string.IsNullOrEmpty(content) || content.Length <= maxLength)
+            return content;
+        return content[..maxLength] + "...";
     }
 }
