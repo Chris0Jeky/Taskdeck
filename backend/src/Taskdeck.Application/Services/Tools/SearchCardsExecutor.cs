@@ -32,9 +32,10 @@ public sealed class SearchCardsExecutor : IToolExecutor
             }, ToolJsonOptions.Default);
         }
 
-        var matchingCards = (await _unitOfWork.Cards.SearchAsync(boardId, query, null, null, ct))
-            .Take(MaxResults)
+        var allMatching = (await _unitOfWork.Cards.SearchAsync(boardId, query, null, null, ct))
             .ToList();
+        var total = allMatching.Count;
+        var matchingCards = allMatching.Take(MaxResults).ToList();
 
         // Look up column and label names
         var columns = (await _unitOfWork.Columns.GetByBoardIdAsync(boardId, ct))
@@ -52,10 +53,6 @@ public sealed class SearchCardsExecutor : IToolExecutor
                 .Select(cl => labels[cl.LabelId])
                 .ToArray()
         }).ToArray();
-
-        // Get a rough total count (the search repository may return more than MaxResults)
-        var allMatching = await _unitOfWork.Cards.SearchAsync(boardId, query, null, null, ct);
-        var total = allMatching.Count();
 
         return JsonSerializer.Serialize(new { results, total }, ToolJsonOptions.Default);
     }

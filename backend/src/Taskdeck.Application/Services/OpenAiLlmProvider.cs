@@ -202,9 +202,28 @@ public class OpenAiLlmProvider : ILlmProvider
         // Conversation messages
         messages.AddRange(request.Messages.Select(MapMessage));
 
-        // Append previous tool results as tool role messages
+        // Append previous tool results: OpenAI requires the assistant message
+        // that triggered the tool calls followed by the tool result messages.
+        // We reconstruct the assistant tool_calls message from the results.
         if (previousToolResults is { Count: > 0 })
         {
+            // Synthetic assistant message with the tool_calls that produced these results
+            messages.Add(new
+            {
+                role = "assistant",
+                content = (string?)null,
+                tool_calls = previousToolResults.Select(r => new
+                {
+                    id = r.CallId,
+                    type = "function",
+                    function = new
+                    {
+                        name = r.ToolName,
+                        arguments = "{}" // Original args not available; empty is acceptable
+                    }
+                }).ToArray()
+            });
+
             foreach (var result in previousToolResults)
             {
                 messages.Add(new

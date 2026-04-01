@@ -223,9 +223,22 @@ public class GeminiLlmProvider : ILlmProvider
         // Add conversation messages
         contents.AddRange(request.Messages.Select(MapMessage));
 
-        // Add previous tool results as user-role functionResponse parts
+        // Add previous tool results: Gemini requires a model message with
+        // functionCall parts followed by a user message with functionResponse parts.
         if (previousToolResults is { Count: > 0 })
         {
+            // Synthetic model message with the functionCall that produced these results
+            var callParts = previousToolResults.Select(r => (object)new
+            {
+                functionCall = new
+                {
+                    name = r.ToolName,
+                    args = new { } // Original args not available
+                }
+            }).ToArray();
+            contents.Add(new { role = "model", parts = callParts });
+
+            // User message with functionResponse parts
             var responseParts = previousToolResults.Select(r =>
             {
                 // Parse the tool result content as JSON, falling back to wrapping as text
