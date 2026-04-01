@@ -12,7 +12,7 @@ At the same time, Taskdeck's core product thesis is **review-first, no silent mu
 
 Existing substrate that this RFC builds on:
 
-- `ITaskdeckTool` / `ITaskdeckToolRegistry` (Domain layer) — tool discovery and scope/risk classification.
+- `ITaskdeckTool` / `ITaskdeckToolRegistry` (Domain layer) — tool metadata, discovery, and scope/risk classification. Note: `ITaskdeckTool` is currently a metadata-only interface (no `Execute` method); execution is handled by the Application layer's orchestrator. The plugin architecture will extend this with an executable tool contract (see §5.1).
 - `AgentPolicyEvaluator` — allowlist + risk-level gating, default "require review".
 - `StarterPackManifestDto` — versioned, declarative manifest pattern for board configuration bundles.
 - `ILlmProvider` — config-gated provider abstraction (ADR-0006 and ADR-0018).
@@ -29,14 +29,14 @@ Plugins may extend Taskdeck in exactly four categories. Any capability outside t
 
 #### 1.1 Custom Automations (new proposal types)
 
-Plugins may register new `ITaskdeckTool` implementations that produce proposals via the existing proposal pipeline. A custom automation tool:
+Plugins may register new tool implementations that produce proposals via the existing proposal pipeline. Since `ITaskdeckTool` is currently metadata-only, the plugin architecture will introduce an executable tool contract (e.g., `IExecutableTaskdeckTool`) that extends `ITaskdeckTool` with an execution method returning an `AutomationProposal` (the existing domain entity for structured board-change proposals). A custom automation tool:
 
 - Declares its `ToolScope` (Board, Inbox, or Global) and `ToolRiskLevel` (Low, Medium, or High).
-- Returns a `ProposalResult` that enters the standard review queue — it never writes to the board directly.
+- Returns an `AutomationProposal` that enters the standard review queue — it never writes to the board directly.
 - Is subject to `AgentPolicyEvaluator` allowlist and risk-level gating exactly like first-party tools.
 - May be invoked by chat (`ToolCallingChatOrchestrator`), agent templates, or scheduled triggers (future).
 
-**Explicitly NOT allowed**: a custom automation tool may not call board-write repository methods directly. It must return a structured proposal. The Application layer will enforce this by accepting only `ProposalResult` outputs from tool execution paths.
+**Explicitly NOT allowed**: a custom automation tool may not call board-write repository methods directly. It must return a structured proposal. The Application layer will enforce this by accepting only `AutomationProposal` outputs from tool execution paths.
 
 #### 1.2 Inbound Connectors (import/capture sources)
 
@@ -54,8 +54,8 @@ The existing `ExternalImportsController` + `IExternalImport` pattern serves as t
 Plugins may contribute Vue component fragments that render custom fields or card detail sections. A frontend plugin:
 
 - Declares the card field key(s) it renders.
-- Runs in the same JS process as the host application (in-process, trusted; no iframe sandbox in near-term).
-- Has access only to the card data passed to it via props — no direct Pinia store access.
+- Runs in the same JS process as the host application (in-process; no iframe or Web Worker sandbox in near-term). Because plugins share the JS process, they can technically import Pinia stores or access global state. The restrictions below are API contracts enforced by code review and manifest validation, not hard runtime boundaries. Meaningful frontend isolation (iframes, workers) is deferred along with the out-of-process model (see §3.2).
+- Interacts with the host exclusively via host-defined props (card data) and callback events. Plugins must not import Pinia stores directly, even though this is technically possible in the same JS process. This is an API contract, not a hard security boundary.
 - Cannot submit mutations through the store directly; it can only emit structured events that the host routes through the normal board-write API (which enforces the proposal gate).
 
 #### 1.4 Custom Board Commands
@@ -72,11 +72,11 @@ These prohibitions are design-level constraints, not just policy:
 
 | Prohibited capability | Enforcement mechanism |
 |---|---|
-| Direct board mutations (bypass proposal pipeline) | Application layer accepts only `ProposalResult` from tool execution; direct repo calls are inaccessible from plugin boundary |
+| Direct board mutations (bypass proposal pipeline) | Application layer accepts only `AutomationProposal` from tool execution; direct repo calls are restricted via DI scoping and API surface design (host does not inject repository interfaces into plugin code). Note: this is a design-time restriction, not a hard sandbox boundary — in-process plugins could technically bypass DI and instantiate their own dependencies. |
 | Access to other users' or tenants' data | All repository calls go through EF Core global query filters with `TenantId` predicate (ADR-0004); plugin-supplied tenant context is rejected — only claims-derived context is used (ADR-0002, GP-02) |
-| Network calls from backend plugins without consent | Plugin manifest must declare `network: [<domain-patterns>]`; unregistered outbound calls are blocked at the HTTP client factory level in the sandbox configuration |
-| Elevated API access (admin endpoints) | Admin-only controllers are behind `[Authorize(Policy = "AdminOnly")]` claims policy (GP-02); plugin identity never carries admin claims |
-| Filesystem access beyond plugin data directory | Plugins receive a scoped `IPluginStorageProvider` with a sandboxed path; raw `IFileSystem` is not injected |
+| Network calls from backend plugins without consent | Plugin manifest must declare `network: [<domain-patterns>]`; host-provided `HttpClient` instances are configured via the HTTP client factory to deny unregistered domains as a best-effort restriction. Note: in-process plugins can bypass this by constructing their own `HttpClient` directly — this is a contractual limitation, not a hard network sandbox. True network isolation requires the deferred out-of-process model (§3.2). |
+| Elevated API access (admin endpoints) | Controllers are protected by `[Authorize]` at the controller level with service-layer claims checks enforcing per-user and per-tenant authorization (GP-02); plugin execution contexts use the current user's claims-derived identity and never carry elevated permissions |
+| Filesystem access beyond plugin data directory | Plugins receive a scoped `IPluginStorageProvider` that provides access only to a designated plugin data directory; raw `IFileSystem` is not injected. Note: this is a contractual, capability-style restriction — in-process .NET plugins can technically call `System.IO.*` directly. True filesystem isolation requires the deferred out-of-process model (§3.2). |
 | Registering new authentication schemes | Auth is owned entirely by the host; plugins cannot modify the token validation pipeline |
 
 ### 3. Security and Sandboxing Model
@@ -88,12 +88,12 @@ Three trust levels are recognized. The level determines what capabilities are av
 | Trust level | Description | Isolation | Who assigns |
 |---|---|---|---|
 | **First-party** | Shipped by Taskdeck maintainers as part of the core product | In-process, no extra constraints | Implicitly; all code in `backend/src/` and `frontend/taskdeck-web/src/` |
-| **Community** | Signed by a third-party developer, published to a plugin registry | In-process (near-term); out-of-process (deferred, see §3.2) | Plugin registry signature verification |
+| **Community** | Signed by a third-party developer, published to a plugin registry. **Near-term caveat**: because community plugins run in-process, they must be treated as highly trusted code — the digital signature verifies publisher identity, not code safety. Meaningful runtime isolation only comes with the deferred out-of-process model (§3.2). | In-process (near-term); out-of-process (deferred, see §3.2) | Plugin registry signature verification |
 | **Local-only** | Developed and loaded from a local path; never published | In-process with workspace-owner consent | User opt-in at install time; cannot be pushed to other workspaces |
 
 #### 3.2 Sandboxing Strategy
 
-**Near-term (this ADR)**: In-process plugins running inside the Taskdeck API process, with boundary enforcement by design (no direct repo access, proposal-only outputs, claims-enforced identity). This mirrors the existing `ITaskdeckTool` pattern.
+**Near-term (this ADR)**: In-process plugins running inside the Taskdeck API process, with boundary enforcement by API contract and design convention (DI scoping restricts repo access, tool execution paths accept only proposal outputs, identity is always claims-derived). These are design-time restrictions — not hard sandbox boundaries. In-process plugins share the host process and can technically bypass DI, use reflection, construct their own HTTP clients, or call `System.IO` directly. The near-term model relies on code review, manifest validation, and supply-chain verification (§3.3) to establish trust. This extends the existing `ITaskdeckTool` pattern.
 
 **Deferred**: Out-of-process isolated execution for untrusted community plugins, using one of:
 
@@ -114,9 +114,8 @@ Every plugin (Community and Local-only) must ship a manifest file (`taskdeck-plu
   "version": "1.2.0",
   "minTaskdeckVersion": "0.8.0",
   "maxTaskdeckVersion": null,
-  "trustLevel": "community",
   "permissions": {
-    "boardScopes": ["board-read", "inbox-write"],
+    "scopes": ["board-read", "inbox-write"],
     "network": ["api.github.com", "*.linear.app"],
     "storage": false
   },
@@ -129,7 +128,9 @@ Every plugin (Community and Local-only) must ship a manifest file (`taskdeck-plu
 }
 ```
 
-- `boardScopes`: declares which `ToolScope` + access level combinations the plugin needs. The installer shows the user exactly what is being granted.
+Note: `trustLevel` is intentionally absent from the manifest. Trust levels are assigned by the host or registry based on signature verification and installation source (see §3.1), never self-declared by the plugin.
+
+- `scopes`: declares which `ToolScope` + access level combinations the plugin needs (e.g., `board-read`, `inbox-write`). Named `scopes` rather than `boardScopes` because it covers workspace-level capabilities beyond boards. The installer shows the user exactly what is being granted.
 - `network`: if present, the HTTP client factory for this plugin allows only listed domain patterns. Absence means no outbound network is permitted.
 - `storage`: if `true`, the plugin receives a scoped storage directory; otherwise, no filesystem access.
 
@@ -139,15 +140,15 @@ The manifest is validated by a `PluginManifestValidator` at install time (follow
 
 **Privilege escalation**
 
-- A plugin cannot call admin-only API endpoints because ASP.NET Core authorization policies validate claims on every request, and plugin execution contexts never carry admin claims. Plugin tools are executed by the Application layer's `ToolCallingChatOrchestrator` or equivalent, which uses the current user's claim-derived identity — not a service account with elevated permissions.
+- A plugin cannot call elevated API endpoints because all controllers are protected by `[Authorize]` at the controller level, and service-layer authorization checks enforce per-user and per-tenant permissions on every request. Plugin tools are executed by the Application layer's `ToolCallingChatOrchestrator` or equivalent, which uses the current user's claim-derived identity — not a service account with elevated permissions.
 - The `AgentPolicyEvaluator` allowlist means a tool must be explicitly granted before any agent can invoke it. A plugin registering a `High` risk tool cannot trigger it autonomously; it always requires user review.
-- Architecture tests (Taskdeck.Architecture.Tests) will enforce that no plugin-facing interface in the Domain layer imports from Infrastructure or Api, preventing a plugin from obtaining a repository or controller reference by construction.
+- Architecture tests (Taskdeck.Architecture.Tests) will enforce that no plugin-facing interface in the Domain layer imports from Infrastructure or Api, ensuring that first-party host code maintains clean layer boundaries. Note: architecture tests validate the host codebase's modularity but cannot prevent pre-compiled third-party plugin assemblies from referencing Infrastructure or Api namespaces. For community plugins, supply-chain verification (§3.3) and code review serve as the enforcement mechanism; true isolation requires the deferred out-of-process model (§3.2).
 
 **Data exfiltration (cross-user/cross-tenant)**
 
 - All repository queries carry a `TenantId` global query filter enforced by EF Core (ADR-0004). A plugin cannot supply or override `TenantId`; the value is always derived from the authenticated user's claims (ADR-0002, GP-02).
 - Plugin code is given only the data explicitly passed to it (card props, proposal context) — it does not receive a `DbContext`, `IUnitOfWork`, or any repository interface directly.
-- The `network` manifest declaration and HTTP client factory scoping limit exfiltration via outbound calls to undeclared destinations.
+- The `network` manifest declaration and HTTP client factory scoping limit exfiltration via outbound calls to undeclared destinations (best-effort for in-process plugins; see §2).
 - SignalR hubs enforce per-user group membership; a plugin cannot subscribe to another user's board events.
 
 **Supply-chain risk**
@@ -186,11 +187,11 @@ The manifest `minTaskdeckVersion` and `maxTaskdeckVersion` fields use semver ran
 
 The near-term implementation reuses existing infrastructure with minimal new abstractions:
 
-1. **`ITaskdeckTool` registration** — Community and local-only plugins implement `ITaskdeckTool` and register via a `PluginHostBuilder` extension method that wraps the existing `ITaskdeckToolRegistry.RegisterTool()`.
+1. **Executable tool contract** — Since `ITaskdeckTool` is currently metadata-only, introduce `IExecutableTaskdeckTool` (extending `ITaskdeckTool` with an `ExecuteAsync` method) as the contract for plugin-provided tools. Community and local-only plugins implement this interface and register via a `PluginHostBuilder` extension method that wraps the existing `ITaskdeckToolRegistry.RegisterTool()`.
 2. **Plugin manifest validation** — `PluginManifestValidator` follows the `StarterPackManifestValidator` pattern: validates schema, semver bounds, and permission declarations at install time.
-3. **Permission-scoped HTTP client** — `PluginHttpClientFactory` wraps `IHttpClientFactory`; per-plugin HTTP clients allow only the domains declared in the manifest.
+3. **Permission-scoped HTTP client** — `PluginHttpClientFactory` wraps `IHttpClientFactory`; per-plugin HTTP clients allow only the domains declared in the manifest. (Note: this is a best-effort restriction for in-process plugins; see §2 for caveats.)
 4. **Plugin identity context** — `PluginExecutionContext` carries `TenantId` and `UserId` derived from claims (never from plugin-supplied values); this context is the only identity source available to plugin code.
-5. **Proposal-only tool output** — `ITaskdeckTool` implementations return `ToolResult` which, for board-write operations, carries a `ProposalRequest` handed to the proposal pipeline. Direct board writes are not reachable from the tool boundary.
+5. **Proposal-only tool output** — `IExecutableTaskdeckTool.ExecuteAsync` returns an `AutomationProposal` (the existing domain entity) which is handed to the proposal pipeline. Direct board writes are not reachable from the host-provided tool boundary (though in-process plugins are not hard-sandboxed; see §2 and §3.2).
 
 #### 5.2 Deferred (Out-of-Process)
 
@@ -207,7 +208,7 @@ Scope: Define the `taskdeck-plugin.json` JSON Schema, implement `PluginManifestV
 Scope: `PluginHostBuilder` extension method on `IServiceCollection` that reads a plugin manifest, validates it, registers the plugin's `ITaskdeckTool` implementations into `ITaskdeckToolRegistry`, and wires a permission-scoped `IHttpClientFactory` instance for any declared network permissions. Integration test: a stub community plugin loaded via `PluginHostBuilder` appears in the tool registry and is policy-evaluated correctly.
 
 **INT-03c: Enforce proposal-only output at the tool execution boundary**
-Scope: Update `ToolCallingChatOrchestrator` and `AgentPolicyEvaluator` to reject any `ToolResult` that carries a direct board mutation (i.e., not a `ProposalRequest`). Add architecture test asserting that `ITaskdeckTool` implementations in the Application layer cannot reference `IUnitOfWork` or any `IRepository<T>` directly. This enforces the "no direct mutation" rule by construction rather than convention.
+Scope: Update `ToolCallingChatOrchestrator` and `AgentPolicyEvaluator` to reject any tool output that carries a direct board mutation (i.e., not an `AutomationProposal`). Add architecture test asserting that `IExecutableTaskdeckTool` implementations in the Application layer cannot reference `IUnitOfWork` or any `IRepository<T>` directly. Note: architecture tests enforce this for first-party code; pre-compiled third-party assemblies require supply-chain verification as the enforcement mechanism.
 
 **INT-03d: Frontend plugin registration and sandboxed card renderer protocol**
 Scope: Define the Vue plugin registration API (`TaskdeckPlugin.install()`), the `cardRenderer` extension point contract (component receives card data as props, emits structured events, no direct store access), and a plugin attribution UI element (badge showing plugin name on plugin-rendered fields). Vitest unit tests for the event-to-API routing path.
@@ -263,7 +264,7 @@ Extend the MCP work (ADR-0019) so that all plugins are simply MCP servers. The h
 - Community plugins carry a verifiable manifest; users can audit exactly what permissions they are granting before installation.
 
 **Negative:**
-- In-process community plugins share the host process; a malicious or buggy plugin can crash the API or consume excessive resources. Mitigated by: manifest validation at install, architecture test enforcement of repo inaccessibility, and the explicit deferred path to out-of-process isolation.
+- In-process community plugins share the host process; a malicious or buggy plugin can crash the API, consume excessive resources, or bypass the design-time restrictions described in §2 and §3.2. Mitigated by: manifest validation at install, supply-chain signature verification (§3.3), code review, and the explicit deferred path to out-of-process isolation for stronger runtime guarantees.
 - Frontend plugins (card renderers) run in the same JS process; a plugin cannot be truly sandboxed without iframes or workers, which are deferred.
 - Maintaining a plugin registry and signing infrastructure is operational overhead not currently staffed.
 
