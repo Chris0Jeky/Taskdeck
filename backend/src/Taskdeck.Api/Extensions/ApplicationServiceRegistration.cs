@@ -1,4 +1,5 @@
 using Taskdeck.Api.Realtime;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Agents;
 
@@ -48,6 +49,10 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IStarterPackApplyService, StarterPackApplyService>();
         services.AddScoped<IStarterPackCatalogService, StarterPackCatalogService>();
         services.AddScoped<IOutboundWebhookService, OutboundWebhookService>();
+        services.AddScoped<IBoardMetricsService>(sp =>
+            new BoardMetricsService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetRequiredService<IAuthorizationService>()));
         services.AddScoped<AgentProfileService>();
         services.AddScoped<AgentRunService>();
         services.AddScoped<SignalRBoardRealtimeNotifier>();
