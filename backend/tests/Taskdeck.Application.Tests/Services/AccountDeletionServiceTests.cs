@@ -264,6 +264,28 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
+    public async Task DeleteAccountAsync_AnonymizesUserPII()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _userRepoMock.Verify(r => r.UpdateAsync(
+            It.Is<User>(u =>
+                u.Username.StartsWith("deleted-") &&
+                u.Email.Contains("@anonymized.local") &&
+                !u.IsActive),
+            default), Times.Once);
+    }
+
+    [Fact]
     public async Task DeleteAccountAsync_UsesTransaction()
     {
         // Arrange

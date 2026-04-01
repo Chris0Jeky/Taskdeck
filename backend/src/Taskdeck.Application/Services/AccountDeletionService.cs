@@ -64,19 +64,12 @@ public class AccountDeletionService : IAccountDeletionService
 
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-            // 1. Anonymize audit logs — set UserId to null so shared history is retained
-            //    without linking back to the deleted user
+            // 1. Count audit logs linked to the user.
+            //    AuditLog.UserId is immutable by domain design — these remain linked to
+            //    the deactivated user record. The user's PII (username, email) is scrubbed
+            //    below (step 7), so the FK reference resolves to an anonymized placeholder.
             var auditLogs = await _unitOfWork.AuditLogs.GetByUserAsync(userId, limit: 100000, cancellationToken: cancellationToken);
-            var auditLogsAnonymized = 0;
-            foreach (var log in auditLogs)
-            {
-                // AuditLog.UserId is private set — we need to anonymize via a new record
-                // or update. Since the entity is immutable by design, we note the count
-                // but the anonymization happens at the repository level.
-                // For now, we count them; the actual anonymization is deferred to the
-                // infrastructure layer if needed in a future migration.
-                auditLogsAnonymized++;
-            }
+            var auditLogsAnonymized = auditLogs.Count();
 
             // 2. Delete notifications (personal data)
             var notifications = await _unitOfWork.Notifications.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
@@ -136,8 +129,14 @@ public class AccountDeletionService : IAccountDeletionService
                 preferencesDeleted++;
             }
 
-            // 7. Deactivate the user account (keeps the record for referential integrity
-            //    but marks it as inactive and clears personal identifying information)
+            // 7. Anonymize and deactivate the user account (keeps the record for
+            //    referential integrity but scrubs PII and marks as inactive).
+            //    Audit logs still reference this user ID but resolve to anonymized fields.
+            var anonymizedSuffix = userId.ToString("N")[..8];
+            user.UpdateProfile(
+                username: $"deleted-{anonymizedSuffix}",
+                email: $"deleted-{anonymizedSuffix}@anonymized.local");
+            user.UpdatePassword(BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()));
             user.Deactivate();
             await _unitOfWork.Users.UpdateAsync(user, cancellationToken);
 
