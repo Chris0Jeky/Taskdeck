@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-03-29
+Last Updated: 2026-04-02
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,22 +10,22 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-03-29)
+## Current Verified Totals (2026-04-02)
 
-- Backend: 1483/1483 passing
-  - Domain: 293
-  - Application: 786
-  - API integration: 392
+- Backend: 2053/2053 passing
+  - Domain: 357
+  - Application: 1260
+  - API integration: 424
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 1102/1102 passing (120 test files)
+- Frontend unit: 1496/1496 passing (134 test files)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): default required lane passing
-- Combined automated total: 2585+ passing (backend 1483 + frontend unit 1102 + E2E)
+- Combined automated total: 3549+ passing (backend 2053 + frontend unit 1496 + E2E)
 
 Verification note:
-- backend totals were re-verified on 2026-03-29 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
-- frontend unit totals were re-verified on 2026-03-29 via `npx vitest --run`
-- significant test growth since 2026-03-06 due to TST-CODEX wave (PRs #436–#448), knowledge service tests (PR #456), AGT-02 tool registry/policy/triage tests (PR #502), demo director presets/assertions/report/soak tests (PR #500), and adversarial review fixes
+- backend totals were re-verified on 2026-04-02 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
+- frontend unit totals were re-verified on 2026-04-02 via `npx vitest --run`
+- significant test growth since 2026-03-29 due to: LLM tool-calling orchestrator and read tools (PR #669, 67 new backend tests), GDPR data portability and account deletion (PR #666, 25 new backend tests), board metrics dashboard (PR #667, 12 backend + frontend tests), MCP prototype board resources (PR #664, 7 new backend tests), GitHub OAuth frontend integration (PR #668, 5 new frontend tests), and UX-19 review card improvements
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -73,6 +73,51 @@ Tracked issues: `#415` to `#429`. PRs: `#436` to `#448`. All delivered and merge
 Remaining coverage gaps (post-wave):
 - Frontend: 1 API module untested (captureApi), remaining composables/stores have baseline coverage
 - Backend: Infrastructure repositories still largely untested, remaining domain entities untested, 1 of 5 workers untested
+
+## LLM Tool-Calling Coverage (PR #669, delivered 2026-04-01)
+
+Tracking issue: `#649` (Phase 1 of `#647`)
+
+New test coverage:
+- `ToolCallingChatOrchestratorTests`: multi-turn loop, timeout, max-round enforcement
+- `ReadToolSchemasTests`: schema generation for all 5 read tools
+- `MockLlmProviderToolCallingTests` / `MockToolCallDispatcherTests` / `MockToolResultsTests`: mock provider tool-calling dispatch and result formatting
+- `OpenAiToolCallingParseTests` / `GeminiToolCallingParseTests`: provider-specific tool-call response parsing
+
+Manual validation recommended: send "What cards are in my Backlog?" via chat with Mock provider and verify dynamic tool-calling response.
+
+## MCP Server Coverage (PR #664, delivered 2026-04-01)
+
+Tracking issue: `#652` (Phase 1 of `#648`)
+
+New test coverage:
+- `McpBoardResourcesTests`: `taskdeck://boards` resource listing, phantom-user fallback, multi-user board scoping
+
+Manual validation recommended: configure `mcp.example.json` in Claude Code / Cursor and ask "What boards do I have?" to verify resource delivery.
+
+## GDPR Data Portability Coverage (PR #666, delivered 2026-04-01)
+
+Tracking issue: `#83`
+
+New test coverage:
+- `DataExportServiceTests` (10 tests): user-scoped data export completeness, versioned payload shape, cross-user isolation
+- `AccountDeletionServiceTests` (15 tests): password re-auth, confirmation phrase enforcement, PII anonymization, audit ref cleanup, deactivated-user login rejection
+
+## Board Metrics Coverage (PR #667, delivered 2026-04-01)
+
+Tracking issue: `#77`
+
+New test coverage:
+- `BoardMetricsServiceTests` (12 backend tests): board-scoped metric aggregation, date range filtering, label grouping
+- `metricsApi.spec.ts` (4 frontend tests): API client mock verification
+
+## GitHub OAuth Frontend Coverage (PR #668, delivered 2026-04-01)
+
+Tracking issue: `#539`
+
+New test coverage:
+- `authApi.spec.ts` (3 tests): `getProviders` and `exchangeOAuthCode` API calls
+- `sessionStore.spec.ts` (2 tests): OAuth code exchange store action
 
 ## Backend Commands
 
@@ -426,6 +471,7 @@ Nightly workflow: `.github/workflows/ci-nightly.yml`
 - scheduled/manual E2E smoke suite (`reusable-e2e-smoke.yml`)
 - scheduled/manual load-concurrency harness (`reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
+- `developer-portal`: builds API, fetches `/swagger/v1/swagger.json`, runs `@redocly/cli build-docs`, uploads `artifacts/developer-portal/` including docs from `docs/api/` (PR #658)
 
 Nightly quality workflow: `.github/workflows/nightly-quality.yml`
 
@@ -537,6 +583,10 @@ Planned quality expectations when implementation starts:
   - Includes database export/import guardrail coverage (sandbox gating, payload validation, file replacement)
   - Includes external import-adapter parsing and board upsert orchestration coverage (CSV/outreach profile, dedupe policy, rollback safety path)
   - Includes starter-pack manifest parsing/validation, first-party catalog validity, and apply-planning coverage
+  - Includes LLM tool-calling orchestrator coverage (multi-turn loop, timeout, round limits) and read tool schema generation
+  - Includes GDPR data export service (user-scoped completeness, versioned payload) and account deletion service (re-auth, confirmation phrase, PII anonymization)
+  - Includes board metrics service coverage (aggregation, date range, label grouping)
+  - Includes MCP board resource coverage (listing, phantom-user fallback, multi-user scoping)
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
@@ -562,6 +612,8 @@ Planned quality expectations when implementation starts:
   - `frontend/taskdeck-web/src/tests`
   - Components, stores, API modules, composables, utilities
   - Includes shared utility tests for `queryBuilder` and `errorMessage`
+  - Includes GitHub OAuth API client and session store coverage (`authApi`, `sessionStore`)
+  - Includes board metrics API client and store coverage (`metricsApi`, `metricsStore`)
 - End-to-end journeys:
   - `frontend/taskdeck-web/tests/e2e`
   - Includes deterministic starter-pack fixture bootstrap coverage for `small`, `medium`, and `edge` manifest scenarios
