@@ -43,7 +43,7 @@ public class BoardResources
         MimeType = "application/json")]
     public async Task<string> ListBoards()
     {
-        var userId = _userContext.GetCurrentUserId();
+        var userId = await _userContext.GetCurrentUserIdAsync();
 
         // List board summaries scoped to this user.
         var listResult = await _boardService.ListBoardsAsync(userId, searchText: null, includeArchived: false);
@@ -53,13 +53,20 @@ public class BoardResources
         var boardSummaries = new List<object>();
         foreach (var boardDto in listResult.Value)
         {
-            // Fetch board detail to get column and card counts.
-            // Acceptable for Phase 1: local SQLite, typically < 20 boards per user.
+            // Phase 1: BoardDto does not carry column/card counts, so we fetch
+            // board detail for each board. Acceptable for local SQLite with
+            // typically < 20 boards per user. Optimise with a dedicated summary
+            // query or DTO enrichment when this becomes a bottleneck.
             var detailResult = await _boardService.GetBoardDetailAsync(boardDto.Id, userId);
             if (!detailResult.IsSuccess)
                 continue; // skip boards we can't read (race condition / deleted mid-request)
 
             var detail = detailResult.Value;
+
+            // Guard against a board archived between the list and detail fetches.
+            if (detail.IsArchived)
+                continue;
+
             var cardCount = detail.Columns.Sum(c => c.CardCount);
 
             boardSummaries.Add(new
