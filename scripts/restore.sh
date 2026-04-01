@@ -132,20 +132,13 @@ fi
 echo "Verifying backup file: $BACKUP_FILE"
 
 # Check SQLite magic bytes: first 15 bytes must be "SQLite format 3" (the full
-# header is 16 bytes including the null terminator, but we compare the text only)
+# header is 16 bytes including the null terminator, but we compare the text only).
+# Prefer exact byte comparison (dd+xxd) over heuristic `file` output.
 MAGIC_EXPECTED="53514c69746520666f726d61742033"
 MAGIC_ACTUAL="$(dd if="$BACKUP_FILE" bs=1 count=15 2>/dev/null | xxd -p 2>/dev/null || true)"
 
-# Fallback magic check using file command if xxd is unavailable
-if command -v file &>/dev/null; then
-    FILE_TYPE="$(file -b "$BACKUP_FILE")"
-    if [[ "$FILE_TYPE" != *"SQLite"* ]]; then
-        echo "ERROR: backup file does not appear to be a SQLite database." >&2
-        echo "  file: $FILE_TYPE" >&2
-        exit 1
-    fi
-    echo "File type check: $FILE_TYPE"
-elif [[ -n "$MAGIC_ACTUAL" ]]; then
+if [[ -n "$MAGIC_ACTUAL" ]]; then
+    # Exact magic-byte check via dd + xxd (most precise)
     if [[ "$MAGIC_ACTUAL" != "$MAGIC_EXPECTED" ]]; then
         echo "ERROR: backup file SQLite magic bytes do not match." >&2
         echo "  Expected: $MAGIC_EXPECTED" >&2
@@ -153,6 +146,15 @@ elif [[ -n "$MAGIC_ACTUAL" ]]; then
         exit 1
     fi
     echo "File type check: SQLite magic bytes verified"
+elif command -v file &>/dev/null; then
+    # Fallback: heuristic check via file command
+    FILE_TYPE="$(file -b "$BACKUP_FILE")"
+    if [[ "$FILE_TYPE" != *"SQLite"* ]]; then
+        echo "ERROR: backup file does not appear to be a SQLite database." >&2
+        echo "  file: $FILE_TYPE" >&2
+        exit 1
+    fi
+    echo "File type check: $FILE_TYPE"
 else
     echo "WARNING: could not verify SQLite magic bytes (xxd and file not available)." >&2
     echo "         Proceeding with integrity_check only." >&2
@@ -236,6 +238,11 @@ fi
 # ---------------------------------------------------------------------------
 DB_DIR="$(dirname "$DB_PATH")"
 mkdir -p "$DB_DIR"
+
+# Remove stale WAL/SHM files to prevent replay against restored DB.
+# EF Core uses WAL mode by default; leftover -wal/-shm from the previous
+# database would be replayed on first open, silently corrupting the restore.
+rm -f "${DB_PATH}-wal" "${DB_PATH}-shm"
 
 if command -v sqlite3 &>/dev/null; then
     # Use sqlite3 .restore to write a clean, consistent database image

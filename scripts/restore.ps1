@@ -201,6 +201,12 @@ if (-not (Test-Path $DbDir)) {
     New-Item -ItemType Directory -Path $DbDir -Force | Out-Null
 }
 
+# Remove stale WAL/SHM files to prevent replay against restored DB.
+# EF Core uses WAL mode by default; leftover -wal/-shm from the previous
+# database would be replayed on first open, silently corrupting the restore.
+Remove-Item -Force -ErrorAction SilentlyContinue "${DbPath}-wal"
+Remove-Item -Force -ErrorAction SilentlyContinue "${DbPath}-shm"
+
 if ($Sqlite3) {
     $SafeBackupFile = $BackupFile -replace "'", "''"
     & $Sqlite3.Source $DbPath ".restore '$SafeBackupFile'"
