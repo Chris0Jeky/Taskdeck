@@ -1,5 +1,6 @@
 using Taskdeck.Api.Realtime;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Tools;
 using Taskdeck.Domain.Agents;
 
 namespace Taskdeck.Api.Extensions;
@@ -63,6 +64,17 @@ public static class ApplicationServiceRegistration
         // Agent policy evaluator and inbox triage assistant
         services.AddScoped<IAgentPolicyEvaluator, AgentPolicyEvaluator>();
         services.AddScoped<InboxTriageAssistant>();
+
+        // Tool-calling infrastructure (read tools)
+        services.AddScoped<IToolExecutor, ListBoardColumnsExecutor>();
+        services.AddScoped<IToolExecutor, ListCardsInColumnExecutor>();
+        services.AddScoped<IToolExecutor, GetCardDetailsExecutor>();
+        services.AddScoped<IToolExecutor, SearchCardsExecutor>();
+        services.AddScoped<IToolExecutor, GetBoardLabelsExecutor>();
+        services.AddScoped<ToolExecutorRegistry>(sp =>
+            new ToolExecutorRegistry(sp.GetServices<IToolExecutor>()));
+        services.AddScoped<IToolStatusNotifier, SignalRToolStatusNotifier>();
+        services.AddScoped<ToolCallingChatOrchestrator>();
 
         return services;
     }
