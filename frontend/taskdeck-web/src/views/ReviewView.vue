@@ -1034,6 +1034,8 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--td-space-3);
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 .td-review-card__header {
@@ -1260,6 +1262,8 @@ watch(
   display: flex;
   flex-wrap: wrap;
   gap: var(--td-space-2);
+  max-height: 12rem;
+  overflow-y: auto;
 }
 
 .td-review-entity-chip {
@@ -1277,6 +1281,8 @@ watch(
   padding-left: 1.25rem;
   color: var(--td-text-secondary);
   line-height: 1.6;
+  max-height: 12rem;
+  overflow-y: auto;
 }
 
 .td-review-card__actions {
@@ -1284,6 +1290,14 @@ watch(
   flex-wrap: wrap;
   gap: var(--td-space-2);
   align-items: center;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--td-surface-container-low);
+  padding-block: var(--td-space-2);
+  margin-inline: calc(-1 * var(--td-space-5, 1.25rem));
+  padding-inline: var(--td-space-5, 1.25rem);
+  border-top: 1px solid var(--td-border-ghost);
 }
 
 /* Two-step flow indicator */
@@ -1440,6 +1454,7 @@ watch(
   .td-review-card {
     gap: var(--td-space-2);
     padding: var(--td-space-4);
+    max-height: 80vh;
   }
 
   .td-review-card__title {
@@ -1454,6 +1469,8 @@ watch(
   .td-review-card__actions {
     flex-direction: column;
     align-items: stretch;
+    margin-inline: calc(-1 * var(--td-space-4, 1rem));
+    padding-inline: var(--td-space-4, 1rem);
   }
 
   .td-review-card__actions .td-btn {
