@@ -717,6 +717,46 @@ watch(
           <span class="td-review-cue">{{ impactSummary(proposal) }}</span>
         </div>
 
+        <!-- Action buttons — always visible, above collapsibles so they are never pushed off-screen -->
+        <div class="td-review-card__actions">
+          <span
+            v-if="normalizeProposalStatus(proposal.status) === 'PendingReview'"
+            class="td-review-card__action-cue"
+          >
+            Changes stay in review until you approve them.
+          </span>
+          <span
+            v-if="normalizeProposalStatus(proposal.status) === 'Approved'"
+            class="td-review-card__action-cue td-review-card__action-cue--approved"
+          >
+            Approved — click "Apply to board" to execute.
+          </span>
+          <button class="td-btn td-btn--secondary td-btn--sm" @click="handleToggleDiff(proposal.id)">
+            {{ selectedDiffProposalId === proposal.id ? 'Hide Diff' : 'View Diff' }}
+          </button>
+          <button
+            class="td-btn td-btn--primary td-btn--sm"
+            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'PendingReview'"
+            @click="handleApproveProposal(proposal.id)"
+          >
+            Approve for board
+          </button>
+          <button
+            class="td-btn td-btn--danger td-btn--sm"
+            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'PendingReview'"
+            @click="handleRejectProposal(proposal.id, proposal.riskLevel)"
+          >
+            Reject
+          </button>
+          <button
+            class="td-btn td-btn--secondary td-btn--sm"
+            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'Approved'"
+            @click="handleExecuteProposal(proposal.id)"
+          >
+            Apply to board
+          </button>
+        </div>
+
         <!-- Collapsible: Affected cards (count badge, expandable) -->
         <div v-if="affectedEntities(proposal).length > 0" class="td-review-card__collapsible">
           <button
@@ -826,40 +866,6 @@ watch(
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Action buttons — always visible -->
-        <div class="td-review-card__actions">
-          <span
-            v-if="normalizeProposalStatus(proposal.status) === 'PendingReview'"
-            class="td-review-card__action-cue"
-          >
-            Changes stay in review until you approve them.
-          </span>
-          <button class="td-btn td-btn--secondary td-btn--sm" @click="handleToggleDiff(proposal.id)">
-            {{ selectedDiffProposalId === proposal.id ? 'Hide Diff' : 'View Diff' }}
-          </button>
-          <button
-            class="td-btn td-btn--primary td-btn--sm"
-            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'PendingReview'"
-            @click="handleApproveProposal(proposal.id)"
-          >
-            Approve for board
-          </button>
-          <button
-            class="td-btn td-btn--danger td-btn--sm"
-            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'PendingReview'"
-            @click="handleRejectProposal(proposal.id, proposal.riskLevel)"
-          >
-            Reject
-          </button>
-          <button
-            class="td-btn td-btn--secondary td-btn--sm"
-            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'Approved'"
-            @click="handleExecuteProposal(proposal.id)"
-          >
-            Apply to board
-          </button>
         </div>
 
         <pre v-if="selectedDiffProposalId === proposal.id && selectedDiff" class="td-review-card__diff">{{ selectedDiff }}</pre>
@@ -1260,6 +1266,10 @@ watch(
   font-weight: 600;
   color: var(--td-text-secondary);
   margin-inline-end: var(--td-space-2);
+}
+
+.td-review-card__action-cue--approved {
+  color: var(--td-color-success);
 }
 
 .td-review-card__diff {
