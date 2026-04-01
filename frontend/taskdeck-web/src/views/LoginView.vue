@@ -47,8 +47,9 @@ async function handleSubmit() {
 
 function startGitHubLogin() {
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
-  const returnUrl = route.query.redirect
-    ? `/login?redirect=${encodeURIComponent(route.query.redirect as string)}`
+  const redirect = [route.query.redirect].flat()[0]
+  const returnUrl = redirect
+    ? `/login?redirect=${encodeURIComponent(redirect)}`
     : '/login'
   window.location.href = `${apiBase}/auth/github/login?returnUrl=${encodeURIComponent(returnUrl)}`
 }
@@ -67,23 +68,32 @@ async function handleOAuthCode(code: string) {
 }
 
 onMounted(async () => {
+  // In demo mode, never process OAuth codes or check providers
+  if (isDemoMode) {
+    // Clean any stray oauth_code from the URL in case someone crafts a link
+    if (route.query.oauth_code) {
+      await router.replace({ path: route.path, query: { ...route.query, oauth_code: undefined } })
+    }
+    return
+  }
+
   // Check for OAuth code in query params (returned from GitHub callback)
-  const oauthCode = route.query.oauth_code as string | undefined
+  // Safely extract first value — route.query values can be string | string[]
+  const oauthCode = [route.query.oauth_code].flat()[0]
   if (oauthCode) {
-    // Clean the code from the URL to prevent reuse on refresh
-    router.replace({ path: route.path, query: { ...route.query, oauth_code: undefined } })
+    // Clean the code from the URL to prevent reuse on refresh — await to ensure
+    // the URL is updated before the exchange call (prevents confusing errors on refresh)
+    await router.replace({ path: route.path, query: { ...route.query, oauth_code: undefined } })
     await handleOAuthCode(oauthCode)
     return
   }
 
   // Check if GitHub OAuth is available (non-blocking)
-  if (!isDemoMode) {
-    try {
-      const providers = await authApi.getProviders()
-      githubAvailable.value = providers.gitHub === true
-    } catch {
-      // Silently ignore — GitHub button simply won't appear
-    }
+  try {
+    const providers = await authApi.getProviders()
+    githubAvailable.value = providers.gitHub === true
+  } catch {
+    // Silently ignore — GitHub button simply won't appear
   }
 })
 </script>
