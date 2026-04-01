@@ -723,14 +723,15 @@ watch(
           <div
             v-if="normalizeProposalStatus(proposal.status) === 'PendingReview'"
             class="td-review-card__flow-steps"
+            role="list"
             aria-label="Two-step approval flow"
           >
-            <span class="td-review-card__flow-step td-review-card__flow-step--active">
+            <span class="td-review-card__flow-step td-review-card__flow-step--active" role="listitem" aria-current="step">
               <span class="td-review-card__flow-step-num" aria-hidden="true">1</span>
               Approve
             </span>
             <span class="td-review-card__flow-arrow" aria-hidden="true">&#8594;</span>
-            <span class="td-review-card__flow-step td-review-card__flow-step--pending">
+            <span class="td-review-card__flow-step td-review-card__flow-step--pending" role="listitem">
               <span class="td-review-card__flow-step-num" aria-hidden="true">2</span>
               Apply to board
             </span>
@@ -738,14 +739,15 @@ watch(
           <div
             v-else-if="normalizeProposalStatus(proposal.status) === 'Approved'"
             class="td-review-card__flow-steps"
+            role="list"
             aria-label="Ready to apply"
           >
-            <span class="td-review-card__flow-step td-review-card__flow-step--done">
+            <span class="td-review-card__flow-step td-review-card__flow-step--done" role="listitem">
               <span class="td-review-card__flow-step-num" aria-hidden="true">1</span>
               Approved
             </span>
             <span class="td-review-card__flow-arrow" aria-hidden="true">&#8594;</span>
-            <span class="td-review-card__flow-step td-review-card__flow-step--active">
+            <span class="td-review-card__flow-step td-review-card__flow-step--active" role="listitem" aria-current="step">
               <span class="td-review-card__flow-step-num" aria-hidden="true">2</span>
               Apply to board
             </span>
@@ -778,7 +780,7 @@ watch(
         </div>
 
         <!-- Collapsible details section — below actions so expanding them never pushes actions out of view -->
-        <div class="td-review-card__details">
+        <div v-if="affectedEntities(proposal).length > 0 || operationHeadlines(proposal).length > 0 || hasProvenanceContext(proposal)" class="td-review-card__details">
           <!-- Collapsible: Affected cards (count badge, expandable) -->
           <div v-if="affectedEntities(proposal).length > 0" class="td-review-card__collapsible">
             <button
@@ -1284,13 +1286,6 @@ watch(
   align-items: center;
 }
 
-.td-review-card__action-cue {
-  font-size: var(--td-font-xs);
-  font-weight: 600;
-  color: var(--td-text-secondary);
-  margin-inline-end: var(--td-space-2);
-}
-
 /* Two-step flow indicator */
 .td-review-card__flow-steps {
   display: flex;
@@ -1467,11 +1462,6 @@ watch(
   .td-review-card__flow-steps {
     width: 100%;
     justify-content: center;
-    margin-inline-end: 0;
-  }
-
-  .td-review-card__action-cue {
-    text-align: center;
     margin-inline-end: 0;
   }
 

@@ -244,7 +244,14 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Apply to board')
     // Two-step flow indicator replaces the old inline action cue
     expect(wrapper.text()).not.toContain('Changes stay in review until you approve them.')
-    expect(wrapper.text()).toContain('→')
+    const flowSteps = wrapper.find('.td-review-card__flow-steps')
+    expect(flowSteps.exists()).toBe(true)
+    expect(flowSteps.text()).toContain('Approve')
+    expect(flowSteps.text()).toContain('Apply to board')
+    expect(flowSteps.attributes('role')).toBe('list')
+    const activeStep = flowSteps.find('[aria-current="step"]')
+    expect(activeStep.exists()).toBe(true)
+    expect(activeStep.text()).toContain('Approve')
 
     // Applied proposals hidden by default (showCompleted is off)
     expect(wrapper.text()).not.toContain('Applied to board')
