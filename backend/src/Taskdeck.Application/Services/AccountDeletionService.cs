@@ -10,6 +10,7 @@ namespace Taskdeck.Application.Services;
 /// <summary>
 /// Handles account deletion/anonymization following GDPR-style requirements.
 /// Strategy:
+/// - Refuse deletion if user is sole owner of any board (must transfer ownership first)
 /// - Anonymize user references in shared data (audit logs, board accesses)
 /// - Delete personal data (profile, external logins, preferences, notifications, captures)
 /// - Deactivate the user account
@@ -51,23 +52,42 @@ public class AccountDeletionService : IAccountDeletionService
         if (user is null)
             return Result.Failure<AccountDeletionResultDto>(ErrorCodes.NotFound, "User not found");
 
+        // Guard: refuse deletion for already-deactivated accounts (concurrency safety)
+        if (!user.IsActive)
+            return Result.Failure<AccountDeletionResultDto>(ErrorCodes.InvalidOperation, "Account is already deactivated");
+
         // Re-authenticate: verify current password
         if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
             return Result.Failure<AccountDeletionResultDto>(ErrorCodes.AuthenticationFailed, "Invalid password");
 
+        // Guard: refuse deletion if user is sole owner of any board (must transfer ownership first)
+        var boardAccesses = await _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
+        var ownerAccesses = boardAccesses.Where(ba => ba.Role == UserRole.Owner).ToList();
+        foreach (var ownerAccess in ownerAccesses)
+        {
+            var allBoardMembers = await _unitOfWork.BoardAccesses.GetByBoardIdAsync(ownerAccess.BoardId, cancellationToken);
+            var otherOwners = allBoardMembers.Where(ba => ba.UserId != userId && ba.Role == UserRole.Owner);
+            if (!otherOwners.Any())
+            {
+                return Result.Failure<AccountDeletionResultDto>(
+                    ErrorCodes.InvalidOperation,
+                    $"Cannot delete account: you are the sole owner of board {ownerAccess.BoardId}. Transfer ownership first.");
+            }
+        }
+
         try
         {
-            // Log the deletion request before modifying data (no PII in the log entry)
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            // Log the deletion request inside the transaction so it rolls back if deletion fails
             await _historyService.LogActionAsync(
                 "User", userId, AuditAction.AccountDeletionRequested, userId,
                 "Account deletion requested by user");
 
-            await _unitOfWork.BeginTransactionAsync(cancellationToken);
-
             // 1. Count audit logs linked to the user.
             //    AuditLog.UserId is immutable by domain design — these remain linked to
             //    the deactivated user record. The user's PII (username, email) is scrubbed
-            //    below (step 7), so the FK reference resolves to an anonymized placeholder.
+            //    below (step 8), so the FK reference resolves to an anonymized placeholder.
             var auditLogs = await _unitOfWork.AuditLogs.GetByUserAsync(userId, limit: 100000, cancellationToken: cancellationToken);
             var auditLogsAnonymized = auditLogs.Count();
 
@@ -89,8 +109,7 @@ public class AccountDeletionService : IAccountDeletionService
                 captureItemsDeleted++;
             }
 
-            // 4. Anonymize chat sessions — delete messages but retain session metadata
-            //    without user linkage for aggregate analytics
+            // 4. Anonymize chat sessions — delete messages and sessions
             var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
             var chatSessionsAnonymized = 0;
             foreach (var session in chatSessions)
@@ -129,10 +148,17 @@ public class AccountDeletionService : IAccountDeletionService
                 preferencesDeleted++;
             }
 
-            // 7. Anonymize and deactivate the user account (keeps the record for
+            // 7. Delete board access records (removes user-board linkage)
+            foreach (var access in boardAccesses)
+            {
+                await _unitOfWork.BoardAccesses.DeleteAsync(access, cancellationToken);
+            }
+
+            // 8. Anonymize and deactivate the user account (keeps the record for
             //    referential integrity but scrubs PII and marks as inactive).
             //    Audit logs still reference this user ID but resolve to anonymized fields.
-            var anonymizedSuffix = userId.ToString("N")[..8];
+            //    Use a random suffix so the pseudonym cannot be reversed from the user ID.
+            var anonymizedSuffix = Guid.NewGuid().ToString("N")[..12];
             user.UpdateProfile(
                 username: $"deleted-{anonymizedSuffix}",
                 email: $"deleted-{anonymizedSuffix}@anonymized.local");
@@ -140,13 +166,13 @@ public class AccountDeletionService : IAccountDeletionService
             user.Deactivate();
             await _unitOfWork.Users.UpdateAsync(user, cancellationToken);
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _unitOfWork.CommitTransactionAsync(cancellationToken);
-
-            // Log completion (no PII)
+            // Log completion inside the transaction (no PII)
             await _historyService.LogActionAsync(
                 "User", userId, AuditAction.AccountAnonymized, null,
                 "Account anonymization completed");
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
             return Result.Success(new AccountDeletionResultDto(
                 Success: true,
@@ -171,7 +197,7 @@ public class AccountDeletionService : IAccountDeletionService
 
             return Result.Failure<AccountDeletionResultDto>(
                 ErrorCodes.UnexpectedError,
-                $"Account deletion failed: {ex.Message}");
+                "Account deletion failed due to an internal error");
         }
     }
 }

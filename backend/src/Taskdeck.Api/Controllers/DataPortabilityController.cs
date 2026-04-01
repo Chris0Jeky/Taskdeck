@@ -35,6 +35,7 @@ public class DataPortabilityController : AuthenticatedControllerBase
     /// chat sessions, audit trail, and preferences.
     /// </summary>
     [HttpGet("export")]
+    [ResponseCache(NoStore = true)]
     public async Task<IActionResult> ExportUserData(CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))

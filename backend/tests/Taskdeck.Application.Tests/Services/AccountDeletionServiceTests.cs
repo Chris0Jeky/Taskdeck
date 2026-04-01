@@ -24,6 +24,7 @@ public class AccountDeletionServiceTests
     private readonly Mock<IExternalLoginRepository> _externalLoginRepoMock;
     private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
     private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
+    private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly AccountDeletionService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -43,6 +44,7 @@ public class AccountDeletionServiceTests
         _externalLoginRepoMock = new Mock<IExternalLoginRepository>();
         _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
         _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
+        _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Notifications).Returns(_notificationRepoMock.Object);
@@ -53,6 +55,7 @@ public class AccountDeletionServiceTests
         _unitOfWorkMock.Setup(u => u.ExternalLogins).Returns(_externalLoginRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword(_password));
 
@@ -90,6 +93,7 @@ public class AccountDeletionServiceTests
     {
         // Arrange
         SetupUserFound();
+        SetupBoardAccessesNone();
         var request = new AccountDeletionRequest("wrongpassword", "DELETE MY ACCOUNT");
 
         // Act
@@ -172,6 +176,78 @@ public class AccountDeletionServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_ReturnsError_WhenUserIsAlreadyDeactivated()
+    {
+        // Arrange
+        var deactivatedUser = new User("inactive", "inactive@example.com", BCrypt.Net.BCrypt.HashPassword(_password));
+        deactivatedUser.Deactivate();
+        _userRepoMock.Setup(r => r.GetByIdAsync(_userId, default)).ReturnsAsync(deactivatedUser);
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain("already deactivated");
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_ReturnsError_WhenUserIsSoleBoardOwner()
+    {
+        // Arrange
+        SetupUserFound();
+        var boardId = Guid.NewGuid();
+        var ownerAccess = new BoardAccess(boardId, _userId, UserRole.Owner, _userId);
+
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(new[] { ownerAccess });
+        _boardAccessRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new[] { ownerAccess }); // sole owner — no other members
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain("sole owner");
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_Succeeds_WhenBoardHasOtherOwner()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var boardId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var ownerAccess = new BoardAccess(boardId, _userId, UserRole.Owner, _userId);
+        var otherOwnerAccess = new BoardAccess(boardId, otherUserId, UserRole.Owner, otherUserId);
+
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(new[] { ownerAccess });
+        _boardAccessRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new[] { ownerAccess, otherOwnerAccess });
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
     }
 
     [Fact]
@@ -286,6 +362,55 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
+    public async Task DeleteAccountAsync_AnonymizedSuffix_IsNotDerivedFromUserId()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert — the anonymized suffix must NOT be the first chars of the user ID
+        result.IsSuccess.Should().BeTrue();
+        var userIdPrefix = _userId.ToString("N")[..12];
+        _userRepoMock.Verify(r => r.UpdateAsync(
+            It.Is<User>(u =>
+                u.Username.StartsWith("deleted-") &&
+                !u.Username.Contains(userIdPrefix)),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_DeletesBoardAccessRecords()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var boardId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var memberAccess = new BoardAccess(boardId, _userId, UserRole.Admin, otherUserId);
+        var otherOwnerAccess = new BoardAccess(boardId, otherUserId, UserRole.Owner, otherUserId);
+
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(new[] { memberAccess });
+        // No sole-owner check needed since user is Admin, not Owner
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _boardAccessRepoMock.Verify(r => r.DeleteAsync(memberAccess, default), Times.Once);
+    }
+
+    [Fact]
     public async Task DeleteAccountAsync_UsesTransaction()
     {
         // Arrange
@@ -318,11 +443,12 @@ public class AccountDeletionServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().NotContain("DB error"); // must not leak internal details
         _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
     }
 
     [Fact]
-    public async Task DeleteAccountAsync_LogsDeletionRequest_BeforeModifyingData()
+    public async Task DeleteAccountAsync_LogsDeletionRequest_InsideTransaction()
     {
         // Arrange
         SetupUserFound();
@@ -332,7 +458,7 @@ public class AccountDeletionServiceTests
         // Act
         await _service.DeleteAccountAsync(_userId, request);
 
-        // Assert — the request log should happen before transaction
+        // Assert — the request log should happen inside the transaction
         _historyServiceMock.Verify(
             h => h.LogActionAsync("User", _userId, AuditAction.AccountDeletionRequested, _userId, It.IsAny<string>()),
             Times.Once);
@@ -382,8 +508,16 @@ public class AccountDeletionServiceTests
         _userRepoMock.Setup(r => r.GetByIdAsync(_userId, default)).ReturnsAsync(_testUser);
     }
 
+    private void SetupBoardAccessesNone()
+    {
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(Enumerable.Empty<BoardAccess>());
+    }
+
     private void SetupEmptyRepositories()
     {
+        SetupBoardAccessesNone();
         _auditLogRepoMock
             .Setup(r => r.GetByUserAsync(_userId, It.IsAny<int>(), default))
             .ReturnsAsync(Enumerable.Empty<AuditLog>());

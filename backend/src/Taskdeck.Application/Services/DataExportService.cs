@@ -166,7 +166,7 @@ public class DataExportService : IDataExportService
         {
             return Result.Failure<UserDataExportDto>(
                 ErrorCodes.UnexpectedError,
-                $"Failed to export user data: {ex.Message}");
+                "Failed to export user data due to an internal error");
         }
     }
 }
