@@ -1,6 +1,6 @@
 # GitHub Label Taxonomy
 
-Last Updated: 2026-02-23
+Last Updated: 2026-04-01
 
 This file is the canonical description source for repository issue labels.
 
@@ -48,6 +48,39 @@ Note:
   - Dependency version updates managed by Dependabot or manual dependency hygiene.
 - `ci`
   - CI/CD pipeline, workflow, and build infrastructure changes.
+
+## Platform Expansion Labels
+
+- `cloud`
+  - Cloud hosting, SaaS deployment, online access, and multi-tenant infrastructure work.
+- `marketing`
+  - Market adoption, go-to-market execution, landing pages, demo videos, and growth activities.
+- `mobile`
+  - Mobile platform, PWA, responsive design, and touch-optimized experience work.
+- `packaging`
+  - Packaging, distribution, installation, and self-contained executable delivery work.
+- `strategy`
+  - Strategic planning, direction, and cross-pillar coordination work.
+
+## Tooling and Agent Labels
+
+- `codex`
+  - Reserved for Codex-agent-specific test coverage and contribution tasks (TST-CODEX-* series).
+- `mcp`
+  - MCP server, Model Context Protocol integration, and external AI agent access work.
+
+## Standard GitHub Labels
+
+- `duplicate`
+  - This issue or pull request already exists; used to close duplicates with a cross-reference.
+- `help wanted`
+  - Extra attention is needed; signals community or cross-team contribution opportunities.
+- `invalid`
+  - This doesn't seem right; used to close issues that are out of scope or misreported.
+- `question`
+  - Further information is requested; used for discussion-style issues awaiting clarification.
+- `wontfix`
+  - This will not be worked on; used to close issues that are intentionally deferred or rejected.
 
 ## Priority Labels
 

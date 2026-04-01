@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-03-31
+Last Updated: 2026-04-01
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -543,6 +543,24 @@ Delivered in the latest cycle:
     - `Swashbuckle.AspNetCore` 6.9.0 → 10.1.7 (with OpenApi v2.x compatibility fix)
     - `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` upgraded to 8.17.0
     - `xunit.runner.visualstudio` 2.8.2 → 3.1.5
+119. LLM tool-calling spike completion (`#618`, 2026-04-01):
+    - completed architecture document at `docs/spikes/SPIKE_618_COMPLETED.md` (1,014 lines, 13 sections)
+    - decided: custom implementation over Semantic Kernel (~800 LOC, zero new dependencies); SK's Gemini connector is alpha-quality with known function-calling bugs, and SK auto-invokes functions conflicting with GP-06
+    - decided: extend `ILlmProvider` with `CompleteWithToolsAsync()` — incremental, no breaking changes to existing non-tool-calling flow
+    - decided: 11 tools total (5 read + 6 write); reads execute directly, writes always produce proposals via `propose_*` prefix
+    - decided: new `ToolCallingChatOrchestrator` wraps `ChatService` with multi-turn loop (max 5 rounds, 60s total timeout, SignalR intermediate states)
+    - decided: Mock provider uses pattern-matching dispatch table for deterministic tool-call simulation
+    - cost model: ~$0.00088 per 3-round conversation on GPT-4o-mini (2-3x static context but unlocks dynamic board querying)
+    - implementation tracker: `#647`; phase issues: `#649` (read tools + orchestrator), `#650` (write tools + proposals), `#651` (refinements)
+120. MCP server spike completion (`#619`, 2026-04-01):
+    - completed architecture document at `docs/spikes/SPIKE_619_COMPLETED.md` (1,374 lines, 16 sections + 2 appendices)
+    - decided: official MCP C# SDK (`ModelContextProtocol` v1.2.0, co-maintained by Microsoft, 4.2k stars, .NET 8 native)
+    - decided: embedded in API process with `--mcp` startup flag for stdio mode; HTTP alongside REST on same Kestrel instance
+    - decided: stdio transport first (Claude Code/Cursor local dev), Streamable HTTP added in Phase 3 for cloud/remote
+    - decided: 9 resources under `taskdeck://` URI scheme, 9 tools (2 read + 5 write + 2 proposal management); `approve_proposal` intentionally excluded (GP-06)
+    - decided: API key auth (`tdsk_` prefix, SHA-256 hashed, user-bound) for HTTP transport; OAuth 2.1 deferred to Phase 4
+    - decided: write tools return proposal IDs immediately; users approve in web UI; agents poll via `get_proposal_status`
+    - implementation tracker: `#648`; phase issues: `#652` (minimal prototype), `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
 
 ## Current Planning Pivot (2026-03-07)
 
@@ -676,12 +694,16 @@ Focus:
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
+- LLM tool-calling architecture spike completed (`#618`); implementation wave seeded: `#647` tracker, `#649`→`#650`→`#651` (read tools → write tools → refinements)
+- MCP server architecture spike completed (`#619`); implementation wave seeded: `#648` tracker, `#652`→`#653`→`#654`→`#655` (prototype → full inventory → HTTP + auth → production hardening)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
 Exit Criteria:
 - runs are first-class and inspectable
 - agent behavior remains proposal-first and trace-first by default
 - no opaque or silent autonomy is introduced
+- LLM chat can dynamically query and mutate board state through tool calls (proposal-first for writes)
+- external AI agents (Claude Code, Cursor) can access Taskdeck via MCP (proposal-first for writes)
 
 ### Horizon E (Post-R2): Knowledge and Integrations Surface
 
@@ -744,6 +766,8 @@ Master tracker: `#531`.
   - workspace invitations
   - email notification delivery
   - activity feed per board
+  - LLM tool-calling for chat (`#647`: `#649`→`#650`→`#651`)
+  - MCP server for external agent integration (`#648`: `#652`→`#653`→`#654`)
 
 - `v0.5.0` **Power Up** (target: Week 15-20):
   - platform installers (Inno Setup, DMG, AppImage)
@@ -837,6 +861,21 @@ Master tracker: `#531`.
   - `#337` tool registry, policy evaluator, and first bounded template (delivered)
   - `#339` knowledge document + SQLite FTS foundation
 - Reuse-before-duplicate anchors for this later wave: `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, `#328`
+- Seeded LLM tool-calling implementation wave (from completed spike `#618`):
+  - `#647` tracker
+  - `#649` Phase 1: read tools + orchestrator + provider tool-calling extension (1-2 weeks)
+  - `#650` Phase 2: write tools + proposal integration (1-2 weeks)
+  - `#651` Phase 3: refinements — loop detection, cost tracking, feature flag (1 week)
+  - Dependency chain: `#649` → `#650` → `#651`
+  - Unblocks conversational refinement (`#576`) and MCP tool inventory (`#653`)
+- Seeded MCP server implementation wave (from completed spike `#619`):
+  - `#648` tracker
+  - `#652` Phase 1: minimal prototype — one resource + stdio + Claude Code (3-5 days)
+  - `#653` Phase 2: full resource + tool inventory (2-3 weeks)
+  - `#654` Phase 3: HTTP transport + API key auth (1-2 weeks)
+  - `#655` Phase 4: production hardening (deferred to v0.4.0+ demand, `Priority IV`)
+  - Dependency chain: `#652` → `#653` → `#654` → `#655`
+  - Phase 2 mirrors LLM tool-calling tool abstractions; shared Application layer services
 
 ### Platform Expansion Wave (2026-03-29 — Priority II)
 
@@ -868,6 +907,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 - Deferred capture follow-ons after MVP retention proof: `#218`, `#219`, `#220`
 - Outreach CRM deferred expansion wave: `#262` to `#268` (`#263` OUT-01 JSON manifest import delivered)
 - Outreach CRM wave reused dependencies: `#75` (delivered import adapters), `#77` (analytics), `#175` (starter-pack catalog expansion)
+- MCP production hardening (deferred): `#655` (observability, OAuth, resource subscriptions, key management UI, scope-based permissions)
 - Codebase maintainability hotspot refactors (analysis wave): `#158`, `#159`, `#160`, `#161`, `#162`, `#163`, `#164`, `#165`, `#166`, `#167` — ActivityView, BoardView, StarterPackManifestValidator, ArchiveRecoveryService, and AutomationExecutorService decompositions are now delivered; remaining issues in this wave cover other hotspots not yet addressed
 
 ### Priority V (Meta/Historical)
