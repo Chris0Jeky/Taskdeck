@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "taskdeck": {
+      "command": "dotnet",
+      "args": ["run", "--project", "backend/src/Taskdeck.Api/Taskdeck.Api.csproj", "--", "--mcp"],
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
