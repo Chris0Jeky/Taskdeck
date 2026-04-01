@@ -53,7 +53,7 @@ test('capture triage should create proposal and apply card with provenance links
   await expect(proposalCard).toBeVisible()
 
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
-  await expect(proposalCard.getByText('Approved')).toBeVisible()
+  await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
   const cardsAfterApprove = await listBoardCards(request, auth, boardId)
   expect(cardsAfterApprove.length).toBe(0)
 

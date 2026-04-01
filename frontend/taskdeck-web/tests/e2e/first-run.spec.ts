@@ -128,7 +128,7 @@ test('first-run path should guide home to capture to review to execute to board'
   await expect(proposalCard).toBeVisible()
 
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
-  await expect(proposalCard.getByText('Approved')).toBeVisible()
+  await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
   await proposalCard.getByRole('button', { name: 'Apply to board' }).click()
