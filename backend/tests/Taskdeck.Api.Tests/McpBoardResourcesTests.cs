@@ -31,7 +31,6 @@ public class McpBoardResourcesTests : IDisposable
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContext<TaskdeckDbContext>(opts => opts.UseSqlite($"Data Source={_dbPath}"));
         services.AddInfrastructure(
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
@@ -71,6 +70,7 @@ public class McpBoardResourcesTests : IDisposable
         // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
 
         var user = new User("alice", "alice@example.com", "Password1!");
         await uow.Users.AddAsync(user);
@@ -84,12 +84,11 @@ public class McpBoardResourcesTests : IDisposable
             .Build();
 
         // Act
-        var provider = new StdioUserContextProvider(config, uow, NullLogger<StdioUserContextProvider>.Instance);
+        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
         // Assert
-        provider.GetCurrentUserId().Should().Be(user.Id);
-        provider.TryGetCurrentUserId(out var resolved).Should().BeTrue();
-        resolved.Should().Be(user.Id);
+        (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
+        (await provider.GetUserIdAsync()).Should().Be(user.Id);
     }
 
     [Fact]
@@ -98,6 +97,7 @@ public class McpBoardResourcesTests : IDisposable
         // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
 
         var user = new User("bob", "bob@example.com", "Password1!");
         await uow.Users.AddAsync(user);
@@ -106,24 +106,52 @@ public class McpBoardResourcesTests : IDisposable
         var config = new ConfigurationBuilder().Build();
 
         // Act
-        var provider = new StdioUserContextProvider(config, uow, NullLogger<StdioUserContextProvider>.Instance);
+        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
         // Assert
-        provider.GetCurrentUserId().Should().Be(user.Id);
+        (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
     }
 
     [Fact]
-    public void StdioUserContextProvider_WhenNoUsersAndNoConfig_Throws()
+    public async Task StdioUserContextProvider_WhenNoUsersAndNoConfig_Throws()
     {
         // Arrange — empty DB, no config
         using var scope = _serviceProvider.CreateScope();
-        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var config = new ConfigurationBuilder().Build();
 
+        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+
         // Act & Assert
-        var act = () => new StdioUserContextProvider(config, uow, NullLogger<StdioUserContextProvider>.Instance);
-        act.Should().Throw<InvalidOperationException>()
+        var act = () => provider.GetCurrentUserIdAsync();
+        await act.Should().ThrowAsync<InvalidOperationException>()
            .WithMessage("*no users found*");
+    }
+
+    [Fact]
+    public async Task StdioUserContextProvider_WhenConfiguredIdIsEmpty_FallsBackToDb()
+    {
+        // Arrange — Guid.Empty configured should be treated as invalid
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+
+        var user = new User("grace", "grace@example.com", "Password1!");
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["McpServer:DefaultUserId"] = Guid.Empty.ToString()
+            })
+            .Build();
+
+        // Act
+        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+
+        // Assert — should fall back to DB, not return Guid.Empty
+        (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
     }
 
     // ── BoardResources tests ──────────────────────────────────────────────────
@@ -263,7 +291,7 @@ public class McpBoardResourcesTests : IDisposable
     {
         private readonly Guid _userId;
         public FixedUserContextProvider(Guid userId) => _userId = userId;
-        public Guid GetCurrentUserId() => _userId;
-        public bool TryGetCurrentUserId(out Guid userId) { userId = _userId; return true; }
+        public Task<Guid> GetCurrentUserIdAsync(CancellationToken cancellationToken = default) => Task.FromResult(_userId);
+        public Task<Guid?> GetUserIdAsync(CancellationToken cancellationToken = default) => Task.FromResult<Guid?>(_userId);
     }
 }
