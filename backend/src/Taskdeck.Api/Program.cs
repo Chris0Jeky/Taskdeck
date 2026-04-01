@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.OpenApi;
 using Taskdeck.Api.Extensions;
@@ -55,6 +56,13 @@ if (args.Contains("--mcp"))
                 .WithResources<BoardResources>();
         })
         .Build();
+
+    // Apply EF Core migrations before starting the MCP host (mirrors web mode behaviour).
+    using (var scope = mcpHost.Services.CreateScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
+        dbContext.Database.Migrate();
+    }
 
     await mcpHost.RunAsync();
     return;
