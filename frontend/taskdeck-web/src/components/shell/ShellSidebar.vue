@@ -143,6 +143,16 @@ const navCatalog: NavItem[] = [
     keywords: 'chat automation assistant board context',
   },
   {
+    id: 'metrics',
+    label: 'Metrics',
+    icon: 'M',
+    path: '/workspace/metrics',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'metrics analytics throughput cycle time wip blocked dashboard',
+  },
+  {
     id: 'activity',
     label: 'Activity',
     icon: 'Y',
