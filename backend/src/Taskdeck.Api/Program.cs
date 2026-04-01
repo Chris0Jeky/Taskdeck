@@ -1,10 +1,73 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.OpenApi;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.FirstRun;
+using Taskdeck.Api.Mcp;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Infrastructure;
+using Taskdeck.Infrastructure.Mcp;
+
+// ── MCP stdio mode ──────────────────────────────────────────────────────────
+// When launched with "--mcp", run as a stdio MCP server instead of a web API.
+// This path intentionally skips JWT, CORS, SignalR, rate limiting, and the
+// HTTP pipeline — none of those are meaningful over a local stdio connection.
+if (args.Contains("--mcp"))
+{
+    var mcpHost = Host.CreateDefaultBuilder(args)
+        .ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddJsonFile("appsettings.json", optional: true);
+            config.AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
+            config.AddJsonFile("appsettings.local.json", optional: true);
+            config.AddEnvironmentVariables();
+        })
+        .ConfigureLogging(logging =>
+        {
+            // In stdio mode stdout is the MCP transport channel.
+            // Log to stderr only to avoid corrupting the JSON-RPC stream.
+            logging.ClearProviders();
+            logging.AddConsole(opts => opts.LogToStandardErrorThreshold = Microsoft.Extensions.Logging.LogLevel.Trace);
+        })
+        .ConfigureServices((ctx, services) =>
+        {
+            // Infrastructure (DbContext, Repositories, UoW)
+            services.AddInfrastructure(ctx.Configuration);
+
+            // Register only the Application services needed by MCP resources.
+            // We deliberately skip web-only services (SignalR notifiers, workers,
+            // LLM providers, rate limiting, etc.) to keep the MCP host minimal.
+            services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
+                new Taskdeck.Application.Services.BoardService(
+                    sp.GetRequiredService<IUnitOfWork>(),
+                    sp.GetService<Taskdeck.Application.Services.IAuthorizationService>()));
+            services.AddScoped<Taskdeck.Application.Services.AuthorizationService>();
+            services.AddScoped<Taskdeck.Application.Services.IAuthorizationService>(
+                sp => sp.GetRequiredService<Taskdeck.Application.Services.AuthorizationService>());
+
+            // Stdio identity: maps the OS process owner to the local default user.
+            services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
+
+            // MCP server: stdio transport + BoardResources resource type.
+            services.AddMcpServer()
+                .WithStdioServerTransport()
+                .WithResources<BoardResources>();
+        })
+        .Build();
+
+    // Apply EF Core migrations before starting the MCP host (mirrors web mode behaviour).
+    using (var scope = mcpHost.Services.CreateScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
+        dbContext.Database.Migrate();
+    }
+
+    await mcpHost.RunAsync();
+    return;
+}
+// ── End MCP stdio mode ───────────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);
 

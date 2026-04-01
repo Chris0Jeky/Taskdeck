@@ -1365,6 +1365,10 @@ watch(
   padding-top: var(--td-space-2);
 }
 
+.td-review-card__action-cue--approved {
+  color: var(--td-color-success);
+}
+
 .td-review-card__diff {
   margin: 0;
   padding: var(--td-space-3);

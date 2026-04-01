@@ -104,6 +104,9 @@ NuGet/
 *.log
 logs/
 artifacts/
+!artifacts/openapi/
+artifacts/openapi/*
+!artifacts/openapi/taskdeck-api.json
 .terraform/
 *.tfstate
 *.tfstate.*
