@@ -169,16 +169,21 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: assistant response appears.
 3. Create board-scoped chat session and send actionable instruction with `Request proposal generation` enabled.
    - Expected: assistant response includes proposal reference.
-4. Open `/workspace/review` and locate proposal.
-   - Expected: review card visible with status/actions, readable summary/risk/source/affected-entity cues, and legacy `/workspace/automations/proposals` links redirect here.
-5. Open proposal, inbox, notification, and card provenance links that target the same board-scoped proposal.
+4. Send a tool-calling question: "What columns does my board have?" or "What cards are in <column>?"
+   - Expected: intermediate "Looking up..." status messages appear via SignalR, then a response with actual board data.
+5. Send a multi-instruction message: "Add a column called Testing and create a card called Unit Tests".
+   - Expected: multiple proposals generated from a single message.
+6. Open `/workspace/review` and locate proposal.
+   - Expected: review cards render with sticky action footer, constrained card height, collapsible detail sections with risk color-coding, and keyboard-accessible links dropdown. Legacy `/workspace/automations/proposals` links redirect here.
+7. Open proposal, inbox, notification, and card provenance links that target the same board-scoped proposal.
    - Expected: all land on `/workspace/review?boardId={boardId}#proposal-{proposalId}` or the equivalent routed location with board context preserved.
-6. Approve proposal.
-   - Expected: status transitions to `Approved`.
-7. Execute proposal with confirmation.
+8. Approve proposal.
+   - Expected: status transitions to `Approved`. Approve→apply cue is visible.
+9. Execute proposal with confirmation (two-step: approve first, then execute as separate action).
    - Expected: status transitions to `Applied`.
-8. View diff for proposal.
+10. View diff for proposal.
     - Expected: diff payload displays.
+11. Verify applied proposals are hidden by default; use clear/dismiss action to manage them.
 
 ## E. Inbox and Notifications Continuity
 
@@ -331,7 +336,7 @@ Prerequisite: scripts are in `scripts/backup.sh`, `scripts/restore.sh` (Unix) an
 4. Fetch user history in `user` mode.
    - Expected: current-user timeline entries display.
 
-## I. API Spot Checks
+## P. API Spot Checks
 
 Assume API at `http://localhost:5000`.
 
@@ -357,8 +362,20 @@ Assume API at `http://localhost:5000`.
 7. Database export/import sandbox gate:
    - `GET /api/export/database` and `POST /api/import/database` with bearer token while sandbox is disabled.
    - Expected: `403` with JSON body containing `errorCode` and `message`.
+8. GDPR data export:
+   - `GET /api/account/export` with bearer token.
+   - Expected: `200` with versioned JSON payload containing user-scoped data.
+9. GDPR account deletion unauthorized:
+   - `POST /api/account/delete` with wrong password.
+   - Expected: `401` or `400` with JSON body containing `errorCode` and `message`.
+10. Board metrics unauthorized:
+    - `GET /api/metrics/boards/{boardId}` without bearer token.
+    - Expected: `401` with JSON body containing `errorCode` and `message`.
+11. Auth provider discovery:
+    - `GET /api/auth/providers`.
+    - Expected: `200` with provider availability payload (no auth required).
 
-## J. Observability Smoke (OBS-01)
+## Q. Observability Smoke (OBS-01)
 
 1. In `backend/src/Taskdeck.Api/appsettings.Development.json`, set:
    - `"Observability": { "EnableConsoleExporter": true }`
@@ -372,7 +389,7 @@ Assume API at `http://localhost:5000`.
    - request spans include `taskdeck.correlation_id`
 5. Revert `EnableConsoleExporter` to `false` after smoke validation.
 
-## K. Known-Gap Triage (From Product Notes)
+## R. Known-Gap Triage (From Product Notes)
 
 Run these checks even if they currently fail; log outcome explicitly.
 
@@ -386,7 +403,7 @@ Run these checks even if they currently fail; log outcome explicitly.
    - Repro: test on shorter and taller viewports.
    - Target behavior: shortcuts/help affordance remains discoverable without deep scrolling.
 
-## L. Manual Findings Regression Pack (MAN-2026-02-21)
+## S. Manual Findings Regression Pack (MAN-2026-02-21)
 
 Use this section to retest the exact findings captured in `docs/archive/2026-02-25_docs-cleanup/notesFromManualTesting.txt`.
 Issue wave:
@@ -466,7 +483,7 @@ For each test below, capture:
    - Expected: clear guidance exists for obtaining required role/permissions.
    - Reference: `docs/ops/TASKDECK_HUMAN_OPERATIONS.md` (`A5 Ops CLI role-assignment workflow`).
 
-## M. Post-Run Documentation Check
+## T. Post-Run Documentation Check
 
 If behavior, commands, or known gaps changed, update:
 - `docs/STATUS.md`
@@ -475,7 +492,7 @@ If behavior, commands, or known gaps changed, update:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/ops/OBSERVABILITY_BASELINE.md` (when telemetry/dashboard/alert contract changes)
 
-## M. Final Automated Smoke Before Merge
+## U. Final Automated Smoke Before Merge
 
 1. Backend:
    - `dotnet test backend/Taskdeck.sln -c Release -m:1`
@@ -487,7 +504,7 @@ If behavior, commands, or known gaps changed, update:
    - fallback when `5173` is unavailable:
      `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db TASKDECK_E2E_FRONTEND_PORT=5001 TASKDECK_E2E_API_CORS_ORIGINS=http://localhost:5001 npx playwright test --reporter=line`
 
-## N. Capture Realignment Manual Slice (Shipped CAP MVP)
+## V. Capture Realignment Manual Slice (Shipped CAP MVP)
 
 Status:
 - active; run this slice as part of regular regression/manual confidence checks for shipped capture behavior (`#200` to `#211`)
@@ -512,7 +529,7 @@ Slice checks:
    - verify unauthenticated/cross-user/missing-resource behavior remains `401/403/404`
    - verify error payload shape remains `{ errorCode, message }`
 
-## O. Testing Harness Wave 1 Manual Slice (`#254` to `#260`)
+## W. Testing Harness Wave 1 Manual Slice (`#254` to `#260`)
 
 Status:
 - planned; execute while TST-16/TST-17/TST-18 and harness guardrail issues are being implemented
@@ -538,7 +555,7 @@ Slice checks:
    - apply the same pack twice and verify no duplicates
    - execute a known conflict path and verify dry-run conflict report with no mutation
 
-## P. Workspace Shell, Board Lifecycle, and Keyboard UX (Slice A)
+## X. Workspace Shell, Board Lifecycle, and Keyboard UX (Slice A)
 
 Status:
 - active; detailed step-indexed checklist in `docs/testing/manual-validation-a-workspace-board-ux.md`
@@ -555,7 +572,7 @@ Scope (22 scenarios, A-01 through A-22):
 6. Today view and onboarding: agenda, dismiss/replay persistence (A-21 to A-22)
 
 Reference: `docs/testing/manual-validation-a-workspace-board-ux.md` for full step tables, evidence guidance, automation candidates, and defect filing template.
-## Q. Authz Policy, Cross-User Isolation, and API Error Contracts (Slice B, `#131`)
+## Y. Authz Policy, Cross-User Isolation, and API Error Contracts (Slice B, `#131`)
 
 Status:
 - active; comprehensive two-user authz matrix covering all controller families
