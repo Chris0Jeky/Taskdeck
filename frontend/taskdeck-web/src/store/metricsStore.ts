@@ -19,6 +19,7 @@ export const useMetricsStore = defineStore('metrics', () => {
       error.value = null
       metrics.value = null
       loading.value = false
+      error.value = 'Metrics are not available in demo mode.'
       return
     }
     try {

@@ -5,6 +5,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -16,6 +17,7 @@ public class BoardMetricsServiceTests
     private readonly Mock<IBoardRepository> _boardRepoMock;
     private readonly Mock<IColumnRepository> _columnRepoMock;
     private readonly Mock<ICardRepository> _cardRepoMock;
+    private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly Mock<IAuthorizationService> _authServiceMock;
     private readonly BoardMetricsService _service;
 
@@ -28,15 +30,29 @@ public class BoardMetricsServiceTests
         _boardRepoMock = new Mock<IBoardRepository>();
         _columnRepoMock = new Mock<IColumnRepository>();
         _cardRepoMock = new Mock<ICardRepository>();
+        _auditLogRepoMock = new Mock<IAuditLogRepository>();
         _authServiceMock = new Mock<IAuthorizationService>();
 
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
 
         _authServiceMock
             .Setup(a => a.CanReadBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
             .ReturnsAsync(Result.Success(true));
+
+        _auditLogRepoMock
+            .Setup(a => a.QueryAsync(
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AuditLog>());
 
         _service = new BoardMetricsService(_unitOfWorkMock.Object, _authServiceMock.Object);
     }
@@ -79,6 +95,18 @@ public class BoardMetricsServiceTests
     }
 
     [Fact]
+    public async Task GetBoardMetricsAsync_ShouldSucceed_WhenFromEqualsTo()
+    {
+        var now = DateTimeOffset.UtcNow;
+        SetupBoard(new List<Column>(), new List<Card>());
+        var query = new BoardMetricsQuery(_boardId, now, now);
+
+        var result = await _service.GetBoardMetricsAsync(query, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GetBoardMetricsAsync_ShouldFail_WhenBoardNotFound()
     {
         _boardRepoMock.Setup(r => r.GetByIdAsync(_boardId, default)).ReturnsAsync((Board?)null);
@@ -102,6 +130,20 @@ public class BoardMetricsServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task GetBoardMetricsAsync_ShouldFail_WhenAuthServiceReturnsError()
+    {
+        _authServiceMock
+            .Setup(a => a.CanReadBoardAsync(_userId, _boardId))
+            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.UnexpectedError, "Auth service unavailable"));
+
+        var query = new BoardMetricsQuery(_boardId, DateTimeOffset.UtcNow.AddDays(-7), DateTimeOffset.UtcNow);
+        var result = await _service.GetBoardMetricsAsync(query, _userId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
     }
 
     #endregion
@@ -179,6 +221,59 @@ public class BoardMetricsServiceTests
 
     #endregion
 
+    #region Done Column Resolution
+
+    [Fact]
+    public void ResolveDoneColumn_ShouldPreferNamedDoneColumn()
+    {
+        var backlog = CreateColumn("Backlog", 0);
+        var inProgress = CreateColumn("In Progress", 1);
+        var done = CreateColumn("Done", 2);
+        var archive = CreateColumn("Archive", 3);
+
+        var result = BoardMetricsService.ResolveDoneColumn(
+            new List<Column> { backlog, inProgress, done, archive });
+
+        result.Should().NotBeNull();
+        result!.Name.Should().Be("Done");
+    }
+
+    [Fact]
+    public void ResolveDoneColumn_ShouldMatchCaseInsensitively()
+    {
+        var todo = CreateColumn("TODO", 0);
+        var completed = CreateColumn("COMPLETED", 1);
+
+        var result = BoardMetricsService.ResolveDoneColumn(
+            new List<Column> { todo, completed });
+
+        result.Should().NotBeNull();
+        result!.Name.Should().Be("COMPLETED");
+    }
+
+    [Fact]
+    public void ResolveDoneColumn_ShouldFallbackToRightmostColumn()
+    {
+        var backlog = CreateColumn("Backlog", 0);
+        var review = CreateColumn("Review", 1);
+        var deployed = CreateColumn("Deployed", 2);
+
+        var result = BoardMetricsService.ResolveDoneColumn(
+            new List<Column> { backlog, review, deployed });
+
+        result.Should().NotBeNull();
+        result!.Name.Should().Be("Deployed");
+    }
+
+    [Fact]
+    public void ResolveDoneColumn_ShouldReturnNull_WhenNoColumns()
+    {
+        var result = BoardMetricsService.ResolveDoneColumn(new List<Column>());
+        result.Should().BeNull();
+    }
+
+    #endregion
+
     #region Static Computation Tests
 
     [Fact]
@@ -188,7 +283,8 @@ public class BoardMetricsServiceTests
             new List<Card>(),
             null,
             DateTimeOffset.UtcNow.AddDays(-7),
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            new Dictionary<Guid, List<(DateTimeOffset, Guid)>>());
 
         result.Should().BeEmpty();
     }
@@ -200,7 +296,8 @@ public class BoardMetricsServiceTests
             new List<Card>(),
             null,
             DateTimeOffset.UtcNow.AddDays(-7),
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            new Dictionary<Guid, List<(DateTimeOffset, Guid)>>());
 
         avg.Should().Be(0);
         entries.Should().BeEmpty();
@@ -241,6 +338,98 @@ public class BoardMetricsServiceTests
         count.Should().Be(1);
         cards.Should().HaveCount(1);
         cards[0].CardTitle.Should().Be("Blocked");
+    }
+
+    [Fact]
+    public void ComputeBlocked_ShouldReturnEmpty_WhenNoBlockedCards()
+    {
+        var colId = Guid.NewGuid();
+        var active = CreateCard(colId, "Active");
+
+        var (count, cards) = BoardMetricsService.ComputeBlocked(new List<Card> { active });
+
+        count.Should().Be(0);
+        cards.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Audit-Based Throughput Tests
+
+    [Fact]
+    public void ComputeThroughput_ShouldUseAuditData_WhenAvailable()
+    {
+        var doneCol = CreateColumn("Done", 1);
+        var card = CreateCard(doneCol.Id, "Completed Card");
+
+        var moveTimestamp = DateTimeOffset.UtcNow.AddDays(-2);
+        var audits = new Dictionary<Guid, List<(DateTimeOffset, Guid)>>
+        {
+            { card.Id, new List<(DateTimeOffset, Guid)> { (moveTimestamp, doneCol.Id) } }
+        };
+
+        var result = BoardMetricsService.ComputeThroughput(
+            new List<Card> { card },
+            doneCol,
+            DateTimeOffset.UtcNow.AddDays(-7),
+            DateTimeOffset.UtcNow,
+            audits);
+
+        result.Should().HaveCount(1);
+        result[0].CompletedCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void ComputeCycleTime_ShouldUseAuditTimestamp_ForAccuracy()
+    {
+        var doneCol = CreateColumn("Done", 1);
+        var card = CreateCard(doneCol.Id, "Card");
+
+        // Move timestamp must be after card creation to produce positive cycle time
+        var moveTimestamp = DateTimeOffset.UtcNow.AddDays(2);
+        var audits = new Dictionary<Guid, List<(DateTimeOffset, Guid)>>
+        {
+            { card.Id, new List<(DateTimeOffset, Guid)> { (moveTimestamp, doneCol.Id) } }
+        };
+
+        var (avg, entries) = BoardMetricsService.ComputeCycleTime(
+            new List<Card> { card },
+            doneCol,
+            DateTimeOffset.UtcNow.AddDays(-7),
+            DateTimeOffset.UtcNow.AddDays(1),
+            audits);
+
+        entries.Should().HaveCount(1);
+        avg.Should().BeGreaterThan(0);
+    }
+
+    #endregion
+
+    #region ParseTargetColumnId Tests
+
+    [Fact]
+    public void ParseTargetColumnId_ShouldParseValidChanges()
+    {
+        var columnId = Guid.NewGuid();
+        var changes = $"target_column={columnId}; position=0";
+
+        var result = BoardMetricsService.ParseTargetColumnId(changes);
+
+        result.Should().Be(columnId);
+    }
+
+    [Fact]
+    public void ParseTargetColumnId_ShouldReturnNull_ForInvalidFormat()
+    {
+        var result = BoardMetricsService.ParseTargetColumnId("some random text");
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseTargetColumnId_ShouldReturnNull_ForEmptyString()
+    {
+        var result = BoardMetricsService.ParseTargetColumnId("");
+        result.Should().BeNull();
     }
 
     #endregion

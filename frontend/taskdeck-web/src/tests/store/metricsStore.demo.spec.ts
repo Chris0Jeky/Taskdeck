@@ -48,15 +48,11 @@ describe('metricsStore demo mode', () => {
     expect(metricsApi.getBoardMetrics).not.toHaveBeenCalled()
     expect(store.metrics).toBeNull()
     expect(store.loading).toBe(false)
-    expect(store.error).toBeNull()
   })
 
-  it('fetchBoardMetrics in demo mode clears any prior error', async () => {
-    // Manually set error to simulate prior state
-    store.error = 'prior error'
-
+  it('fetchBoardMetrics in demo mode shows demo mode message', async () => {
     await store.fetchBoardMetrics({ boardId: 'board-1' })
 
-    expect(store.error).toBeNull()
+    expect(store.error).toBe('Metrics are not available in demo mode.')
   })
 })
