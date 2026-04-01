@@ -74,4 +74,48 @@ describe('authApi', () => {
       expect(http.post).toHaveBeenCalledWith('/auth/change-password', request)
     })
   })
+
+  describe('getProviders', () => {
+    it('should send GET to /auth/providers', async () => {
+      const mockResponse = { gitHub: true }
+      vi.mocked(http.get).mockResolvedValue({ data: mockResponse })
+
+      const result = await authApi.getProviders()
+
+      expect(http.get).toHaveBeenCalledWith('/auth/providers')
+      expect(result).toEqual({ gitHub: true })
+    })
+
+    it('should return false when GitHub is not configured', async () => {
+      const mockResponse = { gitHub: false }
+      vi.mocked(http.get).mockResolvedValue({ data: mockResponse })
+
+      const result = await authApi.getProviders()
+
+      expect(result.gitHub).toBe(false)
+    })
+  })
+
+  describe('exchangeOAuthCode', () => {
+    it('should send POST to /auth/github/exchange with code', async () => {
+      const mockResponse = {
+        token: 'jwt-token-from-github',
+        user: {
+          id: 'user-gh',
+          username: 'octocat',
+          email: 'octocat@github.com',
+          defaultRole: 2,
+          isActive: true,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      }
+      vi.mocked(http.post).mockResolvedValue({ data: mockResponse })
+
+      const result = await authApi.exchangeOAuthCode('test-auth-code')
+
+      expect(http.post).toHaveBeenCalledWith('/auth/github/exchange', { code: 'test-auth-code' })
+      expect(result).toEqual(mockResponse)
+    })
+  })
 })

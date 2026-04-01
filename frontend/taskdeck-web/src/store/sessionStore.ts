@@ -202,6 +202,24 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  async function exchangeOAuthCode(code: string) {
+    try {
+      loading.value = true
+      error.value = null
+      const response = await authApi.exchangeOAuthCode(code)
+      setSession(response)
+      toast.success('Signed in with GitHub')
+      return response
+    } catch (e: unknown) {
+      const msg = getErrorMessage(e, 'GitHub sign-in failed')
+      error.value = msg
+      toast.error(msg)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   function logout() {
     clearSession()
     toast.info('Logged out')
@@ -230,6 +248,7 @@ export const useSessionStore = defineStore('session', () => {
     loginAsDemo,
     register,
     changePassword,
+    exchangeOAuthCode,
     logout,
     restoreSession,
     clearSession,

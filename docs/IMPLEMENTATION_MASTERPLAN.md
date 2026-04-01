@@ -748,7 +748,7 @@ Master tracker: `#531`.
 
 - `v0.2.0` **Open Doors** (target: Week 3-5):
   - hosted cloud instance on Railway/Render (`#537` → `#538`)
-  - GitHub OAuth login (`#539`)
+  - GitHub OAuth login (`#539` — delivered)
   - custom domain and TLS
   - Show HN, Reddit, Dev.to launch
   - landing page on custom domain
@@ -883,7 +883,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 
 - Master strategy tracker: `#531`
 - Packaging and distribution wave: `#532` → `#533` (SPA serving), `#534` (build script), `#535` (release workflow), `#536` (first-run config)
-- Cloud and collaboration wave: `#537` → `#538` (cloud deploy), `#539` (GitHub OAuth)
+- Cloud and collaboration wave: `#537` → `#538` (cloud deploy), `#539` (GitHub OAuth — delivered)
 - Mobile platform wave: `#540` → `#541` (PWA manifest), `#542` (service worker), `#543` (mobile responsive)
 - Market adoption and GTM wave: `#544` → `#545` (README polish), `#546` (demo video), `#547` (LICENSE)
 - Cross-cutting: `#548` (legal/privacy), `#549` (analytics/error tracking), `#550` (brand/domain)

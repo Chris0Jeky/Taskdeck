@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-01
+Last Updated: 2026-04-02
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -89,6 +89,7 @@ Direction guardrails (explicit):
 - Auth posture today:
   - JWT middleware is wired
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, notifications, automation-proposals, archive, ops-cli, and logs controllers
+  - GitHub OAuth login (`CLD-03`): environment-gated OAuth middleware activates only when `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` are configured; `ExternalLogin` entity links GitHub accounts to users without auto-linking by email (prevents account takeover); OAuth callback uses short-lived single-use authorization codes to avoid JWT exposure in URLs; frontend LoginView conditionally shows "Sign in with GitHub" button based on `/api/auth/providers` response; full test coverage in Domain, Application, and frontend layers
 
 ### Frontend
 
