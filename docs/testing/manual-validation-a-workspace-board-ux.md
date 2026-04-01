@@ -1,6 +1,6 @@
 # Manual Validation Slice A: Workspace Shell, Board Lifecycle, and Keyboard UX
 
-Last Updated: 2026-03-29
+Last Updated: 2026-04-02
 Companion: `docs/MANUAL_TEST_CHECKLIST.md` (umbrella checklist)
 
 ## Purpose
@@ -68,6 +68,24 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 
 ---
 
+## Scenario A-02a: GitHub OAuth Login (CLD-03)
+
+**Goal:** Verify GitHub OAuth login when configured.
+
+**Prerequisite:** `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` must be set in backend configuration.
+
+| Step | Action | Expected Outcome |
+|---|---|---|
+| 1 | Navigate to `/login` with OAuth configured | "Sign in with GitHub" button visible alongside username/password form |
+| 2 | Navigate to `/login` without OAuth configured | Only username/password form visible; no GitHub button |
+| 3 | Click "Sign in with GitHub" | Redirected to GitHub authorization page |
+| 4 | Complete GitHub authorization | Redirected back with `oauth_code` query param; code exchanged; authenticated into `/workspace/home` |
+| 5 | Log out and re-login with same GitHub account | Existing linked account recognized; session restored |
+
+**Evidence:** Screenshots of login form with/without GitHub button, and workspace home after OAuth login.
+
+---
+
 ## Scenario A-03: Auth Guard (Unauthenticated Workspace Access)
 
 **Goal:** Verify unauthenticated users cannot reach workspace routes.
@@ -96,6 +114,7 @@ Step-indexed manual validation for workspace shell behavior, board lifecycle ope
 | 6 | Click `Review` in sidebar | Route is `/workspace/review`, review surface renders |
 | 7 | Click `Archive` in sidebar | Route is `/workspace/archive`, archive list renders |
 | 8 | Click `Notifications` in sidebar | Route is `/workspace/notifications`, notification inbox renders |
+| 9 | Click `Metrics` in sidebar (workbench/guided mode) | Route is `/workspace/metrics`, board metrics dashboard renders with board selector |
 
 **Evidence:** Screenshot of each route transition showing correct URL and content.
 
