@@ -6,7 +6,7 @@ Authoring context: Local workflow/config scan + GitHub issue reconciliation + ta
 
 ## Purpose
 
-Define a pragmatic expansion strgithub/workflows/ci-required.yml` so the pipeline scales with the already-seeded testing/security/ops issues without turning PR feedback into a bottleneck.
+Define a pragmatic expansion strategy for `.github/workflows/ci-required.yml` so the pipeline scales with the already-seeded testing/security/ops issues without turning PR feedback into a bottleneck.
 
 This plan is non-authoritative by itself. `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md` remain the canonical sources of truth.
 
