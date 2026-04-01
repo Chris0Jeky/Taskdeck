@@ -33,6 +33,7 @@ public class ChatService : IChatService
     private readonly ILlmQuotaService? _quotaService;
     private readonly ILlmKillSwitchService? _killSwitchService;
     private readonly IBoardContextBuilder? _boardContextBuilder;
+    private readonly ToolCallingChatOrchestrator? _toolCallingOrchestrator;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -44,7 +45,8 @@ public class ChatService : IChatService
         IAuthorizationService? authorizationService = null,
         ILlmQuotaService? quotaService = null,
         ILlmKillSwitchService? killSwitchService = null,
-        IBoardContextBuilder? boardContextBuilder = null)
+        IBoardContextBuilder? boardContextBuilder = null,
+        ToolCallingChatOrchestrator? toolCallingOrchestrator = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -56,6 +58,7 @@ public class ChatService : IChatService
         _quotaService = quotaService;
         _killSwitchService = killSwitchService;
         _boardContextBuilder = boardContextBuilder;
+        _toolCallingOrchestrator = toolCallingOrchestrator;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -144,7 +147,7 @@ public class ChatService : IChatService
             // Determine message type and optional proposal attachment
             var messageType = "text";
             Guid? proposalId = null;
-            string assistantContent;
+            string assistantContent = string.Empty;
             int? tokenUsage = null;
             string? degradedReason = null;
 
@@ -189,6 +192,51 @@ public class ChatService : IChatService
             }
             else
             {
+                var usedToolCalling = false;
+
+                // Try tool-calling path for board-scoped sessions with orchestrator
+                if (_toolCallingOrchestrator != null && session.BoardId.HasValue)
+                {
+                    var toolChatMessages = session.Messages
+                        .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
+                        .ToList();
+
+                    var toolCompletionRequest = new ChatCompletionRequest(
+                        toolChatMessages,
+                        Attribution: BuildAttribution(session, userId),
+                        SystemPrompt: ToolCallingSystemPrompt.Prompt);
+
+                    var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
+                        toolCompletionRequest, session.BoardId.Value, ct);
+
+                    // If tool calling fully degraded (no content), fall through to single-turn
+                    if (!(toolResult.IsDegraded && toolResult.Content == null))
+                    {
+                        usedToolCalling = true;
+                        assistantContent = toolResult.Content ?? "";
+                        tokenUsage = toolResult.TokensUsed;
+                        degradedReason = toolResult.DegradedReason;
+
+                        if (toolResult.IsDegraded)
+                        {
+                            messageType = "degraded";
+                        }
+
+                        // Record usage for quota tracking
+                        if (_quotaService != null && toolResult.TokensUsed > 0)
+                        {
+                            await _quotaService.RecordUsageAsync(
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                toolResult.Provider, toolResult.Model,
+                                toolResult.TokensUsed, 0,
+                                ct);
+                        }
+                    }
+                }
+
+                // Single-turn fallback (no tool calling, or tool calling degraded)
+                if (!usedToolCalling)
+                {
                 // Get LLM response for non-checklist messages.
                 var chatMessages = session.Messages
                     .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
@@ -296,6 +344,7 @@ public class ChatService : IChatService
                         }
                     }
                 }
+                } // end if (!usedToolCalling)
             }
 
             var persistedDegradedReason = string.IsNullOrWhiteSpace(degradedReason)
