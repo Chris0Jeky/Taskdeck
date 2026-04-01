@@ -159,7 +159,7 @@ public class ToolCallingChatOrchestratorTests
 
         result.IsDegraded.Should().BeTrue();
         result.Content.Should().BeNull();
-        result.DegradedReason.Should().Contain("not available");
+        result.DegradedReason.Should().Contain("does not support tool calling");
     }
 
     [Fact]

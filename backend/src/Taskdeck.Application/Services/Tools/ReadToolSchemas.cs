@@ -8,11 +8,6 @@ namespace Taskdeck.Application.Services.Tools;
 /// </summary>
 public static class ReadToolSchemas
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
-
     public static IReadOnlyList<TaskdeckToolSchema> GetAll()
     {
         return new[]

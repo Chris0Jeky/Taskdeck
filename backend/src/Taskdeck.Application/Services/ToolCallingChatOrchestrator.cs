@@ -89,13 +89,15 @@ public sealed class ToolCallingChatOrchestrator
             catch (NotSupportedException)
             {
                 _logger.LogWarning("Provider does not support tool calling; falling back to single-turn.");
-                return BuildDegradedResult(provider, model);
+                return BuildDegradedResult(provider, model, totalTokensUsed, round, toolCallLog,
+                    "Provider does not support tool calling.");
             }
             catch (Exception ex)
             {
                 _logger.LogError("Tool-calling round {Round} failed. {ExceptionSummary}",
                     round, SensitiveDataRedactor.SummarizeException(ex));
-                return BuildDegradedResult(provider, model);
+                return BuildDegradedResult(provider, model, totalTokensUsed, round, toolCallLog,
+                    "Tool-calling round failed due to an internal error.");
             }
 
             totalTokensUsed += llmResult.TokensUsed;
@@ -261,17 +263,21 @@ public sealed class ToolCallingChatOrchestrator
             DegradedReason: "Maximum tool-calling rounds exceeded.");
     }
 
-    private static ToolCallingResult BuildDegradedResult(string provider, string model)
+    private static ToolCallingResult BuildDegradedResult(
+        string provider, string model,
+        int tokensUsed = 0, int round = 0,
+        List<ToolCallLogEntry>? log = null,
+        string? reason = null)
     {
         return new ToolCallingResult(
             Content: null,
-            TokensUsed: 0,
+            TokensUsed: tokensUsed,
             Provider: provider,
             Model: model,
-            Rounds: 0,
-            ToolCallLog: new List<ToolCallLogEntry>(),
+            Rounds: round,
+            ToolCallLog: log ?? new List<ToolCallLogEntry>(),
             IsDegraded: true,
-            DegradedReason: "Tool calling is not available; falling back to single-turn.");
+            DegradedReason: reason ?? "Tool calling is not available; falling back to single-turn.");
     }
 
     private static string TruncateForLog(string content)

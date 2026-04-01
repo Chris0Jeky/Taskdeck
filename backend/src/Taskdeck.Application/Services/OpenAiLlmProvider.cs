@@ -325,7 +325,7 @@ public class OpenAiLlmProvider : ILlmProvider
                 {
                     var callId = tc.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
                     var funcName = "";
-                    var funcArgs = default(JsonElement);
+                    JsonElement funcArgs;
 
                     if (tc.TryGetProperty("function", out var func))
                     {
@@ -334,9 +334,20 @@ public class OpenAiLlmProvider : ILlmProvider
                         {
                             // OpenAI returns arguments as a JSON string that needs re-parsing
                             var argsStr = argsEl.GetString() ?? "{}";
+                            if (string.IsNullOrWhiteSpace(argsStr)) argsStr = "{}";
                             using var argsDoc = JsonDocument.Parse(argsStr);
                             funcArgs = argsDoc.RootElement.Clone();
                         }
+                        else
+                        {
+                            using var emptyDoc = JsonDocument.Parse("{}");
+                            funcArgs = emptyDoc.RootElement.Clone();
+                        }
+                    }
+                    else
+                    {
+                        using var emptyDoc = JsonDocument.Parse("{}");
+                        funcArgs = emptyDoc.RootElement.Clone();
                     }
 
                     calls.Add(new ToolCallRequest(callId, funcName, funcArgs));

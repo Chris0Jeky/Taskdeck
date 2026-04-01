@@ -357,9 +357,16 @@ public class GeminiLlmProvider : ILlmProvider
                     var callId = functionCall.TryGetProperty("id", out var idEl)
                         ? idEl.GetString() ?? $"gemini-{Guid.NewGuid():N}"[..16]
                         : $"gemini-{Guid.NewGuid():N}"[..16];
-                    var args = functionCall.TryGetProperty("args", out var argsEl)
-                        ? argsEl.Clone()
-                        : JsonDocument.Parse("{}").RootElement.Clone();
+                    JsonElement args;
+                    if (functionCall.TryGetProperty("args", out var argsEl))
+                    {
+                        args = argsEl.Clone();
+                    }
+                    else
+                    {
+                        using var emptyDoc = JsonDocument.Parse("{}");
+                        args = emptyDoc.RootElement.Clone();
+                    }
 
                     toolCalls.Add(new ToolCallRequest(callId, name, args));
                 }
