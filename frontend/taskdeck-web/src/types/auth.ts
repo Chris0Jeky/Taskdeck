@@ -39,3 +39,7 @@ export interface SessionState {
   isAuthenticated: boolean
   expiresAt: string | null
 }
+
+export interface AuthProviders {
+  gitHub: boolean
+}
