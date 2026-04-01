@@ -38,6 +38,7 @@ const TodayView = () => import('../views/TodayView.vue')
 const ReviewView = () => import('../views/ReviewView.vue')
 const DevToolsView = () => import('../views/DevToolsView.vue')
 const SavedViewsView = () => import('../views/SavedViewsView.vue')
+const MetricsView = () => import('../views/MetricsView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -129,6 +130,14 @@ const router = createRouter({
     {
       path: '/workspace/activity/user/:userId',
       redirect: '/workspace/activity/user',
+    },
+
+    // Metrics routes
+    {
+      path: '/workspace/metrics',
+      name: 'workspace-metrics',
+      component: MetricsView,
+      meta: { requiresShell: true },
     },
 
     // Automation routes

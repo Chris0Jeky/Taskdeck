@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Taskdeck.Application.Services;
 
 public interface ILlmProvider
@@ -6,6 +8,19 @@ public interface ILlmProvider
     IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, CancellationToken ct = default);
     Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default);
     Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Sends a chat completion request with tool schemas, allowing the LLM to call tools.
+    /// Default implementation throws <see cref="NotSupportedException"/>.
+    /// </summary>
+    Task<LlmToolCompletionResult> CompleteWithToolsAsync(
+        ChatCompletionRequest request,
+        IReadOnlyList<TaskdeckToolSchema> tools,
+        IReadOnlyList<ToolCallResult>? previousToolResults = null,
+        CancellationToken ct = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support tool calling.");
+    }
 }
 
 public record ChatCompletionRequest(
@@ -55,3 +70,51 @@ public record LlmHealthStatus(
     string? Model = null,
     bool IsMock = false,
     bool IsProbed = false);
+
+// ── Tool-calling types ──────────────────────────────────────────────
+
+/// <summary>
+/// Provider-agnostic tool schema. Defined once in the Application layer and
+/// converted to provider-specific wire format at the boundary.
+/// </summary>
+public record TaskdeckToolSchema(
+    string Name,
+    string Description,
+    JsonElement ParametersSchema,
+    IReadOnlyList<string> Required
+);
+
+/// <summary>
+/// A tool call request returned by the LLM provider (provider-assigned call ID).
+/// </summary>
+public record ToolCallRequest(
+    string CallId,
+    string ToolName,
+    JsonElement Arguments
+);
+
+/// <summary>
+/// The result of executing a tool, sent back to the LLM in a subsequent round.
+/// </summary>
+public record ToolCallResult(
+    string CallId,
+    string ToolName,
+    string Content,
+    bool IsError
+);
+
+/// <summary>
+/// The result of a tool-calling-aware completion request.
+/// When <see cref="IsComplete"/> is false, <see cref="ToolCalls"/> contains
+/// pending tool invocations the orchestrator must execute.
+/// </summary>
+public record LlmToolCompletionResult(
+    string? Content,
+    int TokensUsed,
+    string Provider,
+    string Model,
+    IReadOnlyList<ToolCallRequest>? ToolCalls,
+    bool IsComplete,
+    bool IsDegraded = false,
+    string? DegradedReason = null
+);

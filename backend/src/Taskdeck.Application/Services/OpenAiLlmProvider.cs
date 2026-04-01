@@ -131,6 +131,261 @@ public class OpenAiLlmProvider : ILlmProvider
         }
     }
 
+    public async Task<LlmToolCompletionResult> CompleteWithToolsAsync(
+        ChatCompletionRequest request,
+        IReadOnlyList<TaskdeckToolSchema> tools,
+        IReadOnlyList<ToolCallResult>? previousToolResults = null,
+        CancellationToken ct = default)
+    {
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiSettings(_settings, out var validationError))
+        {
+            _logger.LogWarning("OpenAI provider configuration invalid for tool call: {Error}", validationError);
+            return new LlmToolCompletionResult(
+                Content: "I'm unable to process tool calls right now due to a configuration issue.",
+                TokensUsed: 0, Provider: "OpenAI", Model: GetConfiguredModelOrDefault(),
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Live provider configuration is invalid.");
+        }
+
+        try
+        {
+            using var message = new HttpRequestMessage(HttpMethod.Post, BuildChatCompletionsEndpoint());
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.OpenAi.ApiKey.Trim());
+            LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
+            message.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
+
+            using var response = await _httpClient.SendAsync(message, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("OpenAI tool-calling request failed with status code {StatusCode}.", (int)response.StatusCode);
+                return new LlmToolCompletionResult(
+                    Content: "I encountered an error while processing your request.",
+                    TokensUsed: 0, Provider: "OpenAI", Model: GetConfiguredModelOrDefault(),
+                    ToolCalls: null, IsComplete: true, IsDegraded: true,
+                    DegradedReason: "Live provider request failed.");
+            }
+
+            return ParseToolCallingResponse(body);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("OpenAI tool-calling request failed. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
+            return new LlmToolCompletionResult(
+                Content: "I encountered an unexpected error while processing your request.",
+                TokensUsed: 0, Provider: "OpenAI", Model: GetConfiguredModelOrDefault(),
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Live provider request errored.");
+        }
+    }
+
+    private object BuildToolCallingPayload(
+        ChatCompletionRequest request,
+        IReadOnlyList<TaskdeckToolSchema> tools,
+        IReadOnlyList<ToolCallResult>? previousToolResults)
+    {
+        var messages = new List<object>();
+
+        // System prompt for tool-calling mode
+        var systemPrompt = request.SystemPrompt ?? ToolCallingSystemPrompt.Prompt;
+        if (!string.IsNullOrEmpty(systemPrompt))
+        {
+            messages.Add(new { role = "system", content = systemPrompt });
+        }
+
+        // Conversation messages
+        messages.AddRange(request.Messages.Select(MapMessage));
+
+        // Append previous tool results: OpenAI requires the assistant message
+        // that triggered the tool calls followed by the tool result messages.
+        // We reconstruct the assistant tool_calls message from the results.
+        if (previousToolResults is { Count: > 0 })
+        {
+            // Synthetic assistant message with the tool_calls that produced these results
+            messages.Add(new
+            {
+                role = "assistant",
+                content = (string?)null,
+                tool_calls = previousToolResults.Select(r => new
+                {
+                    id = r.CallId,
+                    type = "function",
+                    function = new
+                    {
+                        name = r.ToolName,
+                        arguments = "{}" // Original args not available; empty is acceptable
+                    }
+                }).ToArray()
+            });
+
+            foreach (var result in previousToolResults)
+            {
+                messages.Add(new
+                {
+                    role = "tool",
+                    tool_call_id = result.CallId,
+                    content = result.Content
+                });
+            }
+        }
+
+        // Convert tool schemas to OpenAI format
+        var openAiTools = tools.Select(t => new
+        {
+            type = "function",
+            function = new
+            {
+                name = t.Name,
+                description = t.Description,
+                parameters = t.ParametersSchema
+            }
+        }).ToArray();
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = _settings.OpenAi.Model.Trim(),
+            ["messages"] = messages.ToArray(),
+            ["max_tokens"] = request.MaxTokens,
+            ["temperature"] = request.Temperature,
+            ["stream"] = false,
+            ["tools"] = openAiTools,
+            ["tool_choice"] = "auto"
+        };
+
+        if (request.Attribution is not null)
+        {
+            payload["user"] = LlmRequestAttributionMapper.BuildUserToken(request.Attribution.UserId);
+        }
+
+        return payload;
+    }
+
+    internal LlmToolCompletionResult ParseToolCallingResponse(string responseBody)
+    {
+        var model = GetConfiguredModelOrDefault();
+
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return new LlmToolCompletionResult(
+                Content: "Received empty response from provider.",
+                TokensUsed: 0, Provider: "OpenAI", Model: model,
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Empty response.");
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(responseBody);
+            var root = json.RootElement;
+
+            if (!root.TryGetProperty("choices", out var choices) ||
+                choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
+            {
+                return new LlmToolCompletionResult(
+                    Content: "Could not parse provider response.",
+                    TokensUsed: 0, Provider: "OpenAI", Model: model,
+                    ToolCalls: null, IsComplete: true, IsDegraded: true,
+                    DegradedReason: "No choices in response.");
+            }
+
+            var first = choices[0];
+            var tokensUsed = 0;
+            if (root.TryGetProperty("usage", out var usage) &&
+                usage.TryGetProperty("total_tokens", out var totalTokens) &&
+                totalTokens.TryGetInt32(out var parsedTokens))
+            {
+                tokensUsed = parsedTokens;
+            }
+
+            // Check finish reason
+            var finishReason = first.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String
+                ? fr.GetString() : null;
+
+            if (!first.TryGetProperty("message", out var message))
+            {
+                return new LlmToolCompletionResult(
+                    Content: "Could not parse provider response message.",
+                    TokensUsed: tokensUsed, Provider: "OpenAI", Model: model,
+                    ToolCalls: null, IsComplete: true, IsDegraded: true,
+                    DegradedReason: "No message in response.");
+            }
+
+            // Check for tool calls
+            if (message.TryGetProperty("tool_calls", out var toolCalls) &&
+                toolCalls.ValueKind == JsonValueKind.Array && toolCalls.GetArrayLength() > 0)
+            {
+                var calls = new List<ToolCallRequest>();
+                foreach (var tc in toolCalls.EnumerateArray())
+                {
+                    var callId = tc.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
+                    var funcName = "";
+                    JsonElement funcArgs;
+
+                    if (tc.TryGetProperty("function", out var func))
+                    {
+                        funcName = func.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
+                        if (func.TryGetProperty("arguments", out var argsEl))
+                        {
+                            // OpenAI returns arguments as a JSON string that needs re-parsing
+                            var argsStr = argsEl.GetString() ?? "{}";
+                            if (string.IsNullOrWhiteSpace(argsStr)) argsStr = "{}";
+                            using var argsDoc = JsonDocument.Parse(argsStr);
+                            funcArgs = argsDoc.RootElement.Clone();
+                        }
+                        else
+                        {
+                            using var emptyDoc = JsonDocument.Parse("{}");
+                            funcArgs = emptyDoc.RootElement.Clone();
+                        }
+                    }
+                    else
+                    {
+                        using var emptyDoc = JsonDocument.Parse("{}");
+                        funcArgs = emptyDoc.RootElement.Clone();
+                    }
+
+                    calls.Add(new ToolCallRequest(callId, funcName, funcArgs));
+                }
+
+                return new LlmToolCompletionResult(
+                    Content: null,
+                    TokensUsed: tokensUsed,
+                    Provider: "OpenAI",
+                    Model: model,
+                    ToolCalls: calls,
+                    IsComplete: false);
+            }
+
+            // No tool calls — this is a final text response
+            var content = message.TryGetProperty("content", out var contentEl)
+                ? contentEl.GetString() ?? ""
+                : "";
+
+            return new LlmToolCompletionResult(
+                Content: content,
+                TokensUsed: tokensUsed,
+                Provider: "OpenAI",
+                Model: model,
+                ToolCalls: null,
+                IsComplete: true);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning("Failed to parse OpenAI tool-calling response: {Message}", ex.Message);
+            return new LlmToolCompletionResult(
+                Content: "Could not parse provider response.",
+                TokensUsed: 0, Provider: "OpenAI", Model: model,
+                ToolCalls: null, IsComplete: true, IsDegraded: true,
+                DegradedReason: "Response parsing failed.");
+        }
+    }
+
     public async IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, [EnumeratorCancellation] CancellationToken ct = default)
     {
         var result = await CompleteAsync(request, ct);
