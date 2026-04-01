@@ -4,8 +4,12 @@ namespace Taskdeck.Application.Services;
 
 public static class LlmIntentClassifier
 {
-    // Timeout to prevent catastrophic backtracking
-    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(100);
+    // Timeout to prevent catastrophic backtracking.
+    // All patterns use bounded quantifiers ({0,4}/{0,6}), so true catastrophic
+    // backtracking is not possible. The timeout is set generously (2 s) to avoid
+    // false RegexMatchTimeoutExceptions on CPU-throttled CI runners while still
+    // guarding against adversarial inputs.
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(2000);
 
     // Negative context patterns — suppress matches in these contexts
     private static readonly Regex NegationPattern = new(
