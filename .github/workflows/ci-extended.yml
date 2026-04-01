@@ -74,6 +74,14 @@ jobs:
     with:
       dotnet-version: 8.0.x
 
+  developer-portal:
+    name: Developer Portal
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'api'))
+    uses: ./.github/workflows/reusable-developer-portal.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+
   backend-solution:
     name: Backend Solution Regression
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
