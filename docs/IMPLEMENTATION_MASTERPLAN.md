@@ -694,8 +694,8 @@ Focus:
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
-- LLM tool-calling architecture spike completed (`#618`); implementation wave seeded: `#647` tracker, `#649`→`#650`→`#651` (read tools → write tools → refinements)
-- MCP server architecture spike completed (`#619`); implementation wave seeded: `#648` tracker, `#652`→`#653`→`#654`→`#655` (prototype → full inventory → HTTP + auth → production hardening)
+- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; remaining: `#650` (write tools + proposals), `#651` (refinements), follow-ups `#672`/`#673`/`#674`
+- MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; remaining: `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
 Exit Criteria:
@@ -766,8 +766,8 @@ Master tracker: `#531`.
   - workspace invitations
   - email notification delivery
   - activity feed per board
-  - LLM tool-calling for chat (`#647`: `#649`→`#650`→`#651`)
-  - MCP server for external agent integration (`#648`: `#652`→`#653`→`#654`)
+  - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → `#650`→`#651`)
+  - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered → `#653`→`#654`)
 
 - `v0.5.0` **Power Up** (target: Week 15-20):
   - platform installers (Inno Setup, DMG, AppImage)
@@ -846,8 +846,8 @@ Master tracker: `#531`.
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
-- Analytics and forecasting: `#77`, `#78`, `#79`
-- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83`, `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
+- Analytics and forecasting: `#77` (delivered — board metrics dashboard, PR `#667`; follow-up `#675`), `#78`, `#79`
+- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83` (delivered — GDPR data portability + account deletion, PR `#666`; follow-ups `#670`, `#671`), `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
 - Frontend premium UI foundations wave: `#242`, `#243` (UI-02 shared primitives delivered), `#244`, `#245` (UI-03 stack spike delivered), `#246`, `#247`, `#248`, `#249`, `#250` (PERF-08 delivered)
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 - Seeded secondary MVP follow-through wave (lower priority than Wave P):
@@ -860,21 +860,21 @@ Master tracker: `#531`.
   - `#336` agent profile/run/event foundation
   - `#337` tool registry, policy evaluator, and first bounded template (delivered)
   - `#339` knowledge document + SQLite FTS foundation
-- Reuse-before-duplicate anchors for this later wave: `#75`, `#77`, `#98`, `#100`, `#216`, `#218`, `#219`, `#328`
-- Seeded LLM tool-calling implementation wave (from completed spike `#618`):
+- Reuse-before-duplicate anchors for this later wave: `#75`, ~~`#77` (delivered — board metrics dashboard, PR `#667`)~~, `#98`, `#100`, `#216`, `#218`, `#219`, `#328`
+- LLM tool-calling implementation wave (from completed spike `#618`):
   - `#647` tracker
-  - `#649` Phase 1: read tools + orchestrator + provider tool-calling extension (1-2 weeks)
+  - ~~`#649` Phase 1: read tools + orchestrator + provider tool-calling extension~~ (delivered 2026-04-01, PR `#669`)
   - `#650` Phase 2: write tools + proposal integration (1-2 weeks)
-  - `#651` Phase 3: refinements — loop detection, cost tracking, feature flag (1 week)
-  - Dependency chain: `#649` → `#650` → `#651`
+  - `#651` Phase 3: refinements — loop detection, cost tracking, feature flag (1 week); also `#672` (double LLM call), `#673` (argument replay), `#674` (strict mode + loop detection)
+  - Dependency chain: ~~`#649`~~ → `#650` → `#651`
   - Unblocks conversational refinement (`#576`) and MCP tool inventory (`#653`)
-- Seeded MCP server implementation wave (from completed spike `#619`):
+- MCP server implementation wave (from completed spike `#619`):
   - `#648` tracker
-  - `#652` Phase 1: minimal prototype — one resource + stdio + Claude Code (3-5 days)
+  - ~~`#652` Phase 1: minimal prototype — one resource + stdio + Claude Code~~ (delivered 2026-04-01, PR `#664`)
   - `#653` Phase 2: full resource + tool inventory (2-3 weeks)
   - `#654` Phase 3: HTTP transport + API key auth (1-2 weeks)
   - `#655` Phase 4: production hardening (deferred to v0.4.0+ demand, `Priority IV`)
-  - Dependency chain: `#652` → `#653` → `#654` → `#655`
+  - Dependency chain: ~~`#652`~~ → `#653` → `#654` → `#655`
   - Phase 2 mirrors LLM tool-calling tool abstractions; shared Application layer services
 
 ### Platform Expansion Wave (2026-03-29 — Priority II)
@@ -883,7 +883,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 
 - Master strategy tracker: `#531`
 - Packaging and distribution wave: `#532` → `#533` (SPA serving), `#534` (build script), `#535` (release workflow), `#536` (first-run config)
-- Cloud and collaboration wave: `#537` → `#538` (cloud deploy), `#539` (GitHub OAuth — delivered)
+- Cloud and collaboration wave: `#537` → `#538` (cloud deploy), ~~`#539` (GitHub OAuth — delivered, PR `#668`)~~; follow-up: `#676` (distributed auth code store, PKCE, account linking)
 - Mobile platform wave: `#540` → `#541` (PWA manifest), `#542` (service worker), `#543` (mobile responsive)
 - Market adoption and GTM wave: `#544` → `#545` (README polish), `#546` (demo video), `#547` (LICENSE)
 - Cross-cutting: `#548` (legal/privacy), `#549` (analytics/error tracking), `#550` (brand/domain)
@@ -966,7 +966,7 @@ Outstanding strategy-level gap to monitor:
 1. Stage A (Priority II): tenant-context collaboration foundations and isolation semantics alignment (`#72`, `#73`, `#74`, `#75`, `#76` delivered).
 2. Stage B (Priority IV): platform data-plane evolution for multi-tenant readiness (`#84`, `#85`).
 3. Stage C (Priority IV): tenant-aware DR, rollout, and topology governance (`#86`, `#101`, `#111`).
-4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81` delivered; `#82`, `#83`, `#110` pending).
+4. Stage D (Priority III): security/compliance controls that reinforce tenant boundaries (`#80`, `#81` delivered; `#82`, `#83` delivered, `#110` pending).
 
 
 ## Prepackaged Starter States Track (Roadmap Additions)
