@@ -89,7 +89,7 @@ PowerShell (Windows):
 ```powershell
 # Create a daily backup task
 $action  = New-ScheduledTaskAction -Execute "pwsh.exe" `
-             -Argument "-NonInteractive -File C:\taskdeck\scripts\backup.ps1 -Yes"
+             -Argument "-NonInteractive -File C:\taskdeck\scripts\backup.ps1"
 $trigger = New-ScheduledTaskTrigger -Daily -At "02:00"
 Register-ScheduledTask -TaskName "Taskdeck-Daily-Backup" `
   -Action $action -Trigger $trigger -RunLevel Highest

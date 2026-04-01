@@ -43,8 +43,8 @@ $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($DbPath)) {
     $csEnv = $env:ConnectionStrings__DefaultConnection
     if (-not [string]::IsNullOrWhiteSpace($csEnv)) {
-        # Parse "Data Source=/path/to/taskdeck.db"
-        $DbPath = ($csEnv -replace '^(?i)data\s+source\s*=\s*', '').Trim()
+        # Parse "Data Source=/path/to/taskdeck.db" (handles extra parameters like ";Pooling=true")
+        $DbPath = ($csEnv -split ';' | Where-Object { $_ -match 'Data Source=' } | ForEach-Object { $_ -replace '.*Data Source=', '' }).Trim()
     } elseif (-not [string]::IsNullOrWhiteSpace($env:TASKDECK_DB_PATH)) {
         $DbPath = $env:TASKDECK_DB_PATH
     } else {
@@ -106,7 +106,8 @@ $Sqlite3 = Get-Command sqlite3.exe -ErrorAction SilentlyContinue
 if ($Sqlite3) {
     # sqlite3 .backup is a hot backup: copies pages under a shared lock,
     # flushing WAL frames first. Safe with active readers and writers.
-    & $Sqlite3.Source $DbPath ".backup '$BackupFile'"
+    $SafeBackupFile = $BackupFile -replace "'", "''"
+    & $Sqlite3.Source $DbPath ".backup '$SafeBackupFile'"
     if ($LASTEXITCODE -ne 0) {
         Write-Error "sqlite3 .backup failed (exit code $LASTEXITCODE)."
     }

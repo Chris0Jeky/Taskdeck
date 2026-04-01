@@ -29,8 +29,6 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 DEFAULT_DB_PATH="${HOME}/.taskdeck/taskdeck.db"
 DEFAULT_OUTPUT_DIR="${HOME}/.taskdeck/backups"
 DEFAULT_RETAIN=7
@@ -75,9 +73,9 @@ done
 # Resolve DB path
 # ---------------------------------------------------------------------------
 if [[ -z "$DB_PATH" ]]; then
-    # Try to extract from the ConnectionStrings env var (e.g. "Data Source=/app/data/taskdeck.db")
+    # Try to extract from the ConnectionStrings env var (e.g. "Data Source=/app/data/taskdeck.db;Pooling=true")
     if [[ -n "${ConnectionStrings__DefaultConnection:-}" ]]; then
-        DB_PATH="${ConnectionStrings__DefaultConnection#*=}"
+        DB_PATH=$(echo "${ConnectionStrings__DefaultConnection}" | sed -n 's/.*Data Source=\([^;]*\).*/\1/p')
     elif [[ -n "${TASKDECK_DB_PATH:-}" ]]; then
         DB_PATH="$TASKDECK_DB_PATH"
     else
@@ -140,7 +138,8 @@ if command -v sqlite3 &>/dev/null; then
     # sqlite3 .backup is a hot backup: it copies pages under an SQLite shared
     # lock, flushing any pending WAL frames first. Safe with active readers and
     # writers — the output is a consistent snapshot.
-    sqlite3 "$DB_PATH" ".backup '${BACKUP_FILE}'"
+    SAFE_BACKUP_FILE="${BACKUP_FILE//\'/\'\'}"
+    sqlite3 "$DB_PATH" ".backup '${SAFE_BACKUP_FILE}'"
     echo "Method: sqlite3 hot backup (safe with active writers)"
 else
     echo "WARNING: sqlite3 not found. Falling back to cp." >&2
@@ -170,12 +169,14 @@ echo "Backup written: $BACKUP_FILE"
 # ---------------------------------------------------------------------------
 # Retention: keep only the N most-recent backups; delete older ones
 # ---------------------------------------------------------------------------
-# List backups sorted oldest-first; delete all but the last $RETAIN entries.
+# List backups sorted newest-first (ls -t); delete all but the first $RETAIN entries.
 # The glob is intentionally narrow (taskdeck-backup-*.db) to avoid touching
 # files not managed by this script.
-mapfile -t ALL_BACKUPS < <(
-    ls -1t "${OUTPUT_DIR}/taskdeck-backup-"*.db 2>/dev/null
-)
+# Uses a while-read loop instead of mapfile for macOS Bash 3.2 compatibility.
+ALL_BACKUPS=()
+while IFS= read -r line; do
+    ALL_BACKUPS+=("$line")
+done < <(ls -1t "${OUTPUT_DIR}/taskdeck-backup-"*.db 2>/dev/null)
 
 TOTAL="${#ALL_BACKUPS[@]}"
 if [[ "$TOTAL" -gt "$RETAIN" ]]; then

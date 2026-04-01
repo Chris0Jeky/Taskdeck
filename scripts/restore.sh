@@ -28,8 +28,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
@@ -96,7 +94,7 @@ fi
 # ---------------------------------------------------------------------------
 if [[ -z "$DB_PATH" ]]; then
     if [[ -n "${ConnectionStrings__DefaultConnection:-}" ]]; then
-        DB_PATH="${ConnectionStrings__DefaultConnection#*=}"
+        DB_PATH=$(echo "${ConnectionStrings__DefaultConnection}" | sed -n 's/.*Data Source=\([^;]*\).*/\1/p')
     elif [[ -n "${TASKDECK_DB_PATH:-}" ]]; then
         DB_PATH="$TASKDECK_DB_PATH"
     else
@@ -133,7 +131,8 @@ fi
 # ---------------------------------------------------------------------------
 echo "Verifying backup file: $BACKUP_FILE"
 
-# Check SQLite magic bytes: first 16 bytes must be "SQLite format 3\000"
+# Check SQLite magic bytes: first 15 bytes must be "SQLite format 3" (the full
+# header is 16 bytes including the null terminator, but we compare the text only)
 MAGIC_EXPECTED="53514c69746520666f726d61742033"
 MAGIC_ACTUAL="$(dd if="$BACKUP_FILE" bs=1 count=15 2>/dev/null | xxd -p 2>/dev/null || true)"
 
@@ -221,7 +220,8 @@ TIMESTAMP="$(date -u '+%Y-%m-%d-%H%M%S')"
 if [[ -f "$DB_PATH" ]]; then
     SAFETY_FILE="${SAFETY_DIR}/taskdeck-pre-restore-${TIMESTAMP}.db"
     if command -v sqlite3 &>/dev/null; then
-        sqlite3 "$DB_PATH" ".backup '${SAFETY_FILE}'"
+        SAFE_SAFETY_FILE="${SAFETY_FILE//\'/\'\'}"
+        sqlite3 "$DB_PATH" ".backup '${SAFE_SAFETY_FILE}'"
     else
         cp "$DB_PATH" "$SAFETY_FILE"
     fi
@@ -239,7 +239,8 @@ mkdir -p "$DB_DIR"
 
 if command -v sqlite3 &>/dev/null; then
     # Use sqlite3 .restore to write a clean, consistent database image
-    sqlite3 "$DB_PATH" ".restore '${BACKUP_FILE}'"
+    SAFE_BACKUP_FILE="${BACKUP_FILE//\'/\'\'}"
+    sqlite3 "$DB_PATH" ".restore '${SAFE_BACKUP_FILE}'"
 else
     cp "$BACKUP_FILE" "$DB_PATH"
 fi

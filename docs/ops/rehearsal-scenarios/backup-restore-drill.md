@@ -79,12 +79,15 @@ docker compose -f deploy/docker-compose.yml --profile baseline stop api
 # 3. Corrupt or delete the volume database (from host):
 docker run --rm -v taskdeck_taskdeck-db:/data alpine:3 rm /data/taskdeck.db
 
-# 4. Restore via the restore script (exec into a temp container)
+# 4. Restore via the restore script (exec into a temp container with bash + sqlite3)
 docker run --rm \
   -v taskdeck_taskdeck-db:/data \
   -v "$(pwd):/repo" \
+  --workdir /repo \
   alpine:3 \
-  sh -c "cp /data/backups/taskdeck-backup-<timestamp>.db /data/taskdeck.db"
+  sh -c "apk add --no-cache bash sqlite && bash scripts/restore.sh \
+    --backup-file /data/backups/taskdeck-backup-<timestamp>.db \
+    --db-path /data/taskdeck.db --yes"
 ```
 
 ## Expected Diagnosis Path

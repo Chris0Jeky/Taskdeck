@@ -57,7 +57,7 @@ if (-not (Test-Path $BackupFile -PathType Leaf)) {
 if ([string]::IsNullOrWhiteSpace($DbPath)) {
     $csEnv = $env:ConnectionStrings__DefaultConnection
     if (-not [string]::IsNullOrWhiteSpace($csEnv)) {
-        $DbPath = ($csEnv -replace '^(?i)data\s+source\s*=\s*', '').Trim()
+        $DbPath = ($csEnv -split ';' | Where-Object { $_ -match 'Data Source=' } | ForEach-Object { $_ -replace '.*Data Source=', '' }).Trim()
     } elseif (-not [string]::IsNullOrWhiteSpace($env:TASKDECK_DB_PATH)) {
         $DbPath = $env:TASKDECK_DB_PATH
     } else {
@@ -82,17 +82,22 @@ if ([string]::IsNullOrWhiteSpace($SafetyDir)) {
 # ---------------------------------------------------------------------------
 Write-Host "Verifying backup file: $BackupFile"
 
-# Check SQLite magic bytes (first 16 bytes = "SQLite format 3\0")
+# Check SQLite magic bytes: first 15 bytes must be "SQLite format 3" (the full
+# header is 16 bytes including the null terminator, but we compare the text only)
 $SqliteMagic = [System.Text.Encoding]::ASCII.GetBytes("SQLite format 3")
-$FileBytes   = [System.IO.File]::ReadAllBytes($BackupFile)
 
-if ($FileBytes.Length -lt 16) {
+# Read only the first 16 bytes instead of the entire file
+$HeaderBytes = [byte[]]::new(16)
+$stream = [System.IO.File]::OpenRead($BackupFile)
+try { [void]$stream.Read($HeaderBytes, 0, 16) } finally { $stream.Close() }
+
+if ((Get-Item $BackupFile).Length -lt 16) {
     Write-Error "Backup file is too small to be a valid SQLite database."
 }
 
 $MagicMatch = $true
 for ($i = 0; $i -lt $SqliteMagic.Length; $i++) {
-    if ($FileBytes[$i] -ne $SqliteMagic[$i]) {
+    if ($HeaderBytes[$i] -ne $SqliteMagic[$i]) {
         $MagicMatch = $false
         break
     }
@@ -161,7 +166,8 @@ $SafetyFile = $null
 if (Test-Path $DbPath -PathType Leaf) {
     $SafetyFile = Join-Path $SafetyDir "taskdeck-pre-restore-$Timestamp.db"
     if ($Sqlite3) {
-        & $Sqlite3.Source $DbPath ".backup '$SafetyFile'"
+        $SafeSafetyFile = $SafetyFile -replace "'", "''"
+        & $Sqlite3.Source $DbPath ".backup '$SafeSafetyFile'"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to create safety copy (sqlite3 exit code $LASTEXITCODE)."
         }
@@ -196,7 +202,8 @@ if (-not (Test-Path $DbDir)) {
 }
 
 if ($Sqlite3) {
-    & $Sqlite3.Source $DbPath ".restore '$BackupFile'"
+    $SafeBackupFile = $BackupFile -replace "'", "''"
+    & $Sqlite3.Source $DbPath ".restore '$SafeBackupFile'"
     if ($LASTEXITCODE -ne 0) {
         Write-Error "sqlite3 .restore failed (exit code $LASTEXITCODE). Safety copy: $SafetyFile"
     }
