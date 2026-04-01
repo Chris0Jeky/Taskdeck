@@ -10,10 +10,11 @@ public interface IUserContextProvider
     /// Returns the current user's ID.
     /// Throws <see cref="InvalidOperationException"/> if no user can be resolved.
     /// </summary>
-    Guid GetCurrentUserId();
+    Task<Guid> GetCurrentUserIdAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Attempts to resolve the current user's ID without throwing.
+    /// Returns null when no user can be resolved.
     /// </summary>
-    bool TryGetCurrentUserId(out Guid userId);
+    Task<Guid?> GetUserIdAsync(CancellationToken cancellationToken = default);
 }
