@@ -144,8 +144,11 @@ if command -v sqlite3 &>/dev/null; then
 else
     echo "WARNING: sqlite3 not found. Falling back to cp." >&2
     echo "WARNING: cp is NOT safe if the database has active writers." >&2
+    echo "WARNING: For WAL-mode databases the backup may be incomplete without the -wal file." >&2
     echo "         Install sqlite3 for production use." >&2
     cp "$DB_PATH" "$BACKUP_FILE"
+    # Copy WAL file if it exists so the backup is usable for WAL-mode databases
+    [ -f "${DB_PATH}-wal" ] && cp "${DB_PATH}-wal" "${BACKUP_FILE}-wal"
 fi
 
 # Restrict backup file permissions (owner read/write only)
