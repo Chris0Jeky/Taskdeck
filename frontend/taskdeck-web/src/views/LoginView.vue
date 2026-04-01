@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '../store/sessionStore'
+import { authApi } from '../api/authApi'
 import { sanitizeInternalRedirect } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
 
@@ -13,6 +14,8 @@ const username = ref('')
 const password = ref('')
 const formError = ref<string | null>(null)
 const submitting = ref(false)
+const githubAvailable = ref(false)
+const oauthExchanging = ref(false)
 
 function navigateAfterLogin() {
   const redirectRaw = (route.query.redirect as string) || '/workspace/home'
@@ -41,6 +44,48 @@ async function handleSubmit() {
     submitting.value = false
   }
 }
+
+function startGitHubLogin() {
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+  const returnUrl = route.query.redirect
+    ? `/login?redirect=${encodeURIComponent(route.query.redirect as string)}`
+    : '/login'
+  window.location.href = `${apiBase}/auth/github/login?returnUrl=${encodeURIComponent(returnUrl)}`
+}
+
+async function handleOAuthCode(code: string) {
+  oauthExchanging.value = true
+  formError.value = null
+  try {
+    await session.exchangeOAuthCode(code)
+    navigateAfterLogin()
+  } catch {
+    formError.value = session.error || 'GitHub sign-in failed. Please try again.'
+  } finally {
+    oauthExchanging.value = false
+  }
+}
+
+onMounted(async () => {
+  // Check for OAuth code in query params (returned from GitHub callback)
+  const oauthCode = route.query.oauth_code as string | undefined
+  if (oauthCode) {
+    // Clean the code from the URL to prevent reuse on refresh
+    router.replace({ path: route.path, query: { ...route.query, oauth_code: undefined } })
+    await handleOAuthCode(oauthCode)
+    return
+  }
+
+  // Check if GitHub OAuth is available (non-blocking)
+  if (!isDemoMode) {
+    try {
+      const providers = await authApi.getProviders()
+      githubAvailable.value = providers.gitHub === true
+    } catch {
+      // Silently ignore — GitHub button simply won't appear
+    }
+  }
+})
 </script>
 
 <template>
@@ -58,46 +103,72 @@ async function handleSubmit() {
       </div>
 
       <template v-if="!isDemoMode">
-        <form @submit.prevent="handleSubmit" class="td-auth-form">
-          <div v-if="formError" class="td-auth-error" role="alert">
-            {{ formError }}
+        <div v-if="oauthExchanging" class="td-oauth-exchanging">
+          <p>Completing GitHub sign-in...</p>
+        </div>
+
+        <template v-else>
+          <div v-if="githubAvailable" class="td-oauth-section">
+            <button
+              type="button"
+              class="td-btn td-btn--github"
+              @click="startGitHubLogin"
+              :disabled="submitting"
+            >
+              <svg class="td-github-icon" viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+                <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+              </svg>
+              Sign in with GitHub
+            </button>
+
+            <div class="td-auth-divider">
+              <span class="td-auth-divider__line"></span>
+              <span class="td-auth-divider__text">or</span>
+              <span class="td-auth-divider__line"></span>
+            </div>
           </div>
 
-          <div class="td-form-group">
-            <label for="login-username" class="td-label">Username or Email</label>
-            <input
-              id="login-username"
-              v-model="username"
-              type="text"
-              class="td-input"
-              placeholder="Enter your username or email"
-              autocomplete="username"
-              required
-            />
-          </div>
+          <form @submit.prevent="handleSubmit" class="td-auth-form">
+            <div v-if="formError" class="td-auth-error" role="alert">
+              {{ formError }}
+            </div>
 
-          <div class="td-form-group">
-            <label for="login-password" class="td-label">Password</label>
-            <input
-              id="login-password"
-              v-model="password"
-              type="password"
-              class="td-input"
-              placeholder="Enter your password"
-              autocomplete="current-password"
-              required
-            />
-          </div>
+            <div class="td-form-group">
+              <label for="login-username" class="td-label">Username or Email</label>
+              <input
+                id="login-username"
+                v-model="username"
+                type="text"
+                class="td-input"
+                placeholder="Enter your username or email"
+                autocomplete="username"
+                required
+              />
+            </div>
 
-          <button type="submit" class="td-btn td-btn--primary" :disabled="submitting">
-            {{ submitting ? 'Signing in...' : 'Sign in' }}
-          </button>
-        </form>
+            <div class="td-form-group">
+              <label for="login-password" class="td-label">Password</label>
+              <input
+                id="login-password"
+                v-model="password"
+                type="password"
+                class="td-input"
+                placeholder="Enter your password"
+                autocomplete="current-password"
+                required
+              />
+            </div>
 
-        <p class="td-auth-footer">
-          Don't have an account?
-          <router-link to="/register" class="td-link">Register</router-link>
-        </p>
+            <button type="submit" class="td-btn td-btn--primary" :disabled="submitting">
+              {{ submitting ? 'Signing in...' : 'Sign in' }}
+            </button>
+          </form>
+
+          <p class="td-auth-footer">
+            Don't have an account?
+            <router-link to="/register" class="td-link">Register</router-link>
+          </p>
+        </template>
       </template>
     </div>
   </div>
@@ -220,6 +291,68 @@ async function handleSubmit() {
 .td-link:hover {
   text-decoration: underline;
   color: var(--td-color-ember-glow);
+}
+
+.td-oauth-exchanging {
+  text-align: center;
+  padding: var(--td-space-6) 0;
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-base);
+}
+
+.td-oauth-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-4);
+  margin-bottom: var(--td-space-2);
+}
+
+.td-btn--github {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--td-space-2);
+  width: 100%;
+  padding: var(--td-space-2) var(--td-space-4);
+  background: #24292f;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--td-radius-md);
+  font-size: var(--td-font-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--td-transition-fast);
+}
+
+.td-btn--github:hover:not(:disabled) {
+  background: #2f363d;
+}
+
+.td-btn--github:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.td-github-icon {
+  flex-shrink: 0;
+}
+
+.td-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+}
+
+.td-auth-divider__line {
+  flex: 1;
+  height: 1px;
+  background: var(--td-border-default);
+}
+
+.td-auth-divider__text {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-tertiary);
+  text-transform: lowercase;
 }
 
 .td-demo-entry {
