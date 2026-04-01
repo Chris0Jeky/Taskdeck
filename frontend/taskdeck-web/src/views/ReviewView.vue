@@ -1295,8 +1295,8 @@ watch(
   z-index: 2;
   background: var(--td-surface-container-low);
   padding-block: var(--td-space-2);
-  margin-inline: calc(-1 * var(--td-space-5, 1.25rem));
-  padding-inline: var(--td-space-5, 1.25rem);
+  margin-inline: calc(-1 * var(--td-space-5));
+  padding-inline: var(--td-space-5);
   border-top: 1px solid var(--td-border-ghost);
 }
 
@@ -1469,8 +1469,8 @@ watch(
   .td-review-card__actions {
     flex-direction: column;
     align-items: stretch;
-    margin-inline: calc(-1 * var(--td-space-4, 1rem));
-    padding-inline: var(--td-space-4, 1rem);
+    margin-inline: calc(-1 * var(--td-space-4));
+    padding-inline: var(--td-space-4);
   }
 
   .td-review-card__actions .td-btn {
