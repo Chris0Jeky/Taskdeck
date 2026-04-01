@@ -79,6 +79,7 @@ Available scenarios in `docs/ops/rehearsal-scenarios/`:
 - `missing-telemetry-signal.md` -- Correlation ID missing from OpenTelemetry traces
 - `mcp-server-startup-regression.md` -- Optional MCP server fails at boot
 - `deployment-readiness-failure.md` -- Docker Compose startup fails readiness checks
+- `backup-restore-drill.md` -- Full backup and restore loop; validates scripts, integrity checks, and RTO target
 
 New scenarios should follow the same template structure (pre-conditions, injection, diagnosis, recovery, evidence checklist). File them in the `rehearsal-scenarios/` directory with a descriptive kebab-case filename.
 
