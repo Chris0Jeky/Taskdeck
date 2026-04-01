@@ -242,7 +242,9 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Approved, ready to apply')
     expect(wrapper.text()).toContain('Approve for board')
     expect(wrapper.text()).toContain('Apply to board')
-    expect(wrapper.text()).toContain('Changes stay in review until you approve them.')
+    // Two-step flow indicator replaces the old inline action cue
+    expect(wrapper.text()).toContain('Approve')
+    expect(wrapper.text()).toContain('Apply to board')
 
     // Applied proposals hidden by default (showCompleted is off)
     expect(wrapper.text()).not.toContain('Applied to board')
