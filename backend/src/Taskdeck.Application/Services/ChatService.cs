@@ -194,7 +194,11 @@ public class ChatService : IChatService
             {
                 var usedToolCalling = false;
 
-                // Try tool-calling path for board-scoped sessions with orchestrator
+                // Try tool-calling path for board-scoped sessions with orchestrator.
+                // Only use the tool-calling result when the orchestrator actually called
+                // tools (ToolCallLog is not empty). If the LLM responded with plain text
+                // without calling any tools, fall through to the single-turn path which
+                // handles proposal creation from the user's intent.
                 if (_toolCallingOrchestrator != null && session.BoardId.HasValue)
                 {
                     var toolChatMessages = session.Messages
@@ -209,8 +213,15 @@ public class ChatService : IChatService
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
                         toolCompletionRequest, session.BoardId.Value, ct);
 
-                    // If tool calling fully degraded (no content), fall through to single-turn
-                    if (!(toolResult.IsDegraded && toolResult.Content == null))
+                    // Use tool-calling result only when tools were actually invoked.
+                    // A degraded result with null content means the orchestrator couldn't
+                    // even start (e.g., provider doesn't support tools); a result with
+                    // no tool calls means the LLM chose to answer directly, which should
+                    // still go through proposal creation.
+                    var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
+                    var toolCallingUsable = !toolResult.IsDegraded || toolResult.Content != null;
+
+                    if (toolCallsActuallyMade && toolCallingUsable)
                     {
                         usedToolCalling = true;
                         assistantContent = toolResult.Content ?? "";
