@@ -26,6 +26,13 @@ jobs:
     with:
       dotnet-version: 8.0.x
 
+  developer-portal:
+    name: Developer Portal
+    uses: ./.github/workflows/reusable-developer-portal.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+
   backend-solution:
     name: Backend Solution Regression
     uses: ./.github/workflows/reusable-backend-solution.yml
