@@ -449,4 +449,85 @@ describe('LabelManagerModal', () => {
     expect(wrapper.text()).toContain('No labels yet')
     expect(wrapper.text()).toContain('Create your first label to get started')
   })
+
+  it('should use dark-theme design-token classes instead of hardcoded light-theme classes', () => {
+    const wrapper = mount(LabelManagerModal, {
+      props: {
+        isOpen: true,
+        boardId: 'board-1',
+        labels,
+      },
+    })
+
+    const html = wrapper.html()
+
+    // Must NOT contain hardcoded light-theme Tailwind classes
+    const lightThemePatterns = [
+      'bg-white',
+      'text-gray-900',
+      'text-gray-700',
+      'text-gray-600',
+      'text-gray-500',
+      'text-gray-400',
+      'border-gray-200',
+      'border-gray-300',
+      'bg-gray-50',
+      'bg-gray-100',
+      'bg-blue-600',
+      'bg-blue-700',
+      'text-blue-600',
+      'border-blue-300',
+      'ring-blue-500',
+      'ring-gray-900',
+    ]
+
+    for (const pattern of lightThemePatterns) {
+      expect(html).not.toContain(pattern)
+    }
+
+    // Must contain dark-theme design-token classes
+    const darkThemePatterns = [
+      'bg-surface-container',
+      'text-on-surface',
+      'border-outline-variant',
+    ]
+
+    for (const pattern of darkThemePatterns) {
+      expect(html).toContain(pattern)
+    }
+  })
+
+  it('should use dark-theme classes in the label form', async () => {
+    const wrapper = mount(LabelManagerModal, {
+      props: {
+        isOpen: true,
+        boardId: 'board-1',
+        labels: [],
+      },
+    })
+
+    // Show create form
+    const createButton = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Create New Label'))
+    await createButton?.trigger('click')
+
+    await wrapper.vm.$nextTick()
+
+    const html = wrapper.html()
+
+    // Form section uses dark-theme background
+    expect(html).toContain('bg-surface-container-high')
+
+    // Input uses dark-theme styling
+    const nameInput = wrapper.find('#label-name')
+    const inputClasses = nameInput.classes().join(' ')
+    expect(inputClasses).toContain('bg-surface-container-high')
+    expect(inputClasses).toContain('text-on-surface')
+    expect(inputClasses).toContain('border-outline-variant')
+
+    // No light-theme input classes remain
+    expect(inputClasses).not.toContain('border-gray')
+    expect(inputClasses).not.toContain('ring-blue')
+  })
 })
