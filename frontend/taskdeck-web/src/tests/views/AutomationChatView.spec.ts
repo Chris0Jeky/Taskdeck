@@ -183,6 +183,8 @@ describe('AutomationChatView', () => {
       errorMessage: null,
       model: 'mock-default',
       isMock: true,
+      isProbed: false,
+      verificationStatus: 'unverified',
     })
     mocks.getBoards.mockResolvedValue([
       {
@@ -263,6 +265,8 @@ describe('AutomationChatView', () => {
       errorMessage: null,
       model: 'gemini-2.5-flash',
       isMock: false,
+      isProbed: false,
+      verificationStatus: 'unverified',
     })
 
     const wrapper = mountView()
@@ -282,6 +286,7 @@ describe('AutomationChatView', () => {
       model: 'gpt-4o-mini',
       isMock: false,
       isProbed: true,
+      verificationStatus: 'verified',
     })
 
     const wrapper = mountView()
@@ -290,6 +295,44 @@ describe('AutomationChatView', () => {
     expect(wrapper.text()).toContain('Live LLM verified')
     expect(wrapper.text()).toContain('probe confirmed reachability')
     expect(wrapper.get('[data-llm-health-state="verified"]').exists()).toBe(true)
+  })
+
+  it('shows a failed banner when probe confirms provider is unreachable', async () => {
+    mocks.getHealth.mockResolvedValue({
+      isAvailable: false,
+      providerName: 'OpenAI',
+      errorMessage: 'Connection refused',
+      model: 'gpt-4o-mini',
+      isMock: false,
+      isProbed: true,
+      verificationStatus: 'failed',
+    })
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('LLM verification failed')
+    expect(wrapper.text()).toContain('OpenAI (gpt-4o-mini) verification failed: Connection refused')
+    expect(wrapper.get('[data-llm-health-state="failed"]').exists()).toBe(true)
+  })
+
+  it('shows failed banner with generic message when no error detail is provided', async () => {
+    mocks.getHealth.mockResolvedValue({
+      isAvailable: false,
+      providerName: 'Gemini',
+      errorMessage: null,
+      model: 'gemini-2.5-flash',
+      isMock: false,
+      isProbed: true,
+      verificationStatus: 'failed',
+    })
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).toContain('LLM verification failed')
+    expect(wrapper.text()).toContain('verification failed. The probe could not confirm reachability.')
+    expect(wrapper.get('[data-llm-health-state="failed"]').exists()).toBe(true)
   })
 
   it('renders degraded messages with warning styling and reason', async () => {
@@ -355,6 +398,7 @@ describe('AutomationChatView', () => {
       model: 'gpt-4o-mini',
       isMock: false,
       isProbed: true,
+      verificationStatus: 'verified',
     })
 
     const verifyBtn = findButtonByText(wrapper, 'Verify LLM')
