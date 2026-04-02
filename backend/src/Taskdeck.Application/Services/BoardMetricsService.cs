@@ -57,15 +57,8 @@ public class BoardMetricsService : IBoardMetricsService
         if (board == null)
             return Result.Failure<BoardMetricsResponse>(ErrorCodes.NotFound, "Board not found");
 
-        // Load columns and cards for the board
+        // Load columns (always lightweight — small number per board)
         var columns = (await _unitOfWork.Columns.GetByBoardIdAsync(query.BoardId, cancellationToken)).ToList();
-        var cards = (await _unitOfWork.Cards.GetByBoardIdAsync(query.BoardId, cancellationToken)).ToList();
-
-        // Filter by label if requested
-        if (query.LabelId.HasValue)
-        {
-            cards = cards.Where(c => c.CardLabels.Any(cl => cl.LabelId == query.LabelId.Value)).ToList();
-        }
 
         // Determine the "done" column: prefer a column whose name matches known done patterns,
         // fall back to the rightmost column by position.
@@ -74,19 +67,64 @@ public class BoardMetricsService : IBoardMetricsService
         // Load audit logs for card moves in this board to determine actual completion timestamps
         var cardMoveAudits = await LoadCardMoveAuditsAsync(query.BoardId, query.From, query.To, cancellationToken);
 
-        var throughput = ComputeThroughput(cards, doneColumn, query.From, query.To, cardMoveAudits);
-        var (avgCycleTime, cycleTimeEntries) = ComputeCycleTime(cards, doneColumn, query.From, query.To, cardMoveAudits);
-        var wipSnapshots = ComputeWip(columns, cards);
+        // SQL-level WIP: count cards per column without loading card entities
+        var columnCounts = await _unitOfWork.Cards.CountCardsByColumnAsync(
+            query.BoardId, query.LabelId, cancellationToken);
+        var wipSnapshots = ComputeWipFromCounts(columns, columnCounts);
         var totalWip = wipSnapshots.Sum(w => w.CardCount);
-        var (blockedCount, blockedCards) = ComputeBlocked(cards);
 
+        // SQL-level blocked cards: only load blocked cards, not the entire board
+        var blockedCardEntities = (await _unitOfWork.Cards.GetBlockedByBoardIdAsync(
+            query.BoardId, query.LabelId, cancellationToken)).ToList();
+        var (blockedCount, blockedCards) = ComputeBlocked(blockedCardEntities);
+
+        // For throughput and cycle time, only load cards actually needed:
+        // 1. Cards referenced by audit move logs (for CreatedAt in cycle time computation)
+        // 2. Cards currently in the done column within date range (for fallback path)
+        // This avoids loading the entire board into memory.
+        var auditCardIds = cardMoveAudits.Keys.ToHashSet();
+
+        if (doneColumn != null)
+        {
+            // Load only the specific cards needed for throughput/cycle time
+            var relevantCards = (await _unitOfWork.Cards.GetForMetricsAsync(
+                query.BoardId, query.LabelId, auditCardIds, cancellationToken)).ToList();
+
+            // Also load done-column cards in date range for fallback (only if no audit data)
+            if (auditCardIds.Count == 0)
+            {
+                // Fallback: load cards in the done column within date range
+                var fallbackCards = (await _unitOfWork.Cards.GetForMetricsAsync(
+                    query.BoardId, query.LabelId, cancellationToken: cancellationToken)).ToList();
+                relevantCards = fallbackCards
+                    .Where(c => c.ColumnId == doneColumn.Id && c.UpdatedAt >= query.From && c.UpdatedAt <= query.To)
+                    .ToList();
+            }
+
+            var throughput = ComputeThroughput(relevantCards, doneColumn, query.From, query.To, cardMoveAudits);
+            var (avgCycleTime, cycleTimeEntries) = ComputeCycleTime(relevantCards, doneColumn, query.From, query.To, cardMoveAudits);
+
+            return Result.Success(new BoardMetricsResponse(
+                query.BoardId,
+                query.From,
+                query.To,
+                throughput,
+                avgCycleTime,
+                cycleTimeEntries,
+                wipSnapshots,
+                totalWip,
+                blockedCount,
+                blockedCards));
+        }
+
+        // No done column — throughput and cycle time are empty
         return Result.Success(new BoardMetricsResponse(
             query.BoardId,
             query.From,
             query.To,
-            throughput,
-            avgCycleTime,
-            cycleTimeEntries,
+            Array.Empty<ThroughputDataPoint>(),
+            0,
+            Array.Empty<CycleTimeEntry>(),
             wipSnapshots,
             totalWip,
             blockedCount,
@@ -272,6 +310,26 @@ public class BoardMetricsService : IBoardMetricsService
                 col.Id,
                 col.Name,
                 cards.Count(c => c.ColumnId == col.Id),
+                col.WipLimit))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Compute WIP snapshots from pre-aggregated SQL-level column counts,
+    /// avoiding loading all card entities into memory.
+    /// </summary>
+    internal static IReadOnlyList<WipSnapshot> ComputeWipFromCounts(
+        List<Column> columns,
+        IReadOnlyList<(Guid ColumnId, int CardCount)> columnCounts)
+    {
+        var countLookup = columnCounts.ToDictionary(c => c.ColumnId, c => c.CardCount);
+
+        return columns
+            .OrderBy(c => c.Position)
+            .Select(col => new WipSnapshot(
+                col.Id,
+                col.Name,
+                countLookup.GetValueOrDefault(col.Id, 0),
                 col.WipLimit))
             .ToList();
     }

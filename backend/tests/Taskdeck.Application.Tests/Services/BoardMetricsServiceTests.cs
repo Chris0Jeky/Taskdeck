@@ -434,6 +434,58 @@ public class BoardMetricsServiceTests
 
     #endregion
 
+    #region ComputeWipFromCounts Tests
+
+    [Fact]
+    public void ComputeWipFromCounts_ShouldMapCountsToColumns()
+    {
+        var col1 = CreateColumn("A", 0);
+        var col2 = CreateColumn("B", 1);
+        var counts = new List<(Guid ColumnId, int CardCount)>
+        {
+            (col1.Id, 5),
+            (col2.Id, 3),
+        };
+
+        var result = BoardMetricsService.ComputeWipFromCounts(
+            new List<Column> { col1, col2 }, counts);
+
+        result.Should().HaveCount(2);
+        result[0].CardCount.Should().Be(5);
+        result[1].CardCount.Should().Be(3);
+    }
+
+    [Fact]
+    public void ComputeWipFromCounts_ShouldReturnZero_ForMissingColumns()
+    {
+        var col1 = CreateColumn("A", 0);
+        var col2 = CreateColumn("B", 1);
+        // Only col1 has cards
+        var counts = new List<(Guid ColumnId, int CardCount)>
+        {
+            (col1.Id, 2),
+        };
+
+        var result = BoardMetricsService.ComputeWipFromCounts(
+            new List<Column> { col1, col2 }, counts);
+
+        result.Should().HaveCount(2);
+        result[0].CardCount.Should().Be(2);
+        result[1].CardCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void ComputeWipFromCounts_ShouldReturnEmpty_WhenNoColumns()
+    {
+        var result = BoardMetricsService.ComputeWipFromCounts(
+            new List<Column>(),
+            new List<(Guid, int)>());
+
+        result.Should().BeEmpty();
+    }
+
+    #endregion
+
     #region Helpers
 
     private void SetupBoard(List<Column> columns, List<Card> cards)
@@ -441,7 +493,37 @@ public class BoardMetricsServiceTests
         var board = new Board("Test Board", ownerId: _userId);
         _boardRepoMock.Setup(r => r.GetByIdAsync(_boardId, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByBoardIdAsync(_boardId, default)).ReturnsAsync(columns);
+
+        // Legacy mock for tests that use GetByBoardIdAsync directly
         _cardRepoMock.Setup(r => r.GetByBoardIdAsync(_boardId, default)).ReturnsAsync(cards);
+
+        // New SQL-level mocks for the refactored service
+        var columnCounts = columns
+            .Select(col => (col.Id, cards.Count(c => c.ColumnId == col.Id)))
+            .ToList() as IReadOnlyList<(Guid ColumnId, int CardCount)>;
+        _cardRepoMock
+            .Setup(r => r.CountCardsByColumnAsync(_boardId, It.IsAny<Guid?>(), default))
+            .ReturnsAsync(columnCounts);
+
+        var blockedCards = cards.Where(c => c.IsBlocked).ToList() as IEnumerable<Card>;
+        _cardRepoMock
+            .Setup(r => r.GetBlockedByBoardIdAsync(_boardId, It.IsAny<Guid?>(), default))
+            .ReturnsAsync(blockedCards);
+
+        _cardRepoMock
+            .Setup(r => r.GetForMetricsAsync(
+                _boardId, It.IsAny<Guid?>(), It.IsAny<IEnumerable<Guid>?>(), default))
+            .ReturnsAsync((Guid boardId, Guid? labelId, IEnumerable<Guid>? cardIds, CancellationToken _) =>
+            {
+                IEnumerable<Card> result = cards;
+                if (cardIds != null)
+                {
+                    var ids = cardIds.ToHashSet();
+                    if (ids.Count > 0)
+                        result = result.Where(c => ids.Contains(c.Id));
+                }
+                return result;
+            });
     }
 
     private Column CreateColumn(string name, int position, int? wipLimit = null)
