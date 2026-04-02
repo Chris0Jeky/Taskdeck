@@ -193,12 +193,9 @@ public class ChatService : IChatService
             else
             {
                 var usedToolCalling = false;
+                LlmCompletionResult? reusableNoToolResponse = null;
 
                 // Try tool-calling path for board-scoped sessions with orchestrator.
-                // Only use the tool-calling result when the orchestrator actually called
-                // tools (ToolCallLog is not empty). If the LLM responded with plain text
-                // without calling any tools, fall through to the single-turn path which
-                // handles proposal creation from the user's intent.
                 if (_toolCallingOrchestrator != null && session.BoardId.HasValue)
                 {
                     var toolChatMessages = session.Messages
@@ -213,16 +210,12 @@ public class ChatService : IChatService
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
                         toolCompletionRequest, session.BoardId.Value, ct);
 
-                    // Use tool-calling result only when tools were actually invoked.
-                    // A degraded result with null content means the orchestrator couldn't
-                    // even start (e.g., provider doesn't support tools); a result with
-                    // no tool calls means the LLM chose to answer directly, which should
-                    // still go through proposal creation.
                     var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
                     var toolCallingUsable = !toolResult.IsDegraded || toolResult.Content != null;
 
                     if (toolCallsActuallyMade && toolCallingUsable)
                     {
+                        // Tools were invoked — use the orchestrator result directly.
                         usedToolCalling = true;
                         assistantContent = toolResult.Content ?? "";
                         tokenUsage = toolResult.TokensUsed;
@@ -243,40 +236,78 @@ public class ChatService : IChatService
                                 ct);
                         }
                     }
+                    else if (!toolResult.IsDegraded && toolResult.Content != null)
+                    {
+                        // The LLM responded with plain text (no tool calls). Reuse
+                        // this content instead of making a redundant CompleteAsync
+                        // call (#672). The response still flows through proposal
+                        // creation logic below.
+                        reusableNoToolResponse = new LlmCompletionResult(
+                            Content: toolResult.Content,
+                            TokensUsed: toolResult.TokensUsed,
+                            IsActionable: false,
+                            Provider: toolResult.Provider,
+                            Model: toolResult.Model,
+                            IsDegraded: false);
+
+                        // Record usage for the already-made call
+                        if (_quotaService != null && toolResult.TokensUsed > 0)
+                        {
+                            await _quotaService.RecordUsageAsync(
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                toolResult.Provider, toolResult.Model,
+                                toolResult.TokensUsed, 0,
+                                ct);
+                        }
+                    }
+                    // else: degraded with null content — fall through to single-turn
                 }
 
-                // Single-turn fallback (no tool calling, or tool calling degraded)
+                // Single-turn fallback (no tool calling, tool calling degraded, or
+                // reusing the no-tool response from the orchestrator).
                 if (!usedToolCalling)
                 {
-                // Get LLM response for non-checklist messages.
-                var chatMessages = session.Messages
-                    .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-                    .ToList();
+                LlmCompletionResult llmResult;
 
-                // Build board context for board-scoped sessions
-                var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+                if (reusableNoToolResponse != null)
+                {
+                    // Reuse the text response from the orchestrator's first LLM call
+                    // instead of making a second call (#672).
+                    llmResult = reusableNoToolResponse;
+                }
+                else
+                {
+                    // No orchestrator response available — make a single-turn call.
+                    var chatMessages = session.Messages
+                        .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
+                        .ToList();
 
-                var completionRequest = new ChatCompletionRequest(
-                    chatMessages,
-                    Attribution: BuildAttribution(session, userId),
-                    BoardContext: boardContext);
-                var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
+                    // Build board context for board-scoped sessions
+                    var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
+                    var completionRequest = new ChatCompletionRequest(
+                        chatMessages,
+                        Attribution: BuildAttribution(session, userId),
+                        BoardContext: boardContext);
+                    llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
+
+                    // Record usage for quota tracking. The provider reports a combined
+                    // TokensUsed total without an input/output split. Record the full
+                    // total as input tokens and 0 for output until providers surface
+                    // separate counts.
+                    if (_quotaService != null && llmResult.TokensUsed > 0)
+                    {
+                        await _quotaService.RecordUsageAsync(
+                            userId, Domain.Enums.LlmSurface.Chat,
+                            llmResult.Provider, llmResult.Model,
+                            llmResult.TokensUsed, 0,
+                            ct);
+                    }
+                }
+
                 assistantContent = llmResult.Content;
                 tokenUsage = llmResult.TokensUsed;
                 degradedReason = llmResult.DegradedReason;
-
-                // Record usage for quota tracking. The provider reports a combined
-                // TokensUsed total without an input/output split. Record the full
-                // total as input tokens and 0 for output until providers surface
-                // separate counts.
-                if (_quotaService != null && llmResult.TokensUsed > 0)
-                {
-                    await _quotaService.RecordUsageAsync(
-                        userId, Domain.Enums.LlmSurface.Chat,
-                        llmResult.Provider, llmResult.Model,
-                        llmResult.TokensUsed, 0,
-                        ct);
-                }
 
                 if (llmResult.IsDegraded)
                 {
