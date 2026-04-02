@@ -296,6 +296,10 @@ public class AutomationProposalService : IAutomationProposalService
                 foreach (var card in cards)
                     cardTitles[card.Id] = card.Title;
             }
+            catch (OperationCanceledException)
+            {
+                throw; // Respect cancellation
+            }
             catch
             {
                 // Non-critical: if lookups fail, fall back to IDs
