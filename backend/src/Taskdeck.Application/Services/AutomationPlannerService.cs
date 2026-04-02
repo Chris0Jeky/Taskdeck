@@ -130,11 +130,14 @@ public class AutomationPlannerService : IAutomationPlannerService
                     var cardIdStr = moveCardMatch.Groups[1].Value;
                     var columnName = moveCardMatch.Groups[2].Value;
 
-                    if (!Guid.TryParse(cardIdStr, out var cardId))
-                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, $"Invalid card ID: {cardIdStr}");
-
                     if (!boardId.HasValue)
                         return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Board ID is required for card operations");
+
+                    var resolvedCardId = await CardIdPrefixResolver.ResolveCardIdAsync(
+                        cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
+                    if (!resolvedCardId.IsSuccess)
+                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, resolvedCardId.ErrorMessage);
+                    var cardId = resolvedCardId.Value;
 
                     // Find column
                     var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
@@ -167,8 +170,15 @@ public class AutomationPlannerService : IAutomationPlannerService
                     if (archiveCardMatch.Success)
                     {
                         var cardIdStr = archiveCardMatch.Groups[1].Value;
-                        if (!Guid.TryParse(cardIdStr, out var cardId))
-                            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, $"Invalid card ID: {cardIdStr}");
+
+                        if (!boardId.HasValue)
+                            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Board ID is required for card operations");
+
+                        var resolvedArchiveCardId = await CardIdPrefixResolver.ResolveCardIdAsync(
+                            cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
+                        if (!resolvedArchiveCardId.IsSuccess)
+                            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, resolvedArchiveCardId.ErrorMessage);
+                        var cardId = resolvedArchiveCardId.Value;
 
                         var parameters = JsonSerializer.Serialize(new { cardId });
 
@@ -229,8 +239,14 @@ public class AutomationPlannerService : IAutomationPlannerService
                                 var field = updateCardMatch.Groups[2].Value.ToLowerInvariant();
                                 var value = updateCardMatch.Groups[3].Value;
 
-                                if (!Guid.TryParse(cardIdStr, out var cardId))
-                                    return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, $"Invalid card ID: {cardIdStr}");
+                                if (!boardId.HasValue)
+                                    return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Board ID is required for card operations");
+
+                                var resolvedUpdateCardId = await CardIdPrefixResolver.ResolveCardIdAsync(
+                                    cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
+                                if (!resolvedUpdateCardId.IsSuccess)
+                                    return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, resolvedUpdateCardId.ErrorMessage);
+                                var cardId = resolvedUpdateCardId.Value;
 
                                 var parameters = field == "title"
                                     ? JsonSerializer.Serialize(new { cardId, title = value })
@@ -681,8 +697,14 @@ public class AutomationPlannerService : IAutomationPlannerService
             var cardIdStr = moveCardMatch.Groups[1].Value;
             var columnName = moveCardMatch.Groups[2].Value;
 
-            if (!Guid.TryParse(cardIdStr, out var cardId) || !boardId.HasValue)
+            if (!boardId.HasValue)
                 return null;
+
+            var resolvedCardId = await CardIdPrefixResolver.ResolveCardIdAsync(
+                cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
+            if (!resolvedCardId.IsSuccess)
+                return null;
+            var cardId = resolvedCardId.Value;
 
             var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardId.Value, cancellationToken);
             var column = columns.FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
@@ -702,8 +724,15 @@ public class AutomationPlannerService : IAutomationPlannerService
         if (archiveCardMatch.Success)
         {
             var cardIdStr = archiveCardMatch.Groups[1].Value;
-            if (!Guid.TryParse(cardIdStr, out var cardId))
+
+            if (!boardId.HasValue)
                 return null;
+
+            var resolvedArchiveId = await CardIdPrefixResolver.ResolveCardIdAsync(
+                cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
+            if (!resolvedArchiveId.IsSuccess)
+                return null;
+            var cardId = resolvedArchiveId.Value;
 
             var parameters = JsonSerializer.Serialize(new { cardId });
             operations.Add(new CreateProposalOperationDto(sequence++, "archive", "card", parameters, Guid.NewGuid().ToString(), TargetId: cardId.ToString()));
@@ -745,8 +774,14 @@ public class AutomationPlannerService : IAutomationPlannerService
             var field = updateCardMatch.Groups[2].Value.ToLowerInvariant();
             var value = updateCardMatch.Groups[3].Value;
 
-            if (!Guid.TryParse(cardIdStr, out var cardId))
+            if (!boardId.HasValue)
                 return null;
+
+            var resolvedUpdateId = await CardIdPrefixResolver.ResolveCardIdAsync(
+                cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
+            if (!resolvedUpdateId.IsSuccess)
+                return null;
+            var cardId = resolvedUpdateId.Value;
 
             var parameters = field == "title"
                 ? JsonSerializer.Serialize(new { cardId, title = value })
