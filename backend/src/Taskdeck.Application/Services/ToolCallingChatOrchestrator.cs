@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Services.Tools;
@@ -58,6 +60,7 @@ public sealed class ToolCallingChatOrchestrator
         string model = "unknown";
 
         IReadOnlyList<ToolCallResult>? previousResults = null;
+        string? previousRoundFingerprint = null;
 
         for (var round = 1; round <= MaxRounds; round++)
         {
@@ -144,6 +147,19 @@ public sealed class ToolCallingChatOrchestrator
                     IsDegraded: true,
                     DegradedReason: "Unexpected empty tool call list.");
             }
+
+            // Infinite loop detection: abort if the LLM issues the exact same
+            // tool calls (name + arguments) as the previous round.
+            var currentFingerprint = ComputeToolCallFingerprint(llmResult.ToolCalls);
+            if (previousRoundFingerprint != null &&
+                string.Equals(currentFingerprint, previousRoundFingerprint, StringComparison.Ordinal))
+            {
+                _logger.LogWarning(
+                    "Tool-calling loop detected at round {Round}: identical tool calls as previous round. Aborting.",
+                    round);
+                return BuildLoopDetectedResult(totalTokensUsed, toolCallLog, provider, model, round);
+            }
+            previousRoundFingerprint = currentFingerprint;
 
             var results = new List<ToolCallResult>();
             foreach (var toolCall in llmResult.ToolCalls)
@@ -242,6 +258,48 @@ public sealed class ToolCallingChatOrchestrator
             ToolCallLog: log,
             IsDegraded: true,
             DegradedReason: "Orchestration timeout exceeded.");
+    }
+
+    private static ToolCallingResult BuildLoopDetectedResult(
+        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model, int round)
+    {
+        var partialSummary = log.Count > 0
+            ? " Here is what I found so far: " + string.Join("; ",
+                log.Where(e => !e.IsError).Select(e => $"[{e.ToolName}]"))
+            : "";
+
+        return new ToolCallingResult(
+            Content: $"I noticed I was repeating the same action and stopped to avoid an infinite loop.{partialSummary}",
+            TokensUsed: tokensUsed,
+            Provider: provider,
+            Model: model,
+            Rounds: round,
+            ToolCallLog: log,
+            IsDegraded: true,
+            DegradedReason: "Tool-calling loop detected: identical tool calls in consecutive rounds.");
+    }
+
+    /// <summary>
+    /// Computes a deterministic fingerprint of a set of tool calls (name + arguments)
+    /// so that consecutive identical rounds can be detected.
+    /// </summary>
+    internal static string ComputeToolCallFingerprint(IReadOnlyList<ToolCallRequest> toolCalls)
+    {
+        // Sort by tool name for determinism when parallel calls arrive in varying order
+        var sorted = toolCalls.OrderBy(tc => tc.ToolName, StringComparer.Ordinal)
+            .ThenBy(tc => tc.Arguments.GetRawText(), StringComparer.Ordinal);
+
+        var sb = new StringBuilder();
+        foreach (var tc in sorted)
+        {
+            sb.Append(tc.ToolName);
+            sb.Append(':');
+            sb.Append(tc.Arguments.GetRawText());
+            sb.Append('|');
+        }
+
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(bytes);
     }
 
     private static ToolCallingResult BuildExhaustedResult(
