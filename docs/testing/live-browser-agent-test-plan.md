@@ -166,6 +166,8 @@ When not configured, the OAuth button simply won't appear on the login page.
 - [ ] Reject a different proposal -- verify it's removed without board changes
 - [ ] View diff for a proposal
 - [ ] Verify applied proposals are hidden by default
+- [ ] Verify expired proposals are visually distinct (not shown as "Approved, ready to apply")
+- [ ] Verify expired proposals have a dismiss/clear action
 - [ ] Use keyboard-accessible links dropdown on a proposal card
 
 ### 9. Automation Queue
