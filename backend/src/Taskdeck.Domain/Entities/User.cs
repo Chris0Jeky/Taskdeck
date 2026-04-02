@@ -64,6 +64,12 @@ public class User : Entity
     public UserRole DefaultRole { get; private set; }
     public bool IsActive { get; private set; }
 
+    /// <summary>
+    /// When set, any JWT issued before this timestamp is considered invalid.
+    /// Used to invalidate active sessions after account deletion/deactivation.
+    /// </summary>
+    public DateTimeOffset? TokenInvalidatedAt { get; private set; }
+
     private User() : base() { }
 
     public User(string username, string email, string passwordHash, UserRole defaultRole = UserRole.Editor)
@@ -117,6 +123,16 @@ public class User : Entity
     public void Activate()
     {
         IsActive = true;
+        Touch();
+    }
+
+    /// <summary>
+    /// Marks all existing JWT tokens as invalid by recording the current UTC time.
+    /// Any token with an iat (issued-at) before this timestamp will be rejected.
+    /// </summary>
+    public void InvalidateTokens()
+    {
+        TokenInvalidatedAt = DateTimeOffset.UtcNow;
         Touch();
     }
 }
