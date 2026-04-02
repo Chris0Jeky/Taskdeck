@@ -811,6 +811,11 @@ describe('ReviewView', () => {
     expect(wrapper.text()).not.toContain('Approved, ready to apply')
     // Apply to board button should NOT be available
     expect(wrapper.text()).toContain('This proposal has expired and can no longer be applied')
+
+    // Expired action footer should be rendered for Approved+expired proposals
+    const card = wrapper.get('#proposal-proposal-approved-expired')
+    expect(card.text()).not.toContain('Apply to board')
+    expect(card.text()).toContain('Dismiss')
   })
 
   it('detects client-side expiry for PendingReview proposals past expiresAt', async () => {
@@ -895,6 +900,34 @@ describe('ReviewView', () => {
     expect(wrapper.text()).not.toContain('Expired proposal to dismiss')
     expect(wrapper.text()).toContain('Active proposal')
     expect(mocks.successToast).toHaveBeenCalledWith('Proposal dismissed')
+  })
+
+  it('removes a client-side-expired proposal from view when backend returns dismissed 0', async () => {
+    mocks.dismissProposals.mockResolvedValue({ dismissed: 0 })
+    mocks.getProposals
+      .mockResolvedValueOnce([
+        buildProposal({
+          id: 'proposal-stuck',
+          status: 'Approved',
+          summary: 'Stuck expired proposal',
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        }),
+      ])
+      .mockResolvedValueOnce([])
+
+    const { wrapper } = await mountAt('/workspace/review')
+    expect(wrapper.text()).toContain('Stuck expired proposal')
+
+    const card = wrapper.get('#proposal-proposal-stuck')
+    const dismissBtn = card.findAll('button').find((btn) => btn.text() === 'Dismiss')!
+    await dismissBtn.trigger('click')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['proposal-stuck'])
+    // Should be removed from the local list even though backend returned 0
+    expect(wrapper.text()).not.toContain('Stuck expired proposal')
+    expect(mocks.infoToast).toHaveBeenCalledWith('Proposal removed from view. Refreshing...')
   })
 
   it('does not count expired proposals in pending or ready summary cards', async () => {
