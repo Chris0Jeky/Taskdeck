@@ -29,7 +29,7 @@ public sealed class TokenValidationMiddleware
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, IUnitOfWork unitOfWork)
     {
         var user = context.User;
 
@@ -53,9 +53,9 @@ public sealed class TokenValidationMiddleware
 
         // Resolve the user from the database to check active status and token validity.
         // For a local-first SQLite app this is an acceptable per-request cost.
-        using var scope = context.RequestServices.CreateScope();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var dbUser = await unitOfWork.Users.GetByIdAsync(userId);
+        // IUnitOfWork is injected by the framework from the request scope, so we share
+        // the same DbContext/change-tracker as the rest of the pipeline.
+        var dbUser = await unitOfWork.Users.GetByIdAsync(userId, context.RequestAborted);
 
         if (dbUser == null || !dbUser.IsActive)
         {

@@ -3,7 +3,6 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Taskdeck.Api.Contracts;
@@ -36,7 +35,7 @@ public class TokenValidationMiddlewareTests
 
         var context = new DefaultHttpContext();
         // No authenticated identity
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         nextCalled.Should().BeTrue();
     }
@@ -58,7 +57,7 @@ public class TokenValidationMiddlewareTests
         var issuedAt = DateTimeOffset.UtcNow;
         var context = CreateAuthenticatedContext(userId, issuedAt);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         nextCalled.Should().BeTrue();
         context.Response.StatusCode.Should().NotBe(StatusCodes.Status401Unauthorized);
@@ -83,7 +82,7 @@ public class TokenValidationMiddlewareTests
         var context = CreateAuthenticatedContext(userId, issuedAt);
         context.Response.Body = new MemoryStream();
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
@@ -109,7 +108,7 @@ public class TokenValidationMiddlewareTests
         var context = CreateAuthenticatedContext(userId, issuedAt);
         context.Response.Body = new MemoryStream();
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
@@ -136,7 +135,7 @@ public class TokenValidationMiddlewareTests
         var context = CreateAuthenticatedContext(userId, tokenIssuedAt);
         context.Response.Body = new MemoryStream();
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
@@ -166,7 +165,7 @@ public class TokenValidationMiddlewareTests
         var tokenIssuedAt = DateTimeOffset.UtcNow.AddSeconds(1);
         var context = CreateAuthenticatedContext(userId, tokenIssuedAt);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         nextCalled.Should().BeTrue();
     }
@@ -185,7 +184,7 @@ public class TokenValidationMiddlewareTests
         var context = CreateAuthenticatedContext(userId, DateTimeOffset.UtcNow);
         context.Response.Body = new MemoryStream();
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
@@ -194,6 +193,33 @@ public class TokenValidationMiddlewareTests
         var body = await ReadResponseBody(context);
         body.ErrorCode.Should().Be(ErrorCodes.Unauthorized);
         body.Message.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldPassThrough_WhenTokenIssuedInSameSecondAsInvalidation()
+    {
+        // Regression test for timestamp precision: InvalidateTokens() truncates to
+        // whole seconds so a token issued in the same second is NOT rejected.
+        var userId = Guid.NewGuid();
+        var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password"));
+        SetUserId(user, userId);
+        user.InvalidateTokens();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        var nextCalled = false;
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var middleware = new TokenValidationMiddleware(next, NullLogger<TokenValidationMiddleware>.Instance);
+
+        // Token issued at the exact same second as invalidation
+        var tokenIssuedAt = user.TokenInvalidatedAt!.Value;
+        var context = CreateAuthenticatedContext(userId, tokenIssuedAt);
+
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
+
+        // Same-second token should pass through (not strictly "before" invalidation)
+        nextCalled.Should().BeTrue();
     }
 
     [Fact]
@@ -214,7 +240,7 @@ public class TokenValidationMiddlewareTests
         // Create context with no iat claim
         var context = CreateAuthenticatedContext(userId, iat: null);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _unitOfWorkMock.Object);
 
         // Without iat claim, the comparison cannot be made — token passes through.
         // This is acceptable because all tokens generated by our AuthenticationService
@@ -240,14 +266,7 @@ public class TokenValidationMiddlewareTests
         var identity = new ClaimsIdentity(claims, "Bearer");
         var principal = new ClaimsPrincipal(identity);
 
-        var services = new ServiceCollection();
-        services.AddScoped(_ => _unitOfWorkMock.Object);
-        var serviceProvider = services.BuildServiceProvider();
-
-        var context = new DefaultHttpContext
-        {
-            RequestServices = serviceProvider
-        };
+        var context = new DefaultHttpContext();
         context.User = principal;
 
         return context;

@@ -127,12 +127,17 @@ public class User : Entity
     }
 
     /// <summary>
-    /// Marks all existing JWT tokens as invalid by recording the current UTC time.
-    /// Any token with an iat (issued-at) before this timestamp will be rejected.
+    /// Marks all existing JWT tokens as invalid by recording the current UTC time
+    /// truncated to whole-second precision.  JWT <c>iat</c> claims are Unix
+    /// timestamps (integer seconds), so the invalidation cutoff must use the same
+    /// granularity to avoid rejecting tokens issued in the same second but after
+    /// the invalidation event.
     /// </summary>
     public void InvalidateTokens()
     {
-        TokenInvalidatedAt = DateTimeOffset.UtcNow;
+        // Truncate to second precision to match JWT iat granularity.
+        TokenInvalidatedAt = DateTimeOffset.FromUnixTimeSeconds(
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds());
         Touch();
     }
 }
