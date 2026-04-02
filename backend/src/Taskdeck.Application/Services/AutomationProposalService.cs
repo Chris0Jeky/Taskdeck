@@ -345,7 +345,8 @@ public class AutomationProposalService : IAutomationProposalService
             proposal.Operations.Select(MapOperationToDto).ToList()
         )
         {
-            Presentation = BuildPresentation(proposal)
+            Presentation = BuildPresentation(proposal),
+            IsExpired = DateTime.UtcNow > proposal.ExpiresAt
         };
     }
 
