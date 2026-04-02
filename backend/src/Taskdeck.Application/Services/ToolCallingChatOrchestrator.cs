@@ -61,6 +61,7 @@ public sealed class ToolCallingChatOrchestrator
 
         IReadOnlyList<ToolCallResult>? previousResults = null;
         string? previousRoundFingerprint = null;
+        bool previousRoundHadErrors = false;
 
         for (var round = 1; round <= MaxRounds; round++)
         {
@@ -150,8 +151,11 @@ public sealed class ToolCallingChatOrchestrator
 
             // Infinite loop detection: abort if the LLM issues the exact same
             // tool calls (name + arguments) as the previous round.
+            // Skip detection when the previous round had errors — the LLM may
+            // legitimately retry the same call after a transient tool failure.
             var currentFingerprint = ComputeToolCallFingerprint(llmResult.ToolCalls);
             if (previousRoundFingerprint != null &&
+                !previousRoundHadErrors &&
                 string.Equals(currentFingerprint, previousRoundFingerprint, StringComparison.Ordinal))
             {
                 _logger.LogWarning(
@@ -215,6 +219,7 @@ public sealed class ToolCallingChatOrchestrator
             }
 
             previousResults = results;
+            previousRoundHadErrors = results.Any(r => r.IsError);
         }
 
         // Exhausted all rounds without a final response
