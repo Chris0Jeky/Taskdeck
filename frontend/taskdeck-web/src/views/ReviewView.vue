@@ -128,7 +128,7 @@ const summaryCards = computed<ReviewSummaryCard[]>(() => {
 
     if (normalizedStatus === 'PendingReview') {
       pendingReview += 1
-    } else if (normalizedStatus === 'Approved') {
+    } else if (normalizedStatus === 'Approved' && !isProposalExpired(proposal)) {
       readyToExecute += 1
     } else if (normalizedStatus === 'Applied') {
       appliedRecently += 1
@@ -494,10 +494,47 @@ function captureHrefForProposal(proposal: ApiProposal): string {
     : inboxPath(activeBoardFilter.value)
 }
 
-function reviewStatusClass(status: ApiProposal['status']): string {
-  const normalized = normalizeProposalStatus(status)
+/**
+ * Checks whether a proposal is effectively expired.
+ * Prefers the server-authoritative isExpired flag; falls back to client-side comparison.
+ */
+function isProposalExpired(proposal: ApiProposal): boolean {
+  if (typeof proposal.isExpired === 'boolean') {
+    return proposal.isExpired
+  }
+  return new Date(proposal.expiresAt).getTime() < Date.now()
+}
+
+/**
+ * Returns true when a proposal is in a terminal state that can be dismissed.
+ */
+function isProposalDismissable(proposal: ApiProposal): boolean {
+  const status = normalizeProposalStatus(proposal.status)
+  return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
+}
+
+async function handleDismissProposal(proposalId: string) {
+  try {
+    proposalActionBusyId.value = proposalId
+    const result = await automationApi.dismissProposals([proposalId])
+    if (result.dismissed > 0) {
+      proposals.value = proposals.value.filter((p) => p.id !== proposalId)
+      toast.success('Proposal dismissed.')
+    }
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to dismiss proposal').message)
+  } finally {
+    proposalActionBusyId.value = null
+  }
+}
+
+function reviewStatusClass(proposal: ApiProposal): string {
+  const normalized = normalizeProposalStatus(proposal.status)
   if (normalized === 'PendingReview') return 'td-review-status--pending'
-  if (normalized === 'Approved') return 'td-review-status--approved'
+  if (normalized === 'Approved') {
+    return isProposalExpired(proposal) ? 'td-review-status--expired' : 'td-review-status--approved'
+  }
+  if (normalized === 'Expired') return 'td-review-status--expired'
   if (normalized === 'Applied') return 'td-review-status--applied'
   return 'td-review-status--secondary'
 }
@@ -512,8 +549,11 @@ const statusLabels: Record<string, string> = {
   Dismissed: 'Dismissed',
 }
 
-function reviewStatusLabel(status: ApiProposal['status']): string {
-  const normalized = normalizeProposalStatus(status)
+function reviewStatusLabel(proposal: ApiProposal): string {
+  const normalized = normalizeProposalStatus(proposal.status)
+  if (normalized === 'Approved' && isProposalExpired(proposal)) {
+    return 'Expired (was approved)'
+  }
   return statusLabels[normalized] ?? normalized
 }
 
@@ -550,8 +590,7 @@ function applyBoardFilter(boardId: string) {
 const dismissableProposalIds = computed(() =>
   proposals.value
     .filter((p) => {
-      const status = normalizeProposalStatus(p.status)
-      return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
+      return isProposalDismissable(p) || (normalizeProposalStatus(p.status) === 'Approved' && isProposalExpired(p))
     })
     .filter((p) => matchesActiveBoardFilter(p.boardId))
     .map((p) => p.id),
@@ -707,8 +746,8 @@ watch(
               <span>Source: {{ normalizeProposalSourceType(proposal.sourceType) }}</span>
             </div>
           </div>
-          <span :class="['td-review-status', reviewStatusClass(proposal.status)]">
-            {{ reviewStatusLabel(proposal.status) }}
+          <span :class="['td-review-status', reviewStatusClass(proposal)]">
+            {{ reviewStatusLabel(proposal) }}
           </span>
         </div>
 
@@ -737,7 +776,7 @@ watch(
             </span>
           </div>
           <div
-            v-else-if="normalizeProposalStatus(proposal.status) === 'Approved'"
+            v-else-if="normalizeProposalStatus(proposal.status) === 'Approved' && !isProposalExpired(proposal)"
             class="td-review-card__flow-steps"
             role="list"
             aria-label="Ready to apply"
@@ -750,6 +789,32 @@ watch(
             <span class="td-review-card__flow-step td-review-card__flow-step--active" role="listitem" aria-current="step">
               <span class="td-review-card__flow-step-num" aria-hidden="true">2</span>
               Apply to board
+            </span>
+          </div>
+          <div
+            v-else-if="normalizeProposalStatus(proposal.status) === 'Approved' && isProposalExpired(proposal)"
+            class="td-review-card__flow-steps"
+            role="list"
+            aria-label="Expired proposal"
+          >
+            <span class="td-review-card__flow-step td-review-card__flow-step--expired" role="listitem">
+              <span class="td-review-card__flow-step-num" aria-hidden="true">1</span>
+              Approved
+            </span>
+            <span class="td-review-card__flow-arrow" aria-hidden="true">&#8594;</span>
+            <span class="td-review-card__flow-step td-review-card__flow-step--expired" role="listitem">
+              <span class="td-review-card__flow-step-num" aria-hidden="true">!</span>
+              Expired
+            </span>
+          </div>
+          <div
+            v-else-if="normalizeProposalStatus(proposal.status) === 'Expired'"
+            class="td-review-card__flow-steps"
+            role="list"
+            aria-label="Expired proposal"
+          >
+            <span class="td-review-card__flow-step td-review-card__flow-step--expired" role="listitem">
+              Expired before review
             </span>
           </div>
 
@@ -772,10 +837,18 @@ watch(
           </button>
           <button
             class="td-btn td-btn--secondary td-btn--sm"
-            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'Approved'"
+            :disabled="proposalActionBusyId === proposal.id || normalizeProposalStatus(proposal.status) !== 'Approved' || isProposalExpired(proposal)"
             @click="handleExecuteProposal(proposal.id)"
           >
             Apply to board
+          </button>
+          <button
+            v-if="isProposalDismissable(proposal) || (normalizeProposalStatus(proposal.status) === 'Approved' && isProposalExpired(proposal))"
+            class="td-btn td-btn--secondary td-btn--sm"
+            :disabled="proposalActionBusyId === proposal.id"
+            @click="handleDismissProposal(proposal.id)"
+          >
+            Dismiss
           </button>
         </div>
 
@@ -1230,6 +1303,12 @@ watch(
   border-color: var(--td-color-info);
 }
 
+.td-review-status--expired {
+  color: var(--td-color-error);
+  background: var(--td-color-error-light);
+  border-color: var(--td-color-error);
+}
+
 .td-review-status--secondary {
   color: var(--td-text-secondary);
   background: var(--td-surface-container-high);
@@ -1367,6 +1446,17 @@ watch(
 
 .td-review-card__flow-step--done .td-review-card__flow-step-num {
   background: var(--td-color-success);
+  color: #fff;
+}
+
+.td-review-card__flow-step--expired {
+  color: var(--td-color-error);
+  background: var(--td-color-error-light);
+  border-color: var(--td-color-error);
+}
+
+.td-review-card__flow-step--expired .td-review-card__flow-step-num {
+  background: var(--td-color-error);
   color: #fff;
 }
 
