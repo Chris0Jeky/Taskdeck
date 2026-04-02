@@ -149,16 +149,21 @@ const llmHealthState = computed(() => {
     return 'unknown'
   }
 
-  if (chatHealth.value.isProbed && chatHealth.value.isAvailable && !chatHealth.value.isMock) {
+  if (chatHealth.value.isMock) {
+    return 'mock'
+  }
+
+  const vs = chatHealth.value.verificationStatus
+  if (vs === 'verified') {
     return 'verified'
   }
 
-  if (chatHealth.value.isAvailable && !chatHealth.value.isMock) {
-    return 'configured'
+  if (vs === 'failed') {
+    return 'failed'
   }
 
-  if (chatHealth.value.isMock) {
-    return 'mock'
+  if (chatHealth.value.isAvailable) {
+    return 'configured'
   }
 
   return 'unavailable'
@@ -172,6 +177,8 @@ const llmStatusTitle = computed(() => {
       return 'Live LLM verified'
     case 'configured':
       return 'Live LLM configured'
+    case 'failed':
+      return 'LLM verification failed'
     case 'mock':
       return 'Live LLM not active'
     case 'unavailable':
@@ -206,6 +213,12 @@ const llmStatusCopy = computed(() => {
 
   if (llmHealthState.value === 'configured') {
     return `Taskdeck is configured to use ${providerLabel}, but this health check does not prove the upstream provider accepted a live request yet. Use Verify LLM to confirm reachability.`
+  }
+
+  if (llmHealthState.value === 'failed') {
+    return chatHealth.value.errorMessage
+      ? `${providerLabel} verification failed: ${chatHealth.value.errorMessage}`
+      : `${providerLabel} verification failed. The probe could not confirm reachability.`
   }
 
   if (llmHealthState.value === 'mock') {
@@ -787,13 +800,18 @@ watch(
 }
 
 .td-chat-status--configured {
-  border-color: var(--td-color-success, #2f855a);
-  background: color-mix(in srgb, var(--td-surface-primary) 85%, #dff5e7 15%);
+  border-color: var(--td-color-warning, #b7791f);
+  background: color-mix(in srgb, var(--td-surface-primary) 86%, #fff4d6 14%);
 }
 
 .td-chat-status--verified {
   border-color: var(--td-color-success, #2f855a);
   background: color-mix(in srgb, var(--td-surface-primary) 80%, #c6f6d5 20%);
+}
+
+.td-chat-status--failed {
+  border-color: var(--td-color-danger, #c53030);
+  background: color-mix(in srgb, var(--td-surface-primary) 86%, #fed7d7 14%);
 }
 
 .td-chat-status--mock,
