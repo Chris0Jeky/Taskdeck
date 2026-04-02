@@ -136,14 +136,17 @@ This report also records which claims from the cross-check report were confirmed
    - Follow-up action requests fail with `Invalid card ID: d2d8c7d2`.
    - Seeded as [#677](https://github.com/Chris0Jeky/Taskdeck/issues/677).
 
-2. Expired proposals still presented as executable
+2. Expired proposals still presented as executable and cannot be dismissed
    - Old approved proposal was shown as `Approved, ready to apply`.
    - Forced execution path reached the API and failed with `Proposal has expired`.
+   - **Additional finding (maintainer-confirmed):** expired proposals are stuck in the review list with no dismiss/clear action available. Users cannot remove them.
+   - **Integration test evidence:** `LiveBrowserRegressionApiTests.ApproveProposal_WhenExpired_CurrentlySucceeds_Bug678` confirms the service layer does not re-check `ExpiresAt` — approve returns 200 even when the proposal is past expiry.
    - Seeded as [#678](https://github.com/Chris0Jeky/Taskdeck/issues/678).
 
 3. Archive, Activity, Ops, and Access routes silently redirect to Home
    - Direct navigation to each route landed at `/workspace/home`.
    - Confirmed by checking `window.location.pathname`.
+   - **Maintainer-confirmed (2026-04-02):** this is a real routing issue, not feature flags being off. Routes redirect regardless of user access level.
    - Seeded as [#681](https://github.com/Chris0Jeky/Taskdeck/issues/681).
 
 4. Automation Chat health state is misleading before verification
