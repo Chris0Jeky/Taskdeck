@@ -39,9 +39,10 @@ public static class NaturalLanguageInstructionExtractor
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
-    // Pattern to detect card IDs in the message (for move/archive/update)
+    // Pattern to detect card IDs in the message (for move/archive/update).
+    // Matches full GUIDs (with hyphens) or short 8-char hex prefixes returned by read tools.
     private static readonly Regex CardIdPattern = new(
-        @"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
+        @"\b([0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
