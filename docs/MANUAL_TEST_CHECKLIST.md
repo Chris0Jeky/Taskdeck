@@ -184,6 +184,10 @@ Manual-only checks (non-automatable in generic local script):
 10. View diff for proposal.
     - Expected: diff payload displays.
 11. Verify applied proposals are hidden by default; use clear/dismiss action to manage them.
+12. Verify expired proposal handling in Review:
+    - Expected: expired proposals are visually distinct from actionable proposals (not shown as "Approved, ready to apply").
+    - Expected: expired proposals have a dismiss/clear action so they don't accumulate indefinitely.
+    - **Known bug (`#678`):** As of 2026-04-02, expired proposals appear as actionable and cannot be dismissed. The approve endpoint also accepts expired proposals without re-checking `ExpiresAt`.
 
 ## E. Inbox and Notifications Continuity
 
