@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
@@ -53,7 +54,7 @@ public static class CardIdPrefixResolver
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(cardIdStr))
-            return Result.Failure<Guid>("ValidationError", "Card ID cannot be empty");
+            return Result.Failure<Guid>(ErrorCodes.ValidationError, "Card ID cannot be empty");
 
         // Full GUID — return directly
         if (Guid.TryParse(cardIdStr, out var fullGuid))
@@ -61,7 +62,7 @@ public static class CardIdPrefixResolver
 
         // Not a valid short prefix pattern
         if (!IsShortIdPrefix(cardIdStr))
-            return Result.Failure<Guid>("ValidationError", $"Invalid card ID: {cardIdStr}");
+            return Result.Failure<Guid>(ErrorCodes.ValidationError, $"Invalid card ID: {cardIdStr}");
 
         // Prefix match against board cards
         var normalizedPrefix = cardIdStr.ToLowerInvariant();
@@ -72,12 +73,12 @@ public static class CardIdPrefixResolver
 
         return matches.Count switch
         {
-            0 => Result.Failure<Guid>("NotFound",
+            0 => Result.Failure<Guid>(ErrorCodes.NotFound,
                 $"No card found matching prefix '{cardIdStr}' on this board"),
             1 => Result.Success(matches[0].Id),
-            _ => Result.Failure<Guid>("ValidationError",
+            _ => Result.Failure<Guid>(ErrorCodes.ValidationError,
                 $"Ambiguous card ID prefix '{cardIdStr}' matches {matches.Count} cards. " +
-                "Use a full card ID or a more specific prefix.")
+                "Use the full card ID to disambiguate.")
         };
     }
 }

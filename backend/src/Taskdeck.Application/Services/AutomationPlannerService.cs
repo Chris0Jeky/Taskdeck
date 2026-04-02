@@ -136,7 +136,7 @@ public class AutomationPlannerService : IAutomationPlannerService
                     var resolvedCardId = await CardIdPrefixResolver.ResolveCardIdAsync(
                         cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
                     if (!resolvedCardId.IsSuccess)
-                        return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, resolvedCardId.ErrorMessage);
+                        return Result.Failure<ProposalDto>(resolvedCardId.ErrorCode, resolvedCardId.ErrorMessage);
                     var cardId = resolvedCardId.Value;
 
                     // Find column
@@ -177,7 +177,7 @@ public class AutomationPlannerService : IAutomationPlannerService
                         var resolvedArchiveCardId = await CardIdPrefixResolver.ResolveCardIdAsync(
                             cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
                         if (!resolvedArchiveCardId.IsSuccess)
-                            return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, resolvedArchiveCardId.ErrorMessage);
+                            return Result.Failure<ProposalDto>(resolvedArchiveCardId.ErrorCode, resolvedArchiveCardId.ErrorMessage);
                         var cardId = resolvedArchiveCardId.Value;
 
                         var parameters = JsonSerializer.Serialize(new { cardId });
@@ -245,7 +245,7 @@ public class AutomationPlannerService : IAutomationPlannerService
                                 var resolvedUpdateCardId = await CardIdPrefixResolver.ResolveCardIdAsync(
                                     cardIdStr, boardId.Value, _unitOfWork, cancellationToken);
                                 if (!resolvedUpdateCardId.IsSuccess)
-                                    return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, resolvedUpdateCardId.ErrorMessage);
+                                    return Result.Failure<ProposalDto>(resolvedUpdateCardId.ErrorCode, resolvedUpdateCardId.ErrorMessage);
                                 var cardId = resolvedUpdateCardId.Value;
 
                                 var parameters = field == "title"
