@@ -133,8 +133,10 @@ public class AutomationProposal : Entity
 
     public void Dismiss()
     {
+        var isExpiredApproved = Status == ProposalStatus.Approved && DateTime.UtcNow > ExpiresAt;
         if (Status != ProposalStatus.Applied && Status != ProposalStatus.Rejected
-            && Status != ProposalStatus.Failed && Status != ProposalStatus.Expired)
+            && Status != ProposalStatus.Failed && Status != ProposalStatus.Expired
+            && !isExpiredApproved)
             throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot dismiss proposal in status {Status}");
 
         Status = ProposalStatus.Dismissed;

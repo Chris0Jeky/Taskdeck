@@ -301,8 +301,11 @@ public class AutomationProposalService : IAutomationProposalService
 
             foreach (var proposal in proposals)
             {
+                var isExpiredApproved = proposal.Status == ProposalStatus.Approved
+                    && DateTime.UtcNow > proposal.ExpiresAt;
                 if (proposal.Status is ProposalStatus.Applied or ProposalStatus.Rejected
-                    or ProposalStatus.Failed or ProposalStatus.Expired)
+                    or ProposalStatus.Failed or ProposalStatus.Expired
+                    || isExpiredApproved)
                 {
                     proposal.Dismiss();
                     dismissed++;
