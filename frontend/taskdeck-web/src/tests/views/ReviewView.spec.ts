@@ -22,9 +22,11 @@ const mocks = vi.hoisted(() => ({
   rejectProposal: vi.fn(),
   executeProposal: vi.fn(),
   getProposalDiff: vi.fn(),
+  dismissProposals: vi.fn(),
   getBoards: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
+  infoToast: vi.fn(),
   createRequestId: vi.fn(),
 }))
 
@@ -36,6 +38,7 @@ vi.mock('../../api/automationApi', () => ({
     rejectProposal: mocks.rejectProposal,
     executeProposal: mocks.executeProposal,
     getProposalDiff: mocks.getProposalDiff,
+    dismissProposals: mocks.dismissProposals,
   },
 }))
 
@@ -49,6 +52,7 @@ vi.mock('../../store/toastStore', () => ({
   useToastStore: () => ({
     success: mocks.successToast,
     error: mocks.errorToast,
+    info: mocks.infoToast,
   }),
 }))
 
@@ -62,6 +66,7 @@ vi.mock('../../composables/useErrorMapper', () => ({
 
 function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
   const now = new Date().toISOString()
+  const futureExpiry = new Date(Date.now() + 24 * 60 * 60_000).toISOString()
   const base: Proposal = {
     id: 'proposal-1',
     sourceType: 'Queue',
@@ -75,7 +80,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
     validationIssues: null,
     createdAt: now,
     updatedAt: now,
-    expiresAt: now,
+    expiresAt: futureExpiry,
     decidedAt: null,
     decidedByUserId: null,
     appliedAt: null,
@@ -190,6 +195,7 @@ describe('ReviewView', () => {
     mocks.rejectProposal.mockResolvedValue(buildProposal({ status: 'Rejected' }))
     mocks.executeProposal.mockResolvedValue(buildProposal({ status: 'Applied' }))
     mocks.getProposalDiff.mockResolvedValue('diff')
+    mocks.dismissProposals.mockResolvedValue({ dismissed: 1 })
     mocks.createRequestId.mockReturnValue('request-1')
   })
 
@@ -766,5 +772,176 @@ describe('ReviewView', () => {
     await Promise.resolve()
 
     expect(mocks.rejectProposal).toHaveBeenCalledWith('proposal-1', null)
+  })
+
+  it('shows Expired status badge for proposals with domain Expired status', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-expired',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    // Must show "Expired" status, not "Approved, ready to apply"
+    expect(wrapper.text()).toContain('Expired')
+    expect(wrapper.text()).not.toContain('Approved, ready to apply')
+    // Must show expired notice
+    expect(wrapper.text()).toContain('This proposal has expired and can no longer be applied')
+    // Must have the expired CSS class
+    expect(wrapper.find('.td-review-status--expired').exists()).toBe(true)
+  })
+
+  it('detects client-side expiry for Approved proposals past expiresAt', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-approved-expired',
+        status: 'Approved',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    // Should show as Expired even though domain status is Approved
+    expect(wrapper.find('.td-review-status--expired').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Expired')
+    expect(wrapper.text()).not.toContain('Approved, ready to apply')
+    // Apply to board button should NOT be available
+    expect(wrapper.text()).toContain('This proposal has expired and can no longer be applied')
+  })
+
+  it('detects client-side expiry for PendingReview proposals past expiresAt', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-pending-expired',
+        status: 'PendingReview',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    expect(wrapper.find('.td-review-status--expired').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Expired')
+    expect(wrapper.text()).not.toContain('Review required')
+    // Approve/Reject buttons should not be rendered for expired proposals
+    const card = wrapper.get('#proposal-proposal-pending-expired')
+    expect(card.text()).not.toContain('Approve for board')
+    expect(card.text()).not.toContain('Reject')
+  })
+
+  it('does not show Apply to board button for expired proposals', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-expired-no-apply',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+    const card = wrapper.get('#proposal-proposal-expired-no-apply')
+
+    // Should not have an Apply button
+    const applyBtn = card.findAll('button').find((btn) => btn.text() === 'Apply to board')
+    expect(applyBtn).toBeUndefined()
+  })
+
+  it('shows Dismiss button for expired proposals', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-expired-dismiss',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+    const card = wrapper.get('#proposal-proposal-expired-dismiss')
+
+    const dismissBtn = card.findAll('button').find((btn) => btn.text() === 'Dismiss')
+    expect(dismissBtn).toBeDefined()
+  })
+
+  it('dismisses an expired proposal and removes it from the list', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-to-dismiss',
+        status: 'Expired',
+        summary: 'Expired proposal to dismiss',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+      buildProposal({
+        id: 'proposal-still-active',
+        status: 'PendingReview',
+        summary: 'Active proposal',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+    expect(wrapper.text()).toContain('Expired proposal to dismiss')
+
+    const card = wrapper.get('#proposal-proposal-to-dismiss')
+    const dismissBtn = card.findAll('button').find((btn) => btn.text() === 'Dismiss')!
+    await dismissBtn.trigger('click')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['proposal-to-dismiss'])
+    expect(wrapper.text()).not.toContain('Expired proposal to dismiss')
+    expect(wrapper.text()).toContain('Active proposal')
+    expect(mocks.successToast).toHaveBeenCalledWith('Proposal dismissed')
+  })
+
+  it('does not count expired proposals in pending or ready summary cards', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-active-pending',
+        status: 'PendingReview',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+      buildProposal({
+        id: 'proposal-expired-pending',
+        status: 'PendingReview',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+      buildProposal({
+        id: 'proposal-expired-approved',
+        status: 'Approved',
+        sourceReferenceId: 'capture-x',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    const summaryCards = wrapper.findAll('.td-review-summary-card')
+    // "Pending review" card should only count 1 (the active one)
+    const pendingCard = summaryCards.find((c) => c.text().includes('Pending review'))
+    expect(pendingCard?.text()).toContain('1')
+    // "Ready to execute" card should count 0 (the approved one is expired)
+    const readyCard = summaryCards.find((c) => c.text().includes('Ready to execute'))
+    expect(readyCard?.text()).toContain('0')
+  })
+
+  it('does not treat non-expired Approved proposals as expired', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-approved-active',
+        status: 'Approved',
+        sourceReferenceId: 'capture-2',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    ])
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    expect(wrapper.find('.td-review-status--approved').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Approved, ready to apply')
+    expect(wrapper.text()).not.toContain('This proposal has expired')
   })
 })
