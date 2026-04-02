@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { boardsApi } from '../api/boardsApi'
@@ -44,6 +44,24 @@ const loadingBoards = ref(false)
 const boardFilterInput = ref('')
 const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 const showCompleted = ref(false)
+
+// Reactive clock for client-side expiry detection — updates every 60 s so computed
+// properties that depend on isProposalExpired re-evaluate as time passes.
+const nowMs = ref(Date.now())
+let clockInterval: ReturnType<typeof setInterval> | null = null
+
+function startClock() {
+  clockInterval = setInterval(() => {
+    nowMs.value = Date.now()
+  }, 60_000)
+}
+
+function stopClock() {
+  if (clockInterval !== null) {
+    clearInterval(clockInterval)
+    clockInterval = null
+  }
+}
 
 // Per-proposal collapsible section state (Record<bool> for Vue reactivity)
 const expandedSections = ref<Record<string, Record<string, boolean>>>({})
@@ -107,13 +125,13 @@ const visibleProposals = computed(() =>
   proposals.value.filter((proposal) => {
     if (!matchesActiveBoardFilter(proposal.boardId)) return false
 
-    // Always hide dismissed proposals
-    if (normalizeProposalStatus(proposal.status) === 'Dismissed') return false
-
     const status = normalizeProposalStatus(proposal.status)
 
+    // Always hide dismissed proposals
+    if (status === 'Dismissed') return false
+
     // Always show expired proposals (domain or client-side) so the user can dismiss them
-    if (status === 'Expired' || isProposalExpired(proposal)) return true
+    if (isProposalExpired(proposal)) return true
 
     // When showCompleted is off, hide terminal-state proposals
     if (!showCompleted.value && completedStatuses.has(status)) return false
@@ -503,9 +521,10 @@ function captureHrefForProposal(proposal: ApiProposal): string {
 function isProposalExpired(proposal: ApiProposal): boolean {
   const normalized = normalizeProposalStatus(proposal.status)
   if (normalized === 'Expired') return true
-  // Client-side expiry detection: the backend housekeeping worker may not have run yet
+  // Client-side expiry detection: the backend housekeeping worker may not have run yet.
+  // Uses nowMs.value (reactive ref) so computed properties re-evaluate on the clock tick.
   if (normalized === 'PendingReview' || normalized === 'Approved') {
-    return new Date(proposal.expiresAt).getTime() <= Date.now()
+    return new Date(proposal.expiresAt).getTime() <= nowMs.value
   }
   return false
 }
@@ -582,6 +601,14 @@ async function handleDismissProposal(proposalId: string) {
     if (result.dismissed > 0) {
       proposals.value = proposals.value.filter((p) => p.id !== proposalId)
       toast.success('Proposal dismissed')
+    } else {
+      // The backend skipped this proposal (e.g. client-side-expired but still
+      // PendingReview/Approved on the server). Remove it from the local list
+      // so it doesn't stay stuck with no actionable buttons, and refresh to
+      // get up-to-date server state.
+      proposals.value = proposals.value.filter((p) => p.id !== proposalId)
+      toast.info('Proposal removed from view. Refreshing...')
+      void loadProposals()
     }
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to dismiss proposal').message)
@@ -616,6 +643,11 @@ function clearBoardFilter() {
 onMounted(() => {
   void loadBoardOptions()
   void loadProposals()
+  startClock()
+})
+
+onUnmounted(() => {
+  stopClock()
 })
 
 watch(
