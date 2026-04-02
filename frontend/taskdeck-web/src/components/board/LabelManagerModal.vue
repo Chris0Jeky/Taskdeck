@@ -121,13 +121,13 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
     <!-- Modal -->
     <div class="flex min-h-full items-center justify-center p-4">
-      <div class="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6" @click.stop>
+      <div class="relative bg-surface-container rounded-lg shadow-xl max-w-lg w-full p-6 border border-outline-variant/30" @click.stop>
         <!-- Header -->
         <div class="flex items-start justify-between mb-4">
-          <h2 class="text-2xl font-semibold text-gray-900">Manage Labels</h2>
+          <h2 class="text-2xl font-semibold text-on-surface">Manage Labels</h2>
           <button
             @click="handleClose"
-            class="text-gray-400 hover:text-gray-600 transition-colors"
+            class="text-on-surface-variant hover:text-on-surface transition-colors"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -136,14 +136,14 @@ useEscapeToClose(() => props.isOpen, handleClose)
         </div>
 
         <!-- Create/Edit Form -->
-        <div v-if="showLabelForm" class="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-          <h3 class="text-sm font-medium text-gray-900 mb-3">
+        <div v-if="showLabelForm" class="mb-4 p-4 border border-outline-variant/30 rounded-lg bg-surface-container-high">
+          <h3 class="text-sm font-medium text-on-surface mb-3">
             {{ editingLabelId ? 'Edit Label' : 'Create New Label' }}
           </h3>
           <div class="space-y-3">
             <!-- Name -->
             <div>
-              <label for="label-name" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="label-name" class="block text-sm font-medium text-on-surface-variant mb-1">
                 Label Name *
               </label>
               <input
@@ -151,14 +151,14 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 v-model="labelName"
                 type="text"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                 placeholder="e.g., Bug, Feature, Priority"
               />
             </div>
 
             <!-- Color Picker -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
+              <label class="block text-sm font-medium text-on-surface-variant mb-2">
                 Color *
               </label>
               <div class="flex flex-wrap gap-2 mb-2">
@@ -168,7 +168,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
                   @click="labelColor = color"
                   type="button"
                   class="w-8 h-8 rounded-md border-2 transition-all"
-                  :class="labelColor === color ? 'border-gray-900 ring-2 ring-offset-2 ring-gray-900' : 'border-gray-300'"
+                  :class="labelColor === color ? 'border-on-surface ring-2 ring-offset-2 ring-offset-surface-container-high ring-on-surface' : 'border-outline-variant/40'"
                   :style="{ backgroundColor: color }"
                   :title="color"
                 ></button>
@@ -177,13 +177,13 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 <input
                   v-model="labelColor"
                   type="color"
-                  class="w-12 h-8 border border-gray-300 rounded cursor-pointer"
+                  class="w-12 h-8 border border-outline-variant/40 rounded cursor-pointer bg-surface-container-high"
                 />
                 <input
                   v-model="labelColor"
                   type="text"
                   pattern="^#[0-9A-Fa-f]{6}$"
-                  class="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  class="flex-1 px-3 py-1.5 bg-surface-container-high border border-outline-variant/40 rounded-md text-sm text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                   placeholder="#3B82F6"
                 />
               </div>
@@ -191,7 +191,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
             <!-- Preview -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-on-surface-variant mb-1">
                 Preview
               </label>
               <span
@@ -208,14 +208,14 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 @click="handleSaveLabel"
                 :disabled="!isFormValid()"
                 type="button"
-                class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md transition-colors"
+                class="px-4 py-2 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
               >
                 {{ editingLabelId ? 'Update' : 'Create' }}
               </button>
               <button
                 @click="cancelForm"
                 type="button"
-                class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-md transition-colors"
+                class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
               >
                 Cancel
               </button>
@@ -225,7 +225,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
         <!-- Labels List -->
         <div class="space-y-2 max-h-96 overflow-y-auto">
-          <div v-if="sortedLabels.length === 0" class="text-center py-8 text-gray-400">
+          <div v-if="sortedLabels.length === 0" class="text-center py-8 text-on-surface-variant/60">
             <p class="text-sm">No labels yet</p>
             <p class="text-xs mt-1">Create your first label to get started</p>
           </div>
@@ -233,7 +233,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
           <div
             v-for="label in sortedLabels"
             :key="label.id"
-            class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            class="flex items-center justify-between p-3 border border-outline-variant/30 rounded-lg hover:bg-surface-container-high transition-colors"
           >
             <div class="flex items-center gap-3 flex-1 min-w-0">
               <span
@@ -242,12 +242,12 @@ useEscapeToClose(() => props.isOpen, handleClose)
               >
                 {{ label.name }}
               </span>
-              <span class="text-xs text-gray-500 truncate">{{ label.colorHex }}</span>
+              <span class="text-xs text-on-surface-variant truncate">{{ label.colorHex }}</span>
             </div>
             <div class="flex gap-1 flex-shrink-0">
               <button
                 @click="startEditing(label)"
-                class="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                class="p-1.5 text-on-surface-variant hover:text-primary hover:bg-primary/10 rounded transition-colors"
                 title="Edit"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -256,7 +256,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
               </button>
               <button
                 @click="handleDeleteLabel(label)"
-                class="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                class="p-1.5 text-on-surface-variant hover:text-error hover:bg-error/10 rounded transition-colors"
                 title="Delete"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,7 +271,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
         <button
           v-if="!showLabelForm"
           @click="startCreating"
-          class="w-full mb-4 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 border border-blue-300 rounded-md transition-colors flex items-center justify-center gap-2"
+          class="w-full mb-4 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 border border-primary/40 rounded-md transition-colors flex items-center justify-center gap-2"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -280,11 +280,11 @@ useEscapeToClose(() => props.isOpen, handleClose)
         </button>
 
         <!-- Footer -->
-        <div class="mt-6 pt-4 border-t border-gray-200">
+        <div class="mt-6 pt-4 border-t border-outline-variant/30">
           <button
             @click="handleClose"
             type="button"
-            class="w-full px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-md transition-colors"
+            class="w-full px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
           >
             Done
           </button>
