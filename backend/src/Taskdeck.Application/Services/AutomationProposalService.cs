@@ -296,11 +296,7 @@ public class AutomationProposalService : IAutomationProposalService
                 foreach (var card in cards)
                     cardTitles[card.Id] = card.Title;
             }
-            catch (OperationCanceledException)
-            {
-                throw; // Respect cancellation
-            }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Non-critical: if lookups fail, fall back to IDs
             }
@@ -547,36 +543,44 @@ public class AutomationProposalService : IAutomationProposalService
     {
         var verb = HumanizeActionVerb(operation.ActionType);
         var targetType = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
+        var isCardTarget = operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase);
         var namedTarget = ExtractNamedTarget(operation.Parameters);
 
         // Try to resolve card title from lookup when not embedded in parameters
-        if (namedTarget is null && !string.IsNullOrWhiteSpace(operation.TargetId))
+        // Only attempt card-specific lookups when the operation targets a card
+        if (namedTarget is null && isCardTarget && !string.IsNullOrWhiteSpace(operation.TargetId))
         {
             if (Guid.TryParse(operation.TargetId, out var targetGuid) && cardTitles.TryGetValue(targetGuid, out var title))
                 namedTarget = title;
         }
 
         // Also try to resolve card title from cardId parameter
-        if (namedTarget is null)
+        if (namedTarget is null && isCardTarget)
         {
             var cardIdFromParams = ExtractGuidParameter(operation.Parameters, "cardId");
             if (cardIdFromParams.HasValue && cardTitles.TryGetValue(cardIdFromParams.Value, out var title))
                 namedTarget = title;
         }
 
-        var description = namedTarget is null
-            ? $"{operation.Sequence}. {verb} {targetType}"
-            : $"{operation.Sequence}. {verb} {targetType} \"{namedTarget}\"";
+        // Build description, falling back to raw TargetId when no name is available
+        var description = namedTarget is not null
+            ? $"{operation.Sequence}. {verb} {targetType} \"{namedTarget}\""
+            : !string.IsNullOrWhiteSpace(operation.TargetId)
+                ? $"{operation.Sequence}. {verb} {targetType} {operation.TargetId}"
+                : $"{operation.Sequence}. {verb} {targetType}";
 
-        // Append column context for operations that target a column
+        // Append column context for operations that reference a column
         var columnId = ExtractGuidParameter(operation.Parameters, "columnId");
-        if (columnId.HasValue && columnNames.TryGetValue(columnId.Value, out var columnName))
+        if (columnId.HasValue)
         {
-            var actionNorm = operation.ActionType.ToLowerInvariant();
-            if (actionNorm is "move")
-                description += $" to column \"{columnName}\"";
-            else if (actionNorm is "create")
-                description += $" in column \"{columnName}\"";
+            var columnDisplay = columnNames.TryGetValue(columnId.Value, out var columnName)
+                ? $"\"{columnName}\""
+                : columnId.Value.ToString();
+
+            if (verb == "Move")
+                description += $" to column {columnDisplay}";
+            else if (verb == "Create")
+                description += $" in column {columnDisplay}";
         }
 
         return description;
@@ -600,12 +604,8 @@ public class AutomationProposalService : IAutomationProposalService
             if (!document.RootElement.TryGetProperty(propertyName, out var propertyValue))
                 return null;
 
-            if (propertyValue.ValueKind == JsonValueKind.String &&
-                Guid.TryParse(propertyValue.GetString(), out var guidValue))
+            if (propertyValue.TryGetGuid(out var guidValue))
                 return guidValue;
-
-            if (propertyValue.TryGetGuid(out var directGuid))
-                return directGuid;
         }
         catch (JsonException)
         {
