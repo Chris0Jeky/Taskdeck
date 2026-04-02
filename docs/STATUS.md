@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-02
+Last Updated: 2026-04-03
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -49,6 +49,15 @@ Current constraints are mostly hardening and consistency:
 - GDPR data portability delivered (`#83`/`#666`, 2026-04-01): `DataExportService` exports all user-scoped data as versioned JSON package (boards, notifications, captures, proposals, chat sessions, audit trail, preferences); `AccountDeletionService` with password re-authentication + confirmation phrase safeguard, PII anonymization (username/email/password), `BoardAccess` cleanup, sole-owner guard, transactional rollback on partial failure; `DataPortabilityController` with `[Authorize]` + `[ResponseCache(NoStore = true)]`; PII-free audit logging at request and completion stages; 32 tests; follow-up items: export streaming for large datasets (`#670`), JWT invalidation after deletion (`#671`)
 - Board metrics dashboard delivered (`#77`/`#667`, 2026-04-01): `BoardMetricsService` computes throughput (audit-log-based card completion), cycle time (creation-to-done via audit), WIP (cards per column), and blocked card count/duration; `MetricsController` with date range, board, and label filters; done column resolved by name heuristic (done/complete/finished/shipped/etc.) with positional fallback; frontend dashboard at `/workspace/metrics` with CSS bar charts, summary cards, tables, board selector, date picker, loading/error/empty states; lazy-loaded route + sidebar nav link; 24 backend + 22 frontend tests; follow-up: SQL-level filtering for large boards (`#675`)
 - GitHub OAuth frontend integration delivered (`#539`/`#668`, 2026-04-01): conditional "Sign in with GitHub" button in LoginView based on `/api/auth/providers` response; OAuth code exchange flow with demo-mode gating, array-safe query param extraction, and awaited URL cleanup; session store action with error handling and toast notifications; open redirect prevention on both backend (`Url.IsLocalUrl`) and frontend (`sanitizeInternalRedirect`); follow-up: distributed auth code store, PKCE, account linking (`#676`)
+- Hardening and UX wave delivered (2026-04-03, PRs `#691`–`#698`): 9 issues resolved across 8 PRs with adversarial review follow-through:
+  - **P1 bug fixed** (`#681`/`#691`): Archive, Activity, Ops, and Access workspace routes no longer silently redirect to Home — feature flags for shipped surfaces now default to `true`; 5 new router guard tests
+  - **Expired proposal handling** (`#678`+`#690`/`#696`): Review no longer presents expired proposals as "Approved, ready to apply"; expired proposals show distinct status badge with dismiss/clear action; client-side expiry detection with 60-second reactive clock covers proposals the housekeeping worker hasn't transitioned yet; 9 new tests
+  - **Chat card ID continuity** (`#677`/`#695`): new `CardIdPrefixResolver` resolves 8-char hex prefixes to full GUIDs via board-scoped prefix matching; wired into `AutomationPlannerService` (6 call sites) and `NaturalLanguageInstructionExtractor`; full GUIDs pass through without DB hits; 15 new tests
+  - **Human-readable proposal diffs** (`#682`/`#697`): `GetProposalDiffAsync` now batch-loads cards and columns (2 queries) and resolves operation targets to names; falls back to raw GUID when resolution fails; frontend diff panel with ARIA label and word-wrapping; 4 new tests
+  - **Dark theme label manager** (`#684`/`#692`): 22 light-theme Tailwind classes replaced with design-token equivalents following ColumnEditModal pattern; 2 new tests
+  - **Chat health banner three-state** (`#679`/`#693`): `verificationStatus` field (`unverified`/`verified`/`failed`) added to health DTO; banner shows amber for configured-but-unverified, green for verified, red for failed; 6 new tests
+  - **OpenAI strict mode + loop detection** (`#674`/`#694`): `strict: true` added to OpenAI tool schemas; SHA256-based loop detection in orchestrator aborts when consecutive rounds have identical tool-call fingerprints (with error-retry bypass for transient failures); 10 new tests
+  - **JWT invalidation after account deletion** (`#671`/`#698`): `TokenInvalidatedAt` field on User entity with EF migration; `TokenValidationMiddleware` checks `IsActive` and compares token `iat` against invalidation timestamp on every authenticated request; `AccountDeletionService` sets invalidation timestamp during deletion; whole-second precision truncation matches JWT `iat` granularity; ADR-0021 documents the design decision; 9 new tests
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
