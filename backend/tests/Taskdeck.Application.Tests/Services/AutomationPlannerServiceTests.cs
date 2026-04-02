@@ -929,4 +929,230 @@ public class AutomationPlannerServiceTests
     }
 
     #endregion
+
+    #region Short Card ID Resolution Tests
+
+    [Fact]
+    public async Task ParseInstruction_ShouldResolveShortCardId_ForMoveInstruction()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var knownCardId = Guid.Parse("aabbccdd-1111-2222-3333-444444444444");
+        var shortId = BoardContextBuilder.FormatShortId(knownCardId); // "aabbccdd"
+
+        var card = new Card(knownCardId, boardId, Guid.NewGuid(), "My Card");
+        var column = TestDataBuilder.CreateColumn(boardId, "Done", 2);
+
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Card> { card });
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { column });
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Manual,
+            null,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            $"move card {shortId} to column 'Done'",
+            null, null,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTime.UtcNow.AddDays(1),
+            null, null, null, null, "corr1",
+            new List<ProposalOperationDto>());
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        // Act — use the short 8-char ID, not the full GUID
+        var result = await _service.ParseInstructionAsync(
+            $"move card {shortId} to column 'Done'", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto =>
+                dto.Operations != null &&
+                dto.Operations.Count == 1 &&
+                dto.Operations[0].ActionType == "move" &&
+                dto.Operations[0].TargetType == "card"),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldResolveShortCardId_ForArchiveInstruction()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var knownCardId = Guid.Parse("11223344-aaaa-bbbb-cccc-dddddddddddd");
+        var shortId = BoardContextBuilder.FormatShortId(knownCardId); // "11223344"
+
+        var card = new Card(knownCardId, boardId, Guid.NewGuid(), "Archivable Card");
+
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Card> { card });
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Manual,
+            null,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Medium,
+            $"archive card {shortId}",
+            null, null,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTime.UtcNow.AddDays(1),
+            null, null, null, null, "corr1",
+            new List<ProposalOperationDto>());
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Medium);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            $"archive card {shortId}", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto =>
+                dto.Operations != null &&
+                dto.Operations.Count == 1 &&
+                dto.Operations[0].ActionType == "archive" &&
+                dto.Operations[0].TargetType == "card"),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldResolveShortCardId_ForUpdateInstruction()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var knownCardId = Guid.Parse("deadbeef-0000-1111-2222-333344445555");
+        var shortId = BoardContextBuilder.FormatShortId(knownCardId); // "deadbeef"
+
+        var card = new Card(knownCardId, boardId, Guid.NewGuid(), "Updatable Card");
+
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Card> { card });
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Manual,
+            null,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            $"update card {shortId} title 'New Title'",
+            null, null,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTime.UtcNow.AddDays(1),
+            null, null, null, null, "corr1",
+            new List<ProposalOperationDto>());
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            $"update card {shortId} title 'New Title'", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(
+            It.Is<CreateProposalDto>(dto =>
+                dto.Operations != null &&
+                dto.Operations.Count == 1 &&
+                dto.Operations[0].ActionType == "update" &&
+                dto.Operations[0].TargetType == "card"),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldStillWork_WithFullGuid()
+    {
+        // Verify no regression: full GUIDs should continue to work
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+        var column = TestDataBuilder.CreateColumn(boardId, "Done", 2);
+
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { column });
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Manual,
+            null,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            $"move card {cardId} to column 'Done'",
+            null, null,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTime.UtcNow.AddDays(1),
+            null, null, null, null, "corr1",
+            new List<ProposalOperationDto>());
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .ReturnsAsync(Result.Success());
+
+        // Act — use the full GUID, not a short ID
+        var result = await _service.ParseInstructionAsync(
+            $"move card {cardId} to column 'Done'", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+
+        // Full GUID path should NOT query the card repository
+        _cardRepoMock.Verify(
+            r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnError_ForAmbiguousShortId()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var id1 = Guid.Parse("aabbccdd-1111-2222-3333-444444444444");
+        var id2 = Guid.Parse("aabbccdd-5555-6666-7777-888888888888");
+        var card1 = new Card(id1, boardId, Guid.NewGuid(), "Card A");
+        var card2 = new Card(id2, boardId, Guid.NewGuid(), "Card B");
+
+        _cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Card> { card1, card2 });
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "archive card aabbccdd", userId, boardId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Ambiguous card ID prefix");
+    }
+
+    #endregion
 }
