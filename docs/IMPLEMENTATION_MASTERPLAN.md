@@ -12,8 +12,9 @@ Companion Active Docs:
 
 ## Purpose
 
-This is the active execution guide for sequencing implementation.
-Update this file at the end of each meaningful delivery cycle.
+This is the active execution guide for sequencing past, current, and future implementation.
+`docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
+Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
 ## Planning Principles
 
@@ -804,6 +805,7 @@ Master tracker: `#531`.
 
 ### Priority I (Current Phase 4 Completion Path)
 
+- **Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit. Must be resolved before external onboarding.
 - Security and policy convergence: `#33`, `#34`, `#44`
 - Final cross-user policy convergence follow-through: `#152`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
@@ -814,6 +816,7 @@ Master tracker: `#531`.
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave: `#199` to `#211` (delivered); logging redaction follow-through `#212` is delivered, and remaining linked performance follow-through is `#213`
 - Testing harness guardrails wave (`#254` to `#260`) is delivered; follow-up improvements now route through normal hardening issues
+- Rigorous test expansion wave (`#721` tracker, `#699`–`#720`, `#722`–`#726`): 22 issues seeded 2026-04-03 from systematic codebase audit covering infrastructure repository integration tests, untested workers, controller HTTP gaps, cross-user data isolation proof, concurrency stress, auth edge cases, domain state machines, SignalR hub integration, proposal lifecycle edge cases, LLM tool-calling boundaries, webhook SSRF, frontend store/view gaps, E2E scenarios, export/import round-trips, error contracts, resilience testing, and property-based/adversarial input testing; golden path integration test (`#703`) is highest-signal individual item
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
 - CI/workflow topology expansion and governance track: `#168`
@@ -893,7 +896,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
 - Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
-- Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
+- Test maturity: `#87`, `#88`, `#89` (property/fuzz pilot delivered; extended by `#717`), `#90`, `#91`; rigorous expansion wave tracker at `#721`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
 - Lower-priority secondary MVP follow-through continuation:
