@@ -54,6 +54,8 @@ export interface Proposal {
   correlationId: string
   operations: ProposalOperation[]
   presentation?: ProposalPresentation
+  /** True when the proposal's expiry time has passed (server-authoritative). */
+  isExpired?: boolean
 }
 
 export interface ProposalFilters {

@@ -25,6 +25,12 @@ public record ProposalDto(
 )
 {
     public ProposalPresentationDto Presentation { get; init; } = ProposalPresentationDto.Empty;
+
+    /// <summary>
+    /// True when the proposal's expiry time has passed, regardless of the current status.
+    /// This allows the frontend to distinguish approved-but-expired proposals from executable ones.
+    /// </summary>
+    public bool IsExpired { get; init; }
 }
 
 public record ProposalPresentationDto(

@@ -321,13 +321,12 @@ public class AutomationProposalService : IAutomationProposalService
 
             foreach (var proposal in proposals)
             {
-                if (proposal.Status is ProposalStatus.Applied or ProposalStatus.Rejected
-                    or ProposalStatus.Failed or ProposalStatus.Expired)
+                if (proposal.CanBeDismissed)
                 {
                     proposal.Dismiss();
                     dismissed++;
                 }
-                // Skip proposals not in a dismissible terminal state
+                // Skip proposals not in a dismissible state
             }
 
             if (dismissed > 0)
@@ -365,7 +364,8 @@ public class AutomationProposalService : IAutomationProposalService
             proposal.Operations.Select(MapOperationToDto).ToList()
         )
         {
-            Presentation = BuildPresentation(proposal)
+            Presentation = BuildPresentation(proposal),
+            IsExpired = proposal.IsExpired
         };
     }
 
