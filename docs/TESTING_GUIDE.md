@@ -132,13 +132,13 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 | Priority | Issues | Theme |
 |----------|--------|-------|
 | I | `#703` | Capture → triage → proposal → review → board end-to-end golden path |
-| II | `#699`, `#700`, `#702`, `#704`, `#705`, `#707`, `#723`, `#725` | Infrastructure repos, untested worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor |
+| II | ~~`#699`~~, `#700`, `#702`, `#704`, `#705`, `#707`, `#723`, `#725` | Infrastructure repos (~~`#699` delivered~~), untested worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor |
 | III | `#701`, `#706`, `#708`, `#709`, `#710`, `#711`, `#712`, `#713`, `#714`, `#715`, `#716`, `#718`, `#719`, `#720`, `#726` | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience |
 | IV | `#717` | Property-based and adversarial input tests (extends `#89`) |
 
 ### Key Gaps Identified
 
-- **Infrastructure repositories**: 25+ repositories with raw SQL, GUID formatting, and in-memory pagination — largely untested against real SQLite
+- **Infrastructure repositories**: 25+ repositories with raw SQL, GUID formatting, and in-memory pagination — partially addressed: 7 classes now have 77 integration tests against real SQLite (`#699`/`#730`); remaining repositories still untested
 - **`LlmQueueToProposalWorker`**: most complex worker (fair-batch interleaving, optimistic concurrency, retry/backoff) with zero tests; every capture flows through it
 - **Cross-user data isolation**: after `#508` (queue data leak), no systematic integration test proves data isolation across all surfaces
 - **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage
@@ -151,6 +151,25 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 - Complements `#90` (mutation testing pilot)
 - Complements `#91` (Testcontainers for isolation)
 - Feeds into `#135` (integrated multi-component verification program)
+
+### Delivered: Infrastructure Repository Integration Tests (`#699`/`#730`)
+
+First delivery from the rigorous test expansion wave. 77 integration tests across 7 repository classes running against real SQLite (not mocks or in-memory substitutes).
+
+Pattern:
+- Each test class creates a fresh SQLite database via `DbContextOptionsBuilder<TaskdeckDbContext>` with a unique filename
+- Tests exercise actual EF Core queries, GUID formatting, ordering, pagination, and filtering against real SQLite behavior
+- Database is cleaned up after each test run
+
+Key findings:
+- Found and fixed a real `LlmQueueRepository` ordering bug where queue items were not returned in the expected FIFO order
+- Confirmed correct behavior for raw SQL queries, in-memory pagination edge cases, and GUID string formatting across repositories
+
+Coverage:
+- 7 repository classes tested (including `LlmQueueRepository`, `BoardRepository`, `CardRepository`, and others)
+- Tests validate query correctness, cross-user isolation, empty-result handling, and ordering guarantees
+
+This establishes the pattern for testing remaining infrastructure repositories tracked in the wave (`#721`).
 
 ## Backend Commands
 
