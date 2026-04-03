@@ -25,11 +25,16 @@ public class AccountDeletionService : IAccountDeletionService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
+    private readonly IActiveUserCache? _activeUserCache;
 
-    public AccountDeletionService(IUnitOfWork unitOfWork, IHistoryService historyService)
+    public AccountDeletionService(
+        IUnitOfWork unitOfWork,
+        IHistoryService historyService,
+        IActiveUserCache? activeUserCache = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
+        _activeUserCache = activeUserCache;
     }
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
@@ -165,6 +170,11 @@ public class AccountDeletionService : IAccountDeletionService
             user.UpdatePassword(BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()));
             user.Deactivate();
             await _unitOfWork.Users.UpdateAsync(user, cancellationToken);
+
+            // Invalidate the active-user cache so that any existing JWT tokens
+            // for this user are rejected immediately by the middleware, rather than
+            // waiting for the cache TTL to expire.
+            _activeUserCache?.Invalidate(userId);
 
             // Log completion inside the transaction (no PII)
             await _historyService.LogActionAsync(
