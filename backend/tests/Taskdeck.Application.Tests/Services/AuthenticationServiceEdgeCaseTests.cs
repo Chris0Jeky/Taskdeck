@@ -112,7 +112,7 @@ public class AuthenticationServiceEdgeCaseTests
     }
 
     [Fact]
-    public async Task LoginAsync_ConcurrentLogins_ShouldReturnDifferentJtis()
+    public async Task LoginAsync_SequentialLogins_ShouldReturnDifferentJtis()
     {
         var password = "password123";
         var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword(password));
@@ -552,13 +552,11 @@ public class AuthenticationServiceEdgeCaseTests
     }
 
     [Fact]
-    public async Task ExternalLoginAsync_ShouldReturnError_WhenAllUsernameVariantsTaken_ShortUsername()
+    public async Task ExternalLoginAsync_ShouldSucceedWithGuidFallback_WhenAllUsernameVariantsTaken_ShortUsername()
     {
-        // Known defect: when > 100 username variants are taken and the original
-        // username is short (< 18 chars), the GUID fallback generates a string
-        // shorter than 50 characters, causing Substring(0, 50) to throw
-        // ArgumentOutOfRangeException. The generic catch returns UnexpectedError.
-        // This documents the current behavior for future fix consideration.
+        // Regression test: previously Substring(0, 50) threw ArgumentOutOfRangeException
+        // when the GUID fallback string was shorter than 50 chars (username < 17 chars).
+        // Fixed to use Math.Min(50, length) so the fallback safely truncates.
         var service = CreateService();
 
         _externalLoginRepoMock
@@ -581,9 +579,9 @@ public class AuthenticationServiceEdgeCaseTests
         var dto = new ExternalLoginDto("GitHub", "99999", "popular", "unique@example.com");
         var result = await service.ExternalLoginAsync(dto);
 
-        // Current behavior: returns UnexpectedError due to Substring overflow
-        result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        // With the fix, GUID fallback no longer throws — user is created successfully
+        result.IsSuccess.Should().BeTrue();
+        result.Value.User.Username.Should().StartWith("popular-");
     }
 
     private AuthenticationService CreateService(JwtSettings? jwtSettings = null)

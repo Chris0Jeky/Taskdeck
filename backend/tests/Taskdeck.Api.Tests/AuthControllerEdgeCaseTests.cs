@@ -21,9 +21,9 @@ using Xunit;
 namespace Taskdeck.Api.Tests;
 
 /// <summary>
-/// Edge-case integration tests for AuthController, TokenValidationMiddleware,
-/// and ActiveUserValidationMiddleware — verifying security properties around
-/// OAuth flows, JWT lifecycle, and session invalidation.
+/// Edge-case integration tests for AuthController and TokenValidationMiddleware,
+/// verifying security properties around OAuth flows, JWT lifecycle,
+/// and session invalidation.
 /// Linked to #707 (TST-40).
 /// </summary>
 public class AuthControllerEdgeCaseTests
@@ -100,8 +100,10 @@ public class AuthControllerEdgeCaseTests
         var controller = CreateAuthController();
         var result = controller.ExchangeCode(new ExchangeCodeRequest(code));
 
-        // The expired code is removed by TryRemove, so the response is 401 "invalid or expired"
-        result.Should().BeOfType<UnauthorizedObjectResult>();
+        // TryRemove succeeds (code existed), then the expiry check fires — returns "Code has expired"
+        var unauthorized = result.Should().BeOfType<UnauthorizedObjectResult>().Subject;
+        var error = unauthorized.Value.Should().BeOfType<ApiErrorResponse>().Subject;
+        error.Message.Should().Contain("expired");
     }
 
     [Fact]
