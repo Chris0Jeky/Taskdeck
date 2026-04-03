@@ -186,6 +186,11 @@ public class CardRepository : Repository<Card>, ICardRepository
             {
                 query = query.Where(c => materializedIds.Contains(c.Id));
             }
+            else
+            {
+                // Explicitly provided but empty — no cards match
+                return Array.Empty<Card>();
+            }
         }
 
         return await query
@@ -230,8 +235,6 @@ public class CardRepository : Repository<Card>, ICardRepository
             query = query.Where(c => c.CardLabels.Any(cl => cl.LabelId == labelId.Value));
         }
 
-        return await query
-            .OrderByDescending(c => c.UpdatedAt)
-            .ToListAsync(cancellationToken);
+        return await query.ToListAsync(cancellationToken);
     }
 }

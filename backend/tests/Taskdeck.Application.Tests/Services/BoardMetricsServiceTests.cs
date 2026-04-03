@@ -521,6 +521,8 @@ public class BoardMetricsServiceTests
                     var ids = cardIds.ToHashSet();
                     if (ids.Count > 0)
                         result = result.Where(c => ids.Contains(c.Id));
+                    else
+                        return Enumerable.Empty<Card>(); // Match repository: empty ids -> empty result
                 }
                 return result;
             });

@@ -80,25 +80,30 @@ public class BoardMetricsService : IBoardMetricsService
 
         // For throughput and cycle time, only load cards actually needed:
         // 1. Cards referenced by audit move logs (for CreatedAt in cycle time computation)
-        // 2. Cards currently in the done column within date range (for fallback path)
-        // This avoids loading the entire board into memory.
+        // 2. All board cards only as fallback when there are no audit-based done-moves
+        //    (ComputeThroughput/ComputeCycleTime internally fall back to done-column
+        //     cards when no audit data produces done-column matches)
+        // This avoids loading the entire board into memory on the primary (audit) path.
         var auditCardIds = cardMoveAudits.Keys.ToHashSet();
 
         if (doneColumn != null)
         {
-            // Load only the specific cards needed for throughput/cycle time
-            var relevantCards = (await _unitOfWork.Cards.GetForMetricsAsync(
-                query.BoardId, query.LabelId, auditCardIds, cancellationToken)).ToList();
+            List<Card> relevantCards;
 
-            // Also load done-column cards in date range for fallback (only if no audit data)
-            if (auditCardIds.Count == 0)
+            if (auditCardIds.Count > 0)
             {
-                // Fallback: load cards in the done column within date range
-                var fallbackCards = (await _unitOfWork.Cards.GetForMetricsAsync(
+                // Primary path: load only the specific cards referenced by audits
+                relevantCards = (await _unitOfWork.Cards.GetForMetricsAsync(
+                    query.BoardId, query.LabelId, auditCardIds, cancellationToken)).ToList();
+            }
+            else
+            {
+                // Fallback: no audit data in range — load all board cards so
+                // ComputeThroughput/ComputeCycleTime can use the done-column fallback.
+                // TODO(#675): push done-column + date-range filter to SQL to avoid
+                // loading all cards when no audit data exists.
+                relevantCards = (await _unitOfWork.Cards.GetForMetricsAsync(
                     query.BoardId, query.LabelId, cancellationToken: cancellationToken)).ToList();
-                relevantCards = fallbackCards
-                    .Where(c => c.ColumnId == doneColumn.Id && c.UpdatedAt >= query.From && c.UpdatedAt <= query.To)
-                    .ToList();
             }
 
             var throughput = ComputeThroughput(relevantCards, doneColumn, query.From, query.To, cardMoveAudits);
