@@ -38,6 +38,8 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
             $"/api/boards/{board.Id}/columns",
             new CreateColumnDto(board.Id, "Backlog", null, null));
         columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var column = await columnResponse.Content.ReadFromJsonAsync<ColumnDto>();
+        column.Should().NotBeNull();
 
         // Act 1: Create a capture item with structured checklist text
         var captureResponse = await client.PostAsJsonAsync(
@@ -97,6 +99,7 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         cards!.Should().ContainSingle();
         cards[0].Title.Should().Be("Fix login bug");
         cards[0].BoardId.Should().Be(board.Id);
+        cards[0].ColumnId.Should().Be(column!.Id, "card should be placed in the first (Backlog) column");
 
         // Assert: Capture item is now Converted
         var converted = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.Converted);
@@ -123,6 +126,8 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
             $"/api/boards/{board.Id}/columns",
             new CreateColumnDto(board.Id, "Backlog", null, null));
         columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var column = await columnResponse.Content.ReadFromJsonAsync<ColumnDto>();
+        column.Should().NotBeNull();
 
         // Capture with multiple checklist items
         var captureResponse = await client.PostAsJsonAsync(
@@ -169,6 +174,7 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         cards!.Should().HaveCount(3);
         cards.Select(c => c.Title).Should().BeEquivalentTo(
             new[] { "Implement user authentication", "Write API integration tests", "Update deployment docs" });
+        cards.Should().OnlyContain(c => c.ColumnId == column!.Id, "all cards should be placed in the Backlog column");
     }
 
     [Fact]
