@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Xunit;
 
@@ -84,6 +85,32 @@ public class AuthzRegressionMatrixApiTests : IClassFixture<TestWebApplicationFac
                         SeedCards = []
                     },
                     false))),
+            // Agent endpoints
+            ("agents.list", () => _client.GetAsync("/api/agents")),
+            ("agents.get", () => _client.GetAsync($"/api/agents/{Guid.NewGuid()}")),
+            ("agents.create", () => _client.PostAsJsonAsync("/api/agents",
+                new CreateAgentProfileDto("Unauth Agent", "triage", AgentScopeType.Workspace))),
+            ("agents.update", () => _client.PutAsJsonAsync($"/api/agents/{Guid.NewGuid()}",
+                new UpdateAgentProfileDto("Updated"))),
+            ("agents.delete", () => _client.DeleteAsync($"/api/agents/{Guid.NewGuid()}")),
+            ("agents.runs.list", () => _client.GetAsync($"/api/agents/{Guid.NewGuid()}/runs")),
+            ("agents.runs.get", () => _client.GetAsync($"/api/agents/{Guid.NewGuid()}/runs/{Guid.NewGuid()}")),
+            ("agents.runs.create", () => _client.PostAsJsonAsync($"/api/agents/{Guid.NewGuid()}/runs",
+                new CreateAgentRunDto("unauthorized"))),
+            // Abuse containment endpoints
+            ("abuse.status", () => _client.GetAsync($"/api/abuse/actors/{Guid.NewGuid()}/status")),
+            ("abuse.events", () => _client.GetAsync($"/api/abuse/actors/{Guid.NewGuid()}/events")),
+            ("abuse.override", () => _client.PostAsJsonAsync("/api/abuse/actors/override",
+                new AbuseOverrideRequestDto(Guid.NewGuid(), AbuseState.Restricted, "unauth test"))),
+            ("abuse.evaluate", () => _client.PostAsync($"/api/abuse/actors/{Guid.NewGuid()}/evaluate", null)),
+            // Account / data portability endpoints
+            ("account.export", () => _client.GetAsync("/api/account/export")),
+            ("account.delete", () => _client.PostAsJsonAsync("/api/account/delete",
+                new AccountDeletionRequest("password", "DELETE MY ACCOUNT"))),
+            // Metrics endpoints
+            ("metrics.board", () => _client.GetAsync($"/api/metrics/boards/{Guid.NewGuid()}")),
+            // Search endpoints
+            ("search.query", () => _client.GetAsync("/api/search?q=test")),
             ("users.getById", () => _client.GetAsync($"/api/users/{userId}")),
             ("users.update", () => _client.PutAsJsonAsync($"/api/users/{userId}", new UpdateUserDto("Unauthorized", "unauthorized@example.com"))),
             ("users.activate", () => _client.PostAsync($"/api/users/{userId}/activate", content: null)),
