@@ -22,3 +22,4 @@
 | [0018](ADR-0018-llm-tool-calling-custom-over-semantic-kernel.md) | LLM Tool-Calling — Custom Implementation over Semantic Kernel | Accepted | 2026-04-01 |
 | [0019](ADR-0019-mcp-server-official-sdk-embedded-hosting.md) | MCP Server — Official SDK with Embedded Hosting | Accepted | 2026-04-01 |
 | [0020](ADR-0020-plugin-extension-architecture.md) | Plugin/Extension Architecture RFC and Sandboxing Constraints | Proposed | 2026-04-01 |
+| [0021](ADR-0021-jwt-invalidation-user-active-middleware.md) | JWT Invalidation via User-Active Middleware | Accepted | 2026-04-02 |

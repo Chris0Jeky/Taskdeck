@@ -163,6 +163,9 @@ public class AccountDeletionService : IAccountDeletionService
                 username: $"deleted-{anonymizedSuffix}",
                 email: $"deleted-{anonymizedSuffix}@anonymized.local");
             user.UpdatePassword(BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()));
+            // Invalidate all active JWT tokens so that any in-flight sessions are
+            // rejected by the TokenValidationMiddleware.
+            user.InvalidateTokens();
             user.Deactivate();
             await _unitOfWork.Users.UpdateAsync(user, cancellationToken);
 
