@@ -6,7 +6,7 @@ import DOMPurify from 'dompurify'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
-import type { ChatProviderHealth, ChatMessage, ChatSession } from '../types/chat'
+import type { ChatProviderHealth, ChatMessage, ChatSession, ToolCallMetadata } from '../types/chat'
 import type { Board } from '../types/board'
 import { normalizeChatRole, extractParseHint } from '../utils/chat'
 import type { ParsedHintMessage } from '../utils/chat'
@@ -64,6 +64,7 @@ const selectedNewSessionBoardId = ref<string | null>(null)
 const messageContent = ref('')
 const requestProposal = ref(false)
 const expandedHintIds = ref<Set<string>>(new Set())
+const expandedToolMetaIds = ref<Set<string>>(new Set())
 
 const boardOptions = computed(() =>
   buildInputAssistOptions(
@@ -460,6 +461,29 @@ function applyHintSuggestion(example: string) {
   requestProposal.value = true
 }
 
+function parseToolCallMetadata(message: ChatMessage): ToolCallMetadata | null {
+  if (!message.toolCallMetadataJson) return null
+  try {
+    return JSON.parse(message.toolCallMetadataJson) as ToolCallMetadata
+  } catch {
+    return null
+  }
+}
+
+function toggleToolMeta(messageId: string) {
+  const updated = new Set(expandedToolMetaIds.value)
+  if (updated.has(messageId)) {
+    updated.delete(messageId)
+  } else {
+    updated.add(messageId)
+  }
+  expandedToolMetaIds.value = updated
+}
+
+function formatToolName(toolName: string): string {
+  return toolName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 function openReviewRoute() {
   pushToReview()
 }
@@ -695,6 +719,42 @@ watch(
                 >
                   Open in Review
                 </button>
+              </div>
+              <div v-if="parseToolCallMetadata(message)" class="td-tool-meta">
+                <button
+                  class="td-tool-meta__toggle"
+                  :aria-expanded="expandedToolMetaIds.has(message.id)"
+                  @click="toggleToolMeta(message.id)"
+                >
+                  <span class="td-tool-meta__icon" aria-hidden="true">{{ expandedToolMetaIds.has(message.id) ? '&#9660;' : '&#9654;' }}</span>
+                  {{ parseToolCallMetadata(message)!.tool_calls.length }} tool call{{ parseToolCallMetadata(message)!.tool_calls.length === 1 ? '' : 's' }} in {{ parseToolCallMetadata(message)!.rounds }} round{{ parseToolCallMetadata(message)!.rounds === 1 ? '' : 's' }}
+                </button>
+                <div v-if="expandedToolMetaIds.has(message.id)" class="td-tool-meta__details">
+                  <div
+                    v-for="(call, idx) in parseToolCallMetadata(message)!.tool_calls"
+                    :key="idx"
+                    class="td-tool-call"
+                    :class="{ 'td-tool-call--error': call.is_error }"
+                  >
+                    <div class="td-tool-call__header">
+                      <span class="td-tool-call__round">R{{ call.round }}</span>
+                      <span class="td-tool-call__name">{{ formatToolName(call.tool) }}</span>
+                      <span v-if="call.is_error" class="td-tool-call__badge td-tool-call__badge--error">Error</span>
+                      <span v-else-if="call.tool.startsWith('propose_')" class="td-tool-call__badge td-tool-call__badge--proposal">Proposal</span>
+                    </div>
+                    <div class="td-tool-call__summary">{{ call.result_summary }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="sendingMessage" class="td-message td-message--tool-status" data-message-type="tool-status">
+              <div class="td-message-header">
+                <span class="td-message-role">System</span>
+              </div>
+              <div class="td-message-content td-tool-status">
+                <span class="td-tool-status__spinner" aria-hidden="true"></span>
+                Processing your request...
               </div>
             </div>
           </div>
@@ -1239,6 +1299,122 @@ watch(
   border: 1px solid var(--td-border-default);
   border-radius: var(--td-radius-sm);
   padding: 1px 4px;
+}
+
+/* Tool call metadata expander */
+.td-tool-meta {
+  margin-top: var(--td-space-2);
+  border-top: 1px solid var(--td-border-default);
+  padding-top: var(--td-space-1);
+}
+
+.td-tool-meta__toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--td-font-xs);
+  color: var(--td-text-tertiary);
+  padding: var(--td-space-1) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-1);
+}
+
+.td-tool-meta__toggle:hover {
+  color: var(--td-text-secondary);
+}
+
+.td-tool-meta__icon {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.td-tool-meta__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-1);
+  margin-top: var(--td-space-1);
+}
+
+.td-tool-call {
+  padding: var(--td-space-1) var(--td-space-2);
+  border-left: 2px solid var(--td-border-default);
+  font-size: var(--td-font-xs);
+}
+
+.td-tool-call--error {
+  border-left-color: var(--td-color-danger, #e53e3e);
+}
+
+.td-tool-call__header {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-1);
+  margin-bottom: 2px;
+}
+
+.td-tool-call__round {
+  font-weight: 700;
+  color: var(--td-text-tertiary);
+  min-width: 20px;
+}
+
+.td-tool-call__name {
+  font-weight: 600;
+  color: var(--td-text-primary);
+}
+
+.td-tool-call__badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: var(--td-radius-sm);
+}
+
+.td-tool-call__badge--error {
+  background: color-mix(in srgb, var(--td-surface-primary) 80%, #fed7d7 20%);
+  color: var(--td-color-danger, #e53e3e);
+}
+
+.td-tool-call__badge--proposal {
+  background: color-mix(in srgb, var(--td-surface-primary) 80%, #c6f6d5 20%);
+  color: var(--td-color-success, #2f855a);
+}
+
+.td-tool-call__summary {
+  color: var(--td-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
+}
+
+/* Tool status indicator during sending */
+.td-message--tool-status {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--td-surface-primary) 95%, var(--td-color-primary) 5%);
+}
+
+.td-tool-status {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  color: var(--td-text-secondary);
+  font-style: italic;
+}
+
+.td-tool-status__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--td-border-default);
+  border-top-color: var(--td-color-primary);
+  border-radius: 50%;
+  animation: td-spin 0.8s linear infinite;
+}
+
+@keyframes td-spin {
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 900px) {
