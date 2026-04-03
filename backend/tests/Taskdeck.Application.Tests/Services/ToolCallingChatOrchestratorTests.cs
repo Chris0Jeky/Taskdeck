@@ -61,6 +61,8 @@ public class ToolCallingChatOrchestratorTests
         mock.SetupGet(e => e.ToolName).Returns(toolName);
         mock.Setup(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(result);
+        mock.Setup(e => e.ExecuteAsync(It.IsAny<ToolExecutionContext>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(result);
         return mock;
     }
 
@@ -505,6 +507,14 @@ public class ToolCallingChatOrchestratorTests
         executor.SetupGet(e => e.ToolName).Returns("list_cards_in_column");
         var execCallCount = 0;
         executor.Setup(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                execCallCount++;
+                if (execCallCount == 1)
+                    throw new InvalidOperationException("Transient DB error");
+                return "{\"cards\":[],\"total\":0,\"truncated\":false}";
+            });
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<ToolExecutionContext>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 execCallCount++;
