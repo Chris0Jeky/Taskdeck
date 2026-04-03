@@ -529,11 +529,19 @@ function isProposalExpired(proposal: ApiProposal): boolean {
   return false
 }
 
+function isProposalDismissable(proposal: ApiProposal): boolean {
+  const status = normalizeProposalStatus(proposal.status)
+  return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
+}
+
 function reviewStatusClass(status: ApiProposal['status'], proposal?: ApiProposal): string {
   if (proposal && isProposalExpired(proposal)) return 'td-review-status--expired'
   const normalized = normalizeProposalStatus(status)
   if (normalized === 'PendingReview') return 'td-review-status--pending'
-  if (normalized === 'Approved') return 'td-review-status--approved'
+  if (normalized === 'Approved') {
+    return proposal && isProposalExpired(proposal) ? 'td-review-status--expired' : 'td-review-status--approved'
+  }
+  if (normalized === 'Expired') return 'td-review-status--expired'
   if (normalized === 'Applied') return 'td-review-status--applied'
   return 'td-review-status--secondary'
 }
@@ -586,10 +594,7 @@ function applyBoardFilter(boardId: string) {
 
 const dismissableProposalIds = computed(() =>
   proposals.value
-    .filter((p) => {
-      const status = normalizeProposalStatus(p.status)
-      return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
-    })
+    .filter((p) => isProposalDismissable(p))
     .filter((p) => matchesActiveBoardFilter(p.boardId))
     .map((p) => p.id),
 )
@@ -626,9 +631,15 @@ async function handleDismissApplied() {
 
   try {
     const result = await automationApi.dismissProposals(ids)
-    // Remove dismissed proposals from the local list
-    const dismissedSet = new Set(ids)
-    proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+    if (result.dismissed === ids.length) {
+      // All requested proposals were dismissed; safe to remove them all locally
+      const dismissedSet = new Set(ids)
+      proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+    } else {
+      // Server dismissed fewer than requested (possible clock skew on expiry checks).
+      // Reload to get authoritative state rather than guessing which ones were dismissed.
+      await loadProposals()
+    }
     toast.success(`Cleared ${result.dismissed} completed proposal${result.dismissed === 1 ? '' : 's'}.`)
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to clear proposals').message)
@@ -702,7 +713,7 @@ watch(
           :disabled="dismissableProposalIds.length === 0"
           @click="handleDismissApplied"
         >
-          Clear applied ({{ dismissableProposalIds.length }})
+          Clear completed ({{ dismissableProposalIds.length }})
         </button>
         <button class="td-btn td-btn--primary" :disabled="proposalsLoading" @click="loadProposals">
           {{ proposalsLoading ? 'Refreshing...' : 'Refresh Review' }}
@@ -1461,6 +1472,17 @@ watch(
 
 .td-review-card__flow-step--done .td-review-card__flow-step-num {
   background: var(--td-color-success);
+  color: #fff;
+}
+
+.td-review-card__flow-step--expired {
+  color: var(--td-color-error);
+  background: var(--td-color-error-light);
+  border-color: var(--td-color-error);
+}
+
+.td-review-card__flow-step--expired .td-review-card__flow-step-num {
+  background: var(--td-color-error);
   color: #fff;
 }
 

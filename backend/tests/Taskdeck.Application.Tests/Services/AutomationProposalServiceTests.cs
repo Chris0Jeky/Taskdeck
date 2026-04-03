@@ -569,6 +569,159 @@ public class AutomationProposalServiceTests
 
     #endregion
 
+    #region IsExpired DTO Tests
+
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldSetIsExpiredTrue_WhenProposalHasPassedExpiresAt()
+    {
+        // Arrange
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Expired proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            expiryMinutes: 1);
+        var proposalId = proposal.Id;
+
+        // Force the ExpiresAt into the past
+        var expiresAtProperty = typeof(AutomationProposal).GetProperty("ExpiresAt");
+        expiresAtProperty!.SetValue(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsExpired.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldSetIsExpiredFalse_WhenProposalHasNotExpired()
+    {
+        // Arrange
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Fresh proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            expiryMinutes: 1440);
+        var proposalId = proposal.Id;
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        // Act
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsExpired.Should().BeFalse();
+    }
+
+    #endregion
+
+    #region DismissProposalsAsync Tests
+
+    [Fact]
+    public async Task DismissProposalsAsync_ShouldDismissExpiredApprovedProposal()
+    {
+        // Arrange
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Approved but expired",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            expiryMinutes: 1);
+
+        proposal.Approve(Guid.NewGuid());
+
+        // Force the ExpiresAt into the past
+        var expiresAtProperty = typeof(AutomationProposal).GetProperty("ExpiresAt");
+        expiresAtProperty!.SetValue(proposal, DateTime.UtcNow.AddMinutes(-10));
+
+        _proposalRepoMock.Setup(r => r.GetByIdsAsync(It.IsAny<IReadOnlyList<Guid>>(), default))
+            .ReturnsAsync(new[] { proposal });
+
+        // Act
+        var result = await _service.DismissProposalsAsync(new[] { proposal.Id }, default);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        proposal.Status.Should().Be(ProposalStatus.Dismissed);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task DismissProposalsAsync_ShouldSkipNonExpiredApprovedProposal()
+    {
+        // Arrange
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Approved and still valid",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            expiryMinutes: 1440);
+
+        proposal.Approve(Guid.NewGuid());
+
+        _proposalRepoMock.Setup(r => r.GetByIdsAsync(It.IsAny<IReadOnlyList<Guid>>(), default))
+            .ReturnsAsync(new[] { proposal });
+
+        // Act
+        var result = await _service.DismissProposalsAsync(new[] { proposal.Id }, default);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+        proposal.Status.Should().Be(ProposalStatus.Approved);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task DismissProposalsAsync_ShouldDismissTerminalProposals()
+    {
+        // Arrange
+        var expired = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Expired one",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            expiryMinutes: 1);
+        expired.Expire();
+
+        var applied = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Applied one",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString());
+        applied.Approve(Guid.NewGuid());
+        applied.MarkAsApplied();
+
+        _proposalRepoMock.Setup(r => r.GetByIdsAsync(It.IsAny<IReadOnlyList<Guid>>(), default))
+            .ReturnsAsync(new[] { expired, applied });
+
+        // Act
+        var result = await _service.DismissProposalsAsync(new[] { expired.Id, applied.Id }, default);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(2);
+        expired.Status.Should().Be(ProposalStatus.Dismissed);
+        applied.Status.Should().Be(ProposalStatus.Dismissed);
+    }
+
+    #endregion
+
     #region GetProposalDiffAsync Tests
 
     [Fact]

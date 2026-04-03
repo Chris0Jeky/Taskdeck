@@ -478,6 +478,64 @@ public class AutomationProposalTests
         proposal.Summary.Should().HaveLength(500);
     }
 
+    [Fact]
+    public void Dismiss_ShouldSucceed_WhenApprovedAndExpired()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+        SetPrivateDateTime(proposal, "ExpiresAt", DateTime.UtcNow.AddMinutes(-5));
+
+        // Act
+        proposal.Dismiss();
+
+        // Assert
+        proposal.Status.Should().Be(ProposalStatus.Dismissed);
+    }
+
+    [Fact]
+    public void Dismiss_ShouldThrow_WhenApprovedAndNotExpired()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+
+        // Act
+        var act = () => proposal.Dismiss();
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot dismiss proposal in status Approved");
+    }
+
+    [Fact]
+    public void Dismiss_ShouldSucceed_WhenStatusIsExpired()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+        proposal.Expire();
+
+        // Act
+        proposal.Dismiss();
+
+        // Assert
+        proposal.Status.Should().Be(ProposalStatus.Dismissed);
+    }
+
+    [Fact]
+    public void Dismiss_ShouldThrow_WhenPendingReview()
+    {
+        // Arrange
+        var proposal = CreateProposal();
+
+        // Act
+        var act = () => proposal.Dismiss();
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot dismiss proposal in status PendingReview");
+    }
+
     private AutomationProposal CreateProposal(RiskLevel riskLevel = RiskLevel.Medium)
     {
         return new AutomationProposal(
