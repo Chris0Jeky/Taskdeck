@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,7 +116,7 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
     public async Task MultiOperation_CaptureWithMultipleTasks_ShouldCreateMultipleCards()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "golden-multi");
+        await ApiTestHarness.AuthenticateAsync(client, "golden-multi");
         var board = await ApiTestHarness.CreateBoardAsync(client, "golden-multi-board");
 
         var columnResponse = await client.PostAsJsonAsync(
@@ -219,8 +218,8 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         using var clientA = _factory.CreateClient();
         using var clientB = _factory.CreateClient();
 
-        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "golden-isolation-a");
-        var userB = await ApiTestHarness.AuthenticateAsync(clientB, "golden-isolation-b");
+        await ApiTestHarness.AuthenticateAsync(clientA, "golden-isolation-a");
+        await ApiTestHarness.AuthenticateAsync(clientB, "golden-isolation-b");
 
         var boardA = await ApiTestHarness.CreateBoardAsync(clientA, "golden-isolation-board");
 
