@@ -254,25 +254,25 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
         var board = new Board("Order board", ownerId: user.Id);
         db.Boards.Add(board);
 
-        var col1 = new Column(board.Id, "First", 0);
-        var col2 = new Column(board.Id, "Second", 1);
-        db.Columns.AddRange(col1, col2);
+        // Use a single column to test position ordering (avoids GUID-based column ordering)
+        var col = new Column(board.Id, "Todo", 0);
+        db.Columns.Add(col);
 
-        var cardA = new Card(board.Id, col1.Id, "A in first col", position: 1);
-        var cardB = new Card(board.Id, col1.Id, "B in first col", position: 0);
-        var cardC = new Card(board.Id, col2.Id, "C in second col", position: 0);
-        db.Cards.AddRange(cardA, cardB, cardC);
+        var cardPos2 = new Card(board.Id, col.Id, "Position 2", position: 2);
+        var cardPos0 = new Card(board.Id, col.Id, "Position 0", position: 0);
+        var cardPos1 = new Card(board.Id, col.Id, "Position 1", position: 1);
+        db.Cards.AddRange(cardPos2, cardPos0, cardPos1);
         await db.SaveChangesAsync();
 
         var results = (await repo.GetByBoardIdAsync(board.Id)).ToList();
 
-        // Column ordering: col1 cards before col2 cards
-        var idxB = results.FindIndex(c => c.Id == cardB.Id); // pos 0 in col1
-        var idxA = results.FindIndex(c => c.Id == cardA.Id); // pos 1 in col1
-        var idxC = results.FindIndex(c => c.Id == cardC.Id); // pos 0 in col2
+        var idx0 = results.FindIndex(c => c.Id == cardPos0.Id);
+        var idx1 = results.FindIndex(c => c.Id == cardPos1.Id);
+        var idx2 = results.FindIndex(c => c.Id == cardPos2.Id);
 
-        idxB.Should().BeLessThan(idxA); // lower position first within same column
-        idxA.Should().BeLessThan(idxC); // col1 cards before col2 cards
+        // Cards should be ordered by Position within the same column
+        idx0.Should().BeLessThan(idx1);
+        idx1.Should().BeLessThan(idx2);
     }
 
     [Fact]

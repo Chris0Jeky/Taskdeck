@@ -41,7 +41,9 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         db.LlmRequests.AddRange(pendingFirst, pendingSecond, processing);
         await db.SaveChangesAsync();
 
-        var result = (await repo.GetPendingAsync(limit: 10)).ToList();
+        // Use a large limit because the shared database may contain pending requests
+        // from other test classes seeded via IClassFixture.
+        var result = (await repo.GetPendingAsync(limit: 500)).ToList();
 
         result.Should().Contain(r => r.Id == pendingFirst.Id);
         result.Should().Contain(r => r.Id == pendingSecond.Id);

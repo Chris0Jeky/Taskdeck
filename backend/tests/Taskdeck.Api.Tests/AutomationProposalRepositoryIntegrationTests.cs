@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -60,10 +61,10 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         var user = new User("ap-expiry-user", "ap-expiry@example.com", "hash");
         db.Users.Add(user);
 
-        // Short expiry that will be expired immediately
+        // Create with minimum valid expiry, then force ExpiresAt to the past via raw SQL
         var expired = new AutomationProposal(
             ProposalSourceType.Queue, user.Id, "Will expire soon", RiskLevel.Low,
-            $"corr-exp-{Guid.NewGuid():N}", expiryMinutes: 0);
+            $"corr-exp-{Guid.NewGuid():N}", expiryMinutes: 1);
 
         // Long expiry that should NOT appear
         var notExpired = new AutomationProposal(
@@ -73,12 +74,13 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         db.AutomationProposals.AddRange(expired, notExpired);
         await db.SaveChangesAsync();
 
-        // Wait briefly to ensure expiryMinutes: 0 means ExpiresAt is in the past
-        await Task.Delay(50);
+        // Force the "expired" proposal's ExpiresAt to a past date
+        var pastDate = DateTime.UtcNow.AddDays(-1);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE AutomationProposals SET ExpiresAt = {pastDate} WHERE Id = {expired.Id}");
 
         var results = (await repo.GetExpiredAsync()).ToList();
 
-        // The 0-minute proposal should be expired by now (ExpiresAt = UtcNow at creation)
         results.Should().Contain(p => p.Id == expired.Id);
         results.Should().NotContain(p => p.Id == notExpired.Id);
     }
