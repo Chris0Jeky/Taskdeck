@@ -242,13 +242,31 @@ public class ChatService : IChatService
                         // this content instead of making a redundant CompleteAsync
                         // call (#672). The response still flows through proposal
                         // creation logic below.
+                        //
+                        // Run the local intent classifier on the user message so
+                        // that proposal creation is still triggered for actionable
+                        // messages (e.g. "create card X"). This is the same
+                        // classifier all providers use as a fallback.
+                        var (classifiedActionable, classifiedIntent) =
+                            LlmIntentClassifier.Classify(dto.Content);
+                        List<string>? classifiedInstructions = null;
+                        if (classifiedActionable)
+                        {
+                            var extracted = NaturalLanguageInstructionExtractor.Extract(
+                                dto.Content, classifiedIntent);
+                            if (extracted.Count > 0)
+                                classifiedInstructions = extracted;
+                        }
+
                         reusableNoToolResponse = new LlmCompletionResult(
                             Content: toolResult.Content,
                             TokensUsed: toolResult.TokensUsed,
-                            IsActionable: false,
+                            IsActionable: classifiedActionable,
+                            ActionIntent: classifiedIntent,
                             Provider: toolResult.Provider,
                             Model: toolResult.Model,
-                            IsDegraded: false);
+                            IsDegraded: false,
+                            Instructions: classifiedInstructions);
 
                         // Record usage for the already-made call
                         if (_quotaService != null && toolResult.TokensUsed > 0)
