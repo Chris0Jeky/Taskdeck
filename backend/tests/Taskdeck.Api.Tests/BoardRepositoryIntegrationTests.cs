@@ -96,7 +96,7 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
         await db.SaveChangesAsync();
 
         var count = await repo.CountReadableByUserIdAsync(user.Id, includeArchived: false);
-        count.Should().BeGreaterOrEqualTo(2); // owned + shared
+        count.Should().Be(2); // owned + shared
     }
 
     [Fact]
@@ -269,7 +269,7 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
         // Count since before creation should include it
         var since = DateTimeOffset.UtcNow.AddMinutes(-5);
         var count = await repo.CountReadableUpdatedSinceAsync(user.Id, since, includeArchived: false);
-        count.Should().BeGreaterOrEqualTo(1);
+        count.Should().Be(1);
 
         // Count since far future should not include it
         var future = DateTimeOffset.UtcNow.AddDays(1);
