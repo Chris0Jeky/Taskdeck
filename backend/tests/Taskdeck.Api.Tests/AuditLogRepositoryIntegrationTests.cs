@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -261,10 +262,15 @@ public class AuditLogRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         var user = new User("audit-order-user", "audit-order@example.com", "hash");
         db.Users.Add(user);
 
+        var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var first = new AuditLog("Board", Guid.NewGuid(), AuditAction.Created, user.Id);
-        await Task.Delay(20);
         var second = new AuditLog("Board", Guid.NewGuid(), AuditAction.Updated, user.Id);
         db.AuditLogs.AddRange(first, second);
+        await db.SaveChangesAsync();
+
+        // Set explicit timestamps for deterministic ordering (AuditLog orders by Timestamp)
+        db.Entry(first).Property(nameof(AuditLog.Timestamp)).CurrentValue = baseTime;
+        db.Entry(second).Property(nameof(AuditLog.Timestamp)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
 
         var results = (await repo.GetByUserAsync(user.Id)).ToList();
@@ -272,10 +278,10 @@ public class AuditLogRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         var firstIdx = results.FindIndex(l => l.Id == first.Id);
         var secondIdx = results.FindIndex(l => l.Id == second.Id);
 
-        // DESC order: second should appear before first
-        if (firstIdx >= 0 && secondIdx >= 0)
-        {
-            secondIdx.Should().BeLessThan(firstIdx);
-        }
+        // Explicit assertions that items are present (not silently guarded)
+        firstIdx.Should().BeGreaterOrEqualTo(0, "first item should be in results");
+        secondIdx.Should().BeGreaterOrEqualTo(0, "second item should be in results");
+        // DESC order: second (newer) should appear before first (older)
+        secondIdx.Should().BeLessThan(firstIdx, "DESC: newer before older");
     }
 }
