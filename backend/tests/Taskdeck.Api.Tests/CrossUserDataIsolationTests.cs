@@ -1,10 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -148,7 +150,9 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
 
         // Get User A's column
         var columnsResponse = await clientA.GetAsync($"/api/boards/{boardId}/columns");
+        columnsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var columns = await columnsResponse.Content.ReadFromJsonAsync<List<ColumnDto>>();
+        columns.Should().NotBeNullOrEmpty();
         var columnId = columns![0].Id;
 
         using var clientB = _factory.CreateClient();
@@ -208,7 +212,22 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
     public async Task LlmQueue_UserB_ShouldNotSeeUserA_QueueItems()
     {
         using var clientA = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsync(clientA, "iso-queue-a");
+        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "iso-queue-a");
+        var boardA = await ApiTestHarness.CreateBoardAsync(clientA, "iso-queue-a");
+
+        // Seed a queue item for User A
+        var createQueueResponse = await clientA.PostAsJsonAsync(
+            "/api/llm-queue",
+            new CreateLlmRequestDto("triage", "User A private queue payload", boardA.Id));
+        createQueueResponse.IsSuccessStatusCode.Should().BeTrue(
+            "User A should be able to create a queue item");
+
+        // Verify User A has at least one item
+        var userAQueue = await clientA.GetAsync("/api/llm-queue/user");
+        userAQueue.StatusCode.Should().Be(HttpStatusCode.OK);
+        var userAItems = await userAQueue.Content.ReadFromJsonAsync<List<LlmRequestDto>>();
+        userAItems.Should().NotBeNull();
+        userAItems!.Count.Should().BeGreaterThan(0, "User A should have at least one queue item");
 
         using var clientB = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(clientB, "iso-queue-b");
@@ -216,11 +235,10 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
         // User B querying their own queue should not contain User A's items
         var response = await clientB.GetAsync("/api/llm-queue/user");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var items = await response.Content.ReadFromJsonAsync<List<object>>();
+        var items = await response.Content.ReadFromJsonAsync<List<LlmRequestDto>>();
         items.Should().NotBeNull();
-        // Cannot contain User A items since we only queried User B's endpoint
-        items!.Count.Should().Be(0,
-            "User B should see an empty queue when they have no items");
+        items!.Should().NotContain(i => i.UserId == userA.UserId,
+            "User B must not see queue items belonging to User A");
     }
 
     // ── Proposals ────────────────────────────────────────────────────────────
@@ -234,9 +252,10 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
 
         // Create a proposal for User A via chat
         var sessionId = await ApiTestHarness.CreateChatSessionAsync(clientA, "iso proposal test", boardId);
-        await clientA.PostAsJsonAsync(
+        var chatMsgResponse = await clientA.PostAsJsonAsync(
             $"/api/llm/chat/sessions/{sessionId}/messages",
             new SendChatMessageDto("create card \"test task\"", RequestProposal: true));
+        chatMsgResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Verify User A can see at least one proposal
         var propResponseA = await clientA.GetAsync("/api/automation/proposals");
@@ -314,9 +333,11 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
         var msg = await msgResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
 
         // Approve as User A first
-        await clientA.PostAsJsonAsync(
+        var approveResponse = await clientA.PostAsJsonAsync(
             $"/api/automation/proposals/{msg!.ProposalId}/approve",
             new UpdateProposalStatusDto());
+        approveResponse.IsSuccessStatusCode.Should().BeTrue(
+            "User A must be able to approve their own proposal");
 
         using var clientB = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(clientB, "iso-propexec-b");
@@ -333,33 +354,70 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task Notifications_UserB_ShouldNotSeeUserA_Notifications()
     {
-        // Create data that generates notifications for User A
         using var clientA = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsync(clientA, "iso-notif-a");
+        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "iso-notif-a");
 
         using var clientB = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(clientB, "iso-notif-b");
 
-        // Seed a notification for User A via the DB
-        // (Notifications are typically system-generated; we verify B sees none of A's)
+        // Seed a notification for User A via the DB (notifications are system-generated)
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.Notifications.Add(new Notification(
+                userA.UserId,
+                NotificationType.Mention,
+                NotificationCadence.Immediate,
+                "Cross-user isolation test",
+                "This notification belongs to User A.",
+                deduplicationKey: $"iso-notif:{Guid.NewGuid():N}"));
+            await db.SaveChangesAsync();
+        }
+
+        // Verify User A can see their notification
+        var userANotifResponse = await clientA.GetAsync("/api/notifications");
+        userANotifResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var userANotifs = await userANotifResponse.Content.ReadFromJsonAsync<List<NotificationDto>>();
+        userANotifs.Should().NotBeNull();
+        userANotifs!.Count.Should().BeGreaterThan(0, "User A should have at least one notification");
+
+        // User B should not see User A's notifications
         var notifResponse = await clientB.GetAsync("/api/notifications");
         notifResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var notifs = await notifResponse.Content.ReadFromJsonAsync<List<object>>();
+        var notifs = await notifResponse.Content.ReadFromJsonAsync<List<NotificationDto>>();
         notifs.Should().NotBeNull();
-        // User B should only see their own notifications
+        notifs!.Should().NotContain(n => n.UserId == userA.UserId,
+            "User B must not see User A's notifications");
     }
 
     [Fact]
     public async Task MarkNotificationAsRead_UserB_ShouldBeDenied_ForUserA_Notification()
     {
-        // Use a fabricated notification ID (since we cannot easily create notifications
-        // for User A through the API). The important thing is that if the ID belonged
-        // to User A, User B gets 404/403.
+        using var clientA = _factory.CreateClient();
+        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "iso-notifread-a");
+
         using var clientB = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(clientB, "iso-notifread-b");
 
-        var fakeNotificationId = Guid.NewGuid();
-        var response = await clientB.PostAsync($"/api/notifications/{fakeNotificationId}/read", null);
+        // Seed a real notification for User A via the DB
+        Guid notificationId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var notification = new Notification(
+                userA.UserId,
+                NotificationType.Mention,
+                NotificationCadence.Immediate,
+                "Mark-read isolation test",
+                "This notification belongs to User A.",
+                deduplicationKey: $"iso-notifread:{Guid.NewGuid():N}");
+            db.Notifications.Add(notification);
+            await db.SaveChangesAsync();
+            notificationId = notification.Id;
+        }
+
+        // User B should be denied when trying to mark User A's notification as read
+        var response = await clientB.PostAsync($"/api/notifications/{notificationId}/read", null);
         await ApiTestHarness.AssertNotFoundOrForbiddenAsync(response);
     }
 
@@ -619,7 +677,7 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
     public async Task SharedBoard_UserB_CanAccess_WhenGrantedExplicitAccess()
     {
         using var clientA = _factory.CreateClient();
-        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "iso-share-a");
+        await ApiTestHarness.AuthenticateAsync(clientA, "iso-share-a");
         var boardA = await ApiTestHarness.CreateBoardAsync(clientA, "iso-share-a");
 
         using var clientB = _factory.CreateClient();
@@ -644,7 +702,7 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
     public async Task SharedBoard_UserB_CannotAccessOtherBoards_WhenGrantedAccessToOne()
     {
         using var clientA = _factory.CreateClient();
-        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "iso-shareother-a");
+        await ApiTestHarness.AuthenticateAsync(clientA, "iso-shareother-a");
         var sharedBoard = await ApiTestHarness.CreateBoardAsync(clientA, "iso-shared");
         var privateBoard = await ApiTestHarness.CreateBoardAsync(clientA, "iso-private");
 
@@ -670,7 +728,7 @@ public class CrossUserDataIsolationTests : IClassFixture<TestWebApplicationFacto
     public async Task SharedBoard_RevokedAccess_UserB_ImmediatelyLosesAccess()
     {
         using var clientA = _factory.CreateClient();
-        var userA = await ApiTestHarness.AuthenticateAsync(clientA, "iso-revoke-a");
+        await ApiTestHarness.AuthenticateAsync(clientA, "iso-revoke-a");
         var boardA = await ApiTestHarness.CreateBoardAsync(clientA, "iso-revoke-a");
 
         using var clientB = _factory.CreateClient();
