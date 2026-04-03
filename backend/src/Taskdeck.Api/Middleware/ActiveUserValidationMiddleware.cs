@@ -6,13 +6,16 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Api.Middleware;
 
 /// <summary>
-/// Middleware that rejects requests from users whose accounts have been deactivated or deleted.
+/// Middleware that rejects HTTP requests from users whose accounts have been deactivated or deleted.
 /// Runs after JWT authentication so that the claims principal is already populated.
 /// Anonymous (unauthenticated) requests pass through untouched — the downstream
 /// [Authorize] attribute handles those.
 ///
 /// This closes the gap where a valid JWT issued before account deletion would remain
-/// accepted until natural token expiry.
+/// accepted on subsequent HTTP requests until natural token expiry.
+/// It does not invalidate already-established long-lived connections (for example,
+/// WebSocket/SignalR connections authenticated before deactivation); those require
+/// hub-level checks and/or an explicit server-driven disconnect mechanism if needed.
 /// </summary>
 public sealed class ActiveUserValidationMiddleware
 {
@@ -27,7 +30,7 @@ public sealed class ActiveUserValidationMiddleware
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context, IActiveUserCache cache, IUnitOfWork unitOfWork)
+    public async Task InvokeAsync(HttpContext context, IActiveUserCache cache)
     {
         // Skip if the request is not authenticated (anonymous endpoints, pre-auth routes)
         var identity = context.User.Identity;
@@ -63,16 +66,19 @@ public sealed class ActiveUserValidationMiddleware
             return;
         }
 
-        // Cache miss — query the database
+        // Cache miss — resolve IUnitOfWork lazily to avoid scoped-service instantiation
+        // on every request (cache hits and anonymous requests skip this entirely).
+        var unitOfWork = context.RequestServices.GetRequiredService<IUnitOfWork>();
         var user = await unitOfWork.Users.GetByIdAsync(userId, context.RequestAborted);
         if (user is null || !user.IsActive)
         {
             // Cache the inactive/missing status so subsequent requests don't hit DB
             cache.SetActiveStatus(userId, false);
 
+            // Log only the validated Guid (not raw request values) to avoid log-forging.
             _logger.LogInformation(
-                "Rejected request from inactive/deleted user {UserId} on {Method} {Path}",
-                userId, context.Request.Method, context.Request.Path);
+                "Rejected request from inactive/deleted user {UserId}",
+                userId);
 
             await WriteInactiveUserResponse(context);
             return;

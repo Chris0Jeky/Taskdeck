@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Api.Services;
@@ -24,10 +25,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: false);
         var unitOfWork = new StubUnitOfWork(null);
+        var context = CreateHttpContext(authenticated: false, unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, _cache, unitOfWork);
+        await middleware.InvokeAsync(context, _cache);
 
         nextCalled.Should().BeTrue();
         context.Response.StatusCode.Should().NotBe(401);
@@ -41,10 +42,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userId: null);
         var unitOfWork = new StubUnitOfWork(null);
+        var context = CreateHttpContext(authenticated: true, userId: null, unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, _cache, unitOfWork);
+        await middleware.InvokeAsync(context, _cache);
 
         nextCalled.Should().BeTrue();
     }
@@ -57,10 +58,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userIdRaw: "not-a-guid");
         var unitOfWork = new StubUnitOfWork(null);
+        var context = CreateHttpContext(authenticated: true, userIdRaw: "not-a-guid", unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, _cache, unitOfWork);
+        await middleware.InvokeAsync(context, _cache);
 
         nextCalled.Should().BeTrue();
     }
@@ -76,10 +77,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userId: userId);
         var unitOfWork = new StubUnitOfWork(null); // should NOT be called
+        var context = CreateHttpContext(authenticated: true, userId: userId, unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, _cache, unitOfWork);
+        await middleware.InvokeAsync(context, _cache);
 
         nextCalled.Should().BeTrue();
         unitOfWork.GetByIdCallCount.Should().Be(0, "cache hit should prevent DB query");
@@ -96,10 +97,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userId: userId);
         var unitOfWork = new StubUnitOfWork(null);
+        var context = CreateHttpContext(authenticated: true, userId: userId, unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, _cache, unitOfWork);
+        await middleware.InvokeAsync(context, _cache);
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(401);
@@ -117,10 +118,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userId: userId);
         var unitOfWork = new StubUnitOfWork(user);
+        var context = CreateHttpContext(authenticated: true, userId: userId, unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, cache, unitOfWork);
+        await middleware.InvokeAsync(context, cache);
 
         nextCalled.Should().BeTrue();
         unitOfWork.GetByIdCallCount.Should().Be(1);
@@ -138,10 +139,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userId: userId);
         var unitOfWork = new StubUnitOfWork(null);
+        var context = CreateHttpContext(authenticated: true, userId: userId, unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, cache, unitOfWork);
+        await middleware.InvokeAsync(context, cache);
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(401);
@@ -161,10 +162,10 @@ public class ActiveUserValidationMiddlewareTests
             _ => { nextCalled = true; return Task.CompletedTask; },
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userId: userId);
         var unitOfWork = new StubUnitOfWork(user);
+        var context = CreateHttpContext(authenticated: true, userId: userId, unitOfWork: unitOfWork);
 
-        await middleware.InvokeAsync(context, cache, unitOfWork);
+        await middleware.InvokeAsync(context, cache);
 
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be(401);
@@ -181,11 +182,11 @@ public class ActiveUserValidationMiddlewareTests
             _ => Task.CompletedTask,
             _logger);
 
-        var context = CreateHttpContext(authenticated: true, userId: userId);
-        context.Response.Body = new MemoryStream();
         var unitOfWork = new StubUnitOfWork(null);
+        var context = CreateHttpContext(authenticated: true, userId: userId, unitOfWork: unitOfWork);
+        context.Response.Body = new MemoryStream();
 
-        await middleware.InvokeAsync(context, _cache, unitOfWork);
+        await middleware.InvokeAsync(context, _cache);
 
         context.Response.StatusCode.Should().Be(401);
         context.Response.ContentType.Should().Contain("application/json");
@@ -199,13 +200,43 @@ public class ActiveUserValidationMiddlewareTests
         message.GetString().Should().Contain("deactivated");
     }
 
+    [Fact]
+    public async Task InvokeAsync_DoesNotResolveUnitOfWork_OnCacheHit()
+    {
+        // Verify that IUnitOfWork is NOT resolved from the service provider when cache hits.
+        // This confirms the lazy-resolution optimization.
+        var userId = Guid.NewGuid();
+        _cache.SetActiveStatus(userId, true);
+
+        var nextCalled = false;
+        var middleware = new ActiveUserValidationMiddleware(
+            _ => { nextCalled = true; return Task.CompletedTask; },
+            _logger);
+
+        // Register no IUnitOfWork — resolving it would throw
+        var context = CreateHttpContext(authenticated: true, userId: userId, unitOfWork: null);
+
+        await middleware.InvokeAsync(context, _cache);
+
+        nextCalled.Should().BeTrue("active cached user should pass through without DB lookup");
+    }
+
     private static HttpContext CreateHttpContext(
         bool authenticated,
         Guid? userId = null,
-        string? userIdRaw = null)
+        string? userIdRaw = null,
+        StubUnitOfWork? unitOfWork = null)
     {
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
+
+        // Set up DI service provider with IUnitOfWork for lazy resolution
+        var services = new ServiceCollection();
+        if (unitOfWork is not null)
+        {
+            services.AddSingleton<IUnitOfWork>(unitOfWork);
+        }
+        context.RequestServices = services.BuildServiceProvider();
 
         if (!authenticated)
             return context;
