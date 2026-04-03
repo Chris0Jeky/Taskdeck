@@ -26,21 +26,20 @@ public record ExchangeCodeRequest(string Code);
 [ApiController]
 [Route("api/auth")]
 [Produces("application/json")]
-public class AuthController : ControllerBase
+public class AuthController : AuthenticatedControllerBase
 {
     private readonly AuthenticationService _authService;
     private readonly GitHubOAuthSettings _gitHubOAuthSettings;
-    private readonly IUserContext _userContext;
 
     // Short-lived, single-use authorization codes to avoid exposing JWT in URLs.
     // Key: code, Value: (token, expiry). Codes expire after 60 seconds.
     private static readonly ConcurrentDictionary<string, (AuthResultDto Result, DateTimeOffset Expiry)> _authCodes = new();
 
     public AuthController(AuthenticationService authService, GitHubOAuthSettings gitHubOAuthSettings, IUserContext userContext)
+        : base(userContext)
     {
         _authService = authService;
         _gitHubOAuthSettings = gitHubOAuthSettings;
-        _userContext = userContext;
     }
 
     /// <summary>
@@ -109,19 +108,8 @@ public class AuthController : ControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        if (!_userContext.IsAuthenticated || string.IsNullOrWhiteSpace(_userContext.UserId))
-        {
-            return Unauthorized(new ApiErrorResponse(
-                ErrorCodes.AuthenticationFailed,
-                "Authenticated user context is required"));
-        }
-
-        if (!Guid.TryParse(_userContext.UserId, out var callerUserId))
-        {
-            return Unauthorized(new ApiErrorResponse(
-                ErrorCodes.AuthenticationFailed,
-                "Authenticated user id claim is invalid"));
-        }
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
 
         var result = await _authService.ChangePasswordAsync(callerUserId, request.CurrentPassword, request.NewPassword);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
