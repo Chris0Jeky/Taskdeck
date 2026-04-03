@@ -78,6 +78,15 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IToolExecutor, GetCardDetailsExecutor>();
         services.AddScoped<IToolExecutor, SearchCardsExecutor>();
         services.AddScoped<IToolExecutor, GetBoardLabelsExecutor>();
+
+        // Tool-calling infrastructure (write tools — always produce proposals, GP-06)
+        services.AddScoped<IToolExecutor, ProposeCreateCardExecutor>();
+        services.AddScoped<IToolExecutor, ProposeMoveCardExecutor>();
+        services.AddScoped<IToolExecutor, ProposeArchiveCardExecutor>();
+        services.AddScoped<IToolExecutor, ProposeUpdateCardExecutor>();
+        services.AddScoped<IToolExecutor, ProposeBulkMoveExecutor>();
+        services.AddScoped<IToolExecutor, ProposeCreateColumnExecutor>();
+
         services.AddScoped<ToolExecutorRegistry>(sp =>
             new ToolExecutorRegistry(sp.GetServices<IToolExecutor>()));
         services.AddScoped<IToolStatusNotifier, SignalRToolStatusNotifier>();

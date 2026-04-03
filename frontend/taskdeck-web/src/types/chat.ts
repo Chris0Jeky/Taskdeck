@@ -11,6 +11,20 @@ export interface ParseHintPayload {
   detectedIntent: string | null
 }
 
+export interface ToolCallEntry {
+  round: number
+  tool: string
+  args: Record<string, unknown>
+  result_summary: string
+  is_error: boolean
+}
+
+export interface ToolCallMetadata {
+  rounds: number
+  total_tokens: number
+  tool_calls: ToolCallEntry[]
+}
+
 export interface ChatMessage {
   id: string
   sessionId: string
@@ -21,6 +35,7 @@ export interface ChatMessage {
   tokenUsage: number | null
   createdAt: string
   degradedReason?: string | null
+  toolCallMetadataJson?: string | null
 }
 
 export interface ChatSession {

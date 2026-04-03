@@ -161,6 +161,7 @@ public class ChatService : IChatService
             string assistantContent = string.Empty;
             int? tokenUsage = null;
             string? degradedReason = null;
+            string? toolCallMetadataJson = null;
 
             // Quota and kill switch gate — block before any LLM call
             if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
@@ -219,7 +220,7 @@ public class ChatService : IChatService
                         SystemPrompt: ToolCallingSystemPrompt.Prompt);
 
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
-                        toolCompletionRequest, session.BoardId.Value, ct);
+                        toolCompletionRequest, session.BoardId.Value, userId, ct);
 
                     var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
                     var toolCallingUsable = !toolResult.IsDegraded || toolResult.Content != null;
@@ -231,10 +232,26 @@ public class ChatService : IChatService
                         assistantContent = toolResult.Content ?? "";
                         tokenUsage = toolResult.TokensUsed;
                         degradedReason = toolResult.DegradedReason;
+                        toolCallMetadataJson = ToolCallingChatOrchestrator.BuildToolCallMetadataJson(
+                            toolResult.ToolCallLog, toolResult.Rounds, toolResult.TokensUsed);
 
                         if (toolResult.IsDegraded)
                         {
                             messageType = "degraded";
+                        }
+
+                        // Detect proposal creation from write tool results.
+                        // Write tools (propose_*) return JSON with a proposal_id field
+                        // when they successfully create a proposal. Extract the first
+                        // proposal ID to set the message type and link.
+                        if (messageType == "text")
+                        {
+                            var detectedProposalId = ExtractProposalIdFromToolLog(toolResult.ToolCallLog);
+                            if (detectedProposalId.HasValue)
+                            {
+                                messageType = "proposal-reference";
+                                proposalId = detectedProposalId.Value;
+                            }
                         }
 
                         // Record usage for quota tracking
@@ -431,6 +448,12 @@ public class ChatService : IChatService
                 proposalId,
                 tokenUsage,
                 persistedDegradedReason);
+
+            if (toolCallMetadataJson != null)
+            {
+                assistantMessage.SetToolCallMetadataJson(toolCallMetadataJson);
+            }
+
             session.AddMessage(assistantMessage);
             await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
 
@@ -686,6 +709,35 @@ public class ChatService : IChatService
         return items;
     }
 
+    /// <summary>
+    /// Scans the tool call log for successful write tool executions that created
+    /// proposals. Returns the first proposal GUID found, or null if none.
+    /// </summary>
+    private static Guid? ExtractProposalIdFromToolLog(IReadOnlyList<ToolCallLogEntry> log)
+    {
+        foreach (var entry in log)
+        {
+            if (entry.IsError || !entry.ToolName.StartsWith("propose_", StringComparison.Ordinal))
+                continue;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(entry.ResultSummary);
+                if (doc.RootElement.TryGetProperty("full_proposal_id", out var pidElement))
+                {
+                    if (pidElement.TryGetGuid(out var guid))
+                        return guid;
+                }
+            }
+            catch (JsonException)
+            {
+                // Result may be truncated; skip
+            }
+        }
+
+        return null;
+    }
+
     private static ChatSessionDto MapSessionToDto(ChatSession session)
     {
         return new ChatSessionDto(
@@ -711,7 +763,8 @@ public class ChatService : IChatService
             message.ProposalId,
             message.TokenUsage,
             message.CreatedAt,
-            message.DegradedReason
+            message.DegradedReason,
+            message.ToolCallMetadataJson
         );
     }
 }
