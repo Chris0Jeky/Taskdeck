@@ -893,7 +893,10 @@ watch(
           </div>
         </div>
 
-        <pre v-if="selectedDiffProposalId === proposal.id && selectedDiff" class="td-review-card__diff">{{ selectedDiff }}</pre>
+        <div v-if="selectedDiffProposalId === proposal.id && selectedDiff" class="td-review-card__diff-wrapper">
+          <span class="td-review-card__diff-label">Operation details</span>
+          <pre class="td-review-card__diff" role="region" aria-label="Proposal operation diff">{{ selectedDiff }}</pre>
+        </div>
       </article>
     </section>
   </div>
@@ -1383,6 +1386,18 @@ watch(
   color: var(--td-color-success);
 }
 
+.td-review-card__diff-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-1);
+}
+
+.td-review-card__diff-label {
+  font-size: var(--td-font-xs);
+  color: var(--td-text-tertiary);
+  font-weight: 500;
+}
+
 .td-review-card__diff {
   margin: 0;
   padding: var(--td-space-3);
@@ -1392,6 +1407,8 @@ watch(
   font-size: var(--td-font-xs);
   overflow-x: auto;
   border: 1px solid var(--td-border-ghost);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @media (max-width: 900px) {

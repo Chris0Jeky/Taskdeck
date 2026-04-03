@@ -196,24 +196,36 @@ public class ToolCallingChatOrchestratorTests
     [Fact]
     public async Task ExecuteAsync_MaxRoundsExceeded_ReturnsExhaustedResult()
     {
-        var args = JsonDocument.Parse("{}").RootElement;
         var mock = new Mock<ILlmProvider>();
+        var callSequence = 0;
 
-        // Always return a tool call, never a final response
+        // Alternate between different column names each round to avoid loop
+        // detection, but never return a final response so we exhaust all rounds.
+        // Uses list_cards_in_column which accepts a column_name argument, keeping
+        // mock data consistent with the tool's schema.
+        var columnNames = new[] { "Backlog", "In Progress", "Review", "Done", "Archive" };
+
         mock.Setup(p => p.CompleteWithToolsAsync(
                 It.IsAny<ChatCompletionRequest>(),
                 It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
                 It.IsAny<IReadOnlyList<ToolCallResult>?>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LlmToolCompletionResult(
-                Content: null,
-                TokensUsed: 30,
-                Provider: "Test",
-                Model: "test-v1",
-                ToolCalls: new[] { new ToolCallRequest("call-1", "list_board_columns", args) },
-                IsComplete: false));
+            .ReturnsAsync(() =>
+            {
+                callSequence++;
+                var colName = columnNames[(callSequence - 1) % columnNames.Length];
+                var args = JsonDocument.Parse($"{{\"column_name\":\"{colName}\"}}").RootElement;
+                return new LlmToolCompletionResult(
+                    Content: null,
+                    TokensUsed: 30,
+                    Provider: "Test",
+                    Model: "test-v1",
+                    ToolCalls: new[] { new ToolCallRequest($"call-{callSequence}", "list_cards_in_column", args) },
+                    IsComplete: false);
+            });
 
-        var executor = CreateMockExecutor("list_board_columns", "{\"columns\":[]}");
+        var executor = CreateMockExecutor("list_cards_in_column",
+            "{\"cards\":[],\"total\":0,\"truncated\":false}");
         var registry = new ToolExecutorRegistry(new[] { executor.Object });
         var orchestrator = new ToolCallingChatOrchestrator(
             mock.Object, registry,
@@ -275,5 +287,244 @@ public class ToolCallingChatOrchestratorTests
         result.Content.Should().NotBeNullOrEmpty();
         result.ToolCallLog.Should().HaveCount(1);
         result.ToolCallLog[0].IsError.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RepeatedIdenticalToolCalls_AbortsWithLoopDetection()
+    {
+        var args = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var mock = new Mock<ILlmProvider>();
+
+        // Always return the same tool call with the same arguments
+        mock.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmToolCompletionResult(
+                Content: null,
+                TokensUsed: 30,
+                Provider: "Test",
+                Model: "test-v1",
+                ToolCalls: new[] { new ToolCallRequest("call-1", "list_cards_in_column", args) },
+                IsComplete: false));
+
+        var executor = CreateMockExecutor("list_cards_in_column",
+            "{\"cards\":[],\"total\":0,\"truncated\":false}");
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            mock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        var result = await orchestrator.ExecuteAsync(MakeRequest("What cards are in Backlog?"), _boardId);
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Contain("loop detected");
+        // Loop should be detected on round 2 (first round executes, second detects repeat)
+        result.Rounds.Should().Be(2);
+        // Only the first round's tool call should be in the log (second was aborted before execution)
+        result.ToolCallLog.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DifferentArgumentsSameTool_DoesNotTriggerLoopDetection()
+    {
+        var mock = new Mock<ILlmProvider>();
+        var callSequence = 0;
+
+        mock.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                {
+                    var args1 = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+                    return new LlmToolCompletionResult(
+                        Content: null, TokensUsed: 30, Provider: "Test", Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "list_cards_in_column", args1) },
+                        IsComplete: false);
+                }
+                if (callSequence == 2)
+                {
+                    // Same tool, different arguments
+                    var args2 = JsonDocument.Parse("{\"column_name\":\"Done\"}").RootElement;
+                    return new LlmToolCompletionResult(
+                        Content: null, TokensUsed: 30, Provider: "Test", Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest("call-2", "list_cards_in_column", args2) },
+                        IsComplete: false);
+                }
+                return new LlmToolCompletionResult(
+                    Content: "Here are the results.", TokensUsed: 50,
+                    Provider: "Test", Model: "test-v1",
+                    ToolCalls: null, IsComplete: true);
+            });
+
+        var executor = CreateMockExecutor("list_cards_in_column",
+            "{\"cards\":[],\"total\":0,\"truncated\":false}");
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            mock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        var result = await orchestrator.ExecuteAsync(MakeRequest("Compare Backlog and Done"), _boardId);
+
+        result.IsDegraded.Should().BeFalse();
+        result.Content.Should().Be("Here are the results.");
+        result.Rounds.Should().Be(3);
+        result.ToolCallLog.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DifferentToolsEachRound_DoesNotTriggerLoopDetection()
+    {
+        var mock = new Mock<ILlmProvider>();
+        var callSequence = 0;
+
+        mock.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                {
+                    var args = JsonDocument.Parse("{}").RootElement;
+                    return new LlmToolCompletionResult(
+                        Content: null, TokensUsed: 30, Provider: "Test", Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "list_board_columns", args) },
+                        IsComplete: false);
+                }
+                if (callSequence == 2)
+                {
+                    var args = JsonDocument.Parse("{}").RootElement;
+                    return new LlmToolCompletionResult(
+                        Content: null, TokensUsed: 30, Provider: "Test", Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest("call-2", "get_board_labels", args) },
+                        IsComplete: false);
+                }
+                return new LlmToolCompletionResult(
+                    Content: "Board overview complete.", TokensUsed: 50,
+                    Provider: "Test", Model: "test-v1",
+                    ToolCalls: null, IsComplete: true);
+            });
+
+        var colsExecutor = CreateMockExecutor("list_board_columns", "{\"columns\":[]}");
+        var labelsExecutor = CreateMockExecutor("get_board_labels", "{\"labels\":[]}");
+        var registry = new ToolExecutorRegistry(new[] { colsExecutor.Object, labelsExecutor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            mock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        var result = await orchestrator.ExecuteAsync(MakeRequest("Show board overview"), _boardId);
+
+        result.IsDegraded.Should().BeFalse();
+        result.Content.Should().Be("Board overview complete.");
+        result.Rounds.Should().Be(3);
+    }
+
+    [Fact]
+    public void ComputeToolCallFingerprint_SameCallsDifferentOrder_ProducesSameFingerprint()
+    {
+        var args1 = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var args2 = JsonDocument.Parse("{}").RootElement;
+
+        var calls1 = new List<ToolCallRequest>
+        {
+            new("call-1", "list_cards_in_column", args1),
+            new("call-2", "list_board_columns", args2)
+        };
+
+        // Same calls in different order
+        var calls2 = new List<ToolCallRequest>
+        {
+            new("call-3", "list_board_columns", args2),
+            new("call-4", "list_cards_in_column", args1)
+        };
+
+        var fp1 = ToolCallingChatOrchestrator.ComputeToolCallFingerprint(calls1);
+        var fp2 = ToolCallingChatOrchestrator.ComputeToolCallFingerprint(calls2);
+
+        // Call IDs differ but fingerprint should match (based on name+args only)
+        fp1.Should().Be(fp2);
+    }
+
+    [Fact]
+    public void ComputeToolCallFingerprint_DifferentArguments_ProducesDifferentFingerprint()
+    {
+        var args1 = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var args2 = JsonDocument.Parse("{\"column_name\":\"Done\"}").RootElement;
+
+        var calls1 = new List<ToolCallRequest> { new("call-1", "list_cards_in_column", args1) };
+        var calls2 = new List<ToolCallRequest> { new("call-2", "list_cards_in_column", args2) };
+
+        var fp1 = ToolCallingChatOrchestrator.ComputeToolCallFingerprint(calls1);
+        var fp2 = ToolCallingChatOrchestrator.ComputeToolCallFingerprint(calls2);
+
+        fp1.Should().NotBe(fp2);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_IdenticalCallsAfterError_AllowsRetry()
+    {
+        var args = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var mock = new Mock<ILlmProvider>();
+        var callSequence = 0;
+
+        // Always return the same tool call — identical calls every round
+        mock.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callSequence++;
+                if (callSequence <= 2)
+                {
+                    return new LlmToolCompletionResult(
+                        Content: null, TokensUsed: 30, Provider: "Test", Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest($"call-{callSequence}", "list_cards_in_column", args) },
+                        IsComplete: false);
+                }
+                return new LlmToolCompletionResult(
+                    Content: "Here are the cards.", TokensUsed: 50,
+                    Provider: "Test", Model: "test-v1",
+                    ToolCalls: null, IsComplete: true);
+            });
+
+        // Executor that fails on first call, succeeds on second
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("list_cards_in_column");
+        var execCallCount = 0;
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                execCallCount++;
+                if (execCallCount == 1)
+                    throw new InvalidOperationException("Transient DB error");
+                return "{\"cards\":[],\"total\":0,\"truncated\":false}";
+            });
+
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            mock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        var result = await orchestrator.ExecuteAsync(MakeRequest("What cards are in Backlog?"), _boardId);
+
+        // The retry after the error should NOT trigger loop detection
+        result.IsDegraded.Should().BeFalse();
+        result.Content.Should().Be("Here are the cards.");
+        result.Rounds.Should().Be(3);
+        // Both rounds executed the tool (first errored, second succeeded)
+        result.ToolCallLog.Should().HaveCount(2);
+        result.ToolCallLog[0].IsError.Should().BeTrue();
+        result.ToolCallLog[1].IsError.Should().BeFalse();
     }
 }

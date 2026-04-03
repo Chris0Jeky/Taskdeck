@@ -98,13 +98,24 @@ public class ChatService : IChatService
             ? await _llmProvider.ProbeAsync(ct)
             : await _llmProvider.GetHealthAsync(ct);
 
+        var verificationStatus = DeriveVerificationStatus(health);
+
         return new ChatProviderHealthDto(
             health.IsAvailable,
             health.ProviderName,
             health.ErrorMessage,
             health.Model,
             health.IsMock,
-            health.IsProbed);
+            health.IsProbed,
+            verificationStatus);
+    }
+
+    private static string DeriveVerificationStatus(LlmHealthStatus health)
+    {
+        if (!health.IsProbed)
+            return "unverified";
+
+        return health.IsAvailable ? "verified" : "failed";
     }
 
     public async Task<Result<ChatMessageDto>> SendMessageAsync(Guid sessionId, Guid userId, SendChatMessageDto dto, CancellationToken ct = default)

@@ -1,8 +1,10 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Tools;
 
 namespace Taskdeck.Application.Tests.Services;
 
@@ -145,5 +147,49 @@ public class OpenAiToolCallingParseTests
         var result = _provider.ParseToolCallingResponse("{}");
         result.IsComplete.Should().BeTrue();
         result.IsDegraded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildToolCallingPayload_IncludesStrictTrue_OnEachToolDefinition()
+    {
+        var request = new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "test") });
+        var tools = ReadToolSchemas.GetAll();
+
+        var payload = _provider.BuildToolCallingPayload(request, tools, null);
+
+        // Serialize and re-parse to inspect the wire format
+        var json = JsonSerializer.Serialize(payload);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        root.TryGetProperty("tools", out var toolsArray).Should().BeTrue();
+        toolsArray.GetArrayLength().Should().BeGreaterThan(0);
+
+        foreach (var tool in toolsArray.EnumerateArray())
+        {
+            tool.GetProperty("type").GetString().Should().Be("function");
+            var func = tool.GetProperty("function");
+            func.TryGetProperty("strict", out var strictProp).Should().BeTrue(
+                $"tool '{func.GetProperty("name").GetString()}' should have strict property");
+            strictProp.GetBoolean().Should().BeTrue(
+                $"tool '{func.GetProperty("name").GetString()}' should have strict=true");
+        }
+    }
+
+    [Fact]
+    public void BuildToolCallingPayload_AllToolSchemas_HaveAdditionalPropertiesFalse()
+    {
+        // OpenAI strict mode requires additionalProperties: false on all schemas
+        var tools = ReadToolSchemas.GetAll();
+
+        foreach (var tool in tools)
+        {
+            var schema = tool.ParametersSchema;
+            schema.TryGetProperty("additionalProperties", out var ap).Should().BeTrue(
+                $"tool '{tool.Name}' schema must include additionalProperties");
+            ap.GetBoolean().Should().BeFalse(
+                $"tool '{tool.Name}' must have additionalProperties: false for strict mode");
+        }
     }
 }
