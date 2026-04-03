@@ -31,6 +31,9 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.IsActive)
             .IsRequired();
 
+        builder.Property(u => u.TokenInvalidatedAt)
+            .IsRequired(false);
+
         builder.Property(u => u.CreatedAt)
             .IsRequired();
 

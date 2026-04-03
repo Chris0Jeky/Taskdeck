@@ -32,7 +32,8 @@ public record ChatProviderHealthDto(
     string? ErrorMessage,
     string? Model,
     bool IsMock,
-    bool IsProbed = false
+    bool IsProbed = false,
+    string VerificationStatus = "unverified"
 );
 
 public record CreateChatSessionDto(

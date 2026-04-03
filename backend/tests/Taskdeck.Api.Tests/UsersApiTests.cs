@@ -171,21 +171,17 @@ public class UsersApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task ActivateUser_ShouldReturnNoContent_AfterSelfDeactivation()
+    public async Task ActivateUser_ShouldReturnUnauthorized_AfterSelfDeactivation()
     {
+        // After deactivation, the TokenValidationMiddleware rejects the existing JWT.
+        // A deactivated user must re-authenticate (or be reactivated by an admin).
         var currentUser = await EnsureAuthenticatedAsync();
 
         var deactivateResponse = await _client.PostAsync($"/api/users/{currentUser.UserId}/deactivate", null);
         deactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var activateResponse = await _client.PostAsync($"/api/users/{currentUser.UserId}/activate", null);
-        activateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        var getResponse = await _client.GetAsync($"/api/users/{currentUser.UserId}");
-        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var user = await getResponse.Content.ReadFromJsonAsync<UserDto>();
-        user.Should().NotBeNull();
-        user!.IsActive.Should().BeTrue();
+        activateResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]

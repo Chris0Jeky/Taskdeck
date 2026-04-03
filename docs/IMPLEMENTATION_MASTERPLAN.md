@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-01
+Last Updated: 2026-04-03
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -12,8 +12,9 @@ Companion Active Docs:
 
 ## Purpose
 
-This is the active execution guide for sequencing implementation.
-Update this file at the end of each meaningful delivery cycle.
+This is the active execution guide for sequencing past, current, and future implementation.
+`docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
+Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
 ## Planning Principles
 
@@ -694,7 +695,7 @@ Focus:
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
-- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; remaining: `#650` (write tools + proposals), `#651` (refinements), follow-ups `#672`/`#673`/`#674`
+- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); remaining: `#650` (write tools + proposals), `#651` (refinements), `#672` (double LLM call), `#673` (argument replay)
 - MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; remaining: `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
@@ -723,7 +724,7 @@ Exit Criteria:
 These continue in parallel where they protect trust, performance, or operator posture, but they should not outrun Horizon A through C product legibility work:
 
 - managed-key LLM control plane and abuse controls: `#235`, `#237` (pending), `#238` (operator tooling groundwork delivered; live-traffic wiring pending), `#239` (delivered), `#240` (delivered)
-- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling; UX feedback wave 1 (`#628`) delivered: sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages (`#615`), review collapsible sections with risk color-coding (`#626`); wave 2 delivered: capture triage delimiters (`#614`), chat truncation (`#616`), notification type differentiation/grouping/batch actions (`#625`), search pagination (`#610`), CI-extended path triggers (`#608`)
+- premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling; UX feedback wave 1 (`#628`) delivered: sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages (`#615`), review collapsible sections with risk color-coding (`#626`); wave 2 delivered: capture triage delimiters (`#614`), chat truncation (`#616`), notification type differentiation/grouping/batch actions (`#625`), search pagination (`#610`), CI-extended path triggers (`#608`); hardening wave (2026-04-03) delivered: label manager dark theme (`#684`), human-readable proposal diffs (`#682`), expired proposal handling (`#678`+`#690`), chat health banner three-state (`#679`), dead workspace routes fixed (`#681`)
 - long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
 - platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
 - deferred outreach CRM expansion: `#262` to `#268`
@@ -804,6 +805,7 @@ Master tracker: `#531`.
 
 ### Priority I (Current Phase 4 Completion Path)
 
+- **Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit. Must be resolved before external onboarding.
 - Security and policy convergence: `#33`, `#34`, `#44`
 - Final cross-user policy convergence follow-through: `#152`
 - Starter packs foundation: `#48`, `#49`, `#50`, `#51` (delivered)
@@ -814,6 +816,7 @@ Master tracker: `#531`.
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave: `#199` to `#211` (delivered); logging redaction follow-through `#212` is delivered, and remaining linked performance follow-through is `#213`
 - Testing harness guardrails wave (`#254` to `#260`) is delivered; follow-up improvements now route through normal hardening issues
+- Rigorous test expansion wave (`#721` tracker, `#699`–`#720`, `#722`–`#726`): 22 issues seeded 2026-04-03 from systematic codebase audit covering infrastructure repository integration tests, untested workers, controller HTTP gaps, cross-user data isolation proof, concurrency stress, auth edge cases, domain state machines, SignalR hub integration, proposal lifecycle edge cases, LLM tool-calling boundaries, webhook SSRF, frontend store/view gaps, E2E scenarios, export/import round-trips, error contracts, resilience testing, and property-based/adversarial input testing; golden path integration test (`#703`) is highest-signal individual item
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
 - CI/workflow topology expansion and governance track: `#168`
@@ -847,7 +850,7 @@ Master tracker: `#531`.
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
 - Analytics and forecasting: `#77` (delivered — board metrics dashboard, PR `#667`; follow-up `#675`), `#78`, `#79`
-- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83` (delivered — GDPR data portability + account deletion, PR `#666`; follow-ups `#670`, `#671`), `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
+- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83` (delivered — GDPR data portability + account deletion, PR `#666`; follow-ups `#670`, ~~`#671`~~ (delivered — JWT invalidation after account deletion, PR `#698`, ADR-0021)), `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
 - Frontend premium UI foundations wave: `#242`, `#243` (UI-02 shared primitives delivered), `#244`, `#245` (UI-03 stack spike delivered), `#246`, `#247`, `#248`, `#249`, `#250` (PERF-08 delivered)
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 - Seeded secondary MVP follow-through wave (lower priority than Wave P):
@@ -865,7 +868,7 @@ Master tracker: `#531`.
   - `#647` tracker
   - ~~`#649` Phase 1: read tools + orchestrator + provider tool-calling extension~~ (delivered 2026-04-01, PR `#669`)
   - `#650` Phase 2: write tools + proposal integration (1-2 weeks)
-  - `#651` Phase 3: refinements — loop detection, cost tracking, feature flag (1 week); also `#672` (double LLM call), `#673` (argument replay), `#674` (strict mode + loop detection)
+  - `#651` Phase 3: refinements — cost tracking, feature flag (1 week); also `#672` (double LLM call), `#673` (argument replay); ~~`#674`~~ (strict mode + loop detection — delivered 2026-04-03, PR `#694`)
   - Dependency chain: ~~`#649`~~ → `#650` → `#651`
   - Unblocks conversational refinement (`#576`) and MCP tool inventory (`#653`)
 - MCP server implementation wave (from completed spike `#619`):
@@ -893,7 +896,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
 - Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
-- Test maturity: `#87`, `#88`, `#89`, `#90`, `#91`
+- Test maturity: `#87`, `#88`, `#89` (property/fuzz pilot delivered; extended by `#717`), `#90`, `#91`; rigorous expansion wave tracker at `#721`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
 - Lower-priority secondary MVP follow-through continuation:
@@ -1145,7 +1148,8 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 8. Continue frontend premium UI wave from the delivered foundations: shared primitives (UI-02), PERF-08 budgets, and the stack decision spike (UI-03) are done; next is `#246` (token system audit), `#247` (component reskin pass), and `#248`/`#249`/`#250` interaction/accessibility hardening.
 9. Keep agent substrate and knowledge/integrations work sequenced behind novice-first exit criteria; do not promote them ahead of Horizons A through C.
 13. Continue the chat-to-proposal NLP gap (`#570`): Tier 1 delivered — classifier hardening (`#571`), error UX (`#572`), and integration tests (`#577`) are merged; next is LLM-assisted instruction extraction (`#573`) which requires real provider integration. Board-context prompting (`#575`) and conversational refinement (`#576`) remain Tier 3. Follow-up: enrich audit log entries with changed field details (`#583`).
-14. **UX feedback wave (2026-03-31)**: tracker at `#628`; 17 issues seeded from manual testing. Wave 1 delivered 6 fixes (`#612`, `#615`, `#617`, `#621`, `#623`, `#626`). Wave 2 delivered 5 more: both P1 blockers closed — capture triage dash/semicolon delimiters with context hints (`#614`), chat array truncation detection (`#616`); P2 notification type differentiation, grouping, and batch mark-all-read (`#625`); P4 search cursor pagination (`#610`); ops CI-extended path triggers (`#608`). Remaining open: 1 P2 (`#613`), 2 P3 strategic spikes (`#618`, `#619`). Full analysis at `docs/analysis/2026-03-31_manual_testing_ux_feedback.md`.
+14. **UX feedback wave (2026-03-31)**: tracker at `#628`; 17 issues seeded from manual testing. Wave 1 delivered 6 fixes (`#612`, `#615`, `#617`, `#621`, `#623`, `#626`). Wave 2 delivered 5 more: both P1 blockers closed — capture triage dash/semicolon delimiters with context hints (`#614`), chat array truncation detection (`#616`); P2 notification type differentiation, grouping, and batch mark-all-read (`#625`); P4 search cursor pagination (`#610`); ops CI-extended path triggers (`#608`). Wave 3 delivered review card sticky footer (`#613`/`#665`). Remaining open from `#628`: 2 P3 strategic spikes (`#618`, `#619`) both completed with implementation waves in progress. Full analysis at `docs/analysis/2026-03-31_manual_testing_ux_feedback.md`.
+15. **Hardening and UX wave (2026-04-03)**: 9 issues across 8 PRs (`#691`–`#698`) with adversarial review follow-through: P1 dead workspace routes (`#681`), expired proposal handling in Review (`#678`+`#690`), chat card ID continuity (`#677`), human-readable proposal diffs (`#682`), dark theme label manager (`#684`), chat health banner three-state (`#679`), OpenAI strict mode + loop detection (`#674`), JWT invalidation after account deletion (`#671`/ADR-0021). ~58 new tests added across the wave.
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave, knowledge service tests, and 2026-03-29 NLP/audit/error-UX wave added significant coverage since that certification. Frontend is now at 1491 tests (134 files).

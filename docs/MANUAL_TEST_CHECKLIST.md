@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-02
+Last Updated: 2026-04-03
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -89,7 +89,10 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: routed to `/workspace/home`.
 3. Attempt workspace route while logged out.
    - Expected: redirected to `/login` with redirect query.
-4. Open `/workspace/today`.
+4. Navigate directly to `/workspace/archive`, `/workspace/activity`, `/workspace/ops/cli`, and `/workspace/settings/access`.
+   - Expected: each route loads its intended view — no silent redirect to Home.
+   - Bug fixed (`#681`/`#691`): feature flags for shipped surfaces now default to `true`.
+5. Open `/workspace/today`.
    - Expected: agenda shows review/triage/overdue/due-today/blocked summary cards and the onboarding loop block.
 5. Start `Start Useful Board` from `Home` or `Today`, pick a starter shape, and create a board.
    - Expected: board opens immediately; when a starter pack applies successfully, the starter workflow is present, and when it fails, the board still opens with a warning.
@@ -141,6 +144,8 @@ Manual-only checks (non-automatable in generic local script):
 
 14. Open label manager and perform create/update/delete.
     - Expected: label list and card chips reflect changes.
+    - Expected: label manager modal uses dark workspace theme (design tokens) — no jarring light-theme styling.
+    - Bug fixed (`#684`/`#692`): modal migrated from hardcoded light-theme classes to design-token-driven dark theme.
 
 ## C. Filters and Keyboard Workflow
 
@@ -163,7 +168,10 @@ Manual-only checks (non-automatable in generic local script):
 
 ## D. Automations, Chat, and Proposals
 
-1. Open `/workspace/automations/chat` and create session.
+1. Open `/workspace/automations/chat` and check the LLM health banner.
+   - Expected: banner shows three distinct states — amber "configured" (before verification), green "verified" (after successful probe), or red "failed" (after failed probe). Initial state should NOT appear as healthy/green without verification.
+   - Enhancement (`#679`/`#693`): health banner now distinguishes configured vs verified vs failed provider states.
+2. Create session.
    - Expected: session appears and can be selected.
 2. Send non-actionable message.
    - Expected: assistant response appears.
@@ -182,12 +190,17 @@ Manual-only checks (non-automatable in generic local script):
 9. Execute proposal with confirmation (two-step: approve first, then execute as separate action).
    - Expected: status transitions to `Applied`.
 10. View diff for proposal.
-    - Expected: diff payload displays.
+    - Expected: diff shows human-readable operation descriptions (e.g., `Create card "Fix login bug" in column "To Do"`) instead of raw GUIDs.
+    - Expected: diff panel has "Operation details" heading and proper word-wrapping.
+    - Bug fixed (`#682`/`#697`): raw GUID targets replaced with card titles and column names; falls back to raw GUID when resolution fails.
 11. Verify applied proposals are hidden by default; use clear/dismiss action to manage them.
 12. Verify expired proposal handling in Review:
-    - Expected: expired proposals are visually distinct from actionable proposals (not shown as "Approved, ready to apply").
-    - Expected: expired proposals have a dismiss/clear action so they don't accumulate indefinitely.
-    - **Known bug (`#678`):** As of 2026-04-02, expired proposals appear as actionable and cannot be dismissed. The approve endpoint also accepts expired proposals without re-checking `ExpiresAt`.
+    - Expected: expired proposals show distinct "Expired" status badge — not "Approved, ready to apply".
+    - Expected: expired proposals have a Dismiss button and explanatory notice.
+    - Expected: dismissing an expired proposal removes it from the review list.
+    - Expected: Apply/Approve buttons are not shown for expired proposals.
+    - Expected: proposals that expire while the page is open transition to expired state reactively (60-second clock).
+    - Bug fixed (`#678`+`#690`/`#696`): expired proposals no longer appear actionable; dismiss action now available.
 
 ## E. Inbox and Notifications Continuity
 
@@ -253,7 +266,10 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
    - Expected: account deactivated, PII anonymized, audit references cleaned.
 7. Attempt to log in with the deleted account credentials.
    - Expected: login rejected — account is deactivated.
-8. Verify audit trail contains `DataExported`, `AccountDeletionRequested`, `AccountAnonymized` actions.
+8. Attempt to use the old JWT token (saved before deletion) on any authenticated endpoint.
+   - Expected: `401` with `ApiErrorResponse` — token is invalidated even though it hasn't expired.
+   - Enhancement (`#671`/`#698`): `TokenValidationMiddleware` checks `IsActive` and compares token `iat` against `TokenInvalidatedAt` on every authenticated request; ADR-0021 documents the design decision.
+9. Verify audit trail contains `DataExported`, `AccountDeletionRequested`, `AccountAnonymized` actions.
 
 ## J. Board Metrics Dashboard (ANL-01, `#77`)
 
@@ -298,9 +314,14 @@ Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
 6. Send: "What labels are on this board?"
    - Expected: response includes label names and colors via `get_board_labels` tool.
 7. Verify intermediate tool status messages appear (e.g., "Looking up cards...") via SignalR `ToolStatusEvent`.
-8. Verify multi-turn tool calling: ask a question that requires 2+ tool calls in sequence.
+8. Verify read-to-write card ID continuity: list cards in a column, then ask to move one by the short ID surfaced in the response.
+   - Expected: proposal created successfully using the 8-char hex prefix — no "Invalid card ID" error.
+   - Bug fixed (`#677`/`#695`): `CardIdPrefixResolver` resolves short IDs to full GUIDs via board-scoped prefix matching.
+9. Verify multi-turn tool calling: ask a question that requires 2+ tool calls in sequence.
    - Expected: orchestrator completes within 5 rounds and 60 seconds.
-9. With Mock provider: verify deterministic pattern-based dispatch produces predictable responses.
+   - Expected: repeated identical tool calls (infinite loop) are detected and aborted early with a clear message.
+   - Enhancement (`#674`/`#694`): SHA256-based loop detection with error-retry bypass.
+10. With Mock provider: verify deterministic pattern-based dispatch produces predictable responses.
 
 ## M. Backup and Restore DR Drill (OPS-08, `#86`)
 

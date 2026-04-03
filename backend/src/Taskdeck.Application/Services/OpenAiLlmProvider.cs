@@ -185,7 +185,7 @@ public class OpenAiLlmProvider : ILlmProvider
         }
     }
 
-    private object BuildToolCallingPayload(
+    internal object BuildToolCallingPayload(
         ChatCompletionRequest request,
         IReadOnlyList<TaskdeckToolSchema> tools,
         IReadOnlyList<ToolCallResult>? previousToolResults)
@@ -235,7 +235,9 @@ public class OpenAiLlmProvider : ILlmProvider
             }
         }
 
-        // Convert tool schemas to OpenAI format
+        // Convert tool schemas to OpenAI format with strict mode enabled.
+        // Strict mode guarantees the LLM output conforms exactly to the schema.
+        // Requires: all properties defined, additionalProperties: false.
         var openAiTools = tools.Select(t => new
         {
             type = "function",
@@ -243,6 +245,7 @@ public class OpenAiLlmProvider : ILlmProvider
             {
                 name = t.Name,
                 description = t.Description,
+                strict = true,
                 parameters = t.ParametersSchema
             }
         }).ToArray();
