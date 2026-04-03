@@ -529,12 +529,17 @@ function isProposalExpired(proposal: ApiProposal): boolean {
   return false
 }
 
+function isProposalDismissable(proposal: ApiProposal): boolean {
+  const status = normalizeProposalStatus(proposal.status)
+  return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
+}
+
 function reviewStatusClass(status: ApiProposal['status'], proposal?: ApiProposal): string {
   if (proposal && isProposalExpired(proposal)) return 'td-review-status--expired'
   const normalized = normalizeProposalStatus(status)
   if (normalized === 'PendingReview') return 'td-review-status--pending'
   if (normalized === 'Approved') {
-    return isProposalExpired(proposal) ? 'td-review-status--expired' : 'td-review-status--approved'
+    return proposal && isProposalExpired(proposal) ? 'td-review-status--expired' : 'td-review-status--approved'
   }
   if (normalized === 'Expired') return 'td-review-status--expired'
   if (normalized === 'Applied') return 'td-review-status--applied'
