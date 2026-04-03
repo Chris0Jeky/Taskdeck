@@ -1122,8 +1122,7 @@ public class ChatServiceTests
     #region Double LLM Call Elimination (#672)
 
     /// <summary>
-    /// Helper to build a ChatService with a tool-calling orchestrator injected.
-    /// Uses a mock orchestrator that returns the provided ToolCallingResult.
+    /// Helper to build a ChatService with the provided tool-calling orchestrator injected.
     /// </summary>
     private ChatService BuildServiceWithOrchestrator(ToolCallingChatOrchestrator orchestrator)
     {
@@ -1144,7 +1143,7 @@ public class ChatServiceTests
         return new ToolCallingChatOrchestrator(
             providerMock.Object,
             registry,
-            new Mock<Microsoft.Extensions.Logging.ILogger<ToolCallingChatOrchestrator>>().Object);
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
     }
 
     [Fact]
@@ -1221,7 +1220,7 @@ public class ChatServiceTests
                 callSequence++;
                 if (callSequence == 1)
                 {
-                    var args = System.Text.Json.JsonDocument.Parse("{}").RootElement;
+                    var args = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("{}");
                     return new LlmToolCompletionResult(
                         Content: null,
                         TokensUsed: 50,
@@ -1247,7 +1246,7 @@ public class ChatServiceTests
         var registry = new ToolExecutorRegistry(new[] { executor.Object });
         var orchestrator = new ToolCallingChatOrchestrator(
             orchestratorProviderMock.Object, registry,
-            new Mock<Microsoft.Extensions.Logging.ILogger<ToolCallingChatOrchestrator>>().Object);
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
         var service = BuildServiceWithOrchestrator(orchestrator);
 
         // Act
@@ -1414,6 +1413,58 @@ public class ChatServiceTests
         _llmProviderMock.Verify(
             p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_BoardScoped_EmptyContentNoToolCalls_ShouldFallBackToCompleteAsync()
+    {
+        // Arrange: orchestrator returns empty string content (no tool calls).
+        // Empty content should NOT be reused — fall through to CompleteAsync.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Empty content fallback", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        // Orchestrator's provider returns IsComplete=true with Content=null,
+        // which the orchestrator coalesces to Content="" (empty string).
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        orchestratorProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmToolCompletionResult(
+                Content: null,
+                TokensUsed: 10,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                ToolCalls: null,
+                IsComplete: true));
+
+        var orchestrator = BuildOrchestrator(orchestratorProviderMock);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Proper fallback response.", 20, false, null));
+
+        // Act
+        var result = await service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("Hello"),
+            default);
+
+        // Assert: should have fallen back to CompleteAsync, not reused empty content
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Content.Should().Be("Proper fallback response.");
+
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     #endregion
