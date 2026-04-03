@@ -802,4 +802,90 @@ describe('AutomationChatView', () => {
     expect(wrapper.text()).toContain('health down')
     expect(mocks.errorToast).toHaveBeenCalledWith('health down')
   })
+
+  it('shows tool call metadata expander on messages with tool call data', async () => {
+    const now = new Date().toISOString()
+    const toolMetadata = JSON.stringify({
+      rounds: 2,
+      total_tokens: 4200,
+      tool_calls: [
+        { round: 1, tool: 'list_cards_in_column', args: { column_name: 'Done' }, result_summary: '3 cards found', is_error: false },
+        { round: 2, tool: 'propose_bulk_move', args: { source_column: 'Done', target_column: 'Archive' }, result_summary: 'Proposal created', is_error: false },
+      ],
+    })
+    const toolSession = {
+      id: 'session-tool',
+      userId: 'user-1',
+      boardId: 'board-1',
+      title: 'Tool test',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+      recentMessages: [
+        {
+          id: 'msg-tool',
+          sessionId: 'session-tool',
+          role: 'Assistant',
+          content: 'I created a proposal to move 3 cards.',
+          messageType: 'text' as const,
+          proposalId: null,
+          tokenUsage: 4200,
+          createdAt: now,
+          toolCallMetadataJson: toolMetadata,
+        },
+      ],
+    }
+    mocks.getMySessions.mockResolvedValue([toolSession])
+    mocks.getSession.mockResolvedValue(toolSession)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    // Should show the tool meta toggle
+    const toggle = wrapper.find('.td-tool-meta__toggle')
+    expect(toggle.exists()).toBe(true)
+    expect(toggle.text()).toContain('2 tool calls in 2 rounds')
+
+    // Details should be hidden initially
+    expect(wrapper.find('.td-tool-meta__details').exists()).toBe(false)
+
+    // Click to expand
+    await toggle.trigger('click')
+    await waitForAsyncUi()
+
+    const details = wrapper.find('.td-tool-meta__details')
+    expect(details.exists()).toBe(true)
+    expect(details.text()).toContain('List Cards In Column')
+    expect(details.text()).toContain('Propose Bulk Move')
+    expect(details.text()).toContain('Proposal')
+  })
+
+  it('does not show tool metadata expander for messages without tool call data', async () => {
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.find('.td-tool-meta').exists()).toBe(false)
+  })
+
+  it('shows tool status spinner while sending message', async () => {
+    const sendDeferred = createDeferred<void>()
+    mocks.sendMessage.mockReturnValueOnce(sendDeferred.promise)
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('Move all done cards to archive')
+    await findButtonByText(wrapper, 'Send Message').trigger('click')
+
+    // The spinner should appear while sending
+    await waitForAsyncUi()
+    const statusMsg = wrapper.find('.td-message--tool-status')
+    expect(statusMsg.exists()).toBe(true)
+    expect(statusMsg.text()).toContain('Processing your request')
+
+    // Resolve the send
+    sendDeferred.resolve()
+    await waitForAsyncUi()
+  })
 })
