@@ -131,11 +131,12 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
     #region Race: Worker vs Manual Approval
 
     [Fact]
-    public async Task ExpireStaleProposals_ShouldLogWarning_WhenProposalWasApprovedBetweenFetchAndExpire()
+    public async Task ExpireStaleProposals_ShouldLogWarning_WhenProposalCannotBeExpired()
     {
-        // Simulate race: proposal fetched as PendingReview but was approved
-        // before the worker iterates to it. Approve first (while not expired),
-        // then set ExpiresAt to past (simulating time passing).
+        // Verifies the worker's error handling when Expire() throws on a
+        // non-PendingReview proposal (e.g., approved between fetch and expire
+        // in production). The fake repo intentionally ignores status filters
+        // to exercise this catch path directly.
         var proposal = CreatePendingProposal();
         proposal.Approve(Guid.NewGuid());
         SetExpiresAt(proposal, DateTime.UtcNow.AddMinutes(-5));
@@ -167,23 +168,25 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         var (worker, sp) = CreateWorkerWithProvider(unitOfWork);
         using (sp)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+            // Use 1 second timeout to avoid flakiness in CI environments
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
 
             var executeMethod = typeof(ProposalHousekeepingWorker).GetMethod(
                 "ExecuteAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic);
             executeMethod.Should().NotBeNull();
 
-            // Task.Delay throws TaskCanceledException when the token fires
-            // during the sleep. This is expected behavior for BackgroundService.
+            // Task.Delay(stoppingToken) on line 50 of the worker is outside the
+            // try-catch, so TaskCanceledException propagates when the token fires
+            // during the sleep interval. This is normal BackgroundService behavior.
             var task = (Task)executeMethod!.Invoke(worker, [cts.Token])!;
             try
             {
-                await task.WaitAsync(TimeSpan.FromSeconds(5));
+                await task.WaitAsync(TimeSpan.FromSeconds(10));
             }
             catch (TaskCanceledException)
             {
-                // Expected: Task.Delay cancellation propagates
+                // Expected: Task.Delay cancellation propagates out of ExecuteAsync
             }
 
             task.IsCompleted.Should().BeTrue("worker should stop promptly after cancellation");

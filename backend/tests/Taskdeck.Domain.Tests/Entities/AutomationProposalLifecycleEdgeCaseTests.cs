@@ -18,11 +18,12 @@ public class AutomationProposalLifecycleEdgeCaseTests
     #region Expiry Timing Boundaries
 
     [Fact]
-    public void Approve_ShouldThrow_WhenExpiresAtIsExactlyNow()
+    public void Approve_ShouldThrow_WhenJustPastExpiry()
     {
-        // Arrange: proposal whose expiry has just passed
+        // Arrange: proposal whose expiry has just passed.
+        // Use -1 second (not -1ms) to avoid clock-resolution flakiness on Windows (~15ms).
         var proposal = CreateProposal();
-        SetExpiresAt(proposal, DateTime.UtcNow.AddMilliseconds(-1));
+        SetExpiresAt(proposal, DateTime.UtcNow.AddSeconds(-1));
 
         // Act
         var act = () => proposal.Approve(Guid.NewGuid());
@@ -394,39 +395,105 @@ public class AutomationProposalLifecycleEdgeCaseTests
         proposal.CanBeDismissed.Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData("Applied")]
-    [InlineData("Rejected")]
-    [InlineData("Failed")]
-    [InlineData("Expired")]
-    public void CanBeDismissed_ShouldBeTrue_ForTerminalStatuses(string targetState)
+    [Fact]
+    public void CanBeDismissed_ShouldBeTrue_WhenApplied()
     {
         var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsApplied();
 
-        switch (targetState)
-        {
-            case "Applied":
-                proposal.Approve(Guid.NewGuid());
-                proposal.MarkAsApplied();
-                break;
-            case "Rejected":
-                proposal.Reject(Guid.NewGuid());
-                break;
-            case "Failed":
-                proposal.Approve(Guid.NewGuid());
-                proposal.MarkAsFailed("Error");
-                break;
-            case "Expired":
-                proposal.Expire();
-                break;
-        }
+        proposal.CanBeDismissed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanBeDismissed_ShouldBeTrue_WhenRejected()
+    {
+        var proposal = CreateProposal();
+        proposal.Reject(Guid.NewGuid());
+
+        proposal.CanBeDismissed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanBeDismissed_ShouldBeTrue_WhenFailed()
+    {
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+        proposal.MarkAsFailed("Error");
+
+        proposal.CanBeDismissed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanBeDismissed_ShouldBeTrue_WhenExpired()
+    {
+        var proposal = CreateProposal();
+        proposal.Expire();
 
         proposal.CanBeDismissed.Should().BeTrue();
     }
 
     #endregion
 
-    #region Operation Mutation Guards After State Transitions
+    [Fact]
+    public void Dismiss_ShouldThrow_WhenPendingReview()
+    {
+        var proposal = CreateProposal();
+
+        var act = () => proposal.Dismiss();
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot dismiss proposal in status PendingReview");
+    }
+
+    [Fact]
+    public void Dismiss_ShouldThrow_WhenApprovedAndNotExpired()
+    {
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+
+        var act = () => proposal.Dismiss();
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot dismiss proposal in status Approved");
+    }
+
+    [Fact]
+    public void Reject_ShouldThrow_WhenHighRisk_WithoutReason()
+    {
+        var proposal = CreateProposal(RiskLevel.High);
+
+        var act = () => proposal.Reject(Guid.NewGuid());
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Rejection reason is required for High and Critical risk proposals");
+    }
+
+    [Fact]
+    public void Reject_ShouldThrow_WhenCriticalRisk_WithoutReason()
+    {
+        var proposal = CreateProposal(RiskLevel.Critical);
+
+        var act = () => proposal.Reject(Guid.NewGuid());
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Rejection reason is required for High and Critical risk proposals");
+    }
+
+    [Fact]
+    public void AddOperation_ShouldThrow_WhenApproved()
+    {
+        var proposal = CreateProposal();
+        proposal.Approve(Guid.NewGuid());
+        var operation = CreateOperation(proposal.Id);
+
+        var act = () => proposal.AddOperation(operation);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot add operations after proposal has been decided");
+    }
+
+        #region Operation Mutation Guards After State Transitions
 
     [Fact]
     public void AddOperation_ShouldThrow_WhenExpired()
@@ -545,7 +612,9 @@ public class AutomationProposalLifecycleEdgeCaseTests
     private static void SetExpiresAt(AutomationProposal proposal, DateTime expiresAt)
     {
         var property = typeof(AutomationProposal).GetProperty(
-            nameof(AutomationProposal.ExpiresAt));
+            nameof(AutomationProposal.ExpiresAt),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        property.Should().NotBeNull("ExpiresAt property must exist on AutomationProposal");
         property!.SetValue(proposal, expiresAt);
     }
 
