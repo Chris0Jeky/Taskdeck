@@ -36,24 +36,41 @@ if (args.Contains("--mcp"))
             // Infrastructure (DbContext, Repositories, UoW)
             services.AddInfrastructure(ctx.Configuration);
 
-            // Register only the Application services needed by MCP resources.
+            // Register Application services needed by MCP resources and tools.
             // We deliberately skip web-only services (SignalR notifiers, workers,
             // LLM providers, rate limiting, etc.) to keep the MCP host minimal.
+            services.AddScoped<Taskdeck.Application.Services.AuthorizationService>();
+            services.AddScoped<Taskdeck.Application.Services.IAuthorizationService>(
+                sp => sp.GetRequiredService<Taskdeck.Application.Services.AuthorizationService>());
             services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
                 new Taskdeck.Application.Services.BoardService(
                     sp.GetRequiredService<IUnitOfWork>(),
                     sp.GetService<Taskdeck.Application.Services.IAuthorizationService>()));
-            services.AddScoped<Taskdeck.Application.Services.AuthorizationService>();
-            services.AddScoped<Taskdeck.Application.Services.IAuthorizationService>(
-                sp => sp.GetRequiredService<Taskdeck.Application.Services.AuthorizationService>());
+            services.AddScoped<Taskdeck.Application.Services.ColumnService>();
+            services.AddScoped<Taskdeck.Application.Services.CardService>();
+            services.AddScoped<Taskdeck.Application.Services.LabelService>();
+            services.AddScoped<Taskdeck.Application.Services.AutomationProposalService>();
+            services.AddScoped<Taskdeck.Application.Services.IAutomationProposalService>(
+                sp => sp.GetRequiredService<Taskdeck.Application.Services.AutomationProposalService>());
+            services.AddScoped<Taskdeck.Application.Services.CaptureService>();
+            services.AddScoped<Taskdeck.Application.Services.ICaptureService>(
+                sp => sp.GetRequiredService<Taskdeck.Application.Services.CaptureService>());
+            services.AddScoped<Taskdeck.Application.Services.NotificationService>();
+            services.AddScoped<Taskdeck.Application.Services.INotificationService>(
+                sp => sp.GetRequiredService<Taskdeck.Application.Services.NotificationService>());
 
             // Stdio identity: maps the OS process owner to the local default user.
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
 
-            // MCP server: stdio transport + BoardResources resource type.
+            // MCP server: stdio transport + all resources and tools.
             services.AddMcpServer()
                 .WithStdioServerTransport()
-                .WithResources<BoardResources>();
+                .WithResources<BoardResources>()
+                .WithResources<CaptureResources>()
+                .WithResources<ProposalResources>()
+                .WithTools<ReadTools>()
+                .WithTools<WriteTools>()
+                .WithTools<ProposalTools>();
         })
         .Build();
 

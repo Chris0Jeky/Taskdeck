@@ -17,7 +17,7 @@ using Xunit;
 namespace Taskdeck.Api.Tests;
 
 /// <summary>
-/// Unit/integration tests for the MCP board resource layer (Phase 1).
+/// Unit/integration tests for the MCP board resource layer.
 /// Uses isolated SQLite databases (one per test instance) to avoid flakiness.
 /// </summary>
 public class McpBoardResourcesTests : IDisposable
@@ -41,6 +41,7 @@ public class McpBoardResourcesTests : IDisposable
         services.AddScoped<BoardService>();
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
+        services.AddScoped<LabelService>();
 
         _serviceProvider = services.BuildServiceProvider();
 
@@ -62,12 +63,21 @@ public class McpBoardResourcesTests : IDisposable
         }
     }
 
+    private BoardResources CreateBoardResources(IServiceScope scope, Guid userId)
+    {
+        return new BoardResources(
+            scope.ServiceProvider.GetRequiredService<BoardService>(),
+            scope.ServiceProvider.GetRequiredService<ColumnService>(),
+            scope.ServiceProvider.GetRequiredService<CardService>(),
+            scope.ServiceProvider.GetRequiredService<LabelService>(),
+            new FixedUserContextProvider(userId));
+    }
+
     // ── StdioUserContextProvider tests ────────────────────────────────────────
 
     [Fact]
     public async Task StdioUserContextProvider_WhenConfiguredUserId_ReturnsThatId()
     {
-        // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -83,10 +93,8 @@ public class McpBoardResourcesTests : IDisposable
             })
             .Build();
 
-        // Act
         var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
-        // Assert
         (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
         (await provider.GetUserIdAsync()).Should().Be(user.Id);
     }
@@ -94,7 +102,6 @@ public class McpBoardResourcesTests : IDisposable
     [Fact]
     public async Task StdioUserContextProvider_WhenNoConfiguredId_FallsBackToFirstUser()
     {
-        // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -105,24 +112,20 @@ public class McpBoardResourcesTests : IDisposable
 
         var config = new ConfigurationBuilder().Build();
 
-        // Act
         var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
-        // Assert
         (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
     }
 
     [Fact]
     public async Task StdioUserContextProvider_WhenNoUsersAndNoConfig_Throws()
     {
-        // Arrange — empty DB, no config
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var config = new ConfigurationBuilder().Build();
 
         var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
-        // Act & Assert
         var act = () => provider.GetCurrentUserIdAsync();
         await act.Should().ThrowAsync<InvalidOperationException>()
            .WithMessage("*no users found*");
@@ -131,7 +134,6 @@ public class McpBoardResourcesTests : IDisposable
     [Fact]
     public async Task StdioUserContextProvider_WhenConfiguredIdIsEmpty_FallsBackToDb()
     {
-        // Arrange — Guid.Empty configured should be treated as invalid
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -147,17 +149,14 @@ public class McpBoardResourcesTests : IDisposable
             })
             .Build();
 
-        // Act
         var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
-        // Assert — should fall back to DB, not return Guid.Empty
         (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
     }
 
     [Fact]
     public async Task StdioUserContextProvider_WhenConfiguredIdDoesNotExistInDb_FallsBackToFirstUser()
     {
-        // Arrange — configured GUID is valid but does not match any user in the database
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -166,7 +165,7 @@ public class McpBoardResourcesTests : IDisposable
         await uow.Users.AddAsync(realUser);
         await uow.SaveChangesAsync();
 
-        var phantomId = Guid.NewGuid(); // does not exist in DB
+        var phantomId = Guid.NewGuid();
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -174,10 +173,8 @@ public class McpBoardResourcesTests : IDisposable
             })
             .Build();
 
-        // Act
         var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
-        // Assert — should fall back to the real user, not return the phantom ID
         var resolved = await provider.GetCurrentUserIdAsync();
         resolved.Should().Be(realUser.Id, "phantom user ID should not be used; should fall back to first DB user");
         resolved.Should().NotBe(phantomId);
@@ -186,7 +183,6 @@ public class McpBoardResourcesTests : IDisposable
     [Fact]
     public async Task StdioUserContextProvider_WhenConfiguredIdDoesNotExistAndNoUsers_Throws()
     {
-        // Arrange — configured GUID doesn't exist, and DB has no users
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
 
@@ -200,18 +196,16 @@ public class McpBoardResourcesTests : IDisposable
 
         var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
 
-        // Act & Assert
         var act = () => provider.GetCurrentUserIdAsync();
         await act.Should().ThrowAsync<InvalidOperationException>()
            .WithMessage("*no users found*");
     }
 
-    // ── BoardResources tests ──────────────────────────────────────────────────
+    // ── BoardResources.ListBoards tests ──────────────────────────────────────
 
     [Fact]
     public async Task BoardResources_ListBoards_ReturnsCompactJsonWithRequiredFields()
     {
-        // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
@@ -223,12 +217,10 @@ public class McpBoardResourcesTests : IDisposable
         await boardService.CreateBoardAsync(new CreateBoardDto("Alpha", null), user.Id);
         await boardService.CreateBoardAsync(new CreateBoardDto("Beta", null), user.Id);
 
-        var resources = new BoardResources(boardService, new FixedUserContextProvider(user.Id));
+        var resources = CreateBoardResources(scope, user.Id);
 
-        // Act
         var json = await resources.ListBoards();
 
-        // Assert — valid JSON with correct shape
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
@@ -253,7 +245,6 @@ public class McpBoardResourcesTests : IDisposable
     [Fact]
     public async Task BoardResources_ListBoards_ExcludesArchivedBoards()
     {
-        // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
@@ -266,12 +257,10 @@ public class McpBoardResourcesTests : IDisposable
         var archivedResult = await boardService.CreateBoardAsync(new CreateBoardDto("Archived", null), user.Id);
         await boardService.UpdateBoardAsync(archivedResult.Value.Id, new UpdateBoardDto(null, null, IsArchived: true), user.Id);
 
-        var resources = new BoardResources(boardService, new FixedUserContextProvider(user.Id));
+        var resources = CreateBoardResources(scope, user.Id);
 
-        // Act
         var json = await resources.ListBoards();
 
-        // Assert — only active board is returned
         using var doc = JsonDocument.Parse(json);
         var boards = doc.RootElement.GetProperty("boards");
         boards.GetArrayLength().Should().Be(1);
@@ -282,7 +271,6 @@ public class McpBoardResourcesTests : IDisposable
     [Fact]
     public async Task BoardResources_ListBoards_ReturnsCorrectColumnAndCardCounts()
     {
-        // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
@@ -300,12 +288,10 @@ public class McpBoardResourcesTests : IDisposable
         await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Done", null, null));
         await cardService.CreateCardAsync(new CreateCardDto(boardId, col1.Value.Id, "Task A", null, null, null));
 
-        var resources = new BoardResources(boardService, new FixedUserContextProvider(user.Id));
+        var resources = CreateBoardResources(scope, user.Id);
 
-        // Act
         var json = await resources.ListBoards();
 
-        // Assert
         using var doc = JsonDocument.Parse(json);
         var boardItem = doc.RootElement.GetProperty("boards")[0];
         boardItem.GetProperty("columnCount").GetInt32().Should().Be(2);
@@ -315,7 +301,6 @@ public class McpBoardResourcesTests : IDisposable
     [Fact]
     public async Task BoardResources_ListBoards_EmptyResultWhenNoBoards()
     {
-        // Arrange
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
@@ -324,12 +309,10 @@ public class McpBoardResourcesTests : IDisposable
         await uow.Users.AddAsync(user);
         await uow.SaveChangesAsync();
 
-        var resources = new BoardResources(boardService, new FixedUserContextProvider(user.Id));
+        var resources = CreateBoardResources(scope, user.Id);
 
-        // Act
         var json = await resources.ListBoards();
 
-        // Assert
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         root.GetProperty("boards").GetArrayLength().Should().Be(0);
@@ -341,7 +324,6 @@ public class McpBoardResourcesTests : IDisposable
     [Fact]
     public async Task BoardResources_ListBoards_OnlyReturnsCurrentUserBoards()
     {
-        // Arrange — two users, each with their own board
         using var scope = _serviceProvider.CreateScope();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
@@ -351,7 +333,6 @@ public class McpBoardResourcesTests : IDisposable
         await uow.Users.AddAsync(userBob);
         await uow.SaveChangesAsync();
 
-        // Create a BoardService with AuthorizationService so ownership filtering is enforced.
         var authService = new AuthorizationService(uow);
         var boardService = new BoardService(uow, authService);
 
@@ -359,15 +340,16 @@ public class McpBoardResourcesTests : IDisposable
         await boardService.CreateBoardAsync(new CreateBoardDto("Alice Board 2", null), userAlice.Id);
         await boardService.CreateBoardAsync(new CreateBoardDto("Bob Board 1", null), userBob.Id);
 
-        // Act — list boards as Alice via MCP BoardResources
-        var aliceResources = new BoardResources(boardService, new FixedUserContextProvider(userAlice.Id));
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+        var labelService = scope.ServiceProvider.GetRequiredService<LabelService>();
+
+        var aliceResources = new BoardResources(boardService, columnService, cardService, labelService, new FixedUserContextProvider(userAlice.Id));
         var aliceJson = await aliceResources.ListBoards();
 
-        // Act — list boards as Bob via MCP BoardResources
-        var bobResources = new BoardResources(boardService, new FixedUserContextProvider(userBob.Id));
+        var bobResources = new BoardResources(boardService, columnService, cardService, labelService, new FixedUserContextProvider(userBob.Id));
         var bobJson = await bobResources.ListBoards();
 
-        // Assert — Alice sees only her 2 boards
         using var aliceDoc = JsonDocument.Parse(aliceJson);
         var aliceBoards = aliceDoc.RootElement.GetProperty("boards");
         aliceBoards.GetArrayLength().Should().Be(2);
@@ -377,7 +359,6 @@ public class McpBoardResourcesTests : IDisposable
             board.GetProperty("name").GetString().Should().StartWith("Alice Board");
         }
 
-        // Assert — Bob sees only his 1 board
         using var bobDoc = JsonDocument.Parse(bobJson);
         var bobBoards = bobDoc.RootElement.GetProperty("boards");
         bobBoards.GetArrayLength().Should().Be(1);
@@ -385,10 +366,163 @@ public class McpBoardResourcesTests : IDisposable
         bobBoards[0].GetProperty("name").GetString().Should().Be("Bob Board 1");
     }
 
+    // ── BoardResources.GetBoardDetail tests ──────────────────────────────────
+
+    [Fact]
+    public async Task BoardResources_GetBoardDetail_ReturnsColumnsAndLabels()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        var labelService = scope.ServiceProvider.GetRequiredService<LabelService>();
+
+        var user = new User("detail-user", "detail@example.com", "Password1!");
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+
+        var board = await boardService.CreateBoardAsync(new CreateBoardDto("DetailBoard", null), user.Id);
+        var boardId = board.Value.Id;
+
+        await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Todo", null, 5));
+        await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Done", null, null));
+        await labelService.CreateLabelAsync(new CreateLabelDto(boardId, "bug", "#e74c3c"));
+
+        var resources = CreateBoardResources(scope, user.Id);
+        var json = await resources.GetBoardDetail(boardId.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        root.GetProperty("id").GetGuid().Should().Be(boardId);
+        root.GetProperty("name").GetString().Should().Be("DetailBoard");
+        root.GetProperty("columns").GetArrayLength().Should().Be(2);
+        root.GetProperty("labels").GetArrayLength().Should().Be(1);
+
+        var firstLabel = root.GetProperty("labels").EnumerateArray().First();
+        firstLabel.GetProperty("name").GetString().Should().Be("bug");
+        firstLabel.GetProperty("color").GetString().Should().BeEquivalentTo("#e74c3c");
+    }
+
+    [Fact]
+    public async Task BoardResources_GetBoardDetail_InvalidId_Throws()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var user = new User("invalid-user", "invalid@example.com", "Password1!");
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+
+        var resources = CreateBoardResources(scope, user.Id);
+
+        var act = () => resources.GetBoardDetail("not-a-guid");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*invalid board ID*");
+    }
+
+    // ── BoardResources.GetColumnCards tests ───────────────────────────────────
+
+    [Fact]
+    public async Task BoardResources_GetColumnCards_ReturnsCardsInColumn()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+
+        var user = new User("cards-user", "cards@example.com", "Password1!");
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+
+        var board = await boardService.CreateBoardAsync(new CreateBoardDto("CardsBoard", null), user.Id);
+        var boardId = board.Value.Id;
+
+        var col = await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Backlog", null, null));
+        var colId = col.Value.Id;
+        await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Card A", "desc", null, null));
+        await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Card B", null, null, null));
+
+        var resources = CreateBoardResources(scope, user.Id);
+        var json = await resources.GetColumnCards(boardId.ToString(), colId.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        root.GetProperty("columnName").GetString().Should().Be("Backlog");
+        root.GetProperty("totalCount").GetInt32().Should().Be(2);
+        root.GetProperty("cards").GetArrayLength().Should().Be(2);
+
+        var firstCard = root.GetProperty("cards").EnumerateArray().First();
+        firstCard.GetProperty("title").GetString().Should().Be("Card A");
+        firstCard.GetProperty("hasDescription").GetBoolean().Should().BeTrue();
+    }
+
+    // ── BoardResources.GetCardDetail tests ───────────────────────────────────
+
+    [Fact]
+    public async Task BoardResources_GetCardDetail_ReturnsFullDetail()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
+
+        var user = new User("detail-card-user", "detailcard@example.com", "Password1!");
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+
+        var board = await boardService.CreateBoardAsync(new CreateBoardDto("CardBoard", null), user.Id);
+        var boardId = board.Value.Id;
+        var col = await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Active", null, null));
+        var card = await cardService.CreateCardAsync(new CreateCardDto(boardId, col.Value.Id, "My Card", "Full description", null, null));
+
+        var resources = CreateBoardResources(scope, user.Id);
+        var json = await resources.GetCardDetail(boardId.ToString(), card.Value.Id.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        root.GetProperty("title").GetString().Should().Be("My Card");
+        root.GetProperty("description").GetString().Should().Be("Full description");
+        root.GetProperty("columnName").GetString().Should().Be("Active");
+    }
+
+    // ── BoardResources.GetBoardLabels tests ──────────────────────────────────
+
+    [Fact]
+    public async Task BoardResources_GetBoardLabels_ReturnsLabels()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var labelService = scope.ServiceProvider.GetRequiredService<LabelService>();
+
+        var user = new User("labels-user", "labels@example.com", "Password1!");
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+
+        var board = await boardService.CreateBoardAsync(new CreateBoardDto("LabelBoard", null), user.Id);
+        var boardId = board.Value.Id;
+        await labelService.CreateLabelAsync(new CreateLabelDto(boardId, "feature", "#2ecc71"));
+        await labelService.CreateLabelAsync(new CreateLabelDto(boardId, "bug", "#e74c3c"));
+
+        var resources = CreateBoardResources(scope, user.Id);
+        var json = await resources.GetBoardLabels(boardId.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        root.GetProperty("boardName").GetString().Should().Be("LabelBoard");
+        root.GetProperty("totalCount").GetInt32().Should().Be(2);
+        root.GetProperty("labels").GetArrayLength().Should().Be(2);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>Stub IUserContextProvider that returns a fixed user ID.</summary>
-    private sealed class FixedUserContextProvider : IUserContextProvider
+    internal sealed class FixedUserContextProvider : IUserContextProvider
     {
         private readonly Guid _userId;
         public FixedUserContextProvider(Guid userId) => _userId = userId;
