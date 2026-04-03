@@ -726,6 +726,7 @@ public class ChatServiceTests
         result.ErrorMessage.Should().Be("ApiKey is required.");
         result.Model.Should().Be("gpt-4o-mini");
         result.IsMock.Should().BeFalse();
+        result.VerificationStatus.Should().Be("unverified");
     }
 
     [Fact]
@@ -741,6 +742,7 @@ public class ChatServiceTests
         result.ProviderName.Should().Be("DeterministicStub");
         result.Model.Should().Be("stub-model");
         result.IsMock.Should().BeTrue();
+        result.VerificationStatus.Should().Be("unverified");
     }
 
     [Fact]
@@ -756,8 +758,25 @@ public class ChatServiceTests
         result.ProviderName.Should().Be("OpenAI");
         result.Model.Should().Be("gpt-4o-mini");
         result.IsProbed.Should().BeTrue();
+        result.VerificationStatus.Should().Be("verified");
         _llmProviderMock.Verify(p => p.ProbeAsync(default), Times.Once);
         _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldReturnFailedVerificationStatus_WhenProbeFailsAvailability()
+    {
+        _llmProviderMock
+            .Setup(p => p.ProbeAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(false, "OpenAI", "Connection refused", "gpt-4o-mini", IsProbed: true));
+
+        var result = await _service.GetProviderHealthAsync(probe: true, default);
+
+        result.IsAvailable.Should().BeFalse();
+        result.ProviderName.Should().Be("OpenAI");
+        result.ErrorMessage.Should().Be("Connection refused");
+        result.IsProbed.Should().BeTrue();
+        result.VerificationStatus.Should().Be("failed");
     }
 
     #region NLP Gap Tests — Documents #570 (Chat-to-Proposal NLP Gap)

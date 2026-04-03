@@ -34,6 +34,8 @@ export interface ChatSession {
   recentMessages: ChatMessage[]
 }
 
+export type VerificationStatus = 'unverified' | 'verified' | 'failed'
+
 export interface ChatProviderHealth {
   isAvailable: boolean
   providerName: string
@@ -41,6 +43,7 @@ export interface ChatProviderHealth {
   model: string | null
   isMock: boolean
   isProbed: boolean
+  verificationStatus: VerificationStatus
 }
 
 export interface CreateChatSessionRequest {

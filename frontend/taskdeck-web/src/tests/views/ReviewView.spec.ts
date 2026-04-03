@@ -976,5 +976,24 @@ describe('ReviewView', () => {
     expect(wrapper.find('.td-review-status--approved').exists()).toBe(true)
     expect(wrapper.text()).toContain('Approved, ready to apply')
     expect(wrapper.text()).not.toContain('This proposal has expired')
+  it('renders human-readable diff content with operation details label', async () => {
+    const readableDiff = '0. Create card "Fix login bug" in column "To Do"\n1. Move card "Setup CI" to column "In Progress"'
+    mocks.getProposals.mockResolvedValue([buildProposal()])
+    mocks.getProposalDiff.mockResolvedValue(readableDiff)
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    const viewDiffBtn = wrapper.get('#proposal-proposal-1').findAll('button').find((node) => node.text() === 'View Diff')!
+    await viewDiffBtn.trigger('click')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Fix login bug')
+    expect(wrapper.text()).toContain('To Do')
+    expect(wrapper.text()).toContain('Setup CI')
+    expect(wrapper.text()).toContain('In Progress')
+    expect(wrapper.text()).toContain('Operation details')
+    expect(wrapper.find('.td-review-card__diff').exists()).toBe(true)
+    expect(wrapper.find('.td-review-card__diff-label').exists()).toBe(true)
   })
 })

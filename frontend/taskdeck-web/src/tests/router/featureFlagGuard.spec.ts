@@ -119,11 +119,39 @@ describe('feature-flag route guard (#524)', () => {
       // runtime check guards against future key renames at the type level.
       const validFlags = [
         'newShell', 'newAuth', 'newAccess', 'newActivity',
-        'newOps', 'newAutomation', 'newArchive',
+        'newOps', 'newAutomation', 'newArchive', 'devTools',
       ] as const
       for (const { flag } of FLAGGED_ROUTES) {
         expect(validFlags).toContain(flag)
       }
+    })
+  })
+
+  describe('previously-redirecting routes are accessible with default flags (#681)', () => {
+    // These routes previously defaulted their flags to false, silently redirecting
+    // to /workspace/home.  After #681 the defaults are true, so the guard must
+    // allow navigation without any explicit setFlag call.
+    const PREVIOUSLY_BLOCKED: { path: string; flag: keyof FeatureFlags }[] = [
+      { path: '/workspace/archive', flag: 'newArchive' },
+      { path: '/workspace/activity', flag: 'newActivity' },
+      { path: '/workspace/ops/cli', flag: 'newOps' },
+      { path: '/workspace/settings/access', flag: 'newAccess' },
+    ]
+
+    it.each(PREVIOUSLY_BLOCKED)(
+      '$path is allowed with default flags (no redirect)',
+      ({ flag }) => {
+        // Fresh store with defaults — no explicit setFlag call
+        expect(store.isEnabled(flag)).toBe(true)
+        expect(guardDecision({ requiresFlag: flag }, store)).toBeUndefined()
+      },
+    )
+
+    it('devTools route is still blocked by default', () => {
+      expect(store.isEnabled('devTools')).toBe(false)
+      expect(guardDecision({ requiresFlag: 'devTools' }, store)).toEqual({
+        path: '/workspace/home',
+      })
     })
   })
 })
