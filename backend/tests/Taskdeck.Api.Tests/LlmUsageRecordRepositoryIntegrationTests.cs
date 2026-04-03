@@ -41,7 +41,7 @@ public class LlmUsageRecordRepositoryIntegrationTests : IClassFixture<TestWebApp
         var to = DateTimeOffset.UtcNow.AddMinutes(5);
 
         var count = await repo.GetRequestCountAsync(user.Id, null, from, to);
-        count.Should().BeGreaterOrEqualTo(2);
+        count.Should().Be(2);
     }
 
     [Fact]
@@ -86,8 +86,8 @@ public class LlmUsageRecordRepositoryIntegrationTests : IClassFixture<TestWebApp
         var chatCount = await repo.GetRequestCountAsync(user.Id, LlmSurface.Chat, from, to);
         var captureCount = await repo.GetRequestCountAsync(user.Id, LlmSurface.CaptureTriage, from, to);
 
-        chatCount.Should().BeGreaterOrEqualTo(1);
-        captureCount.Should().BeGreaterOrEqualTo(1);
+        chatCount.Should().Be(1);
+        captureCount.Should().Be(1);
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public class LlmUsageRecordRepositoryIntegrationTests : IClassFixture<TestWebApp
         var total = await repo.GetTotalTokensAsync(user.Id, LlmSurface.Worker, from, to);
 
         // (100+50) + (200+100) = 450
-        total.Should().BeGreaterOrEqualTo(450);
+        total.Should().Be(450);
     }
 
     [Fact]
@@ -156,9 +156,9 @@ public class LlmUsageRecordRepositoryIntegrationTests : IClassFixture<TestWebApp
 
         var summary = await repo.GetUsageSummaryAsync(user.Id, LlmSurface.Worker, from, to);
 
-        summary.TotalRequests.Should().BeGreaterOrEqualTo(2);
-        summary.TotalInputTokens.Should().BeGreaterOrEqualTo(300); // 100 + 200
-        summary.TotalOutputTokens.Should().BeGreaterOrEqualTo(125); // 50 + 75
+        summary.TotalRequests.Should().Be(2);
+        summary.TotalInputTokens.Should().Be(300); // 100 + 200
+        summary.TotalOutputTokens.Should().Be(125); // 50 + 75
     }
 
     [Fact]
@@ -203,8 +203,9 @@ public class LlmUsageRecordRepositoryIntegrationTests : IClassFixture<TestWebApp
         var allUsersCount = await repo.GetRequestCountAsync(null, null, from, to);
         var userACount = await repo.GetRequestCountAsync(userA.Id, null, from, to);
 
-        // All users count should be >= each individual user count
-        allUsersCount.Should().BeGreaterOrEqualTo(userACount);
+        // All users count should include both users' records
+        allUsersCount.Should().BeGreaterOrEqualTo(2);
+        userACount.Should().Be(1);
     }
 
     [Fact]
