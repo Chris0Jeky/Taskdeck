@@ -34,6 +34,12 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         var pending = new AutomationProposal(
             ProposalSourceType.Queue, user.Id, "Pending proposal", RiskLevel.Low,
             $"corr-pending-{Guid.NewGuid():N}");
+        // Add an operation to verify the "WithOperations" part of the test name
+        var operation = new AutomationProposalOperation(
+            pending.Id, 0, "create", "card", "{\"title\":\"Test Card\"}",
+            $"idempkey-{Guid.NewGuid():N}", targetId: Guid.NewGuid().ToString());
+        pending.AddOperation(operation);
+
         var approved = new AutomationProposal(
             ProposalSourceType.Queue, user.Id, "Approved proposal", RiskLevel.Low,
             $"corr-approved-{Guid.NewGuid():N}");
@@ -49,6 +55,11 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         pendingResults.Should().NotContain(p => p.Id == approved.Id);
         approvedResults.Should().Contain(p => p.Id == approved.Id);
         approvedResults.Should().NotContain(p => p.Id == pending.Id);
+
+        // Verify operations are included in the result
+        var loadedPending = pendingResults.First(p => p.Id == pending.Id);
+        loadedPending.Operations.Should().HaveCount(1);
+        loadedPending.Operations[0].ActionType.Should().Be("create");
     }
 
     [Fact]
@@ -250,7 +261,7 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
 
         var count = await repo.CountPendingReviewByUserIdAsync(user.Id);
 
-        count.Should().BeGreaterOrEqualTo(2);
+        count.Should().Be(2);
     }
 
     [Fact]
@@ -345,5 +356,34 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         result.Should().Contain(p => p.Id == p1.Id);
         result.Should().Contain(p => p.Id == p2.Id);
         result.Should().NotContain(p => p.Id == p3.Id);
+    }
+
+    [Fact]
+    public async Task GetExpiredAsync_WithExpiresAtExactlyNow_ShouldNotReturnAsExpired()
+    {
+        // Locks in that GetExpiredAsync uses strict < (not <=) for ExpiresAt comparison.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-boundary-user", "ap-boundary@example.com", "hash");
+        db.Users.Add(user);
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Boundary test", RiskLevel.Low,
+            $"corr-boundary-{Guid.NewGuid():N}", expiryMinutes: 1);
+        db.AutomationProposals.Add(proposal);
+        await db.SaveChangesAsync();
+
+        // Set ExpiresAt to a point slightly in the future (1 second from now)
+        // so that "now" at query time is still before ExpiresAt
+        var futureExpiry = DateTime.UtcNow.AddSeconds(1);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE AutomationProposals SET ExpiresAt = {futureExpiry} WHERE Id = {proposal.Id}");
+
+        var results = (await repo.GetExpiredAsync()).ToList();
+
+        // ExpiresAt is in the future, so strict < should NOT include it
+        results.Should().NotContain(p => p.Id == proposal.Id);
     }
 }
