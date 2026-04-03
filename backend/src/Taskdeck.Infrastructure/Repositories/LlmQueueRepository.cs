@@ -108,10 +108,13 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
     {
         if (_context.Database.IsSqlite())
         {
-            return await _context.LlmRequests
-                .FromSqlInterpolated($"SELECT * FROM LlmRequests WHERE UserId = {userId} ORDER BY CreatedAt DESC")
+            // FromSqlInterpolated + Include may not preserve ORDER BY from the raw SQL
+            // (EF Core wraps it in a subquery), so sort in-memory after materialization.
+            var results = await _context.LlmRequests
+                .FromSqlInterpolated($"SELECT * FROM LlmRequests WHERE UserId = {userId}")
                 .Include(lr => lr.Board)
                 .ToListAsync(cancellationToken);
+            return results.OrderByDescending(lr => lr.CreatedAt).ToList();
         }
 
         return await _context.LlmRequests
