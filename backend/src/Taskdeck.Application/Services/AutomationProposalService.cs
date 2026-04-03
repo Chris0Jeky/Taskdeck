@@ -276,15 +276,35 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal.Operations.Count == 0)
             return Result.Failure<string>(ErrorCodes.NotFound, "Diff preview not available for this proposal");
 
+        var orderedOperations = proposal.Operations
+            .OrderBy(o => o.Sequence)
+            .ToList();
+
+        // Batch-load entity names for resolving IDs to human-readable labels
+        var columnNames = new Dictionary<Guid, string>();
+        var cardTitles = new Dictionary<Guid, string>();
+
+        if (proposal.BoardId.HasValue)
+        {
+            try
+            {
+                var columns = await _unitOfWork.Columns.GetByBoardIdAsync(proposal.BoardId.Value, cancellationToken);
+                foreach (var column in columns)
+                    columnNames[column.Id] = column.Name;
+
+                var cards = await _unitOfWork.Cards.GetByBoardIdAsync(proposal.BoardId.Value, cancellationToken);
+                foreach (var card in cards)
+                    cardTitles[card.Id] = card.Title;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Non-critical: if lookups fail, fall back to IDs
+            }
+        }
+
         var generatedDiff = string.Join(
             Environment.NewLine,
-            proposal.Operations
-                .OrderBy(o => o.Sequence)
-                .Select(o =>
-                {
-                    var target = string.IsNullOrWhiteSpace(o.TargetId) ? o.TargetType : $"{o.TargetType}:{o.TargetId}";
-                    return $"{o.Sequence}. {o.ActionType} {target}";
-                }));
+            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles)));
 
         return Result.Success(generatedDiff);
     }
@@ -510,6 +530,89 @@ public class AutomationProposalService : IAutomationProposalService
         return namedTarget is null
             ? $"{verb} {target}."
             : $"{verb} {target} \"{namedTarget}\".";
+    }
+
+    /// <summary>
+    /// Produces a human-readable diff line for a single operation, resolving
+    /// card IDs to titles and column IDs to names where possible.
+    /// </summary>
+    private static string DescribeOperationReadable(
+        AutomationProposalOperation operation,
+        IReadOnlyDictionary<Guid, string> columnNames,
+        IReadOnlyDictionary<Guid, string> cardTitles)
+    {
+        var verb = HumanizeActionVerb(operation.ActionType);
+        var targetType = HumanizeTargetType(operation.TargetType).ToLowerInvariant();
+        var isCardTarget = operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase);
+        var namedTarget = ExtractNamedTarget(operation.Parameters);
+
+        // Try to resolve card title from lookup when not embedded in parameters
+        // Only attempt card-specific lookups when the operation targets a card
+        if (namedTarget is null && isCardTarget && !string.IsNullOrWhiteSpace(operation.TargetId))
+        {
+            if (Guid.TryParse(operation.TargetId, out var targetGuid) && cardTitles.TryGetValue(targetGuid, out var title))
+                namedTarget = title;
+        }
+
+        // Also try to resolve card title from cardId parameter
+        if (namedTarget is null && isCardTarget)
+        {
+            var cardIdFromParams = ExtractGuidParameter(operation.Parameters, "cardId");
+            if (cardIdFromParams.HasValue && cardTitles.TryGetValue(cardIdFromParams.Value, out var title))
+                namedTarget = title;
+        }
+
+        // Build description, falling back to raw TargetId when no name is available
+        var description = namedTarget is not null
+            ? $"{operation.Sequence}. {verb} {targetType} \"{namedTarget}\""
+            : !string.IsNullOrWhiteSpace(operation.TargetId)
+                ? $"{operation.Sequence}. {verb} {targetType} {operation.TargetId}"
+                : $"{operation.Sequence}. {verb} {targetType}";
+
+        // Append column context for operations that reference a column
+        var columnId = ExtractGuidParameter(operation.Parameters, "columnId");
+        if (columnId.HasValue)
+        {
+            var columnDisplay = columnNames.TryGetValue(columnId.Value, out var columnName)
+                ? $"\"{columnName}\""
+                : columnId.Value.ToString();
+
+            if (verb == "Move")
+                description += $" to column {columnDisplay}";
+            else if (verb == "Create")
+                description += $" in column {columnDisplay}";
+        }
+
+        return description;
+    }
+
+    /// <summary>
+    /// Extracts a GUID value from a JSON parameters string by property name.
+    /// Returns null when the property is missing, not a valid GUID, or the JSON is invalid.
+    /// </summary>
+    private static Guid? ExtractGuidParameter(string parameters, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(parameters))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(parameters);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (!document.RootElement.TryGetProperty(propertyName, out var propertyValue))
+                return null;
+
+            if (propertyValue.TryGetGuid(out var guidValue))
+                return guidValue;
+        }
+        catch (JsonException)
+        {
+            // Malformed JSON — fall through to null
+        }
+
+        return null;
     }
 
     private static string? ExtractNamedTarget(string parameters)

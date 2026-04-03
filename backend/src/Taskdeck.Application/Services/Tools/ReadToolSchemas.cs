@@ -8,17 +8,16 @@ namespace Taskdeck.Application.Services.Tools;
 /// </summary>
 public static class ReadToolSchemas
 {
-    public static IReadOnlyList<TaskdeckToolSchema> GetAll()
+    private static readonly IReadOnlyList<TaskdeckToolSchema> CachedAll = new[]
     {
-        return new[]
-        {
-            ListBoardColumns(),
-            ListCardsInColumn(),
-            GetCardDetails(),
-            SearchCards(),
-            GetBoardLabels()
-        };
-    }
+        ListBoardColumns(),
+        ListCardsInColumn(),
+        GetCardDetails(),
+        SearchCards(),
+        GetBoardLabels()
+    };
+
+    public static IReadOnlyList<TaskdeckToolSchema> GetAll() => CachedAll;
 
     public static TaskdeckToolSchema ListBoardColumns() => new(
         Name: "list_board_columns",

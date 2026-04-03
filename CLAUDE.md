@@ -8,8 +8,8 @@ A local-first execution workspace for developers. Core thesis: near-zero-frictio
 
 ## Required Reading Before Changes
 
-1. `docs/STATUS.md` — source of truth for current state (always read first)
-2. `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery sequencing / roadmap
+1. `docs/STATUS.md` — source of truth for current shipped state (always read first)
+2. `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery history, planned work, roadmap sequencing, and strategic intentions
 3. `docs/GOLDEN_PRINCIPLES.md` — stable invariants and guardrails
 4. `AGENTS.md` — full contributor protocol, definition of done, output expectations
 
@@ -110,7 +110,7 @@ Mock provider is default. OpenAI and Gemini supported behind config gates. See `
 
 - Behavior changes ship with tests (unit/integration/E2E as appropriate).
 - Handle error cases explicitly; do not swallow failures.
-- Update docs when reality changes: `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md`.
+- Update docs when reality changes: `docs/STATUS.md` for current state, `docs/IMPLEMENTATION_MASTERPLAN.md` for delivery history and planned work.
 - HTTP semantics: use stable codes (401/403/404/409). Claims-first identity.
 
 ## Coding Conventions
@@ -141,8 +141,8 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 
 ## Key Docs
 
-- `docs/STATUS.md` — current shipped reality
-- `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery sequencing
+- `docs/STATUS.md` — current shipped reality (what is true now)
+- `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery history, roadmap, and planned work (what was done and what comes next)
 - `docs/GOLDEN_PRINCIPLES.md` — stable invariants
 - `docs/decisions/INDEX.md` — architecture decision records
 - `docs/TESTING_GUIDE.md` — test operations reference

@@ -83,6 +83,9 @@ public static class PipelineConfiguration
         });
 
         app.UseAuthentication();
+        // Reject tokens for deleted/deactivated users or tokens issued before invalidation.
+        // Must run after UseAuthentication (so JWT is parsed) and before UseAuthorization.
+        app.UseMiddleware<TokenValidationMiddleware>();
         if (rateLimitingSettings.Enabled)
         {
             app.UseRateLimiter();

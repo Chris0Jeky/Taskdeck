@@ -163,4 +163,78 @@ public class CardRepository : Repository<Card>, ICardRepository
             .Where(c => c.Title.Contains(searchText) || c.Description.Contains(searchText))
             .CountAsync(cancellationToken);
     }
+
+    public async Task<IEnumerable<Card>> GetForMetricsAsync(
+        Guid boardId,
+        Guid? labelId = null,
+        IEnumerable<Guid>? cardIds = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbSet
+            .AsNoTracking()
+            .Where(c => c.BoardId == boardId);
+
+        if (labelId.HasValue)
+        {
+            query = query.Where(c => c.CardLabels.Any(cl => cl.LabelId == labelId.Value));
+        }
+
+        if (cardIds != null)
+        {
+            var materializedIds = cardIds.ToList();
+            if (materializedIds.Count > 0)
+            {
+                query = query.Where(c => materializedIds.Contains(c.Id));
+            }
+            else
+            {
+                // Explicitly provided but empty — no cards match
+                return Array.Empty<Card>();
+            }
+        }
+
+        return await query
+            .OrderBy(c => c.ColumnId)
+            .ThenBy(c => c.Position)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<(Guid ColumnId, int CardCount)>> CountCardsByColumnAsync(
+        Guid boardId,
+        Guid? labelId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbSet
+            .AsNoTracking()
+            .Where(c => c.BoardId == boardId);
+
+        if (labelId.HasValue)
+        {
+            query = query.Where(c => c.CardLabels.Any(cl => cl.LabelId == labelId.Value));
+        }
+
+        var results = await query
+            .GroupBy(c => c.ColumnId)
+            .Select(g => new { ColumnId = g.Key, CardCount = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return results.Select(r => (r.ColumnId, r.CardCount)).ToList();
+    }
+
+    public async Task<IEnumerable<Card>> GetBlockedByBoardIdAsync(
+        Guid boardId,
+        Guid? labelId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbSet
+            .AsNoTracking()
+            .Where(c => c.BoardId == boardId && c.IsBlocked);
+
+        if (labelId.HasValue)
+        {
+            query = query.Where(c => c.CardLabels.Any(cl => cl.LabelId == labelId.Value));
+        }
+
+        return await query.ToListAsync(cancellationToken);
+    }
 }

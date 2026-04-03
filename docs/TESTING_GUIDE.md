@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-02
+Last Updated: 2026-04-03
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -70,9 +70,9 @@ Tracked issues: `#415` to `#429`. PRs: `#436` to `#448`. All delivered and merge
 | 4 — Backend Domain | CardComment, Notification, AutomationProposal, LlmUsageRecord | Entity construction + invariants | `#423`-`#426` |
 | 5 — Backend Services | OutboundWebhookSignature (expand), WorkerHeartbeatRegistry, CompositeBoardRealtimeNotifier | Service tests with mocking | `#427`-`#429` |
 
-Remaining coverage gaps (post-wave):
-- Frontend: 1 API module untested (captureApi), remaining composables/stores have baseline coverage
-- Backend: Infrastructure repositories still largely untested, remaining domain entities untested, 1 of 5 workers untested
+Remaining coverage gaps (post-wave, now tracked in TST-32 to TST-57 wave `#721`):
+- Frontend: 1 API module untested (captureApi), remaining composables/stores have baseline coverage → tracked in `#711`, `#716`
+- Backend: Infrastructure repositories still largely untested → tracked in `#699`; remaining domain entities untested → tracked in `#701`; 1 of 5 workers untested → tracked in `#700`
 
 ## LLM Tool-Calling Coverage (PR #669, delivered 2026-04-01)
 
@@ -118,6 +118,39 @@ Tracking issue: `#539`
 New test coverage:
 - `authApi.spec.ts` (3 tests): `getProviders` and `exchangeOAuthCode` API calls
 - `sessionStore.spec.ts` (2 tests): OAuth code exchange store action
+
+## Rigorous Test Expansion Wave (TST-32 to TST-57, seeded 2026-04-03)
+
+Tracker issue: `#721`. Seeded from a systematic codebase audit across backend, frontend, and cross-cutting integration boundaries.
+
+Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity.
+
+### Wave Scope
+
+22 issues spanning integration tests, edge cases, adversarial inputs, failure modes, and cross-user data isolation. Focus is on integration seams (where services interact) rather than adding more isolated unit tests.
+
+| Priority | Issues | Theme |
+|----------|--------|-------|
+| I | `#703` | Capture → triage → proposal → review → board end-to-end golden path |
+| II | `#699`, `#700`, `#702`, `#704`, `#705`, `#707`, `#723`, `#725` | Infrastructure repos, untested worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor |
+| III | `#701`, `#706`, `#708`, `#709`, `#710`, `#711`, `#712`, `#713`, `#714`, `#715`, `#716`, `#718`, `#719`, `#720`, `#726` | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience |
+| IV | `#717` | Property-based and adversarial input tests (extends `#89`) |
+
+### Key Gaps Identified
+
+- **Infrastructure repositories**: 25+ repositories with raw SQL, GUID formatting, and in-memory pagination — largely untested against real SQLite
+- **`LlmQueueToProposalWorker`**: most complex worker (fair-batch interleaving, optimistic concurrency, retry/backoff) with zero tests; every capture flows through it
+- **Cross-user data isolation**: after `#508` (queue data leak), no systematic integration test proves data isolation across all surfaces
+- **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage
+- **Golden path**: no single integration test exercises capture → proposal → review → board as a connected pipeline
+
+### Relationship to Existing Test Issues
+
+- Extends `#254` (testing harness improvement wave, delivered)
+- Extends `#89` (property/fuzz pilot, delivered)
+- Complements `#90` (mutation testing pilot)
+- Complements `#91` (Testcontainers for isolation)
+- Feeds into `#135` (integrated multi-component verification program)
 
 ## Backend Commands
 
