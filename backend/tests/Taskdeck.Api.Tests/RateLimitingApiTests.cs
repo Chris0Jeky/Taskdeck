@@ -373,7 +373,6 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         {
             Content = JsonContent.Create(new
             {
-                UserId = userId,
                 CurrentPassword = currentPassword,
                 NewPassword = newPassword
             })
