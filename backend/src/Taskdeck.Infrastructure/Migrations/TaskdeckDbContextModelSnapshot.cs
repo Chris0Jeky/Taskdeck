@@ -684,6 +684,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<int?>("TokenUsage")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ToolCallMetadataJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 
