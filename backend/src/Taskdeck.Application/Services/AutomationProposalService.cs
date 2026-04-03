@@ -301,16 +301,12 @@ public class AutomationProposalService : IAutomationProposalService
 
             foreach (var proposal in proposals)
             {
-                var isExpiredApproved = proposal.Status == ProposalStatus.Approved
-                    && DateTime.UtcNow > proposal.ExpiresAt;
-                if (proposal.Status is ProposalStatus.Applied or ProposalStatus.Rejected
-                    or ProposalStatus.Failed or ProposalStatus.Expired
-                    || isExpiredApproved)
+                if (proposal.CanBeDismissed)
                 {
                     proposal.Dismiss();
                     dismissed++;
                 }
-                // Skip proposals not in a dismissible terminal state
+                // Skip proposals not in a dismissible state
             }
 
             if (dismissed > 0)
@@ -349,7 +345,7 @@ public class AutomationProposalService : IAutomationProposalService
         )
         {
             Presentation = BuildPresentation(proposal),
-            IsExpired = DateTime.UtcNow > proposal.ExpiresAt
+            IsExpired = proposal.IsExpired
         };
     }
 

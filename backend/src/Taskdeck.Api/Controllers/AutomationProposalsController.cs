@@ -217,7 +217,8 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
     /// <summary>
     /// Dismisses completed proposals so they no longer appear in the default review list.
-    /// Accepts an array of proposal IDs; only proposals in terminal states (Applied, Rejected, Failed, Expired) will be dismissed.
+    /// Accepts an array of proposal IDs; only proposals in dismissable states
+    /// (Applied, Rejected, Failed, Expired, or Approved-but-expired) will be dismissed.
     /// </summary>
     [HttpPost("dismiss")]
     public async Task<IActionResult> DismissProposals(

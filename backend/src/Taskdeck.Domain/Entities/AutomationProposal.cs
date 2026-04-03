@@ -131,12 +131,23 @@ public class AutomationProposal : Entity
         Touch();
     }
 
+    /// <summary>
+    /// True when the proposal's expiry time has passed, regardless of the current status.
+    /// </summary>
+    public bool IsExpired => DateTime.UtcNow > ExpiresAt;
+
+    /// <summary>
+    /// True when the proposal is in a state that allows dismissal.
+    /// Terminal statuses (Applied, Rejected, Failed, Expired) and approved-but-expired proposals can be dismissed.
+    /// </summary>
+    public bool CanBeDismissed =>
+        Status is ProposalStatus.Applied or ProposalStatus.Rejected
+            or ProposalStatus.Failed or ProposalStatus.Expired
+        || (Status == ProposalStatus.Approved && IsExpired);
+
     public void Dismiss()
     {
-        var isExpiredApproved = Status == ProposalStatus.Approved && DateTime.UtcNow > ExpiresAt;
-        if (Status != ProposalStatus.Applied && Status != ProposalStatus.Rejected
-            && Status != ProposalStatus.Failed && Status != ProposalStatus.Expired
-            && !isExpiredApproved)
+        if (!CanBeDismissed)
             throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot dismiss proposal in status {Status}");
 
         Status = ProposalStatus.Dismissed;

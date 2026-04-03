@@ -506,11 +506,18 @@ function isProposalExpired(proposal: ApiProposal): boolean {
 }
 
 /**
- * Returns true when a proposal is in a terminal state that can be dismissed.
+ * Returns true when a proposal is in a state that can be dismissed.
+ * Includes terminal statuses and approved-but-expired proposals.
  */
 function isProposalDismissable(proposal: ApiProposal): boolean {
   const status = normalizeProposalStatus(proposal.status)
-  return status === 'Applied' || status === 'Rejected' || status === 'Failed' || status === 'Expired'
+  return (
+    status === 'Applied' ||
+    status === 'Rejected' ||
+    status === 'Failed' ||
+    status === 'Expired' ||
+    (status === 'Approved' && isProposalExpired(proposal))
+  )
 }
 
 async function handleDismissProposal(proposalId: string) {
@@ -589,9 +596,7 @@ function applyBoardFilter(boardId: string) {
 
 const dismissableProposalIds = computed(() =>
   proposals.value
-    .filter((p) => {
-      return isProposalDismissable(p) || (normalizeProposalStatus(p.status) === 'Approved' && isProposalExpired(p))
-    })
+    .filter((p) => isProposalDismissable(p))
     .filter((p) => matchesActiveBoardFilter(p.boardId))
     .map((p) => p.id),
 )
@@ -605,9 +610,15 @@ async function handleDismissApplied() {
 
   try {
     const result = await automationApi.dismissProposals(ids)
-    // Remove dismissed proposals from the local list
-    const dismissedSet = new Set(ids)
-    proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+    if (result.dismissed === ids.length) {
+      // All requested proposals were dismissed; safe to remove them all locally
+      const dismissedSet = new Set(ids)
+      proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+    } else {
+      // Server dismissed fewer than requested (possible clock skew on expiry checks).
+      // Reload to get authoritative state rather than guessing which ones were dismissed.
+      await loadProposals()
+    }
     toast.success(`Cleared ${result.dismissed} completed proposal${result.dismissed === 1 ? '' : 's'}.`)
   } catch (e: unknown) {
     toast.error(getErrorDisplay(e, 'Failed to clear proposals').message)
@@ -676,7 +687,7 @@ watch(
           :disabled="dismissableProposalIds.length === 0"
           @click="handleDismissApplied"
         >
-          Clear applied ({{ dismissableProposalIds.length }})
+          Clear completed ({{ dismissableProposalIds.length }})
         </button>
         <button class="td-btn td-btn--primary" :disabled="proposalsLoading" @click="loadProposals">
           {{ proposalsLoading ? 'Refreshing...' : 'Refresh Review' }}
@@ -843,7 +854,7 @@ watch(
             Apply to board
           </button>
           <button
-            v-if="isProposalDismissable(proposal) || (normalizeProposalStatus(proposal.status) === 'Approved' && isProposalExpired(proposal))"
+            v-if="isProposalDismissable(proposal)"
             class="td-btn td-btn--secondary td-btn--sm"
             :disabled="proposalActionBusyId === proposal.id"
             @click="handleDismissProposal(proposal.id)"
