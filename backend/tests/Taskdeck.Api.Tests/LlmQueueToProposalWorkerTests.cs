@@ -406,21 +406,56 @@ public class LlmQueueToProposalWorkerTests
     }
 
     [Fact]
-    public void BuildFairBatch_MixedItems_InterleavesCorrectly()
+    public void BuildFairBatch_MixedItems_CaptureOlder_InterleavesCapturePendingOrder()
     {
         var capture1 = CreateCaptureTriageItem();
+        var capture2 = CreateCaptureTriageItem();
         var pending1 = CreatePendingItem();
-        var captures = new List<LlmRequest> { capture1 };
-        var pending = new List<LlmRequest> { pending1 };
+        var pending2 = CreatePendingItem();
+
+        // Set timestamps: captures are older than pending items
+        SetCreatedAt(capture1, DateTimeOffset.UtcNow.AddMinutes(-10));
+        SetCreatedAt(capture2, DateTimeOffset.UtcNow.AddMinutes(-9));
+        SetCreatedAt(pending1, DateTimeOffset.UtcNow.AddMinutes(-5));
+        SetCreatedAt(pending2, DateTimeOffset.UtcNow.AddMinutes(-4));
+
+        var captures = new List<LlmRequest> { capture1, capture2 };
+        var pending = new List<LlmRequest> { pending1, pending2 };
 
         var batch = InvokeBuildFairBatchItems(captures, pending, 10);
 
-        batch.Should().HaveCount(2);
-        // Both items should be present
-        var captureCount = batch.Count(b => GetIsCaptureTriage(b));
-        var pendingCount = batch.Count(b => !GetIsCaptureTriage(b));
-        captureCount.Should().Be(1);
-        pendingCount.Should().Be(1);
+        batch.Should().HaveCount(4);
+        // Captures are older, so takeCaptureFirst=true.
+        // Interleaving order: capture, pending, capture, pending
+        GetIsCaptureTriage(batch[0]).Should().BeTrue("first item should be capture (older)");
+        GetIsCaptureTriage(batch[1]).Should().BeFalse("second item should be pending (interleaved)");
+        GetIsCaptureTriage(batch[2]).Should().BeTrue("third item should be capture");
+        GetIsCaptureTriage(batch[3]).Should().BeFalse("fourth item should be pending");
+    }
+
+    [Fact]
+    public void BuildFairBatch_MixedItems_PendingOlder_InterleavesPendingCaptureOrder()
+    {
+        var capture1 = CreateCaptureTriageItem();
+        var pending1 = CreatePendingItem();
+        var pending2 = CreatePendingItem();
+
+        // Set timestamps: pending is older than captures
+        SetCreatedAt(pending1, DateTimeOffset.UtcNow.AddMinutes(-10));
+        SetCreatedAt(pending2, DateTimeOffset.UtcNow.AddMinutes(-9));
+        SetCreatedAt(capture1, DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var captures = new List<LlmRequest> { capture1 };
+        var pending = new List<LlmRequest> { pending1, pending2 };
+
+        var batch = InvokeBuildFairBatchItems(captures, pending, 10);
+
+        batch.Should().HaveCount(3);
+        // Pending is older, so takeCaptureFirst=false.
+        // Interleaving order: pending, capture, pending
+        GetIsCaptureTriage(batch[0]).Should().BeFalse("first item should be pending (older)");
+        GetIsCaptureTriage(batch[1]).Should().BeTrue("second item should be capture (interleaved)");
+        GetIsCaptureTriage(batch[2]).Should().BeFalse("third item should be pending");
     }
 
     private static IList<object> InvokeBuildFairBatchItems(
@@ -439,6 +474,14 @@ public class LlmQueueToProposalWorkerTests
         return list.Cast<object>().ToList();
     }
 
+    private static void SetCreatedAt(LlmRequest item, DateTimeOffset createdAt)
+    {
+        // CreatedAt has a protected setter; use reflection to set it for test control
+        var prop = typeof(Entity).GetProperty("CreatedAt");
+        prop.Should().NotBeNull("CreatedAt property must exist on Entity");
+        prop!.GetSetMethod(nonPublic: true)!.Invoke(item, [createdAt]);
+    }
+
     private static bool GetIsCaptureTriage(object batchItem)
     {
         var prop = batchItem.GetType().GetProperty("IsCaptureTriage");
@@ -451,19 +494,23 @@ public class LlmQueueToProposalWorkerTests
     #region Concurrency: already-claimed item
 
     [Fact]
-    public async Task ProcessBatch_ItemAlreadyClaimed_SkipsGracefully()
+    public async Task ProcessBatch_ItemClaimedBetweenFetchAndProcess_SkipsGracefully()
     {
-        // Create an item but make it already in Processing state
-        // so MarkAsProcessing throws DomainException
+        // Simulate a race: item is Pending when the batch is built,
+        // but another worker claims it (transitions to Processing)
+        // before ProcessSingleItemAsync re-fetches and tries MarkAsProcessing.
         var item = CreatePendingItem();
-        item.MarkAsProcessing(); // Now it's Processing
-        // Put it back in the "pending" list by manipulating the repo
-        var queueRepo = new FakeLlmQueueRepository([item]);
+        var queueRepo = new FakeLlmQueueRepository([item])
+        {
+            // Hook: when GetByIdAsync is called, transition the item to Processing
+            // before returning, simulating another worker claiming it first.
+            OnBeforeGetById = i => { if (i.Status == RequestStatus.Pending) i.MarkAsProcessing(); }
+        };
         var planner = new FakeAutomationPlannerService();
         using var sp = BuildServiceProvider(queueRepo, planner);
         var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
 
-        // Should not throw - the DomainException is caught
+        // Should not throw - the worker catches DomainException from double MarkAsProcessing
         var act = async () => await InvokeProcessBatchAsync(worker, CancellationToken.None);
         await act.Should().NotThrowAsync();
 
@@ -499,41 +546,51 @@ public class LlmQueueToProposalWorkerTests
     public void GetRetryBackoffSeconds_EmptyArray_ReturnsZero()
     {
         var settings = DefaultSettings(retryBackoff: []);
-        var worker = CreateWorkerForBackoffTest(settings);
-        var result = InvokeGetRetryBackoffSeconds(worker, 0);
-        result.Should().Be(0);
+        var (worker, sp) = CreateWorkerForBackoffTest(settings);
+        using (sp)
+        {
+            var result = InvokeGetRetryBackoffSeconds(worker, 0);
+            result.Should().Be(0);
+        }
     }
 
     [Fact]
     public void GetRetryBackoffSeconds_SingleElement_AlwaysReturnsThatElement()
     {
         var settings = DefaultSettings(retryBackoff: [42]);
-        var worker = CreateWorkerForBackoffTest(settings);
-        InvokeGetRetryBackoffSeconds(worker, 0).Should().Be(42);
-        InvokeGetRetryBackoffSeconds(worker, 1).Should().Be(42);
-        InvokeGetRetryBackoffSeconds(worker, 5).Should().Be(42);
+        var (worker, sp) = CreateWorkerForBackoffTest(settings);
+        using (sp)
+        {
+            InvokeGetRetryBackoffSeconds(worker, 0).Should().Be(42);
+            InvokeGetRetryBackoffSeconds(worker, 1).Should().Be(42);
+            InvokeGetRetryBackoffSeconds(worker, 5).Should().Be(42);
+        }
     }
 
     [Fact]
     public void GetRetryBackoffSeconds_OutOfRange_ClampsToLastElement()
     {
         var settings = DefaultSettings(retryBackoff: [1, 5, 30]);
-        var worker = CreateWorkerForBackoffTest(settings);
-        InvokeGetRetryBackoffSeconds(worker, 10).Should().Be(30);
+        var (worker, sp) = CreateWorkerForBackoffTest(settings);
+        using (sp)
+        {
+            InvokeGetRetryBackoffSeconds(worker, 10).Should().Be(30);
+        }
     }
 
-    private static LlmQueueToProposalWorker CreateWorkerForBackoffTest(WorkerSettings settings)
+    private static (LlmQueueToProposalWorker Worker, ServiceProvider Provider) CreateWorkerForBackoffTest(WorkerSettings settings)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork(new FakeLlmQueueRepository([])));
         services.AddSingleton<IAutomationPlannerService>(new FakeAutomationPlannerService());
         services.AddSingleton<ICaptureTriageService>(new FakeCaptureTriageService());
-        using var sp = services.BuildServiceProvider();
-        return new LlmQueueToProposalWorker(
+        var sp = services.BuildServiceProvider();
+        var worker = new LlmQueueToProposalWorker(
             sp.GetRequiredService<IServiceScopeFactory>(),
             settings,
             new WorkerHeartbeatRegistry(),
             NullLogger<LlmQueueToProposalWorker>.Instance);
+        return (worker, sp);
     }
 
     private static int InvokeGetRetryBackoffSeconds(LlmQueueToProposalWorker worker, int retryCount)
@@ -594,37 +651,36 @@ public class LlmQueueToProposalWorkerTests
 
     private sealed class FakeLlmQueueRepository : ILlmQueueRepository
     {
-        private readonly List<LlmRequest> _pendingItems;
-        private readonly List<LlmRequest> _processingCaptureItems;
+        private readonly List<LlmRequest> _allItems;
         public bool TryClaimProcessingCaptureResult { get; set; } = true;
+        public Action<LlmRequest>? OnBeforeGetById { get; set; }
 
         public FakeLlmQueueRepository(
             IEnumerable<LlmRequest> pendingItems,
             IEnumerable<LlmRequest>? processingCaptureItems = null)
         {
-            _pendingItems = pendingItems.ToList();
-            _processingCaptureItems = processingCaptureItems?.ToList() ?? [];
+            _allItems = pendingItems.ToList();
+            if (processingCaptureItems != null)
+            {
+                _allItems.AddRange(processingCaptureItems);
+            }
         }
 
         public Task<IEnumerable<LlmRequest>> GetByStatusAsync(
             RequestStatus status,
             CancellationToken cancellationToken = default)
         {
-            if (status == RequestStatus.Pending)
-            {
-                return Task.FromResult<IEnumerable<LlmRequest>>(_pendingItems.ToList());
-            }
-            if (status == RequestStatus.Processing)
-            {
-                return Task.FromResult<IEnumerable<LlmRequest>>(_processingCaptureItems.ToList());
-            }
-            return Task.FromResult<IEnumerable<LlmRequest>>([]);
+            var result = _allItems.Where(i => i.Status == status).ToList();
+            return Task.FromResult<IEnumerable<LlmRequest>>(result);
         }
 
         public Task<LlmRequest?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
-            var item = _pendingItems.FirstOrDefault(i => i.Id == id)
-                       ?? _processingCaptureItems.FirstOrDefault(i => i.Id == id);
+            var item = _allItems.FirstOrDefault(i => i.Id == id);
+            if (item != null)
+            {
+                OnBeforeGetById?.Invoke(item);
+            }
             return Task.FromResult(item);
         }
 
@@ -642,7 +698,7 @@ public class LlmQueueToProposalWorkerTests
             => Task.FromResult((0, 0, 0, 0, 0));
 
         public Task<IEnumerable<LlmRequest>> GetPendingAsync(int limit = 100, CancellationToken cancellationToken = default)
-            => Task.FromResult<IEnumerable<LlmRequest>>(_pendingItems.Take(limit).ToList());
+            => Task.FromResult<IEnumerable<LlmRequest>>(_allItems.Where(i => i.Status == RequestStatus.Pending).Take(limit).ToList());
 
         public Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult<IEnumerable<LlmRequest>>([]);
@@ -654,10 +710,10 @@ public class LlmQueueToProposalWorkerTests
             => Task.FromResult(new Dictionary<RequestStatus, int>());
 
         public Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(_pendingItems.FirstOrDefault());
+            => Task.FromResult(_allItems.Where(i => i.Status == RequestStatus.Pending).FirstOrDefault());
 
         public Task<IEnumerable<LlmRequest>> GetAllAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IEnumerable<LlmRequest>>(_pendingItems.Concat(_processingCaptureItems).ToList());
+            => Task.FromResult<IEnumerable<LlmRequest>>(_allItems.ToList());
 
         public Task<LlmRequest> AddAsync(LlmRequest entity, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
