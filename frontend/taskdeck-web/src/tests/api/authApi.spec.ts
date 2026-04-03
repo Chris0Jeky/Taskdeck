@@ -68,7 +68,7 @@ describe('authApi', () => {
     it('should send POST to /auth/change-password', async () => {
       vi.mocked(http.post).mockResolvedValue({ data: undefined })
 
-      const request = { userId: 'user-1', currentPassword: 'old', newPassword: 'new' }
+      const request = { currentPassword: 'old', newPassword: 'new' }
       await authApi.changePassword(request)
 
       expect(http.post).toHaveBeenCalledWith('/auth/change-password', request)
