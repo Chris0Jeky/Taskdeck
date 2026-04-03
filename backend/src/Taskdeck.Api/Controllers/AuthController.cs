@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Contracts;
@@ -8,13 +9,14 @@ using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Filters;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
 using AuthenticationService = Taskdeck.Application.Services.AuthenticationService;
 
 namespace Taskdeck.Api.Controllers;
 
-public record ChangePasswordRequest(Guid UserId, string CurrentPassword, string NewPassword);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public record ExchangeCodeRequest(string Code);
 
 /// <summary>
@@ -24,7 +26,7 @@ public record ExchangeCodeRequest(string Code);
 [ApiController]
 [Route("api/auth")]
 [Produces("application/json")]
-public class AuthController : ControllerBase
+public class AuthController : AuthenticatedControllerBase
 {
     private readonly AuthenticationService _authService;
     private readonly GitHubOAuthSettings _gitHubOAuthSettings;
@@ -33,7 +35,8 @@ public class AuthController : ControllerBase
     // Key: code, Value: (token, expiry). Codes expire after 60 seconds.
     private static readonly ConcurrentDictionary<string, (AuthResultDto Result, DateTimeOffset Expiry)> _authCodes = new();
 
-    public AuthController(AuthenticationService authService, GitHubOAuthSettings gitHubOAuthSettings)
+    public AuthController(AuthenticationService authService, GitHubOAuthSettings gitHubOAuthSettings, IUserContext userContext)
+        : base(userContext)
     {
         _authService = authService;
         _gitHubOAuthSettings = gitHubOAuthSettings;
@@ -88,14 +91,16 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Change the password for an existing user.
+    /// Change the password for the authenticated caller.
+    /// The target user is always derived from the JWT — client-supplied user IDs are not accepted.
     /// </summary>
     /// <param name="request">Current and new password.</param>
     /// <response code="204">Password changed successfully.</response>
     /// <response code="400">Validation error.</response>
-    /// <response code="401">Current password is incorrect.</response>
+    /// <response code="401">Not authenticated or current password is incorrect.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("change-password")]
+    [Authorize]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
@@ -103,7 +108,10 @@ public class AuthController : ControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        var result = await _authService.ChangePasswordAsync(request.UserId, request.CurrentPassword, request.NewPassword);
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var result = await _authService.ChangePasswordAsync(callerUserId, request.CurrentPassword, request.NewPassword);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 

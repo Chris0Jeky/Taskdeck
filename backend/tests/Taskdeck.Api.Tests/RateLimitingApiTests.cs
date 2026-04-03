@@ -160,12 +160,12 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         using var client = factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "rate-password");
 
-        (await SendChangePasswordRequestAsync(client, user.UserId, "password123", "RateLimitPass!456"))
+        (await SendChangePasswordRequestAsync(client, "password123", "RateLimitPass!456"))
             .StatusCode
             .Should()
             .Be(HttpStatusCode.NoContent);
 
-        var throttled = await SendChangePasswordRequestAsync(client, user.UserId, "RateLimitPass!456", "RateLimitPass!789");
+        var throttled = await SendChangePasswordRequestAsync(client, "RateLimitPass!456", "RateLimitPass!789");
         await AssertThrottleContractAsync(throttled, RateLimitingPolicyNames.AuthPerIp);
     }
 
@@ -364,7 +364,6 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
 
     private static async Task<HttpResponseMessage> SendChangePasswordRequestAsync(
         HttpClient client,
-        Guid userId,
         string currentPassword,
         string newPassword,
         string? forwardedFor = null)
@@ -373,7 +372,6 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         {
             Content = JsonContent.Create(new
             {
-                UserId = userId,
                 CurrentPassword = currentPassword,
                 NewPassword = newPassword
             })

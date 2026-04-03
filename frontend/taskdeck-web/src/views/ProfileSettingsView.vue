@@ -49,9 +49,8 @@ async function handleChangePassword() {
   }
   try {
     submitting.value = true
-    const userId = session.requireUserId('password changes')
+    session.requireUserId('password changes')
     await session.changePassword({
-      userId,
       currentPassword: currentPassword.value,
       newPassword: newPassword.value,
     })
