@@ -9,18 +9,17 @@ namespace Taskdeck.Application.Services.Tools;
 /// </summary>
 public static class WriteToolSchemas
 {
-    public static IReadOnlyList<TaskdeckToolSchema> GetAll()
+    private static readonly IReadOnlyList<TaskdeckToolSchema> CachedAll = new[]
     {
-        return new[]
-        {
-            ProposeCreateCard(),
-            ProposeMoveCard(),
-            ProposeArchiveCard(),
-            ProposeUpdateCard(),
-            ProposeBulkMove(),
-            ProposeCreateColumn()
-        };
-    }
+        ProposeCreateCard(),
+        ProposeMoveCard(),
+        ProposeArchiveCard(),
+        ProposeUpdateCard(),
+        ProposeBulkMove(),
+        ProposeCreateColumn()
+    };
+
+    public static IReadOnlyList<TaskdeckToolSchema> GetAll() => CachedAll;
 
     public static TaskdeckToolSchema ProposeCreateCard() => new(
         Name: "propose_create_card",
