@@ -171,11 +171,6 @@ public class AccountDeletionService : IAccountDeletionService
             user.Deactivate();
             await _unitOfWork.Users.UpdateAsync(user, cancellationToken);
 
-            // Invalidate the active-user cache so that any existing JWT tokens
-            // for this user are rejected immediately by the middleware, rather than
-            // waiting for the cache TTL to expire.
-            _activeUserCache?.Invalidate(userId);
-
             // Log completion inside the transaction (no PII)
             await _historyService.LogActionAsync(
                 "User", userId, AuditAction.AccountAnonymized, null,
@@ -183,6 +178,11 @@ public class AccountDeletionService : IAccountDeletionService
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+            // Invalidate the active-user cache AFTER the transaction commits so that
+            // concurrent requests cannot repopulate the cache from the still-active row
+            // during the commit window.
+            _activeUserCache?.Invalidate(userId);
 
             return Result.Success(new AccountDeletionResultDto(
                 Success: true,
