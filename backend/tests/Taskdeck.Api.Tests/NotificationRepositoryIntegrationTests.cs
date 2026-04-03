@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
@@ -106,12 +107,22 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         var user = new User("notif-page-user", "notif-page@example.com", "hash");
         db.Users.Add(user);
 
+        var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var notifications = new List<Notification>();
         for (var i = 0; i < 5; i++)
         {
-            db.Notifications.Add(new Notification(
+            var notif = new Notification(
                 user.Id, NotificationType.System, NotificationCadence.Immediate,
-                $"Page notif {i}", $"Message {i}"));
-            await Task.Delay(20); // ensure different CreatedAt for ordering
+                $"Page notif {i}", $"Message {i}");
+            notifications.Add(notif);
+            db.Notifications.Add(notif);
+        }
+        await db.SaveChangesAsync();
+
+        // Set explicit timestamps for deterministic ordering
+        for (var i = 0; i < notifications.Count; i++)
+        {
+            db.Entry(notifications[i]).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(i);
         }
         await db.SaveChangesAsync();
 
@@ -226,12 +237,17 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         var user = new User("notif-ord-user", "notif-ord@example.com", "hash");
         db.Users.Add(user);
 
+        var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var first = new Notification(user.Id, NotificationType.System, NotificationCadence.Immediate,
             "First notif", "Created first");
-        await Task.Delay(20);
         var second = new Notification(user.Id, NotificationType.System, NotificationCadence.Immediate,
             "Second notif", "Created second");
         db.Notifications.AddRange(first, second);
+        await db.SaveChangesAsync();
+
+        // Set explicit timestamps for deterministic ordering
+        db.Entry(first).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime;
+        db.Entry(second).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
 
         var results = (await repo.GetByUserIdAsync(user.Id)).ToList();
@@ -239,10 +255,10 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         var firstIdx = results.FindIndex(n => n.Id == first.Id);
         var secondIdx = results.FindIndex(n => n.Id == second.Id);
 
-        // DESC: second should appear before first
-        if (firstIdx >= 0 && secondIdx >= 0)
-        {
-            secondIdx.Should().BeLessThan(firstIdx);
-        }
+        // Explicit assertions that items are present (not silently guarded)
+        firstIdx.Should().BeGreaterOrEqualTo(0, "first item should be in results");
+        secondIdx.Should().BeGreaterOrEqualTo(0, "second item should be in results");
+        // DESC: second (newer) should appear before first (older)
+        secondIdx.Should().BeLessThan(firstIdx, "DESC: newer before older");
     }
 }
