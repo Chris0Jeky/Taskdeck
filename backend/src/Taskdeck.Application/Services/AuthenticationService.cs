@@ -179,7 +179,8 @@ public class AuthenticationService : IAuthenticationService
                 suffix++;
                 if (suffix > maxUsernameSuffixAttempts)
                 {
-                    candidateUsername = $"{normalizedUsername}-{Guid.NewGuid():N}".Substring(0, 50);
+                    var guidFallback = $"{normalizedUsername}-{Guid.NewGuid():N}";
+                    candidateUsername = guidFallback[..Math.Min(50, guidFallback.Length)];
                     break;
                 }
                 candidateUsername = $"{normalizedUsername}{suffix}";
