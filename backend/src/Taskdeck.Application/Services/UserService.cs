@@ -9,10 +9,12 @@ namespace Taskdeck.Application.Services;
 public class UserService : IUserService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IActiveUserCache? _activeUserCache;
 
-    public UserService(IUnitOfWork unitOfWork)
+    public UserService(IUnitOfWork unitOfWork, IActiveUserCache? activeUserCache = null)
     {
         _unitOfWork = unitOfWork;
+        _activeUserCache = activeUserCache;
     }
 
     public async Task<Result<UserDto>> CreateUserAsync(CreateUserDto dto)
@@ -114,6 +116,9 @@ public class UserService : IUserService
         user.Deactivate();
         await _unitOfWork.SaveChangesAsync();
 
+        // Invalidate the cache so the middleware rejects this user's JWT immediately
+        _activeUserCache?.Invalidate(userId);
+
         return Result.Success();
     }
 
@@ -125,6 +130,9 @@ public class UserService : IUserService
 
         user.Activate();
         await _unitOfWork.SaveChangesAsync();
+
+        // Invalidate the cache so the middleware picks up the re-activated status
+        _activeUserCache?.Invalidate(userId);
 
         return Result.Success();
     }
