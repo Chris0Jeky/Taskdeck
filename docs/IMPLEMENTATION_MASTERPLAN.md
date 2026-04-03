@@ -562,6 +562,30 @@ Delivered in the latest cycle:
     - decided: API key auth (`tdsk_` prefix, SHA-256 hashed, user-bound) for HTTP transport; OAuth 2.1 deferred to Phase 4
     - decided: write tools return proposal IDs immediately; users approve in web UI; agents poll via `get_proposal_status`
     - implementation tracker: `#648`; phase issues: `#652` (minimal prototype), `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
+121. SQL-level board metrics filtering delivery (`#675`/`#724`, 2026-04-03):
+    - added dedicated repository methods (`GetForMetricsAsync`, `CountCardsByColumnAsync`, `GetBlockedByBoardIdAsync`) for SQL-level filtering instead of in-memory post-fetch filtering
+    - `BoardMetricsService` now delegates filtering to SQL queries for scalability on large boards
+    - frontend `Math.max(...spread)` replaced with `reduce` for empty-array safety
+122. Double LLM call elimination delivery (`#672`/`#727`, 2026-04-03):
+    - `ChatService` now reuses the orchestrator's text response when no tools are called instead of making a second LLM completion request
+    - halves latency for non-tool chat messages with no behavior change for tool-calling flows
+123. JWT invalidation hardening delivery (`#671`/`#728`, 2026-04-03):
+    - added `ActiveUserValidationMiddleware` that checks user active status on every authenticated request with 30-second in-memory cache
+    - cache invalidated on user deletion/deactivation so stale JWTs are rejected within seconds
+    - complements the `TokenValidationMiddleware` (PR `#698`) with runtime active-user enforcement
+124. Expired proposal review UX delivery (`#678`+`#690`/`#729`, 2026-04-03):
+    - added `IsExpired` flag on `ProposalDto` and domain `CanBeDismissed` method
+    - expired proposals in Review now show distinct "Expired" status badge with dismiss action and explanatory notice
+    - Apply/Approve buttons disabled for expired proposals; 60-second reactive clock covers proposals expiring while page is open
+125. Infrastructure repository integration tests delivery (`#699`/`#730`, 2026-04-03):
+    - added 77 integration tests across 7 repository classes running against real SQLite
+    - found and fixed a real `LlmQueueRepository` ordering bug during test development
+    - first delivery from the rigorous test expansion wave (`#721`)
+126. LLM write tools and proposal integration delivery (`#650`/`#731`, 2026-04-03):
+    - added 6 write tool executors (`propose_create`, `propose_move`, `propose_archive`, `propose_update`, `propose_bulk_move`, `propose_create_column`) in Application layer
+    - added EF migration for `ToolCallMetadataJson` field on proposals for tool-call provenance
+    - orchestrator now serves 11 tools (5 read + 6 write); writes always produce proposals per GP-06
+    - frontend tool-status indicators show write-tool progress via SignalR `ToolStatusEvent`
 
 ## Current Planning Pivot (2026-03-07)
 
@@ -695,7 +719,7 @@ Focus:
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
-- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); remaining: `#650` (write tools + proposals), `#651` (refinements), `#672` (double LLM call), `#673` (argument replay)
+- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); remaining: `#651` (refinements), `#673` (argument replay)
 - MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; remaining: `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
@@ -767,7 +791,7 @@ Master tracker: `#531`.
   - workspace invitations
   - email notification delivery
   - activity feed per board
-  - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → `#650`→`#651`)
+  - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → ~~`#650`~~ delivered → `#651`)
   - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered → `#653`→`#654`)
 
 - `v0.5.0` **Power Up** (target: Week 15-20):
@@ -816,7 +840,7 @@ Master tracker: `#531`.
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave: `#199` to `#211` (delivered); logging redaction follow-through `#212` is delivered, and remaining linked performance follow-through is `#213`
 - Testing harness guardrails wave (`#254` to `#260`) is delivered; follow-up improvements now route through normal hardening issues
-- Rigorous test expansion wave (`#721` tracker, `#699`–`#720`, `#722`–`#726`): 22 issues seeded 2026-04-03 from systematic codebase audit covering infrastructure repository integration tests, untested workers, controller HTTP gaps, cross-user data isolation proof, concurrency stress, auth edge cases, domain state machines, SignalR hub integration, proposal lifecycle edge cases, LLM tool-calling boundaries, webhook SSRF, frontend store/view gaps, E2E scenarios, export/import round-trips, error contracts, resilience testing, and property-based/adversarial input testing; golden path integration test (`#703`) is highest-signal individual item
+- Rigorous test expansion wave (`#721` tracker, `#699`–`#720`, `#722`–`#726`): 22 issues seeded 2026-04-03 from systematic codebase audit covering infrastructure repository integration tests, untested workers, controller HTTP gaps, cross-user data isolation proof, concurrency stress, auth edge cases, domain state machines, SignalR hub integration, proposal lifecycle edge cases, LLM tool-calling boundaries, webhook SSRF, frontend store/view gaps, E2E scenarios, export/import round-trips, error contracts, resilience testing, and property-based/adversarial input testing; golden path integration test (`#703`) is highest-signal individual item; first delivery: ~~`#699`~~ infrastructure repo integration tests (77 tests, 7 classes, PR `#730`)
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
 - CI/workflow topology expansion and governance track: `#168`
@@ -849,8 +873,8 @@ Master tracker: `#531`.
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
-- Analytics and forecasting: `#77` (delivered — board metrics dashboard, PR `#667`; follow-up `#675`), `#78`, `#79`
-- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83` (delivered — GDPR data portability + account deletion, PR `#666`; follow-ups `#670`, ~~`#671`~~ (delivered — JWT invalidation after account deletion, PR `#698`, ADR-0021)), `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
+- Analytics and forecasting: `#77` (delivered — board metrics dashboard, PR `#667`; SQL-level filtering follow-up ~~`#675`~~ delivered, PR `#724`), `#78`, `#79`
+- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83` (delivered — GDPR data portability + account deletion, PR `#666`; follow-ups `#670`, ~~`#671`~~ (delivered — JWT invalidation after account deletion, PRs `#698`+`#728`, ADR-0021)), `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
 - Frontend premium UI foundations wave: `#242`, `#243` (UI-02 shared primitives delivered), `#244`, `#245` (UI-03 stack spike delivered), `#246`, `#247`, `#248`, `#249`, `#250` (PERF-08 delivered)
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 - Seeded secondary MVP follow-through wave (lower priority than Wave P):
@@ -867,9 +891,9 @@ Master tracker: `#531`.
 - LLM tool-calling implementation wave (from completed spike `#618`):
   - `#647` tracker
   - ~~`#649` Phase 1: read tools + orchestrator + provider tool-calling extension~~ (delivered 2026-04-01, PR `#669`)
-  - `#650` Phase 2: write tools + proposal integration (1-2 weeks)
-  - `#651` Phase 3: refinements — cost tracking, feature flag (1 week); also `#672` (double LLM call), `#673` (argument replay); ~~`#674`~~ (strict mode + loop detection — delivered 2026-04-03, PR `#694`)
-  - Dependency chain: ~~`#649`~~ → `#650` → `#651`
+  - ~~`#650` Phase 2: write tools + proposal integration~~ (delivered 2026-04-03, PR `#731`)
+  - `#651` Phase 3: refinements — cost tracking, feature flag (1 week); also ~~`#672`~~ (double LLM call — delivered 2026-04-03, PR `#727`), `#673` (argument replay); ~~`#674`~~ (strict mode + loop detection — delivered 2026-04-03, PR `#694`)
+  - Dependency chain: ~~`#649`~~ → ~~`#650`~~ → `#651`
   - Unblocks conversational refinement (`#576`) and MCP tool inventory (`#653`)
 - MCP server implementation wave (from completed spike `#619`):
   - `#648` tracker
@@ -1150,6 +1174,7 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 13. Continue the chat-to-proposal NLP gap (`#570`): Tier 1 delivered — classifier hardening (`#571`), error UX (`#572`), and integration tests (`#577`) are merged; next is LLM-assisted instruction extraction (`#573`) which requires real provider integration. Board-context prompting (`#575`) and conversational refinement (`#576`) remain Tier 3. Follow-up: enrich audit log entries with changed field details (`#583`).
 14. **UX feedback wave (2026-03-31)**: tracker at `#628`; 17 issues seeded from manual testing. Wave 1 delivered 6 fixes (`#612`, `#615`, `#617`, `#621`, `#623`, `#626`). Wave 2 delivered 5 more: both P1 blockers closed — capture triage dash/semicolon delimiters with context hints (`#614`), chat array truncation detection (`#616`); P2 notification type differentiation, grouping, and batch mark-all-read (`#625`); P4 search cursor pagination (`#610`); ops CI-extended path triggers (`#608`). Wave 3 delivered review card sticky footer (`#613`/`#665`). Remaining open from `#628`: 2 P3 strategic spikes (`#618`, `#619`) both completed with implementation waves in progress. Full analysis at `docs/analysis/2026-03-31_manual_testing_ux_feedback.md`.
 15. **Hardening and UX wave (2026-04-03)**: 9 issues across 8 PRs (`#691`–`#698`) with adversarial review follow-through: P1 dead workspace routes (`#681`), expired proposal handling in Review (`#678`+`#690`), chat card ID continuity (`#677`), human-readable proposal diffs (`#682`), dark theme label manager (`#684`), chat health banner three-state (`#679`), OpenAI strict mode + loop detection (`#674`), JWT invalidation after account deletion (`#671`/ADR-0021). ~58 new tests added across the wave.
+16. **Post-hardening delivery wave (2026-04-03)**: 6 issues across 6 PRs (`#724`–`#731`): SQL-level board metrics filtering (`#675`), double LLM call elimination (`#672`), JWT invalidation hardening with active-user middleware (`#671`), expired proposal review UX with dismiss action (`#678`+`#690`), infrastructure repo integration tests (`#699` — 77 tests, 7 classes, real SQLite, found real ordering bug), LLM write tools + proposal integration (`#650` — 6 write executors, EF migration, 11 total tools, frontend status indicators).
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave, knowledge service tests, and 2026-03-29 NLP/audit/error-UX wave added significant coverage since that certification. Frontend is now at 1491 tests (134 files).
