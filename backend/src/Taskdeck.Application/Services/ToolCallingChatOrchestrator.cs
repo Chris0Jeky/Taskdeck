@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Services.Tools;
@@ -15,6 +17,12 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public sealed class ToolCallingChatOrchestrator
 {
+    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        WriteIndented = false
+    };
+
     /// <summary>Maximum tool-calling rounds per user message.</summary>
     public const int MaxRounds = 5;
 
@@ -50,7 +58,22 @@ public sealed class ToolCallingChatOrchestrator
         Guid boardId,
         CancellationToken ct = default)
     {
-        var tools = ReadToolSchemas.GetAll();
+        return await ExecuteAsync(request, boardId, Guid.Empty, ct);
+    }
+
+    /// <summary>
+    /// Executes a multi-turn tool-calling conversation with user context for write tools.
+    /// Returns the final result including accumulated token usage and tool call metadata.
+    /// </summary>
+    public async Task<ToolCallingResult> ExecuteAsync(
+        ChatCompletionRequest request,
+        Guid boardId,
+        Guid userId,
+        CancellationToken ct = default)
+    {
+        var tools = ReadToolSchemas.GetAll()
+            .Concat(WriteToolSchemas.GetAll())
+            .ToList();
         var totalTokensUsed = 0;
         var toolCallLog = new List<ToolCallLogEntry>();
         var stopwatch = Stopwatch.StartNew();
@@ -58,6 +81,8 @@ public sealed class ToolCallingChatOrchestrator
         string model = "unknown";
 
         IReadOnlyList<ToolCallResult>? previousResults = null;
+        string? previousRoundFingerprint = null;
+        bool previousRoundHadErrors = false;
 
         for (var round = 1; round <= MaxRounds; round++)
         {
@@ -145,6 +170,22 @@ public sealed class ToolCallingChatOrchestrator
                     DegradedReason: "Unexpected empty tool call list.");
             }
 
+            // Infinite loop detection: abort if the LLM issues the exact same
+            // tool calls (name + arguments) as the previous round.
+            // Skip detection when the previous round had errors — the LLM may
+            // legitimately retry the same call after a transient tool failure.
+            var currentFingerprint = ComputeToolCallFingerprint(llmResult.ToolCalls);
+            if (previousRoundFingerprint != null &&
+                !previousRoundHadErrors &&
+                string.Equals(currentFingerprint, previousRoundFingerprint, StringComparison.Ordinal))
+            {
+                _logger.LogWarning(
+                    "Tool-calling loop detected at round {Round}: identical tool calls as previous round. Aborting.",
+                    round);
+                return BuildLoopDetectedResult(totalTokensUsed, toolCallLog, provider, model, round);
+            }
+            previousRoundFingerprint = currentFingerprint;
+
             var results = new List<ToolCallResult>();
             foreach (var toolCall in llmResult.ToolCalls)
             {
@@ -174,7 +215,8 @@ public sealed class ToolCallingChatOrchestrator
                 {
                     try
                     {
-                        resultContent = await executor.ExecuteAsync(boardId, toolCall.Arguments, ct);
+                        var context = new ToolExecutionContext(boardId, userId);
+                        resultContent = await executor.ExecuteAsync(context, toolCall.Arguments, ct);
                         isError = false;
                     }
                     catch (Exception ex)
@@ -199,6 +241,7 @@ public sealed class ToolCallingChatOrchestrator
             }
 
             previousResults = results;
+            previousRoundHadErrors = results.Any(r => r.IsError);
         }
 
         // Exhausted all rounds without a final response
@@ -210,6 +253,7 @@ public sealed class ToolCallingChatOrchestrator
     {
         return toolName switch
         {
+            // Read tools
             "list_board_columns" => "Looking up board columns...",
             "list_cards_in_column" when arguments.TryGetProperty("column_name", out var cn) =>
                 $"Looking up cards in {cn.GetString()}...",
@@ -221,8 +265,51 @@ public sealed class ToolCallingChatOrchestrator
                 $"Searching for \"{q.GetString()}\"...",
             "search_cards" => "Searching cards...",
             "get_board_labels" => "Looking up board labels...",
+            // Write tools (always proposals)
+            "propose_create_card" when arguments.TryGetProperty("title", out var title) =>
+                $"Creating proposal for new card \"{title.GetString()}\"...",
+            "propose_create_card" => "Creating proposal for new card...",
+            "propose_move_card" when arguments.TryGetProperty("card_id", out var mc) =>
+                $"Creating proposal to move card {mc.GetString()}...",
+            "propose_move_card" => "Creating proposal to move card...",
+            "propose_archive_card" when arguments.TryGetProperty("card_id", out var ac) =>
+                $"Creating proposal to archive card {ac.GetString()}...",
+            "propose_archive_card" => "Creating proposal to archive card...",
+            "propose_update_card" when arguments.TryGetProperty("card_id", out var uc) =>
+                $"Creating proposal to update card {uc.GetString()}...",
+            "propose_update_card" => "Creating proposal to update card...",
+            "propose_bulk_move" when arguments.TryGetProperty("source_column", out var bsc) =>
+                $"Creating proposal to move cards from {bsc.GetString()}...",
+            "propose_bulk_move" => "Creating proposal to move cards...",
+            "propose_create_column" when arguments.TryGetProperty("name", out var colName) =>
+                $"Creating proposal for column \"{colName.GetString()}\"...",
+            "propose_create_column" => "Creating proposal for new column...",
             _ => $"Executing {toolName}..."
         };
+    }
+
+    /// <summary>
+    /// Builds a JSON metadata string from the tool call log for persistence on ChatMessage.
+    /// </summary>
+    public static string? BuildToolCallMetadataJson(IReadOnlyList<ToolCallLogEntry> log, int totalRounds, int totalTokens)
+    {
+        if (log.Count == 0) return null;
+
+        var metadata = new
+        {
+            rounds = totalRounds,
+            total_tokens = totalTokens,
+            tool_calls = log.Select(e => new
+            {
+                round = e.Round,
+                tool = e.ToolName,
+                args = e.Arguments,
+                result_summary = e.ResultSummary,
+                is_error = e.IsError
+            }).ToArray()
+        };
+
+        return JsonSerializer.Serialize(metadata, MetadataJsonOptions);
     }
 
     private static ToolCallingResult BuildTimeoutResult(
@@ -242,6 +329,48 @@ public sealed class ToolCallingChatOrchestrator
             ToolCallLog: log,
             IsDegraded: true,
             DegradedReason: "Orchestration timeout exceeded.");
+    }
+
+    private static ToolCallingResult BuildLoopDetectedResult(
+        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model, int round)
+    {
+        var partialSummary = log.Count > 0
+            ? " Here is what I found so far: " + string.Join("; ",
+                log.Where(e => !e.IsError).Select(e => $"[{e.ToolName}]"))
+            : "";
+
+        return new ToolCallingResult(
+            Content: $"I noticed I was repeating the same action and stopped to avoid an infinite loop.{partialSummary}",
+            TokensUsed: tokensUsed,
+            Provider: provider,
+            Model: model,
+            Rounds: round,
+            ToolCallLog: log,
+            IsDegraded: true,
+            DegradedReason: "Tool-calling loop detected: identical tool calls in consecutive rounds.");
+    }
+
+    /// <summary>
+    /// Computes a deterministic fingerprint of a set of tool calls (name + arguments)
+    /// so that consecutive identical rounds can be detected.
+    /// </summary>
+    internal static string ComputeToolCallFingerprint(IReadOnlyList<ToolCallRequest> toolCalls)
+    {
+        // Sort by tool name for determinism when parallel calls arrive in varying order
+        var sorted = toolCalls.OrderBy(tc => tc.ToolName, StringComparer.Ordinal)
+            .ThenBy(tc => tc.Arguments.GetRawText(), StringComparer.Ordinal);
+
+        var sb = new StringBuilder();
+        foreach (var tc in sorted)
+        {
+            sb.Append(tc.ToolName);
+            sb.Append(':');
+            sb.Append(tc.Arguments.GetRawText());
+            sb.Append('|');
+        }
+
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(bytes);
     }
 
     private static ToolCallingResult BuildExhaustedResult(

@@ -1,8 +1,10 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Application.Services.Tools;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -726,6 +728,7 @@ public class ChatServiceTests
         result.ErrorMessage.Should().Be("ApiKey is required.");
         result.Model.Should().Be("gpt-4o-mini");
         result.IsMock.Should().BeFalse();
+        result.VerificationStatus.Should().Be("unverified");
     }
 
     [Fact]
@@ -741,6 +744,7 @@ public class ChatServiceTests
         result.ProviderName.Should().Be("DeterministicStub");
         result.Model.Should().Be("stub-model");
         result.IsMock.Should().BeTrue();
+        result.VerificationStatus.Should().Be("unverified");
     }
 
     [Fact]
@@ -756,8 +760,25 @@ public class ChatServiceTests
         result.ProviderName.Should().Be("OpenAI");
         result.Model.Should().Be("gpt-4o-mini");
         result.IsProbed.Should().BeTrue();
+        result.VerificationStatus.Should().Be("verified");
         _llmProviderMock.Verify(p => p.ProbeAsync(default), Times.Once);
         _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldReturnFailedVerificationStatus_WhenProbeFailsAvailability()
+    {
+        _llmProviderMock
+            .Setup(p => p.ProbeAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(false, "OpenAI", "Connection refused", "gpt-4o-mini", IsProbed: true));
+
+        var result = await _service.GetProviderHealthAsync(probe: true, default);
+
+        result.IsAvailable.Should().BeFalse();
+        result.ProviderName.Should().Be("OpenAI");
+        result.ErrorMessage.Should().Be("Connection refused");
+        result.IsProbed.Should().BeTrue();
+        result.VerificationStatus.Should().Be("failed");
     }
 
     #region NLP Gap Tests — Documents #570 (Chat-to-Proposal NLP Gap)
@@ -1112,6 +1133,356 @@ public class ChatServiceTests
                 It.IsAny<CancellationToken>(),
                 It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    #endregion
+
+    #region Double LLM Call Elimination (#672)
+
+    /// <summary>
+    /// Helper to build a ChatService with the provided tool-calling orchestrator injected.
+    /// </summary>
+    private ChatService BuildServiceWithOrchestrator(ToolCallingChatOrchestrator orchestrator)
+    {
+        return new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            toolCallingOrchestrator: orchestrator);
+    }
+
+    private static ToolCallingChatOrchestrator BuildOrchestrator(Mock<ILlmProvider> providerMock)
+    {
+        var registry = new ToolExecutorRegistry(Array.Empty<IToolExecutor>());
+        return new ToolCallingChatOrchestrator(
+            providerMock.Object,
+            registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_BoardScoped_NoToolCalls_ShouldNotCallCompleteAsync()
+    {
+        // Arrange: orchestrator returns text without tool calls
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No-tool response", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        // Set up CompleteWithToolsAsync to return a text-only response (no tool calls)
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        orchestratorProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmToolCompletionResult(
+                Content: "I can help you manage your board. What would you like to do?",
+                TokensUsed: 80,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                ToolCalls: null,
+                IsComplete: true));
+
+        var orchestrator = BuildOrchestrator(orchestratorProviderMock);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        // Act
+        var result = await service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("Hello, what can you do?"),
+            default);
+
+        // Assert: response reuses orchestrator content
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Content.Should().Be("I can help you manage your board. What would you like to do?");
+        result.Value.TokenUsage.Should().Be(80);
+
+        // The main provider's CompleteAsync should NEVER be called (#672)
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_BoardScoped_WithToolCalls_ShouldNotCallCompleteAsync()
+    {
+        // Arrange: orchestrator returns result with tool calls made
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Tool-call response", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        // Provider returns a tool call on round 1, then a final response on round 2
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        var callSequence = 0;
+        orchestratorProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                {
+                    var args = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("{}");
+                    return new LlmToolCompletionResult(
+                        Content: null,
+                        TokensUsed: 50,
+                        Provider: "OpenAI",
+                        Model: "gpt-4o-mini",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "list_board_columns", args) },
+                        IsComplete: false);
+                }
+                return new LlmToolCompletionResult(
+                    Content: "Your board has 3 columns: Backlog, In Progress, Done.",
+                    TokensUsed: 60,
+                    Provider: "OpenAI",
+                    Model: "gpt-4o-mini",
+                    ToolCalls: null,
+                    IsComplete: true);
+            });
+
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("list_board_columns");
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<System.Text.Json.JsonElement>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"columns\":[\"Backlog\",\"In Progress\",\"Done\"]}");
+
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            orchestratorProviderMock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        // Act
+        var result = await service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("What columns are on this board?"),
+            default);
+
+        // Assert: tool-calling path used, no CompleteAsync
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Content.Should().Contain("3 columns");
+        result.Value.TokenUsage.Should().Be(110); // 50 + 60
+
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_BoardScoped_DegradedNullContent_ShouldFallBackToCompleteAsync()
+    {
+        // Arrange: orchestrator returns degraded with null content (provider doesn't support tools)
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Degraded fallback", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        orchestratorProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new NotSupportedException("Not supported"));
+
+        var orchestrator = BuildOrchestrator(orchestratorProviderMock);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        // CompleteAsync should be the fallback
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Fallback response from single-turn.", 15, false, null));
+
+        // Act
+        var result = await service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("Hello"),
+            default);
+
+        // Assert: fell back to CompleteAsync because orchestrator was degraded with null content
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Content.Should().Be("Fallback response from single-turn.");
+
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_NonBoardScoped_ShouldStillCallCompleteAsync()
+    {
+        // Arrange: session has no board ID — orchestrator should not be used
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Non-board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        var orchestrator = BuildOrchestrator(orchestratorProviderMock);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Single-turn response.", 10, false, null));
+
+        // Act
+        var result = await service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("Hello"),
+            default);
+
+        // Assert: CompleteAsync called because session is not board-scoped
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Content.Should().Be("Single-turn response.");
+
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Orchestrator provider should never have been invoked
+        orchestratorProviderMock.Verify(
+            p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_BoardScoped_NoToolCalls_RequestProposal_ShouldAttemptProposalCreation()
+    {
+        // Arrange: orchestrator returns text (no tools), but the user requests a proposal.
+        // The reused response should still go through proposal creation.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Reuse with proposal", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        orchestratorProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmToolCompletionResult(
+                Content: "Sure, I can create that card.",
+                TokensUsed: 70,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                ToolCalls: null,
+                IsComplete: true));
+
+        var orchestrator = BuildOrchestrator(orchestratorProviderMock);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        // The reused LlmCompletionResult has IsActionable=false, so proposal
+        // creation depends on dto.RequestProposal && session.BoardId.HasValue
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(
+                ErrorCodes.ValidationError, "Cannot parse instruction"));
+
+        // Act
+        var result = await service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("create card \"My Task\"", RequestProposal: true),
+            default);
+
+        // Assert: proposal attempted (from single-turn path using reused response)
+        result.IsSuccess.Should().BeTrue();
+        // Proposal creation was attempted because RequestProposal=true
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Once);
+
+        // CompleteAsync should NOT be called — reused the orchestrator response
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_BoardScoped_EmptyContentNoToolCalls_ShouldFallBackToCompleteAsync()
+    {
+        // Arrange: orchestrator returns empty string content (no tool calls).
+        // Empty content should NOT be reused — fall through to CompleteAsync.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Empty content fallback", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        // Orchestrator's provider returns IsComplete=true with Content=null,
+        // which the orchestrator coalesces to Content="" (empty string).
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        orchestratorProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmToolCompletionResult(
+                Content: null,
+                TokensUsed: 10,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                ToolCalls: null,
+                IsComplete: true));
+
+        var orchestrator = BuildOrchestrator(orchestratorProviderMock);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Proper fallback response.", 20, false, null));
+
+        // Act
+        var result = await service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("Hello"),
+            default);
+
+        // Assert: should have fallen back to CompleteAsync, not reused empty content
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Content.Should().Be("Proper fallback response.");
+
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

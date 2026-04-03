@@ -22,7 +22,8 @@ public record ChatMessageDto(
     Guid? ProposalId,
     int? TokenUsage,
     DateTimeOffset CreatedAt,
-    string? DegradedReason = null
+    string? DegradedReason = null,
+    string? ToolCallMetadataJson = null
 );
 
 public record ChatProviderHealthDto(
@@ -31,7 +32,8 @@ public record ChatProviderHealthDto(
     string? ErrorMessage,
     string? Model,
     bool IsMock,
-    bool IsProbed = false
+    bool IsProbed = false,
+    string VerificationStatus = "unverified"
 );
 
 public record CreateChatSessionDto(

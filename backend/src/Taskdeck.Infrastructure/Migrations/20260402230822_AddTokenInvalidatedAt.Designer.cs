@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260402230822_AddTokenInvalidatedAt")]
+    partial class AddTokenInvalidatedAt
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.14");
@@ -683,9 +686,6 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.Property<int?>("TokenUsage")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("ToolCallMetadataJson")
-                        .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");

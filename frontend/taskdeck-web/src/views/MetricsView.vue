@@ -73,12 +73,14 @@ const hasData = computed(() => !!metrics.value)
 
 const maxThroughput = computed(() => {
   if (!metrics.value?.throughput.length) return 1
-  return Math.max(...metrics.value.throughput.map((d) => d.completedCount), 1)
+  // Use reduce instead of Math.max(...spread) to avoid stack overflow on large arrays
+  return metrics.value.throughput.reduce((max, d) => Math.max(max, d.completedCount), 1)
 })
 
 const maxWipCount = computed(() => {
   if (!metrics.value?.wipSnapshots.length) return 1
-  return Math.max(...metrics.value.wipSnapshots.map((w) => w.cardCount), 1)
+  // Use reduce instead of Math.max(...spread) to avoid stack overflow on large arrays
+  return metrics.value.wipSnapshots.reduce((max, w) => Math.max(max, w.cardCount), 1)
 })
 </script>
 
