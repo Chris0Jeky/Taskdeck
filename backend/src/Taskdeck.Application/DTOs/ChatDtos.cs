@@ -22,7 +22,8 @@ public record ChatMessageDto(
     Guid? ProposalId,
     int? TokenUsage,
     DateTimeOffset CreatedAt,
-    string? DegradedReason = null
+    string? DegradedReason = null,
+    string? ToolCallMetadataJson = null
 );
 
 public record ChatProviderHealthDto(

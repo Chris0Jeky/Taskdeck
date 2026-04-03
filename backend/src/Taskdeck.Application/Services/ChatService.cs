@@ -150,6 +150,7 @@ public class ChatService : IChatService
             string assistantContent = string.Empty;
             int? tokenUsage = null;
             string? degradedReason = null;
+            string? toolCallMetadataJson = null;
 
             // Quota and kill switch gate — block before any LLM call
             if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
@@ -211,7 +212,7 @@ public class ChatService : IChatService
                         SystemPrompt: ToolCallingSystemPrompt.Prompt);
 
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
-                        toolCompletionRequest, session.BoardId.Value, ct);
+                        toolCompletionRequest, session.BoardId.Value, userId, ct);
 
                     // Use tool-calling result only when tools were actually invoked.
                     // A degraded result with null content means the orchestrator couldn't
@@ -227,6 +228,8 @@ public class ChatService : IChatService
                         assistantContent = toolResult.Content ?? "";
                         tokenUsage = toolResult.TokensUsed;
                         degradedReason = toolResult.DegradedReason;
+                        toolCallMetadataJson = ToolCallingChatOrchestrator.BuildToolCallMetadataJson(
+                            toolResult.ToolCallLog, toolResult.Rounds, toolResult.TokensUsed);
 
                         if (toolResult.IsDegraded)
                         {
@@ -371,6 +374,12 @@ public class ChatService : IChatService
                 proposalId,
                 tokenUsage,
                 persistedDegradedReason);
+
+            if (toolCallMetadataJson != null)
+            {
+                assistantMessage.SetToolCallMetadataJson(toolCallMetadataJson);
+            }
+
             session.AddMessage(assistantMessage);
             await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
 
@@ -651,7 +660,8 @@ public class ChatService : IChatService
             message.ProposalId,
             message.TokenUsage,
             message.CreatedAt,
-            message.DegradedReason
+            message.DegradedReason,
+            message.ToolCallMetadataJson
         );
     }
 }
