@@ -90,6 +90,10 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE AutomationProposals SET ExpiresAt = {pastDate} WHERE Id = {expired.Id}");
 
+        // Clear the change tracker so the subsequent query reads fresh data from the database
+        // rather than serving the stale tracked entity with the old ExpiresAt value.
+        db.ChangeTracker.Clear();
+
         var results = (await repo.GetExpiredAsync()).ToList();
 
         results.Should().Contain(p => p.Id == expired.Id);
@@ -380,6 +384,9 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<TestWe
         var futureExpiry = DateTime.UtcNow.AddSeconds(1);
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE AutomationProposals SET ExpiresAt = {futureExpiry} WHERE Id = {proposal.Id}");
+
+        // Clear the change tracker so the subsequent query reads fresh data from the database.
+        db.ChangeTracker.Clear();
 
         var results = (await repo.GetExpiredAsync()).ToList();
 

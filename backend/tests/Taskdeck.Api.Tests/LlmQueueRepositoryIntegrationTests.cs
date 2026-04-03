@@ -47,6 +47,10 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         db.Entry(pendingSecond).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
 
+        // Clear the change tracker so the repository query reads fresh data from the database
+        // and returns results in the SQL-specified ORDER BY order.
+        db.ChangeTracker.Clear();
+
         // Use a large limit because the shared database may contain pending requests
         // from other test classes seeded via IClassFixture.
         var result = (await repo.GetPendingAsync(limit: 500)).ToList();
@@ -227,6 +231,11 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         db.Entry(reqANewer).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
 
+        // Clear the change tracker so the repository query reads fresh data from the database
+        // and returns results in the SQL-specified ORDER BY CreatedAt DESC order,
+        // rather than serving tracked entities from the identity map in insertion order.
+        db.ChangeTracker.Clear();
+
         var resultA = (await repo.GetByUserAsync(userA.Id)).ToList();
         var resultB = (await repo.GetByUserAsync(userB.Id)).ToList();
 
@@ -265,6 +274,9 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         db.Entry(first).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime;
         db.Entry(second).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
+
+        // Clear the change tracker so the repository query reads fresh data from the database.
+        db.ChangeTracker.Clear();
 
         var next = await repo.GetNextPendingAsync();
 
