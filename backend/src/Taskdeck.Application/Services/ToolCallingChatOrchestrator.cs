@@ -15,6 +15,12 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public sealed class ToolCallingChatOrchestrator
 {
+    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        WriteIndented = false
+    };
+
     /// <summary>Maximum tool-calling rounds per user message.</summary>
     public const int MaxRounds = 5;
 
@@ -282,11 +288,7 @@ public sealed class ToolCallingChatOrchestrator
             }).ToArray()
         };
 
-        return JsonSerializer.Serialize(metadata, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-            WriteIndented = false
-        });
+        return JsonSerializer.Serialize(metadata, MetadataJsonOptions);
     }
 
     private static ToolCallingResult BuildTimeoutResult(

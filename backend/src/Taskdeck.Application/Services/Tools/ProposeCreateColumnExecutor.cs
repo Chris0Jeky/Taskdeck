@@ -52,7 +52,16 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
         int? position = null;
         if (arguments.TryGetProperty("position", out var p) && p.ValueKind == JsonValueKind.Number)
         {
-            position = p.GetInt32();
+            var rawPosition = p.GetInt32();
+            if (rawPosition < 0)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    error = "position must be non-negative",
+                    suggestion = "Use 0 for the first position or omit to append at end"
+                }, ToolJsonOptions.Default);
+            }
+            position = rawPosition;
         }
 
         // Check for duplicate column name
@@ -92,6 +101,7 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
         var summary = $"Create column '{name}' at position {resolvedPosition}";
+        if (summary.Length > 500) summary = summary[..497] + "...";
 
         var createDto = new CreateProposalDto(
             ProposalSourceType.Chat,

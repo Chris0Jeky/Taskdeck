@@ -77,10 +77,13 @@ public sealed class ProposeArchiveCardExecutor : IToolExecutor
 
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
+        var summary = $"Archive card '{card.Title}'";
+        if (summary.Length > 500) summary = summary[..497] + "...";
+
         var createDto = new CreateProposalDto(
             ProposalSourceType.Chat,
             context.UserId,
-            $"Archive card '{card.Title}'",
+            summary,
             riskLevel,
             Guid.NewGuid().ToString(),
             context.BoardId,
@@ -102,7 +105,7 @@ public sealed class ProposeArchiveCardExecutor : IToolExecutor
         {
             proposal_id = BoardContextBuilder.FormatShortId(result.Value.Id),
             full_proposal_id = result.Value.Id,
-            summary = $"Archive card '{card.Title}'",
+            summary,
             risk = riskLevel.ToString()
         }, ToolJsonOptions.Default);
     }

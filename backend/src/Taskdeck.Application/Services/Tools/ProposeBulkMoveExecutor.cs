@@ -101,8 +101,9 @@ public sealed class ProposeBulkMoveExecutor : IToolExecutor
         {
             // Resolve specific card IDs from board
             var allBoardCards = await _unitOfWork.Cards.GetByBoardIdAsync(context.BoardId, ct);
-            var cardLookup = allBoardCards.ToDictionary(
-                c => BoardContextBuilder.FormatShortId(c.Id).ToLowerInvariant(), c => c);
+            var cardLookup = allBoardCards
+                .GroupBy(c => BoardContextBuilder.FormatShortId(c.Id).ToLowerInvariant())
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
             cardsToMove = new List<Domain.Entities.Card>();
             var notFound = new List<string>();
@@ -172,6 +173,7 @@ public sealed class ProposeBulkMoveExecutor : IToolExecutor
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
         var summary = $"Move {cardsToMove.Count} card{(cardsToMove.Count == 1 ? "" : "s")} from {sourceColumn.Name} to {targetColumn.Name}";
+        if (summary.Length > 500) summary = summary[..497] + "...";
 
         var createDto = new CreateProposalDto(
             ProposalSourceType.Chat,

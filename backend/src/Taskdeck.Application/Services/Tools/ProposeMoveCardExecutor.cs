@@ -107,10 +107,13 @@ public sealed class ProposeMoveCardExecutor : IToolExecutor
 
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
+        var summary = $"Move card '{card.Title}' to {targetColumn.Name}";
+        if (summary.Length > 500) summary = summary[..497] + "...";
+
         var createDto = new CreateProposalDto(
             ProposalSourceType.Chat,
             context.UserId,
-            $"Move card '{card.Title}' to {targetColumn.Name}",
+            summary,
             riskLevel,
             Guid.NewGuid().ToString(),
             context.BoardId,
@@ -132,7 +135,7 @@ public sealed class ProposeMoveCardExecutor : IToolExecutor
         {
             proposal_id = BoardContextBuilder.FormatShortId(result.Value.Id),
             full_proposal_id = result.Value.Id,
-            summary = $"Move card '{card.Title}' to {targetColumn.Name}",
+            summary,
             risk = riskLevel.ToString()
         }, ToolJsonOptions.Default);
     }

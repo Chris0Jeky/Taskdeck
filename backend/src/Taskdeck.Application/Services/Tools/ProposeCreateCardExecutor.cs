@@ -112,10 +112,13 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
 
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
+        var summary = $"Create card '{title}' in {resolvedColumnName}";
+        if (summary.Length > 500) summary = summary[..497] + "...";
+
         var createDto = new CreateProposalDto(
             ProposalSourceType.Chat,
             context.UserId,
-            $"Create card '{title}' in {resolvedColumnName}",
+            summary,
             riskLevel,
             Guid.NewGuid().ToString(),
             context.BoardId,
@@ -137,7 +140,7 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
         {
             proposal_id = BoardContextBuilder.FormatShortId(result.Value.Id),
             full_proposal_id = result.Value.Id,
-            summary = $"Create card '{title}' in {resolvedColumnName}",
+            summary,
             risk = riskLevel.ToString()
         }, ToolJsonOptions.Default);
     }
