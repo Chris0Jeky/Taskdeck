@@ -503,6 +503,41 @@ public class AccountDeletionServiceTests
             Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task DeleteAccountAsync_InvalidatesActiveUserCache()
+    {
+        // Arrange — create a service with a cache mock
+        var cacheMock = new Mock<IActiveUserCache>();
+        var serviceWithCache = new AccountDeletionService(
+            _unitOfWorkMock.Object, _historyServiceMock.Object, cacheMock.Object);
+
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await serviceWithCache.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        cacheMock.Verify(c => c.Invalidate(_userId), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_SucceedsWithoutCache()
+    {
+        // Arrange — the default _service has no cache (null), should still work
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await _service.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+    }
+
     private void SetupUserFound()
     {
         _userRepoMock.Setup(r => r.GetByIdAsync(_userId, default)).ReturnsAsync(_testUser);

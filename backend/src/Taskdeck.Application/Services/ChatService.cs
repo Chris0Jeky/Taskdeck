@@ -161,6 +161,7 @@ public class ChatService : IChatService
             string assistantContent = string.Empty;
             int? tokenUsage = null;
             string? degradedReason = null;
+            string? toolCallMetadataJson = null;
 
             // Quota and kill switch gate — block before any LLM call
             if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
@@ -204,12 +205,9 @@ public class ChatService : IChatService
             else
             {
                 var usedToolCalling = false;
+                LlmCompletionResult? reusableNoToolResponse = null;
 
                 // Try tool-calling path for board-scoped sessions with orchestrator.
-                // Only use the tool-calling result when the orchestrator actually called
-                // tools (ToolCallLog is not empty). If the LLM responded with plain text
-                // without calling any tools, fall through to the single-turn path which
-                // handles proposal creation from the user's intent.
                 if (_toolCallingOrchestrator != null && session.BoardId.HasValue)
                 {
                     var toolChatMessages = session.Messages
@@ -222,26 +220,38 @@ public class ChatService : IChatService
                         SystemPrompt: ToolCallingSystemPrompt.Prompt);
 
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
-                        toolCompletionRequest, session.BoardId.Value, ct);
+                        toolCompletionRequest, session.BoardId.Value, userId, ct);
 
-                    // Use tool-calling result only when tools were actually invoked.
-                    // A degraded result with null content means the orchestrator couldn't
-                    // even start (e.g., provider doesn't support tools); a result with
-                    // no tool calls means the LLM chose to answer directly, which should
-                    // still go through proposal creation.
                     var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
                     var toolCallingUsable = !toolResult.IsDegraded || toolResult.Content != null;
 
                     if (toolCallsActuallyMade && toolCallingUsable)
                     {
+                        // Tools were invoked — use the orchestrator result directly.
                         usedToolCalling = true;
                         assistantContent = toolResult.Content ?? "";
                         tokenUsage = toolResult.TokensUsed;
                         degradedReason = toolResult.DegradedReason;
+                        toolCallMetadataJson = ToolCallingChatOrchestrator.BuildToolCallMetadataJson(
+                            toolResult.ToolCallLog, toolResult.Rounds, toolResult.TokensUsed);
 
                         if (toolResult.IsDegraded)
                         {
                             messageType = "degraded";
+                        }
+
+                        // Detect proposal creation from write tool results.
+                        // Write tools (propose_*) return JSON with a proposal_id field
+                        // when they successfully create a proposal. Extract the first
+                        // proposal ID to set the message type and link.
+                        if (messageType == "text")
+                        {
+                            var detectedProposalId = ExtractProposalIdFromToolLog(toolResult.ToolCallLog);
+                            if (detectedProposalId.HasValue)
+                            {
+                                messageType = "proposal-reference";
+                                proposalId = detectedProposalId.Value;
+                            }
                         }
 
                         // Record usage for quota tracking
@@ -254,119 +264,175 @@ public class ChatService : IChatService
                                 ct);
                         }
                     }
+                    else if (!toolResult.IsDegraded && !string.IsNullOrWhiteSpace(toolResult.Content))
+                    {
+                        // The LLM responded with plain text (no tool calls). Reuse
+                        // this content instead of making a redundant CompleteAsync
+                        // call (#672). The response still flows through proposal
+                        // creation logic below.
+                        //
+                        // Run the local intent classifier on the user message so
+                        // that proposal creation is still triggered for actionable
+                        // messages (e.g. "create card X"). This is the same
+                        // classifier all providers use as a fallback.
+                        var (classifiedActionable, classifiedIntent) =
+                            LlmIntentClassifier.Classify(dto.Content);
+                        List<string>? classifiedInstructions = null;
+                        if (classifiedActionable)
+                        {
+                            var extracted = NaturalLanguageInstructionExtractor.Extract(
+                                dto.Content, classifiedIntent);
+                            if (extracted.Count > 0)
+                                classifiedInstructions = extracted;
+                        }
+
+                        reusableNoToolResponse = new LlmCompletionResult(
+                            Content: toolResult.Content,
+                            TokensUsed: toolResult.TokensUsed,
+                            IsActionable: classifiedActionable,
+                            ActionIntent: classifiedIntent,
+                            Provider: toolResult.Provider,
+                            Model: toolResult.Model,
+                            IsDegraded: false,
+                            Instructions: classifiedInstructions);
+
+                        // Record usage for the already-made call
+                        if (_quotaService != null && toolResult.TokensUsed > 0)
+                        {
+                            await _quotaService.RecordUsageAsync(
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                toolResult.Provider, toolResult.Model,
+                                toolResult.TokensUsed, 0,
+                                ct);
+                        }
+                    }
+                    // else: degraded with null content — fall through to single-turn
                 }
 
-                // Single-turn fallback (no tool calling, or tool calling degraded)
+                // Single-turn fallback (no tool calling, tool calling degraded, or
+                // reusing the no-tool response from the orchestrator).
                 if (!usedToolCalling)
                 {
-                // Get LLM response for non-checklist messages.
-                var chatMessages = session.Messages
-                    .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
-                    .ToList();
+                    LlmCompletionResult llmResult;
 
-                // Build board context for board-scoped sessions
-                var boardContext = await BuildBoardContextForSessionAsync(session, ct);
-
-                var completionRequest = new ChatCompletionRequest(
-                    chatMessages,
-                    Attribution: BuildAttribution(session, userId),
-                    BoardContext: boardContext);
-                var llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
-                assistantContent = llmResult.Content;
-                tokenUsage = llmResult.TokensUsed;
-                degradedReason = llmResult.DegradedReason;
-
-                // Record usage for quota tracking. The provider reports a combined
-                // TokensUsed total without an input/output split. Record the full
-                // total as input tokens and 0 for output until providers surface
-                // separate counts.
-                if (_quotaService != null && llmResult.TokensUsed > 0)
-                {
-                    await _quotaService.RecordUsageAsync(
-                        userId, Domain.Enums.LlmSurface.Chat,
-                        llmResult.Provider, llmResult.Model,
-                        llmResult.TokensUsed, 0,
-                        ct);
-                }
-
-                if (llmResult.IsDegraded)
-                {
-                    messageType = "degraded";
-                }
-
-                var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
-
-                if (shouldAttemptProposal)
-                {
-                    if (!session.BoardId.HasValue)
+                    if (reusableNoToolResponse != null)
                     {
-                        // Surface a hint so the user knows why no proposal was created
-                        assistantContent = $"{llmResult.Content}\n\n(To act on this, open a board-scoped chat session.)";
-                        messageType = "status";
+                        // Reuse the text response from the orchestrator's first LLM call
+                        // instead of making a second call (#672).
+                        llmResult = reusableNoToolResponse;
                     }
                     else
                     {
-                        // Determine which instructions to parse: prefer LLM-extracted
-                        // instructions over the raw user message (static classifier fallback).
-                        var instructionsToParse = llmResult.Instructions is { Count: > 0 }
-                            ? llmResult.Instructions
-                            : new List<string> { dto.Content };
+                        // No orchestrator response available — make a single-turn call.
+                        var chatMessages = session.Messages
+                            .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
+                            .ToList();
 
-                        // Use batch parsing for multiple instructions to create a single
-                        // atomic proposal. For single instructions, use the original
-                        // single-instruction parser for backward compatibility.
-                        Result<ProposalDto>? proposalResult;
-                        if (instructionsToParse.Count > 1)
+                        // Build board context for board-scoped sessions
+                        var boardContext = await BuildBoardContextForSessionAsync(session, ct);
+
+                        var completionRequest = new ChatCompletionRequest(
+                            chatMessages,
+                            Attribution: BuildAttribution(session, userId),
+                            BoardContext: boardContext);
+                        llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
+
+                        // Record usage for quota tracking. The provider reports a combined
+                        // TokensUsed total without an input/output split. Record the full
+                        // total as input tokens and 0 for output until providers surface
+                        // separate counts.
+                        if (_quotaService != null && llmResult.TokensUsed > 0)
                         {
-                            proposalResult = await _automationPlanner.ParseBatchInstructionAsync(
-                                instructionsToParse,
-                                userId,
-                                session.BoardId,
-                                ct,
-                                sourceType: ProposalSourceType.Chat,
-                                sourceReferenceId: session.Id.ToString());
+                            await _quotaService.RecordUsageAsync(
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                llmResult.Provider, llmResult.Model,
+                                llmResult.TokensUsed, 0,
+                                ct);
+                        }
+                    }
+
+                    assistantContent = llmResult.Content;
+                    tokenUsage = llmResult.TokensUsed;
+                    degradedReason = llmResult.DegradedReason;
+
+                    if (llmResult.IsDegraded)
+                    {
+                        messageType = "degraded";
+                    }
+
+                    var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
+
+                    if (shouldAttemptProposal)
+                    {
+                        if (!session.BoardId.HasValue)
+                        {
+                            // Surface a hint so the user knows why no proposal was created
+                            assistantContent = $"{llmResult.Content}\n\n(To act on this, open a board-scoped chat session.)";
+                            messageType = "status";
                         }
                         else
                         {
-                            proposalResult = await _automationPlanner.ParseInstructionAsync(
-                                instructionsToParse[0],
-                                userId,
-                                session.BoardId,
-                                ct,
-                                sourceType: ProposalSourceType.Chat,
-                                sourceReferenceId: session.Id.ToString());
-                        }
+                            // Determine which instructions to parse: prefer LLM-extracted
+                            // instructions over the raw user message (static classifier fallback).
+                            var instructionsToParse = llmResult.Instructions is { Count: > 0 }
+                                ? llmResult.Instructions
+                                : new List<string> { dto.Content };
 
-                        if (proposalResult.IsSuccess)
-                        {
-                            messageType = "proposal-reference";
-                            proposalId = proposalResult.Value.Id;
-                            assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
-                        }
-                        else
-                        {
-                            if (proposalResult.ErrorMessage?.Contains(AutomationPlannerService.ParseHintMarker) == true)
+                            // Use batch parsing for multiple instructions to create a single
+                            // atomic proposal. For single instructions, use the original
+                            // single-instruction parser for backward compatibility.
+                            Result<ProposalDto>? proposalResult;
+                            if (instructionsToParse.Count > 1)
                             {
-                                var hintContext = llmResult.IsActionable
-                                    ? "I detected a task request but could not parse it into a proposal."
-                                    : "Could not create the requested proposal.";
-                                assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{proposalResult.ErrorMessage}";
-                                messageType = "parse-hint";
-                            }
-                            else if (llmResult.IsActionable)
-                            {
-                                assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})";
-                                messageType = "status";
+                                proposalResult = await _automationPlanner.ParseBatchInstructionAsync(
+                                    instructionsToParse,
+                                    userId,
+                                    session.BoardId,
+                                    ct,
+                                    sourceType: ProposalSourceType.Chat,
+                                    sourceReferenceId: session.Id.ToString());
                             }
                             else
                             {
-                                assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
-                                messageType = "status";
+                                proposalResult = await _automationPlanner.ParseInstructionAsync(
+                                    instructionsToParse[0],
+                                    userId,
+                                    session.BoardId,
+                                    ct,
+                                    sourceType: ProposalSourceType.Chat,
+                                    sourceReferenceId: session.Id.ToString());
+                            }
+
+                            if (proposalResult.IsSuccess)
+                            {
+                                messageType = "proposal-reference";
+                                proposalId = proposalResult.Value.Id;
+                                assistantContent = $"{llmResult.Content}\n\nProposal created for review: {proposalResult.Value.Id}";
+                            }
+                            else
+                            {
+                                if (proposalResult.ErrorMessage?.Contains(AutomationPlannerService.ParseHintMarker) == true)
+                                {
+                                    var hintContext = llmResult.IsActionable
+                                        ? "I detected a task request but could not parse it into a proposal."
+                                        : "Could not create the requested proposal.";
+                                    assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{proposalResult.ErrorMessage}";
+                                    messageType = "parse-hint";
+                                }
+                                else if (llmResult.IsActionable)
+                                {
+                                    assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})";
+                                    messageType = "status";
+                                }
+                                else
+                                {
+                                    assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
+                                    messageType = "status";
+                                }
                             }
                         }
                     }
                 }
-                } // end if (!usedToolCalling)
             }
 
             var persistedDegradedReason = string.IsNullOrWhiteSpace(degradedReason)
@@ -382,6 +448,12 @@ public class ChatService : IChatService
                 proposalId,
                 tokenUsage,
                 persistedDegradedReason);
+
+            if (toolCallMetadataJson != null)
+            {
+                assistantMessage.SetToolCallMetadataJson(toolCallMetadataJson);
+            }
+
             session.AddMessage(assistantMessage);
             await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
 
@@ -637,6 +709,35 @@ public class ChatService : IChatService
         return items;
     }
 
+    /// <summary>
+    /// Scans the tool call log for successful write tool executions that created
+    /// proposals. Returns the first proposal GUID found, or null if none.
+    /// </summary>
+    private static Guid? ExtractProposalIdFromToolLog(IReadOnlyList<ToolCallLogEntry> log)
+    {
+        foreach (var entry in log)
+        {
+            if (entry.IsError || !entry.ToolName.StartsWith("propose_", StringComparison.Ordinal))
+                continue;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(entry.ResultSummary);
+                if (doc.RootElement.TryGetProperty("full_proposal_id", out var pidElement))
+                {
+                    if (pidElement.TryGetGuid(out var guid))
+                        return guid;
+                }
+            }
+            catch (JsonException)
+            {
+                // Result may be truncated; skip
+            }
+        }
+
+        return null;
+    }
+
     private static ChatSessionDto MapSessionToDto(ChatSession session)
     {
         return new ChatSessionDto(
@@ -662,7 +763,8 @@ public class ChatService : IChatService
             message.ProposalId,
             message.TokenUsage,
             message.CreatedAt,
-            message.DegradedReason
+            message.DegradedReason,
+            message.ToolCallMetadataJson
         );
     }
 }

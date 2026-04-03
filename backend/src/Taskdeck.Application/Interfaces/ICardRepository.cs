@@ -13,4 +13,32 @@ public interface ICardRepository : IRepository<Card>
     Task<IEnumerable<Card>> SearchAcrossBoardsAsync(IEnumerable<Guid> boardIds, string searchText, int maxResults, CancellationToken cancellationToken = default);
     Task<IEnumerable<Card>> SearchAcrossBoardsAsync(IEnumerable<Guid> boardIds, string searchText, int maxResults, int offset, CancellationToken cancellationToken = default);
     Task<int> CountSearchAcrossBoardsAsync(IEnumerable<Guid> boardIds, string searchText, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lightweight query for board metrics: returns cards without eager-loading labels.
+    /// Optionally filters to a specific label (via SQL join), and/or to specific card IDs.
+    /// </summary>
+    Task<IEnumerable<Card>> GetForMetricsAsync(
+        Guid boardId,
+        Guid? labelId = null,
+        IEnumerable<Guid>? cardIds = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Count cards per column for a board at SQL level, avoiding loading card entities.
+    /// Returns (columnId, cardCount) pairs.
+    /// </summary>
+    Task<IReadOnlyList<(Guid ColumnId, int CardCount)>> CountCardsByColumnAsync(
+        Guid boardId,
+        Guid? labelId = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get only blocked cards for a board at SQL level, without eager-loading labels.
+    /// Optionally filters by label.
+    /// </summary>
+    Task<IEnumerable<Card>> GetBlockedByBoardIdAsync(
+        Guid boardId,
+        Guid? labelId = null,
+        CancellationToken cancellationToken = default);
 }

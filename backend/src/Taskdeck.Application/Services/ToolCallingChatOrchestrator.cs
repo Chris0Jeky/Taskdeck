@@ -17,6 +17,12 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public sealed class ToolCallingChatOrchestrator
 {
+    private static readonly JsonSerializerOptions MetadataJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        WriteIndented = false
+    };
+
     /// <summary>Maximum tool-calling rounds per user message.</summary>
     public const int MaxRounds = 5;
 
@@ -52,7 +58,22 @@ public sealed class ToolCallingChatOrchestrator
         Guid boardId,
         CancellationToken ct = default)
     {
-        var tools = ReadToolSchemas.GetAll();
+        return await ExecuteAsync(request, boardId, Guid.Empty, ct);
+    }
+
+    /// <summary>
+    /// Executes a multi-turn tool-calling conversation with user context for write tools.
+    /// Returns the final result including accumulated token usage and tool call metadata.
+    /// </summary>
+    public async Task<ToolCallingResult> ExecuteAsync(
+        ChatCompletionRequest request,
+        Guid boardId,
+        Guid userId,
+        CancellationToken ct = default)
+    {
+        var tools = ReadToolSchemas.GetAll()
+            .Concat(WriteToolSchemas.GetAll())
+            .ToList();
         var totalTokensUsed = 0;
         var toolCallLog = new List<ToolCallLogEntry>();
         var stopwatch = Stopwatch.StartNew();
@@ -194,7 +215,8 @@ public sealed class ToolCallingChatOrchestrator
                 {
                     try
                     {
-                        resultContent = await executor.ExecuteAsync(boardId, toolCall.Arguments, ct);
+                        var context = new ToolExecutionContext(boardId, userId);
+                        resultContent = await executor.ExecuteAsync(context, toolCall.Arguments, ct);
                         isError = false;
                     }
                     catch (Exception ex)
@@ -231,6 +253,7 @@ public sealed class ToolCallingChatOrchestrator
     {
         return toolName switch
         {
+            // Read tools
             "list_board_columns" => "Looking up board columns...",
             "list_cards_in_column" when arguments.TryGetProperty("column_name", out var cn) =>
                 $"Looking up cards in {cn.GetString()}...",
@@ -242,8 +265,51 @@ public sealed class ToolCallingChatOrchestrator
                 $"Searching for \"{q.GetString()}\"...",
             "search_cards" => "Searching cards...",
             "get_board_labels" => "Looking up board labels...",
+            // Write tools (always proposals)
+            "propose_create_card" when arguments.TryGetProperty("title", out var title) =>
+                $"Creating proposal for new card \"{title.GetString()}\"...",
+            "propose_create_card" => "Creating proposal for new card...",
+            "propose_move_card" when arguments.TryGetProperty("card_id", out var mc) =>
+                $"Creating proposal to move card {mc.GetString()}...",
+            "propose_move_card" => "Creating proposal to move card...",
+            "propose_archive_card" when arguments.TryGetProperty("card_id", out var ac) =>
+                $"Creating proposal to archive card {ac.GetString()}...",
+            "propose_archive_card" => "Creating proposal to archive card...",
+            "propose_update_card" when arguments.TryGetProperty("card_id", out var uc) =>
+                $"Creating proposal to update card {uc.GetString()}...",
+            "propose_update_card" => "Creating proposal to update card...",
+            "propose_bulk_move" when arguments.TryGetProperty("source_column", out var bsc) =>
+                $"Creating proposal to move cards from {bsc.GetString()}...",
+            "propose_bulk_move" => "Creating proposal to move cards...",
+            "propose_create_column" when arguments.TryGetProperty("name", out var colName) =>
+                $"Creating proposal for column \"{colName.GetString()}\"...",
+            "propose_create_column" => "Creating proposal for new column...",
             _ => $"Executing {toolName}..."
         };
+    }
+
+    /// <summary>
+    /// Builds a JSON metadata string from the tool call log for persistence on ChatMessage.
+    /// </summary>
+    public static string? BuildToolCallMetadataJson(IReadOnlyList<ToolCallLogEntry> log, int totalRounds, int totalTokens)
+    {
+        if (log.Count == 0) return null;
+
+        var metadata = new
+        {
+            rounds = totalRounds,
+            total_tokens = totalTokens,
+            tool_calls = log.Select(e => new
+            {
+                round = e.Round,
+                tool = e.ToolName,
+                args = e.Arguments,
+                result_summary = e.ResultSummary,
+                is_error = e.IsError
+            }).ToArray()
+        };
+
+        return JsonSerializer.Serialize(metadata, MetadataJsonOptions);
     }
 
     private static ToolCallingResult BuildTimeoutResult(

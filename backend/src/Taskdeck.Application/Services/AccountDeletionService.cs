@@ -25,11 +25,16 @@ public class AccountDeletionService : IAccountDeletionService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
+    private readonly IActiveUserCache? _activeUserCache;
 
-    public AccountDeletionService(IUnitOfWork unitOfWork, IHistoryService historyService)
+    public AccountDeletionService(
+        IUnitOfWork unitOfWork,
+        IHistoryService historyService,
+        IActiveUserCache? activeUserCache = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
+        _activeUserCache = activeUserCache;
     }
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
@@ -176,6 +181,11 @@ public class AccountDeletionService : IAccountDeletionService
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+            // Invalidate the active-user cache AFTER the transaction commits so that
+            // concurrent requests cannot repopulate the cache from the still-active row
+            // during the commit window.
+            _activeUserCache?.Invalidate(userId);
 
             return Result.Success(new AccountDeletionResultDto(
                 Success: true,

@@ -23,6 +23,7 @@ public class ChatMessage : Entity
     public Guid? ProposalId { get; private set; }
     public int? TokenUsage { get; private set; }
     public string? DegradedReason { get; private set; }
+    public string? ToolCallMetadataJson { get; private set; }
 
     // Navigation
     public ChatSession Session { get; private set; } = null!;
@@ -75,6 +76,12 @@ public class ChatMessage : Entity
             throw new DomainException(ErrorCodes.ValidationError, "ProposalId cannot be empty");
 
         ProposalId = proposalId;
+        Touch();
+    }
+
+    public void SetToolCallMetadataJson(string? metadataJson)
+    {
+        ToolCallMetadataJson = string.IsNullOrWhiteSpace(metadataJson) ? null : metadataJson.Trim();
         Touch();
     }
 }
