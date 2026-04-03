@@ -65,4 +65,4 @@ The evaluation criteria were: Gemini provider maturity, compatibility with GP-06
 - [ADR-0017](ADR-0017-agent-tool-registry-review-first.md) — Agent Tool Registry (reused by tool-calling)
 - [ADR-0006](ADR-0006-llm-provider-mock-default.md) — LLM Provider Mock-Default strategy
 - `docs/GOLDEN_PRINCIPLES.md` GP-06 — Review-First Automation Safety
-- Implementation tracker: #647; phase issues: #649, #650, #651
+- Implementation tracker: #647; phase issues: #649 (delivered), #650 (delivered), #651

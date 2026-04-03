@@ -72,7 +72,7 @@ Tracked issues: `#415` to `#429`. PRs: `#436` to `#448`. All delivered and merge
 
 Remaining coverage gaps (post-wave, now tracked in TST-32 to TST-57 wave `#721`):
 - Frontend: 1 API module untested (captureApi), remaining composables/stores have baseline coverage → tracked in `#711`, `#716`
-- Backend: Infrastructure repositories still largely untested → tracked in `#699`; remaining domain entities untested → tracked in `#701`; 1 of 5 workers untested → tracked in `#700`
+- Backend: Infrastructure repositories partially covered (7 classes, 77 tests in `#699`/`#730`; remaining repos untested); remaining domain entities untested → tracked in `#701`; 1 of 5 workers untested → tracked in `#700`
 
 ## LLM Tool-Calling Coverage (PR #669, delivered 2026-04-01)
 
