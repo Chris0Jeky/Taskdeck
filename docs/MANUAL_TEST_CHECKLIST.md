@@ -268,8 +268,10 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
    - Expected: login rejected — account is deactivated.
 8. Attempt to use the old JWT token (saved before deletion) on any authenticated endpoint.
    - Expected: `401` with `ApiErrorResponse` — token is invalidated even though it hasn't expired.
-   - Enhancement (`#671`/`#698`): `TokenValidationMiddleware` checks `IsActive` and compares token `iat` against `TokenInvalidatedAt` on every authenticated request; ADR-0021 documents the design decision.
-9. Verify audit trail contains `DataExported`, `AccountDeletionRequested`, `AccountAnonymized` actions.
+   - Enhancement (`#671`/`#698`+`#728`): `TokenValidationMiddleware` checks `IsActive` and compares token `iat` against `TokenInvalidatedAt` on every authenticated request; `ActiveUserValidationMiddleware` provides runtime active-user enforcement with 30-second in-memory cache invalidated on deletion/deactivation; ADR-0021 documents the design decision.
+9. Verify JWT invalidation latency after account deletion.
+   - Expected: within 30 seconds of account deletion, any request using the old JWT returns `401` (cache TTL is 30 seconds).
+10. Verify audit trail contains `DataExported`, `AccountDeletionRequested`, `AccountAnonymized` actions.
 
 ## J. Board Metrics Dashboard (ANL-01, `#77`)
 
@@ -287,6 +289,9 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
    - Expected: 200 with structured metrics payload.
 7. Verify unauthenticated access to metrics endpoint.
    - Expected: 401.
+8. Verify metrics correctness on a board with many cards (10+ cards across 3+ columns).
+   - Expected: WIP counts per column match actual card counts; blocked count matches blocked cards; throughput and cycle time reflect audit log data.
+   - Enhancement (`#675`/`#724`): metrics now use SQL-level filtering via dedicated repository methods instead of in-memory filtering; results should be identical but more scalable.
 
 ## K. MCP Server Validation (MCP-01, `#652`)
 
@@ -322,6 +327,20 @@ Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
    - Expected: repeated identical tool calls (infinite loop) are detected and aborted early with a clear message.
    - Enhancement (`#674`/`#694`): SHA256-based loop detection with error-retry bypass.
 10. With Mock provider: verify deterministic pattern-based dispatch produces predictable responses.
+11. Send a write instruction: "Create a card called 'Fix login bug' in the To Do column".
+    - Expected: assistant invokes `propose_create` tool; response references a created proposal; tool-status indicator shows "Creating proposal..." via SignalR.
+    - Enhancement (`#650`/`#731`): 6 write tool executors produce proposals per GP-06.
+12. Send: "Move card 'Fix login bug' to Done".
+    - Expected: `propose_move` tool invoked; proposal created for card movement.
+13. Send: "Archive card 'Fix login bug'".
+    - Expected: `propose_archive` tool invoked; proposal created for archival.
+14. Send a multi-action instruction: "Add a column called Testing and create a card called Unit Tests in it".
+    - Expected: multiple proposals generated from a single message via write tools.
+15. Navigate to Review after a write tool instruction and verify the proposal is present.
+    - Expected: proposal card shows the operation from the chat instruction; apply flow works normally.
+16. Verify non-tool chat messages feel responsive (no perceptible double-LLM-call latency).
+    - Expected: simple conversational messages return without tool-calling overhead.
+    - Enhancement (`#672`/`#727`): `ChatService` reuses orchestrator text when no tools called, halving latency.
 
 ## M. Backup and Restore DR Drill (OPS-08, `#86`)
 
