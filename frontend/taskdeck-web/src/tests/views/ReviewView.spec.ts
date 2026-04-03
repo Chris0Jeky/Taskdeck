@@ -64,6 +64,7 @@ vi.mock('../../composables/useErrorMapper', () => ({
 
 function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
   const now = new Date().toISOString()
+  const futureExpiry = new Date(Date.now() + 86400000).toISOString() // 24h from now
   const base: Proposal = {
     id: 'proposal-1',
     sourceType: 'Queue',
@@ -77,7 +78,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
     validationIssues: null,
     createdAt: now,
     updatedAt: now,
-    expiresAt: now,
+    expiresAt: futureExpiry,
     decidedAt: null,
     decidedByUserId: null,
     appliedAt: null,
