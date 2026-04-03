@@ -317,6 +317,25 @@ public class UserServiceTests
     }
 
     [Fact]
+    public async Task DeactivateUserAsync_ShouldInvalidateActiveUserCache()
+    {
+        // Arrange
+        var cacheMock = new Mock<IActiveUserCache>();
+        var serviceWithCache = new UserService(_unitOfWorkMock.Object, cacheMock.Object);
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default))
+            .ReturnsAsync(user);
+
+        // Act
+        var result = await serviceWithCache.DeactivateUserAsync(user.Id);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        cacheMock.Verify(c => c.Invalidate(user.Id), Times.Once);
+    }
+
+    [Fact]
     public async Task DeactivateUserAsync_ShouldReturnNotFound_WhenUserDoesNotExist()
     {
         // Arrange
@@ -356,6 +375,26 @@ public class UserServiceTests
         result.IsSuccess.Should().BeTrue();
         user.IsActive.Should().BeTrue();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ActivateUserAsync_ShouldInvalidateActiveUserCache()
+    {
+        // Arrange
+        var cacheMock = new Mock<IActiveUserCache>();
+        var serviceWithCache = new UserService(_unitOfWorkMock.Object, cacheMock.Object);
+        var user = new User("testuser", "test@example.com", "hashedpassword");
+        user.Deactivate();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id, default))
+            .ReturnsAsync(user);
+
+        // Act
+        var result = await serviceWithCache.ActivateUserAsync(user.Id);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        cacheMock.Verify(c => c.Invalidate(user.Id), Times.Once);
     }
 
     [Fact]

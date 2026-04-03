@@ -1,4 +1,5 @@
 using Taskdeck.Api.Realtime;
+using Taskdeck.Api.Services;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Tools;
@@ -52,6 +53,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IOutboundWebhookService, OutboundWebhookService>();
         services.AddScoped<IDataExportService, DataExportService>();
         services.AddScoped<IAccountDeletionService, AccountDeletionService>();
+        services.AddSingleton<InMemoryActiveUserCache>();
+        services.AddSingleton<IActiveUserCache>(sp => sp.GetRequiredService<InMemoryActiveUserCache>());
         services.AddScoped<IBoardMetricsService>(sp =>
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
