@@ -103,9 +103,16 @@ public class AgentRunsApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task CrossUserIsolation_ShouldPreventAccessToOtherUsersRuns()
     {
-        // User A creates an agent and a run
-        var (clientA, profileA) = await SetupAgentAsync("run-owner");
-        var createRunResponse = await clientA.PostAsJsonAsync($"/api/agents/{profileA.Id}/runs",
+        // User A creates an agent and a run (inline to properly dispose client)
+        using var clientA = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(clientA, "run-owner");
+        var createProfileResp = await clientA.PostAsJsonAsync("/api/agents",
+            new CreateAgentProfileDto("run-owner-agent", "triage", AgentScopeType.Workspace));
+        createProfileResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var profileA = await createProfileResp.Content.ReadFromJsonAsync<AgentProfileDto>();
+        profileA.Should().NotBeNull();
+
+        var createRunResponse = await clientA.PostAsJsonAsync($"/api/agents/{profileA!.Id}/runs",
             new CreateAgentRunDto("Owner run"));
         createRunResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var run = await createRunResponse.Content.ReadFromJsonAsync<AgentRunDto>();

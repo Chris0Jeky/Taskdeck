@@ -174,4 +174,10 @@ public class AbuseContainmentApiTests : IClassFixture<TestWebApplicationFactory>
         doc.RootElement.TryGetProperty("signalsDetected", out _).Should().BeTrue();
         doc.RootElement.TryGetProperty("status", out _).Should().BeTrue();
     }
+
+    // NOTE: Cross-user isolation tests for abuse endpoints are intentionally omitted.
+    // The AbuseContainmentController currently allows any authenticated user to query
+    // any actorUserId status/events and override any actor state. This is a known
+    // design gap (missing operator-only RBAC) flagged by Gemini review. It should be
+    // addressed as a security fix, not papered over by tests that document broken behavior.
 }

@@ -79,7 +79,7 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task DeleteAccount_WithWrongPassword_ShouldFail()
+    public async Task DeleteAccount_WithWrongPassword_ShouldReturn401()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "delete-wrongpw");
@@ -87,14 +87,12 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.PostAsJsonAsync("/api/account/delete",
             new AccountDeletionRequest("wrong-password", "DELETE MY ACCOUNT"));
 
-        // Should reject with an error (401 or 400 depending on implementation)
-        response.StatusCode.Should().NotBe(HttpStatusCode.OK,
-            "account deletion with wrong password should not succeed");
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        // Wrong password maps to AuthenticationFailed -> 401
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized, "AuthenticationFailed");
     }
 
     [Fact]
-    public async Task DeleteAccount_WithWrongConfirmation_ShouldFail()
+    public async Task DeleteAccount_WithWrongConfirmation_ShouldReturn400()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "delete-wrongconfirm");
@@ -102,9 +100,8 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.PostAsJsonAsync("/api/account/delete",
             new AccountDeletionRequest("password123", "wrong confirmation"));
 
-        response.StatusCode.Should().NotBe(HttpStatusCode.OK,
-            "account deletion with wrong confirmation phrase should not succeed");
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        // Wrong confirmation phrase maps to ValidationError -> 400
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
     }
 
     [Fact]
@@ -138,8 +135,8 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         var loginResponse = await loginClient.PostAsJsonAsync("/api/auth/login",
             new LoginDto(user.Email, "password123"));
 
-        loginResponse.StatusCode.Should().NotBe(HttpStatusCode.OK,
-            "deleted user should not be able to log in");
+        // Deleted user password hash and email are randomized, so login must fail with 401
+        await ApiTestHarness.AssertErrorContractAsync(loginResponse, HttpStatusCode.Unauthorized, "AuthenticationFailed");
     }
 
     [Fact]
