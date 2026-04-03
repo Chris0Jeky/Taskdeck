@@ -83,6 +83,7 @@ public static class PipelineConfiguration
         });
 
         app.UseAuthentication();
+        app.UseMiddleware<ActiveUserValidationMiddleware>();
         if (rateLimitingSettings.Enabled)
         {
             app.UseRateLimiter();
