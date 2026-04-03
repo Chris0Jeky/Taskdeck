@@ -236,6 +236,20 @@ public class ChatService : IChatService
                             messageType = "degraded";
                         }
 
+                        // Detect proposal creation from write tool results.
+                        // Write tools (propose_*) return JSON with a proposal_id field
+                        // when they successfully create a proposal. Extract the first
+                        // proposal ID to set the message type and link.
+                        if (messageType == "text")
+                        {
+                            var detectedProposalId = ExtractProposalIdFromToolLog(toolResult.ToolCallLog);
+                            if (detectedProposalId.HasValue)
+                            {
+                                messageType = "proposal-reference";
+                                proposalId = detectedProposalId.Value;
+                            }
+                        }
+
                         // Record usage for quota tracking
                         if (_quotaService != null && toolResult.TokensUsed > 0)
                         {
@@ -633,6 +647,35 @@ public class ChatService : IChatService
         }
 
         return items;
+    }
+
+    /// <summary>
+    /// Scans the tool call log for successful write tool executions that created
+    /// proposals. Returns the first proposal GUID found, or null if none.
+    /// </summary>
+    private static Guid? ExtractProposalIdFromToolLog(IReadOnlyList<ToolCallLogEntry> log)
+    {
+        foreach (var entry in log)
+        {
+            if (entry.IsError || !entry.ToolName.StartsWith("propose_", StringComparison.Ordinal))
+                continue;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(entry.ResultSummary);
+                if (doc.RootElement.TryGetProperty("full_proposal_id", out var pidElement))
+                {
+                    if (pidElement.TryGetGuid(out var guid))
+                        return guid;
+                }
+            }
+            catch (JsonException)
+            {
+                // Result may be truncated; skip
+            }
+        }
+
+        return null;
     }
 
     private static ChatSessionDto MapSessionToDto(ChatSession session)

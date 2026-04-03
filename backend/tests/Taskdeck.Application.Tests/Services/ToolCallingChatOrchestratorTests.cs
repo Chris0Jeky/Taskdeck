@@ -264,6 +264,8 @@ public class ToolCallingChatOrchestratorTests
         executor.SetupGet(e => e.ToolName).Returns("list_board_columns");
         executor.Setup(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("DB error"));
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<ToolExecutionContext>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("DB error"));
 
         var registry = new ToolExecutorRegistry(new[] { executor.Object });
         var orchestrator = new ToolCallingChatOrchestrator(

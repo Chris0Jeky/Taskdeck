@@ -131,6 +131,7 @@ public sealed class ProposeMoveCardExecutor : IToolExecutor
         return JsonSerializer.Serialize(new
         {
             proposal_id = BoardContextBuilder.FormatShortId(result.Value.Id),
+            full_proposal_id = result.Value.Id,
             summary = $"Move card '{card.Title}' to {targetColumn.Name}",
             risk = riskLevel.ToString()
         }, ToolJsonOptions.Default);

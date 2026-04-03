@@ -197,6 +197,7 @@ public sealed class ProposeBulkMoveExecutor : IToolExecutor
         return JsonSerializer.Serialize(new
         {
             proposal_id = BoardContextBuilder.FormatShortId(result.Value.Id),
+            full_proposal_id = result.Value.Id,
             summary,
             risk = riskLevel.ToString(),
             card_count = cardsToMove.Count

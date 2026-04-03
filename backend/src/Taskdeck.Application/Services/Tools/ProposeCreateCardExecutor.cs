@@ -136,6 +136,7 @@ public sealed class ProposeCreateCardExecutor : IToolExecutor
         return JsonSerializer.Serialize(new
         {
             proposal_id = BoardContextBuilder.FormatShortId(result.Value.Id),
+            full_proposal_id = result.Value.Id,
             summary = $"Create card '{title}' in {resolvedColumnName}",
             risk = riskLevel.ToString()
         }, ToolJsonOptions.Default);

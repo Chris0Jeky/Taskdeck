@@ -101,6 +101,7 @@ public sealed class ProposeArchiveCardExecutor : IToolExecutor
         return JsonSerializer.Serialize(new
         {
             proposal_id = BoardContextBuilder.FormatShortId(result.Value.Id),
+            full_proposal_id = result.Value.Id,
             summary = $"Archive card '{card.Title}'",
             risk = riskLevel.ToString()
         }, ToolJsonOptions.Default);
