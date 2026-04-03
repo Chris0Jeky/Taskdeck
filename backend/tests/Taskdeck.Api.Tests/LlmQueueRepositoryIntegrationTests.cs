@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -32,13 +33,18 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         db.Users.Add(user);
 
         // Create requests with different statuses — only Pending should appear
+        var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var pendingFirst = new LlmRequest(user.Id, "inbox.capture.text", "{\"text\":\"first\"}");
-        await Task.Delay(20); // ensure different CreatedAt
         var pendingSecond = new LlmRequest(user.Id, "inbox.capture.text", "{\"text\":\"second\"}");
         var processing = new LlmRequest(user.Id, "inbox.capture.text", "{\"text\":\"processing\"}");
         processing.MarkAsProcessing();
 
         db.LlmRequests.AddRange(pendingFirst, pendingSecond, processing);
+        await db.SaveChangesAsync();
+
+        // Set explicit timestamps for deterministic ordering
+        db.Entry(pendingFirst).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime;
+        db.Entry(pendingSecond).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
 
         // Use a large limit because the shared database may contain pending requests
@@ -93,15 +99,18 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
 
         var expectedUpdatedAt = request.UpdatedAt;
 
-        // First claim should succeed
-        var firstClaim = await repo.TryClaimProcessingCaptureAsync(
-            request.Id, expectedUpdatedAt);
-        firstClaim.Should().BeTrue();
+        // Use separate scopes + Task.WhenAll for truly concurrent claims
+        using var firstScope = _factory.Services.CreateScope();
+        using var secondScope = _factory.Services.CreateScope();
+        var firstRepo = firstScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+        var secondRepo = secondScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
 
-        // Second claim with stale UpdatedAt should fail (optimistic concurrency)
-        var secondClaim = await repo.TryClaimProcessingCaptureAsync(
-            request.Id, expectedUpdatedAt);
-        secondClaim.Should().BeFalse();
+        var results = await Task.WhenAll(
+            firstRepo.TryClaimProcessingCaptureAsync(request.Id, expectedUpdatedAt),
+            secondRepo.TryClaimProcessingCaptureAsync(request.Id, expectedUpdatedAt));
+
+        // Exactly one should succeed (optimistic concurrency)
+        results.Count(r => r).Should().Be(1);
     }
 
     [Fact]
@@ -206,18 +215,34 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         var userB = new User("llm-userb", "llm-userb@example.com", "hash");
         db.Users.AddRange(userA, userB);
 
-        var reqA = new LlmRequest(userA.Id, "inbox.capture.text", "{\"text\":\"a\"}");
+        var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var reqAOlder = new LlmRequest(userA.Id, "inbox.capture.text", "{\"text\":\"a-older\"}");
+        var reqANewer = new LlmRequest(userA.Id, "inbox.capture.text", "{\"text\":\"a-newer\"}");
         var reqB = new LlmRequest(userB.Id, "inbox.capture.text", "{\"text\":\"b\"}");
-        db.LlmRequests.AddRange(reqA, reqB);
+        db.LlmRequests.AddRange(reqAOlder, reqANewer, reqB);
+        await db.SaveChangesAsync();
+
+        // Set explicit timestamps for deterministic ordering
+        db.Entry(reqAOlder).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime;
+        db.Entry(reqANewer).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
 
         var resultA = (await repo.GetByUserAsync(userA.Id)).ToList();
         var resultB = (await repo.GetByUserAsync(userB.Id)).ToList();
 
-        resultA.Should().Contain(r => r.Id == reqA.Id);
+        // User isolation
+        resultA.Should().Contain(r => r.Id == reqAOlder.Id);
+        resultA.Should().Contain(r => r.Id == reqANewer.Id);
         resultA.Should().NotContain(r => r.Id == reqB.Id);
         resultB.Should().Contain(r => r.Id == reqB.Id);
-        resultB.Should().NotContain(r => r.Id == reqA.Id);
+        resultB.Should().NotContain(r => r.Id == reqAOlder.Id);
+
+        // Verify DESC ordering: newer should appear before older
+        var newerIdx = resultA.FindIndex(r => r.Id == reqANewer.Id);
+        var olderIdx = resultA.FindIndex(r => r.Id == reqAOlder.Id);
+        newerIdx.Should().BeGreaterOrEqualTo(0, "newer item should be in results");
+        olderIdx.Should().BeGreaterOrEqualTo(0, "older item should be in results");
+        newerIdx.Should().BeLessThan(olderIdx, "DESC: newer before older");
     }
 
     [Fact]
@@ -230,10 +255,15 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         var user = new User("llm-next-user", "llm-next@example.com", "hash");
         db.Users.Add(user);
 
+        var baseTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var first = new LlmRequest(user.Id, "inbox.capture.text", "{\"text\":\"first\"}");
-        await Task.Delay(20);
         var second = new LlmRequest(user.Id, "inbox.capture.text", "{\"text\":\"second\"}");
         db.LlmRequests.AddRange(first, second);
+        await db.SaveChangesAsync();
+
+        // Set explicit timestamps for deterministic ordering
+        db.Entry(first).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime;
+        db.Entry(second).Property(nameof(Entity.CreatedAt)).CurrentValue = baseTime.AddSeconds(1);
         await db.SaveChangesAsync();
 
         var next = await repo.GetNextPendingAsync();
@@ -265,9 +295,9 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<TestWebApplicati
         var counts = await repo.GetStatusCountsByUserAsync(user.Id);
 
         counts.Should().ContainKey(RequestStatus.Pending);
-        counts[RequestStatus.Pending].Should().BeGreaterOrEqualTo(2);
+        counts[RequestStatus.Pending].Should().Be(2);
         counts.Should().ContainKey(RequestStatus.Processing);
-        counts[RequestStatus.Processing].Should().BeGreaterOrEqualTo(1);
+        counts[RequestStatus.Processing].Should().Be(1);
     }
 
     [Fact]
