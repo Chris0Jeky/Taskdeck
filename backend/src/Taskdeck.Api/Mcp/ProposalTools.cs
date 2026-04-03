@@ -39,6 +39,8 @@ public class ProposalTools
         [Description("Proposal ID (UUID)")]
         string proposal_id)
     {
+        var userId = await _userContext.GetCurrentUserIdAsync();
+
         if (!Guid.TryParse(proposal_id, out var proposalGuid))
             return Error("Invalid proposal_id format");
 
@@ -47,6 +49,10 @@ public class ProposalTools
             return Error(result.ErrorMessage);
 
         var p = result.Value;
+
+        // Verify the proposal belongs to the current user
+        if (p.RequestedByUserId != userId)
+            return Error("Proposal not found or access denied");
 
         return JsonSerializer.Serialize(new
         {
@@ -145,8 +151,18 @@ public class ProposalTools
         [Description("Proposal ID to dismiss (UUID)")]
         string proposal_id)
     {
+        var userId = await _userContext.GetCurrentUserIdAsync();
+
         if (!Guid.TryParse(proposal_id, out var proposalGuid))
             return Error("Invalid proposal_id format");
+
+        // Verify the proposal belongs to the current user before dismissing
+        var getResult = await _proposalService.GetProposalByIdAsync(proposalGuid);
+        if (!getResult.IsSuccess)
+            return Error(getResult.ErrorMessage);
+
+        if (getResult.Value.RequestedByUserId != userId)
+            return Error("Proposal not found or access denied");
 
         var result = await _proposalService.DismissProposalsAsync(new List<Guid> { proposalGuid });
         if (!result.IsSuccess)

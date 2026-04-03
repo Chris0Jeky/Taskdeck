@@ -68,6 +68,8 @@ public class ProposalResources
         MimeType = "application/json")]
     public async Task<string> GetProposalDetail(string proposalId)
     {
+        var userId = await _userContext.GetCurrentUserIdAsync();
+
         if (!Guid.TryParse(proposalId, out var proposalGuid))
             throw new ArgumentException($"MCP: invalid proposal ID '{proposalId}'");
 
@@ -76,6 +78,10 @@ public class ProposalResources
             throw new InvalidOperationException($"MCP: failed to get proposal: {result.ErrorMessage}");
 
         var p = result.Value;
+
+        // Verify the proposal belongs to the current user
+        if (p.RequestedByUserId != userId)
+            throw new InvalidOperationException("MCP: proposal not found or access denied");
 
         var operations = p.Operations.Select(op => new
         {
