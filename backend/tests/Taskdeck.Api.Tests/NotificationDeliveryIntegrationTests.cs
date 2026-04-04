@@ -320,7 +320,6 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         var user = new User("pref-mention-off", "pref-mention-off@example.com", "hash");
@@ -355,7 +354,6 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         var user = new User("pref-all-off", "pref-all-off@example.com", "hash");
@@ -666,8 +664,9 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         var response = await client.PostAsync("/api/notifications/mark-all-read", null);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("\"markedCount\":");
+        var markResult = await response.Content.ReadFromJsonAsync<MarkAllReadResponse>();
+        markResult.Should().NotBeNull();
+        markResult!.MarkedCount.Should().BeGreaterOrEqualTo(3, "at least 3 seeded unread notifications");
 
         // Verify all are now read
         var getResponse = await client.GetAsync("/api/notifications?unreadOnly=true");
@@ -706,8 +705,9 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         var response = await client.PostAsync("/api/notifications/mark-all-read", null);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("\"markedCount\":0");
+        var markResult = await response.Content.ReadFromJsonAsync<MarkAllReadResponse>();
+        markResult.Should().NotBeNull();
+        markResult!.MarkedCount.Should().Be(0, "no unread notifications exist for this user");
     }
 
     // ────────────────────────────────────────────────────────────
@@ -977,8 +977,10 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
     }
 
     // ────────────────────────────────────────────────────────────
-    // Helpers
+    // Helpers / DTOs
     // ────────────────────────────────────────────────────────────
+
+    private record MarkAllReadResponse(int MarkedCount);
 
     private async Task<Notification> SeedNotificationAsync(
         Guid userId,
