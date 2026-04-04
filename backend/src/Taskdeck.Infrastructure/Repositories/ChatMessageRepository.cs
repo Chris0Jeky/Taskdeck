@@ -27,4 +27,19 @@ public class ChatMessageRepository : Repository<ChatMessage>, IChatMessageReposi
             .OrderBy(m => m.CreatedAt)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> CountBySessionIdsAsync(IEnumerable<Guid> sessionIds, CancellationToken cancellationToken = default)
+    {
+        var idList = sessionIds.ToList();
+        if (idList.Count == 0)
+            return new Dictionary<Guid, int>();
+
+        var counts = await _dbSet
+            .Where(m => idList.Contains(m.SessionId))
+            .GroupBy(m => m.SessionId)
+            .Select(g => new { SessionId = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return counts.ToDictionary(x => x.SessionId, x => x.Count);
+    }
 }

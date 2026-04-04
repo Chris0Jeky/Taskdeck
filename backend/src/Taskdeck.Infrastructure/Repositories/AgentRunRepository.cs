@@ -17,6 +17,15 @@ public class AgentRunRepository : Repository<AgentRun>, IAgentRunRepository
     {
         var boundedLimit = limit <= 0 ? DefaultLimit : limit;
 
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate DateTimeOffset ordering from LINQ; use raw SQL to keep ORDER BY + LIMIT in DB.
+            return await _dbSet
+                .FromSqlInterpolated(
+                    $"SELECT * FROM AgentRuns WHERE AgentProfileId = {agentProfileId} ORDER BY CreatedAt DESC LIMIT {boundedLimit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await _dbSet
             .Where(ar => ar.AgentProfileId == agentProfileId)
             .OrderByDescending(ar => ar.CreatedAt)
