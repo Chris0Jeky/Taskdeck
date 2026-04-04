@@ -170,6 +170,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     {
         // Document the current behavior: expired codes persist until CleanupExpiredCodes is called.
         // This test validates the behavior described in the issue: cleanup is not on a timer.
+        // The static ConcurrentDictionary also does not work with horizontal scaling — see #676.
         var code = $"accumulate-{Guid.NewGuid():N}";
         var dict = GetAuthCodesDict();
         var dummyResult = CreateDummyAuthResult();
