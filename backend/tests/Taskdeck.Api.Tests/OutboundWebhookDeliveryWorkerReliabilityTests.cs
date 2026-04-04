@@ -30,10 +30,11 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
     [Fact]
     public async Task ProcessDueDeliveriesAsync_ShouldMarkDelivered_OnHttp200()
     {
-        var (worker, delivery, handler, _, serviceProvider) = BuildWorkerWithResponse(
+        var (worker, delivery, handler, _, serviceProvider, httpClient) = BuildWorkerWithResponse(
             HttpStatusCode.OK,
             maxRetries: 3);
         await using var _ = serviceProvider;
+        using var _hc = httpClient;
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -51,8 +52,9 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
     [InlineData(HttpStatusCode.NoContent)]
     public async Task ProcessDueDeliveriesAsync_ShouldMarkDelivered_OnAny2xxResponse(HttpStatusCode statusCode)
     {
-        var (worker, delivery, handler, _, serviceProvider) = BuildWorkerWithResponse(statusCode, maxRetries: 3);
+        var (worker, delivery, handler, _, serviceProvider, httpClient) = BuildWorkerWithResponse(statusCode, maxRetries: 3);
         await using var _sp = serviceProvider;
+        using var _hc = httpClient;
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -74,11 +76,12 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         HttpStatusCode statusCode, int expectedStatusCode)
     {
         var beforeDispatch = DateTimeOffset.UtcNow;
-        var (worker, delivery, handler, _, serviceProvider) = BuildWorkerWithResponse(
+        var (worker, delivery, handler, _, serviceProvider, httpClient) = BuildWorkerWithResponse(
             statusCode,
             maxRetries: 5,
             retryBackoffSeconds: [10, 30, 60]);
         await using var _sp = serviceProvider;
+        using var _hc = httpClient;
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -99,11 +102,12 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
     public async Task ProcessDueDeliveriesAsync_ShouldScheduleRetry_OnHttp429()
     {
         var beforeDispatch = DateTimeOffset.UtcNow;
-        var (worker, delivery, handler, _, serviceProvider) = BuildWorkerWithResponse(
+        var (worker, delivery, handler, _, serviceProvider, httpClient) = BuildWorkerWithResponse(
             HttpStatusCode.TooManyRequests,
             maxRetries: 3,
             retryBackoffSeconds: [60]);
         await using var _sp = serviceProvider;
+        using var _hc = httpClient;
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -132,7 +136,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         {
             OnSend = (_, ct) => throw new TaskCanceledException("simulated timeout", new TimeoutException())
         };
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 3);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 3);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -150,10 +155,11 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
     [Fact]
     public async Task ProcessDueDeliveriesAsync_ShouldDeadLetter_WhenMaxRetriesExhaustedOn5xx()
     {
-        var (worker, delivery, handler, _, serviceProvider) = BuildWorkerWithResponse(
+        var (worker, delivery, handler, _, serviceProvider, httpClient) = BuildWorkerWithResponse(
             HttpStatusCode.InternalServerError,
             maxRetries: 1);
         await using var _sp = serviceProvider;
+        using var _hc = httpClient;
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -177,7 +183,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         {
             OnSend = (_, _) => throw new HttpRequestException("connection refused")
         };
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 1);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 1);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -206,7 +213,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
 
         var handler = new CapturingHandler();
         // allowLocalhostEndpoints: false — private IPs are blocked
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 3, allowLocalhost: false);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 3, allowLocalhost: false);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -227,7 +235,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
 
         var handler = new CapturingHandler();
         // allowLocalhostEndpoints: false
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 3, allowLocalhost: false);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 3, allowLocalhost: false);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -258,7 +267,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
                 return new HttpResponseMessage(HttpStatusCode.OK);
             }
         };
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 3);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 3);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -289,7 +299,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
                 return new HttpResponseMessage(HttpStatusCode.OK);
             }
         };
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 3);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 3);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -320,7 +331,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         using var serviceProvider = BuildServiceProvider(unitOfWork);
 
         var handler = new CapturingHandler();
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 3, maxBatchSize: 10, maxConcurrency: 5);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 3, maxBatchSize: 10, maxConcurrency: 5);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -357,7 +369,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
                 return new HttpResponseMessage(HttpStatusCode.OK);
             }
         };
-        var worker = BuildWorker(serviceProvider, new HttpClient(handler), maxRetries: 3);
+        using var httpClient = new HttpClient(handler);
+        var worker = BuildWorker(serviceProvider, httpClient, maxRetries: 3);
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
@@ -388,7 +401,8 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         OutboundWebhookDelivery delivery,
         CapturingHandler handler,
         FakeUnitOfWork unitOfWork,
-        ServiceProvider serviceProvider)
+        ServiceProvider serviceProvider,
+        HttpClient httpClient)
         BuildWorkerWithResponse(
             HttpStatusCode statusCode,
             int maxRetries,
@@ -407,14 +421,15 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
             OnSend = (_, _) => new HttpResponseMessage(statusCode)
         };
 
+        var httpClient = new HttpClient(handler);
         var worker = BuildWorker(
             serviceProvider,
-            new HttpClient(handler),
+            httpClient,
             maxRetries,
             retryBackoffSeconds,
             allowLocalhost: allowLocalhost);
 
-        return (worker, delivery, handler, unitOfWork, serviceProvider);
+        return (worker, delivery, handler, unitOfWork, serviceProvider, httpClient);
     }
 
     private static OutboundWebhookDeliveryWorker BuildWorker(
