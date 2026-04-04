@@ -61,7 +61,13 @@ public record LlmCompletionResult(
     List<string>? Instructions = null
 );
 
-public record LlmTokenEvent(string Token, bool IsComplete, string? Error = null);
+public record LlmTokenEvent(
+    string Token,
+    bool IsComplete,
+    string? Error = null,
+    int? TokensUsed = null,
+    string? Provider = null,
+    string? Model = null);
 
 public record LlmHealthStatus(
     bool IsAvailable,
@@ -95,12 +101,15 @@ public record ToolCallRequest(
 
 /// <summary>
 /// The result of executing a tool, sent back to the LLM in a subsequent round.
+/// Carries the original <see cref="Arguments"/> so providers can replay them
+/// in synthetic assistant messages without losing fidelity.
 /// </summary>
 public record ToolCallResult(
     string CallId,
     string ToolName,
     string Content,
-    bool IsError
+    bool IsError,
+    JsonElement Arguments = default
 );
 
 /// <summary>

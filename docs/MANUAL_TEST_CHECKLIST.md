@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-04
+Last Updated: 2026-04-04 (wave #771–#779)
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -323,6 +323,13 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
    - Expected: within 30 seconds of account deletion, any request using the old JWT returns `401` (cache TTL is 30 seconds).
 10. Verify audit trail contains `DataExported`, `AccountDeletionRequested`, `AccountAnonymized` actions.
 
+**Export streaming endpoint (PR #774):**
+- Call `GET /api/account/export/stream` with bearer token on a large account (many boards, cards, notifications).
+  - Expected: `200` with `Content-Type: application/json`; response body is a complete, valid JSON object with the same `v1.0` envelope as `/export`.
+- Verify data correctness: streamed response contains the same boards, notifications, captures, and audit trail entries as the buffered `/export` endpoint.
+- Verify old `GET /api/account/export` still works unchanged (backward compatibility).
+- On a network disconnect mid-stream (or large export interrupted), verify the server does not crash and subsequent requests succeed.
+
 ## J. Board Metrics Dashboard (ANL-01, `#77`)
 
 1. Open `/workspace/metrics` from sidebar navigation.
@@ -410,6 +417,14 @@ Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
 16. Verify non-tool chat messages feel responsive (no perceptible double-LLM-call latency).
     - Expected: simple conversational messages return without tool-calling overhead.
     - Enhancement (`#672`/`#727`): `ChatService` reuses orchestrator text when no tools called, halving latency.
+
+**Tool-calling feature flag (PR #773):**
+- Verify tool-calling is enabled by default: send "What columns does my board have?" in a board-scoped session.
+  - Expected: tool calls fire and response contains actual board data.
+- Set `LlmToolCalling:Enabled: false` in backend config and restart the API.
+  - Expected: all chat messages fall through to single-turn `CompleteAsync`; no `ToolStatusEvent` SignalR messages appear; responses are generated without tool round-trips.
+- Re-enable (`Enabled: true`) and verify tool-calling resumes.
+- Verify `MaxToolResultBytes` (default 8 000): if a tool returns a very large result, it should be truncated before being fed back to the LLM (no oversized context errors).
 
 ## L2. ChangePassword Security Fix Validation (SEC-20, `#722`)
 
@@ -574,6 +589,99 @@ These areas now have extensive automated test coverage (~586 new tests). Manual 
    - Expected: 404 with GP-03 error contract.
 3. Send `POST /api/boards` with malformed JSON body.
    - Expected: 400 (may be ProblemDetails from ASP.NET middleware, not GP-03 — this is documented behavior).
+
+## P3. Tech-Debt, Security, and Feature Hardening Wave (`#765`–`#770`, `#776`)
+
+These 7 PRs resolve tech-debt, security, and feature gaps with two rounds of adversarial review each. ~65 new tests (32 backend + 33 frontend).
+
+### P3.1. Agent API Fix (covered by `#758`/`#776`)
+
+1. `GET /api/agents` with valid bearer token.
+   - Expected: `200` with JSON array of agent profiles (previously returned 500 due to `DateTimeOffset` ORDER BY in SQLite).
+2. `GET /api/agents/{id}/runs?limit=5` with valid bearer token.
+   - Expected: `200` with JSON array limited to 5 entries, ordered by CreatedAt descending.
+3. `GET /api/agents` without bearer token.
+   - Expected: `401`.
+
+### P3.2. DataExport Exception Logging (covered by `#759`/`#766`)
+
+1. Trigger a data export (`GET /api/account/export`) with valid bearer token.
+   - Expected: `200` with versioned JSON payload; no error-level log entries for `DataExportService` on success.
+2. If backend logs are observable: verify that `OperationCanceledException` during export does NOT produce an `Error`-level log entry (only genuine failures should log at Error).
+
+### P3.3. Streaming Chat Token Usage (covered by `#763`/`#768`)
+
+1. Open `/workspace/automations/chat`. Create a board-scoped session. Send a message.
+   - Expected: response streams in real-time as before.
+2. After streaming completes, refresh the page.
+   - Expected: the assistant response is visible in chat history (previously, streamed responses were not persisted as `ChatMessage` records).
+
+### P3.4. EF Core Version Alignment (covered by `#760`/`#767`)
+
+1. `dotnet build backend/Taskdeck.sln -c Release` — verify 0 errors.
+2. `dotnet test backend/Taskdeck.sln -c Release -m:1` — verify all tests pass.
+3. Visit `http://localhost:5000/swagger` — verify Swagger UI loads correctly.
+
+### P3.5. Tool Argument Replay (covered by `#673`/`#770`)
+
+1. Open `/workspace/automations/chat`. Create a board-scoped session. Ask: "What cards are in Backlog?" (or first column name).
+   - Expected: coherent multi-turn response using tool calls.
+2. Follow up with: "Tell me more about the first card." then another follow-up.
+   - Expected: multi-turn tool-calling maintains context across rounds. Original tool arguments are preserved in provider replay messages.
+
+## P4. Dependency Hygiene, A11y, Tool-Calling, Streaming, and Test Wave (`#771`–`#779`)
+
+Eight PRs merged 2026-04-04 with two rounds of adversarial review each. ~258 new tests (automated). Manual checks below verify the surface-visible changes.
+
+### P4.1. Dependency Overrides (covered by `#761`/`#771`)
+
+1. `cd frontend/taskdeck-web && npm ls ws` — verify `ws@7.5.10` is present and resolves from the npm registry (not from a `.tgz` file path).
+2. `npm ls p-limit` — verify `p-limit@3.1.0` resolves without an overrides entry.
+3. `npm run build` — verify the frontend builds without warnings about vendored packages.
+4. Confirm `vendor/ws-7.5.10.tgz` no longer exists in the repository.
+
+### P4.2. Accessibility Regression (covered by `#762`/`#779`)
+
+1. `cd frontend/taskdeck-web && npm run lint` — verify 0 warnings (threshold is 20; expect well under).
+2. Navigate through key surfaces using keyboard only (Tab to focus, Enter/Space to activate):
+   - Command palette (`Ctrl+K`): Tab through results, Enter activates.
+   - Label manager modal: Tab through inputs, labels are associated via `for`/`id`.
+   - Card modal: Tab to Close button, Enter/Space closes.
+   - Expected: no interactive element is reachable only by mouse.
+3. Verify autofocus removal did not regress UX:
+   - Open "Add column" modal — input field should be focusable by Tab but not grab focus on open.
+4. Open a modal backdrop (e.g., card modal) and press `Escape`.
+   - Expected: modal closes. (Keyboard event companion wired to backdrop.)
+
+### P4.3. Tool-Calling Feature Flag Spot Check (covered by `#651`/`#773`)
+
+- See the dedicated checks added to section L above.
+
+### P4.4. Streaming Export Spot Check (covered by `#670`/`#774`)
+
+- See the dedicated checks added to section I above.
+
+### P4.5. Store Integration Regression (covered by `#711`/`#777`)
+
+1. Log in as a fresh user and navigate to `/workspace/automation/queue`.
+   - Expected: 0 queue items (data isolation `#508` regression — now regression-tested).
+2. On a multi-board account, create a board and verify the active board in the sidebar does NOT auto-switch away from the current board.
+   - Expected: board auto-switch regression (`#509`) is not present.
+
+### P4.6. Resilience: Degraded LLM Path (covered by `#720`/`#778`)
+
+1. In backend config, set a deliberately invalid `OpenAI:ApiKey` (e.g., `"bad-key"`) while keeping `EnableLiveProviders: true`.
+2. Open `/workspace/automations/chat`, create a board-scoped session, send a message.
+   - Expected: response is delivered via the `Mock` fallback provider (no crash, no blank response). Health banner should show amber/red, not green.
+3. Restore the correct API key (or revert to Mock-only mode).
+
+### P4.7. E2E Scenario Smoke (covered by `#712`/`#772`)
+
+1. Run `npx playwright test tests/e2e/error-recovery.spec.ts --reporter=line` from `frontend/taskdeck-web/`.
+   - Expected: all 8 error-recovery scenarios pass using `page.route()` interception (no live backend required for error paths).
+2. Spot-check one multi-board scenario manually:
+   - Create 3 boards, switch between them rapidly.
+   - Expected: no data cross-contamination between boards (each board's cards remain scoped to that board).
 
 ## Q. Observability Smoke (OBS-01)
 

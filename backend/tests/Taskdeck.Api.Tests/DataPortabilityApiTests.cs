@@ -140,6 +140,42 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task StreamUserData_ShouldReturnUnauthorized_WhenNoToken()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/account/export/stream");
+
+        await ApiTestHarness.AssertUnauthorizedAsync(response);
+    }
+
+    [Fact]
+    public async Task StreamUserData_ShouldReturnCompleteValidJson_ForAuthenticatedUser()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "stream-export-user");
+
+        var response = await client.GetAsync("/api/account/export/stream");
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotBeNullOrWhiteSpace();
+
+        // Must be valid, complete JSON (not truncated)
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.TryGetProperty("version", out var versionProp).Should().BeTrue();
+        versionProp.GetString().Should().Be("1.0");
+        doc.RootElement.TryGetProperty("userId", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("profile", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("data", out var dataProp).Should().BeTrue();
+        dataProp.TryGetProperty("notifications", out _).Should().BeTrue();
+        dataProp.TryGetProperty("chatSessions", out _).Should().BeTrue();
+        dataProp.TryGetProperty("auditTrail", out _).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ExportUserData_CrossUserIsolation_ShouldScopeToRequestingUser()
     {
         // User A exports
