@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive, ref } from 'vue'
 import LoginView from '../../views/LoginView.vue'
 
 // Hoist route/router mocks so they're available to vi.mock factories
@@ -20,6 +19,10 @@ const sessionMock = vi.hoisted(() => ({
   register: vi.fn(),
   exchangeOAuthCode: vi.fn(),
   error: null as string | null,
+}))
+
+const authApiMock = vi.hoisted(() => ({
+  getProviders: vi.fn(),
 }))
 
 const isDemoModeMock = vi.hoisted(() => ({ value: false }))
@@ -42,7 +45,7 @@ vi.mock('../../store/sessionStore', () => ({
 
 vi.mock('../../api/authApi', () => ({
   authApi: {
-    getProviders: vi.fn().mockResolvedValue({ gitHub: false }),
+    getProviders: authApiMock.getProviders,
   },
 }))
 
@@ -71,6 +74,7 @@ describe('LoginView', () => {
     sessionMock.login.mockResolvedValue(undefined)
     sessionMock.loginAsDemo.mockReturnValue(undefined)
     sessionMock.exchangeOAuthCode.mockResolvedValue(undefined)
+    authApiMock.getProviders.mockResolvedValue({ gitHub: false })
   })
 
   it('renders the sign-in title', async () => {
@@ -196,6 +200,48 @@ describe('LoginView', () => {
     await waitForUi()
 
     expect(submitBtn.attributes('disabled')).toBeUndefined()
+  })
+
+  describe('GitHub OAuth button', () => {
+    it('does not render GitHub sign-in button when gitHub provider is unavailable', async () => {
+      authApiMock.getProviders.mockResolvedValue({ gitHub: false })
+
+      const wrapper = mount(LoginView)
+      await waitForUi()
+      await waitForUi() // extra tick for provider check
+
+      const githubBtn = wrapper.findAll('button').find((b) =>
+        b.text().includes('Sign in with GitHub'),
+      )
+      expect(githubBtn).toBeUndefined()
+    })
+
+    it('renders GitHub sign-in button when gitHub provider is available', async () => {
+      authApiMock.getProviders.mockResolvedValue({ gitHub: true })
+
+      const wrapper = mount(LoginView)
+      await waitForUi()
+      await waitForUi()
+
+      const githubBtn = wrapper.findAll('button').find((b) =>
+        b.text().includes('Sign in with GitHub'),
+      )
+      expect(githubBtn).toBeDefined()
+    })
+
+    it('does not render GitHub button when getProviders call fails', async () => {
+      authApiMock.getProviders.mockRejectedValue(new Error('unreachable'))
+
+      const wrapper = mount(LoginView)
+      await waitForUi()
+      await waitForUi()
+
+      const githubBtn = wrapper.findAll('button').find((b) =>
+        b.text().includes('Sign in with GitHub'),
+      )
+      // Should silently fail and not show button
+      expect(githubBtn).toBeUndefined()
+    })
   })
 
   describe('demo mode', () => {
