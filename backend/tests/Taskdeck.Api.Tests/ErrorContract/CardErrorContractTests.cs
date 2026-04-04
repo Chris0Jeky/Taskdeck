@@ -103,7 +103,7 @@ public class CardErrorContractTests : IClassFixture<TestWebApplicationFactory>
             $"/api/boards/{board.Id}/cards",
             new CreateCardDto(board.Id, Guid.NewGuid(), "Card In Missing Column", null, null, null));
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public class CardErrorContractTests : IClassFixture<TestWebApplicationFactory>
             $"/api/boards/{boardId}/cards/{Guid.NewGuid()}/move",
             new MoveCardDto(columnId, 0));
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public class CardErrorContractTests : IClassFixture<TestWebApplicationFactory>
             $"/api/boards/{boardId}/cards/{card!.Id}/move",
             new MoveCardDto(Guid.NewGuid(), 0));
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public class CardErrorContractTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.DeleteAsync(
             $"/api/boards/{board.Id}/cards/{Guid.NewGuid()}");
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public class CardErrorContractTests : IClassFixture<TestWebApplicationFactory>
             $"/api/boards/{board.Id}/cards/{Guid.NewGuid()}",
             new UpdateCardDto("New Title", null, null, null, null, null));
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]

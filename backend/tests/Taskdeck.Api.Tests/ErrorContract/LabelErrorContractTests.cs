@@ -58,7 +58,7 @@ public class LabelErrorContractTests : IClassFixture<TestWebApplicationFactory>
             $"/api/boards/{board.Id}/labels/{Guid.NewGuid()}",
             new UpdateLabelDto("New Name", null));
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -71,6 +71,6 @@ public class LabelErrorContractTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.DeleteAsync(
             $"/api/boards/{board.Id}/labels/{Guid.NewGuid()}");
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 }

@@ -76,24 +76,19 @@ public class ProposalErrorContractTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
-    public async Task ExecuteProposal_MissingIdempotencyKey_Returns400WithErrorContract()
+    public async Task ExecuteProposal_NonExistentIdWithoutIdempotencyKey_ReturnsErrorContract()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "prop-err-noidemp");
 
-        // Even though the proposal doesn't exist, the missing header check
-        // might come after proposal lookup, so we test with a non-existent ID
-        // and expect either 400 or 404.
+        // Proposal lookup happens before the idempotency header check,
+        // so a non-existent ID returns 404 regardless of the missing header.
+        // This test verifies the error contract holds for the 404 path.
         var response = await client.PostAsync(
             $"/api/automation/proposals/{Guid.NewGuid()}/execute",
             content: null);
 
-        // The endpoint checks for the proposal first, then the header,
-        // so this returns 404 for non-existent. We verify the contract is valid.
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest,
-            HttpStatusCode.NotFound);
-        await ApiTestHarness.AssertErrorContractAsync(response, response.StatusCode);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]

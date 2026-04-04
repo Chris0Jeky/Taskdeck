@@ -25,7 +25,7 @@ public class ContentTypeAndFormatErrorContractTests : IClassFixture<TestWebAppli
     }
 
     [Fact]
-    public async Task PostBoard_MalformedJson_Returns400WithErrorContract()
+    public async Task PostBoard_MalformedJson_Returns400WithJsonBody()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "fmt-err-malformed");
@@ -34,11 +34,12 @@ public class ContentTypeAndFormatErrorContractTests : IClassFixture<TestWebAppli
             "/api/boards",
             new StringContent("{invalid-json", Encoding.UTF8, "application/json"));
 
+        // ASP.NET model-binding failures return ProblemDetails (RFC 9457),
+        // not the app-level ApiErrorResponse. We verify the response is
+        // structured JSON (not HTML or stack traces) with a 400 status.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().NotBeNullOrWhiteSpace();
-
-        // Verify it's valid JSON (not an HTML error page or stack trace)
         var parseAction = () => JsonDocument.Parse(body);
         parseAction.Should().NotThrow("error responses must be valid JSON, not HTML or stack traces");
     }
@@ -57,6 +58,7 @@ public class ContentTypeAndFormatErrorContractTests : IClassFixture<TestWebAppli
             HttpStatusCode.BadRequest,
             HttpStatusCode.UnsupportedMediaType);
 
+        // Verify the response body is valid JSON (not HTML or stack traces)
         var body = await response.Content.ReadAsStringAsync();
         if (!string.IsNullOrWhiteSpace(body))
         {
@@ -102,26 +104,25 @@ public class ContentTypeAndFormatErrorContractTests : IClassFixture<TestWebAppli
         if (!string.IsNullOrWhiteSpace(body))
         {
             body.TrimStart().Should().NotStartWith("<",
-                "404 responses should not return HTML — they should return JSON or empty body");
+                "404 responses should not return HTML -- they should return JSON or empty body");
         }
     }
 
     [Fact]
     public async Task NonExistentApiRoute_Returns404_NotHtml()
     {
-        // Test specifically for /api/ prefix routes
+        // Test specifically for /api/ prefix routes with authentication
         using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "fmt-err-api-noroute");
 
         var response = await client.GetAsync("/api/nonexistent/resource/path");
 
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.NotFound,
-            HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var body = await response.Content.ReadAsStringAsync();
         if (!string.IsNullOrWhiteSpace(body))
         {
-            body.TrimStart().Should().NotStartWith("<!DOCTYPE",
+            body.TrimStart().Should().NotStartWith("<",
                 "API routes should never return HTML error pages");
         }
     }
@@ -149,7 +150,7 @@ public class ContentTypeAndFormatErrorContractTests : IClassFixture<TestWebAppli
     }
 
     [Fact]
-    public async Task PostBoard_JsonArrayInsteadOfObject_Returns400()
+    public async Task PostBoard_JsonArrayInsteadOfObject_Returns400WithJsonBody()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "fmt-err-array");
@@ -158,8 +159,10 @@ public class ContentTypeAndFormatErrorContractTests : IClassFixture<TestWebAppli
             "/api/boards",
             new StringContent("[1,2,3]", Encoding.UTF8, "application/json"));
 
+        // ASP.NET model-binding type mismatch returns ProblemDetails (RFC 9457),
+        // not the app-level ApiErrorResponse. We verify the response is
+        // structured JSON (not HTML or stack traces) with a 400 status.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
         var body = await response.Content.ReadAsStringAsync();
         body.Should().NotBeNullOrWhiteSpace();
         var parseAction = () => JsonDocument.Parse(body);

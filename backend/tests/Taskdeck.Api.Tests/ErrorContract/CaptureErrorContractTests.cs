@@ -69,7 +69,7 @@ public class CaptureErrorContractTests : IClassFixture<TestWebApplicationFactory
 
         var response = await client.GetAsync($"/api/capture/items/{Guid.NewGuid()}");
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class CaptureErrorContractTests : IClassFixture<TestWebApplicationFactory
             $"/api/capture/items/{Guid.NewGuid()}/ignore",
             content: null);
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public class CaptureErrorContractTests : IClassFixture<TestWebApplicationFactory
             $"/api/capture/items/{Guid.NewGuid()}/cancel",
             content: null);
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -119,6 +119,6 @@ public class CaptureErrorContractTests : IClassFixture<TestWebApplicationFactory
             $"/api/capture/items/{Guid.NewGuid()}/triage",
             content: null);
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 }

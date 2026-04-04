@@ -119,7 +119,7 @@ public class ColumnErrorContractTests : IClassFixture<TestWebApplicationFactory>
             $"/api/boards/{board.Id}/columns/{Guid.NewGuid()}",
             new UpdateColumnDto("New Name", null, null));
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public class ColumnErrorContractTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.DeleteAsync(
             $"/api/boards/{board.Id}/columns/{Guid.NewGuid()}");
 
-        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, ErrorCodes.NotFound);
     }
 
     [Fact]
