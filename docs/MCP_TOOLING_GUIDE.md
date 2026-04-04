@@ -1,6 +1,6 @@
 # MCP Tooling Guide for Taskdeck Agents (Codex)
 
-**Audience:** Codex CLI / IDE agents working in this repo.  
+**Audience:** Codex CLI / IDE agents working in this repo (also referenced by Claude Code agents).  
 **Goal:** Make tool usage automatic and predictable.
 
 Operational companion:
@@ -211,13 +211,11 @@ UI verification:
 
 ---
 
-## Windows PowerShell Command Chaining
+## Shell Command Chaining (Windows)
 
-In this repository environment, command execution uses Windows PowerShell where `&&` is not supported.
+The shell environment depends on the agent runtime:
+- **Codex agents** typically use PowerShell where `&&` is not supported — use `;` and `$LASTEXITCODE`.
+- **Claude Code agents** use bash — standard `&&` chaining works.
 
-Use:
-- `;` to chain commands
-- `$LASTEXITCODE` checks for fail-fast behavior when needed
-
-Example:
+PowerShell example:
 - `cmd1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmd2`

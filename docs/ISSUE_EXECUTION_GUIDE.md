@@ -319,7 +319,7 @@ Testing/UX/docs:
 20. `#97` INT-03 plugin architecture RFC
 21. `#98` INT-04 connector framework
 22. `#99` DOC-03 developer portal generation
-23. `#216` GTM-01 thesis-aligned demo/landing baseline
+23. `#216` GTM-01 thesis-aligned demo/landing baseline (delivered)
 24. `#217` RES-01 user-research execution slice
 25. `#218` CAP-20 transcript capture source
 26. `#219` CAP-21 voice capture/transcription (opt-in)
