@@ -161,9 +161,13 @@ public class LlmProviderAbstractionEdgeCaseTests
         var result = await provider.CompleteWithToolsAsync(request, Array.Empty<TaskdeckToolSchema>(), previousResults);
 
         result.IsComplete.Should().BeTrue();
-        // The MockLlmProvider truncates at 200 chars
         result.Content.Should().NotBeNull();
-        result.Content!.Length.Should().BeLessThan(longResult.Length + 200);
+        // The MockLlmProvider truncates tool results at 200 chars.
+        // The full 500-char 'Z' string should NOT appear in the summary.
+        result.Content!.Should().NotContain(longResult,
+            "tool result should be truncated in the summary, not included verbatim");
+        // But the truncated version (first 200 chars) should appear
+        result.Content.Should().Contain(new string('Z', 200));
     }
 
     // ── MockLlmProvider Health ──────────────────────────────────

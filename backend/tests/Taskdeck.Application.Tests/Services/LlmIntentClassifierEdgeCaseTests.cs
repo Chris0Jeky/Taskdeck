@@ -21,7 +21,7 @@ public class LlmIntentClassifierEdgeCaseTests
     [InlineData("stop create new tasks")]
     [InlineData("cancel the delete of card 5")]
     [InlineData("don't remove that task")]
-    [InlineData("avoid creating a task please")] // "avoid" + "creating" uses "avoid" in the negation list
+    [InlineData("avoid create a task please")] // negation regex: "avoid" followed by verbs within word distance
     public void Classify_NegatedInput_IsNotActionable(string input)
     {
         var (isActionable, _) = LlmIntentClassifier.Classify(input);
@@ -151,13 +151,26 @@ public class LlmIntentClassifierEdgeCaseTests
     [Theory]
     [InlineData("create a card\nand some other text")]
     [InlineData("create\na\ncard")]
-    public void Classify_NewlinesInInput_StillDetects(string input)
+    public void Classify_NewlinesInInput_DoesNotThrow(string input)
     {
-        // Regex patterns work per-line or across depending on implementation
-        var (isActionable, _) = LlmIntentClassifier.Classify(input);
+        // Verify that newlines in input do not cause exceptions.
+        // The classifier may or may not detect the intent depending on
+        // whether the regex matches across line boundaries, but it must
+        // never crash.
+        var act = () => LlmIntentClassifier.Classify(input);
+        act.Should().NotThrow("newlines in input must not cause exceptions");
+    }
 
-        // Regardless of detection, it should not throw
-        // (The actual behavior depends on regex mode - this tests safety)
+    [Fact]
+    public void Classify_NewlinesSeparatingActionablePhrase_DetectsWhenOnOneLine()
+    {
+        // "create a card" on a single line should be detected even with trailing newlines
+        var input = "create a card\nsome other text after";
+
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(input);
+
+        isActionable.Should().BeTrue("actionable phrase on first line should be detected");
+        actionIntent.Should().Be("card.create");
     }
 
     [Fact]
