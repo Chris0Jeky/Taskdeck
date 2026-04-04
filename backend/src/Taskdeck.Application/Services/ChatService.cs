@@ -34,6 +34,7 @@ public class ChatService : IChatService
     private readonly ILlmKillSwitchService? _killSwitchService;
     private readonly IBoardContextBuilder? _boardContextBuilder;
     private readonly ToolCallingChatOrchestrator? _toolCallingOrchestrator;
+    private readonly LlmToolCallingSettings _toolCallingSettings;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -46,7 +47,8 @@ public class ChatService : IChatService
         ILlmQuotaService? quotaService = null,
         ILlmKillSwitchService? killSwitchService = null,
         IBoardContextBuilder? boardContextBuilder = null,
-        ToolCallingChatOrchestrator? toolCallingOrchestrator = null)
+        ToolCallingChatOrchestrator? toolCallingOrchestrator = null,
+        LlmToolCallingSettings? toolCallingSettings = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -59,6 +61,7 @@ public class ChatService : IChatService
         _killSwitchService = killSwitchService;
         _boardContextBuilder = boardContextBuilder;
         _toolCallingOrchestrator = toolCallingOrchestrator;
+        _toolCallingSettings = toolCallingSettings ?? new LlmToolCallingSettings();
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -208,7 +211,9 @@ public class ChatService : IChatService
                 LlmCompletionResult? reusableNoToolResponse = null;
 
                 // Try tool-calling path for board-scoped sessions with orchestrator.
-                if (_toolCallingOrchestrator != null && session.BoardId.HasValue)
+                // The feature flag allows disabling the orchestrator without code changes
+                // (e.g. for cost control). When disabled, falls through to single-turn.
+                if (_toolCallingOrchestrator != null && _toolCallingSettings.Enabled && session.BoardId.HasValue)
                 {
                     var toolChatMessages = session.Messages
                         .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
@@ -502,12 +507,50 @@ public class ChatService : IChatService
             Attribution: BuildAttribution(session, userId),
             BoardContext: boardContext);
 
-        // TODO: Streaming responses cannot record usage because token counts are
-        // not available until the stream completes. Implement post-stream usage
-        // recording when the provider surfaces cumulative token counts.
+        // Accumulate streamed content and capture usage from the final token event
+        // so we can persist an assistant message and record quota usage after the
+        // stream completes.
+        var contentBuilder = new System.Text.StringBuilder();
+        int? tokensUsed = null;
+        string? provider = null;
+        string? model = null;
+
         await foreach (var token in _llmProvider.StreamAsync(request, ct))
         {
+            contentBuilder.Append(token.Token);
+            if (token.IsComplete)
+            {
+                tokensUsed = token.TokensUsed;
+                provider = token.Provider;
+                model = token.Model;
+            }
+
             yield return token;
+        }
+
+        // Persist the streamed assistant message with token usage so the streaming
+        // path is consistent with the non-streaming SendMessageAsync path.
+        var streamedContent = contentBuilder.ToString();
+        if (!string.IsNullOrEmpty(streamedContent))
+        {
+            var assistantMessage = new ChatMessage(
+                sessionId,
+                ChatMessageRole.Assistant,
+                streamedContent,
+                tokenUsage: tokensUsed);
+            session.AddMessage(assistantMessage);
+            await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        // Record usage for quota tracking, matching the non-streaming path behavior
+        if (_quotaService != null && tokensUsed is > 0 && provider != null && model != null)
+        {
+            await _quotaService.RecordUsageAsync(
+                userId, Domain.Enums.LlmSurface.Chat,
+                provider, model,
+                tokensUsed.Value, 0,
+                ct);
         }
     }
 
