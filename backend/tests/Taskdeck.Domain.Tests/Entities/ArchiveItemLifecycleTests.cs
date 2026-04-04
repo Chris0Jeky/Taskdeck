@@ -118,7 +118,7 @@ public class ArchiveItemLifecycleTests
         var item = CreateAvailableItem();
         var initialUpdatedAt = item.UpdatedAt;
 
-        // Small delay to ensure timestamp difference
+        // MarkAsRestored should update UpdatedAt; assertion allows equal-or-later timestamps
         item.MarkAsRestored(Guid.NewGuid());
 
         item.UpdatedAt.Should().BeOnOrAfter(initialUpdatedAt);

@@ -100,6 +100,15 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
         restoreResult.Should().NotBeNull();
         restoreResult!.Success.Should().BeTrue();
         restoreResult.RestoredEntityId.Should().NotBeNull();
+
+        // Verify the board is actually visible again and no longer archived
+        var boardsResponse = await client.GetAsync("/api/boards?includeArchived=true");
+        boardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var allBoards = await boardsResponse.Content.ReadFromJsonAsync<List<BoardDto>>();
+        allBoards.Should().NotBeNull();
+        var restoredBoard = allBoards!.FirstOrDefault(b => b.Id == board.Id);
+        restoredBoard.Should().NotBeNull("restored board should still exist in board list");
+        restoredBoard!.IsArchived.Should().BeFalse("board should no longer be archived after restore");
     }
 
     #endregion
@@ -182,6 +191,16 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
         var restoreResult = await restoreResponse.Content.ReadFromJsonAsync<RestoreResult>();
         restoreResult!.Success.Should().BeTrue();
         restoreResult.ResolvedName.Should().Be("Restored Card");
+        restoreResult.RestoredEntityId.Should().NotBeNull();
+
+        // Verify the restored card is actually in the original column
+        var cardsResponse = await client.GetAsync($"/api/boards/{board.Id}/cards");
+        cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+        cards.Should().NotBeNull();
+        var restoredCard = cards!.FirstOrDefault(c => c.Id == restoreResult.RestoredEntityId);
+        restoredCard.Should().NotBeNull("restored card should appear in the board's card list");
+        restoredCard!.ColumnId.Should().Be(column.Id, "card should be restored to the original column");
     }
 
     [Fact]
@@ -267,6 +286,17 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
         var restoreResult = await restoreResponse.Content.ReadFromJsonAsync<RestoreResult>();
         restoreResult!.Success.Should().BeTrue();
         restoreResult.ResolvedName.Should().Be("Restored Column");
+
+        // Verify the restored column is at the end of the board
+        var columnsResponse = await client.GetAsync($"/api/boards/{board.Id}/columns");
+        columnsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var columns = await columnsResponse.Content.ReadFromJsonAsync<List<ColumnDto>>();
+        columns.Should().NotBeNull();
+        columns!.Should().HaveCountGreaterThanOrEqualTo(2, "board should have original + restored column");
+        var restoredCol = columns.FirstOrDefault(c => c.Name == "Restored Column");
+        restoredCol.Should().NotBeNull("restored column should appear in the board");
+        restoredCol!.Position.Should().BeGreaterThanOrEqualTo(existingColumn.Position,
+            "restored column should be at or after the existing column's position");
     }
 
     #endregion
@@ -575,12 +605,8 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
             $"/api/archive/card/{archiveItem.EntityId}/restore",
             restoreDto);
 
-        // Should fail due to bad snapshot - could be 400 (validation) or 500 (parse)
-        restoreResponse.IsSuccessStatusCode.Should().BeFalse();
-        restoreResponse.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest,
-            HttpStatusCode.InternalServerError,
-            HttpStatusCode.Conflict);
+        // RestoreExecutor catches JsonException and returns ValidationError -> 400
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     #endregion
@@ -728,11 +754,8 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
             $"/api/archive/card/{archiveItem.EntityId}/restore",
             restoreDto);
 
-        // RestorePlanner rejects restore to archived board with InvalidOperation
-        restoreResponse.IsSuccessStatusCode.Should().BeFalse();
-        restoreResponse.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest,
-            HttpStatusCode.Conflict);
+        // RestorePlanner rejects restore to archived board with InvalidOperation -> 409
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     #endregion
