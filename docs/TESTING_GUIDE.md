@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-03
+Last Updated: 2026-04-04
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,22 +10,22 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-02)
+## Current Verified Totals (2026-04-04)
 
-- Backend: 2053/2053 passing
-  - Domain: 357
-  - Application: 1260
-  - API integration: 424
+- Backend: ~2350+ passing (estimated based on ~300 new tests from PRs `#732`–`#739`)
+  - Domain: ~400+ (42 new proposal lifecycle edge case tests)
+  - Application: ~1300+ (25 new proposal/auth/policy tests)
+  - API integration: ~590+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP tests)
   - CLI contract: 4
   - Architecture boundaries: 8
 - Frontend unit: 1496/1496 passing (134 test files)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): default required lane passing
-- Combined automated total: 3549+ passing (backend 2053 + frontend unit 1496 + E2E)
+- Combined automated total: ~3850+ passing (backend ~2350+ + frontend unit 1496 + E2E)
 
 Verification note:
-- backend totals were re-verified on 2026-04-02 via `dotnet test backend/Taskdeck.sln -c Release -m:1`
+- backend totals are estimated after the 2026-04-04 wave (`#732`–`#739`, ~300 new tests); each PR verified green individually; full-suite recertification needed
 - frontend unit totals were re-verified on 2026-04-02 via `npx vitest --run`
-- significant test growth since 2026-03-29 due to: LLM tool-calling orchestrator and read tools (PR #669, 67 new backend tests), GDPR data portability and account deletion (PR #666, 25 new backend tests), board metrics dashboard (PR #667, 12 backend + frontend tests), MCP prototype board resources (PR #664, 7 new backend tests), GitHub OAuth frontend integration (PR #668, 5 new frontend tests), and UX-19 review card improvements
+- significant test growth in 2026-04-04 wave: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -123,26 +123,28 @@ New test coverage:
 
 Tracker issue: `#721`. Seeded from a systematic codebase audit across backend, frontend, and cross-cutting integration boundaries.
 
-Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity.
+Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint does not verify caller identity. **RESOLVED** in `#732` (2026-04-04).
 
 ### Wave Scope
 
 22 issues spanning integration tests, edge cases, adversarial inputs, failure modes, and cross-user data isolation. Focus is on integration seams (where services interact) rather than adding more isolated unit tests.
 
-| Priority | Issues | Theme |
-|----------|--------|-------|
-| I | `#703` | Capture → triage → proposal → review → board end-to-end golden path |
-| II | ~~`#699`~~, `#700`, `#702`, `#704`, `#705`, `#707`, `#723`, `#725` | Infrastructure repos (~~`#699` delivered~~), untested worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor |
-| III | `#701`, `#706`, `#708`, `#709`, `#710`, `#711`, `#712`, `#713`, `#714`, `#715`, `#716`, `#718`, `#719`, `#720`, `#726` | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience |
-| IV | `#717` | Property-based and adversarial input tests (extends `#89`) |
+| Priority | Issues | Theme | Status |
+|----------|--------|-------|--------|
+| I | ~~`#703`~~ | Capture → triage → proposal → review → board end-to-end golden path | **Delivered** (`#735`) |
+| II | ~~`#699`~~, ~~`#700`~~, ~~`#702`~~, ~~`#704`~~, `#705`, ~~`#707`~~, `#723`, `#725` | Infrastructure repos, worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor | **5 of 8 delivered** |
+| III | `#701`, `#706`, ~~`#708`~~, `#709`, `#710`, `#711`, `#712`, `#713`, `#714`, `#715`, `#716`, `#718`, `#719`, `#720`, `#726` | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **1 of 15 delivered** |
+| IV | `#717` | Property-based and adversarial input tests (extends `#89`) | Open |
 
-### Key Gaps Identified
+**Wave progress**: 7 of 22 issues delivered (plus SEC-20 fix). ~300 new tests. 15 issues remain open.
 
-- **Infrastructure repositories**: 25+ repositories with raw SQL, GUID formatting, and in-memory pagination — partially addressed: 7 classes now have 77 integration tests against real SQLite (`#699`/`#730`); remaining repositories still untested
-- **`LlmQueueToProposalWorker`**: most complex worker (fair-batch interleaving, optimistic concurrency, retry/backoff) with zero tests; every capture flows through it
-- **Cross-user data isolation**: after `#508` (queue data leak), no systematic integration test proves data isolation across all surfaces
-- **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage
-- **Golden path**: no single integration test exercises capture → proposal → review → board as a connected pipeline
+### Key Gaps Identified (updated 2026-04-04)
+
+- ~~**Infrastructure repositories**~~: 7 classes now have 77 integration tests (`#699`/`#730`); remaining repositories still untested
+- ~~**`LlmQueueToProposalWorker`**~~: **RESOLVED** — 24 integration tests delivered (`#700`/`#734`) covering happy path, error/retry, cancellation, fair-batch, and capture triage paths
+- ~~**Cross-user data isolation**~~: **RESOLVED** — 38 integration tests delivered (`#704`/`#733`) covering all major API boundaries; 3 false-positive tests caught and fixed in adversarial review
+- **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage (`#725` open)
+- ~~**Golden path**~~: **RESOLVED** — 7 integration tests delivered (`#703`/`#735`) proving full capture → triage → proposal → review → board pipeline
 
 ### Relationship to Existing Test Issues
 
@@ -170,6 +172,67 @@ Coverage:
 - Tests validate query correctness, cross-user isolation, empty-result handling, and ordering guarantees
 
 This establishes the pattern for testing remaining infrastructure repositories tracked in the wave (`#721`).
+
+### Delivered: SEC-20 ChangePassword Identity Bypass Fix (`#722`/`#732`)
+
+Security fix: `ChangePassword` endpoint now derives userId exclusively from JWT claims instead of accepting client-supplied `UserId`. 5 new integration tests (unauthenticated 401, own-account success, wrong password, cross-user body-UserId ignored, invalid token).
+
+### Delivered: Golden-Path Integration Test (`#703`/`#735`)
+
+7 integration tests exercising the full capture → triage → proposal → review → board pipeline against real SQLite with Mock LLM provider:
+- Happy path: single capture → proposal → approve → card on board with correct title and column placement
+- Multi-operation: 3 checklist items → proposal with 3 operations → 3 cards created atomically
+- Rejection: proposal rejected → board remains empty
+- Cross-user isolation: User B cannot read/approve/execute User A's proposal
+- Audit trail: card creation via proposal recorded in board audit log
+- Provenance integrity: full backward-traceable chain (capture → proposal → card) at DB level
+- Triage failure: capture without board fails deterministically
+
+### Delivered: Cross-User Data Isolation Tests (`#704`/`#733`)
+
+38 integration tests proving cross-user isolation across all major API boundaries:
+- Boards, columns, cards, captures, proposals, notifications, audit trails, chat sessions, knowledge docs, webhooks, board exports, labels, board access controls
+- 3 shared-board tests (grant, scope limitation, revocation)
+- Adversarial review caught 3 false-positive tests (LlmQueue never seeded, notifications never created, mark-notification used fabricated GUID) and missing precondition assertions
+
+### Delivered: LlmQueueToProposalWorker Integration Tests (`#700`/`#734`)
+
+24 tests for the central background worker (previously zero coverage):
+- Happy path, empty queue, transient error retry, max-retry boundary, permanent failure
+- Unhandled exceptions, already-claimed items, capture triage paths, disabled processing
+- Graceful cancellation, `BuildFairBatchItems` logic, retry backoff, multi-item batch
+- Adversarial review fixed: fake repository ignoring status transitions, misleading race-condition test, weak interleaving assertions, premature ServiceProvider disposal
+
+### Delivered: Controller HTTP Integration Tests (`#702`/`#738`)
+
+67 tests covering 6 previously-untested controllers + 17 new authz regression matrix entries:
+- DataPortabilityApiTests (8), AbuseContainmentApiTests (12), MetricsApiTests (7), SearchApiTests (6), AgentProfilesApiTests (10), AgentRunsApiTests (7)
+- Discovered 2 pre-existing bugs: `GET /api/agents` and `GET /api/agents/{id}/runs` return 500
+- Adversarial review fixed: weak `NotBe(OK)` assertions, resource leak, leaked file from another branch
+
+### Delivered: Proposal Lifecycle Edge Cases (`#708`/`#736`)
+
+74 tests across domain (42), application (25), and api (7) layers:
+- Expiry timing boundaries, double-apply/fail prevention, comprehensive state machine violations
+- Batch expiry, worker-vs-manual-approval race, dismissal edge cases, operation mutation guards
+- Adversarial review fixed: clock-resolution flakiness (`AddMilliseconds` → `AddSeconds`), string-based Theory refactoring risk, aggressive cancellation timeout; added 5 new edge case tests
+
+### Delivered: OAuth/Auth Edge Case Tests (`#707`/`#737`)
+
+44 tests across service (31) and controller (13) layers:
+- Login edge cases (blank creds, inactive user, wrong password, concurrent JWT uniqueness)
+- Registration edge cases (duplicate email, invalid lengths)
+- Token validation (malformed, wrong key, expired, future nbf, wrong issuer/audience, missing sub, deleted/inactive user)
+- OAuth code exchange (empty, invalid, replay, expired), open redirect prevention
+- **Production bug found and fixed**: `ExternalLoginAsync` `Substring(0, 50)` overflow for short usernames
+
+### Delivered: MCP Full Resource and Tool Inventory (`#653`/`#739`)
+
+42 MCP-specific tests for the full inventory:
+- 9 resources under `taskdeck://` URI scheme
+- 11 tools (2 read + 6 write + 3 proposal management)
+- GP-06 compliance verified: all write tools produce proposals, `approve_proposal` excluded
+- **User-scoping gap found and fixed in adversarial review**: proposal resources/tools were not checking `RequestedByUserId`
 
 ## Backend Commands
 

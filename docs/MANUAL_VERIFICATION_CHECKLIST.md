@@ -424,6 +424,43 @@ These are previously reported bugs. Verify they remain fixed or track their curr
 
 ---
 
+## Section 22: Security + Testing + MCP Wave (PRs #732-#739, 2026-04-04)
+
+**What changed:** SEC-20 ChangePassword fix, ~300 new backend tests across 7 testing PRs, MCP full resource/tool inventory, production bug fix in ExternalLoginAsync.
+
+### Verifications — SEC-20 Fix (#732)
+
+- [ ] `POST /api/auth/change-password` with valid bearer token and correct `currentPassword`/`newPassword`. Verify password is changed for the calling user.
+- [ ] `POST /api/auth/change-password` without bearer token. Verify `401`.
+- [ ] `POST /api/auth/change-password` with body containing `"userId": "<other-user-id>"`. Verify the other user's password is NOT changed — field is ignored.
+- [ ] Verify the `ChangePasswordRequest` no longer has a `userId` field in the API contract (Swagger).
+
+### Verifications — MCP Full Inventory (#739)
+
+- [ ] Start API with `--mcp` flag. From MCP client, list available resources. Verify 9 resources under `taskdeck://` scheme: boards, board/{id}, board/{id}/columns, board/{id}/cards, card/{id}, captures, proposals, board/{id}/labels, and proposal/{id}.
+- [ ] List available tools. Verify 11 tools: `search_cards`, `get_board_summary`, `create_card`, `move_card`, `update_card`, `archive_card`, `create_capture`, `create_column`, `get_proposal_status`, `list_proposals`, `dismiss_proposal`.
+- [ ] Use a write tool (e.g., `create_card`). Verify it returns a proposal ID, not a direct card creation.
+- [ ] Verify `approve_proposal` tool does NOT exist (intentionally excluded per GP-06).
+- [ ] Attempt to access another user's proposal via `get_proposal_status`. Verify access denied.
+
+### Verifications — Test Suite Health
+
+- [ ] `dotnet test backend/Taskdeck.sln -c Release -m:1` — verify all tests pass with ~2350+ total.
+- [ ] `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose` — verify all frontend tests pass.
+- [ ] Check CI status on PRs #732-#739 — verify all required checks passed.
+
+### Verifications — Production Bug Fix (#737)
+
+- [ ] If GitHub OAuth is configured: create many users with similar usernames to exhaust username variants. Verify the GUID-based fallback works without error (previously threw `ArgumentOutOfRangeException` for short usernames < 17 chars).
+
+### Verifications — Known Pre-Existing Bugs Found (#738)
+
+- [ ] `GET /api/agents` with valid bearer token. **Known bug**: returns 500. Verify this is still the case and track for fix.
+- [ ] `GET /api/agents/{id}/runs` with valid bearer token. **Known bug**: returns 500. Verify this is still the case and track for fix.
+- [ ] `GET /api/account/export` after creating a board. **Possible bug**: export may return empty boards list. Investigate.
+
+---
+
 ## Final Automated Smoke
 
 After manual verification, run the full automated suite to confirm no regressions:

@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-03
+Last Updated: 2026-04-04
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -293,7 +293,7 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
    - Expected: WIP counts per column match actual card counts; blocked count matches blocked cards; throughput and cycle time reflect audit log data.
    - Enhancement (`#675`/`#724`): metrics now use SQL-level filtering via dedicated repository methods instead of in-memory filtering; results should be identical but more scalable.
 
-## K. MCP Server Validation (MCP-01, `#652`)
+## K. MCP Server Validation (MCP-01/MCP-02, `#652`/`#653`)
 
 Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
 
@@ -304,6 +304,25 @@ Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
    - Expected: JSON listing of boards with id, name, columnCount, cardCount, isArchived, updatedAt fields.
 4. Verify board listing matches the user's boards (scoped by `StdioUserContextProvider` identity).
 5. Verify archived boards are included with `isArchived: true`.
+6. Request `taskdeck://boards/{boardId}` resource for an owned board.
+   - Expected: board detail including columns and metadata.
+7. Request `taskdeck://boards/{boardId}/cards` resource.
+   - Expected: card listing for the board.
+8. Request `taskdeck://captures` resource.
+   - Expected: captures listing scoped to the authenticated user.
+9. Request `taskdeck://proposals` resource.
+   - Expected: proposals listing scoped to the authenticated user.
+10. Use the `search_cards` tool with a keyword.
+    - Expected: matching cards returned from user's boards.
+11. Use the `create_card` tool with board, column, and title.
+    - Expected: a **proposal ID** is returned (not a card directly). Write tools must produce proposals per GP-06.
+12. Use the `move_card` tool to move a card.
+    - Expected: proposal ID returned for the move operation.
+13. Use the `dismiss_proposal` tool on an owned proposal.
+    - Expected: proposal dismissed successfully.
+14. Attempt to access another user's proposal via `get_proposal_status` tool.
+    - Expected: access denied or empty result — user-scoped enforcement.
+    - Enhancement (`#653`/`#739`): user-scoping checks added on `GetProposalDetail`, `GetProposalStatus`, and `DismissProposal` after adversarial review.
 
 ## L. LLM Tool-Calling Chat (LLM-06 Phase 1, `#649`)
 
@@ -341,6 +360,32 @@ Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
 16. Verify non-tool chat messages feel responsive (no perceptible double-LLM-call latency).
     - Expected: simple conversational messages return without tool-calling overhead.
     - Enhancement (`#672`/`#727`): `ChatService` reuses orchestrator text when no tools called, halving latency.
+
+## L2. ChangePassword Security Fix Validation (SEC-20, `#722`)
+
+1. Log in as User A. Call `POST /api/auth/change-password` with `{ "currentPassword": "...", "newPassword": "..." }` (no `userId` in body).
+   - Expected: password changed successfully for the calling user.
+2. Verify old password no longer works for login.
+3. Verify new password works for login.
+4. Call `POST /api/auth/change-password` without bearer token.
+   - Expected: `401`.
+5. Call `POST /api/auth/change-password` with body containing `"userId": "<other-user-id>"` alongside valid passwords.
+   - Expected: the `userId` field is **ignored** — only the caller's own password is changed, never another user's.
+   - Bug fixed (`#722`/`#732`): endpoint previously accepted `UserId` from body, allowing any authenticated user to change another user's password.
+
+## L3. OAuth/Auth Edge Case Regression (TST-40, `#707`)
+
+1. Attempt login with blank username/password.
+   - Expected: deterministic validation error, not 500.
+2. Attempt login with inactive/deleted account.
+   - Expected: clear rejection message distinguishable from wrong-password.
+3. Register with duplicate email.
+   - Expected: conflict error with actionable guidance.
+4. Use an expired JWT on any authenticated endpoint.
+   - Expected: `401` with `ApiErrorResponse`.
+5. Use a JWT with `iat` before `TokenInvalidatedAt` (after account deletion).
+   - Expected: `401` — token invalidated even though not expired.
+   - Note: `ExternalLoginAsync` username fallback Substring overflow bug was found and fixed in this wave (`#737`).
 
 ## M. Backup and Restore DR Drill (OPS-08, `#86`)
 
