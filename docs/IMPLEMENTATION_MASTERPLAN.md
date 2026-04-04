@@ -604,11 +604,11 @@ Delivered in the latest cycle:
     - manual card provenance empty state fixed (`#680`/`#754`): 3 bugs caught and fixed by adversarial review (overly broad 404 swallow, global Axios log regression, empty-state flash); `CardModal.vue` now shows "No capture provenance available." correctly; 4 new tests
     - WIP-limit toast dedup regression tests (`#686`/`#745`): 7 tests in `boardStore.wipLimit.spec.ts` for `createCard` and `moveCard`
     - auth-flow toast lifecycle tests (`#685`/`#742`): 20 tests in `sessionStore.authToast.spec.ts`; adversarial review fixed timer leak, mock isolation, inverted assertion
-    - router auth guard + workspace stability tests (`#687`/`#748`): `authGuard.spec.ts` and `workspaceRouteStability.spec.ts` with 12-route exhaustive guard table; pre-existing `AuthControllerEdgeCaseTests.cs` compile error fixed
+    - router auth guard + workspace stability tests (`#687`/`#748`): `authGuard.spec.ts` and `workspaceRouteStability.spec.ts` with 16-case exhaustive guard table; pre-existing `AuthControllerEdgeCaseTests.cs` compile error fixed
     - inbox triage action visibility tests (`#688`/`#743`): 21 new tests in `InboxView.spec.ts` for single-item triage and bulk action bar visibility
     - webhook HMAC verification tests (`#726`/`#750`): 11 tests in `OutboundWebhookHmacDeliveryTests.cs` for header format, round-trip, wrong-key, secret rotation, timing-safe comparison
-    - webhook delivery reliability + SSRF boundary tests (`#710`/`#756`): 78 total webhook tests across 7 files; SSRF coverage via `OutboundWebhookEndpointGuardTests` for private IP ranges; retry/backoff/dead-letter reliability; `HttpClient` resource leak fixed in tests
-    - TST-32–TST-57 wave progress updated: 17 of 22 issues now delivered; remaining open: `#705`, `#711`, `#712`, `#716`, `#717`; frontend suite at 1592 passing (up from 1496)
+    - webhook delivery reliability + SSRF boundary tests (`#710`/`#756`): 78 total webhook tests across 9 files; SSRF coverage via `OutboundWebhookEndpointGuardTests` for private IP ranges; retry/backoff/dead-letter reliability; `HttpClient` resource leak fixed in tests
+    - TST-32–TST-57 wave progress updated: 17 of 25 issues now delivered; remaining open: `#705`, `#711`, `#712`, `#716`, `#717`, `#720`, `#723`, `#725`; frontend suite at 1592 passing (up from 1496)
 
 ## Current Planning Pivot (2026-03-07)
 

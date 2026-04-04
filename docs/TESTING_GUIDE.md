@@ -12,15 +12,15 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-04-04)
 
-- Backend: ~2990+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755` + ~50+ net new webhook tests from PRs `#750`/`#756`)
+- Backend: ~2990+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755` + ~78 webhook tests from PRs `#750`/`#756`)
   - Domain: ~620+ (174 new entity state machine tests + 45 archive lifecycle domain tests)
   - Application: ~1500+ (101 LLM edge cases + 64 export/import + 51 metrics accuracy tests)
   - API integration: ~810+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP + 19 SignalR + 57 error contract + 29 archive lifecycle + 10 metrics controller + 36 notification tests + 11 webhook HMAC + 22 webhook SSRF/delivery/repository)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 1592/1592 passing (134+ test files)
+- Frontend unit: 1592/1592 passing (~125 test files)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): default required lane passing
-- Combined automated total: ~4600+ passing (backend ~3010+ + frontend unit 1592 + E2E)
+- Combined automated total: ~4600+ passing (backend ~2990+ + frontend unit 1592 + E2E)
 
 Verification note:
 - backend totals are estimated after three 2026-04-04 waves; wave 1 (`#732`–`#739`, ~300 new tests), wave 2 (`#740`–`#755`, ~586 new tests with adversarial review), and wave 3 (`#750`/`#756`, ~50+ net new webhook tests: 11 HMAC + endpoint guard extensions + service/signature/worker/domain tests); each PR verified green individually; full-suite recertification needed
@@ -138,7 +138,7 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 | III | ~~`#701`~~, ~~`#706`~~, ~~`#708`~~, ~~`#709`~~, ~~`#710`~~, `#711`, `#712`, ~~`#713`~~, ~~`#714`~~, ~~`#715`~~, `#716`, ~~`#718`~~, ~~`#719`~~, `#720`, ~~`#726`~~ | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **11 of 15 delivered** |
 | IV | `#717` | Property-based and adversarial input tests (extends `#89`) | Open |
 
-**Wave progress**: 17 of 22 issues delivered (plus SEC-20 fix). ~960+ new tests across three delivery waves. 5 issues remain open: `#705`, `#711`, `#712`, `#716`, `#717`.
+**Wave progress**: 17 of 25 issues delivered (plus SEC-20 fix). ~960+ new tests across three delivery waves. 8 issues remain open: `#705`, `#711`, `#712`, `#716`, `#717`, `#720`, `#723`, `#725`.
 
 ### Key Gaps Identified (updated 2026-04-04)
 
