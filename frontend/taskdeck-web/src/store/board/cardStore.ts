@@ -158,12 +158,10 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
   ): Promise<CardCaptureProvenance | null> {
     if (helpers.isDemoMode) return null
     try {
+      // cardsApi.getCardProvenance already returns null for 404 (manual cards have no
+      // capture provenance — absence is expected, not exceptional).
       return await cardsApi.getCardProvenance(boardId, cardId)
     } catch (e: unknown) {
-      if (helpers.isHttpNotFound(e)) {
-        return null
-      }
-
       helpers.handleApiError(e, 'Failed to fetch card provenance')
       throw e
     }
