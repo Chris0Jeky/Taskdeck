@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -104,17 +105,17 @@ public class DataExportService : IDataExportService
                 p.BoardId,
                 p.CreatedAt)).ToList();
 
-            // For chat sessions, count messages per session
-            var exportChatSessions = new List<UserDataExportChatSessionDto>();
-            foreach (var session in chatSessions)
-            {
-                var messages = await _unitOfWork.ChatMessages.GetBySessionIdAsync(session.Id, limit: 10000, cancellationToken: cancellationToken);
-                exportChatSessions.Add(new UserDataExportChatSessionDto(
-                    session.Id,
-                    session.Status.ToString(),
-                    messages.Count(),
-                    session.CreatedAt));
-            }
+            // Count messages per session in a single batched query (avoids N+1)
+            var sessionIds = chatSessions.Select(s => s.Id).ToList();
+            var messageCounts = sessionIds.Count > 0
+                ? await _unitOfWork.ChatMessages.CountBySessionIdsAsync(sessionIds, cancellationToken)
+                : new Dictionary<Guid, int>();
+
+            var exportChatSessions = chatSessions.Select(session => new UserDataExportChatSessionDto(
+                session.Id,
+                session.Status.ToString(),
+                messageCounts.TryGetValue(session.Id, out var count) ? count : 0,
+                session.CreatedAt)).ToList();
 
             var exportAuditEntries = auditLogs.Select(a => new UserDataExportAuditEntryDto(
                 a.Id,
@@ -178,6 +179,291 @@ public class DataExportService : IDataExportService
             return Result.Failure<UserDataExportDto>(
                 ErrorCodes.UnexpectedError,
                 "Failed to export user data due to an internal error");
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> StreamUserDataExportAsync(Guid userId, Stream destination, CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+            return Result.Failure(ErrorCodes.NotFound, "User not found");
+
+        try
+        {
+            await using var writer = new Utf8JsonWriter(destination, new JsonWriterOptions { Indented = false });
+
+            writer.WriteStartObject();
+
+            // --- envelope metadata ---
+            writer.WriteString("version", ExportVersion);
+            writer.WriteString("exportedAt", DateTimeOffset.UtcNow);
+            writer.WriteString("userId", userId.ToString());
+
+            // --- profile ---
+            writer.WriteStartObject("profile");
+            writer.WriteString("username", user.Username);
+            writer.WriteString("email", user.Email);
+            writer.WriteBoolean("isActive", user.IsActive);
+            writer.WriteString("defaultRole", user.DefaultRole.ToString());
+            writer.WriteString("createdAt", user.CreatedAt);
+            writer.WriteEndObject();
+
+            // --- data ---
+            writer.WriteStartObject("data");
+
+            // boards (small — full load is fine)
+            var boardAccesses = await _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
+            var boardIds = boardAccesses.Select(ba => ba.BoardId).Distinct().ToList();
+            var boards = boardIds.Count > 0
+                ? await _unitOfWork.Boards.GetByIdsAsync(boardIds, cancellationToken)
+                : Enumerable.Empty<Domain.Entities.Board>();
+            var boardLookup = boards.ToDictionary(b => b.Id);
+
+            writer.WriteStartArray("boards");
+            foreach (var ba in boardAccesses)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                boardLookup.TryGetValue(ba.BoardId, out var board);
+                writer.WriteStartObject();
+                writer.WriteString("boardId", ba.BoardId.ToString());
+                writer.WriteString("name", board?.Name ?? "[deleted]");
+                writer.WriteString("description", board?.Description);
+                writer.WriteString("role", ba.Role.ToString());
+                writer.WriteBoolean("isOwner", ba.Role == UserRole.Owner);
+                writer.WriteString("createdAt", ba.CreatedAt);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // notifications — streamed page-by-page to avoid loading all into memory
+            writer.WriteStartArray("notifications");
+            await foreach (var n in StreamNotificationsAsync(userId, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("id", n.Id.ToString());
+                writer.WriteString("type", n.Type.ToString());
+                writer.WriteString("title", n.Title);
+                writer.WriteString("message", n.Message);
+                writer.WriteBoolean("isRead", n.IsRead);
+                writer.WriteString("createdAt", n.CreatedAt);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // capture items (small)
+            var captures = await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
+            writer.WriteStartArray("captureItems");
+            foreach (var c in captures)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("id", c.Id.ToString());
+                writer.WriteString("status", c.Status.ToString());
+                writer.WriteString("requestType", c.RequestType);
+                writer.WriteString("createdAt", c.CreatedAt);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // proposals — streamed page-by-page
+            writer.WriteStartArray("proposals");
+            await foreach (var p in StreamProposalsAsync(userId, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("id", p.Id.ToString());
+                writer.WriteString("status", p.Status.ToString());
+                writer.WriteString("summary", p.Summary);
+                if (p.BoardId.HasValue)
+                    writer.WriteString("boardId", p.BoardId.Value.ToString());
+                else
+                    writer.WriteNull("boardId");
+                writer.WriteString("createdAt", p.CreatedAt);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // chat sessions with batched message counts — streamed
+            writer.WriteStartArray("chatSessions");
+            await foreach (var (session, msgCount) in StreamChatSessionsWithCountsAsync(userId, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("id", session.Id.ToString());
+                writer.WriteString("status", session.Status.ToString());
+                writer.WriteNumber("messageCount", msgCount);
+                writer.WriteString("createdAt", session.CreatedAt);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // audit trail — streamed page-by-page
+            writer.WriteStartArray("auditTrail");
+            await foreach (var a in StreamAuditLogsAsync(userId, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("id", a.Id.ToString());
+                writer.WriteString("entityType", a.EntityType);
+                writer.WriteString("entityId", a.EntityId.ToString());
+                writer.WriteString("action", a.Action.ToString());
+                writer.WriteString("timestamp", a.Timestamp);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            // preferences (single row)
+            var preferences = await _unitOfWork.UserPreferences.GetByUserIdAsync(userId, cancellationToken);
+            if (preferences is not null)
+            {
+                writer.WriteStartObject("preferences");
+                writer.WriteString("workspaceMode", preferences.WorkspaceMode.ToString());
+                writer.WriteString("createdAt", preferences.CreatedAt);
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteNull("preferences");
+            }
+
+            // notification preferences (single row)
+            var notifPrefs = await _unitOfWork.NotificationPreferences.GetByUserIdAsync(userId, cancellationToken);
+            if (notifPrefs is not null)
+            {
+                writer.WriteStartObject("notificationPreferences");
+                writer.WriteBoolean("inAppChannelEnabled", notifPrefs.InAppChannelEnabled);
+                writer.WriteBoolean("mentionImmediateEnabled", notifPrefs.MentionImmediateEnabled);
+                writer.WriteBoolean("assignmentImmediateEnabled", notifPrefs.AssignmentImmediateEnabled);
+                writer.WriteBoolean("proposalOutcomeImmediateEnabled", notifPrefs.ProposalOutcomeImmediateEnabled);
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteNull("notificationPreferences");
+            }
+
+            writer.WriteEndObject(); // data
+            writer.WriteEndObject(); // root
+            await writer.FlushAsync(cancellationToken);
+
+            // Log the export action
+            await _historyService.LogActionAsync(
+                "User", userId, AuditAction.DataExported, userId,
+                "User data export (streaming) requested");
+
+            return Result.Success();
+        }
+        catch (OperationCanceledException)
+        {
+            // Propagate cancellation — do not swallow
+            throw;
+        }
+        catch (Exception)
+        {
+            return Result.Failure(
+                ErrorCodes.UnexpectedError,
+                "Failed to stream user data export due to an internal error");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Private streaming helpers — page through large tables without a hard cap
+    // -----------------------------------------------------------------------
+
+    private const int StreamPageSize = 500;
+
+    private async IAsyncEnumerable<Domain.Entities.Notification> StreamNotificationsAsync(
+        Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        int offset = 0;
+        while (true)
+        {
+            var page = await _unitOfWork.Notifications.GetByUserIdAsync(
+                userId, limit: StreamPageSize, unreadOnly: false, boardId: null,
+                cancellationToken: cancellationToken, offset: offset);
+
+            var rows = page.ToList();
+            foreach (var row in rows)
+                yield return row;
+
+            if (rows.Count < StreamPageSize)
+                yield break;
+
+            offset += rows.Count;
+        }
+    }
+
+    private async IAsyncEnumerable<Domain.Entities.AutomationProposal> StreamProposalsAsync(
+        Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // IAutomationProposalRepository.GetByUserIdAsync does not expose an offset parameter,
+        // so we cannot page at the DB level. Load all rows in a single query using int.MaxValue
+        // as the limit — EF Core translates this to LIMIT 2147483647 which effectively removes
+        // the cap. The repo's NormalizeLimit guard only triggers for limit <= 0 and leaves
+        // positive values unchanged.
+        var all = await _unitOfWork.AutomationProposals.GetByUserIdAsync(
+            userId, limit: int.MaxValue, cancellationToken: cancellationToken);
+
+        foreach (var p in all)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return p;
+        }
+    }
+
+    private async IAsyncEnumerable<(Domain.Entities.ChatSession Session, int MessageCount)> StreamChatSessionsWithCountsAsync(
+        Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // IChatSessionRepository.GetByUserIdAsync does not expose an offset parameter.
+        // Load all sessions in one shot and resolve message counts in batches of StreamPageSize
+        // to bound the IN-clause size passed to CountBySessionIdsAsync.
+        var allSessions = (await _unitOfWork.ChatSessions.GetByUserIdAsync(
+            userId, limit: int.MaxValue, cancellationToken: cancellationToken)).ToList();
+
+        for (int i = 0; i < allSessions.Count; i += StreamPageSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var batch = allSessions.Skip(i).Take(StreamPageSize).ToList();
+            var counts = await _unitOfWork.ChatMessages.CountBySessionIdsAsync(
+                batch.Select(s => s.Id), cancellationToken);
+
+            foreach (var session in batch)
+            {
+                counts.TryGetValue(session.Id, out var msgCount);
+                yield return (session, msgCount);
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<Domain.Entities.AuditLog> StreamAuditLogsAsync(
+        Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // IAuditLogRepository.GetByUserAsync does not expose an offset parameter.
+        // Load all rows in one shot — this is the table most likely to be large so
+        // we accept the tradeoff of a single large DB read vs. correctness of the
+        // pagination. A future improvement would add offset support to the repo.
+        var all = await _unitOfWork.AuditLogs.GetByUserAsync(
+            userId, limit: int.MaxValue, cancellationToken: cancellationToken);
+
+        foreach (var a in all)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return a;
         }
     }
 }
