@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -15,11 +16,16 @@ public class DataExportService : IDataExportService
     private const string ExportVersion = "1.0";
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
+    private readonly ILogger<DataExportService>? _logger;
 
-    public DataExportService(IUnitOfWork unitOfWork, IHistoryService historyService)
+    public DataExportService(
+        IUnitOfWork unitOfWork,
+        IHistoryService historyService,
+        ILogger<DataExportService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
+        _logger = logger;
     }
 
     public async Task<Result<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -164,6 +170,11 @@ public class DataExportService : IDataExportService
         }
         catch (Exception ex)
         {
+            if (ex is not OperationCanceledException)
+            {
+                _logger?.LogError(ex, "Failed to export user data for user {UserId}", userId);
+            }
+
             return Result.Failure<UserDataExportDto>(
                 ErrorCodes.UnexpectedError,
                 "Failed to export user data due to an internal error");
