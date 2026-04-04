@@ -120,13 +120,9 @@ public class GdprDataExportRoundTripTests
         var json = JsonSerializer.Serialize(export, JsonOptions);
         json.Should().NotBeNullOrWhiteSpace();
 
-        // Parse and verify structure
-        var doc = JsonDocument.Parse(json);
+        // Parsing validates JSON syntax (including rejecting trailing commas)
+        using var doc = JsonDocument.Parse(json);
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
-
-        // No trailing commas or invalid JSON
-        json.Should().NotContain(",]");
-        json.Should().NotContain(",}");
 
         // Verify the export can be deserialized back
         var deserialized = JsonSerializer.Deserialize<UserDataExportDto>(json, JsonOptions);

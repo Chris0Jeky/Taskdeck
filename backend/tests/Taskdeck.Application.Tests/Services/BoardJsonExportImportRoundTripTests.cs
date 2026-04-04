@@ -128,7 +128,7 @@ public class BoardJsonExportImportRoundTripTests
 
         var exportedCard2 = exportDto.Cards.First(c => c.Title == "Add dashboard");
         exportedCard2.Labels.Should().ContainSingle(l => l.Name == "Feature");
-        exportedCard2.DueDate.Should().NotBeNull("due date should be preserved");
+        exportedCard2.DueDate.Should().BeCloseTo(dueDate, TimeSpan.FromSeconds(1), "due date value should be preserved");
     }
 
     [Fact]
@@ -533,12 +533,8 @@ public class BoardJsonExportImportRoundTripTests
         var json = exportResult.Value;
         json.Should().NotBeNullOrWhiteSpace();
 
-        // Should not have trailing commas
-        json.Should().NotContain(",]");
-        json.Should().NotContain(",}");
-
-        // Should parse without exceptions
-        var doc = JsonDocument.Parse(json);
+        // Parsing validates JSON syntax (including rejecting trailing commas)
+        using var doc = JsonDocument.Parse(json);
         doc.Should().NotBeNull();
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
     }

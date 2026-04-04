@@ -23,7 +23,7 @@ public class CrossFormatImportIntegrityTests
     };
 
     [Fact]
-    public void BoardJsonExport_FedAsCsvPayload_ProducesParseError()
+    public void BoardJsonExport_FedAsCsvPayload_ProducesZeroCandidates()
     {
         // Create a board JSON export payload
         var now = DateTimeOffset.UtcNow;
@@ -46,20 +46,11 @@ public class CrossFormatImportIntegrityTests
 
         var result = _csvAdapter.Parse(request);
 
-        // The CSV parser should either fail or produce zero useful candidates
-        // because JSON is not valid CSV (the header row won't match expected columns)
-        if (result.IsSuccess)
-        {
-            // If it parses at all, it should not produce meaningful candidates
-            // since JSON keys don't map to expected CSV column aliases
-            result.Value.Candidates.Should().BeEmpty(
-                "JSON payload should not produce valid CSV candidates");
-        }
-        else
-        {
-            // Alternatively, the parser may reject it outright
-            result.ErrorCode.Should().NotBeNull();
-        }
+        // JSON is technically parseable as single-column CSV (the "{" line becomes the header),
+        // but no recognized column aliases exist, so zero candidates are produced.
+        result.IsSuccess.Should().BeTrue("JSON is syntactically parseable as degenerate CSV");
+        result.Value.Candidates.Should().BeEmpty(
+            "JSON payload should not produce valid CSV candidates because no column aliases match");
     }
 
     [Fact]
