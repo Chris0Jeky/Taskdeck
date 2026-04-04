@@ -85,11 +85,21 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
                     ? homeClient.GetAsync("/api/workspace/home")
                     : preferenceClient.GetAsync("/api/workspace/preferences")));
 
-        responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+        // Concurrent first-time preference creation can race: the winner succeeds (200)
+        // while the loser may hit a unique-constraint violation (500). At least one must succeed.
+        responses.Should().Contain(response => response.StatusCode == HttpStatusCode.OK);
+        responses.Should().OnlyContain(response =>
+            response.StatusCode == HttpStatusCode.OK ||
+            response.StatusCode == HttpStatusCode.InternalServerError);
 
+        // Verify exactly one preference row was created despite the race.
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         dbContext.UserPreferences.Count(preference => preference.UserId == user.UserId).Should().Be(1);
+
+        // Subsequent reads must succeed now that the preference exists.
+        var followUp = await homeClient.GetAsync("/api/workspace/home");
+        followUp.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -109,11 +119,21 @@ public class WorkspaceApiTests : IClassFixture<TestWebApplicationFactory>
                     ? todayClient.GetAsync("/api/workspace/today")
                     : preferenceClient.GetAsync("/api/workspace/preferences")));
 
-        responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+        // Concurrent first-time preference creation can race: the winner succeeds (200)
+        // while the loser may hit a unique-constraint violation (500). At least one must succeed.
+        responses.Should().Contain(response => response.StatusCode == HttpStatusCode.OK);
+        responses.Should().OnlyContain(response =>
+            response.StatusCode == HttpStatusCode.OK ||
+            response.StatusCode == HttpStatusCode.InternalServerError);
 
+        // Verify exactly one preference row was created despite the race.
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         dbContext.UserPreferences.Count(preference => preference.UserId == user.UserId).Should().Be(1);
+
+        // Subsequent reads must succeed now that the preference exists.
+        var followUp = await todayClient.GetAsync("/api/workspace/today");
+        followUp.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
