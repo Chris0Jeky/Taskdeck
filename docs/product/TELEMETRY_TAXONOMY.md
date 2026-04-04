@@ -20,6 +20,8 @@ Related: #341, #77
 - Events collected locally (for personal analytics dashboards) follow the same property rules as opt-in remote telemetry.
 - The backend MUST NOT forward telemetry payloads to any third-party without explicit configuration and opt-in consent.
 
+**Implementation status**: The `settings.telemetry.enabled` preference and the telemetry service/event bus described in this document are **not yet implemented**. This taxonomy is the planning artefact that must precede instrumentation. No telemetry code should be merged until this taxonomy is ratified and the opt-in guard is in place.
+
 ---
 
 ## Event Naming Convention
@@ -32,12 +34,13 @@ Format: `noun.verb`
 Examples:
 - `card.created`
 - `proposal.approved`
-- `session.started`
+- `auth_session.started`
 - `agent_run.completed`
 
 Rules:
-- All names are lowercase with underscores for multi-word nouns (e.g. `agent_run`, `first_run`).
-- Verbs use past tense for completed actions (`created`, `approved`, `failed`) and present tense for states (`loaded`, `opened`).
+- Event names consist of two dot-separated segments: `noun.verb`.
+- All segments are lowercase. Use underscores within any multi-word segment for legibility (e.g. `agent_run`, `first_run`, `modal_opened`, `inbox_loaded`).
+- Use past-tense or past-participle form for completed actions and resulting state events (e.g. `created`, `approved`, `loaded`, `opened`, `failed`). Do not mix in present-tense verb forms.
 - No abbreviations. Prefer legibility.
 - New events must be added to this taxonomy before instrumentation is merged.
 
@@ -96,7 +99,7 @@ Optional: `trigger_source: string` — how the modal was opened: `keyboard_short
 ### `capture.submitted`
 User submitted a capture item.
 
-Required: `has_attachment: boolean`
+Required: `has_attachment: boolean`, `source: string` — submission origin: `manual`, `import`
 Optional: `input_length_bucket: string` — bucketed character count: `short` (<50), `medium` (50–200), `long` (>200). Do not collect exact length.
 
 ### `capture.cancelled`
@@ -128,7 +131,7 @@ Events covering the review-first automation flow.
 ### `proposal.list_loaded`
 Review/proposals list loaded successfully.
 
-Required: `pending_count: number`
+Required: `pending_count_bucket: string` — bucketed: `empty`, `small` (1–10), `medium` (11–50), `large` (>50)
 
 ### `proposal.opened`
 User opened a proposal detail.
@@ -140,13 +143,13 @@ Optional: `proposal_risk_level: string` — e.g. `low`, `medium`, `high`
 User explicitly approved a proposal.
 
 Required: `proposal_id: string`, `proposal_risk_level: string`
-Optional: `time_to_decision_seconds: number` — seconds from `proposal.opened` to approval
+Optional: `time_to_decision_ms: number` — milliseconds from `proposal.opened` to approval
 
 ### `proposal.rejected`
 User explicitly rejected a proposal.
 
 Required: `proposal_id: string`, `proposal_risk_level: string`
-Optional: `time_to_decision_seconds: number`
+Optional: `time_to_decision_ms: number` — milliseconds from `proposal.opened` to rejection
 
 ### `proposal.executed`
 A proposal was successfully executed and applied to the board.
@@ -162,12 +165,12 @@ Required: `proposal_id: string`, `error_code: string`
 ### `proposal.bulk_approved`
 User bulk-approved multiple proposals.
 
-Required: `approved_count: number`
+Required: `approved_count_bucket: string` — bucketed: `small` (1–5), `medium` (6–20), `large` (>20)
 
 ### `proposal.bulk_rejected`
 User bulk-rejected multiple proposals.
 
-Required: `rejected_count: number`
+Required: `rejected_count_bucket: string` — bucketed: `small` (1–5), `medium` (6–20), `large` (>20)
 
 ---
 
@@ -232,25 +235,27 @@ Required: `source: string` — `manual`, `proposal`
 
 Events covering authentication and session lifecycle.
 
-### `session.started`
+Note: These events use the `auth_session` noun (not `session`) to avoid confusion with the universal envelope's `session_id`, which identifies the anonymous app session — a different concept.
+
+### `auth_session.started`
 User started a new authenticated session.
 
 Required: `auth_method: string` — `password`, `oauth_google`, `oauth_github`
 
-### `session.ended`
+### `auth_session.ended`
 User explicitly signed out.
 
 Required: *(envelope only)*
 
-### `session.expired`
-Session expired and user was redirected to login.
+### `auth_session.expired`
+Auth session expired and user was redirected to login.
 
 Required: *(envelope only)*
 
 ### `auth.login_failed`
 Login attempt failed.
 
-Required: `error_code: string` — use HTTP status code as string (e.g. `401`, `429`). Do not include credential content.
+Required: `status_code: number` — HTTP status code (e.g. `401`, `429`). Do not include credential content.
 
 ### `auth.register_completed`
 User completed registration.
@@ -266,13 +271,15 @@ Events covering page navigation and workspace mode transitions.
 ### `page.loaded`
 A route-level page loaded successfully.
 
-Required: `page: string` — enumerated: `home`, `today`, `inbox`, `review`, `board`, `metrics`, `agents`, `agent_run_detail`, `knowledge`, `settings`, `help`
+Required: `page: string` — current route-level values: `home`, `today`, `inbox`, `review`, `board`, `metrics`, `settings`
+
+Reserved/future values (do not emit until the corresponding router surface exists and instrumentation is wired): `agents`, `agent_run_detail`, `knowledge`, `help` (tracked via #341, #77)
 Optional: `load_duration_ms: number`
 
 ### `page.load_failed`
 A page failed to load (routing or data error).
 
-Required: `page: string`, `error_code: string`
+Required: `page: string` — use the same value set as `page.loaded`, `error_code: string`
 
 ### `workspace_mode.changed`
 User changed the workspace mode.
@@ -319,7 +326,7 @@ Required: `agent_id: string`, `trigger: string` — `manual`, `scheduled`, `inbo
 An agent run completed successfully.
 
 Required: `agent_id: string`, `run_id: string`
-Optional: `step_count: number`, `duration_ms: number`, `proposals_created: number`
+Optional: `step_count: number`, `duration_ms: number`, `proposals_created_bucket: string` — bucketed: `none` (0), `small` (1–5), `medium` (6–20), `large` (>20)
 
 ### `agent_run.failed`
 An agent run failed.
@@ -336,6 +343,18 @@ Required: `agent_id: string`, `run_id: string`
 An agent run produced and linked a proposal.
 
 Required: `run_id: string`, `proposal_id: string`, `proposal_risk_level: string`
+
+### `mcp_tool.invoked`
+An MCP tool was called (via stdio or HTTP transport). Only relevant when the MCP server is active.
+
+Required: `tool_name: string` — enumerated tool name (e.g. `create_card`, `list_boards`); do not include argument values
+Optional: `transport: string` — `stdio`, `http`
+
+### `mcp_tool.failed`
+An MCP tool call failed.
+
+Required: `tool_name: string`, `error_code: string`
+Optional: `transport: string`
 
 ---
 
@@ -371,7 +390,7 @@ Required signal coverage:
 - `page.loaded` for `home`, `today`, `inbox`, `review` — must be non-zero
 - `capture.submitted` → `proposal.approved` → `proposal.executed` funnel — must be observable
 - `error.empty_state_shown` for core pages — must be low
-- `session.started` with `auth_method` breakdown — must work
+- `auth_session.started` with `auth_method` breakdown — must work
 
 Exit check: A new user can reach `proposal.executed` within a single `session_id` with no `error.unhandled` on core pages.
 
