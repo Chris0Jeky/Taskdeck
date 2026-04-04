@@ -31,8 +31,17 @@ export const cardsApi = {
     await http.delete(`/boards/${boardId}/cards/${cardId}`)
   },
 
-  async getCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance> {
-    const { data } = await http.get<CardCaptureProvenance>(`/boards/${boardId}/cards/${cardId}/provenance`)
-    return data
+  async getCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance | null> {
+    try {
+      const { data } = await http.get<CardCaptureProvenance>(`/boards/${boardId}/cards/${cardId}/provenance`)
+      return data
+    } catch (e: unknown) {
+      const candidate = e as { response?: { status?: number } } | null
+      if (candidate?.response?.status === 404) {
+        // Manual cards have no capture provenance — treat absence as empty state, not an error.
+        return null
+      }
+      throw e
+    }
   },
 }
