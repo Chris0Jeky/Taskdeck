@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-04
+Last Updated: 2026-04-04 (wave #771–#779)
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -610,6 +610,16 @@ Delivered in the latest cycle:
     - webhook HMAC verification tests (`#726`/`#750`): 11 tests in `OutboundWebhookHmacDeliveryTests.cs` for header format, round-trip, wrong-key, secret rotation, timing-safe comparison
     - webhook delivery reliability + SSRF boundary tests (`#710`/`#756`): 78 total webhook tests across 9 files; SSRF coverage via `OutboundWebhookEndpointGuardTests` for private IP ranges; retry/backoff/dead-letter reliability; `HttpClient` resource leak fixed in tests
     - TST-32–TST-57 wave progress updated: 17 of 25 issues now delivered; remaining open: `#705`, `#711`, `#712`, `#716`, `#717`, `#720`, `#723`, `#725`; frontend suite at 1592 passing (up from 1496)
+129. Dependency hygiene, accessibility, tool-calling refinements, streaming, and test coverage wave (PRs `#771`–`#779`, 2026-04-04):
+    - vendored dependency cleanup (`#761`/`#771`): removed `vendor/ws-7.5.10.tgz` and orphaned Dockerfile `COPY vendor/` line; `ws` resolves from registry as `^7.5.10`; no-op `p-limit` override removed; adversarial review updated stale STATUS.md/MASTERPLAN docs references
+    - accessibility lint remediation (`#762`/`#779`): 105 warnings → 0; form label associations, keyboard event companions, ARIA modal/backdrop attributes, `--max-warnings 20` CI threshold; adversarial review fixed 2 CI regressions (TdTooltip Fragment, role="option" tabindex violation); 2 non-blocking ARIA follow-up items filed
+    - tool-calling Phase 3 refinements (`#651`/`#773`): `LlmToolCallingSettings` with `Enabled`/`MaxToolResultBytes` config keys; `ChatService` bypasses orchestrator when disabled; `TruncateToolResult` binary-search UTF-8 byte budget; cost tracking DI wiring completed; 17 new tests (2 added by adversarial review fixing byte-budget contract bug and replacing O(n) loop)
+    - export streaming (`#670`/`#774`): `GET /api/account/export/stream` streams via `Utf8JsonWriter`; `CountBySessionIdsAsync` GROUP BY fixes N+1; 500-session batch respects SQLite 999-param limit; 15 tests; adversarial review fixed `ToErrorActionResult()` crash after `Response.HasStarted`
+    - frontend view vitest coverage (`#716`/`#775`): 83 tests across 6 views (LoginView, RegisterView, BoardsListView, ExportImportView, SavedViewsView, DevToolsView); adversarial review fixed 3 ESLint errors (CI blocker) and added 3 OAuth callback path tests
+    - Pinia store integration tests (`#711`/`#777`): 91 tests across 6 stores mocking HTTP layer; covers #508/#509 regressions; adversarial review fixed timer leak, microtask drain, and 4 type-bypass casts
+    - resilience/degraded-mode tests (`#720`/`#778`): 34 tests (18 backend + 16 frontend); adversarial review fixed CI blocker (unused import), double-invocation anti-pattern, and timing race
+    - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
+    - TST-32–TST-57 wave: 21 of 25 issues now delivered; remaining open: `#705`, `#717`, `#723`, `#725`; frontend suite ~1734 passing
 
 ## Current Planning Pivot (2026-03-07)
 
@@ -743,7 +753,7 @@ Focus:
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
-- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `EnableToolCalling` feature flag, token budget truncation — 15 new tests); remaining: `#673` (argument replay)
+- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` byte budget with binary search — 17 new tests, PR `#773`); remaining: `#673` (argument replay)
 - MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; remaining: `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
