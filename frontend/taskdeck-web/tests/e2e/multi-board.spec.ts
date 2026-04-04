@@ -209,10 +209,14 @@ test('rapid back-and-forth navigation between two boards should settle on the la
     columnNamePrefix: 'Y-Column',
   })
 
-  // Navigate rapidly back and forth — intentionally not waiting between each
-  void page.goto(`/workspace/boards/${boardIdX}`)
-  void page.goto(`/workspace/boards/${boardIdY}`)
-  void page.goto(`/workspace/boards/${boardIdX}`)
+  // Navigate rapidly: fire each goto and immediately start the next.
+  // Promise.race is intentional — we only care that the last navigation wins.
+  // The earlier navigations may be aborted; Playwright handles this gracefully.
+  const navX1 = page.goto(`/workspace/boards/${boardIdX}`)
+  const navY1 = page.goto(`/workspace/boards/${boardIdY}`)
+  const navX2 = page.goto(`/workspace/boards/${boardIdX}`)
+  // Await the last navigation explicitly; prior navigations may be aborted (AbortError).
+  await Promise.allSettled([navX1, navY1, navX2])
   await page.goto(`/workspace/boards/${boardIdY}`)
 
   // Final navigation should win — board Y must be displayed

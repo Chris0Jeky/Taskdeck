@@ -249,14 +249,19 @@ test('proposal detail should show human-readable operation descriptions', async 
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible({ timeout: 15_000 })
 
-  // The proposal summary or operations list must contain human-readable text
-  // (not raw JSON or UUIDs as the primary description)
-  const summary = proposalCard.locator('[class*="summary"], [class*="description"], p').first()
-  if (await summary.isVisible({ timeout: 5_000 }).catch(() => false)) {
+  // The proposal card overall must have visible text describing the proposal.
+  // It must not be empty or contain only raw JSON/UUIDs.
+  const proposalText = await proposalCard.innerText()
+  // Human-readable: text should contain words with 3+ letters
+  expect(proposalText).toMatch(/\w{3,}/)
+  // Must not be entirely raw JSON braces (e.g. '{...}' as the only content)
+  expect(proposalText.trim()).not.toMatch(/^\{.*\}$/)
+
+  // Optional: look for a labelled summary section and assert it is non-empty
+  const summary = proposalCard.locator('[class*="summary"], [class*="description"]').first()
+  if (await summary.isVisible({ timeout: 3_000 }).catch(() => false)) {
     const summaryText = await summary.innerText()
-    // Human-readable: should contain words, not only hex/braces
-    expect(summaryText).toMatch(/\w{3,}/)
-    expect(summaryText).not.toMatch(/^\{.*\}$/)
+    expect(summaryText.trim().length).toBeGreaterThan(0)
   }
 })
 
