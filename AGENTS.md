@@ -100,7 +100,7 @@ Its scope applies to the entire repo unless overridden by more specific `AGENTS.
 - Backend API (local): from `backend/src/Taskdeck.Api`, run `dotnet run`.
 - Frontend dev server: from `frontend/taskdeck-web`, run `npm install` once, then `npm run dev`.
 - Frontend checks (required when frontend touched): from `frontend/taskdeck-web`,
-  `npm run typecheck ; npm run build ; npx vitest --run` (use `;` not `&&` in PowerShell).
+  `npm run typecheck; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx vitest --run` (PowerShell fail-fast; do not use `&&`).
 
 ## Coding Style & Naming
 - Backend: C# conventions, 4-space indentation, PascalCase for classes and public members,

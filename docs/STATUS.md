@@ -781,7 +781,7 @@ Commands:
 - `cd frontend/taskdeck-web && npm run build`
 
 Result:
-- Frontend unit: 1491/1491 passing (134 test files)
+- Frontend unit: 1491/1491 passing (134 test files) — **stale**: post-wave count is 1592/1592 (~125 files); see `docs/TESTING_GUIDE.md` for latest estimates
 - Typecheck: passing
 - Production build: passing
 
