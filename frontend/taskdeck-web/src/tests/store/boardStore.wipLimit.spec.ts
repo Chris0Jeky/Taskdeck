@@ -14,7 +14,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useBoardStore } from '../../store/boardStore'
 import { useToastStore } from '../../store/toastStore'
 import { cardsApi } from '../../api/cardsApi'
-import type { Board, Column } from '../../types/board'
+import type { BoardDetail, Column } from '../../types/board'
 
 // ── API mocks ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ function makeColumn(overrides: Partial<Column> = {}): Column {
   }
 }
 
-function makeBoard(columns: Column[] = []): Board {
+function makeBoard(columns: Column[] = []): BoardDetail {
   return {
     id: 'board-1',
     name: 'Test Board',
