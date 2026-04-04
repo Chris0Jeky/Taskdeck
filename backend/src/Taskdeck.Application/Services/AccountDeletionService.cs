@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -26,15 +27,18 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
     private readonly IActiveUserCache? _activeUserCache;
+    private readonly ILogger<AccountDeletionService>? _logger;
 
     public AccountDeletionService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
-        IActiveUserCache? activeUserCache = null)
+        IActiveUserCache? activeUserCache = null,
+        ILogger<AccountDeletionService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
         _activeUserCache = activeUserCache;
+        _logger = logger;
     }
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
@@ -199,13 +203,14 @@ public class AccountDeletionService : IAccountDeletionService
         }
         catch (Exception ex)
         {
+            _logger?.LogError(ex, "Account deletion failed for user {UserId}", userId);
             try
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
             }
-            catch
+            catch (Exception rollbackEx)
             {
-                // Rollback failure is secondary — report the primary error
+                _logger?.LogError(rollbackEx, "Transaction rollback also failed for user {UserId} account deletion", userId);
             }
 
             return Result.Failure<AccountDeletionResultDto>(
