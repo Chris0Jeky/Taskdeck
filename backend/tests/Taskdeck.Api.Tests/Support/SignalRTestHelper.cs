@@ -42,13 +42,21 @@ public static class SignalRTestHelper
         int expectedCount,
         TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (collector.Count < expectedCount && DateTime.UtcNow < deadline)
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(5);
+        var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
+        while (collector.Count < expectedCount && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(50);
         }
 
-        return collector.ToList();
+        var result = collector.ToList();
+        if (result.Count < expectedCount)
+        {
+            throw new TimeoutException(
+                $"Expected {expectedCount} event(s) but received {result.Count} within {effectiveTimeout.TotalSeconds}s.");
+        }
+
+        return result;
     }
 }
 

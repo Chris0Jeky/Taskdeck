@@ -13,7 +13,7 @@ namespace Taskdeck.Api.Tests;
 
 /// <summary>
 /// Integration tests for the BoardsHub SignalR hub covering presence lifecycle,
-/// authentication enforcement, board mutation event delivery, and edge cases.
+/// authentication enforcement, and edge cases.
 /// Uses WebApplicationFactory with the real SignalR pipeline (in-memory transport).
 /// </summary>
 public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory>
@@ -35,7 +35,9 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await using var connection = SignalRTestHelper.CreateBoardsHubConnection(_factory, accessToken: null);
 
         var act = () => connection.StartAsync();
-        await act.Should().ThrowAsync<Exception>();
+        // SignalR negotiate returns 401; the client wraps this in HttpRequestException
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .Where(ex => ex.Message.Contains("401") || ex.StatusCode == HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -56,7 +58,9 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await using var connection = SignalRTestHelper.CreateBoardsHubConnection(_factory, "not-a-valid-jwt");
 
         var act = () => connection.StartAsync();
-        await act.Should().ThrowAsync<Exception>();
+        // Invalid JWT causes 401 on the negotiate endpoint
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .Where(ex => ex.Message.Contains("401") || ex.StatusCode == HttpStatusCode.Unauthorized);
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -131,10 +135,12 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         var colResponse = await client.PostAsJsonAsync(
             $"/api/boards/{board.Id}/columns",
             new CreateColumnDto(board.Id, "Backlog", null, null));
+        colResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var column = await colResponse.Content.ReadFromJsonAsync<ColumnDto>();
         var cardResponse = await client.PostAsJsonAsync(
             $"/api/boards/{board.Id}/cards",
             new CreateCardDto(board.Id, column!.Id, "Test Card", null, null, null));
+        cardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var card = await cardResponse.Content.ReadFromJsonAsync<CardDto>();
 
         var events = new EventCollector<BoardPresenceSnapshot>();
@@ -412,13 +418,13 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
         await conn1.InvokeAsync("JoinBoard", board.Id);
         await SignalRTestHelper.WaitForEventsAsync(events1, 1);
 
-        var conn2 = SignalRTestHelper.CreateBoardsHubConnection(_factory, user.Token);
+        await using var conn2 = SignalRTestHelper.CreateBoardsHubConnection(_factory, user.Token);
         conn2.On<BoardPresenceSnapshot>("boardPresence", _ => { });
         await conn2.StartAsync();
         await conn2.InvokeAsync("JoinBoard", board.Id);
         await SignalRTestHelper.WaitForEventsAsync(events1, 2);
 
-        // Disconnect conn2
+        // Disconnect conn2 (DisposeAsync is idempotent; await using provides safety net)
         events1.Clear();
         await conn2.DisposeAsync();
 
