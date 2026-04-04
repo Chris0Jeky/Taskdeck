@@ -32,9 +32,14 @@ function expiredJwt(): string {
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
-// Mock demoMode before importing http (module-level side effects)
+// Mock demoMode before importing http (module-level side effects).
+// Use a hoisted getter so per-test overrides work without Object.defineProperty
+// (which triggers ESLint no-import-assign).
+const demoModeFlag = vi.hoisted(() => ({ value: false }))
 vi.mock('../../utils/demoMode', () => ({
-  isDemoMode: false,
+  get isDemoMode() {
+    return demoModeFlag.value
+  },
 }))
 
 // We'll control this per-test
@@ -47,22 +52,22 @@ vi.mock('../../utils/navigation', () => navigationMock)
 
 import http from '../../api/http'
 import * as tokenStorage from '../../utils/tokenStorage'
-import * as demoMode from '../../utils/demoMode'
 
 // ─── Test suite ─────────────────────────────────────────────────────────────
 
 describe('http interceptors (#725)', () => {
   let mock: MockAdapter
-  const originalHref = window.location.href
+  const originalLocation = window.location
 
   beforeEach(() => {
     mock = new MockAdapter(http)
     localStorage.clear()
     vi.restoreAllMocks()
     navigationMock.isAuthRoutePath.mockReturnValue(false)
-    // Reset window.location.href to a neutral value
+    demoModeFlag.value = false
+    // Reset window.location to a test-friendly object
     Object.defineProperty(window, 'location', {
-      value: { ...window.location, href: 'http://localhost/', pathname: '/workspace/home', search: '' },
+      value: { ...originalLocation, href: 'http://localhost/', pathname: '/workspace/home', search: '' },
       writable: true,
       configurable: true,
     })
@@ -70,10 +75,9 @@ describe('http interceptors (#725)', () => {
 
   afterEach(() => {
     mock.restore()
-    // Restore isDemoMode in case a test overrode it and then threw
-    Object.defineProperty(demoMode, 'isDemoMode', { value: false, writable: true })
+    demoModeFlag.value = false
     Object.defineProperty(window, 'location', {
-      value: { ...window.location, href: originalHref },
+      value: originalLocation,
       writable: true,
       configurable: true,
     })
@@ -212,8 +216,7 @@ describe('http interceptors (#725)', () => {
     it('does not redirect or clear storage on 401 when in demo mode', async () => {
       vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
       const clearSpy = vi.spyOn(tokenStorage, 'clearAll')
-      // Override isDemoMode to true for this test
-      Object.defineProperty(demoMode, 'isDemoMode', { value: true, writable: true })
+      demoModeFlag.value = true
       Object.defineProperty(window, 'location', {
         value: { pathname: '/workspace/home', search: '', href: '' },
         writable: true,
@@ -226,9 +229,6 @@ describe('http interceptors (#725)', () => {
       // In demo mode, neither redirect nor clearAll should fire
       expect(window.location.href).toBe('')
       expect(clearSpy).not.toHaveBeenCalled()
-
-      // Restore isDemoMode (also covered by afterEach safety net below)
-      Object.defineProperty(demoMode, 'isDemoMode', { value: false, writable: true })
     })
   })
 

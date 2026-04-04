@@ -1,10 +1,15 @@
 /**
  * Integration tests for the Vue Router auth guard, legacy redirects, and
- * afterEach performance instrumentation (issue #725).
+ * route meta handling (issue #725).
  *
  * Unlike authGuard.spec.ts which mirrors the guard decision function,
- * these tests use the real router instance to verify end-to-end navigation
+ * these tests use a real router instance to verify end-to-end navigation
  * behavior including redirects, meta resolution, and guard interactions.
+ *
+ * Note: afterEach performance instrumentation (routePerf.end()) is not
+ * covered here because usePerformanceMark has module-level side effects
+ * that are better suited for E2E tests. The composable could get its own
+ * unit spec in a future pass.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createRouter, createWebHistory } from 'vue-router'
