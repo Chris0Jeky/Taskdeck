@@ -291,6 +291,7 @@ public class DataExportServiceTests
     {
         // Arrange
         SetupUserFound();
+        SetupEmptyRepositories();
 
         var loggerMock = new Mock<ILogger<DataExportService>>();
         var serviceWithLogger = new DataExportService(
@@ -323,6 +324,7 @@ public class DataExportServiceTests
     {
         // Arrange — the default _service has no logger (null), should still return failure
         SetupUserFound();
+        SetupEmptyRepositories();
 
         _boardAccessRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, default))
