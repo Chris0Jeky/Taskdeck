@@ -107,7 +107,7 @@ Required: *(envelope only)*
 ### `capture.triage_clicked`
 User clicked the triage action on a capture item in the inbox.
 
-Required: `item_id: string`
+Required: `item_id: string` — opaque UUID only; no content derived from the item
 
 ### `capture.inbox_loaded`
 Inbox view loaded successfully.
@@ -346,7 +346,7 @@ Events covering product-level errors that affect the user experience.
 ### `error.unhandled`
 An unhandled application error occurred.
 
-Required: `error_code: string`, `surface: string` — enumerated page or component area. Do not include stack traces or user-generated content.
+Required: `error_code: string`, `surface: string` — use the same enumerated values as `page` in `page.loaded` (e.g. `home`, `board`, `review`), plus component-level values like `capture_modal`, `proposal_card`, `agent_run_detail`. Do not include stack traces or user-generated content.
 
 ### `error.api_request_failed`
 An API request to the backend failed.
