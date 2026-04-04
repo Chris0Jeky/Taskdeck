@@ -83,7 +83,7 @@ function goToBoard(id: string) {
       </div>
 
       <!-- Error State -->
-      <div v-else-if="boardStore.error" class="bg-ember/10 border border-ember rounded-lg p-4 text-ember">
+      <div v-else-if="boardStore.error" class="bg-ember/10 border border-ember rounded-lg p-4 text-ember" role="alert">
         {{ boardStore.error }}
       </div>
 

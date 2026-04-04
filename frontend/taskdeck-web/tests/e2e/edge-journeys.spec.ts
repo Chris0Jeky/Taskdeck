@@ -255,11 +255,11 @@ test('proposal detail should show human-readable operation descriptions', async 
   // Must not be entirely raw JSON braces (e.g. '{...}' as the only content)
   expect(proposalText.trim()).not.toMatch(/^\{.*\}$/)
 
-  // The proposal card must contain a labelled summary/description section that is non-empty.
-  const summary = proposalCard.locator('[class*="summary"], [class*="description"]').first()
-  await expect(summary).toBeVisible({ timeout: 5_000 })
-  const summaryText = await summary.innerText()
-  expect(summaryText.trim().length).toBeGreaterThan(0)
+  // The proposal card must contain a title (readable summary) that is non-empty.
+  const title = proposalCard.locator('.td-review-card__title').first()
+  await expect(title).toBeVisible({ timeout: 5_000 })
+  const titleText = await title.innerText()
+  expect(titleText.trim().length).toBeGreaterThan(0)
 })
 
 // ─── Keyboard navigation ──────────────────────────────────────────────────────

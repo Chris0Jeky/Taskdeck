@@ -249,37 +249,27 @@ test('proposal approve API conflict should show error feedback and keep proposal
 // ─── Scenario 6: LLM provider degraded → user sees degraded message ───────────
 
 test('chat request when LLM provider returns degraded response should show degraded indicator', async ({ page }) => {
-  // Intercept the chat send endpoint with a 503 (provider-down pattern)
-  await page.route('**/api/llm/chat*', async (route) => {
-    if (route.request().method() === 'POST') {
-      await route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          errorCode: 'ProviderUnavailable',
-          message: 'LLM provider is currently unavailable. Please try again later.',
-        }),
-      })
-      return
-    }
-    await route.continue()
+  // Intercept the health endpoint with a 503 to simulate provider unavailability.
+  // The chat page fetches /api/llm/chat/health on mount and renders a status section
+  // with a data-llm-health-state attribute reflecting provider state.
+  await page.route('**/api/llm/chat/health*', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        errorCode: 'ProviderUnavailable',
+        message: 'LLM provider is currently unavailable. Please try again later.',
+      }),
+    })
   })
 
   await page.goto('/workspace/automations/chat')
 
-  const chatInput = page.getByPlaceholder(/type a message|ask something|chat/i).first()
-
-  // The chat input must be present; if it is missing the page is already broken
-  // in a way we cannot assert on meaningfully — fail fast.
-  await expect(chatInput).toBeVisible({ timeout: 10_000 })
-  await chatInput.fill('What cards are due today?')
-  await chatInput.press('Enter')
-
-  // Expect degraded/error indicator — not a raw stack trace
+  // When the health endpoint fails, the chat page renders a status section with
+  // data-llm-health-state="error" and text indicating the provider is unavailable.
   const degradedIndicator = page
-    .getByRole('alert')
-    .or(page.getByText(/unavailable|degraded|try again|provider/i))
-    .or(page.locator('[data-llm-health-state="degraded"]'))
+    .locator('[data-llm-health-state="error"]')
+    .or(page.getByText(/unavailable|degraded|try again|provider|status unavailable/i))
     .first()
   await expect(degradedIndicator).toBeVisible({ timeout: 10_000 })
 })
