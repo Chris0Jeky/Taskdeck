@@ -187,7 +187,7 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
     // ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task PublishAsync_DuplicateDeduplicationKey_SecondCallReturnsfalse()
+    public async Task PublishAsync_DuplicateDeduplicationKey_SecondCallReturnsFalse()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -279,7 +279,7 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         result2.Value.Should().BeTrue();
 
         var count = db.Notifications.Count(n => n.UserId == user.Id);
-        count.Should().BeGreaterOrEqualTo(2);
+        count.Should().Be(2, "exactly two notifications with different dedup keys should exist");
     }
 
     [Fact]
@@ -308,7 +308,7 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         second.Value.Should().BeTrue("no dedup key means duplicates are allowed");
 
         var count = db.Notifications.Count(n => n.UserId == user.Id);
-        count.Should().BeGreaterOrEqualTo(2);
+        count.Should().Be(2, "exactly two duplicate notifications should exist when no dedup key is set");
     }
 
     // ────────────────────────────────────────────────────────────
@@ -666,7 +666,7 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
 
         var markResult = await response.Content.ReadFromJsonAsync<MarkAllReadResponse>();
         markResult.Should().NotBeNull();
-        markResult!.MarkedCount.Should().BeGreaterOrEqualTo(3, "at least 3 seeded unread notifications");
+        markResult!.MarkedCount.Should().Be(3, "exactly 3 seeded unread notifications for this user");
 
         // Verify all are now read
         var getResponse = await client.GetAsync("/api/notifications?unreadOnly=true");
@@ -729,7 +729,7 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var notifications = await response.Content.ReadFromJsonAsync<NotificationDto[]>();
         notifications.Should().NotBeNull();
-        notifications!.Length.Should().BeLessOrEqualTo(5);
+        notifications!.Length.Should().Be(5, "10 notifications seeded with limit=5 should return exactly 5");
     }
 
     [Fact]
@@ -937,7 +937,7 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         var elapsed = DateTimeOffset.UtcNow - start;
 
         results.Count.Should().Be(20);
-        elapsed.TotalSeconds.Should().BeLessThan(5, "pagination query should complete within 5 seconds");
+        elapsed.TotalSeconds.Should().BeLessThan(2, "pagination query on 200 rows should complete within 2 seconds");
 
         // Verify offset beyond total returns empty
         var emptyPage = (await repo.GetByUserIdAsync(user.Id, limit: 20, offset: 200)).ToList();
