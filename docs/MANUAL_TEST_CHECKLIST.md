@@ -464,6 +464,67 @@ Assume API at `http://localhost:5000`.
     - `GET /api/auth/providers`.
     - Expected: `200` with provider availability payload (no auth required).
 
+## P2. Post-Wave-2 Automated Test Verification (TST-34 to TST-52, `#740`–`#755`)
+
+These areas now have extensive automated test coverage (~586 new tests). Manual checks below confirm the automated coverage corresponds to real runtime behavior.
+
+### P2.1. SignalR Presence Lifecycle (covered by `#706`/`#751`)
+
+1. Open the same board in two browser tabs (same user).
+   - Expected: presence shows 1 user, not 2 duplicate entries.
+2. Close one tab.
+   - Expected: user still appears in presence (other tab still connected).
+3. Close both tabs, then reopen the board.
+   - Expected: presence resets cleanly on reconnect.
+4. Open the same board as two different users.
+   - Expected: both users visible in presence. Actions in one tab trigger realtime updates in the other.
+5. Set editing focus on a card, then navigate away.
+   - Expected: editing indicator clears for that user.
+
+### P2.2. Notification Delivery and Deduplication (covered by `#719`/`#746`)
+
+1. Create a card comment mentioning another user.
+   - Expected: mentioned user receives a Mention notification.
+2. Repeat the same mention in a new comment.
+   - Expected: second notification is created (deduplication is by key, not by content).
+3. Open notifications, mark all read, then check count.
+   - Expected: unread count drops to 0; mark-all-read is scoped to the current board context if board filter is active.
+4. Verify notifications do not leak across users: log in as User B and check for User A's notifications.
+   - Expected: none visible.
+
+### P2.3. Export/Import Round-Trip (covered by `#713`/`#752`)
+
+1. Create a board with columns, cards (including special characters: emoji, unicode, HTML entities), labels, and WIP limits.
+2. Export as JSON via board settings.
+3. Create a new board and import the exported JSON.
+   - Expected: all data preserved — card titles, descriptions, labels, column order, WIP limits.
+4. Export the same board as CSV.
+   - Expected: CSV is well-formed; fields with commas and quotes are properly escaped.
+
+### P2.4. Board Metrics Accuracy (covered by `#718`/`#749`)
+
+1. On a board with cards that have been moved to a "Done" column:
+   - Open `/workspace/metrics`, select the board.
+   - Expected: throughput count matches the number of cards moved to Done in the selected date range.
+2. Verify WIP counts match actual card counts per column (count manually).
+3. Block a card with a reason, then check metrics.
+   - Expected: blocked card count includes the newly blocked card.
+
+### P2.5. Archive Conflict Detection (covered by `#715`/`#755`)
+
+1. Archive a board, then rename a column on another board to match a column name from the archived board.
+2. Attempt to restore the archived board.
+   - Expected: if column name conflicts exist, the conflict detection strategy applies (Rename appends suffix, or Fail returns 409 depending on configuration).
+
+### P2.6. API Error Contract Consistency (covered by `#714`/`#753`)
+
+1. Send `POST /api/boards` with empty `{ "name": "" }`.
+   - Expected: 400 with `{ "errorCode": "...", "message": "..." }` shape (GP-03 contract).
+2. Send `GET /api/boards/{non-existent-guid}` with valid auth.
+   - Expected: 404 with GP-03 error contract.
+3. Send `POST /api/boards` with malformed JSON body.
+   - Expected: 400 (may be ProblemDetails from ASP.NET middleware, not GP-03 — this is documented behavior).
+
 ## Q. Observability Smoke (OBS-01)
 
 1. In `backend/src/Taskdeck.Api/appsettings.Development.json`, set:

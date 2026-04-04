@@ -46,6 +46,21 @@ function currentUserPresenceSeed(): BoardPresenceMember[] {
   return [{ userId: uid, displayName: sessionStore.username ?? null, editingCardId: null }]
 }
 
+/**
+ * Normalize presence member display names so the identity label remains
+ * consistent across idle and editing states.  The server may send an email
+ * address as displayName for the current user while the local seed uses
+ * username — this normalisation prefers username when available, preventing
+ * the idle→editing label switch described in #683.
+ */
+function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresenceMember[] {
+  const currentUserId = sessionStore.userId
+  const currentUsername = sessionStore.username
+  if (!currentUserId || !currentUsername) return members
+  return members.map((m) =>
+    m.userId === currentUserId ? { ...m, displayName: currentUsername } : m,
+  )
+}
 
 const boardId = ref(route.params.id as string)
 const realtime = createBoardRealtimeController({
@@ -57,8 +72,9 @@ const realtime = createBoardRealtimeController({
       return
     }
 
-    presenceMembers.value = snapshot.members
-    boardStore.setBoardPresenceMembers(snapshot.members)
+    const normalized = normalizePresenceMembers(snapshot.members)
+    presenceMembers.value = normalized
+    boardStore.setBoardPresenceMembers(normalized)
   },
 })
 
