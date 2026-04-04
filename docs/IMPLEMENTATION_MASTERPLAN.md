@@ -390,6 +390,7 @@ Delivered in the latest cycle:
    - frontend npm dependency graph now uses `p-limit@3.0.2` override (compatible with `p-locate@5`) to remove blocked `yocto-queue-0.1.0` fetches without cross-major override drift
    - refreshed lockfile keeps container `npm ci` deterministic and unblocks `.github/workflows/reusable-container-images.yml` frontend build stage
    - local Docker validation confirms `deploy/docker/frontend.Dockerfile` build-stage `npm ci` and `npm run build` both complete successfully with the override
+   - [Superseded by `#761` (dependency-overrides audit): vendor tarball `vendor/ws-7.5.10.tgz` removed; `ws` now declared as `^7.5.10` from the npm registry; `p-limit` override removed — npm naturally resolves `p-limit@3.1.0` (highest in the `^3.0.2` range required by `p-locate@5`); orphaned `COPY vendor/` Dockerfile step removed]
 86. OPS-20 role discoverability and permission-guidance delivery (`#179`):
    - ops command permission failures now include current-role context, runnable-template fallback lists, and explicit next-step guidance to verify/request elevated access
    - ops console now surfaces current role and runnable-template discoverability context up front, and restricted template selection now shows explicit role-based warnings before run attempts
