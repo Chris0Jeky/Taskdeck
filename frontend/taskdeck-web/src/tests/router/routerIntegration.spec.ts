@@ -7,7 +7,7 @@
  * behavior including redirects, meta resolution, and guard interactions.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'
 import { isTokenExpired } from '../../utils/jwt'
 import * as tokenStorage from '../../utils/tokenStorage'

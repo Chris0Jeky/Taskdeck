@@ -48,7 +48,6 @@ vi.mock('../../utils/navigation', () => navigationMock)
 import http from '../../api/http'
 import * as tokenStorage from '../../utils/tokenStorage'
 import * as demoMode from '../../utils/demoMode'
-import { isAuthRoutePath } from '../../utils/navigation'
 
 // ─── Test suite ─────────────────────────────────────────────────────────────
 
@@ -71,6 +70,8 @@ describe('http interceptors (#725)', () => {
 
   afterEach(() => {
     mock.restore()
+    // Restore isDemoMode in case a test overrode it and then threw
+    Object.defineProperty(demoMode, 'isDemoMode', { value: false, writable: true })
     Object.defineProperty(window, 'location', {
       value: { ...window.location, href: originalHref },
       writable: true,
@@ -208,9 +209,9 @@ describe('http interceptors (#725)', () => {
       expect(window.location.href).toBe('')
     })
 
-    it('does not redirect on 401 when in demo mode', async () => {
+    it('does not redirect or clear storage on 401 when in demo mode', async () => {
       vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
-      vi.spyOn(tokenStorage, 'clearAll')
+      const clearSpy = vi.spyOn(tokenStorage, 'clearAll')
       // Override isDemoMode to true for this test
       Object.defineProperty(demoMode, 'isDemoMode', { value: true, writable: true })
       Object.defineProperty(window, 'location', {
@@ -222,10 +223,11 @@ describe('http interceptors (#725)', () => {
 
       await expect(http.get('/test')).rejects.toThrow()
 
-      // In demo mode, no redirect and no clearAll
+      // In demo mode, neither redirect nor clearAll should fire
       expect(window.location.href).toBe('')
+      expect(clearSpy).not.toHaveBeenCalled()
 
-      // Restore
+      // Restore isDemoMode (also covered by afterEach safety net below)
       Object.defineProperty(demoMode, 'isDemoMode', { value: false, writable: true })
     })
   })
