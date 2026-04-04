@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
+import type { BoardPresenceSnapshot } from '../../types/realtime'
 
 const mockSessionStore = reactive<{ userId: string | null; username: string | null }>({
   userId: 'user-abc',
@@ -28,6 +29,10 @@ const realtimeMock = {
   stop: vi.fn(async () => {}),
   setEditingCard: vi.fn(async () => {}),
 }
+
+// Captures the onPresenceChanged callback passed by BoardView so tests can
+// simulate incoming SignalR presence snapshots.
+let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
 
 const mockBoardStore = reactive({
   currentBoard: {
@@ -85,7 +90,10 @@ vi.mock('../../composables/useKeyboardShortcuts', () => ({
 }))
 
 vi.mock('../../composables/useBoardRealtime', () => ({
-  createBoardRealtimeController: vi.fn(() => realtimeMock),
+  createBoardRealtimeController: vi.fn((options) => {
+    capturedOnPresenceChanged = options.onPresenceChanged
+    return realtimeMock
+  }),
 }))
 
 async function waitForUi() {
@@ -129,6 +137,7 @@ function mountView() {
 describe('BoardView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    capturedOnPresenceChanged = undefined
     localStorage.clear()
     routeMock.params.id = 'board-1'
     mockSessionStore.userId = 'user-abc'
@@ -263,5 +272,66 @@ describe('BoardView', () => {
     const firstCall = mockBoardStore.setBoardPresenceMembers.mock.calls[0]
     expect(firstCall).toBeDefined()
     expect(firstCall[0]).toEqual([])
+  })
+
+  it('normalizes current user displayName to username when server sends email in presence snapshot (#683)', async () => {
+    mountView()
+    await waitForUi()
+
+    // Simulate SignalR snapshot where server sent email as displayName for current user
+    capturedOnPresenceChanged?.({
+      boardId: 'board-1',
+      occurredAt: new Date().toISOString(),
+      members: [
+        { userId: 'user-abc', displayName: 'alice@taskdeck.local', editingCardId: 'card-1' },
+      ],
+    })
+    await waitForUi()
+
+    // Should have replaced email with username, preserving editingCardId
+    const lastCall = mockBoardStore.setBoardPresenceMembers.mock.calls.at(-1)
+    expect(lastCall).toBeDefined()
+    expect(lastCall![0]).toEqual([
+      { userId: 'user-abc', displayName: 'alice', editingCardId: 'card-1' },
+    ])
+  })
+
+  it('leaves other members displayName unchanged when normalizing presence snapshot (#683)', async () => {
+    mountView()
+    await waitForUi()
+
+    capturedOnPresenceChanged?.({
+      boardId: 'board-1',
+      occurredAt: new Date().toISOString(),
+      members: [
+        { userId: 'user-abc', displayName: 'alice@taskdeck.local', editingCardId: null },
+        { userId: 'user-xyz', displayName: 'bob@taskdeck.local', editingCardId: null },
+      ],
+    })
+    await waitForUi()
+
+    const lastCall = mockBoardStore.setBoardPresenceMembers.mock.calls.at(-1)
+    expect(lastCall).toBeDefined()
+    // Current user normalized to username, other member unchanged
+    expect(lastCall![0]).toEqual([
+      { userId: 'user-abc', displayName: 'alice', editingCardId: null },
+      { userId: 'user-xyz', displayName: 'bob@taskdeck.local', editingCardId: null },
+    ])
+  })
+
+  it('ignores presence snapshots for other boards (#683)', async () => {
+    mountView()
+    await waitForUi()
+
+    const callCountBefore = mockBoardStore.setBoardPresenceMembers.mock.calls.length
+
+    capturedOnPresenceChanged?.({
+      boardId: 'board-other',
+      occurredAt: new Date().toISOString(),
+      members: [{ userId: 'user-abc', displayName: 'alice@taskdeck.local', editingCardId: null }],
+    })
+    await waitForUi()
+
+    expect(mockBoardStore.setBoardPresenceMembers.mock.calls.length).toBe(callCountBefore)
   })
 })
