@@ -180,9 +180,9 @@ Provider runtime support does not replace managed-key control-plane requirements
 
 Continue tracked work in:
 
-- delivered baseline: `#236` (identity attribution contract)
-- remaining follow-through: `#235`, `#237`, `#238`, `#240`
-- incident response runbook and drill scripts: `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md` (`#239`)
+- delivered: `#236` (identity attribution contract), `#239` (incident runbook at `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md`), `#240` (fair-use policy at `docs/security/MANAGED_KEY_USAGE_POLICY.md`)
+- partially delivered: `#238` (operator tooling + domain groundwork shipped; live-traffic automated containment is follow-up)
+- remaining: `#235` (rate-limit and quota enforcement), `#237` (real-time abuse detection pipeline)
 
 ## References
 

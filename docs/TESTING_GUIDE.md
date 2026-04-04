@@ -50,8 +50,8 @@ High-signal additions and delivered guardrails:
 
 Telemetry and release-gate follow-through from the expanded blueprint:
 
-- product telemetry/event taxonomy remains tracked in `#341` with reuse of `#77`, while `#328` now provides the delivered first-run guardrail baseline
-- keep event names privacy-safe and product-shaped (for example `home_loaded`, `today_loaded`, `capture_created`, `proposal_opened`, `proposal_approved`, `board_action_capture_here_clicked`, `workspace_mode_changed`, `agent_run_started`, `agent_run_completed`, `agent_run_failed`)
+- product telemetry/event taxonomy delivered in `#341`/`#741` — see `docs/product/TELEMETRY_TAXONOMY.md`; reuses `#77` as baseline; `#328` provides the delivered first-run guardrail
+- keep event names privacy-safe and product-shaped using the canonical `noun.verb` format from `docs/product/TELEMETRY_TAXONOMY.md` (e.g. `capture.modal_opened`, `capture.submitted`, `proposal.approved`, `proposal.dismissed`, `card.created`, `board.loaded`, `auth_session.started`, `agent_run.completed`)
 - treat launch framing as evidence gates, not marketing labels:
   - `R1` novice-first beta -> coherent `Home -> capture -> review -> execute -> board` path
   - `R2` agent foundation alpha -> inspectable runs, policies, and bounded templates

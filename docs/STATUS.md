@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-04 (wave 2)
+Last Updated: 2026-04-04
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -802,7 +802,8 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): 2695+ passing (backend 1593 + frontend unit 1102 + E2E)
+- Combined automated total (backend + frontend unit/build + default frontend E2E): ~4600+ passing (backend ~2990+ + frontend unit 1592 + E2E)
+- Note: backend totals are estimates after three 2026-04-04 delivery waves; full-suite recertification needed. See `docs/TESTING_GUIDE.md` for detailed breakdown.
 
 ## CI Status
 
@@ -845,12 +846,6 @@ Nightly workflow: `.github/workflows/ci-nightly.yml`
 - scheduled/manual E2E smoke (reuses `.github/workflows/reusable-e2e-smoke.yml`)
 - scheduled/manual load/concurrency harness (reuses `.github/workflows/reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
-
-Release workflow: `.github/workflows/ci-release.yml`
-
-- release/tag/manual build verification (backend + frontend)
-- container image artifact/checksum lane reused from container baseline workflow
-- SBOM/provenance placeholder (follow-through: `#103`, `#106`)
 
 Dependency update automation: `.github/dependabot.yml`
 
