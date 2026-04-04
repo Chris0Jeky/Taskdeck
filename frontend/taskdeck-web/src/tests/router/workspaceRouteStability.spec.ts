@@ -76,6 +76,14 @@ function makePreferenceResponse(mode: WorkspaceMode) {
   return {
     userId: TEST_USER_ID,
     workspaceMode: mode,
+    onboarding: {
+      visibility: 'dismissed' as const,
+      isComplete: true,
+      currentStepId: null,
+      dismissedAt: null,
+      completedAt: null,
+      steps: [],
+    },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -228,6 +236,14 @@ describe('workspace mode persistence across navigation (#687)', () => {
       vi.mocked(workspaceApi.getHomeSummary).mockResolvedValue({
         workspaceMode: 'workbench',
         isFirstRun: false,
+        onboarding: {
+          visibility: 'dismissed' as const,
+          isComplete: true,
+          currentStepId: null,
+          dismissedAt: null,
+          completedAt: null,
+          steps: [],
+        },
         workload: { capturesNeedingTriage: 3, capturesInProgress: 1, capturesReadyForFollowUp: 0, proposalsPendingReview: 2 },
         boards: { totalBoards: 1, recentBoardsCount: 1, recentBoards: [] },
         recommendedActions: [],
@@ -243,24 +259,26 @@ describe('workspace mode persistence across navigation (#687)', () => {
       expect(store.onboarding).toBeNull()
     })
 
-    it('resetForLogout restores mode from localStorage (last persisted local value)', async () => {
-      localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, 'workbench')
+    it('resetForLogout restores mode from localStorage (reads current localStorage, not in-memory state)', async () => {
       const store = useWorkspaceStore()
 
-      // Server returns a different mode — hydrate it.
-      // Note: applyMode() inside hydratePreferences() also writes to localStorage,
-      // so after hydration localStorage contains 'agent' (the hydrated mode).
+      // Hydrate with 'agent' — this sets both the store and localStorage to 'agent'.
       vi.mocked(workspaceApi.getPreferences).mockResolvedValue(makePreferenceResponse('agent'))
       await store.hydratePreferences()
       expect(store.mode).toBe('agent')
       expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('agent')
 
-      // Logout — resetForLogout reads from localStorage at the time of logout.
-      // Since hydration already persisted 'agent', the post-logout mode is 'agent'.
+      // Simulate an external change to localStorage BEFORE logout
+      // (e.g. another tab wrote a different value).
+      // This proves resetForLogout() re-reads from localStorage rather than
+      // keeping the in-memory value.
+      localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, 'workbench')
+
       store.resetForLogout()
 
-      expect(store.mode).toBe('agent')
-      // The key invariant: mode is sourced from localStorage, not from in-memory server state.
+      // Must reflect what localStorage contains at logout time ('workbench'),
+      // NOT the prior in-memory server-hydrated value ('agent').
+      expect(store.mode).toBe('workbench')
       expect(store.mode).toBe(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY))
     })
 
