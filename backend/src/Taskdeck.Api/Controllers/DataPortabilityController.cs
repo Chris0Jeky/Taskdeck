@@ -7,7 +7,6 @@ using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Controllers;
 
-
 /// <summary>
 /// Endpoints for GDPR-style data portability: user data export and account deletion.
 /// All endpoints require authentication and scope access strictly to the requesting user.
