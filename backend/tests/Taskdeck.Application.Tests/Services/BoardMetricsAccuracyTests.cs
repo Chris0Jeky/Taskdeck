@@ -489,6 +489,29 @@ public class BoardMetricsAccuracyTests
     }
 
     [Fact]
+    public void ComputeCycleTime_CardCreatedDirectlyInDoneColumn_ZeroCycleTime()
+    {
+        var doneCol = CreateColumn("Done", 2);
+        var createdAt = new DateTimeOffset(2026, 3, 10, 10, 0, 0, TimeSpan.Zero);
+        var card = CreateCardWithCreatedAt(doneCol.Id, "Born Done", createdAt);
+
+        // Card was moved to done at the exact moment of creation (or created directly there)
+        var audits = new Dictionary<Guid, List<(DateTimeOffset, Guid)>>
+        {
+            { card.Id, new List<(DateTimeOffset, Guid)> { (createdAt, doneCol.Id) } }
+        };
+
+        var (avg, entries) = BoardMetricsService.ComputeCycleTime(
+            new List<Card> { card }, doneCol,
+            createdAt.AddDays(-1), createdAt.AddDays(1), audits);
+
+        entries.Should().HaveCount(1);
+        entries[0].CycleTimeDays.Should().Be(0,
+            "card created and immediately moved to done should have 0 cycle time");
+        avg.Should().Be(0);
+    }
+
+    [Fact]
     public void ComputeCycleTime_CardNotInCardsList_SkippedGracefully()
     {
         var doneCol = CreateColumn("Done", 2);
