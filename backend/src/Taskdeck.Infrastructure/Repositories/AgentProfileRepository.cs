@@ -13,9 +13,10 @@ public class AgentProfileRepository : Repository<AgentProfile>, IAgentProfileRep
 
     public async Task<IEnumerable<AgentProfile>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        return await _dbSet
+        // Materialize first, then sort in memory — SQLite doesn't support DateTimeOffset in ORDER BY
+        var profiles = await _dbSet
             .Where(ap => ap.UserId == userId)
-            .OrderByDescending(ap => ap.CreatedAt)
             .ToListAsync(cancellationToken);
+        return profiles.OrderByDescending(ap => ap.CreatedAt);
     }
 }

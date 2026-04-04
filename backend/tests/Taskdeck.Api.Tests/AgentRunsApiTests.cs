@@ -79,7 +79,7 @@ public class AgentRunsApiTests : IClassFixture<TestWebApplicationFactory>
         run.Objective.Should().Be("Triage inbox items");
     }
 
-    [Fact(Skip = "Known bug: GET /api/agents/{id}/runs returns 500 UnexpectedError — tracked separately")]
+    [Fact]
     public async Task ListRuns_ShouldReturnOk_ForOwnAgent()
     {
         var (client, profile) = await SetupAgentAsync("run-list");
