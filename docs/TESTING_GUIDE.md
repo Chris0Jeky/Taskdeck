@@ -12,20 +12,21 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-04-04)
 
-- Backend: ~2350+ passing (estimated based on ~300 new tests from PRs `#732`–`#739`)
-  - Domain: ~400+ (42 new proposal lifecycle edge case tests)
-  - Application: ~1300+ (25 new proposal/auth/policy tests)
-  - API integration: ~590+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP tests)
+- Backend: ~2950+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755`)
+  - Domain: ~620+ (174 new entity state machine tests + 45 archive lifecycle domain tests)
+  - Application: ~1500+ (101 LLM edge cases + 64 export/import + 51 metrics accuracy tests)
+  - API integration: ~770+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP + 19 SignalR + 57 error contract + 29 archive lifecycle + 10 metrics controller + 36 notification tests)
   - CLI contract: 4
   - Architecture boundaries: 8
 - Frontend unit: 1496/1496 passing (134 test files)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): default required lane passing
-- Combined automated total: ~3850+ passing (backend ~2350+ + frontend unit 1496 + E2E)
+- Combined automated total: ~4450+ passing (backend ~2950+ + frontend unit 1496 + E2E)
 
 Verification note:
-- backend totals are estimated after the 2026-04-04 wave (`#732`–`#739`, ~300 new tests); each PR verified green individually; full-suite recertification needed
+- backend totals are estimated after two 2026-04-04 waves; wave 1 (`#732`–`#739`, ~300 new tests) and wave 2 (`#740`–`#755`, ~586 new tests with adversarial review); each PR verified green individually; full-suite recertification needed
 - frontend unit totals were re-verified on 2026-04-02 via `npx vitest --run`
-- significant test growth in 2026-04-04 wave: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
+- significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
+- significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -133,10 +134,10 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 |----------|--------|-------|--------|
 | I | ~~`#703`~~ | Capture → triage → proposal → review → board end-to-end golden path | **Delivered** (`#735`) |
 | II | ~~`#699`~~, ~~`#700`~~, ~~`#702`~~, ~~`#704`~~, `#705`, ~~`#707`~~, `#723`, `#725` | Infrastructure repos, worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor | **5 of 8 delivered** |
-| III | `#701`, `#706`, ~~`#708`~~, `#709`, `#710`, `#711`, `#712`, `#713`, `#714`, `#715`, `#716`, `#718`, `#719`, `#720`, `#726` | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **1 of 15 delivered** |
+| III | ~~`#701`~~, ~~`#706`~~, ~~`#708`~~, ~~`#709`~~, `#710`, `#711`, `#712`, ~~`#713`~~, ~~`#714`~~, ~~`#715`~~, `#716`, ~~`#718`~~, ~~`#719`~~, `#720`, `#726` | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **9 of 15 delivered** |
 | IV | `#717` | Property-based and adversarial input tests (extends `#89`) | Open |
 
-**Wave progress**: 7 of 22 issues delivered (plus SEC-20 fix). ~300 new tests. 15 issues remain open.
+**Wave progress**: 15 of 22 issues delivered (plus SEC-20 fix). ~886 new tests across two delivery waves. 7 issues remain open.
 
 ### Key Gaps Identified (updated 2026-04-04)
 
@@ -145,6 +146,14 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 - ~~**Cross-user data isolation**~~: **RESOLVED** — 38 integration tests delivered (`#704`/`#733`) covering all major API boundaries; 3 false-positive tests caught and fixed in adversarial review
 - **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage (`#725` open)
 - ~~**Golden path**~~: **RESOLVED** — 7 integration tests delivered (`#703`/`#735`) proving full capture → triage → proposal → review → board pipeline
+- ~~**Domain entity state machines**~~: **RESOLVED** — 174 exhaustive tests delivered (`#701`/`#740`) covering CommandRun, ArchiveItem, ChatSession, UserPreference, NotificationPreference, CardLabel, CardCommentMention
+- ~~**SignalR hub integration**~~: **RESOLVED** — 19 integration tests delivered (`#706`/`#751`) covering auth, presence, multi-user, authorization, and edge cases
+- ~~**LLM tool-calling edge cases**~~: **RESOLVED** — 101 tests delivered (`#709`/`#747`) for orchestrator, provider abstraction, intent classifier, and tool executor registry
+- ~~**Export/import integrity**~~: **RESOLVED** — 64 round-trip tests delivered (`#713`/`#752`) covering JSON, CSV, GDPR, database, and cross-format validation
+- ~~**API error contract regression**~~: **RESOLVED** — 57 tests delivered (`#714`/`#753`) verifying GP-03 error contract across 7 endpoint families
+- ~~**Archive lifecycle**~~: **RESOLVED** — 74 tests delivered (`#715`/`#755`): 45 domain state machine + 29 API integration covering cross-user isolation, conflict detection, audit trail
+- ~~**Board metrics accuracy**~~: **RESOLVED** — 61 tests delivered (`#718`/`#749`): 51 service + 10 controller covering throughput, cycle time, WIP, blocked cards, done-column heuristic
+- ~~**Notification delivery**~~: **RESOLVED** — 36 tests delivered (`#719`/`#746`) covering all 5 types, deduplication, preference filtering, cross-user isolation, batch operations
 
 ### Relationship to Existing Test Issues
 
@@ -233,6 +242,86 @@ Security fix: `ChangePassword` endpoint now derives userId exclusively from JWT 
 - 11 tools (2 read + 6 write + 3 proposal management)
 - GP-06 compliance verified: all write tools produce proposals, `approve_proposal` excluded
 - **User-scoping gap found and fixed in adversarial review**: proposal resources/tools were not checking `RequestedByUserId`
+
+### Delivered: Domain Entity State Machine Exhaustive Tests (`#701`/`#740`)
+
+174 tests across 7 entity test classes:
+- **CommandRun** (68 tests): all 6 states × 5 transitions (valid + invalid), constructor validation, `SetOutputPreview` boundary (1000 chars), `SetTruncated` idempotency, `AddLog`, Touch verification
+- **ArchiveItem** (41 tests): all 4 states × 4 transitions, constructor validation (entityType, name length 200, Guid.Empty, empty snapshot), round-trip flows
+- **ChatSession** (22 tests): Active/Archived lifecycle, AddMessage blocked on archived, UpdateTitle validation
+- **UserPreference** (18 tests): DismissOnboarding/ReplayOnboarding, RecordOnboardingCompletion once-only guard, UpdateWorkspaceMode
+- **NotificationPreference** (7 tests): constructor validation, Update permutations
+- **CardLabel** (4 tests): join entity construction
+- **CardCommentMention** (6 tests): constructor validation, username length boundary (50 chars)
+- Two rounds of adversarial review fixed misleading test name and leftover unused variable
+
+### Delivered: SignalR Hub and Realtime Integration Tests (`#706`/`#751`)
+
+19 integration tests using WebApplicationFactory with SignalR test client:
+- Authentication (3): unauthenticated rejection, valid/invalid token
+- Presence lifecycle (5): join broadcast, set/clear editing, leave cleanup, abrupt disconnect
+- Multi-user (2): multiple users see all members, same-user two-connection aggregation
+- Authorization (3): join/leave/editing without board access rejected
+- Edge cases (6): board switching, two-tab disconnect, non-existent board, Guid.Empty, timestamps, cross-board isolation
+- Adversarial review fixed false-positive auth tests (bare Exception → HttpRequestException+401), silent timeout, resource leak, missing status assertions
+
+### Delivered: LLM Provider and Tool-Calling Edge Cases (`#709`/`#747`)
+
+101 tests across 4 test classes:
+- **ToolCallingChatOrchestratorEdgeCaseTests** (18): per-round timeout, empty tool calls, concurrent calls, cancellation, metadata, token accumulation, loop detection (added in review)
+- **LlmProviderAbstractionEdgeCaseTests** (24): default CompleteWithToolsAsync throws, MockLlmProvider edge cases, provider selection, kill switch
+- **LlmIntentClassifierEdgeCaseTests** (49): negation filtering, other-tool questions, positive intent, non-actionable, prompt injection, disambiguation, plurals, alternate verbs
+- **ToolExecutorRegistryEdgeCaseTests** (10): empty registry, case-insensitive lookup, duplicate/null registration (added in review)
+- Adversarial review fixed false-positive prompt injection test, replaced 30-second slow test, added loop detection and registry edge cases
+
+### Delivered: Data Export/Import Round-Trip Integrity Tests (`#713`/`#752`)
+
+64 tests across 5 test files:
+- **BoardJsonExportImport** (23): full round-trip, special characters, 100-card scale, empty boards, WIP limits, cross-user isolation, corrupt JSON, duplicate labels
+- **CsvImport** (23): RFC 4180 edge cases, BOM, CRLF, deduplication, 1000-row scale, missing fields, invalid dates
+- **GdprDataExport** (9): valid parseable JSON, empty user, field preservation, cross-user isolation, version/timestamp
+- **DatabaseExportImport** (21): byte-level round-trip, corrupted/truncated rejection, SQLite signature validation, oversized payload
+- **CrossFormatImport** (11): format mismatch detection, binary garbage, wrong JSON shapes
+- Adversarial review fixed weak DueDate assertion, brittle JSON substring checks, non-deterministic test branching
+
+### Delivered: API Error Contract Regression Tests (`#714`/`#753`)
+
+57 tests across 7 test files in `ErrorContract/` namespace:
+- **Board** (9), **Card** (10), **Column** (11), **Capture** (8), **Proposal** (7), **Label** (4), **ContentType/Format** (7)
+- All error assertions through `ApiTestHarness.AssertErrorContractAsync` validating GP-03 `{errorCode, message}` shape
+- Adversarial review fixed 12 weak 404 assertions missing errorCode, 2 false-positive GP-03 tests, non-deterministic unauthenticated test, misleading test name
+
+### Delivered: Archive and Restore Lifecycle Tests (`#715`/`#755`)
+
+74 tests across domain (45) and API integration (29):
+- **Domain** (45): all valid/invalid ArchiveItem transitions, full lifecycle sequences, Touch timestamp updates, constructor validation boundaries
+- **API** (29): board/card/column archive-restore cycles, cross-user isolation (3 tests), double-archive/restore handling (409), conflict detection (Rename/Fail strategies), snapshot integrity, audit trail, restore to non-existent/archived boards, filter by type/status/board, auth enforcement
+- Adversarial review fixed 2 false-positive tests missing key assertions, 1 missing position check, 2 weak assertions pinned to specific status codes
+
+### Delivered: Board Metrics Accuracy Verification Tests (`#718`/`#749`)
+
+61 tests across service (51) and controller (10):
+- Done column detection (14): named patterns, case-insensitivity, positional fallback, multiple done-like columns
+- Throughput (6): card counting, bounce, same-day grouping, non-done exclusion
+- Cycle time (8): exact calculation, multi-column paths, averages, in-progress exclusion, zero cycle time
+- WIP (4): per-column counts, position ordering, WIP limits
+- Blocked cards (5): sort by duration, reasons, unblocked exclusion
+- Controller (10): from-after-to validation, label filter, response structure, date range handling
+- Adversarial review fixed misleading test name, vacuous sort assertion, silent reflection failure, naming convention
+
+### Delivered: Notification Delivery Integration Tests (`#719`/`#746`)
+
+36 integration tests:
+- Delivery (5): all 5 notification types (Mention, Assignment, ProposalOutcome, BoardChange, System)
+- Deduplication (4): same-key rejection, different-key allowance, no-key duplicates
+- Preference filtering (6): type-level enable/disable, in-app channel kill switch, digest-only, BoardChange always-on
+- Cross-user isolation (2): notifications scoped to owner, mark-all-read scoped
+- Mark as read (4): basic, idempotent, 404, cross-user forbidden
+- Batch (3): count returned, board-scoped, zero unread
+- Pagination (4): limit enforcement, unread/board filters, invalid limit
+- Auth (5): all endpoints reject unauthenticated
+- Adversarial review fixed PascalCase typo, 4 weak assertions tightened, overly generous performance threshold
+- Production observation noted: `NotificationRepository.GetByUserIdAsync` materializes all rows before in-memory pagination (tracked separately)
 
 ## Backend Commands
 

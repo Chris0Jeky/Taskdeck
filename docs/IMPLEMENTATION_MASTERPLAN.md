@@ -586,6 +586,17 @@ Delivered in the latest cycle:
     - added EF migration for `ToolCallMetadataJson` field on proposals for tool-call provenance
     - orchestrator now serves 11 tools (5 read + 6 write); writes always produce proposals per GP-06
     - frontend tool-status indicators show write-tool progress via SignalR `ToolStatusEvent`
+127. Rigorous test expansion wave 2 delivery (PRs `#740`–`#755`, 2026-04-04):
+    - 8 issues from `#721` tracker, ~586 new tests with two rounds of adversarial review (47 review-fix commits)
+    - domain entity state machine exhaustive tests (`#701`/`#740`): 174 tests across 7 entities (CommandRun, ArchiveItem, ChatSession, UserPreference, NotificationPreference, CardLabel, CardCommentMention)
+    - SignalR hub and realtime integration tests (`#706`/`#751`): 19 tests covering auth, presence, multi-user, authorization, edge cases; review fixed false-positive auth tests and resource leaks
+    - LLM provider and tool-calling edge cases (`#709`/`#747`): 101 tests across orchestrator, provider, classifier, registry; review added loop detection and registry edge cases
+    - data export/import round-trip integrity tests (`#713`/`#752`): 64 tests covering JSON, CSV, GDPR, database, cross-format validation
+    - API error contract regression tests (`#714`/`#753`): 57 tests across 7 endpoint families with GP-03 contract enforcement; review fixed 12 weak 404 assertions and 2 false-positive contract tests
+    - archive and restore lifecycle tests (`#715`/`#755`): 74 tests (45 domain + 29 API) covering state machine, cross-user isolation, conflict detection, audit trail
+    - board metrics accuracy verification tests (`#718`/`#749`): 61 tests (51 service + 10 controller) for throughput, cycle time, WIP, blocked cards, done-column heuristic
+    - notification delivery integration tests (`#719`/`#746`): 36 tests covering all 5 notification types, deduplication, preference filtering, cross-user isolation, batch operations
+    - wave progress: 15 of 22 `#721` issues now delivered (~886 new tests total); 7 issues remain open
 
 ## Current Planning Pivot (2026-03-07)
 

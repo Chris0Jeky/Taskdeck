@@ -42,6 +42,7 @@ const mockCaptureStore = reactive({
     createdAt: string
     processedAt: string | null
     retryCount: number
+    errorMessage?: string | null
     provenance?: {
       captureItemId: string
       triageRunId: string | null
@@ -1223,5 +1224,432 @@ describe('InboxView', () => {
 
     expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(false)
     expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  describe('triage action visibility', () => {
+    it('does not render detail action footer when no item is selected', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      expect(wrapper.find('.td-inbox-detail__actions').exists()).toBe(false)
+    })
+
+    it('renders detail action footer when an item is selected', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('.td-inbox-detail__actions').exists()).toBe(true)
+    })
+
+    it('shows Start Triage button for a New item', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'New',
+          source: 'Typed',
+          textExcerpt: 'New item excerpt',
+          rawText: 'New item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: null,
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      expect(footer.text()).toContain('Start Triage')
+    })
+
+    it('Start Triage button is enabled for a New item', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'New',
+          source: 'Typed',
+          textExcerpt: 'New item excerpt',
+          rawText: 'New item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: null,
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      const triageBtn = footer.findAll('button').find((b) => b.text() === 'Start Triage')
+      expect(triageBtn).toBeDefined()
+      expect(triageBtn!.attributes('disabled')).toBeUndefined()
+    })
+
+    it('Ignore and Cancel buttons are enabled for a New item', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'New',
+          source: 'Typed',
+          textExcerpt: 'New item excerpt',
+          rawText: 'New item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: null,
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      const ignoreBtn = footer.findAll('button').find((b) => b.text() === 'Ignore')
+      const cancelBtn = footer.findAll('button').find((b) => b.text() === 'Cancel')
+      expect(ignoreBtn).toBeDefined()
+      expect(ignoreBtn!.attributes('disabled')).toBeUndefined()
+      expect(cancelBtn).toBeDefined()
+      expect(cancelBtn!.attributes('disabled')).toBeUndefined()
+    })
+
+    it('shows Triage Complete label and disables triage button for ProposalCreated status', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'ProposalCreated',
+          source: 'Typed',
+          textExcerpt: 'Ready item excerpt',
+          rawText: 'Ready item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      const triageBtn = footer.findAll('button').find((b) => b.text() === 'Triage Complete')
+      expect(triageBtn).toBeDefined()
+      expect(triageBtn!.attributes('disabled')).toBeDefined()
+    })
+
+    it('disables Ignore and Cancel for a ProposalCreated item', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'ProposalCreated',
+          source: 'Typed',
+          textExcerpt: 'Ready item excerpt',
+          rawText: 'Ready item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      const ignoreBtn = footer.findAll('button').find((b) => b.text() === 'Ignore')
+      const cancelBtn = footer.findAll('button').find((b) => b.text() === 'Cancel')
+      expect(ignoreBtn!.attributes('disabled')).toBeDefined()
+      expect(cancelBtn!.attributes('disabled')).toBeDefined()
+    })
+
+    it('shows Converted label and disables triage for a Converted item', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'Converted',
+          source: 'Typed',
+          textExcerpt: 'Converted item excerpt',
+          rawText: 'Converted item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      const triageBtn = footer.findAll('button').find((b) => b.text() === 'Converted')
+      expect(triageBtn).toBeDefined()
+      expect(triageBtn!.attributes('disabled')).toBeDefined()
+    })
+
+    it('shows Retry Triage and enables it for a Failed item', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'Failed',
+          source: 'Typed',
+          textExcerpt: 'Failed item excerpt',
+          rawText: 'Failed item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: null,
+          retryCount: 1,
+          errorMessage: 'LLM timeout',
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      const retryBtn = footer.findAll('button').find((b) => b.text() === 'Retry Triage')
+      expect(retryBtn).toBeDefined()
+      expect(retryBtn!.attributes('disabled')).toBeUndefined()
+    })
+
+    it('footer remains present after selecting a different item', async () => {
+      const createdAt = new Date().toISOString()
+      mockCaptureStore.fetchDetail.mockImplementation(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'New',
+          source: 'Typed',
+          textExcerpt: `Excerpt for ${itemId}`,
+          rawText: `Full text for ${itemId}`,
+          createdAt,
+          processedAt: null,
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      const options = wrapper.findAll('[role="option"]')
+      await options[0]!.trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('.td-inbox-detail__actions').exists()).toBe(true)
+
+      await options[1]!.trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('.td-inbox-detail__actions').exists()).toBe(true)
+    })
+
+    it('footer disappears when detail panel is closed', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('.td-inbox-detail__actions').exists()).toBe(true)
+
+      const closeBtn = wrapper.findAll('button').find((b) => b.text().includes('Close'))
+      await closeBtn?.trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('.td-inbox-detail__actions').exists()).toBe(false)
+    })
+
+    it('all four footer action buttons are present when an item is selected', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'New',
+          source: 'Typed',
+          textExcerpt: 'New item excerpt',
+          rawText: 'New item full text',
+          createdAt: new Date().toISOString(),
+          processedAt: null,
+          retryCount: 0,
+          provenance: null,
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      const footer = wrapper.get('.td-inbox-detail__actions')
+      const footerButtons = footer.findAll('button')
+      const buttonTexts = footerButtons.map((b) => b.text())
+      // Verify all required footer actions are present: Refresh Detail, triage action, Ignore, Cancel
+      expect(buttonTexts.some((t) => t.includes('Refresh Detail') || t.includes('Refreshing'))).toBe(true)
+      expect(buttonTexts.some((t) => t.includes('Start Triage') || t.includes('Triage') || t.includes('Converted'))).toBe(true)
+      expect(buttonTexts.some((t) => t.includes('Ignore'))).toBe(true)
+      expect(buttonTexts.some((t) => t.includes('Cancel'))).toBe(true)
+    })
+  })
+
+  describe('bulk action visibility', () => {
+    it('batch action bar is absent when no checkboxes are ticked', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
+    })
+
+    it('batch action bar appears after checking one item', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      const checkbox = wrapper.get('[data-testid="inbox-item-checkbox"]')
+      await checkbox.trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(true)
+    })
+
+    it('batch action bar shows Triage, Ignore, Cancel and Clear buttons', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[data-testid="inbox-item-checkbox"]').trigger('click')
+      await waitForUi()
+
+      const bar = wrapper.get('[data-testid="batch-action-bar"]')
+      const labels = bar.findAll('button').map((b) => b.text())
+      expect(labels.some((l) => l.includes('Triage'))).toBe(true)
+      expect(labels.some((l) => l.includes('Ignore'))).toBe(true)
+      expect(labels.some((l) => l.includes('Cancel'))).toBe(true)
+      expect(labels.some((l) => l === 'Clear')).toBe(true)
+    })
+
+    it('batch action bar shows correct count when two items are checked', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      const checkboxes = wrapper.findAll('[data-testid="inbox-item-checkbox"]')
+      await checkboxes[0]!.trigger('click')
+      await waitForUi()
+      await checkboxes[1]!.trigger('click')
+      await waitForUi()
+
+      const bar = wrapper.get('[data-testid="batch-action-bar"]')
+      expect(bar.text()).toContain('Triage (2)')
+      expect(bar.text()).toContain('Ignore (2)')
+      expect(wrapper.text()).toContain('2 selected')
+    })
+
+    it('batch action bar disappears after Clear is clicked', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[data-testid="inbox-item-checkbox"]').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(true)
+
+      const clearBtn = wrapper.find('[data-testid="batch-action-bar"]')
+        .findAll('button').find((b) => b.text() === 'Clear')
+      await clearBtn?.trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
+    })
+
+    it('select-all checkbox shows indeterminate state when only one of two items is checked', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      const checkboxes = wrapper.findAll('[data-testid="inbox-item-checkbox"]')
+      await checkboxes[0]!.trigger('click')
+      await waitForUi()
+
+      const selectAll = wrapper.get('[data-testid="select-all"] input')
+      expect((selectAll.element as HTMLInputElement).indeterminate).toBe(true)
+    })
+
+    it('select-all selects all items and shows batch bar with full count', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[data-testid="select-all"] input').trigger('change')
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('2 selected')
+    })
+
+    it('batch action buttons are disabled while batch operation is in progress', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[data-testid="inbox-item-checkbox"]').trigger('click')
+      await waitForUi()
+
+      mockCaptureStore.batchBusy = true
+      await waitForUi()
+
+      const bar = wrapper.get('[data-testid="batch-action-bar"]')
+      // Triage, Ignore, and Cancel are disabled when batchBusy; Clear remains enabled
+      const disabledButtons = bar.findAll('button[disabled]')
+      expect(disabledButtons).toHaveLength(3)
+      const clearBtn = bar.findAll('button').find((b) => b.text() === 'Clear')
+      expect(clearBtn!.attributes('disabled')).toBeUndefined()
+    })
+
+    it('empty inbox does not render select-all checkbox or batch bar', async () => {
+      mockCaptureStore.items = []
+      mockCaptureStore.hasItems = false
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="select-all"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
+    })
   })
 })
