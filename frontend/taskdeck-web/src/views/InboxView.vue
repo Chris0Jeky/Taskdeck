@@ -744,7 +744,6 @@ onUnmounted(() => {
                       selectedItemId === items[virtualRow.index]!.id ? 'td-inbox-row--selected' : ''
                     ]"
                     role="option"
-                    tabindex="-1"
                     :aria-selected="selectedItemId === items[virtualRow.index]!.id"
                     @mouseenter="setActiveIndex(virtualRow.index)"
                     @focusin="setActiveIndex(virtualRow.index)"
