@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.IdentityModel.Tokens;
@@ -121,12 +122,12 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
 
         var code = InjectAuthCodeForUser(user, TimeSpan.FromSeconds(60));
 
-        // Fire multiple concurrent exchange requests for the same code
-        var tasks = Enumerable.Range(0, 5).Select(_ =>
-        {
-            var c = _factory.CreateClient();
-            return c.PostAsJsonAsync("/api/auth/github/exchange", new { Code = code });
-        }).ToArray();
+        // Fire multiple concurrent exchange requests for the same code.
+        // HttpClient is thread-safe, so reuse a single instance to avoid handler leaks.
+        using var exchangeClient = _factory.CreateClient();
+        var tasks = Enumerable.Range(0, 5)
+            .Select(_ => exchangeClient.PostAsJsonAsync("/api/auth/github/exchange", new { Code = code }))
+            .ToArray();
 
         var responses = await Task.WhenAll(tasks);
 
@@ -313,16 +314,21 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     }
 
     // ─────────────────────────────────────────────────────────
-    // 3. SignalR query-string auth
+    // 3. SignalR auth
     // ─────────────────────────────────────────────────────────
+    // Note: The .NET SignalR client with HttpMessageHandlerFactory (in-process
+    // test transport) sends tokens via the Authorization header, not via the
+    // ?access_token= query string. These tests verify SignalR endpoint auth
+    // generally but do NOT exercise the OnMessageReceived query-string
+    // extraction path in AuthenticationRegistration.cs. True query-string
+    // auth testing would require WebSocket transport or manual URL construction.
 
     [Fact]
-    public async Task SignalR_QueryStringToken_AcceptsValidJwt()
+    public async Task SignalR_AcceptsValidJwt()
     {
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "signalr-qs");
 
-        // Connect using access_token query parameter (browser WebSocket path)
         await using var connection = SignalRTestHelper.CreateBoardsHubConnection(_factory, user.Token);
         await connection.StartAsync();
 
@@ -330,7 +336,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task SignalR_QueryStringToken_RejectsExpiredJwt()
+    public async Task SignalR_RejectsExpiredJwt()
     {
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "signalr-exp");
@@ -352,7 +358,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task SignalR_QueryStringToken_RejectsWrongSigningKey()
+    public async Task SignalR_RejectsWrongSigningKey()
     {
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "signalr-key");
@@ -397,8 +403,10 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         var response = await client.GetAsync("/api/auth/providers");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("gitHub");
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.TryGetProperty("gitHub", out var gitHubProp).Should().BeTrue("providers response should contain 'gitHub' property");
+        gitHubProp.ValueKind.Should().BeOneOf(new[] { JsonValueKind.True, JsonValueKind.False },
+            "gitHub property should be a boolean");
     }
 
     // ─────────────────────────────────────────────────────────
@@ -462,9 +470,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         var notBefore = expiresIn < TimeSpan.Zero
             ? now.AddMinutes(-60)
             : now;
-        var expires = expiresIn < TimeSpan.Zero
-            ? now.Add(expiresIn)
-            : now.Add(expiresIn);
+        var expires = now.Add(expiresIn);
 
         var token = new JwtSecurityToken(
             issuer: issuer,
