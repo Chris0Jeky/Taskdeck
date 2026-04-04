@@ -502,12 +502,50 @@ public class ChatService : IChatService
             Attribution: BuildAttribution(session, userId),
             BoardContext: boardContext);
 
-        // TODO: Streaming responses cannot record usage because token counts are
-        // not available until the stream completes. Implement post-stream usage
-        // recording when the provider surfaces cumulative token counts.
+        // Accumulate streamed content and capture usage from the final token event
+        // so we can persist an assistant message and record quota usage after the
+        // stream completes.
+        var contentBuilder = new System.Text.StringBuilder();
+        int? tokensUsed = null;
+        string? provider = null;
+        string? model = null;
+
         await foreach (var token in _llmProvider.StreamAsync(request, ct))
         {
+            contentBuilder.Append(token.Token);
+            if (token.IsComplete)
+            {
+                tokensUsed = token.TokensUsed;
+                provider = token.Provider;
+                model = token.Model;
+            }
+
             yield return token;
+        }
+
+        // Persist the streamed assistant message with token usage so the streaming
+        // path is consistent with the non-streaming SendMessageAsync path.
+        var streamedContent = contentBuilder.ToString();
+        if (!string.IsNullOrEmpty(streamedContent))
+        {
+            var assistantMessage = new ChatMessage(
+                sessionId,
+                ChatMessageRole.Assistant,
+                streamedContent,
+                tokenUsage: tokensUsed);
+            session.AddMessage(assistantMessage);
+            await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        // Record usage for quota tracking, matching the non-streaming path behavior
+        if (_quotaService != null && tokensUsed is > 0 && provider != null && model != null)
+        {
+            await _quotaService.RecordUsageAsync(
+                userId, Domain.Enums.LlmSurface.Chat,
+                provider, model,
+                tokensUsed.Value, 0,
+                ct);
         }
     }
 
