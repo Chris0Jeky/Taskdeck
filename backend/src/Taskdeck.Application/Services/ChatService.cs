@@ -34,6 +34,7 @@ public class ChatService : IChatService
     private readonly ILlmKillSwitchService? _killSwitchService;
     private readonly IBoardContextBuilder? _boardContextBuilder;
     private readonly ToolCallingChatOrchestrator? _toolCallingOrchestrator;
+    private readonly LlmToolCallingSettings _toolCallingSettings;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -46,7 +47,8 @@ public class ChatService : IChatService
         ILlmQuotaService? quotaService = null,
         ILlmKillSwitchService? killSwitchService = null,
         IBoardContextBuilder? boardContextBuilder = null,
-        ToolCallingChatOrchestrator? toolCallingOrchestrator = null)
+        ToolCallingChatOrchestrator? toolCallingOrchestrator = null,
+        LlmToolCallingSettings? toolCallingSettings = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -59,6 +61,7 @@ public class ChatService : IChatService
         _killSwitchService = killSwitchService;
         _boardContextBuilder = boardContextBuilder;
         _toolCallingOrchestrator = toolCallingOrchestrator;
+        _toolCallingSettings = toolCallingSettings ?? new LlmToolCallingSettings();
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -208,7 +211,9 @@ public class ChatService : IChatService
                 LlmCompletionResult? reusableNoToolResponse = null;
 
                 // Try tool-calling path for board-scoped sessions with orchestrator.
-                if (_toolCallingOrchestrator != null && session.BoardId.HasValue)
+                // The feature flag allows disabling the orchestrator without code changes
+                // (e.g. for cost control). When disabled, falls through to single-turn.
+                if (_toolCallingOrchestrator != null && _toolCallingSettings.Enabled && session.BoardId.HasValue)
                 {
                     var toolChatMessages = session.Messages
                         .Select(m => new ChatCompletionMessage(m.Role.ToString(), m.Content))
