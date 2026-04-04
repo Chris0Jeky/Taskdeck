@@ -12,21 +12,22 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-04-04)
 
-- Backend: ~2950+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755`)
+- Backend: ~2990+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755` + ~78 webhook tests from PRs `#750`/`#756`)
   - Domain: ~620+ (174 new entity state machine tests + 45 archive lifecycle domain tests)
   - Application: ~1500+ (101 LLM edge cases + 64 export/import + 51 metrics accuracy tests)
-  - API integration: ~770+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP + 19 SignalR + 57 error contract + 29 archive lifecycle + 10 metrics controller + 36 notification tests)
+  - API integration: ~810+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP + 19 SignalR + 57 error contract + 29 archive lifecycle + 10 metrics controller + 36 notification tests + 11 webhook HMAC + 22 webhook SSRF/delivery/repository)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 1496/1496 passing (134 test files)
+- Frontend unit: 1592/1592 passing (~125 test files)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): default required lane passing
-- Combined automated total: ~4450+ passing (backend ~2950+ + frontend unit 1496 + E2E)
+- Combined automated total: ~4600+ passing (backend ~2990+ + frontend unit 1592 + E2E)
 
 Verification note:
-- backend totals are estimated after two 2026-04-04 waves; wave 1 (`#732`–`#739`, ~300 new tests) and wave 2 (`#740`–`#755`, ~586 new tests with adversarial review); each PR verified green individually; full-suite recertification needed
-- frontend unit totals were re-verified on 2026-04-02 via `npx vitest --run`
+- backend totals are estimated after three 2026-04-04 waves; wave 1 (`#732`–`#739`, ~300 new tests), wave 2 (`#740`–`#755`, ~586 new tests with adversarial review), and wave 3 (`#750`/`#756`, ~50+ net new webhook tests: 11 HMAC + endpoint guard extensions + service/signature/worker/domain tests); each PR verified green individually; full-suite recertification needed
+- frontend unit totals: **1592 passing** as of 2026-04-04 post-wave 3 (up from 1496 pre-wave); verified via `npx vitest --run` after adversarial review fixes
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
+- significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -51,7 +52,7 @@ High-signal additions and delivered guardrails:
 Telemetry and release-gate follow-through from the expanded blueprint:
 
 - product telemetry/event taxonomy delivered in `#341`/`#741` — see `docs/product/TELEMETRY_TAXONOMY.md`; reuses `#77` as baseline; `#328` provides the delivered first-run guardrail
-- keep event names privacy-safe and product-shaped using the canonical `noun.verb` format from `docs/product/TELEMETRY_TAXONOMY.md` (e.g. `capture.modal_opened`, `capture.submitted`, `proposal.approved`, `proposal.dismissed`, `card.created`, `board.loaded`, `auth_session.started`, `agent_run.completed`)
+- keep event names privacy-safe and product-shaped using the canonical `noun.verb` format from `docs/product/TELEMETRY_TAXONOMY.md` (for example `capture.modal_opened`, `capture.submitted`, `proposal.approved`, `proposal.dismissed`, `card.created`, `board.loaded`, `auth_session.started`, `agent_run.completed`, `agent_run.failed`)
 - treat launch framing as evidence gates, not marketing labels:
   - `R1` novice-first beta -> coherent `Home -> capture -> review -> execute -> board` path
   - `R2` agent foundation alpha -> inspectable runs, policies, and bounded templates
@@ -134,17 +135,17 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 |----------|--------|-------|--------|
 | I | ~~`#703`~~ | Capture → triage → proposal → review → board end-to-end golden path | **Delivered** (`#735`) |
 | II | ~~`#699`~~, ~~`#700`~~, ~~`#702`~~, ~~`#704`~~, `#705`, ~~`#707`~~, `#723`, `#725` | Infrastructure repos, worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor | **5 of 8 delivered** |
-| III | ~~`#701`~~, ~~`#706`~~, ~~`#708`~~, ~~`#709`~~, `#710`, `#711`, `#712`, ~~`#713`~~, ~~`#714`~~, ~~`#715`~~, `#716`, ~~`#718`~~, ~~`#719`~~, `#720`, `#726` | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **9 of 15 delivered** |
+| III | ~~`#701`~~, ~~`#706`~~, ~~`#708`~~, ~~`#709`~~, ~~`#710`~~, `#711`, `#712`, ~~`#713`~~, ~~`#714`~~, ~~`#715`~~, `#716`, ~~`#718`~~, ~~`#719`~~, `#720`, ~~`#726`~~ | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **11 of 15 delivered** |
 | IV | `#717` | Property-based and adversarial input tests (extends `#89`) | Open |
 
-**Wave progress**: 15 of 22 issues delivered (plus SEC-20 fix). ~886 new tests across two delivery waves. 7 issues remain open.
+**Wave progress**: 17 of 25 issues delivered (plus SEC-20 fix). ~960+ new tests across three delivery waves. 8 issues remain open: `#705`, `#711`, `#712`, `#716`, `#717`, `#720`, `#723`, `#725`.
 
 ### Key Gaps Identified (updated 2026-04-04)
 
 - ~~**Infrastructure repositories**~~: 7 classes now have 77 integration tests (`#699`/`#730`); remaining repositories still untested
 - ~~**`LlmQueueToProposalWorker`**~~: **RESOLVED** — 24 integration tests delivered (`#700`/`#734`) covering happy path, error/retry, cancellation, fair-batch, and capture triage paths
 - ~~**Cross-user data isolation**~~: **RESOLVED** — 38 integration tests delivered (`#704`/`#733`) covering all major API boundaries; 3 false-positive tests caught and fixed in adversarial review
-- **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage (`#725` open)
+- **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage (`#725` open); note — router auth guard now has unit tests from `#748` but interceptor remains untested
 - ~~**Golden path**~~: **RESOLVED** — 7 integration tests delivered (`#703`/`#735`) proving full capture → triage → proposal → review → board pipeline
 - ~~**Domain entity state machines**~~: **RESOLVED** — 174 exhaustive tests delivered (`#701`/`#740`) covering CommandRun, ArchiveItem, ChatSession, UserPreference, NotificationPreference, CardLabel, CardCommentMention
 - ~~**SignalR hub integration**~~: **RESOLVED** — 19 integration tests delivered (`#706`/`#751`) covering auth, presence, multi-user, authorization, and edge cases
@@ -154,6 +155,8 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 - ~~**Archive lifecycle**~~: **RESOLVED** — 74 tests delivered (`#715`/`#755`): 45 domain state machine + 29 API integration covering cross-user isolation, conflict detection, audit trail
 - ~~**Board metrics accuracy**~~: **RESOLVED** — 61 tests delivered (`#718`/`#749`): 51 service + 10 controller covering throughput, cycle time, WIP, blocked cards, done-column heuristic
 - ~~**Notification delivery**~~: **RESOLVED** — 36 tests delivered (`#719`/`#746`) covering all 5 types, deduplication, preference filtering, cross-user isolation, batch operations
+- ~~**Webhook HMAC signature verification**~~: **RESOLVED** — 11 tests delivered (`#726`/`#750`) covering header format, HMAC round-trip, wrong-key rejection, secret rotation, timing-safe comparison
+- ~~**Webhook delivery reliability and SSRF**~~: **RESOLVED** — 78 webhook tests across 9 files delivered (`#710`/`#756`) covering retry/backoff, dead-letter, SSRF boundary conditions (private IPv4/IPv6 ranges via `OutboundWebhookEndpointGuardTests`)
 
 ### Relationship to Existing Test Issues
 
@@ -876,3 +879,44 @@ For local development only, authorization bypass can be enabled via:
 Safety boundary:
 - Sandbox bypass is forced off outside Development environment.
 - Validation and data integrity rules still apply.
+
+## Webhook HMAC Signature Verification Coverage (PR #750, delivered 2026-04-04)
+
+Tracking issue: `#726`
+
+New test coverage:
+- `OutboundWebhookHmacDeliveryTests` (11 tests): header format verification (`sha256=<64-hex>`), HMAC round-trip receiver recompute and match, wrong-key rejection, secret rotation produces different signature, body/content-type matching, large payload (100 kB), timing-safe comparison via `CryptographicOperations.FixedTimeEquals`, determinism, key-differ properties
+
+Key adversarial review findings fixed: secret rotation test was testing different subscriptions (not actual rotation on same subscription); BCL-testing assertions replaced with real domain property tests.
+
+## Webhook Delivery Reliability and SSRF Coverage (PR #756, delivered 2026-04-04)
+
+Tracking issue: `#710`
+
+New test coverage across webhook test suite (78 tests total across 9 files):
+- `OutboundWebhookEndpointGuardTests` (Application.Tests): SSRF guard cases covering private IPv4 ranges and endpoint validation
+- `OutboundWebhookServiceTests` (Application.Tests, 19 tests): service-level webhook subscription and delivery orchestration
+- `OutboundWebhookSignatureTests` (Application.Tests, 8 tests): HMAC signature computation and verification
+- `OutboundWebhookDeliveryWorkerTests` (Api.Tests, 8 tests): worker-level delivery scheduling and retry logic
+- `OutboundWebhookHmacDeliveryTests` (Api.Tests, 11 tests): end-to-end HMAC delivery including header format, round-trip, wrong-key rejection
+- `OutboundWebhooksApiTests` (Api.Tests, 10 tests): API endpoint contract for webhook subscription management
+- `OutboundWebhookDeliveryRepositoryTests` (Api.Tests, 3 tests): repository-level delivery persistence
+- `OutboundWebhookDeliveryTests` (Domain.Tests, 8 tests): domain entity state and transitions
+- `OutboundWebhookSubscriptionTests` (Domain.Tests, 7 tests): subscription domain entity
+
+Key adversarial review fix: `HttpClient` resource leaks across 9 test methods.
+
+Manual validation recommended: configure a webhook endpoint with a known secret and verify that (a) the `X-Taskdeck-Webhook-Signature` header (alongside `X-Taskdeck-Webhook-Timestamp`) is present and verifiable with HMAC-SHA256, and (b) a webhook targeting `http://localhost/` or `http://10.0.0.1/` is rejected at the SSRF guard.
+
+## Frontend Regression Test Wave (PRs #742–#745, #748, #743, #744, #754, delivered 2026-04-04)
+
+Tracking issues: `#683`, `#680`, `#685`, `#686`, `#687`, `#688`
+
+New test files:
+- `boardStore.wipLimit.spec.ts` (7 tests): WIP-limit toast deduplication regression for `createCard` and `moveCard`; guards against future double-toast introduction
+- `sessionStore.authToast.spec.ts` (20 tests): auth-flow toast lifecycle — login/register/OAuth failure and success toasts, cross-flow isolation, auto-removal independence; uses real `toastStore` backed by fresh Pinia
+- `router/authGuard.spec.ts` (new): auth guard decision table — unauthenticated redirect, expired-token cleanup, authenticated pass-through, deflection from /login when authenticated, demo mode, 12-route exhaustive table
+- `router/workspaceRouteStability.spec.ts` (new): workspace mode persistence across simulated reloads, hydration drift prevention, `resetForLogout` cleanup
+- `InboxView.spec.ts` (+21 tests): single-item triage action states (per status variant), bulk action bar visibility and count, batchBusy disabled state, select-all behavior; all assertions on DOM state
+
+Frontend suite total after this wave: **1592 passing** (up from 1496 pre-wave).
