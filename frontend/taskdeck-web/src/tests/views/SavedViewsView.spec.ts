@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive, computed } from 'vue'
+import { reactive } from 'vue'
 import SavedViewsView from '../../views/SavedViewsView.vue'
 import type { SavedView, SavedViewFilter } from '../../store/savedViewStore'
-import type { Board, Card } from '../../types/board'
+import type { Board } from '../../types/board'
 
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -41,24 +41,6 @@ function makeBoard(overrides: Partial<Board> = {}): Board {
     name: 'My Board',
     description: null,
     isArchived: false,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-    ...overrides,
-  }
-}
-
-function makeCard(overrides: Partial<Card> = {}): Card {
-  return {
-    id: 'card-1',
-    boardId: 'board-1',
-    columnId: 'col-1',
-    title: 'Sample Card',
-    description: '',
-    position: 0,
-    dueDate: null,
-    isBlocked: false,
-    blockReason: null,
-    labels: [],
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
     ...overrides,

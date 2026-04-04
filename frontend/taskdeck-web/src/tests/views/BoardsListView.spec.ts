@@ -116,7 +116,6 @@ describe('BoardsListView', () => {
     const wrapper = mount(BoardsListView)
     await waitForUi()
 
-    const boardCard = wrapper.find('[key]') // grid item
     // Find the clickable board card by looking for the board name in a clickable div
     const boardCards = wrapper.findAll('.cursor-pointer')
     const targetCard = boardCards.find((c) => c.text().includes('My Board'))

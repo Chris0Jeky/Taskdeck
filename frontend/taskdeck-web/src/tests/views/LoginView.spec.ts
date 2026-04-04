@@ -244,6 +244,46 @@ describe('LoginView', () => {
     })
   })
 
+  describe('GitHub OAuth code exchange', () => {
+    it('calls exchangeOAuthCode and navigates when oauth_code query param is present', async () => {
+      routeMock.query = { oauth_code: 'gh-code-abc123' }
+      sessionMock.exchangeOAuthCode.mockResolvedValue(undefined)
+
+      mount(LoginView)
+      await waitForUi()
+      await waitForUi()
+
+      expect(sessionMock.exchangeOAuthCode).toHaveBeenCalledWith('gh-code-abc123')
+      expect(routerMocks.push).toHaveBeenCalledWith('/workspace/home')
+    })
+
+    it('cleans oauth_code from URL before exchanging the code', async () => {
+      routeMock.query = { oauth_code: 'gh-code-abc123' }
+      sessionMock.exchangeOAuthCode.mockResolvedValue(undefined)
+
+      mount(LoginView)
+      await waitForUi()
+      await waitForUi()
+
+      // router.replace must be called before push (URL cleaned before exchange)
+      expect(routerMocks.replace).toHaveBeenCalledWith(
+        expect.objectContaining({ query: expect.objectContaining({ oauth_code: undefined }) }),
+      )
+    })
+
+    it('shows error when exchangeOAuthCode fails', async () => {
+      routeMock.query = { oauth_code: 'bad-code' }
+      sessionMock.exchangeOAuthCode.mockRejectedValue(new Error('exchange failed'))
+      sessionMock.error = 'GitHub sign-in failed. Please try again.'
+
+      const wrapper = mount(LoginView)
+      await waitForUi()
+      await waitForUi()
+
+      expect(wrapper.find('[role="alert"]').text()).toContain('GitHub sign-in failed.')
+    })
+  })
+
   describe('demo mode', () => {
     it('renders the Enter Demo button and hides the login form', async () => {
       isDemoModeMock.value = true
