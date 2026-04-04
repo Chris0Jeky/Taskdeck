@@ -7,7 +7,7 @@
  *  - Registration-success state must not survive logout and later login attempts.
  *  - Successful login must render login-specific success messaging, not stale registration messaging.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { authApi } from '../../api/authApi'
 import { useSessionStore } from '../../store/sessionStore'
@@ -86,8 +86,13 @@ describe('auth-flow toast regression (#685)', () => {
     setActivePinia(createPinia())
     session = useSessionStore()
     toast = useToastStore()
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     localStorage.clear()
+  })
+
+  afterEach(() => {
+    // Guarantee real timers are restored even if a fake-timer test assertion fails
+    vi.useRealTimers()
   })
 
   // -------------------------------------------------------------------------
@@ -116,7 +121,9 @@ describe('auth-flow toast regression (#685)', () => {
         session.login({ usernameOrEmail: 'locked', password: 'pass' }),
       ).rejects.toBeDefined()
 
-      expect(toast.toasts[0].message).toBe('Your account has been locked. Contact support.')
+      const errorToasts = toast.toasts.filter((t) => t.type === 'error')
+      expect(errorToasts).toHaveLength(1)
+      expect(errorToasts[0].message).toBe('Your account has been locked. Contact support.')
     })
 
     it('stores the error in session.error alongside the toast', async () => {
@@ -282,8 +289,13 @@ describe('auth-flow toast regression (#685)', () => {
 
       expect(session.error).toBe('Invalid credentials')
 
-      // Second attempt: login resolves — error should be cleared before the API call
-      vi.mocked(authApi.login).mockResolvedValueOnce(makeAuthResponse())
+      // Second attempt: login resolves — error should be cleared before the API call.
+      // Use mockImplementationOnce so we can assert session.error is already null
+      // at the moment the API is invoked (not just after it settles).
+      vi.mocked(authApi.login).mockImplementationOnce(async () => {
+        expect(session.error).toBeNull()
+        return makeAuthResponse()
+      })
       await session.login({ usernameOrEmail: 'testuser', password: 'pass' })
 
       expect(session.error).toBeNull()
