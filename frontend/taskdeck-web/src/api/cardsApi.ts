@@ -31,8 +31,23 @@ export const cardsApi = {
     await http.delete(`/boards/${boardId}/cards/${cardId}`)
   },
 
-  async getCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance> {
-    const { data } = await http.get<CardCaptureProvenance>(`/boards/${boardId}/cards/${cardId}/provenance`)
-    return data
+  async getCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance | null> {
+    try {
+      const { data } = await http.get<CardCaptureProvenance>(`/boards/${boardId}/cards/${cardId}/provenance`)
+      return data
+    } catch (e: unknown) {
+      const candidate = e as { response?: { status?: number; data?: { message?: string } } } | null
+      if (
+        candidate?.response?.status === 404 &&
+        typeof candidate.response.data?.message === 'string' &&
+        candidate.response.data.message.startsWith('Capture provenance not found')
+      ) {
+        // Manual cards have no capture provenance — treat only that specific absence as
+        // empty state, not an error. Other 404s (e.g. card not found in board) are rethrown
+        // so callers can surface them as genuine errors.
+        return null
+      }
+      throw e
+    }
   },
 }
