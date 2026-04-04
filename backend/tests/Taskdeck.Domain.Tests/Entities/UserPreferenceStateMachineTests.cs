@@ -124,8 +124,8 @@ public class UserPreferenceStateMachineTests
         pref.DismissOnboarding();
 
         pref.OnboardingVisibility.Should().Be(WorkspaceOnboardingVisibility.Dismissed);
-        // Timestamp updates each time (no guard)
-        pref.OnboardingDismissedAt.Should().NotBeNull();
+        // Timestamp updates each time (no guard), so it should be >= the first call
+        pref.OnboardingDismissedAt.Should().BeOnOrAfter(firstDismiss!.Value);
     }
 
     [Fact]
