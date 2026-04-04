@@ -42,6 +42,7 @@ const mockCaptureStore = reactive({
     createdAt: string
     processedAt: string | null
     retryCount: number
+    errorMessage?: string | null
     provenance?: {
       captureItemId: string
       triageRunId: string | null
@@ -1523,8 +1524,12 @@ describe('InboxView', () => {
 
       const footer = wrapper.get('.td-inbox-detail__actions')
       const footerButtons = footer.findAll('button')
-      // Refresh Detail, triage action, Ignore, Cancel
-      expect(footerButtons).toHaveLength(4)
+      const buttonTexts = footerButtons.map((b) => b.text())
+      // Verify all required footer actions are present: Refresh Detail, triage action, Ignore, Cancel
+      expect(buttonTexts.some((t) => t.includes('Refresh Detail') || t.includes('Refreshing'))).toBe(true)
+      expect(buttonTexts.some((t) => t.includes('Start Triage') || t.includes('Triage') || t.includes('Converted'))).toBe(true)
+      expect(buttonTexts.some((t) => t.includes('Ignore'))).toBe(true)
+      expect(buttonTexts.some((t) => t.includes('Cancel'))).toBe(true)
     })
   })
 
@@ -1619,28 +1624,21 @@ describe('InboxView', () => {
     })
 
     it('batch action buttons are disabled while batch operation is in progress', async () => {
-      mockCaptureStore.batchTriage.mockImplementation(
-        () => new Promise(() => {
-          // Intentionally unresolved to keep batchBusy active.
-        }),
-      )
-
       const wrapper = mount(InboxView)
       await waitForUi()
 
       await wrapper.get('[data-testid="inbox-item-checkbox"]').trigger('click')
       await waitForUi()
 
-      const bar = wrapper.get('[data-testid="batch-action-bar"]')
-      const triageBtn = bar.findAll('button').find((b) => b.text().includes('Triage'))
-      await triageBtn?.trigger('click')
-      await waitForUi()
-
       mockCaptureStore.batchBusy = true
       await waitForUi()
 
-      const batchButtons = wrapper.get('[data-testid="batch-action-bar"]').findAll('button[disabled]')
-      expect(batchButtons.length).toBeGreaterThan(0)
+      const bar = wrapper.get('[data-testid="batch-action-bar"]')
+      // Triage, Ignore, and Cancel are disabled when batchBusy; Clear remains enabled
+      const disabledButtons = bar.findAll('button[disabled]')
+      expect(disabledButtons).toHaveLength(3)
+      const clearBtn = bar.findAll('button').find((b) => b.text() === 'Clear')
+      expect(clearBtn!.attributes('disabled')).toBeUndefined()
     })
 
     it('empty inbox does not render select-all checkbox or batch bar', async () => {
