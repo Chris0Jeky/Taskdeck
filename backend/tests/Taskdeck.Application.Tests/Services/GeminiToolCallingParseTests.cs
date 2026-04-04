@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -162,5 +163,94 @@ public class GeminiToolCallingParseTests
         var result = _provider.ParseToolCallingResponse("{}");
         result.IsComplete.Should().BeTrue();
         result.IsDegraded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildToolCallingPayload_PreviousResults_ReplayOriginalArguments()
+    {
+        var request = new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "What cards?") });
+        var tools = new List<TaskdeckToolSchema>();
+
+        var originalArgs = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var previousResults = new List<ToolCallResult>
+        {
+            new("fc_1", "list_cards_in_column", "{\"cards\":[]}", false, originalArgs)
+        };
+
+        var payload = _provider.BuildToolCallingPayload(request, tools, previousResults);
+
+        var json = JsonSerializer.Serialize(payload);
+        using var doc = JsonDocument.Parse(json);
+        var contents = doc.RootElement.GetProperty("contents");
+
+        // Find the synthetic model message with functionCall parts
+        JsonElement? modelMsg = null;
+        foreach (var msg in contents.EnumerateArray())
+        {
+            if (msg.TryGetProperty("role", out var role) &&
+                role.GetString() == "model" &&
+                msg.TryGetProperty("parts", out var parts))
+            {
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.TryGetProperty("functionCall", out _))
+                    {
+                        modelMsg = msg;
+                        break;
+                    }
+                }
+            }
+        }
+
+        modelMsg.Should().NotBeNull("payload should contain a synthetic model message with functionCall");
+        var callPart = modelMsg!.Value.GetProperty("parts")[0].GetProperty("functionCall");
+        callPart.GetProperty("name").GetString().Should().Be("list_cards_in_column");
+        callPart.GetProperty("args").GetProperty("column_name").GetString().Should().Be("Backlog");
+    }
+
+    [Fact]
+    public void BuildToolCallingPayload_PreviousResultsWithoutArguments_FallsBackToEmptyObject()
+    {
+        var request = new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "columns?") });
+        var tools = new List<TaskdeckToolSchema>();
+
+        // ToolCallResult constructed without explicit Arguments (backward compat)
+        var previousResults = new List<ToolCallResult>
+        {
+            new("fc_1", "list_board_columns", "{\"columns\":[]}", false)
+        };
+
+        var payload = _provider.BuildToolCallingPayload(request, tools, previousResults);
+
+        var json = JsonSerializer.Serialize(payload);
+        using var doc = JsonDocument.Parse(json);
+        var contents = doc.RootElement.GetProperty("contents");
+
+        JsonElement? modelMsg = null;
+        foreach (var msg in contents.EnumerateArray())
+        {
+            if (msg.TryGetProperty("role", out var role) &&
+                role.GetString() == "model" &&
+                msg.TryGetProperty("parts", out var parts))
+            {
+                foreach (var part in parts.EnumerateArray())
+                {
+                    if (part.TryGetProperty("functionCall", out _))
+                    {
+                        modelMsg = msg;
+                        break;
+                    }
+                }
+            }
+        }
+
+        modelMsg.Should().NotBeNull();
+        var callPart = modelMsg!.Value.GetProperty("parts")[0].GetProperty("functionCall");
+        var args = callPart.GetProperty("args");
+        // Should be an empty object (no properties)
+        args.ValueKind.Should().Be(JsonValueKind.Object);
+        args.EnumerateObject().Should().BeEmpty();
     }
 }

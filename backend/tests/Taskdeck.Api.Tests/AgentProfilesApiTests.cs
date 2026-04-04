@@ -134,7 +134,7 @@ public class AgentProfilesApiTests : IClassFixture<TestWebApplicationFactory>
         getDeletedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [Fact(Skip = "Known bug: GET /api/agents returns 500 UnexpectedError — tracked separately")]
+    [Fact]
     public async Task ListProfiles_ShouldReturnOk_ForAuthenticatedUser()
     {
         using var client = _factory.CreateClient();

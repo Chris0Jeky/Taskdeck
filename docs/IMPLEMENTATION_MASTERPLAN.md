@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-04
+Last Updated: 2026-04-04 (wave #771–#779)
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -390,6 +390,7 @@ Delivered in the latest cycle:
    - frontend npm dependency graph now uses `p-limit@3.0.2` override (compatible with `p-locate@5`) to remove blocked `yocto-queue-0.1.0` fetches without cross-major override drift
    - refreshed lockfile keeps container `npm ci` deterministic and unblocks `.github/workflows/reusable-container-images.yml` frontend build stage
    - local Docker validation confirms `deploy/docker/frontend.Dockerfile` build-stage `npm ci` and `npm run build` both complete successfully with the override
+   - [Superseded by `#761` (dependency-overrides audit): vendor tarball `vendor/ws-7.5.10.tgz` removed; `ws` now declared as `^7.5.10` from the npm registry; `p-limit` override removed — npm naturally resolves `p-limit@3.1.0` (highest in the `^3.0.2` range required by `p-locate@5`); orphaned `COPY vendor/` Dockerfile step removed]
 86. OPS-20 role discoverability and permission-guidance delivery (`#179`):
    - ops command permission failures now include current-role context, runnable-template fallback lists, and explicit next-step guidance to verify/request elevated access
    - ops console now surfaces current role and runnable-template discoverability context up front, and restricted template selection now shows explicit role-based warnings before run attempts
@@ -609,6 +610,16 @@ Delivered in the latest cycle:
     - webhook HMAC verification tests (`#726`/`#750`): 11 tests in `OutboundWebhookHmacDeliveryTests.cs` for header format, round-trip, wrong-key, secret rotation, timing-safe comparison
     - webhook delivery reliability + SSRF boundary tests (`#710`/`#756`): 78 total webhook tests across 9 files; SSRF coverage via `OutboundWebhookEndpointGuardTests` for private IP ranges; retry/backoff/dead-letter reliability; `HttpClient` resource leak fixed in tests
     - TST-32–TST-57 wave progress updated: 17 of 25 issues now delivered; remaining open: `#705`, `#711`, `#712`, `#716`, `#717`, `#720`, `#723`, `#725`; frontend suite at 1592 passing (up from 1496)
+129. Dependency hygiene, accessibility, tool-calling refinements, streaming, and test coverage wave (PRs `#771`–`#779`, 2026-04-04):
+    - vendored dependency cleanup (`#761`/`#771`): removed `vendor/ws-7.5.10.tgz` and orphaned Dockerfile `COPY vendor/` line; `ws` resolves from registry as `^7.5.10`; no-op `p-limit` override removed; adversarial review updated stale STATUS.md/MASTERPLAN docs references
+    - accessibility lint remediation (`#762`/`#779`): 105 warnings → 0; form label associations, keyboard event companions, ARIA modal/backdrop attributes, `--max-warnings 20` CI threshold; adversarial review fixed 2 CI regressions (TdTooltip Fragment, role="option" tabindex violation); 2 non-blocking ARIA follow-up items filed
+    - tool-calling Phase 3 refinements (`#651`/`#773`): `LlmToolCallingSettings` with `Enabled`/`MaxToolResultBytes` config keys; `ChatService` bypasses orchestrator when disabled; `TruncateToolResult` binary-search UTF-8 byte budget; cost tracking DI wiring completed; 17 new tests (2 added by adversarial review fixing byte-budget contract bug and replacing O(n) loop)
+    - export streaming (`#670`/`#774`): `GET /api/account/export/stream` streams via `Utf8JsonWriter`; `CountBySessionIdsAsync` GROUP BY fixes N+1; 500-session batch respects SQLite 999-param limit; 15 tests; adversarial review fixed `ToErrorActionResult()` crash after `Response.HasStarted`
+    - frontend view vitest coverage (`#716`/`#775`): 83 tests across 6 views (LoginView, RegisterView, BoardsListView, ExportImportView, SavedViewsView, DevToolsView); adversarial review fixed 3 ESLint errors (CI blocker) and added 3 OAuth callback path tests
+    - Pinia store integration tests (`#711`/`#777`): 91 tests across 6 stores mocking HTTP layer; covers #508/#509 regressions; adversarial review fixed timer leak, microtask drain, and 4 type-bypass casts
+    - resilience/degraded-mode tests (`#720`/`#778`): 34 tests (18 backend + 16 frontend); adversarial review fixed CI blocker (unused import), double-invocation anti-pattern, and timing race
+    - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
+    - TST-32–TST-57 wave: 21 of 25 issues now delivered; remaining open: `#705`, `#717`, `#723`, `#725`; frontend suite ~1734 passing
 
 ## Current Planning Pivot (2026-03-07)
 
@@ -742,7 +753,7 @@ Focus:
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
-- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); remaining: `#651` (refinements), `#673` (argument replay)
+- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` byte budget with binary search — 17 new tests, PR `#773`); remaining: `#673` (argument replay)
 - MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; remaining: `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
@@ -814,7 +825,7 @@ Master tracker: `#531`.
   - workspace invitations
   - email notification delivery
   - activity feed per board
-  - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → ~~`#650`~~ delivered → `#651`)
+  - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → ~~`#650`~~ delivered → ~~`#651`~~ delivered)
   - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered → `#653`→`#654`)
 
 - `v0.5.0` **Power Up** (target: Week 15-20):
@@ -915,8 +926,8 @@ Master tracker: `#531`.
   - `#647` tracker
   - ~~`#649` Phase 1: read tools + orchestrator + provider tool-calling extension~~ (delivered 2026-04-01, PR `#669`)
   - ~~`#650` Phase 2: write tools + proposal integration~~ (delivered 2026-04-03, PR `#731`)
-  - `#651` Phase 3: refinements — cost tracking, feature flag (1 week); also ~~`#672`~~ (double LLM call — delivered 2026-04-03, PR `#727`), `#673` (argument replay); ~~`#674`~~ (strict mode + loop detection — delivered 2026-04-03, PR `#694`)
-  - Dependency chain: ~~`#649`~~ → ~~`#650`~~ → `#651`
+  - ~~`#651` Phase 3: refinements — cost tracking, feature flag~~ (delivered 2026-04-04): `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` token budget enforcement, cost tracking to `ILlmQuotaService`, 15 new tests; also ~~`#672`~~ (double LLM call — delivered 2026-04-03, PR `#727`), `#673` (argument replay); ~~`#674`~~ (strict mode + loop detection — delivered 2026-04-03, PR `#694`)
+  - Dependency chain: ~~`#649`~~ → ~~`#650`~~ → ~~`#651`~~
   - Unblocks conversational refinement (`#576`) and MCP tool inventory (`#653`)
 - MCP server implementation wave (from completed spike `#619`):
   - `#648` tracker
@@ -1199,6 +1210,7 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 15. **Hardening and UX wave (2026-04-03)**: 9 issues across 8 PRs (`#691`–`#698`) with adversarial review follow-through: P1 dead workspace routes (`#681`), expired proposal handling in Review (`#678`+`#690`), chat card ID continuity (`#677`), human-readable proposal diffs (`#682`), dark theme label manager (`#684`), chat health banner three-state (`#679`), OpenAI strict mode + loop detection (`#674`), JWT invalidation after account deletion (`#671`/ADR-0021). ~58 new tests added across the wave.
 16. **Post-hardening delivery wave (2026-04-03)**: 6 issues across 6 PRs (`#724`–`#731`): SQL-level board metrics filtering (`#675`), double LLM call elimination (`#672`), JWT invalidation hardening with active-user middleware (`#671`), expired proposal review UX with dismiss action (`#678`+`#690`), infrastructure repo integration tests (`#699` — 77 tests, 7 classes, real SQLite, found real ordering bug), LLM write tools + proposal integration (`#650` — 6 write executors, EF migration, 11 total tools, frontend status indicators).
 17. **Security + testing + MCP wave (2026-04-04)**: 8 issues across 8 PRs (`#732`–`#739`) with two rounds of adversarial self-review. ~300 new tests added. Key deliveries: SEC-20 ChangePassword identity bypass fix (`#722`/`#732`), golden-path capture→board integration test (`#703`/`#735`), cross-user data isolation tests (`#704`/`#733` — 38 tests, 3 false-positive tests caught in review), worker integration tests (`#700`/`#734` — 24 tests, fake repo status-tracking fixed in review), controller HTTP tests (`#702`/`#738` — 67 tests, 6 controllers, 2 pre-existing bugs found), proposal lifecycle edge cases (`#708`/`#736` — 74 tests, clock-flakiness fixed in review), OAuth/auth edge cases (`#707`/`#737` — 44 tests, found+fixed `ExternalLoginAsync` Substring overflow production bug), MCP full inventory (`#653`/`#739` — 9 resources + 11 tools, user-scoping gap found+fixed in review). Test expansion wave (`#721`) progress: 7 of 22 issues now delivered (`#699`, `#700`, `#702`, `#703`, `#704`, `#707`, `#708`); remaining 15 open.
+18. **Tech-debt, security, and feature hardening wave (2026-04-04)**: 7 issues across 7 PRs (`#765`–`#770`, `#776`) with two rounds of adversarial review per PR (~65 new tests: 32 backend + 33 frontend). Key deliveries: Agent API 500 fix (`#758`/`#776` — `DateTimeOffset` ORDER BY in SQLite, `AgentRunRepository` upgraded to `IsSqlite()` SQL-level pattern, round 2 caught load-all-before-limit perf bug), DataExport exception logging (`#759`/`#766` — `ILogger` added to `DataExportService`/`AccountDeletionService`, round 2 added `OperationCanceledException` filter + `CancellationToken.None` rollback), streaming chat token usage (`#763`/`#768` — `LlmTokenEvent` extended, all 3 providers populated, `StreamResponseAsync` now persists messages + records quota), EF Core version alignment (`#760`/`#767` — 9.0.14→8.0.14, EF9-only API removed, `FrameworkReference` swap, round 2 added `PrivateAssets`), frontend HTTP interceptor/auth guard tests (`#725`/`#765` — 33 tests, round 2 fixed ESLint `no-import-assign` CI breaker), OAuth token lifecycle tests (`#723`/`#769` — 19 tests covering auth code store + JWT lifecycle + SignalR auth, round 2 fixed `HttpClient` leak + misleading test names), tool argument replay (`#673`/`#770` — `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay now uses real arguments). Test expansion wave (`#721`) progress: 9 of 22 issues now delivered (added `#723`, `#725`); remaining 13 open.
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Run a full backend + frontend test suite recertification to refresh the 2026-03-06 baseline counts; the TST-CODEX wave, knowledge service tests, and 2026-03-29 NLP/audit/error-UX wave added significant coverage since that certification. Frontend is now at 1491 tests (134 files).

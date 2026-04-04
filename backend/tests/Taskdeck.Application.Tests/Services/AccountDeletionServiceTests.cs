@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -536,6 +537,40 @@ public class AccountDeletionServiceTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_LogsException_WhenDeletionFails()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var loggerMock = new Mock<ILogger<AccountDeletionService>>();
+        var serviceWithLogger = new AccountDeletionService(
+            _unitOfWorkMock.Object, _historyServiceMock.Object,
+            activeUserCache: null, logger: loggerMock.Object);
+
+        var expectedException = new InvalidOperationException("DB error");
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default)).ThrowsAsync(expectedException);
+
+        var request = new AccountDeletionRequest(_password, "DELETE MY ACCOUNT");
+
+        // Act
+        var result = await serviceWithLogger.DeleteAccountAsync(_userId, request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Account deletion failed")),
+                expectedException,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
     }
 
     private void SetupUserFound()

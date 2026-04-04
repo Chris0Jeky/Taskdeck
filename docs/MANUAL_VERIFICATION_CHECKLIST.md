@@ -455,9 +455,62 @@ These are previously reported bugs. Verify they remain fixed or track their curr
 
 ### Verifications — Known Pre-Existing Bugs Found (#738)
 
-- [ ] `GET /api/agents` with valid bearer token. **Known bug**: returns 500. Verify this is still the case and track for fix.
-- [ ] `GET /api/agents/{id}/runs` with valid bearer token. **Known bug**: returns 500. Verify this is still the case and track for fix.
+- [x] ~~`GET /api/agents` with valid bearer token. **Known bug**: returns 500.~~ **FIXED** in `#758`/`#776` (2026-04-04): `DateTimeOffset` ORDER BY in SQLite resolved via materialize-then-sort.
+- [x] ~~`GET /api/agents/{id}/runs` with valid bearer token. **Known bug**: returns 500.~~ **FIXED** in `#758`/`#776` (2026-04-04): `AgentRunRepository` upgraded to `IsSqlite()` + `FromSqlInterpolated` pattern with SQL-level ORDER BY + LIMIT.
 - [ ] `GET /api/account/export` after creating a board. **Possible bug**: export may return empty boards list. Investigate.
+
+---
+
+## Section 23: Tech-Debt, Security, and Feature Hardening Wave (PRs #765-#770, #776, 2026-04-04)
+
+**What changed:** Agent API 500 fix, DataExport exception logging, streaming chat token usage recording, EF Core 9→8 version alignment, frontend auth guard tests, OAuth token lifecycle tests, tool argument replay in LLM multi-turn. Two rounds of adversarial review per PR.
+
+### Verifications — Agent API Fix (#758/#776)
+
+- [ ] `GET /api/agents` with valid bearer token. Verify `200` with JSON array (previously returned 500).
+- [ ] `GET /api/agents/{id}/runs` with valid bearer token. Verify `200` with JSON array (previously returned 500).
+- [ ] Create an agent profile, then run it. `GET /api/agents/{id}/runs?limit=5`. Verify results are ordered by CreatedAt descending and limited to 5.
+- [ ] `GET /api/agents` without bearer token. Verify `401`.
+
+### Verifications — DataExport Exception Logging (#759/#766)
+
+- [ ] Trigger a data export (`GET /api/account/export`). If it succeeds, verify no error-level log entries for DataExportService.
+- [ ] Verify that `DataExportService` and `AccountDeletionService` accept nullable `ILogger` — no DI registration changes required.
+
+### Verifications — Streaming Chat Token Usage (#763/#768)
+
+- [ ] Open `/workspace/automations/chat`. Create a board-scoped session. Send a message and observe the response streaming.
+- [ ] After streaming completes, verify the assistant message is persisted: refresh the page and verify the response is still visible in chat history (previously, streamed responses were not saved).
+- [ ] If quota tracking is visible (e.g., via API or logs), verify token usage is recorded for streamed responses.
+
+### Verifications — EF Core Version Alignment (#760/#767)
+
+- [ ] `dotnet build backend/Taskdeck.sln -c Release` — verify 0 errors.
+- [ ] `dotnet test backend/Taskdeck.sln -c Release -m:1` — verify all tests pass.
+- [ ] Visit `http://localhost:5000/swagger`. Verify Swagger UI loads correctly.
+- [ ] Check `backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj` — verify all EF Core packages are at 8.0.14 (not 9.x).
+
+### Verifications — Frontend Auth Guard Tests (#725/#765)
+
+- [ ] `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose` — verify all tests pass including new `http.spec.ts` and `routerIntegration.spec.ts`.
+- [ ] Navigate to a protected route while logged out. Verify redirect to `/login?redirect=<original-path>`.
+- [ ] Log in and verify redirect back to the original path.
+
+### Verifications — OAuth Token Lifecycle (#723/#769)
+
+- [ ] Backend tests cover auth code replay prevention and concurrent exchange atomicity — verify via `dotnet test --filter "FullyQualifiedName~OAuthTokenLifecycle"`.
+- [ ] Verify expired JWT returns `401` with `ApiErrorResponse` JSON shape (not HTML).
+
+### Verifications — Tool Argument Replay (#673/#770)
+
+- [ ] Open `/workspace/automations/chat`. Create a board-scoped session. Ask a question that triggers tool calls (e.g., "What cards are in Backlog?"). Verify the response is coherent across multiple turns.
+- [ ] In multi-turn conversation, verify the LLM remembers prior tool results and provides contextual follow-up answers.
+
+### Verifications — Test Suite Health (Post-Wave)
+
+- [ ] `dotnet test backend/Taskdeck.sln -c Release -m:1` — verify all tests pass with ~3020+ backend total.
+- [ ] `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose` — verify all frontend tests pass with ~1625+ total.
+- [ ] Check CI status on PRs #765-#770, #776 — verify all required checks passed.
 
 ---
 

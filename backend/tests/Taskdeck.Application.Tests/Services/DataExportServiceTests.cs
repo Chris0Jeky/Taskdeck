@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -285,8 +286,314 @@ public class DataExportServiceTests
             .ReturnsAsync((NotificationPreference?)null);
     }
 
+    [Fact]
+    public async Task ExportUserDataAsync_LogsException_WhenRepositoryThrows()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var loggerMock = new Mock<ILogger<DataExportService>>();
+        var serviceWithLogger = new DataExportService(
+            _unitOfWorkMock.Object, _historyServiceMock.Object, loggerMock.Object);
+
+        var expectedException = new InvalidOperationException("Database connection lost");
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ThrowsAsync(expectedException);
+
+        // Act
+        var result = await serviceWithLogger.ExportUserDataAsync(_userId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to export user data")),
+                expectedException,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_ReturnsFailure_WhenExceptionOccurs_WithoutLogger()
+    {
+        // Arrange — the default _service has no logger (null), should still return failure
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ThrowsAsync(new InvalidOperationException("DB error"));
+
+        // Act
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        // Assert — must not throw; must return a failure result
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().NotContain("DB error"); // must not leak internal details
+    }
+
     private void SetupEmptyRepositoriesExceptBoards()
     {
+        _notificationRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), false, null, default, 0))
+            .ReturnsAsync(Enumerable.Empty<Notification>());
+        _llmQueueRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, default))
+            .ReturnsAsync(Enumerable.Empty<LlmRequest>());
+        _proposalRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
+        _chatSessionRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .ReturnsAsync(Enumerable.Empty<ChatSession>());
+        _auditLogRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, It.IsAny<int>(), default))
+            .ReturnsAsync(Enumerable.Empty<AuditLog>());
+        _userPrefRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync((UserPreference?)null);
+        _notifPrefRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync((NotificationPreference?)null);
+    }
+}
+
+/// <summary>
+/// Tests for the streaming export path added to fix issue #670 (export streaming for large datasets).
+/// </summary>
+public class DataExportServiceStreamingTests
+{
+    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<IHistoryService> _historyServiceMock;
+    private readonly Mock<IUserRepository> _userRepoMock;
+    private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
+    private readonly Mock<IBoardRepository> _boardRepoMock;
+    private readonly Mock<INotificationRepository> _notificationRepoMock;
+    private readonly Mock<ILlmQueueRepository> _llmQueueRepoMock;
+    private readonly Mock<IAutomationProposalRepository> _proposalRepoMock;
+    private readonly Mock<IChatSessionRepository> _chatSessionRepoMock;
+    private readonly Mock<IChatMessageRepository> _chatMessageRepoMock;
+    private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
+    private readonly Mock<IUserPreferenceRepository> _userPrefRepoMock;
+    private readonly Mock<INotificationPreferenceRepository> _notifPrefRepoMock;
+    private readonly DataExportService _service;
+
+    private readonly Guid _userId = Guid.NewGuid();
+    private readonly User _testUser;
+
+    public DataExportServiceStreamingTests()
+    {
+        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _historyServiceMock = new Mock<IHistoryService>();
+        _userRepoMock = new Mock<IUserRepository>();
+        _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
+        _boardRepoMock = new Mock<IBoardRepository>();
+        _notificationRepoMock = new Mock<INotificationRepository>();
+        _llmQueueRepoMock = new Mock<ILlmQueueRepository>();
+        _proposalRepoMock = new Mock<IAutomationProposalRepository>();
+        _chatSessionRepoMock = new Mock<IChatSessionRepository>();
+        _chatMessageRepoMock = new Mock<IChatMessageRepository>();
+        _auditLogRepoMock = new Mock<IAuditLogRepository>();
+        _userPrefRepoMock = new Mock<IUserPreferenceRepository>();
+        _notifPrefRepoMock = new Mock<INotificationPreferenceRepository>();
+
+        _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Notifications).Returns(_notificationRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.LlmQueue).Returns(_llmQueueRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ChatSessions).Returns(_chatSessionRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.ChatMessages).Returns(_chatMessageRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.UserPreferences).Returns(_userPrefRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.NotificationPreferences).Returns(_notifPrefRepoMock.Object);
+
+        _testUser = new User("streamuser", "stream@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
+
+        _historyServiceMock
+            .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success());
+
+        _service = new DataExportService(_unitOfWorkMock.Object, _historyServiceMock.Object);
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_ReturnsValidationError_WhenUserIdIsEmpty()
+    {
+        using var stream = new MemoryStream();
+        var result = await _service.StreamUserDataExportAsync(Guid.Empty, stream);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_ReturnsNotFound_WhenUserDoesNotExist()
+    {
+        _userRepoMock.Setup(r => r.GetByIdAsync(_userId, default)).ReturnsAsync((User?)null);
+
+        using var stream = new MemoryStream();
+        var result = await _service.StreamUserDataExportAsync(_userId, stream);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_WritesValidJson_ForExistingUser()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        using var stream = new MemoryStream();
+        var result = await _service.StreamUserDataExportAsync(_userId, stream);
+
+        result.IsSuccess.Should().BeTrue();
+        stream.Length.Should().BeGreaterThan(0);
+
+        stream.Position = 0;
+        var json = System.Text.Encoding.UTF8.GetString(stream.ToArray());
+
+        // Must be parseable as valid JSON
+        var action = () => System.Text.Json.JsonDocument.Parse(json);
+        action.Should().NotThrow("streaming export must produce valid JSON");
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_OutputContainsRequiredEnvelopeFields()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        using var stream = new MemoryStream();
+        await _service.StreamUserDataExportAsync(_userId, stream);
+
+        stream.Position = 0;
+        using var doc = System.Text.Json.JsonDocument.Parse(stream);
+
+        doc.RootElement.TryGetProperty("version", out var version).Should().BeTrue();
+        version.GetString().Should().Be("1.0");
+
+        doc.RootElement.TryGetProperty("userId", out var userIdProp).Should().BeTrue();
+        userIdProp.GetString().Should().Be(_userId.ToString());
+
+        doc.RootElement.TryGetProperty("profile", out var profileProp).Should().BeTrue();
+        profileProp.TryGetProperty("username", out var usernameProp).Should().BeTrue();
+        usernameProp.GetString().Should().Be("streamuser");
+
+        doc.RootElement.TryGetProperty("data", out var dataProp).Should().BeTrue();
+        dataProp.TryGetProperty("boards", out _).Should().BeTrue();
+        dataProp.TryGetProperty("notifications", out _).Should().BeTrue();
+        dataProp.TryGetProperty("proposals", out _).Should().BeTrue();
+        dataProp.TryGetProperty("chatSessions", out _).Should().BeTrue();
+        dataProp.TryGetProperty("auditTrail", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_UsesOneCountQueryForManyChatSessions_NotNPlus1()
+    {
+        // Arrange — two chat sessions
+        SetupUserFound();
+
+        var session1 = new ChatSession(_userId, "Session One");
+        var session2 = new ChatSession(_userId, "Session Two");
+        var sessions = new[] { session1, session2 };
+
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(Enumerable.Empty<BoardAccess>());
+        _notificationRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), false, null, default, 0))
+            .ReturnsAsync(Enumerable.Empty<Notification>());
+        _llmQueueRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, default))
+            .ReturnsAsync(Enumerable.Empty<LlmRequest>());
+        _proposalRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .ReturnsAsync(Enumerable.Empty<AutomationProposal>());
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), default))
+            .ReturnsAsync(sessions);
+
+        // CountBySessionIdsAsync should be called ONCE with both session IDs
+        _chatMessageRepoMock
+            .Setup(r => r.CountBySessionIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(new Dictionary<Guid, int>
+            {
+                { session1.Id, 3 },
+                { session2.Id, 7 }
+            });
+
+        _auditLogRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, It.IsAny<int>(), default))
+            .ReturnsAsync(Enumerable.Empty<AuditLog>());
+        _userPrefRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync((UserPreference?)null);
+        _notifPrefRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync((NotificationPreference?)null);
+
+        using var stream = new MemoryStream();
+
+        // Act
+        var result = await _service.StreamUserDataExportAsync(_userId, stream);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+
+        // CountBySessionIdsAsync must have been called exactly once (not N times)
+        _chatMessageRepoMock.Verify(
+            r => r.CountBySessionIdsAsync(It.IsAny<IEnumerable<Guid>>(), default),
+            Times.Once,
+            "message counts should be fetched in a single batched query, not one per session");
+
+        // GetBySessionIdAsync must never be called (that's the old N+1 pattern)
+        _chatMessageRepoMock.Verify(
+            r => r.GetBySessionIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), default),
+            Times.Never,
+            "streaming export must not fall back to the N+1 GetBySessionIdAsync pattern");
+
+        // Verify the output JSON contains the correct message counts
+        stream.Position = 0;
+        using var doc = System.Text.Json.JsonDocument.Parse(stream);
+        var chatSessions = doc.RootElement.GetProperty("data").GetProperty("chatSessions");
+        chatSessions.GetArrayLength().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_LogsExportAction()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        using var stream = new MemoryStream();
+        await _service.StreamUserDataExportAsync(_userId, stream);
+
+        _historyServiceMock.Verify(
+            h => h.LogActionAsync("User", _userId, AuditAction.DataExported, _userId, It.IsAny<string>()),
+            Times.Once);
+    }
+
+    private void SetupUserFound()
+    {
+        _userRepoMock.Setup(r => r.GetByIdAsync(_userId, default)).ReturnsAsync(_testUser);
+    }
+
+    private void SetupEmptyRepositories()
+    {
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ReturnsAsync(Enumerable.Empty<BoardAccess>());
         _notificationRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, It.IsAny<int>(), false, null, default, 0))
             .ReturnsAsync(Enumerable.Empty<Notification>());
