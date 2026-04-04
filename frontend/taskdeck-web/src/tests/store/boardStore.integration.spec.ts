@@ -5,7 +5,7 @@
  * Mocking http (not the API modules) means any mismatch between API response
  * shapes and what the store expects will be caught here.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useBoardStore } from '../../store/boardStore'
@@ -65,6 +65,10 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
     vi.clearAllMocks()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   // ── fetchBoards ───────────────────────────────────────────────────────────
 
   describe('fetchBoards', () => {
@@ -118,7 +122,6 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
       await store.fetchBoards()
 
       expect(store.activeBoardId).toBe('board-1')
-      vi.useRealTimers()
     })
 
     it('does not switch activeBoardId when a second board is created (regression #509)', async () => {

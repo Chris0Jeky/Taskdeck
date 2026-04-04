@@ -10,6 +10,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../../utils/storageKeys'
+import type { HomeSummary, TodaySummary, WorkspaceOnboarding } from '../../types/workspace'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -34,9 +35,9 @@ vi.mock('../../utils/demoMode', async (importOriginal) => {
   return { ...actual, isDemoMode: false }
 })
 
-function makeOnboarding(overrides: Partial<Record<string, unknown>> = {}) {
+function makeOnboarding(overrides: Partial<WorkspaceOnboarding> = {}): WorkspaceOnboarding {
   return {
-    visibility: 'active' as const,
+    visibility: 'active',
     isComplete: false,
     currentStepId: 'create-first-board',
     dismissedAt: null,
@@ -56,9 +57,9 @@ function makePreferencePayload(mode: 'guided' | 'workbench' | 'agent' = 'guided'
   }
 }
 
-function makeHomeSummary(overrides: Partial<Record<string, unknown>> = {}) {
+function makeHomeSummary(overrides: Partial<HomeSummary> = {}): HomeSummary {
   return {
-    workspaceMode: 'guided' as const,
+    workspaceMode: 'guided',
     isFirstRun: false,
     onboarding: makeOnboarding(),
     workload: {
@@ -79,9 +80,9 @@ function makeHomeSummary(overrides: Partial<Record<string, unknown>> = {}) {
   }
 }
 
-function makeTodaySummary(overrides: Partial<Record<string, unknown>> = {}) {
+function makeTodaySummary(overrides: Partial<TodaySummary> = {}): TodaySummary {
   return {
-    workspaceMode: 'guided' as const,
+    workspaceMode: 'guided',
     onboarding: makeOnboarding(),
     summary: {
       capturesNeedingTriage: 1,
@@ -251,8 +252,8 @@ describe('workspaceStore — integration (real workspaceApi, mocked HTTP)', () =
       vi.mocked(http.put).mockResolvedValue({ data: dismissed })
 
       const store = useWorkspaceStore()
-      store.homeSummary = makeHomeSummary() as never
-      store.todaySummary = makeTodaySummary() as never
+      store.homeSummary = makeHomeSummary()
+      store.todaySummary = makeTodaySummary()
 
       await store.updateOnboarding('dismiss')
 

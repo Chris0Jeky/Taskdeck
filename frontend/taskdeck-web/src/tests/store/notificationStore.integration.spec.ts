@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useNotificationStore } from '../../store/notificationStore'
+import type { NotificationItem } from '../../types/notifications'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -33,7 +34,7 @@ vi.mock('../../utils/demoMode', async (importOriginal) => {
   return { ...actual, isDemoMode: false }
 })
 
-function makeNotification(overrides: Partial<Record<string, unknown>> = {}) {
+function makeNotification(overrides: Partial<NotificationItem> = {}): NotificationItem {
   return {
     id: 'n-1',
     userId: 'u-1',
@@ -128,7 +129,7 @@ describe('notificationStore — integration (real notificationsApi, mocked HTTP)
       store.notifications = [
         makeNotification({ id: 'n-1', isRead: false }),
         makeNotification({ id: 'n-2', isRead: false }),
-      ] as never[]
+      ]
 
       const readResponse = makeNotification({ id: 'n-1', isRead: true, readAt: '2026-02-01T00:00:00Z' })
       vi.mocked(http.post).mockResolvedValue({ data: readResponse })
@@ -143,7 +144,7 @@ describe('notificationStore — integration (real notificationsApi, mocked HTTP)
 
     it('correctly URL-encodes special characters in the notification id', async () => {
       const store = useNotificationStore()
-      store.notifications = [makeNotification({ id: 'n/special+id' })] as never[]
+      store.notifications = [makeNotification({ id: 'n/special+id' })]
 
       vi.mocked(http.post).mockResolvedValue({ data: makeNotification({ id: 'n/special+id', isRead: true }) })
 
@@ -172,7 +173,7 @@ describe('notificationStore — integration (real notificationsApi, mocked HTTP)
       store.notifications = [
         makeNotification({ id: 'n-1', isRead: false }),
         makeNotification({ id: 'n-2', isRead: false }),
-      ] as never[]
+      ]
 
       vi.mocked(http.post).mockResolvedValue({ data: { markedCount: 2 } })
       await store.markAllRead()
@@ -187,7 +188,7 @@ describe('notificationStore — integration (real notificationsApi, mocked HTTP)
       store.notifications = [
         makeNotification({ id: 'n-1', boardId: 'board-A', isRead: false }),
         makeNotification({ id: 'n-2', boardId: 'board-B', isRead: false }),
-      ] as never[]
+      ]
 
       vi.mocked(http.post).mockResolvedValue({ data: { markedCount: 1 } })
       await store.markAllRead('board-A')

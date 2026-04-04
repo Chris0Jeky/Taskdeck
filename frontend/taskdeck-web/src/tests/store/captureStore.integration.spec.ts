@@ -205,10 +205,13 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
 
       const promise = store.triageItem('c-opt')
 
-      // Resolve the POST first — after this, optimistic state should be set
+      // Resolve the POST first — after this, optimistic state should be set.
+      // The triageItem flow involves multiple await hops (http.post → enqueueTriage → triageItem),
+      // so we flush the microtask queue three times to ensure all continuations run.
       resolvePost({ data: { id: 'c-opt', status: 'Triaging', alreadyTriaging: false } })
-      // Drain the microtask queue so the optimistic mutation runs
-      await new Promise<void>((r) => setTimeout(r, 0))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
 
       // Status must already be Triaging even though GET has not resolved yet
       expect(store.detailById['c-opt']?.status).toBe('Triaging')
