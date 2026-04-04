@@ -17,11 +17,13 @@ public class AgentRunRepository : Repository<AgentRun>, IAgentRunRepository
     {
         var boundedLimit = limit <= 0 ? DefaultLimit : limit;
 
-        return await _dbSet
+        // Materialize first, then sort in memory — SQLite doesn't support DateTimeOffset in ORDER BY
+        var runs = await _dbSet
             .Where(ar => ar.AgentProfileId == agentProfileId)
-            .OrderByDescending(ar => ar.CreatedAt)
-            .Take(boundedLimit)
             .ToListAsync(cancellationToken);
+        return runs
+            .OrderByDescending(ar => ar.CreatedAt)
+            .Take(boundedLimit);
     }
 
     public async Task<AgentRun?> GetByIdWithEventsAsync(Guid id, CancellationToken cancellationToken = default)
