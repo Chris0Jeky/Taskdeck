@@ -200,7 +200,7 @@ public class BoardMetricsAccuracyTests
         {
             audits[card.Id] = new List<(DateTimeOffset, Guid)>
             {
-                (baseDate.AddHours(i(cards, card)), doneCol.Id)
+                (baseDate.AddHours(GetCardIndex(cards, card)), doneCol.Id)
             };
         }
 
@@ -622,18 +622,27 @@ public class BoardMetricsAccuracyTests
     {
         var colId = Guid.NewGuid();
 
+        // Create cards with controlled UpdatedAt so blocked durations differ meaningfully.
+        // ComputeBlocked derives duration from (UtcNow - UpdatedAt), so an older UpdatedAt
+        // means a longer blocked duration.
         var recentlyBlocked = CreateCard(colId, "Recent");
         recentlyBlocked.Block("New blocker");
 
         var longBlocked = CreateCard(colId, "Long Blocked");
         longBlocked.Block("Old blocker");
+        // Force longBlocked to have an UpdatedAt 2 days in the past so its duration is meaningfully larger
+        SetUpdatedAt(longBlocked, DateTimeOffset.UtcNow.AddDays(-2));
 
         var (count, cards) = BoardMetricsService.ComputeBlocked(
             new List<Card> { recentlyBlocked, longBlocked });
 
         count.Should().Be(2);
-        cards.Should().BeInDescendingOrder(c => c.BlockedDurationDays,
-            "blocked cards should be sorted longest-blocked first");
+        cards[0].CardTitle.Should().Be("Long Blocked",
+            "the card blocked longest (2 days ago) should appear first");
+        cards[1].CardTitle.Should().Be("Recent",
+            "the recently blocked card should appear second");
+        cards[0].BlockedDurationDays.Should().BeGreaterThan(cards[1].BlockedDurationDays,
+            "blocked cards should be sorted longest-blocked first with distinguishable durations");
     }
 
     [Fact]
@@ -817,7 +826,7 @@ public class BoardMetricsAccuracyTests
 
     #region Helpers
 
-    private static int i(List<Card> cards, Card card) => cards.IndexOf(card);
+    private static int GetCardIndex(List<Card> cards, Card card) => cards.IndexOf(card);
 
     private void SetupBoard(List<Column> columns, List<Card> cards)
     {
@@ -896,11 +905,53 @@ public class BoardMetricsAccuracyTests
                 // Try property backing field convention
                 var backingField = typeof(Entity).GetField("<CreatedAt>k__BackingField",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                backingField?.SetValue(card, createdAt);
+                if (backingField != null)
+                {
+                    backingField.SetValue(card, createdAt);
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "Could not set CreatedAt via reflection. Entity class may have been refactored. " +
+                        "Update CreateCardWithCreatedAt to match the new backing field layout.");
+                }
             }
         }
 
+        // Verify the override actually took effect
+        card.CreatedAt.Should().Be(createdAt,
+            "reflection-based CreatedAt override must succeed for cycle time tests to be valid");
+
         return card;
+    }
+
+    /// <summary>
+    /// Sets UpdatedAt on an entity via reflection for controlled blocked-duration tests.
+    /// </summary>
+    private static void SetUpdatedAt(Entity entity, DateTimeOffset updatedAt)
+    {
+        var prop = typeof(Entity).GetProperty("UpdatedAt");
+        if (prop != null && prop.CanWrite)
+        {
+            prop.SetValue(entity, updatedAt);
+        }
+        else
+        {
+            var backingField = typeof(Entity).GetField("<UpdatedAt>k__BackingField",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (backingField != null)
+            {
+                backingField.SetValue(entity, updatedAt);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "Could not set UpdatedAt via reflection. Entity class may have been refactored.");
+            }
+        }
+
+        entity.UpdatedAt.Should().Be(updatedAt,
+            "reflection-based UpdatedAt override must succeed for blocked duration tests to be valid");
     }
 
     #endregion

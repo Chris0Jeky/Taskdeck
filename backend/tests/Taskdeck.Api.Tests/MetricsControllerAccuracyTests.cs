@@ -102,7 +102,7 @@ public class MetricsControllerAccuracyTests : IClassFixture<TestWebApplicationFa
     }
 
     [Fact]
-    public async Task GetBoardMetrics_EmptyBoardId_ShouldReturnNotFound()
+    public async Task GetBoardMetrics_EmptyBoardId_ShouldReturnBadRequest()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "metrics-emptyid");
@@ -111,10 +111,9 @@ public class MetricsControllerAccuracyTests : IClassFixture<TestWebApplicationFa
         var response = await client.GetAsync(
             $"/api/metrics/boards/{Guid.Empty}");
 
-        // Service returns validation error for empty board ID, which maps to 400
-        var validStatuses = new[] { HttpStatusCode.BadRequest, HttpStatusCode.NotFound, HttpStatusCode.Forbidden };
-        validStatuses.Should().Contain(response.StatusCode,
-            "empty board ID should fail with an appropriate error code");
+        // Service returns ValidationError for empty board ID, which maps to 400
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "empty board ID should be rejected as a validation error");
     }
 
     [Fact]
