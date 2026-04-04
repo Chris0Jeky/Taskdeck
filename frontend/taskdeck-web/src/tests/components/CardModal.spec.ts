@@ -388,7 +388,7 @@ describe('CardModal', () => {
     })
   })
 
-  it('should render fallback message when capture provenance is unavailable', async () => {
+  it('should render "Created manually" empty state when capture provenance is unavailable (manual card)', async () => {
     mockStore.fetchCardProvenance.mockResolvedValue(null)
 
     const wrapper = mount(CardModal, {
@@ -403,7 +403,11 @@ describe('CardModal', () => {
     await Promise.resolve()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('No capture provenance available.')
+    const emptyState = wrapper.find('[data-testid="provenance-empty-state"]')
+    expect(emptyState.exists()).toBe(true)
+    expect(emptyState.text()).toContain('Created manually')
+    // No error alert should be shown for an expected empty state
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
   it('should render a provenance error message when capture provenance fetch fails', async () => {
@@ -423,6 +427,6 @@ describe('CardModal', () => {
 
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
     expect(wrapper.text()).toContain('Unable to load capture provenance.')
-    expect(wrapper.text()).not.toContain('No capture provenance available.')
+    expect(wrapper.find('[data-testid="provenance-empty-state"]').exists()).toBe(false)
   })
 })

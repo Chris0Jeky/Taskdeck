@@ -135,5 +135,21 @@ describe('cardsApi', () => {
       expect(http.get).toHaveBeenCalledWith('/boards/board-1/cards/card-1/provenance')
       expect(result).toEqual(provenance)
     })
+
+    it('should return null for manually-created cards with no capture provenance (404)', async () => {
+      const notFoundError = { response: { status: 404, data: { errorCode: 'NotFound' } } }
+      vi.mocked(http.get).mockRejectedValue(notFoundError)
+
+      const result = await cardsApi.getCardProvenance('board-1', 'manual-card-1')
+
+      expect(result).toBeNull()
+    })
+
+    it('should rethrow non-404 errors from the provenance endpoint', async () => {
+      const serverError = { response: { status: 500, data: { errorCode: 'InternalError' } } }
+      vi.mocked(http.get).mockRejectedValue(serverError)
+
+      await expect(cardsApi.getCardProvenance('board-1', 'card-1')).rejects.toEqual(serverError)
+    })
   })
 })
