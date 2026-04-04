@@ -186,6 +186,20 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
       expect(store.currentBoard?.name).toBe('Renamed')
       expect(http.put).toHaveBeenCalledWith('/boards/board-1', expect.any(Object))
     })
+
+    it('does not corrupt board name in the list when PUT /boards/:id fails', async () => {
+      const original = makeBoardPayload()
+      vi.mocked(http.get).mockResolvedValue({ data: [original] })
+
+      const store = useBoardStore()
+      await store.fetchBoards()
+
+      vi.mocked(http.put).mockRejectedValue({ response: { status: 409, data: { message: 'Conflict' } } })
+      await expect(store.updateBoard('board-1', { name: 'Will fail', description: null, isArchived: null })).rejects.toBeDefined()
+
+      // The list must retain the original name (no optimistic mutation that isn't rolled back)
+      expect(store.boards[0].name).toBe('My Board')
+    })
   })
 
   // ── deleteBoard ───────────────────────────────────────────────────────────
