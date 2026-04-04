@@ -122,6 +122,7 @@ watch(
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
   <div
     v-if="isOpen"
     class="td-overlay"
@@ -129,6 +130,7 @@ watch(
     aria-label="Workspace setup"
     aria-modal="true"
     @click.self="closeModal"
+    @keydown.escape="closeModal"
   >
     <div class="td-setup-modal">
       <header class="td-setup-modal__header">

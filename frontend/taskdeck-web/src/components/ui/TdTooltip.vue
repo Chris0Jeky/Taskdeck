@@ -40,8 +40,10 @@ function handleBlur() {
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- tooltip wrapper; @mouseenter/@mouseleave for hover, @focusin/@focusout for keyboard/screen-reader access -->
   <div
     class="td-tooltip-wrapper"
+    role="group"
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
     @focusin="handleFocus"

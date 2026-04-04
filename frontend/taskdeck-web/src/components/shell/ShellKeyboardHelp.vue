@@ -10,6 +10,7 @@ const emit = defineEmits<{
 
 <template>
   <Teleport to="body">
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
     <div
       v-if="visible"
       class="td-overlay"
@@ -17,6 +18,7 @@ const emit = defineEmits<{
       aria-label="Keyboard shortcuts"
       aria-modal="true"
       @click.self="emit('close')"
+      @keydown.escape="emit('close')"
     >
       <div class="td-keyboard-help">
         <div class="td-keyboard-help__header">

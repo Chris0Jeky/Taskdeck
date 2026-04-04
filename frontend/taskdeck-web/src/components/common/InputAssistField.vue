@@ -203,6 +203,7 @@ function onKeydown(event: KeyboardEvent) {
         role="option"
         :aria-selected="index === activeIndex"
         @mouseenter="activeIndex = index"
+        @focusin="activeIndex = index"
         @mousedown.prevent="selectOption(option)"
       >
         <span class="td-input-assist__option-label">{{ option.label }}</span>

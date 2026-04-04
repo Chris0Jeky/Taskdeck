@@ -112,8 +112,9 @@ const hasActiveFilters = computed(() => {
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="space-y-2">
-          <label class="block text-sm font-medium text-on-surface-variant">Search</label>
+          <label for="filter-search" class="block text-sm font-medium text-on-surface-variant">Search</label>
           <input
+            id="filter-search"
             v-model="localFilters.searchText"
             @input="updateFilters"
             type="text"
@@ -123,8 +124,9 @@ const hasActiveFilters = computed(() => {
         </div>
 
         <div class="space-y-2">
-          <label class="block text-sm font-medium text-on-surface-variant">Due Date</label>
+          <label for="filter-due-date" class="block text-sm font-medium text-on-surface-variant">Due Date</label>
           <select
+            id="filter-due-date"
             v-model="localFilters.dueDateFilter"
             @change="updateFilters"
             class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
@@ -138,7 +140,7 @@ const hasActiveFilters = computed(() => {
         </div>
 
         <div class="space-y-2">
-          <label class="block text-sm font-medium text-on-surface-variant">Status</label>
+          <p class="block text-sm font-medium text-on-surface-variant">Status</p>
           <label class="flex items-center px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-lg cursor-pointer hover:bg-surface-container-highest transition-colors">
             <input
               v-model="localFilters.showBlockedOnly"
@@ -151,12 +153,12 @@ const hasActiveFilters = computed(() => {
         </div>
 
         <div class="space-y-2">
-          <label class="block text-sm font-medium text-on-surface-variant">
+          <p class="block text-sm font-medium text-on-surface-variant">
             Labels
             <span v-if="localFilters.labelIds.length > 0" class="text-xs text-on-surface-variant/70">
               ({{ localFilters.labelIds.length }} selected)
             </span>
-          </label>
+          </p>
           <div class="max-h-[120px] overflow-y-auto bg-surface-container-high border border-outline-variant/40 rounded-lg p-2 space-y-1">
             <div v-if="labels.length === 0" class="text-sm text-on-surface-variant py-1">
               No labels available

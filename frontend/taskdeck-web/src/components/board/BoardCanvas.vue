@@ -28,11 +28,14 @@ defineEmits<{
 <template>
   <div class="td-board-canvas">
     <div class="td-board-canvas__lanes">
+      <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- drag-and-drop column zone; group role + drag events are intentional, keyboard DnD handled at card level -->
       <div
         v-for="column in sortedColumns"
         :key="column.id"
         :data-column-dnd-id="column.id"
         draggable="false"
+        role="group"
+        :aria-label="`Column: ${column.name}`"
         :class="[
           'transition-all',
           draggedColumn?.id === column.id ? 'opacity-50' : '',

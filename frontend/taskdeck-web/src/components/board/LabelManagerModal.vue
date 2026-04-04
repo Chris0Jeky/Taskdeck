@@ -111,10 +111,15 @@ useEscapeToClose(() => props.isOpen, handleClose)
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
   <div
     v-if="isOpen"
     class="fixed inset-0 z-50 overflow-y-auto"
+    role="dialog"
+    aria-label="Manage Labels"
+    aria-modal="true"
     @click.self="handleClose"
+    @keydown.escape="handleClose"
   >
     <!-- Backdrop -->
     <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
@@ -158,9 +163,9 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
             <!-- Color Picker -->
             <div>
-              <label class="block text-sm font-medium text-on-surface-variant mb-2">
+              <p class="block text-sm font-medium text-on-surface-variant mb-2">
                 Color *
-              </label>
+              </p>
               <div class="flex flex-wrap gap-2 mb-2">
                 <button
                   v-for="color in colorPalette"
@@ -174,12 +179,16 @@ useEscapeToClose(() => props.isOpen, handleClose)
                 ></button>
               </div>
               <div class="flex items-center gap-2">
+                <label for="label-color-picker" class="sr-only">Color picker</label>
                 <input
+                  id="label-color-picker"
                   v-model="labelColor"
                   type="color"
                   class="w-12 h-8 border border-outline-variant/40 rounded cursor-pointer bg-surface-container-high"
                 />
+                <label for="label-color-hex" class="sr-only">Hex color value</label>
                 <input
+                  id="label-color-hex"
                   v-model="labelColor"
                   type="text"
                   pattern="^#[0-9A-Fa-f]{6}$"
@@ -191,9 +200,9 @@ useEscapeToClose(() => props.isOpen, handleClose)
 
             <!-- Preview -->
             <div>
-              <label class="block text-sm font-medium text-on-surface-variant mb-1">
+              <p class="block text-sm font-medium text-on-surface-variant mb-1">
                 Preview
-              </label>
+              </p>
               <span
                 class="inline-block px-3 py-1.5 rounded-md text-sm font-medium text-white"
                 :style="{ backgroundColor: labelColor }"

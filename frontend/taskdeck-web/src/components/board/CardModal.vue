@@ -292,10 +292,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
   <div
     v-if="isOpen"
     class="fixed inset-0 z-50 overflow-y-auto"
+    role="dialog"
+    aria-label="Edit Card"
+    aria-modal="true"
     @click.self="handleClose"
+    @keydown.escape="handleClose"
   >
     <!-- Backdrop -->
     <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
@@ -404,9 +409,9 @@ onBeforeUnmount(() => {
 
           <!-- Labels -->
           <div>
-            <label class="block text-sm font-medium text-on-surface-variant mb-2">
+            <p class="block text-sm font-medium text-on-surface-variant mb-2">
               Labels
-            </label>
+            </p>
             <div v-if="labels.length > 0" class="flex flex-col gap-2">
               <label
                 v-for="label in labels"
@@ -498,6 +503,7 @@ onBeforeUnmount(() => {
                 <div v-if="editingCommentId === comment.id" class="space-y-2">
                   <textarea
                     v-model="editingCommentContent"
+                    aria-label="Edit comment"
                     rows="2"
                     class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50"
                   ></textarea>
@@ -550,6 +556,7 @@ onBeforeUnmount(() => {
                   <div v-if="!comment.isDeleted" class="space-y-2 pt-1">
                     <textarea
                       v-model="replyDraftByParent[comment.id]"
+                      aria-label="Reply to comment"
                       rows="2"
                       class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
                       placeholder="Reply..."

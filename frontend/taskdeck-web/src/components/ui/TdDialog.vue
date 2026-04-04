@@ -95,11 +95,14 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <Transition name="td-dialog">
+      <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- backdrop container; escape key handled here, dialog element inside receives focus -->
       <div
         v-if="props.open"
         class="td-dialog-backdrop"
         @click.self="handleBackdropClick"
+        @keydown.escape="handleBackdropClick"
       >
+        <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- dialog element with focus trap; @keydown handles tab cycling and escape -->
         <div
           ref="dialogRef"
           class="td-dialog"
