@@ -2,7 +2,6 @@ FROM node:24.13.1-alpine AS build
 WORKDIR /app
 
 COPY frontend/taskdeck-web/package.json frontend/taskdeck-web/package-lock.json ./
-COPY frontend/taskdeck-web/vendor ./vendor
 RUN npm ci
 
 COPY frontend/taskdeck-web/ ./
