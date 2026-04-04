@@ -36,9 +36,15 @@ export const cardsApi = {
       const { data } = await http.get<CardCaptureProvenance>(`/boards/${boardId}/cards/${cardId}/provenance`)
       return data
     } catch (e: unknown) {
-      const candidate = e as { response?: { status?: number } } | null
-      if (candidate?.response?.status === 404) {
-        // Manual cards have no capture provenance — treat absence as empty state, not an error.
+      const candidate = e as { response?: { status?: number; data?: { message?: string } } } | null
+      if (
+        candidate?.response?.status === 404 &&
+        typeof candidate.response.data?.message === 'string' &&
+        candidate.response.data.message.startsWith('Capture provenance not found')
+      ) {
+        // Manual cards have no capture provenance — treat only that specific absence as
+        // empty state, not an error. Other 404s (e.g. card not found in board) are rethrown
+        // so callers can surface them as genuine errors.
         return null
       }
       throw e

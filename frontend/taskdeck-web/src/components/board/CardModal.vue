@@ -608,7 +608,7 @@ onBeforeUnmount(() => {
                   Triage run: {{ captureProvenance.triageRunId }}
                 </p>
               </div>
-              <p v-else class="text-xs text-on-surface-variant italic" data-testid="provenance-empty-state">Created manually — no capture provenance.</p>
+              <p v-else-if="loadedCaptureProvenanceCardId === card.id" class="text-xs text-on-surface-variant italic" data-testid="provenance-empty-state">Created manually — no capture provenance.</p>
             </div>
           </div>
         </div>

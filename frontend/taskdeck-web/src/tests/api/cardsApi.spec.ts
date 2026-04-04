@@ -136,13 +136,30 @@ describe('cardsApi', () => {
       expect(result).toEqual(provenance)
     })
 
-    it('should return null for manually-created cards with no capture provenance (404)', async () => {
-      const notFoundError = { response: { status: 404, data: { errorCode: 'NotFound' } } }
+    it('should return null for manually-created cards with no capture provenance (404 + provenance message)', async () => {
+      const notFoundError = {
+        response: {
+          status: 404,
+          data: { errorCode: 'NotFound', message: 'Capture provenance not found for card manual-card-1' },
+        },
+      }
       vi.mocked(http.get).mockRejectedValue(notFoundError)
 
       const result = await cardsApi.getCardProvenance('board-1', 'manual-card-1')
 
       expect(result).toBeNull()
+    })
+
+    it('should rethrow 404 when the card itself is not found (card-not-found, not provenance-absent)', async () => {
+      const cardNotFoundError = {
+        response: {
+          status: 404,
+          data: { errorCode: 'NotFound', message: 'Card with ID stale-id not found in board board-1' },
+        },
+      }
+      vi.mocked(http.get).mockRejectedValue(cardNotFoundError)
+
+      await expect(cardsApi.getCardProvenance('board-1', 'stale-id')).rejects.toEqual(cardNotFoundError)
     })
 
     it('should rethrow non-404 errors from the provenance endpoint', async () => {
