@@ -398,24 +398,18 @@ public class DataExportService : IDataExportService
         Guid userId,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        int offset = 0;
-        while (true)
+        // IAutomationProposalRepository.GetByUserIdAsync does not expose an offset parameter,
+        // so we cannot page at the DB level. Load all rows in a single query using int.MaxValue
+        // as the limit — EF Core translates this to LIMIT 2147483647 which effectively removes
+        // the cap. The repo's NormalizeLimit guard only triggers for limit <= 0 and leaves
+        // positive values unchanged.
+        var all = await _unitOfWork.AutomationProposals.GetByUserIdAsync(
+            userId, limit: int.MaxValue, cancellationToken: cancellationToken);
+
+        foreach (var p in all)
         {
-            // GetByUserIdAsync honours the limit parameter; we page manually.
-            var page = await _unitOfWork.AutomationProposals.GetByUserIdAsync(
-                userId, limit: StreamPageSize, cancellationToken: cancellationToken);
-
-            // Skip already-yielded rows (offset applied in-memory because the repo
-            // interface doesn't expose an offset parameter).
-            var rows = page.Skip(offset).Take(StreamPageSize).ToList();
-            foreach (var row in rows)
-                yield return row;
-
-            // Proposals are typically small; stop when we get fewer than a full page.
-            if (rows.Count < StreamPageSize)
-                yield break;
-
-            offset += rows.Count;
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return p;
         }
     }
 
@@ -423,30 +417,24 @@ public class DataExportService : IDataExportService
         Guid userId,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // Load all sessions (typically small); resolve message counts in one batch query per page.
-        int offset = 0;
-        while (true)
+        // IChatSessionRepository.GetByUserIdAsync does not expose an offset parameter.
+        // Load all sessions in one shot and resolve message counts in batches of StreamPageSize
+        // to bound the IN-clause size passed to CountBySessionIdsAsync.
+        var allSessions = (await _unitOfWork.ChatSessions.GetByUserIdAsync(
+            userId, limit: int.MaxValue, cancellationToken: cancellationToken)).ToList();
+
+        for (int i = 0; i < allSessions.Count; i += StreamPageSize)
         {
-            var allSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(
-                userId, limit: StreamPageSize, cancellationToken: cancellationToken);
-
-            var page = allSessions.Skip(offset).Take(StreamPageSize).ToList();
-            if (page.Count == 0)
-                yield break;
-
+            cancellationToken.ThrowIfCancellationRequested();
+            var batch = allSessions.Skip(i).Take(StreamPageSize).ToList();
             var counts = await _unitOfWork.ChatMessages.CountBySessionIdsAsync(
-                page.Select(s => s.Id), cancellationToken);
+                batch.Select(s => s.Id), cancellationToken);
 
-            foreach (var session in page)
+            foreach (var session in batch)
             {
                 counts.TryGetValue(session.Id, out var msgCount);
                 yield return (session, msgCount);
             }
-
-            if (page.Count < StreamPageSize)
-                yield break;
-
-            offset += page.Count;
         }
     }
 
@@ -454,20 +442,17 @@ public class DataExportService : IDataExportService
         Guid userId,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        int offset = 0;
-        while (true)
+        // IAuditLogRepository.GetByUserAsync does not expose an offset parameter.
+        // Load all rows in one shot — this is the table most likely to be large so
+        // we accept the tradeoff of a single large DB read vs. correctness of the
+        // pagination. A future improvement would add offset support to the repo.
+        var all = await _unitOfWork.AuditLogs.GetByUserAsync(
+            userId, limit: int.MaxValue, cancellationToken: cancellationToken);
+
+        foreach (var a in all)
         {
-            var page = await _unitOfWork.AuditLogs.GetByUserAsync(
-                userId, limit: StreamPageSize, cancellationToken: cancellationToken);
-
-            var rows = page.Skip(offset).Take(StreamPageSize).ToList();
-            foreach (var row in rows)
-                yield return row;
-
-            if (rows.Count < StreamPageSize)
-                yield break;
-
-            offset += rows.Count;
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return a;
         }
     }
 }
