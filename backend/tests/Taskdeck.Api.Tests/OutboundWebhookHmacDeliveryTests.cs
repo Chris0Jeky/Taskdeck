@@ -38,7 +38,7 @@ public class OutboundWebhookHmacDeliveryTests
         var capturedRequests = new List<HttpRequestMessage>();
         var handler = new CapturingHandler(capturedRequests, HttpStatusCode.OK);
 
-        await RunWorkerAsync(subscription, delivery, handler);
+        await RunWorkerAsync(delivery, handler);
 
         capturedRequests.Should().ContainSingle();
         capturedRequests[0].Headers.TryGetValues("X-Taskdeck-Webhook-Signature", out var sigValues)
@@ -58,7 +58,7 @@ public class OutboundWebhookHmacDeliveryTests
         var handler = new CapturingHandler(capturedRequests, HttpStatusCode.OK);
         var beforeDispatch = DateTimeOffset.UtcNow;
 
-        await RunWorkerAsync(subscription, delivery, handler);
+        await RunWorkerAsync(delivery, handler);
 
         capturedRequests.Should().ContainSingle();
         capturedRequests[0].Headers.TryGetValues("X-Taskdeck-Webhook-Timestamp", out var tsValues)
@@ -84,7 +84,7 @@ public class OutboundWebhookHmacDeliveryTests
         var capturedRequests = new List<HttpRequestMessage>();
         var handler = new CapturingHandler(capturedRequests, HttpStatusCode.OK);
 
-        await RunWorkerAsync(subscription, delivery, handler);
+        await RunWorkerAsync(delivery, handler);
 
         var request = capturedRequests.Single();
         var receivedTimestamp = long.Parse(
@@ -123,7 +123,7 @@ public class OutboundWebhookHmacDeliveryTests
             },
             statusCode: HttpStatusCode.OK);
 
-        await RunWorkerAsync(subscription, delivery, handler);
+        await RunWorkerAsync(delivery, handler);
 
         capturedBody.Should().Be(payload, "the request body must match the payload that was signed");
         capturedContentType.Should().Be("application/json");
@@ -137,7 +137,7 @@ public class OutboundWebhookHmacDeliveryTests
         var capturedRequests = new List<HttpRequestMessage>();
         var handler = new CapturingHandler(capturedRequests, HttpStatusCode.OK);
 
-        await RunWorkerAsync(subscription, delivery, handler);
+        await RunWorkerAsync(delivery, handler);
 
         var request = capturedRequests.Single();
         request.Headers.TryGetValues("X-Taskdeck-Webhook-Delivery-Id", out var deliveryIds)
@@ -164,7 +164,7 @@ public class OutboundWebhookHmacDeliveryTests
         var capturedRequests = new List<HttpRequestMessage>();
         var handler = new CapturingHandler(capturedRequests, HttpStatusCode.OK);
 
-        await RunWorkerAsync(subscription, delivery, handler);
+        await RunWorkerAsync(delivery, handler);
 
         var request = capturedRequests.Single();
         var receivedTimestamp = long.Parse(
@@ -197,13 +197,13 @@ public class OutboundWebhookHmacDeliveryTests
         var subscription = MakeSubscription(AllowedEndpoint, oldSecret);
         var deliveryBefore = MakeDelivery(subscription, payload);
         var capturedBefore = new List<HttpRequestMessage>();
-        await RunWorkerAsync(subscription, deliveryBefore, new CapturingHandler(capturedBefore, HttpStatusCode.OK));
+        await RunWorkerAsync(deliveryBefore, new CapturingHandler(capturedBefore, HttpStatusCode.OK));
 
-        // Rotate the secret: simulate a new delivery using the updated subscription.
-        var subscriptionAfterRotation = MakeSubscription(AllowedEndpoint, newSecret);
-        var deliveryAfter = MakeDelivery(subscriptionAfterRotation, payload);
+        // Rotate the secret on the same subscription record and dispatch a new delivery.
+        subscription.RotateSecret(newSecret);
+        var deliveryAfter = MakeDelivery(subscription, payload);
         var capturedAfter = new List<HttpRequestMessage>();
-        await RunWorkerAsync(subscriptionAfterRotation, deliveryAfter, new CapturingHandler(capturedAfter, HttpStatusCode.OK));
+        await RunWorkerAsync(deliveryAfter, new CapturingHandler(capturedAfter, HttpStatusCode.OK));
 
         var sigBefore = capturedBefore.Single().Headers.GetValues("X-Taskdeck-Webhook-Signature").Single();
         var sigAfter = capturedAfter.Single().Headers.GetValues("X-Taskdeck-Webhook-Signature").Single();
@@ -267,7 +267,7 @@ public class OutboundWebhookHmacDeliveryTests
         var capturedRequests = new List<HttpRequestMessage>();
         var handler = new CapturingHandler(capturedRequests, HttpStatusCode.OK);
 
-        await RunWorkerAsync(subscription, delivery, handler);
+        await RunWorkerAsync(delivery, handler);
 
         var request = capturedRequests.Single();
         var receivedTimestamp = long.Parse(
@@ -281,38 +281,39 @@ public class OutboundWebhookHmacDeliveryTests
     }
 
     // ---------------------------------------------------------------------------
-    // Timing-safe comparison: constant-time equality check coverage
+    // Signature determinism: same inputs must always produce the same digest
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void CryptographicEquals_ShouldReturnTrue_ForIdenticalValues()
+    public void Signature_ShouldBeDeterministic_ForSameInputs()
     {
-        // Verifies that a timing-safe comparison returns true for matching signatures.
-        // This pattern is what a receiver should use to prevent timing attacks.
-        var secret = "timing-safe-secret";
+        // OutboundWebhookSignature.Compute must be deterministic: a receiver that
+        // recomputes the expected HMAC and compares it to the received header
+        // (using CryptographicOperations.FixedTimeEquals) relies on this property.
+        var secret = "determinism-secret";
         var timestamp = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
         var payload = "{\"id\":\"t1\"}";
+
         var sig1 = OutboundWebhookSignature.Compute(secret, timestamp, payload);
         var sig2 = OutboundWebhookSignature.Compute(secret, timestamp, payload);
 
-        CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(sig1),
-            Encoding.UTF8.GetBytes(sig2))
-            .Should().BeTrue("identical signatures must be equal under constant-time comparison");
+        sig1.Should().Be(sig2,
+            "the same key, timestamp, and payload must always produce an identical digest " +
+            "so that receiver-side constant-time comparison can succeed");
     }
 
     [Fact]
-    public void CryptographicEquals_ShouldReturnFalse_ForDifferentKeys()
+    public void Signature_ShouldDiffer_WhenKeyDiffers()
     {
         var timestamp = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
         var payload = "{\"id\":\"t2\"}";
+
         var correct = OutboundWebhookSignature.Compute("correct-key", timestamp, payload);
         var wrong = OutboundWebhookSignature.Compute("wrong-key", timestamp, payload);
 
-        CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(correct),
-            Encoding.UTF8.GetBytes(wrong))
-            .Should().BeFalse("different keys must produce signatures that fail constant-time comparison");
+        correct.Should().NotBe(wrong,
+            "different signing keys must produce different digests, " +
+            "ensuring a receiver using the wrong key correctly fails verification");
     }
 
     // ---------------------------------------------------------------------------
@@ -359,7 +360,6 @@ public class OutboundWebhookHmacDeliveryTests
     }
 
     private static async Task RunWorkerAsync(
-        OutboundWebhookSubscription subscription,
         OutboundWebhookDelivery delivery,
         HttpMessageHandler handler)
     {
@@ -412,7 +412,11 @@ public class OutboundWebhookHmacDeliveryTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            _captured.Add(request);
+            lock (_captured)
+            {
+                _captured.Add(request);
+            }
+
             return Task.FromResult(new HttpResponseMessage(_statusCode));
         }
     }
