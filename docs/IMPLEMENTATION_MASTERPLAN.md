@@ -743,7 +743,7 @@ Focus:
 
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
-- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); remaining: `#651` (refinements), `#673` (argument replay)
+- LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `EnableToolCalling` feature flag, token budget truncation — 15 new tests); remaining: `#673` (argument replay)
 - MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; remaining: `#653` (full inventory), `#654` (HTTP + auth), `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
@@ -815,7 +815,7 @@ Master tracker: `#531`.
   - workspace invitations
   - email notification delivery
   - activity feed per board
-  - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → ~~`#650`~~ delivered → `#651`)
+  - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → ~~`#650`~~ delivered → ~~`#651`~~ delivered)
   - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered → `#653`→`#654`)
 
 - `v0.5.0` **Power Up** (target: Week 15-20):
@@ -916,8 +916,8 @@ Master tracker: `#531`.
   - `#647` tracker
   - ~~`#649` Phase 1: read tools + orchestrator + provider tool-calling extension~~ (delivered 2026-04-01, PR `#669`)
   - ~~`#650` Phase 2: write tools + proposal integration~~ (delivered 2026-04-03, PR `#731`)
-  - `#651` Phase 3: refinements — cost tracking, feature flag (1 week); also ~~`#672`~~ (double LLM call — delivered 2026-04-03, PR `#727`), `#673` (argument replay); ~~`#674`~~ (strict mode + loop detection — delivered 2026-04-03, PR `#694`)
-  - Dependency chain: ~~`#649`~~ → ~~`#650`~~ → `#651`
+  - ~~`#651` Phase 3: refinements — cost tracking, feature flag~~ (delivered 2026-04-04): `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` token budget enforcement, cost tracking to `ILlmQuotaService`, 15 new tests; also ~~`#672`~~ (double LLM call — delivered 2026-04-03, PR `#727`), `#673` (argument replay); ~~`#674`~~ (strict mode + loop detection — delivered 2026-04-03, PR `#694`)
+  - Dependency chain: ~~`#649`~~ → ~~`#650`~~ → ~~`#651`~~
   - Unblocks conversational refinement (`#576`) and MCP tool inventory (`#653`)
 - MCP server implementation wave (from completed spike `#619`):
   - `#648` tracker

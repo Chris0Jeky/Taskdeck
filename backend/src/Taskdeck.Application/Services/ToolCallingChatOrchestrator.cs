@@ -36,17 +36,20 @@ public sealed class ToolCallingChatOrchestrator
     private readonly ToolExecutorRegistry _executorRegistry;
     private readonly ILogger<ToolCallingChatOrchestrator> _logger;
     private readonly IToolStatusNotifier? _statusNotifier;
+    private readonly LlmToolCallingSettings _settings;
 
     public ToolCallingChatOrchestrator(
         ILlmProvider provider,
         ToolExecutorRegistry executorRegistry,
         ILogger<ToolCallingChatOrchestrator> logger,
-        IToolStatusNotifier? statusNotifier = null)
+        IToolStatusNotifier? statusNotifier = null,
+        LlmToolCallingSettings? settings = null)
     {
         _provider = provider;
         _executorRegistry = executorRegistry;
         _logger = logger;
         _statusNotifier = statusNotifier;
+        _settings = settings ?? new LlmToolCallingSettings();
     }
 
     /// <summary>
@@ -232,6 +235,11 @@ public sealed class ToolCallingChatOrchestrator
                     }
                 }
 
+                // Enforce token budget: truncate oversized tool results before they
+                // are fed back to the LLM.  This keeps the conversation within the
+                // provider's context window even when a tool returns a large payload.
+                resultContent = TruncateToolResult(resultContent, _settings.MaxToolResultBytes);
+
                 results.Add(new ToolCallResult(
                     toolCall.CallId, toolCall.ToolName, resultContent, isError, toolCall.Arguments));
 
@@ -407,6 +415,79 @@ public sealed class ToolCallingChatOrchestrator
             ToolCallLog: log ?? new List<ToolCallLogEntry>(),
             IsDegraded: true,
             DegradedReason: reason ?? "Tool calling is not available; falling back to single-turn.");
+    }
+
+    /// <summary>
+    /// Truncates a tool result string to the configured byte budget so oversized
+    /// payloads do not blow out the provider's context window.
+    /// When <paramref name="maxBytes"/> is 0 or negative, no truncation is applied.
+    /// A "...(truncated)" marker is appended so the LLM knows the result was cut short.
+    /// The returned string is always within <paramref name="maxBytes"/> UTF-8 bytes.
+    /// </summary>
+    internal static string TruncateToolResult(string content, int maxBytes)
+    {
+        if (maxBytes <= 0 || string.IsNullOrEmpty(content))
+            return content;
+
+        var utf8 = System.Text.Encoding.UTF8;
+        var encoded = utf8.GetByteCount(content);
+        if (encoded <= maxBytes)
+            return content;
+
+        const string marker = "...(truncated)";
+        var markerBytes = utf8.GetByteCount(marker);
+
+        // If the budget cannot even hold the marker, return as many bytes as fit
+        // from the marker itself so the result is always <= maxBytes.
+        if (maxBytes <= markerBytes)
+            return marker[..FindCharCountFittingBytes(marker, maxBytes, utf8)];
+
+        var maxContentBytes = maxBytes - markerBytes;
+
+        // Binary search for the longest prefix whose UTF-8 encoding fits the budget.
+        // Avoids the O(n) worst case of a decrementing walk and makes no heap
+        // allocations during the search (GetByteCount accepts ReadOnlySpan<char>).
+        var span = content.AsSpan();
+        var low = 0;
+        var high = content.Length;
+        var best = 0;
+        while (low <= high)
+        {
+            var mid = low + ((high - low) / 2);
+            if (utf8.GetByteCount(span[..mid]) <= maxContentBytes)
+            {
+                best = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return best > 0 ? content[..best] + marker : marker;
+    }
+
+    private static int FindCharCountFittingBytes(string s, int maxBytes, System.Text.Encoding utf8)
+    {
+        var low = 0;
+        var high = s.Length;
+        var best = 0;
+        var span = s.AsSpan();
+        while (low <= high)
+        {
+            var mid = low + ((high - low) / 2);
+            if (utf8.GetByteCount(span[..mid]) <= maxBytes)
+            {
+                best = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+        return best;
     }
 
     private static string TruncateForLog(string content)
