@@ -11,7 +11,6 @@ import { useSessionStore } from '../../store/sessionStore'
 import { boardsApi } from '../../api/boardsApi'
 import { captureApi } from '../../api/captureApi'
 import { authApi } from '../../api/authApi'
-import { usersApi } from '../../api/usersApi'
 
 // ─── global mocks ────────────────────────────────────────────────────────────
 

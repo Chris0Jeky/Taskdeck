@@ -129,9 +129,10 @@ public class ChatServiceResilienceTests
     [Fact]
     public async Task SendMessageAsync_WhenProviderReturnsEmptyContent_DomainValidationPreventsEmptyMessage()
     {
-        // When the provider returns empty content, the ChatMessage domain entity rejects it
-        // (Content cannot be empty). This is the correct safety behavior: no empty messages
-        // are persisted. The service surfaces a failure rather than silently creating a bad record.
+        // When the provider returns empty content, the ChatMessage domain entity constructor
+        // throws DomainException("Content cannot be empty"). ChatService catches DomainException
+        // in its outer try/catch and returns Result.Failure — it does NOT silently persist an
+        // empty message. This test verifies the failure is surfaced with the correct error code.
         var userId = Guid.NewGuid();
         var session = new ChatSession(userId, "Empty content session");
         _chatSessionRepoMock
@@ -147,27 +148,15 @@ public class ChatServiceResilienceTests
                 DegradedReason: "Empty response."));
 
         var service = BuildService();
-        // The DomainException from ChatMessage(content: "") propagates as an exception
-        var act = async () => await service.SendMessageAsync(
+        var result = await service.SendMessageAsync(
             session.Id, userId, new SendChatMessageDto("Any question"), default);
 
-        // Either throws DomainException or the ChatService wraps it into a failure result.
-        // Either outcome is acceptable — what matters is no empty content persisted silently.
-        try
-        {
-            var result = await service.SendMessageAsync(
-                session.Id, userId, new SendChatMessageDto("Any question"), default);
-            // If it doesn't throw, it should at least not return a success with empty content
-            if (result.IsSuccess)
-            {
-                result.Value.Content.Should().NotBeNullOrWhiteSpace(
-                    "empty content must never be silently persisted");
-            }
-        }
-        catch (DomainException ex)
-        {
-            ex.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        }
+        // ChatService catches DomainException and returns a failure result; it never persists
+        // an empty assistant message.
+        result.IsSuccess.Should().BeFalse(
+            "empty content returned by the provider must never be silently persisted");
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError,
+            "ChatService wraps the DomainException from ChatMessage into a ValidationError result");
     }
 
     // -----------------------------------------------------------------------

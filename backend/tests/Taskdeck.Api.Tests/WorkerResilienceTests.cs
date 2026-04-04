@@ -104,7 +104,11 @@ public class WorkerResilienceTests
         };
         var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), settings, logger);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+        // 500ms gives the worker enough time to complete the first batch iteration (which is a
+        // synchronous DB throw, so it runs in microseconds) before the token is cancelled.
+        // 150ms was the previous value; it was too tight on heavily loaded CI runners where
+        // thread scheduling could delay the first iteration past the cancellation window.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         try
         {
             await InvokeExecuteAsync(worker, cts.Token);
