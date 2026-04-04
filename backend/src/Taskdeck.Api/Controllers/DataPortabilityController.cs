@@ -65,10 +65,12 @@ public class DataPortabilityController : AuthenticatedControllerBase
         var result = await _dataExportService.StreamUserDataExportAsync(userId, Response.Body, cancellationToken);
         if (!result.IsSuccess)
         {
-            // If streaming hasn't started yet we can still return an error response.
-            // If bytes have already been flushed the status code is already 200 and the
-            // connection will close; callers should validate JSON completeness.
-            return result.ToErrorActionResult();
+            // Guard: once any bytes have been flushed to the wire the status code (200) and
+            // headers are committed — we cannot change them. Attempting to set a 4xx/5xx would
+            // throw InvalidOperationException. In that case we fall through and return EmptyResult;
+            // the client will receive a truncated/incomplete JSON body and must validate completeness.
+            if (!Response.HasStarted)
+                return result.ToErrorActionResult();
         }
 
         return new EmptyResult();
