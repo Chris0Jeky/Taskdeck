@@ -153,10 +153,10 @@ Manual-only checks (non-automatable in generic local script):
 
 **Manual card provenance empty state (PR #754):**
 - Open a card that was created manually (not via capture/inbox).
-  - Expected: card detail shows "Created manually — no capture provenance." in the provenance area. No error shown. No blank/broken provenance section.
+  - Expected: card detail shows "No capture provenance available." in the provenance area. No error shown. No blank/broken provenance section.
 - Open a card created via the capture/inbox flow.
-  - Expected: card detail shows full capture provenance (source, timestamp, original capture text). The "Created manually" message does NOT appear for captured cards.
-- If card was created manually, verify the provenance empty state does not flash "Created manually" during the initial load of a captured card's modal.
+  - Expected: card detail shows full capture provenance (source, timestamp, original capture text). The "No capture provenance available." message does NOT appear for captured cards.
+- For captured cards, verify the provenance empty state does not flash during the initial load of the captured card's modal.
   - Expected: empty state is only shown after load completes and provenance is confirmed absent.
 
 11. Edit title/description, set due date, block with reason, assign labels.

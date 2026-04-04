@@ -601,13 +601,13 @@ Delivered in the latest cycle:
     - 9 issues from `#721` tracker plus product telemetry taxonomy, two bug fixes, and six frontend regression test additions
     - product telemetry taxonomy delivered (`#341`/`#741`): `docs/product/TELEMETRY_TAXONOMY.md` with 35+ named events, privacy-first bucketing, and R1/R2/R3 launch gate anchors; opt-in, not yet implemented
     - board header presence label bug fixed (`#683`/`#744`): username/email flip resolved with `normalizePresenceMembers()` in `BoardView.vue`; adversarial review confirmed no edge cases; 3 new tests
-    - manual card provenance empty state fixed (`#680`/`#754`): 3 bugs caught and fixed by adversarial review (overly broad 404 swallow, global Axios log regression, empty-state flash); `CardModal.vue` now shows "Created manually — no capture provenance." correctly; 4 new tests
+    - manual card provenance empty state fixed (`#680`/`#754`): 3 bugs caught and fixed by adversarial review (overly broad 404 swallow, global Axios log regression, empty-state flash); `CardModal.vue` now shows "No capture provenance available." correctly; 4 new tests
     - WIP-limit toast dedup regression tests (`#686`/`#745`): 7 tests in `boardStore.wipLimit.spec.ts` for `createCard` and `moveCard`
     - auth-flow toast lifecycle tests (`#685`/`#742`): 20 tests in `sessionStore.authToast.spec.ts`; adversarial review fixed timer leak, mock isolation, inverted assertion
     - router auth guard + workspace stability tests (`#687`/`#748`): `authGuard.spec.ts` and `workspaceRouteStability.spec.ts` with 12-route exhaustive guard table; pre-existing `AuthControllerEdgeCaseTests.cs` compile error fixed
     - inbox triage action visibility tests (`#688`/`#743`): 21 new tests in `InboxView.spec.ts` for single-item triage and bulk action bar visibility
     - webhook HMAC verification tests (`#726`/`#750`): 11 tests in `OutboundWebhookHmacDeliveryTests.cs` for header format, round-trip, wrong-key, secret rotation, timing-safe comparison
-    - webhook delivery reliability + SSRF boundary tests (`#710`/`#756`): 161 total webhook tests across 4 files; socket-level SSRF for all private IP ranges, CGNAT, cloud metadata, dynamic DNS; retry/backoff/dead-letter reliability; `HttpClient` resource leak fixed in tests
+    - webhook delivery reliability + SSRF boundary tests (`#710`/`#756`): 78 total webhook tests across 7 files; SSRF coverage via `OutboundWebhookEndpointGuardTests` for private IP ranges; retry/backoff/dead-letter reliability; `HttpClient` resource leak fixed in tests
     - TST-32–TST-57 wave progress updated: 17 of 22 issues now delivered; remaining open: `#705`, `#711`, `#712`, `#716`, `#717`; frontend suite at 1592 passing (up from 1496)
 
 ## Current Planning Pivot (2026-03-07)
