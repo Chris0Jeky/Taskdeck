@@ -36,17 +36,20 @@ public sealed class ToolCallingChatOrchestrator
     private readonly ToolExecutorRegistry _executorRegistry;
     private readonly ILogger<ToolCallingChatOrchestrator> _logger;
     private readonly IToolStatusNotifier? _statusNotifier;
+    private readonly LlmToolCallingSettings _settings;
 
     public ToolCallingChatOrchestrator(
         ILlmProvider provider,
         ToolExecutorRegistry executorRegistry,
         ILogger<ToolCallingChatOrchestrator> logger,
-        IToolStatusNotifier? statusNotifier = null)
+        IToolStatusNotifier? statusNotifier = null,
+        LlmToolCallingSettings? settings = null)
     {
         _provider = provider;
         _executorRegistry = executorRegistry;
         _logger = logger;
         _statusNotifier = statusNotifier;
+        _settings = settings ?? new LlmToolCallingSettings();
     }
 
     /// <summary>
@@ -232,6 +235,11 @@ public sealed class ToolCallingChatOrchestrator
                     }
                 }
 
+                // Enforce token budget: truncate oversized tool results before they
+                // are fed back to the LLM.  This keeps the conversation within the
+                // provider's context window even when a tool returns a large payload.
+                resultContent = TruncateToolResult(resultContent, _settings.MaxToolResultBytes);
+
                 results.Add(new ToolCallResult(
                     toolCall.CallId, toolCall.ToolName, resultContent, isError));
 
@@ -407,6 +415,37 @@ public sealed class ToolCallingChatOrchestrator
             ToolCallLog: log ?? new List<ToolCallLogEntry>(),
             IsDegraded: true,
             DegradedReason: reason ?? "Tool calling is not available; falling back to single-turn.");
+    }
+
+    /// <summary>
+    /// Truncates a tool result string to the configured byte budget so oversized
+    /// payloads do not blow out the provider's context window.
+    /// When <paramref name="maxBytes"/> is 0 or negative, no truncation is applied.
+    /// A "(truncated)" marker is appended so the LLM knows the result was cut short.
+    /// </summary>
+    internal static string TruncateToolResult(string content, int maxBytes)
+    {
+        if (maxBytes <= 0 || string.IsNullOrEmpty(content))
+            return content;
+
+        var encoded = System.Text.Encoding.UTF8.GetByteCount(content);
+        if (encoded <= maxBytes)
+            return content;
+
+        // Truncate by characters (approximate — UTF-8 multi-byte chars are uncommon
+        // in typical JSON tool results but we avoid cutting in the middle of a char).
+        const string marker = "...(truncated)";
+        // Walk back until the byte count fits
+        var maxChars = maxBytes - System.Text.Encoding.UTF8.GetByteCount(marker);
+        if (maxChars <= 0) return marker;
+
+        // Binary-search-like: estimate character count from byte ratio then clamp
+        var ratio = (double)maxChars / encoded;
+        var estimate = (int)(content.Length * ratio);
+        while (estimate > 0 && System.Text.Encoding.UTF8.GetByteCount(content[..estimate]) > maxChars)
+            estimate--;
+
+        return estimate > 0 ? content[..estimate] + marker : marker;
     }
 
     private static string TruncateForLog(string content)
