@@ -398,7 +398,10 @@ public class OpenAiLlmProvider : ILlmProvider
         {
             ct.ThrowIfCancellationRequested();
             var token = (i == 0 ? string.Empty : " ") + tokens[i];
-            yield return new LlmTokenEvent(token, i == tokens.Length - 1);
+            var isLast = i == tokens.Length - 1;
+            yield return isLast
+                ? new LlmTokenEvent(token, true, TokensUsed: result.TokensUsed, Provider: result.Provider, Model: result.Model)
+                : new LlmTokenEvent(token, false);
         }
     }
 
