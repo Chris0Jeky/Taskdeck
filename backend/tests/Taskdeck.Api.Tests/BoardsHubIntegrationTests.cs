@@ -168,9 +168,11 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
 
         using var client2 = _factory.CreateClient();
         var user2 = await ApiTestHarness.AuthenticateAsync(client2, "hub-leave2");
-        await client1.PostAsJsonAsync(
+        var grantResponse = await client1.PostAsJsonAsync(
             $"/api/boards/{board.Id}/access",
             new GrantAccessDto(board.Id, user2.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK,
+            "granting board access is a precondition for this test");
 
         // Observer (user1) joins board
         var observerEvents = new EventCollector<BoardPresenceSnapshot>();
@@ -209,9 +211,11 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
 
         using var client2 = _factory.CreateClient();
         var user2 = await ApiTestHarness.AuthenticateAsync(client2, "hub-disc2");
-        await client1.PostAsJsonAsync(
+        var grantResponse = await client1.PostAsJsonAsync(
             $"/api/boards/{board.Id}/access",
             new GrantAccessDto(board.Id, user2.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK,
+            "granting board access is a precondition for this test");
 
         // User1 connects and joins
         var events1 = new EventCollector<BoardPresenceSnapshot>();
@@ -252,9 +256,11 @@ public class BoardsHubIntegrationTests : IClassFixture<TestWebApplicationFactory
 
         using var client2 = _factory.CreateClient();
         var user2 = await ApiTestHarness.AuthenticateAsync(client2, "hub-multi2");
-        await client1.PostAsJsonAsync(
+        var grantResponse = await client1.PostAsJsonAsync(
             $"/api/boards/{board.Id}/access",
             new GrantAccessDto(board.Id, user2.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK,
+            "granting board access is a precondition for this test");
 
         var events1 = new EventCollector<BoardPresenceSnapshot>();
         await using var conn1 = SignalRTestHelper.CreateBoardsHubConnection(_factory, user1.Token);
