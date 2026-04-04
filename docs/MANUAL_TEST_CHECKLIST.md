@@ -105,6 +105,16 @@ Manual-only checks (non-automatable in generic local script):
 9. Logout from top bar.
    - Expected: token/session cleared, redirected to `/login`.
 
+**Auth-flow toast regression (PR #742):**
+- Attempt login with wrong password.
+  - Expected: error toast appears with the server-provided reason (e.g. "Invalid credentials").
+- Attempt registration with a duplicate email.
+  - Expected: error toast appears with guidance about the duplicate account.
+- Login successfully after a failed attempt.
+  - Expected: error toast from the failed attempt does not persist; success toast "Logged in successfully" appears.
+- Sign in with GitHub OAuth (if configured).
+  - Expected: success toast "Signed in with GitHub" appears; error toast appears on OAuth failure.
+
 ## B. Boards, Columns, Cards, Labels
 
 1. Create board from workspace boards page.
@@ -130,10 +140,25 @@ Manual-only checks (non-automatable in generic local script):
    - Expected: operation blocked with visible error feedback.
    - WIP limit enforcement bug (`#517`) has been resolved; verify regression.
 
+**WIP-limit toast deduplication regression (PR #745):**
+- Set a WIP limit of 1 on a column, add a card, then try to add a second card.
+  - Expected: exactly ONE error toast appears. No duplicate toasts.
+- Try to move a card into the same WIP-limit-reached column.
+  - Expected: exactly ONE error toast. No duplicate toasts.
+
 9. Create card inline.
    - Expected: card appears in target column.
 10. Open card modal (`Enter` on selected card or click).
    - Expected: modal opens with current values.
+
+**Manual card provenance empty state (PR #754):**
+- Open a card that was created manually (not via capture/inbox).
+  - Expected: card detail shows "Created manually — no capture provenance." in the provenance area. No error shown. No blank/broken provenance section.
+- Open a card created via the capture/inbox flow.
+  - Expected: card detail shows full capture provenance (source, timestamp, original capture text). The "Created manually" message does NOT appear for captured cards.
+- If card was created manually, verify the provenance empty state does not flash "Created manually" during the initial load of a captured card's modal.
+  - Expected: empty state is only shown after load completes and provenance is confirmed absent.
+
 11. Edit title/description, set due date, block with reason, assign labels.
     - Expected: updates persist and render in lane.
 12. Move card to another column via drag/drop using the `Drag Card` handle.
@@ -146,6 +171,12 @@ Manual-only checks (non-automatable in generic local script):
     - Expected: label list and card chips reflect changes.
     - Expected: label manager modal uses dark workspace theme (design tokens) — no jarring light-theme styling.
     - Bug fixed (`#684`/`#692`): modal migrated from hardcoded light-theme classes to design-token-driven dark theme.
+
+**Board header presence label format (PR #744):**
+- Open a board with at least one other presence member (or open the same board in two browser tabs with the same user).
+  - Expected: the current user's presence indicator shows their **username** (e.g. "alice"), NOT their email (e.g. "alice@example.com").
+  - Expected: when you open a card for editing, the presence label stays as username — it does not switch to email.
+  - Expected: presence indicators for OTHER users show whatever name the server provides (unaffected by the fix).
 
 ## C. Filters and Keyboard Workflow
 
@@ -201,6 +232,25 @@ Manual-only checks (non-automatable in generic local script):
     - Expected: Apply/Approve buttons are not shown for expired proposals.
     - Expected: proposals that expire while the page is open transition to expired state reactively (60-second clock).
     - Bug fixed (`#678`+`#690`/`#696`): expired proposals no longer appear actionable; dismiss action now available.
+
+## D2. Router Auth Guard and Workspace State (PR #748)
+
+1. Workspace routes require authentication.
+   - Navigate to `/workspace/boards` while logged out.
+   - Expected: redirected to `/login?redirect=%2Fworkspace%2Fboards`.
+   - Log in. Expected: redirected back to `/workspace/boards`.
+
+2. Expired token cleanup.
+   - Manually set an expired JWT in localStorage (`taskdeck_token` key with an `exp` in the past), then navigate to any `/workspace/` route.
+   - Expected: token is cleared from localStorage, user redirected to `/login`.
+
+3. Workspace mode persistence across navigation.
+   - Switch workspace mode (if applicable) on Home, then navigate to Inbox, then back.
+   - Expected: workspace mode is unchanged after navigation within the workspace.
+
+4. Logout clears workspace state.
+   - Log in, navigate into a board, then logout from the top bar.
+   - Expected: after logging back in, workspace state is fresh (no stale board context from previous session).
 
 ## E. Inbox and Notifications Continuity
 
