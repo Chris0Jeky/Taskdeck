@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
@@ -17,12 +16,7 @@ public static class DependencyInjection
             ?? "Data Source=taskdeck.db";
 
         services.AddDbContext<TaskdeckDbContext>(options =>
-            options
-                .UseSqlite(connectionString)
-                // EF Core 9 introduced PendingModelChangesWarning which throws when upgrading
-                // from EF Core 8 snapshots. EF tooling confirms no actual model changes are
-                // pending; suppress to allow startup after the snapshot format migration.
-                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+            options.UseSqlite(connectionString));
 
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
