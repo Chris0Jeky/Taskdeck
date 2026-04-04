@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
@@ -576,8 +575,12 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
             $"/api/archive/card/{archiveItem.EntityId}/restore",
             restoreDto);
 
-        // Should fail with validation error due to bad snapshot
+        // Should fail due to bad snapshot - could be 400 (validation) or 500 (parse)
         restoreResponse.IsSuccessStatusCode.Should().BeFalse();
+        restoreResponse.StatusCode.Should().BeOneOf(
+            HttpStatusCode.BadRequest,
+            HttpStatusCode.InternalServerError,
+            HttpStatusCode.Conflict);
     }
 
     #endregion
@@ -725,8 +728,11 @@ public class ArchiveRestoreLifecycleTests : IClassFixture<TestWebApplicationFact
             $"/api/archive/card/{archiveItem.EntityId}/restore",
             restoreDto);
 
-        // RestorePlanner rejects restore to archived board
+        // RestorePlanner rejects restore to archived board with InvalidOperation
         restoreResponse.IsSuccessStatusCode.Should().BeFalse();
+        restoreResponse.StatusCode.Should().BeOneOf(
+            HttpStatusCode.BadRequest,
+            HttpStatusCode.Conflict);
     }
 
     #endregion
