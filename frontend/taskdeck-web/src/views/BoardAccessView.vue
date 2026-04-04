@@ -272,6 +272,7 @@ function openRoute(path: string) {
           <div class="td-access-controls">
             <select
               :value="normalizeBoardRole(entry.role)"
+              :aria-label="`Role for ${entry.userId}`"
               class="td-input td-input--sm"
               :disabled="entry.userId === session.userId"
               @change="handleRoleChange(entry.id, ($event.target as HTMLSelectElement).value)"

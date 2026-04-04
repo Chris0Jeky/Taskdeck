@@ -575,7 +575,7 @@ watch(
         </div>
 
         <div class="td-form-group">
-          <input v-model="newSessionTitle" class="td-input" type="text" placeholder="Session title" />
+          <input v-model="newSessionTitle" class="td-input" type="text" aria-label="Session title" placeholder="Session title" />
           <InputAssistField
             v-model="newSessionBoardId"
             :options="boardOptions"
@@ -698,7 +698,6 @@ watch(
                   <ul
                     v-if="expandedHintIds.has(message.id)"
                     class="td-hint-card__patterns"
-                    role="list"
                     aria-label="Supported instruction patterns"
                   >
                     <li
@@ -775,6 +774,7 @@ watch(
           <div class="td-chat-compose">
             <textarea
               v-model="messageContent"
+              aria-label="Automation instruction"
               class="td-textarea"
               rows="3"
               placeholder="Describe an automation instruction..."

@@ -259,6 +259,7 @@ function formatDuration(ms: number): string {
           <input
             v-model="traceName"
             type="text"
+            aria-label="Trace name"
             placeholder="Trace name"
             class="bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200 w-64"
             :disabled="recorder.isRecording.value"
@@ -416,8 +417,9 @@ function formatDuration(ms: number): string {
         <h2 class="text-lg font-semibold text-zinc-200 mb-3">Scenario Editor</h2>
         <div class="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <label class="block text-xs text-zinc-400 mb-1">Name</label>
+            <label for="scenario-name" class="block text-xs text-zinc-400 mb-1">Name</label>
             <input
+              id="scenario-name"
               v-model="scenario.name"
               type="text"
               placeholder="Scenario name"
@@ -425,8 +427,9 @@ function formatDuration(ms: number): string {
             />
           </div>
           <div>
-            <label class="block text-xs text-zinc-400 mb-1">Tags (comma-separated)</label>
+            <label for="scenario-tags" class="block text-xs text-zinc-400 mb-1">Tags (comma-separated)</label>
             <input
+              id="scenario-tags"
               :value="(scenario.tags ?? []).join(', ')"
               type="text"
               placeholder="demo, onboarding"
@@ -436,8 +439,9 @@ function formatDuration(ms: number): string {
           </div>
         </div>
         <div class="mb-4">
-          <label class="block text-xs text-zinc-400 mb-1">Description</label>
+          <label for="scenario-description" class="block text-xs text-zinc-400 mb-1">Description</label>
           <textarea
+            id="scenario-description"
             v-model="scenario.description"
             placeholder="What does this scenario demonstrate?"
             rows="2"
@@ -505,6 +509,7 @@ function formatDuration(ms: number): string {
       <div v-if="scenarioJsonView" class="mb-6">
         <textarea
           v-model="scenarioJsonText"
+          aria-label="Scenario JSON"
           rows="20"
           class="w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-2 text-xs font-mono text-zinc-200"
         />
@@ -561,8 +566,9 @@ function formatDuration(ms: number): string {
 
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="block text-xs text-zinc-400 mb-1">Description</label>
+                <label :for="`step-${si}-desc`" class="block text-xs text-zinc-400 mb-1">Description</label>
                 <input
+                  :id="`step-${si}-desc`"
                   v-model="step.description"
                   type="text"
                   placeholder="What does this step do?"
@@ -570,8 +576,9 @@ function formatDuration(ms: number): string {
                 />
               </div>
               <div>
-                <label class="block text-xs text-zinc-400 mb-1">Delay (ms)</label>
+                <label :for="`step-${si}-delay`" class="block text-xs text-zinc-400 mb-1">Delay (ms)</label>
                 <input
+                  :id="`step-${si}-delay`"
                   v-model.number="step.delayMs"
                   type="number"
                   min="0"
@@ -583,8 +590,9 @@ function formatDuration(ms: number): string {
             <!-- Dynamic params -->
             <div class="mt-2 grid grid-cols-2 gap-3">
               <div v-for="key in getStepParamKeys(step)" :key="key">
-                <label class="block text-xs text-zinc-400 mb-1">{{ key }}</label>
+                <label :for="`step-${si}-param-${key}`" class="block text-xs text-zinc-400 mb-1">{{ key }}</label>
                 <input
+                  :id="`step-${si}-param-${key}`"
                   :value="(step.params as unknown as Record<string, unknown>)[key]"
                   :type="typeof (step.params as unknown as Record<string, unknown>)[key] === 'number' ? 'number' : 'text'"
                   class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-zinc-200"

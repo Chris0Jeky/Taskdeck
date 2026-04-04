@@ -53,12 +53,13 @@ function goToBoard(id: string) {
       <div v-if="showCreateForm" class="mb-6 td-panel">
         <h2 class="text-lg font-semibold mb-4 text-on-surface">Create New Board</h2>
         <form @submit.prevent="createBoard" class="flex gap-3">
+          <label for="new-board-name" class="sr-only">Board name</label>
           <input
+            id="new-board-name"
             v-model="newBoardName"
             type="text"
             placeholder="Board name"
             class="flex-1 px-4 py-2 border border-outline-variant/15 rounded-lg bg-surface-container text-on-surface placeholder:text-on-surface/40 focus:outline-none focus:ring-1 focus:ring-primary-container"
-            autofocus
           />
           <button
             type="submit"
@@ -119,8 +120,13 @@ function goToBoard(id: string) {
         <div
           v-for="board in boardStore.boards"
           :key="board.id"
-          @click="goToBoard(board.id)"
+          role="button"
+          tabindex="0"
+          :aria-label="`Open board: ${board.name}`"
           class="bg-surface-container-low rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.3)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.3)] transition-shadow cursor-pointer p-6 border border-outline-variant/15 hover:bg-surface-container group"
+          @click="goToBoard(board.id)"
+          @keydown.enter="goToBoard(board.id)"
+          @keydown.space.prevent="goToBoard(board.id)"
         >
           <h3 class="text-xl font-semibold text-on-surface mb-2">
             {{ board.name }}

@@ -147,8 +147,8 @@ function resetImport() {
       <div v-if="importStep === 1">
         <p class="td-section-desc">Paste board JSON data to import.</p>
         <div class="td-form-group">
-          <label class="td-label">Board JSON</label>
-          <textarea v-model="importJson" class="td-textarea td-textarea--lg" rows="10" placeholder="Paste JSON here..."></textarea>
+          <label for="import-json" class="td-label">Board JSON</label>
+          <textarea id="import-json" v-model="importJson" class="td-textarea td-textarea--lg" rows="10" placeholder="Paste JSON here..."></textarea>
         </div>
         <button class="td-btn td-btn--primary" :disabled="!importJson.trim()" @click="importStep = 2">
           Validate & Preview

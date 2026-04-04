@@ -390,8 +390,8 @@ function openRoute(path: string) {
       </div>
 
       <div class="td-form-group">
-        <label class="td-label">Parameters (JSON object)</label>
-        <textarea v-model="cliParameters" class="td-textarea" rows="3" placeholder='{"query":"board"}'></textarea>
+        <label for="cli-parameters" class="td-label">Parameters (JSON object)</label>
+        <textarea id="cli-parameters" v-model="cliParameters" class="td-textarea" rows="3" placeholder='{"query":"board"}'></textarea>
       </div>
 
       <button class="td-btn td-btn--primary td-btn--sm" @click="handleCliRun" :disabled="cliRunning">
@@ -411,17 +411,17 @@ function openRoute(path: string) {
 
     <div v-if="activeTab === 'endpoints'" class="td-ops-panel">
       <div class="td-endpoint-form">
-        <select v-model="endpointMethod" class="td-input td-input--method">
+        <select v-model="endpointMethod" class="td-input td-input--method" aria-label="HTTP method">
           <option v-for="m in httpMethods" :key="m" :value="m">{{ m }}</option>
         </select>
-        <input v-model="endpointPath" type="text" class="td-input td-input--path" placeholder="/boards" />
+        <input v-model="endpointPath" type="text" aria-label="Request path" class="td-input td-input--path" placeholder="/boards" />
         <button class="td-btn td-btn--primary td-btn--sm" @click="handleEndpointSend" :disabled="endpointSending">
           {{ endpointSending ? 'Sending...' : 'Send' }}
         </button>
       </div>
       <div v-if="endpointMethod !== 'GET'" class="td-form-group">
-        <label class="td-label">Request Body (JSON)</label>
-        <textarea v-model="endpointBody" class="td-textarea" rows="4" placeholder='{"name":"example"}'></textarea>
+        <label for="endpoint-body" class="td-label">Request Body (JSON)</label>
+        <textarea id="endpoint-body" v-model="endpointBody" class="td-textarea" rows="4" placeholder='{"name":"example"}'></textarea>
       </div>
       <div v-if="endpointResponse !== null" class="td-response-panel">
         <div class="td-response-header">
@@ -436,14 +436,14 @@ function openRoute(path: string) {
 
     <div v-if="activeTab === 'logs'" class="td-ops-panel">
       <div class="td-logs-toolbar">
-        <select v-model="logLevel" class="td-input">
+        <select v-model="logLevel" class="td-input" aria-label="Log level filter">
           <option value="all">All levels</option>
           <option value="Info">Info</option>
           <option value="Warning">Warning</option>
           <option value="Error">Error</option>
         </select>
-        <input v-model="logSource" class="td-input" placeholder="Source filter (or all)" />
-        <input v-model="logCorrelationId" class="td-input" placeholder="Correlation ID (optional)" />
+        <input v-model="logSource" class="td-input" aria-label="Source filter" placeholder="Source filter (or all)" />
+        <input v-model="logCorrelationId" class="td-input" aria-label="Correlation ID" placeholder="Correlation ID (optional)" />
         <button class="td-btn td-btn--secondary td-btn--sm" @click="loadLogs" :disabled="logLoading">Refresh</button>
         <label class="td-autorefresh">
           <input v-model="autoRefreshLogs" type="checkbox" />
