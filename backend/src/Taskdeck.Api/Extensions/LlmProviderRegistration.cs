@@ -29,6 +29,10 @@ public static class LlmProviderRegistration
             return new AbuseDetectionService(settings, state, usageRecords);
         });
 
+        // Tool-calling feature flag and budget settings
+        var llmToolCallingSettings = configuration.GetSection("LlmToolCalling").Get<LlmToolCallingSettings>() ?? new LlmToolCallingSettings();
+        services.AddSingleton(llmToolCallingSettings);
+
         // LLM provider settings and deterministic provider selection policy
         var llmProviderSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
         services.AddSingleton(llmProviderSettings);

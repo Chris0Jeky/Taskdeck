@@ -187,8 +187,13 @@ public class OpenAiLlmProviderTests
         events.Should().HaveCount(2);
         events[0].Token.Should().Be("alpha");
         events[0].IsComplete.Should().BeFalse();
+        events[0].TokensUsed.Should().BeNull();
+        events[0].Provider.Should().BeNull();
         events[1].Token.Should().Be(" beta");
         events[1].IsComplete.Should().BeTrue();
+        events[1].TokensUsed.Should().Be(7);
+        events[1].Provider.Should().Be("OpenAI");
+        events[1].Model.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]

@@ -192,4 +192,80 @@ public class OpenAiToolCallingParseTests
                 $"tool '{tool.Name}' must have additionalProperties: false for strict mode");
         }
     }
+
+    [Fact]
+    public void BuildToolCallingPayload_PreviousResults_ReplayOriginalArguments()
+    {
+        var request = new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "What cards?") });
+        var tools = ReadToolSchemas.GetAll();
+
+        var originalArgs = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var previousResults = new List<ToolCallResult>
+        {
+            new("call-1", "list_cards_in_column", "{\"cards\":[]}", false, originalArgs)
+        };
+
+        var payload = _provider.BuildToolCallingPayload(request, tools, previousResults);
+
+        var json = JsonSerializer.Serialize(payload);
+        using var doc = JsonDocument.Parse(json);
+        var messages = doc.RootElement.GetProperty("messages");
+
+        // Find the synthetic assistant message with tool_calls
+        JsonElement? assistantMsg = null;
+        foreach (var msg in messages.EnumerateArray())
+        {
+            if (msg.GetProperty("role").GetString() == "assistant" &&
+                msg.TryGetProperty("tool_calls", out _))
+            {
+                assistantMsg = msg;
+                break;
+            }
+        }
+
+        assistantMsg.Should().NotBeNull("payload should contain a synthetic assistant message with tool_calls");
+        var toolCalls = assistantMsg!.Value.GetProperty("tool_calls");
+        toolCalls.GetArrayLength().Should().Be(1);
+
+        var func = toolCalls[0].GetProperty("function");
+        var argsString = func.GetProperty("arguments").GetString()!;
+        using var argsDoc = JsonDocument.Parse(argsString);
+        argsDoc.RootElement.GetProperty("column_name").GetString().Should().Be("Backlog");
+    }
+
+    [Fact]
+    public void BuildToolCallingPayload_PreviousResultsWithoutArguments_FallsBackToEmptyObject()
+    {
+        var request = new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "What columns?") });
+        var tools = ReadToolSchemas.GetAll();
+
+        // ToolCallResult constructed without explicit Arguments (backward compat)
+        var previousResults = new List<ToolCallResult>
+        {
+            new("call-1", "list_board_columns", "{\"columns\":[]}", false)
+        };
+
+        var payload = _provider.BuildToolCallingPayload(request, tools, previousResults);
+
+        var json = JsonSerializer.Serialize(payload);
+        using var doc = JsonDocument.Parse(json);
+        var messages = doc.RootElement.GetProperty("messages");
+
+        JsonElement? assistantMsg = null;
+        foreach (var msg in messages.EnumerateArray())
+        {
+            if (msg.GetProperty("role").GetString() == "assistant" &&
+                msg.TryGetProperty("tool_calls", out _))
+            {
+                assistantMsg = msg;
+                break;
+            }
+        }
+
+        assistantMsg.Should().NotBeNull();
+        var func = assistantMsg!.Value.GetProperty("tool_calls")[0].GetProperty("function");
+        func.GetProperty("arguments").GetString().Should().Be("{}");
+    }
 }

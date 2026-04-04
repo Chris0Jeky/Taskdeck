@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -283,6 +284,59 @@ public class DataExportServiceTests
         _notifPrefRepoMock
             .Setup(r => r.GetByUserIdAsync(_userId, default))
             .ReturnsAsync((NotificationPreference?)null);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_LogsException_WhenRepositoryThrows()
+    {
+        // Arrange
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var loggerMock = new Mock<ILogger<DataExportService>>();
+        var serviceWithLogger = new DataExportService(
+            _unitOfWorkMock.Object, _historyServiceMock.Object, loggerMock.Object);
+
+        var expectedException = new InvalidOperationException("Database connection lost");
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ThrowsAsync(expectedException);
+
+        // Act
+        var result = await serviceWithLogger.ExportUserDataAsync(_userId);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+
+        loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to export user data")),
+                expectedException,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_ReturnsFailure_WhenExceptionOccurs_WithoutLogger()
+    {
+        // Arrange — the default _service has no logger (null), should still return failure
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        _boardAccessRepoMock
+            .Setup(r => r.GetByUserIdAsync(_userId, default))
+            .ThrowsAsync(new InvalidOperationException("DB error"));
+
+        // Act
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        // Assert — must not throw; must return a failure result
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().NotContain("DB error"); // must not leak internal details
     }
 
     private void SetupEmptyRepositoriesExceptBoards()
