@@ -275,7 +275,7 @@ public class AuthControllerEdgeCaseTests
     public async Task Login_ShouldReturn401_WhenBodyIsNull()
     {
         var authService = CreateMockAuthService();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false));
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), CreateMockUserContext());
 
         var result = await controller.Login(null);
 
@@ -288,7 +288,7 @@ public class AuthControllerEdgeCaseTests
     public async Task Login_ShouldReturn401_WhenFieldsEmpty()
     {
         var authService = CreateMockAuthService();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false));
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), CreateMockUserContext());
 
         var result = await controller.Login(new LoginDto("", ""));
 
@@ -305,7 +305,15 @@ public class AuthControllerEdgeCaseTests
     {
         var authServiceMock = CreateMockAuthService();
         var gitHubSettings = CreateGitHubSettings(gitHubConfigured);
-        return new AuthController(authServiceMock.Object, gitHubSettings);
+        return new AuthController(authServiceMock.Object, gitHubSettings, CreateMockUserContext());
+    }
+
+    private static IUserContext CreateMockUserContext()
+    {
+        var mock = new Mock<IUserContext>();
+        mock.Setup(u => u.UserId).Returns((string?)null);
+        mock.Setup(u => u.IsAuthenticated).Returns(false);
+        return mock.Object;
     }
 
     private static Mock<AuthenticationService> CreateMockAuthService()
