@@ -203,10 +203,14 @@ public class AccountDeletionService : IAccountDeletionService
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Account deletion failed for user {UserId}", userId);
+            if (ex is not OperationCanceledException)
+            {
+                _logger?.LogError(ex, "Account deletion failed for user {UserId}", userId);
+            }
+
             try
             {
-                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             }
             catch (Exception rollbackEx)
             {

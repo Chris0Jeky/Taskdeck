@@ -170,7 +170,11 @@ public class DataExportService : IDataExportService
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to export user data for user {UserId}", userId);
+            if (ex is not OperationCanceledException)
+            {
+                _logger?.LogError(ex, "Failed to export user data for user {UserId}", userId);
+            }
+
             return Result.Failure<UserDataExportDto>(
                 ErrorCodes.UnexpectedError,
                 "Failed to export user data due to an internal error");
