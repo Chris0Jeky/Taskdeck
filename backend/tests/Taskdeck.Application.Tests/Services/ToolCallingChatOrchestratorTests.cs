@@ -539,4 +539,75 @@ public class ToolCallingChatOrchestratorTests
         result.ToolCallLog[0].IsError.Should().BeTrue();
         result.ToolCallLog[1].IsError.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task ExecuteAsync_PreservesOriginalToolArguments_InToolCallResult()
+    {
+        // Arrange: provider returns a tool call with specific arguments on round 1,
+        // then we capture the ToolCallResult passed to round 2 and verify it
+        // carries the original arguments.
+        var originalArgs = JsonDocument.Parse("{\"column_name\":\"Backlog\",\"limit\":10}").RootElement;
+        IReadOnlyList<ToolCallResult>? capturedResults = null;
+
+        var mock = new Mock<ILlmProvider>();
+        var callSequence = 0;
+
+        mock.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest _, IReadOnlyList<TaskdeckToolSchema> _,
+                IReadOnlyList<ToolCallResult>? prev, CancellationToken _) =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                {
+                    return new LlmToolCompletionResult(
+                        Content: null,
+                        TokensUsed: 50,
+                        Provider: "Test",
+                        Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "list_cards_in_column", originalArgs) },
+                        IsComplete: false);
+                }
+
+                // Capture what the orchestrator passes as previousToolResults
+                capturedResults = prev;
+                return new LlmToolCompletionResult(
+                    Content: "Done.",
+                    TokensUsed: 100,
+                    Provider: "Test",
+                    Model: "test-v1",
+                    ToolCalls: null,
+                    IsComplete: true);
+            });
+
+        var executor = CreateMockExecutor("list_cards_in_column",
+            "{\"cards\":[],\"total\":0,\"truncated\":false}");
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            mock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        // Act
+        await orchestrator.ExecuteAsync(MakeRequest("What cards are in Backlog?"), _boardId);
+
+        // Assert: the ToolCallResult passed to round 2 preserves the original arguments
+        capturedResults.Should().NotBeNull();
+        capturedResults.Should().HaveCount(1);
+        capturedResults![0].Arguments.ValueKind.Should().Be(JsonValueKind.Object);
+        capturedResults[0].Arguments.GetProperty("column_name").GetString().Should().Be("Backlog");
+        capturedResults[0].Arguments.GetProperty("limit").GetInt32().Should().Be(10);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ToolCallResult_DefaultArguments_AreSafe()
+    {
+        // A ToolCallResult constructed without explicit Arguments should have
+        // default(JsonElement) which is ValueKind.Undefined — providers must
+        // handle this gracefully.
+        var result = new ToolCallResult("call-1", "test_tool", "{}", false);
+        result.Arguments.ValueKind.Should().Be(JsonValueKind.Undefined);
+    }
 }

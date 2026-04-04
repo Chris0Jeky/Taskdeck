@@ -233,7 +233,7 @@ public sealed class ToolCallingChatOrchestrator
                 }
 
                 results.Add(new ToolCallResult(
-                    toolCall.CallId, toolCall.ToolName, resultContent, isError));
+                    toolCall.CallId, toolCall.ToolName, resultContent, isError, toolCall.Arguments));
 
                 toolCallLog.Add(new ToolCallLogEntry(
                     round, toolCall.ToolName, toolCall.Arguments,

@@ -213,7 +213,7 @@ public class GeminiLlmProvider : ILlmProvider
         }
     }
 
-    private object BuildToolCallingPayload(
+    internal object BuildToolCallingPayload(
         ChatCompletionRequest request,
         IReadOnlyList<TaskdeckToolSchema> tools,
         IReadOnlyList<ToolCallResult>? previousToolResults)
@@ -227,13 +227,16 @@ public class GeminiLlmProvider : ILlmProvider
         // functionCall parts followed by a user message with functionResponse parts.
         if (previousToolResults is { Count: > 0 })
         {
-            // Synthetic model message with the functionCall that produced these results
+            // Synthetic model message with the functionCall that produced these results.
+            // ToolCallResult now carries the original arguments so we replay them faithfully.
             var callParts = previousToolResults.Select(r => (object)new
             {
                 functionCall = new
                 {
                     name = r.ToolName,
-                    args = new { } // Original args not available
+                    args = r.Arguments.ValueKind != JsonValueKind.Undefined
+                        ? (object)r.Arguments
+                        : new { }
                 }
             }).ToArray();
             contents.Add(new { role = "model", parts = callParts });

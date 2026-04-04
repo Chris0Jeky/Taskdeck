@@ -207,7 +207,8 @@ public class OpenAiLlmProvider : ILlmProvider
         // We reconstruct the assistant tool_calls message from the results.
         if (previousToolResults is { Count: > 0 })
         {
-            // Synthetic assistant message with the tool_calls that produced these results
+            // Synthetic assistant message with the tool_calls that produced these results.
+            // ToolCallResult now carries the original arguments so we replay them faithfully.
             messages.Add(new
             {
                 role = "assistant",
@@ -219,7 +220,9 @@ public class OpenAiLlmProvider : ILlmProvider
                     function = new
                     {
                         name = r.ToolName,
-                        arguments = "{}" // Original args not available; empty is acceptable
+                        arguments = r.Arguments.ValueKind != JsonValueKind.Undefined
+                            ? r.Arguments.GetRawText()
+                            : "{}"
                     }
                 }).ToArray()
             });
