@@ -18,7 +18,7 @@ public class LlmToolCallingSettings
     /// Maximum byte length of a single tool result before it is truncated.
     /// Keeps oversized responses within the provider's context window.
     /// 0 = no truncation limit (not recommended for production).
-    /// Default is 8 000 bytes (~6 000 tokens at typical tokenisation ratios).
+    /// Default is 8 000 bytes (roughly a few thousand tokens depending on content and tokenizer).
     /// </summary>
     public int MaxToolResultBytes { get; set; } = 8_000;
 }

@@ -124,6 +124,27 @@ public class ToolCallingFeatureFlagAndCostTests
         result.Should().BeEmpty();
     }
 
+    [Fact]
+    public void TruncateToolResult_MaxBytesSmallerThanMarker_ResultIsWithinBudget()
+    {
+        // marker "...(truncated)" is 14 bytes; budget of 5 must still honour the limit
+        const int maxBytes = 5;
+        var content = new string('X', 1000);
+        var result = ToolCallingChatOrchestrator.TruncateToolResult(content, maxBytes);
+        System.Text.Encoding.UTF8.GetByteCount(result).Should().BeLessOrEqualTo(maxBytes,
+            "returned string must never exceed the stated byte budget");
+    }
+
+    [Fact]
+    public void TruncateToolResult_OversizedMultiByteContent_ResultIsWithinBudget()
+    {
+        // CJK characters encode to 3 bytes each in UTF-8
+        var content = new string('\u4E2D', 10_000); // 30 000 bytes
+        var result = ToolCallingChatOrchestrator.TruncateToolResult(content, 8_000);
+        result.Should().EndWith("...(truncated)");
+        System.Text.Encoding.UTF8.GetByteCount(result).Should().BeLessOrEqualTo(8_000);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Orchestrator token accumulation tests
     // ─────────────────────────────────────────────────────────────────────────

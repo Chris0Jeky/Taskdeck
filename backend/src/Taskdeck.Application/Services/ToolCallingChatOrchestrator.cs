@@ -421,31 +421,73 @@ public sealed class ToolCallingChatOrchestrator
     /// Truncates a tool result string to the configured byte budget so oversized
     /// payloads do not blow out the provider's context window.
     /// When <paramref name="maxBytes"/> is 0 or negative, no truncation is applied.
-    /// A "(truncated)" marker is appended so the LLM knows the result was cut short.
+    /// A "...(truncated)" marker is appended so the LLM knows the result was cut short.
+    /// The returned string is always within <paramref name="maxBytes"/> UTF-8 bytes.
     /// </summary>
     internal static string TruncateToolResult(string content, int maxBytes)
     {
         if (maxBytes <= 0 || string.IsNullOrEmpty(content))
             return content;
 
-        var encoded = System.Text.Encoding.UTF8.GetByteCount(content);
+        var utf8 = System.Text.Encoding.UTF8;
+        var encoded = utf8.GetByteCount(content);
         if (encoded <= maxBytes)
             return content;
 
-        // Truncate by characters (approximate — UTF-8 multi-byte chars are uncommon
-        // in typical JSON tool results but we avoid cutting in the middle of a char).
         const string marker = "...(truncated)";
-        // Walk back until the byte count fits
-        var maxChars = maxBytes - System.Text.Encoding.UTF8.GetByteCount(marker);
-        if (maxChars <= 0) return marker;
+        var markerBytes = utf8.GetByteCount(marker);
 
-        // Binary-search-like: estimate character count from byte ratio then clamp
-        var ratio = (double)maxChars / encoded;
-        var estimate = (int)(content.Length * ratio);
-        while (estimate > 0 && System.Text.Encoding.UTF8.GetByteCount(content[..estimate]) > maxChars)
-            estimate--;
+        // If the budget cannot even hold the marker, return as many bytes as fit
+        // from the marker itself so the result is always <= maxBytes.
+        if (maxBytes <= markerBytes)
+            return marker[..FindCharCountFittingBytes(marker, maxBytes, utf8)];
 
-        return estimate > 0 ? content[..estimate] + marker : marker;
+        var maxContentBytes = maxBytes - markerBytes;
+
+        // Binary search for the longest prefix whose UTF-8 encoding fits the budget.
+        // Avoids the O(n) worst case of a decrementing walk and makes no heap
+        // allocations during the search (GetByteCount accepts ReadOnlySpan<char>).
+        var span = content.AsSpan();
+        var low = 0;
+        var high = content.Length;
+        var best = 0;
+        while (low <= high)
+        {
+            var mid = low + ((high - low) / 2);
+            if (utf8.GetByteCount(span[..mid]) <= maxContentBytes)
+            {
+                best = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return best > 0 ? content[..best] + marker : marker;
+    }
+
+    private static int FindCharCountFittingBytes(string s, int maxBytes, System.Text.Encoding utf8)
+    {
+        var low = 0;
+        var high = s.Length;
+        var best = 0;
+        var span = s.AsSpan();
+        while (low <= high)
+        {
+            var mid = low + ((high - low) / 2);
+            if (utf8.GetByteCount(span[..mid]) <= maxBytes)
+            {
+                best = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+        return best;
     }
 
     private static string TruncateForLog(string content)
