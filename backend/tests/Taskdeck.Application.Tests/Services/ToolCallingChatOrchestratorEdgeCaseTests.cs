@@ -38,26 +38,17 @@ public class ToolCallingChatOrchestratorEdgeCaseTests
     [Fact]
     public async Task ExecuteAsync_PerRoundTimeout_ReturnsDegradedResult()
     {
-        // Simulate a provider that takes longer than PerRoundTimeoutSeconds
+        // Simulate a per-round timeout by throwing OperationCanceledException
+        // with a non-cancelled external token. This exercises the orchestrator's
+        // catch(OperationCanceledException) when !ct.IsCancellationRequested path
+        // without waiting for the real 30-second timeout.
         var mock = new Mock<ILlmProvider>();
         mock.Setup(p => p.CompleteWithToolsAsync(
                 It.IsAny<ChatCompletionRequest>(),
                 It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
                 It.IsAny<IReadOnlyList<ToolCallResult>?>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(async (ChatCompletionRequest _, IReadOnlyList<TaskdeckToolSchema> _,
-                IReadOnlyList<ToolCallResult>? _, CancellationToken ct) =>
-            {
-                // Wait until cancellation triggers (per-round timeout)
-                await Task.Delay(TimeSpan.FromSeconds(60), ct);
-                return new LlmToolCompletionResult(
-                    Content: "Should not reach here",
-                    TokensUsed: 0,
-                    Provider: "Test",
-                    Model: "test-v1",
-                    ToolCalls: null,
-                    IsComplete: true);
-            });
+            .ThrowsAsync(new OperationCanceledException("Simulated per-round timeout"));
 
         var registry = new ToolExecutorRegistry(Array.Empty<IToolExecutor>());
         var orchestrator = new ToolCallingChatOrchestrator(
@@ -661,5 +652,94 @@ public class ToolCallingChatOrchestratorEdgeCaseTests
 
         result.IsDegraded.Should().BeTrue();
         result.Content.Should().Contain("[list_cards_in_column]");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LoopDetection_AbortsOnIdenticalConsecutiveToolCalls()
+    {
+        // When the LLM issues the exact same tool calls in consecutive rounds
+        // (and the previous round had no errors), the orchestrator should abort
+        // with a loop-detected degraded result.
+        var args = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var mock = new Mock<ILlmProvider>();
+
+        mock.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmToolCompletionResult(
+                Content: null, TokensUsed: 25,
+                Provider: "Test", Model: "test-v1",
+                ToolCalls: new[] { new ToolCallRequest("call-1", "list_cards_in_column", args) },
+                IsComplete: false));
+
+        var executor = CreateMockExecutor("list_cards_in_column", "{\"cards\":[]}");
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            mock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        var result = await orchestrator.ExecuteAsync(MakeRequest("Show backlog cards"), _boardId);
+
+        result.IsDegraded.Should().BeTrue();
+        result.DegradedReason.Should().Contain("loop");
+        result.Rounds.Should().Be(2, "loop should be detected on the second round with identical calls");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LoopDetection_RetriesAllowedAfterErrors()
+    {
+        // When the previous round had errors, the LLM may legitimately retry
+        // the same tool calls. Loop detection should NOT trigger in this case.
+        var args = JsonDocument.Parse("{\"column_name\":\"Backlog\"}").RootElement;
+        var mock = new Mock<ILlmProvider>();
+        var callSequence = 0;
+
+        mock.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callSequence++;
+                if (callSequence <= 2)
+                {
+                    return new LlmToolCompletionResult(
+                        Content: null, TokensUsed: 25,
+                        Provider: "Test", Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "list_cards_in_column", args) },
+                        IsComplete: false);
+                }
+                return new LlmToolCompletionResult(
+                    Content: "Found the cards.", TokensUsed: 50,
+                    Provider: "Test", Model: "test-v1",
+                    ToolCalls: null, IsComplete: true);
+            });
+
+        // First call throws (error), second call succeeds. This means the retry
+        // of identical tool calls should be allowed because the previous round had errors.
+        var executorCallCount = 0;
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("list_cards_in_column");
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<ToolExecutionContext>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                executorCallCount++;
+                if (executorCallCount == 1)
+                    throw new InvalidOperationException("Transient failure");
+                return "{\"cards\":[]}";
+            });
+
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            mock.Object, registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        var result = await orchestrator.ExecuteAsync(MakeRequest("Show backlog cards"), _boardId);
+
+        result.IsDegraded.Should().BeFalse("retry after error should not trigger loop detection");
+        result.Rounds.Should().Be(3);
     }
 }

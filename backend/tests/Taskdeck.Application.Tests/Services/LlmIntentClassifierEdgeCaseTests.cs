@@ -174,8 +174,11 @@ public class LlmIntentClassifierEdgeCaseTests
     }
 
     [Fact]
-    public void Classify_PromptInjection_DoesNotCrash()
+    public void Classify_PromptInjection_DoesNotCrashAndStillClassifies()
     {
+        // Injection payloads that contain "create a card" should still be classified
+        // as actionable — the classifier is a regex-based intent detector, not a
+        // sanitizer. The key guarantee is no crashes and correct classification.
         var injections = new[]
         {
             "create a card'; DROP TABLE cards;--",
@@ -188,6 +191,11 @@ public class LlmIntentClassifierEdgeCaseTests
         {
             var act = () => LlmIntentClassifier.Classify(input);
             act.Should().NotThrow($"input '{input}' should not cause an exception");
+
+            var (isActionable, actionIntent) = LlmIntentClassifier.Classify(input);
+            isActionable.Should().BeTrue(
+                $"injection input '{input}' still contains 'create a card' and should be actionable");
+            actionIntent.Should().Be("card.create");
         }
     }
 

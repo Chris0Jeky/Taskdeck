@@ -129,4 +129,30 @@ public class ToolExecutorRegistryEdgeCaseTests
 
         ctx1.Should().Be(ctx2); // Record equality
     }
+
+    [Fact]
+    public void Constructor_DuplicateToolNames_ThrowsOnCreation()
+    {
+        // ToolExecutorRegistry uses ToDictionary internally which throws
+        // ArgumentException on duplicate keys. This verifies the crash behavior
+        // is surfaced rather than silently losing executors.
+        var e1 = MakeExecutor("list_board_columns");
+        var e2 = MakeExecutor("list_board_columns"); // duplicate
+
+        var act = () => new ToolExecutorRegistry(new[] { e1.Object, e2.Object });
+
+        act.Should().Throw<ArgumentException>("duplicate tool names should not be silently accepted");
+    }
+
+    [Fact]
+    public void GetExecutor_NullToolName_ThrowsArgumentNullException()
+    {
+        var executor = MakeExecutor("list_board_columns");
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+
+        // Dictionary.TryGetValue throws ArgumentNullException on null key
+        var act = () => registry.GetExecutor(null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
 }
