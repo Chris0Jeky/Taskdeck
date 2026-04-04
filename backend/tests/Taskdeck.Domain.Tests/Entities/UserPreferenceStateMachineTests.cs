@@ -114,7 +114,7 @@ public class UserPreferenceStateMachineTests
     }
 
     [Fact]
-    public void DismissOnboarding_IsIdempotent()
+    public void DismissOnboarding_CalledTwice_KeepsDismissedAndAdvancesTimestamp()
     {
         var pref = CreateDefault();
 
@@ -124,7 +124,8 @@ public class UserPreferenceStateMachineTests
         pref.DismissOnboarding();
 
         pref.OnboardingVisibility.Should().Be(WorkspaceOnboardingVisibility.Dismissed);
-        // Timestamp updates each time (no guard), so it should be >= the first call
+        // DismissOnboarding overwrites the timestamp each call (no early-return guard),
+        // so the second call produces a value >= the first.
         pref.OnboardingDismissedAt.Should().BeOnOrAfter(firstDismiss!.Value);
     }
 
@@ -195,7 +196,6 @@ public class UserPreferenceStateMachineTests
         var pref = CreateDefault();
         pref.RecordOnboardingCompletion();
         var firstCompletion = pref.OnboardingCompletedAt;
-        var beforeSecondCall = pref.UpdatedAt;
 
         pref.RecordOnboardingCompletion();
 
