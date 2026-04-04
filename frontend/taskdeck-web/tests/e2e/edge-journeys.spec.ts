@@ -74,9 +74,8 @@ test('very long capture text (5000 chars) should be accepted and visible in inbo
   // Click to open detail and confirm text is present (possibly truncated in excerpt)
   await captureRow.click()
   const detailText = page.locator('.td-inbox-detail__text')
-  if (await detailText.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await expect(detailText).toContainText(marker)
-  }
+  await expect(detailText).toBeVisible({ timeout: 8_000 })
+  await expect(detailText).toContainText(marker)
 })
 
 test('capture with special characters (emoji, unicode, markdown) should be preserved', async ({ page }) => {
@@ -102,10 +101,9 @@ test('capture with special characters (emoji, unicode, markdown) should be prese
   // Detail view must preserve the emoji and unicode content
   await captureRow.click()
   const detailText = page.locator('.td-inbox-detail__text')
-  if (await detailText.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await expect(detailText).toContainText('🚀')
-    await expect(detailText).toContainText('Ñoño')
-  }
+  await expect(detailText).toBeVisible({ timeout: 8_000 })
+  await expect(detailText).toContainText('🚀')
+  await expect(detailText).toContainText('Ñoño')
 })
 
 test('capture submitted while not on a board should be reachable in global inbox', async ({ page }) => {
@@ -257,12 +255,11 @@ test('proposal detail should show human-readable operation descriptions', async 
   // Must not be entirely raw JSON braces (e.g. '{...}' as the only content)
   expect(proposalText.trim()).not.toMatch(/^\{.*\}$/)
 
-  // Optional: look for a labelled summary section and assert it is non-empty
+  // The proposal card must contain a labelled summary/description section that is non-empty.
   const summary = proposalCard.locator('[class*="summary"], [class*="description"]').first()
-  if (await summary.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    const summaryText = await summary.innerText()
-    expect(summaryText.trim().length).toBeGreaterThan(0)
-  }
+  await expect(summary).toBeVisible({ timeout: 5_000 })
+  const summaryText = await summary.innerText()
+  expect(summaryText.trim().length).toBeGreaterThan(0)
 })
 
 // ─── Keyboard navigation ──────────────────────────────────────────────────────
@@ -304,8 +301,8 @@ test('Escape key should close each open modal and inline form in sequence', asyn
   const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
   await expect(card).toBeVisible()
 
-  // Open card edit modal via Enter key
-  await page.locator('body').click()
+  // Open card edit modal: explicitly click the card to focus it, then press Enter
+  await card.click()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
 

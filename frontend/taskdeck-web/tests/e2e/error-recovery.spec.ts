@@ -13,7 +13,6 @@
  * backend configuration.
  */
 
-import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
@@ -270,11 +269,11 @@ test('chat request when LLM provider returns degraded response should show degra
 
   const chatInput = page.getByPlaceholder(/type a message|ask something|chat/i).first()
 
-  // If the chat input is not present the page may show degraded state already
-  if (await chatInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await chatInput.fill('What cards are due today?')
-    await chatInput.press('Enter')
-  }
+  // The chat input must be present; if it is missing the page is already broken
+  // in a way we cannot assert on meaningfully — fail fast.
+  await expect(chatInput).toBeVisible({ timeout: 10_000 })
+  await chatInput.fill('What cards are due today?')
+  await chatInput.press('Enter')
 
   // Expect degraded/error indicator — not a raw stack trace
   const degradedIndicator = page
@@ -290,7 +289,7 @@ test('chat request when LLM provider returns degraded response should show degra
 test('boards list API failure should show error in boards workspace', async ({ page }) => {
   let intercepted = false
 
-  await page.route('**/api/boards', async (route) => {
+  await page.route('**/api/boards*', async (route) => {
     if (route.request().method() === 'GET' && !intercepted) {
       intercepted = true
       await route.fulfill({

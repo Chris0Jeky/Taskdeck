@@ -36,7 +36,10 @@ async function createBoardViaUI(page: Page, boardName: string): Promise<string> 
   await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
   await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
   const match = /\/workspace\/boards\/([a-f0-9-]+)$/.exec(page.url())
-  return match?.[1] ?? ''
+  if (!match) {
+    throw new Error(`Failed to parse board id from URL after creation: ${page.url()}`)
+  }
+  return match[1]
 }
 
 function columnByName(page: Page, columnName: string) {
