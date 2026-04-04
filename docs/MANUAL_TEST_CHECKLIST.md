@@ -575,6 +575,45 @@ These areas now have extensive automated test coverage (~586 new tests). Manual 
 3. Send `POST /api/boards` with malformed JSON body.
    - Expected: 400 (may be ProblemDetails from ASP.NET middleware, not GP-03 — this is documented behavior).
 
+## P3. Tech-Debt, Security, and Feature Hardening Wave (`#765`–`#770`, `#776`)
+
+These 7 PRs resolve tech-debt, security, and feature gaps with two rounds of adversarial review each. ~65 new tests (32 backend + 33 frontend).
+
+### P3.1. Agent API Fix (covered by `#758`/`#776`)
+
+1. `GET /api/agents` with valid bearer token.
+   - Expected: `200` with JSON array of agent profiles (previously returned 500 due to `DateTimeOffset` ORDER BY in SQLite).
+2. `GET /api/agents/{id}/runs?limit=5` with valid bearer token.
+   - Expected: `200` with JSON array limited to 5 entries, ordered by CreatedAt descending.
+3. `GET /api/agents` without bearer token.
+   - Expected: `401`.
+
+### P3.2. DataExport Exception Logging (covered by `#759`/`#766`)
+
+1. Trigger a data export (`GET /api/account/export`) with valid bearer token.
+   - Expected: `200` with versioned JSON payload; no error-level log entries for `DataExportService` on success.
+2. If backend logs are observable: verify that `OperationCanceledException` during export does NOT produce an `Error`-level log entry (only genuine failures should log at Error).
+
+### P3.3. Streaming Chat Token Usage (covered by `#763`/`#768`)
+
+1. Open `/workspace/automations/chat`. Create a board-scoped session. Send a message.
+   - Expected: response streams in real-time as before.
+2. After streaming completes, refresh the page.
+   - Expected: the assistant response is visible in chat history (previously, streamed responses were not persisted as `ChatMessage` records).
+
+### P3.4. EF Core Version Alignment (covered by `#760`/`#767`)
+
+1. `dotnet build backend/Taskdeck.sln -c Release` — verify 0 errors.
+2. `dotnet test backend/Taskdeck.sln -c Release -m:1` — verify all tests pass.
+3. Visit `http://localhost:5000/swagger` — verify Swagger UI loads correctly.
+
+### P3.5. Tool Argument Replay (covered by `#673`/`#770`)
+
+1. Open `/workspace/automations/chat`. Create a board-scoped session. Ask: "What cards are in Backlog?" (or first column name).
+   - Expected: coherent multi-turn response using tool calls.
+2. Follow up with: "Tell me more about the first card." then another follow-up.
+   - Expected: multi-turn tool-calling maintains context across rounds. Original tool arguments are preserved in provider replay messages.
+
 ## Q. Observability Smoke (OBS-01)
 
 1. In `backend/src/Taskdeck.Api/appsettings.Development.json`, set:
