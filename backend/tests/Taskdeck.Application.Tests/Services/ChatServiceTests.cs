@@ -1488,9 +1488,125 @@ public class ChatServiceTests
 
     #endregion
 
+    [Fact]
+    public async Task StreamResponseAsync_ShouldPersistAssistantMessageWithTokenUsage()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream persist test");
+        ChatMessage? persistedMessage = null;
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage msg, CancellationToken _) =>
+            {
+                persistedMessage = msg;
+                return msg;
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamEventsWithUsage());
+
+        // Consume the stream
+        await foreach (var _ in _service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        // Assert: a ChatMessage was persisted with the correct content and token usage
+        persistedMessage.Should().NotBeNull();
+        persistedMessage!.Role.Should().Be(ChatMessageRole.Assistant);
+        persistedMessage.Content.Should().Be("hello world");
+        persistedMessage.TokenUsage.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_ShouldRecordQuotaUsage_WhenQuotaServiceAvailable()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream quota test");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage msg, CancellationToken _) => msg);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamEventsWithUsage());
+
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.CheckQuotaAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaCheckResultDto(true, null, 10000, 100));
+
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        // Consume the stream
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+
+        quotaMock.Verify(q => q.RecordUsageAsync(
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "Mock",
+            "mock-default",
+            42,
+            0,
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_FinalTokenEvent_ShouldCarryUsageFields()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream usage fields test");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage msg, CancellationToken _) => msg);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamEventsWithUsage());
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var token in _service.StreamResponseAsync(session.Id, userId, default))
+        {
+            events.Add(token);
+        }
+
+        events.Should().HaveCount(2);
+
+        // Non-final event should not carry usage
+        events[0].TokensUsed.Should().BeNull();
+        events[0].Provider.Should().BeNull();
+        events[0].Model.Should().BeNull();
+
+        // Final event should carry usage
+        events[1].TokensUsed.Should().Be(42);
+        events[1].Provider.Should().Be("Mock");
+        events[1].Model.Should().Be("mock-default");
+    }
+
     private static async IAsyncEnumerable<LlmTokenEvent> StreamEvents()
     {
-        yield return new LlmTokenEvent("token", true);
+        yield return new LlmTokenEvent("token", true, TokensUsed: 10, Provider: "Mock", Model: "mock-default");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> StreamEventsWithUsage()
+    {
+        yield return new LlmTokenEvent("hello", false);
+        yield return new LlmTokenEvent(" world", true, TokensUsed: 42, Provider: "Mock", Model: "mock-default");
         await Task.CompletedTask;
     }
 }
