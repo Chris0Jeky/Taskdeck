@@ -82,8 +82,8 @@ export default [
       'vuejs-accessibility/mouse-events-have-key-events': 'warn',
       // form-control-has-label is covered by our manual label audit
       'vuejs-accessibility/form-control-has-label': 'warn',
-      // label-has-for requires explicit for/id binding — warn during rollout
-      'vuejs-accessibility/label-has-for': 'warn',
+      // label-has-for: accept either nesting or for/id association (HTML spec allows both)
+      'vuejs-accessibility/label-has-for': ['warn', { required: { some: ['nesting', 'id'] } }],
       // Div/span click handlers are common in Vue component patterns — warn for gradual migration
       'vuejs-accessibility/no-static-element-interactions': 'warn',
       // Autofocus is intentional in modals and command palettes for UX

@@ -353,7 +353,6 @@ describe('metrics board selection route stability (#687)', () => {
     await store.hydratePreferences()
     expect(store.mode).toBe('workbench')
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(metricsApi.getBoardMetrics).mockResolvedValue(makeMetricsResponse() as any)
 
     await metricsStore.fetchBoardMetrics({ boardId: 'board-1', from: '2026-01-01', to: '2026-01-31' })
@@ -365,7 +364,6 @@ describe('metrics board selection route stability (#687)', () => {
 
   it('fetchBoardMetrics loads data without raising an error on success', async () => {
     const metricsStore = useMetricsStore()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(metricsApi.getBoardMetrics).mockResolvedValue(makeMetricsResponse() as any)
 
     await metricsStore.fetchBoardMetrics({ boardId: 'board-1', from: '2026-01-01', to: '2026-01-31' })
@@ -377,7 +375,6 @@ describe('metrics board selection route stability (#687)', () => {
 
   it('fetching metrics for a second board completes cleanly (no stale error)', async () => {
     const metricsStore = useMetricsStore()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(metricsApi.getBoardMetrics).mockResolvedValue(makeMetricsResponse() as any)
 
     await metricsStore.fetchBoardMetrics({ boardId: 'board-1', from: '2026-01-01', to: '2026-01-31' })
@@ -385,7 +382,6 @@ describe('metrics board selection route stability (#687)', () => {
 
     // Select a different board
     const response2 = { ...makeMetricsResponse(), boardId: 'board-2' } satisfies ReturnType<typeof makeMetricsResponse>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(metricsApi.getBoardMetrics).mockResolvedValue(response2 as any)
 
     await metricsStore.fetchBoardMetrics({ boardId: 'board-2', from: '2026-01-01', to: '2026-01-31' })
@@ -401,7 +397,6 @@ describe('metrics board selection route stability (#687)', () => {
     vi.mocked(workspaceApi.getPreferences).mockResolvedValue(makePreferenceResponse('agent'))
     await store.hydratePreferences()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(metricsApi.getBoardMetrics).mockResolvedValue(makeMetricsResponse() as any)
     await metricsStore.fetchBoardMetrics({ boardId: 'board-1', from: '2026-01-01', to: '2026-01-31' })
 
