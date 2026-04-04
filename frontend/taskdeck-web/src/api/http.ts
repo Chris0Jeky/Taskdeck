@@ -45,7 +45,14 @@ http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      console.error('API Error:', error.response.data)
+      // 404 is an expected "not found" state for optional resources (e.g. capture
+      // provenance on manually-created cards). Log at warn level so callers that
+      // handle the absence silently don't pollute the console with error noise.
+      if (error.response.status === 404) {
+        console.warn('API Not Found:', error.response.data)
+      } else {
+        console.error('API Error:', error.response.data)
+      }
 
       // Handle 401 - clear session and redirect to login (skip in demo mode)
       if (error.response.status === 401 && !isDemoMode) {
