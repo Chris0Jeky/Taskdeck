@@ -61,7 +61,13 @@ public record LlmCompletionResult(
     List<string>? Instructions = null
 );
 
-public record LlmTokenEvent(string Token, bool IsComplete, string? Error = null);
+public record LlmTokenEvent(
+    string Token,
+    bool IsComplete,
+    string? Error = null,
+    int? TokensUsed = null,
+    string? Provider = null,
+    string? Model = null);
 
 public record LlmHealthStatus(
     bool IsAvailable,
