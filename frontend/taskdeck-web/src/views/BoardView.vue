@@ -368,7 +368,6 @@ useKeyboardShortcuts([
               type="text"
               placeholder="Column name"
               class="td-column-form__input"
-              autofocus
               @keydown.enter.prevent="createColumn"
             />
             <button

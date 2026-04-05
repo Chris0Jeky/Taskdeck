@@ -45,7 +45,7 @@ function handleWorkspaceModeChange(event: Event) {
 </script>
 
 <template>
-  <header class="td-topbar" role="banner">
+  <header class="td-topbar">
     <div class="td-topbar__left">
       <div class="td-topbar__mode">
         <label class="td-topbar__mode-label" for="workspace-mode-select">Workspace</label>

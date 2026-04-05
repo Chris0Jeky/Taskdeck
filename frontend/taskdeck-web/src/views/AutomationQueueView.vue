@@ -257,8 +257,8 @@ onMounted(() => {
 
       <div v-if="showComposer" class="td-queue__composer">
         <div class="td-form-group">
-          <label class="td-label">Request Type (advanced)</label>
-          <input v-model="newRequestType" type="text" class="td-input" placeholder="instruction" />
+          <label for="queue-request-type" class="td-label">Request Type (advanced)</label>
+          <input id="queue-request-type" v-model="newRequestType" type="text" class="td-input" placeholder="instruction" />
           <div class="td-helper">
             Leave this as <strong>instruction</strong> for most manual requests. Capture triage requests are created
             through <strong>Inbox -&gt; Start Triage</strong>, not by typing them here.
@@ -266,7 +266,7 @@ onMounted(() => {
         </div>
 
         <div class="td-form-group">
-          <label class="td-label">Board (optional)</label>
+          <p class="td-label">Board (optional)</p>
           <InputAssistField
             :model-value="boardDisplayValue"
             :options="boardOptions"
@@ -283,8 +283,9 @@ onMounted(() => {
         </div>
 
         <div class="td-form-group">
-          <label class="td-label">Instruction</label>
+          <label for="queue-instruction" class="td-label">Instruction</label>
           <textarea
+            id="queue-instruction"
             v-model="newPayload"
             class="td-textarea"
             rows="6"

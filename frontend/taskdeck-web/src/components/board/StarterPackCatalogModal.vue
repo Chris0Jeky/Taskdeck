@@ -591,10 +591,15 @@ useEscapeToClose(() => props.isOpen, handleClose)
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
   <div
     v-if="isOpen"
     class="fixed inset-0 z-50 overflow-y-auto"
+    role="dialog"
+    aria-label="Starter Pack Catalog"
+    aria-modal="true"
     @click.self="handleClose"
+    @keydown.escape="handleClose"
   >
     <div class="sp-backdrop fixed inset-0 transition-opacity"></div>
 

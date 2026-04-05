@@ -187,8 +187,11 @@ function handleCardDragOver(event: DragEvent) {
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- drag-and-drop column drop zone; group role + drag events are intentional for kanban DnD -->
   <div
     :data-column-id="column.id"
+    role="group"
+    :aria-label="`${column.name} column`"
     :class="[
       'td-column-lane',
       isDragOver ? 'td-column-lane--drag-over' : ''
@@ -258,10 +261,10 @@ function handleCardDragOver(event: DragEvent) {
           <textarea
             data-action="add-card-input"
             v-model="newCardTitle"
+            aria-label="New card title"
             placeholder="Enter card title..."
             class="td-column-lane__card-input"
             rows="3"
-            autofocus
           ></textarea>
           <div class="td-column-lane__card-form-actions">
             <button
@@ -288,6 +291,7 @@ function handleCardDragOver(event: DragEvent) {
       <div
         v-for="card in cards"
         :key="card.id"
+        role="presentation"
         @dragover="handleCardDragOver"
         @drop="handleCardDrop(card, $event)"
       >

@@ -67,10 +67,15 @@ const categories: ShortcutCategory[] = [
 <template>
   <Teleport to="body">
     <Transition name="modal">
+      <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop: dialog role with keyboard handler satisfies a11y, click-to-close is standard UX -->
       <div
         v-if="isOpen"
         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+        role="dialog"
+        aria-label="Keyboard Shortcuts"
+        aria-modal="true"
         @click="handleBackdropClick"
+        @keydown.escape="emit('close')"
       >
         <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <!-- Header -->

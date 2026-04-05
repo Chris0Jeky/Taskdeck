@@ -249,7 +249,7 @@ onMounted(() => {
 
       <h2 class="td-section-title">Archived Items</h2>
       <div class="td-toolbar">
-        <select v-model="entityTypeFilter" class="td-input" @change="loadArchiveItems">
+        <select v-model="entityTypeFilter" class="td-input" aria-label="Filter by entity type" @change="loadArchiveItems">
           <option value="all">All types</option>
           <option value="board">Boards</option>
           <option value="column">Columns</option>

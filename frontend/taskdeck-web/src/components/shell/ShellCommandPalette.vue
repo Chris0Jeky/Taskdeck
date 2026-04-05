@@ -198,6 +198,7 @@ watch(allPaletteItems, (items) => {
 
 <template>
   <Teleport to="body">
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
     <div
       v-if="visible"
       class="td-overlay"
@@ -205,15 +206,16 @@ watch(allPaletteItems, (items) => {
       aria-label="Command palette"
       aria-modal="true"
       @click.self="handleClose"
+      @keydown.escape="handleClose"
     >
       <div class="td-command-palette">
         <input
           ref="commandPaletteInput"
           v-model="commandQuery"
           type="text"
+          aria-label="Command palette search"
           class="td-command-palette__input"
           placeholder="Type a command or search boards and cards..."
-          autofocus
           role="combobox"
           aria-autocomplete="list"
           :aria-expanded="visible"
@@ -242,9 +244,12 @@ watch(allPaletteItems, (items) => {
                 index === selectedIndex ? 'td-command-palette__item--active' : ''
               ]"
               role="option"
+              tabindex="-1"
               :aria-selected="index === selectedIndex"
               @mouseenter="setSelected(index)"
+              @focusin="setSelected(index)"
               @click="activateItem(item)"
+              @keydown.enter="activateItem(item)"
             >
               <span class="td-command-palette__item-icon">{{ getItemIcon(item) }}</span>
               <span class="td-command-palette__item-content">

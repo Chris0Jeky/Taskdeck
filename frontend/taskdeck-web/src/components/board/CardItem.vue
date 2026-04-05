@@ -89,6 +89,7 @@ function isOverdue(dateString: string | null): boolean {
   <div
     draggable="false"
     :data-card-id="card.id"
+    role="option"
     :class="[
       'td-board-card group relative cursor-pointer',
       isSelected ? 'td-board-card--selected' : '',
@@ -97,6 +98,8 @@ function isOverdue(dateString: string | null): boolean {
     tabindex="0"
     :aria-selected="isSelected"
     @click.stop="emit('click', card)"
+    @keydown.enter="emit('click', card)"
+    @keydown.space.prevent="emit('click', card)"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
   >
@@ -143,6 +146,7 @@ function isOverdue(dateString: string | null): boolean {
       v-if="showMoveMenu && columns"
       class="td-card-move-menu"
       role="menu"
+      tabindex="-1"
       aria-label="Move card to column"
       @click.stop
       @keydown="handleMoveMenuKeydown"
@@ -170,6 +174,7 @@ function isOverdue(dateString: string | null): boolean {
       <div
         v-if="showMoveMenu"
         class="fixed inset-0 z-40"
+        aria-hidden="true"
         @click="closeMoveMenu"
       />
     </Teleport>

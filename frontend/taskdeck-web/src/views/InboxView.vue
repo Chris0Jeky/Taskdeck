@@ -746,13 +746,16 @@ onUnmounted(() => {
                     role="option"
                     :aria-selected="selectedItemId === items[virtualRow.index]!.id"
                     @mouseenter="setActiveIndex(virtualRow.index)"
+                    @focusin="setActiveIndex(virtualRow.index)"
                     @click="openItemFromList(items[virtualRow.index]!, virtualRow.index)"
+                    @keydown.enter="openItemFromList(items[virtualRow.index]!, virtualRow.index)"
                   >
                     <div class="td-inbox-row__head">
                       <input
                         type="checkbox"
                         class="td-inbox-row__checkbox"
                         data-testid="inbox-item-checkbox"
+                        :aria-label="`Select item ${virtualRow.index + 1}`"
                         :checked="selectedIds.has(items[virtualRow.index]!.id)"
                         @click.stop="toggleItemSelection(items[virtualRow.index]!.id)"
                       />
@@ -808,16 +811,18 @@ onUnmounted(() => {
               Loading detail...
             </div>
             <template v-else-if="isEditingSuggestion">
-              <label class="td-inbox-detail__edit-label">Capture Text</label>
+              <label for="inbox-edit-text" class="td-inbox-detail__edit-label">Capture Text</label>
               <textarea
+                id="inbox-edit-text"
                 v-model="editedText"
                 class="td-inbox-detail__edit-textarea"
                 data-testid="suggestion-edit-textarea"
                 rows="12"
                 placeholder="Edit the capture text before triage..."
               />
-              <label class="td-inbox-detail__edit-label">Title Hint (optional)</label>
+              <label for="inbox-edit-title" class="td-inbox-detail__edit-label">Title Hint (optional)</label>
               <input
+                id="inbox-edit-title"
                 v-model="editedTitleHint"
                 class="td-inbox-detail__edit-input"
                 data-testid="suggestion-edit-title"

@@ -168,8 +168,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="td-overlay" role="dialog" aria-label="Capture item" aria-modal="true" @click.self="requestClose">
-    <div class="td-capture-modal" @keydown="handleKeydown">
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
+  <div class="td-overlay" role="dialog" aria-label="Capture item" aria-modal="true" @click.self="requestClose" @keydown.escape="requestClose">
+    <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- document role inside dialog; @keydown handles Ctrl+Enter save shortcut -->
+    <div class="td-capture-modal" role="document" @keydown="handleKeydown">
       <header class="td-capture-modal__header">
         <h2>{{ captureMode === 'typed' ? 'Quick Capture' : 'Transcript Capture' }}</h2>
         <button class="td-capture-modal__close" aria-label="Close capture modal" @click="requestClose">
@@ -207,6 +209,7 @@ onUnmounted(() => {
         <textarea
           ref="textInput"
           v-model="text"
+          aria-label="Capture text"
           class="td-capture-modal__input"
           placeholder="Capture a thought, task, or follow-up..."
           rows="8"
@@ -242,6 +245,7 @@ onUnmounted(() => {
             ref="fileInput"
             type="file"
             accept=".txt,text/plain"
+            aria-label="Upload text file"
             class="td-capture-modal__file-input"
             @change="handleFileUpload"
           />
@@ -250,6 +254,7 @@ onUnmounted(() => {
         <textarea
           ref="transcriptInput"
           v-model="text"
+          aria-label="Transcript content"
           class="td-capture-modal__input td-capture-modal__input--transcript"
           placeholder="Paste transcript content here..."
           rows="14"
