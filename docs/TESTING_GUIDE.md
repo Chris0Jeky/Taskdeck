@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-04
+Last Updated: 2026-04-05
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -12,23 +12,24 @@ Companion Active Docs:
 
 ## Current Verified Totals (2026-04-04)
 
-- Backend: ~3020+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755` + ~78 webhook tests from PRs `#750`/`#756` + ~32 new tests from PRs `#765`–`#770`/`#776`)
+- Backend: ~3070+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755` + ~78 webhook tests from PRs `#750`/`#756` + ~32 new tests from PRs `#765`–`#770`/`#776` + ~52 new backend tests from PRs `#771`–`#779`)
   - Domain: ~620+ (174 new entity state machine tests + 45 archive lifecycle domain tests)
-  - Application: ~1510+ (101 LLM edge cases + 64 export/import + 51 metrics accuracy + 4 streaming token usage + 6 tool argument replay + 3 DataExport logging tests)
+  - Application: ~1560+ (101 LLM edge cases + 64 export/import + 51 metrics accuracy + 4 streaming token usage + 6 tool argument replay + 3 DataExport logging + 17 tool-calling refinements + 15 export streaming + 18 resilience/degraded-mode tests)
   - API integration: ~830+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP + 19 SignalR + 57 error contract + 29 archive lifecycle + 10 metrics controller + 36 notification tests + 11 webhook HMAC + 22 webhook SSRF/delivery/repository + 19 OAuth token lifecycle)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: 1625/1625 passing (~127 test files)
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness): default required lane passing
-- Combined automated total: ~4660+ passing (backend ~3020+ + frontend unit 1625 + E2E)
+- Frontend unit: ~1734 passing (~133 test files)
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys): default required lane passing
+- Combined automated total: ~4830+ passing (backend ~3070+ + frontend unit ~1734 + E2E)
 
 Verification note:
 - backend totals are estimated after three 2026-04-04 waves; wave 1 (`#732`–`#739`, ~300 new tests), wave 2 (`#740`–`#755`, ~586 new tests with adversarial review), and wave 3 (`#750`/`#756`, ~50+ net new webhook tests: 11 HMAC + endpoint guard extensions + service/signature/worker/domain tests); each PR verified green individually; full-suite recertification needed
-- frontend unit totals: **1625 passing** as of 2026-04-04 post-wave 4 (up from 1592 pre-wave); 33 new tests from `#725`/`#765` (19 HTTP interceptor + 14 router integration); verified via `npx vitest --run` after adversarial review fixes
+- frontend unit totals: **~1734 passing** as of 2026-04-05 post-wave 5 (up from 1592 pre-waves 4+5); wave 4: 33 new tests from `#725`/`#765` (19 HTTP interceptor + 14 router integration); wave 5: 83 view tests (`#716`/`#775`), 91 store integration tests (`#711`/`#777`), 16 resilience tests (`#720`/`#778`); verified via `npx vitest --run` after adversarial review fixes
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
 - significant test growth in 2026-04-04 wave 4 (PRs `#765`–`#770`, `#776`, 7 issues): OAuth token lifecycle integration (19 backend tests, `#723`/`#769`), tool argument replay (6 backend tests, `#673`/`#770`), streaming chat token usage (4 backend tests, `#763`/`#768`), DataExport exception logging (3 backend tests, `#759`/`#766`), Agent API 500 fix (2 un-skipped tests, `#758`/`#776`), frontend HTTP interceptor + router auth guard tests (33 new tests, `#725`/`#765`); all 7 PRs received two rounds of adversarial review with review-fix commits addressing CI failures, performance bugs, resource leaks, misleading test names, and weak assertions
+- significant test growth in 2026-04-04 wave 5 (PRs `#771`–`#779`, 8 issues, ~258 new tests): tool-calling Phase 3 refinements (17 backend tests, `#651`/`#773`), export streaming (15 backend tests, `#670`/`#774`), resilience/degraded-mode (34 tests: 18 backend + 16 frontend, `#720`/`#778`), frontend view vitest coverage (83 tests across 6 views, `#716`/`#775`), Pinia store integration (91 tests across 6 stores, `#711`/`#777`), E2E error state expansion (25 Playwright scenarios, `#712`/`#772`), accessibility lint (105 warnings → 0, `#762`/`#779`), vendored dependency cleanup (`#761`/`#771`); all 8 PRs received two rounds of adversarial review
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
