@@ -10,7 +10,10 @@ const newBoardName = ref('')
 const showCreateForm = ref(false)
 
 onMounted(async () => {
-  await boardStore.fetchBoards()
+  // Catch the rethrown error — boardStore.error is already set by handleApiError
+  // so the template can display it. Without this catch, Vue treats the unhandled
+  // rejection as a lifecycle-hook error and may tear down the component.
+  await boardStore.fetchBoards().catch(() => {})
 })
 
 async function createBoard() {
@@ -84,7 +87,7 @@ function goToBoard(id: string) {
       </div>
 
       <!-- Error State -->
-      <div v-else-if="boardStore.error" class="bg-ember/10 border border-ember rounded-lg p-4 text-ember">
+      <div v-else-if="boardStore.error" class="bg-ember/10 border border-ember rounded-lg p-4 text-ember" role="alert">
         {{ boardStore.error }}
       </div>
 
