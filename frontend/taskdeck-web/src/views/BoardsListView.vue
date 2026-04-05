@@ -10,7 +10,10 @@ const newBoardName = ref('')
 const showCreateForm = ref(false)
 
 onMounted(async () => {
-  await boardStore.fetchBoards()
+  // Catch the rethrown error — boardStore.error is already set by handleApiError
+  // so the template can display it. Without this catch, Vue treats the unhandled
+  // rejection as a lifecycle-hook error and may tear down the component.
+  await boardStore.fetchBoards().catch(() => {})
 })
 
 async function createBoard() {

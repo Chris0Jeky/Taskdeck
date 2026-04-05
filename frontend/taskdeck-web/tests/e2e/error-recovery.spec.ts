@@ -14,7 +14,7 @@
  */
 
 import { expect, test } from '@playwright/test'
-import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { API_BASE_URL, API_ORIGIN, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, waitForProposalCreated } from './support/captureFlow'
 import { assertOk } from './support/httpAsserts'
@@ -279,7 +279,12 @@ test('chat request when LLM provider returns degraded response should show degra
 test('boards list API failure should show error in boards workspace', async ({ page }) => {
   let intercepted = false
 
-  await page.route('**/api/boards*', async (route) => {
+  // Use a URL predicate instead of a glob pattern. The glob '**/api/boards*'
+  // also matches Vite dev-server module requests (e.g. /src/api/boardsApi.ts)
+  // which breaks dynamic imports and prevents the component from loading at all.
+  await page.route((url) => {
+    return url.origin === API_ORIGIN && /\/api\/boards(\?|$)/.test(url.pathname)
+  }, async (route) => {
     if (route.request().method() === 'GET' && !intercepted) {
       intercepted = true
       await route.fulfill({
