@@ -2,12 +2,15 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '../store/boardStore'
 import { useMetricsStore } from '../store/metricsStore'
+import { useToastStore } from '../store/toastStore'
 import { metricsApi } from '../api/metricsApi'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 import type { MetricsQuery } from '../types/metrics'
 import type { Board } from '../types/board'
 
 const boardStore = useBoardStore()
 const metricsStore = useMetricsStore()
+const toast = useToastStore()
 
 const selectedBoardId = ref<string>('')
 const dateRangeDays = ref(30)
@@ -77,8 +80,9 @@ async function exportCsv() {
       to: toDate.value,
     }
     await metricsApi.exportBoardMetricsCsv(query)
-  } catch {
-    // Error is surfaced by the store via toast
+  } catch (e: unknown) {
+    const { message } = getErrorDisplay(e, 'Failed to export CSV')
+    toast.error(message)
   } finally {
     exporting.value = false
   }
