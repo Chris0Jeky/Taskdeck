@@ -107,8 +107,9 @@ public sealed class ApiKeyMiddleware
         // Set the authenticated user ID for HttpUserContextProvider
         context.Items[HttpUserContextProvider.UserIdItemKey] = apiKey.UserId;
 
-        // Update last-used timestamp (fire-and-forget, use a separate tracking context)
-        _ = UpdateLastUsedAsync(dbContext, apiKey.Id);
+        // Update last-used timestamp before continuing the pipeline.
+        // This is non-critical so failures are swallowed.
+        await UpdateLastUsedAsync(dbContext, apiKey.Id);
 
         await _next(context);
     }
