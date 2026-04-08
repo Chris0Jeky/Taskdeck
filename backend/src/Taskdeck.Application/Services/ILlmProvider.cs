@@ -58,7 +58,8 @@ public record LlmCompletionResult(
     string Model = "mock-default",
     bool IsDegraded = false,
     string? DegradedReason = null,
-    List<string>? Instructions = null
+    List<string>? Instructions = null,
+    bool IsClarificationRequest = false
 );
 
 public record LlmTokenEvent(
