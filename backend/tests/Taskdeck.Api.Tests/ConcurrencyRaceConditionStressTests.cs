@@ -43,8 +43,8 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
 
     /// <summary>
     /// Scenario 1: Two concurrent triage requests for the same capture item.
-    /// Exactly one should succeed (202 Accepted); the other should get a
-    /// non-success status or a duplicate triage should be harmless.
+    /// Both may succeed because SQLite serializes writes and the triage endpoint
+    /// is idempotent, but no unexpected errors should occur.
     /// </summary>
     [Fact]
     public async Task CaptureTriage_ConcurrentDoubleTriageForSameItem_AtMostOneSucceeds()
@@ -547,8 +547,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
 
         // One client approves, another rejects simultaneously
         using var barrier = new SemaphoreSlim(0, 2);
-        var approveStatus = HttpStatusCode.Unused;
-        var rejectStatus = HttpStatusCode.Unused;
+        var results = new ConcurrentDictionary<string, HttpStatusCode>();
 
         var approveTask = Task.Run(async () =>
         {
@@ -557,7 +556,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             await barrier.WaitAsync();
             var resp = await raceClient.PostAsync(
                 $"/api/automation/proposals/{proposalId}/approve", null);
-            approveStatus = resp.StatusCode;
+            results["approve"] = resp.StatusCode;
         });
 
         var rejectTask = Task.Run(async () =>
@@ -568,15 +567,15 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             var resp = await raceClient.PostAsJsonAsync(
                 $"/api/automation/proposals/{proposalId}/reject",
                 new UpdateProposalStatusDto("rejected in race test"));
-            rejectStatus = resp.StatusCode;
+            results["reject"] = resp.StatusCode;
         });
 
         barrier.Release(2);
         await Task.WhenAll(approveTask, rejectTask);
 
         // Exactly one should succeed
-        var successCount = (approveStatus == HttpStatusCode.OK ? 1 : 0)
-                         + (rejectStatus == HttpStatusCode.OK ? 1 : 0);
+        var successCount = (results["approve"] == HttpStatusCode.OK ? 1 : 0)
+                         + (results["reject"] == HttpStatusCode.OK ? 1 : 0);
         successCount.Should().Be(1,
             "exactly one of approve/reject should succeed in a race");
 
@@ -654,6 +653,8 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         var okCount = codes.Count(s => s == HttpStatusCode.OK);
         okCount.Should().BeGreaterOrEqualTo(1,
             "at least one execute should succeed");
+        // NOTE: SQLite serializes writes, so both may succeed sequentially.
+        // The real guard is the final-state assertions below.
 
         // Verify the proposal ended in Applied state exactly once
         var proposalResp = await client.GetAsync($"/api/automation/proposals/{proposalId}");
@@ -662,12 +663,13 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         proposal!.Status.Should().Be(ProposalStatus.Applied,
             "proposal should be in Applied state after execution");
 
-        // Verify exactly one card was created (not duplicated)
+        // Verify at most one card was created (not duplicated) — must be exactly 0 or 1
         var cardsResp = await client.GetAsync($"/api/boards/{board.Id}/cards");
         cardsResp.StatusCode.Should().Be(HttpStatusCode.OK);
         var cards = await cardsResp.Content.ReadFromJsonAsync<List<CardDto>>();
-        cards!.Count(c => c.Title.Contains("Double execute item")).Should().BeLessOrEqualTo(1,
-            "double execute should not create duplicate cards");
+        var matchingCards = cards!.Count(c => c.Title.Contains("Double execute item"));
+        matchingCards.Should().BeInRange(0, 1,
+            "double execute should not create duplicate cards (0 if mock LLM proposal has no card action, 1 if it does)");
     }
 
     // ── Rate Limiting Under Load ─────────────────────────────────────────────
