@@ -296,10 +296,12 @@ public class ForecastingService : IForecastingService
             return (mean, 0);
 
         // Compute std dev over the full span (including zero days)
+        // Use dictionary for O(1) lookup per day instead of O(n) FirstOrDefault
+        var countByDate = dailyThroughput.ToDictionary(d => d.Date, d => d.Count);
         var sumSquaredDiff = 0.0;
         for (var day = earliest; day <= latest; day = day.AddDays(1))
         {
-            var dayCount = dailyThroughput.FirstOrDefault(d => d.Date == day)?.Count ?? 0;
+            var dayCount = countByDate.GetValueOrDefault(day, 0);
             var diff = dayCount - mean;
             sumSquaredDiff += diff * diff;
         }
