@@ -1013,7 +1013,7 @@ describe('InboxView', () => {
     await wrapper.get('[role="option"]').trigger('click')
     await waitForUi()
 
-    expect(wrapper.text()).toContain('Loading detail...')
+    expect(wrapper.find('[data-testid="inbox-detail-loading"]').exists()).toBe(true)
   })
 
   it('refresh detail action swallows fetch errors', async () => {
@@ -1650,6 +1650,110 @@ describe('InboxView', () => {
 
       expect(wrapper.find('[data-testid="select-all"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
+    })
+  })
+
+  describe('premium primitive states', () => {
+    it('shows skeleton loading rows when list is loading', async () => {
+      mockCaptureStore.loadingList = true
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="inbox-loading-skeleton"]').exists()).toBe(true)
+      // Should render 5 skeleton rows
+      expect(wrapper.findAll('.td-inbox__skeleton-row')).toHaveLength(5)
+    })
+
+    it('shows TdInlineAlert with retry button on list error', async () => {
+      mockCaptureStore.loadingList = false
+      mockCaptureStore.listError = 'Network error'
+      mockCaptureStore.items = []
+      mockCaptureStore.hasItems = false
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="inbox-list-error"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Network error')
+      expect(wrapper.find('[data-testid="inbox-retry-btn"]').exists()).toBe(true)
+    })
+
+    it('shows TdEmptyState when inbox has no items', async () => {
+      mockCaptureStore.loadingList = false
+      mockCaptureStore.listError = null
+      mockCaptureStore.items = []
+      mockCaptureStore.hasItems = false
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="inbox-empty-state"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('No capture items yet')
+    })
+
+    it('shows no-selection empty state in detail panel when no item selected', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="inbox-detail-placeholder"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('No item selected')
+    })
+
+    it('shows skeleton loading in detail panel while fetching detail', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async () => {
+        mockCaptureStore.loadingDetail = true
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="inbox-detail-loading"]').exists()).toBe(true)
+    })
+
+    it('shows proposal link with success alert for items with proposal', async () => {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId,
+          userId: 'user-1',
+          boardId: null,
+          status: 'ProposalCreated',
+          source: 'Typed',
+          textExcerpt: 'Some excerpt',
+          rawText: 'Full text',
+          createdAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          retryCount: 0,
+          provenance: {
+            captureItemId: itemId,
+            triageRunId: 'triage-1',
+            proposalId: 'proposal-123',
+            promptVersion: null,
+          },
+        }
+      })
+
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      await wrapper.get('[role="option"]').trigger('click')
+      await waitForUi()
+
+      expect(wrapper.find('[data-testid="inbox-proposal-link"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('proposed board update is ready')
+    })
+
+    it('uses TdBadge for status badges in list rows', async () => {
+      const wrapper = mount(InboxView)
+      await waitForUi()
+
+      // TdBadge renders with td-badge class
+      const badges = wrapper.findAll('.td-badge')
+      // Each row should have 2 badges (status + source), so at least 4 for 2 items
+      expect(badges.length).toBeGreaterThanOrEqual(4)
     })
   })
 })
