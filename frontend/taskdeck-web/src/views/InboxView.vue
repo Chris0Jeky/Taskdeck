@@ -691,7 +691,8 @@ onUnmounted(() => {
           :aria-activedescendant="activeDescendantId"
           @keydown="handleKeydown"
         >
-          <div v-if="captureStore.loadingList" class="td-inbox__skeleton-list" data-testid="inbox-loading-skeleton">
+          <div v-if="captureStore.loadingList" class="td-inbox__skeleton-list" data-testid="inbox-loading-skeleton" role="status">
+            <span class="sr-only">Loading inbox items...</span>
             <div v-for="n in 5" :key="n" class="td-inbox__skeleton-row">
               <div class="td-inbox__skeleton-head">
                 <TdSkeleton width="60px" height="18px" />
@@ -810,8 +811,6 @@ onUnmounted(() => {
           v-if="hashLoadFailedItemId && !selectedItemId"
           class="td-inbox__detail-feedback"
           data-testid="inbox-detail-error"
-          role="alert"
-          aria-live="assertive"
         >
           <TdInlineAlert variant="error">
             Unable to load capture detail.
@@ -834,7 +833,9 @@ onUnmounted(() => {
           v-else-if="captureStore.loadingDetail && !selectedItem"
           class="td-inbox__detail-feedback"
           data-testid="inbox-detail-loading"
+          role="status"
         >
+          <span class="sr-only">Loading capture detail...</span>
           <div class="td-inbox__detail-skeleton">
             <TdSkeleton width="40%" height="20px" />
             <TdSkeleton width="60%" height="14px" />
