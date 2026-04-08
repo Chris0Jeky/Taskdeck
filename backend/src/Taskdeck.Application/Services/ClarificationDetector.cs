@@ -33,19 +33,31 @@ public static class ClarificationDetector
     };
 
     /// <summary>
-    /// Patterns in LLM responses that indicate the response is asking for
-    /// clarification rather than providing an answer.
+    /// Strong clarification patterns — these are reliable indicators that the
+    /// response is asking for clarification even without a question mark.
     /// </summary>
-    private static readonly Regex ClarificationPattern = new(
+    private static readonly Regex StrongClarificationPattern = new(
         @"(?:" +
             // Numbered list of questions (1. ... 2. ...)
             @"(?:\d+\.\s+.+\?\s*){2,}" +
             @"|" +
-            // "Could you tell me" / "Can you clarify" / "I need to know" patterns
-            @"(?:could you (?:tell|clarify|specify|let me know)|can you (?:clarify|specify|tell me)|i need (?:to know|more (?:details|information))|(?:please|could you) (?:provide|share|give me))" +
+            // "Could you tell me" / "Can you clarify" / "I need to know more" patterns
+            @"(?:could you (?:tell|clarify|specify|let me know)|can you (?:clarify|specify|tell me)|i need more (?:details|information))" +
             @"|" +
-            // "Before I can" / "To help you better" / "I'd like to ask" patterns
-            @"(?:before i can|to help you (?:better|with)|i'd like to (?:ask|know|clarify)|let me ask)" +
+            // "I'd like to ask" / "let me ask" — explicit ask intent
+            @"(?:i'd like to (?:ask|clarify)|let me ask)" +
+        @")",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+    /// <summary>
+    /// Weak clarification patterns — these phrases appear in both clarification
+    /// questions and normal action statements, so they require at least one
+    /// question mark in the content to be considered clarification.
+    /// </summary>
+    private static readonly Regex WeakClarificationPattern = new(
+        @"(?:" +
+            // "Before I can" / "To help you better" / "I'd like to know" / "I need to know"
+            @"(?:before i can|to help you (?:better|with)|i'd like to know|i need to know|(?:please|could you) (?:provide|share|give me))" +
         @")",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
@@ -67,16 +79,23 @@ public static class ClarificationDetector
         if (string.IsNullOrWhiteSpace(content))
             return false;
 
-        // Check explicit clarification patterns
-        if (ClarificationPattern.IsMatch(content))
+        // Strong patterns are reliable on their own — no question mark required
+        if (StrongClarificationPattern.IsMatch(content))
             return true;
 
-        // Heuristic: multiple question marks suggest clarification
+        // Count question marks (both mid-text and trailing)
         var questionCount = MultiQuestionPattern.Matches(content).Count;
-        // Also count trailing question mark (end of string)
         if (content.TrimEnd().EndsWith('?'))
             questionCount++;
 
+        // Weak patterns only count as clarification when the response
+        // actually contains a question mark. This prevents false positives on
+        // normal responses like "To help you with this, I created the cards."
+        // or "Before I can proceed, let me create the cards."
+        if (questionCount > 0 && WeakClarificationPattern.IsMatch(content))
+            return true;
+
+        // Heuristic: multiple question marks suggest clarification
         return questionCount >= 2;
     }
 

@@ -12,9 +12,9 @@ public class ClarificationDetectorTests
     [Theory]
     [InlineData("Could you tell me more about what you need?")]
     [InlineData("I can help with that! Could you tell me:\n1. How many tasks?\n2. What areas?\n3. Which column?")]
-    [InlineData("Before I can create those tasks, I need to know a few things.")]
     [InlineData("To help you better, could you clarify the following?")]
     [InlineData("I'd like to ask a few questions before proceeding.")]
+    [InlineData("Before I can create those tasks, I need to know: how many? Which column?")]
     public void IsClarificationResponse_ShouldReturnTrue_ForClarificationPatterns(string content)
     {
         ClarificationDetector.IsClarificationResponse(content).Should().BeTrue();
@@ -26,6 +26,14 @@ public class ClarificationDetectorTests
     [InlineData("Done! I've moved the card to the Done column.")]
     [InlineData("")]
     [InlineData("   ")]
+    // False-positive guard: weak clarification patterns without question marks
+    // should NOT be classified as clarification
+    [InlineData("Please provide your feedback on this proposal.")]
+    [InlineData("To help you with this, I created the following cards.")]
+    [InlineData("Before I can proceed, let me create the cards.")]
+    [InlineData("I need to know that the task was created successfully.")]
+    [InlineData("To help you better, I've organized the tasks into three columns.")]
+    [InlineData("Before I can create those tasks, I need to know a few things.")]
     public void IsClarificationResponse_ShouldReturnFalse_ForNonClarificationResponses(string content)
     {
         ClarificationDetector.IsClarificationResponse(content).Should().BeFalse();
