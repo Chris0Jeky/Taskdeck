@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Xunit;
