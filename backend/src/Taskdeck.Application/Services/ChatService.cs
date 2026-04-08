@@ -318,6 +318,11 @@ public class ChatService : IChatService
                 // reusing the no-tool response from the orchestrator).
                 if (!usedToolCalling)
                 {
+                    // Determine clarification state from message history.
+                    var clarificationRounds = ClarificationDetector.CountClarificationRounds(session.Messages.ToList());
+                    var isSkipRequest = ClarificationDetector.IsSkipRequest(dto.Content);
+                    var forceBestEffort = isSkipRequest || ClarificationDetector.ShouldForceBestEffort(session.Messages.ToList());
+
                     LlmCompletionResult llmResult;
 
                     if (reusableNoToolResponse != null)
@@ -336,10 +341,15 @@ public class ChatService : IChatService
                         // Build board context for board-scoped sessions
                         var boardContext = await BuildBoardContextForSessionAsync(session, ct);
 
+                        // Append clarification guidance to system prompt
+                        var clarificationPrompt = ClarificationDetector.BuildClarificationSystemPrompt(
+                            clarificationRounds, forceBestEffort);
+
                         var completionRequest = new ChatCompletionRequest(
                             chatMessages,
                             Attribution: BuildAttribution(session, userId),
-                            BoardContext: boardContext);
+                            BoardContext: boardContext,
+                            SystemPrompt: clarificationPrompt);
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
 
                         // Record usage for quota tracking. The provider reports a combined
@@ -365,9 +375,24 @@ public class ChatService : IChatService
                         messageType = "degraded";
                     }
 
-                    var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
+                    // Clarification loop: if the LLM response is a clarification question
+                    // (either via the IsClarificationRequest flag from the provider, or
+                    // detected heuristically), set the message type to "clarification"
+                    // instead of attempting proposal creation.
+                    var isClarification = llmResult.IsClarificationRequest
+                        || (!forceBestEffort && !llmResult.IsActionable
+                            && ClarificationDetector.IsClarificationResponse(llmResult.Content));
 
-                    if (shouldAttemptProposal)
+                    if (isClarification && messageType != "degraded")
+                    {
+                        messageType = "clarification";
+                        // No proposal creation — wait for user's clarifying response
+                    }
+                    else
+                    {
+                        var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
+
+                        if (shouldAttemptProposal)
                     {
                         if (!session.BoardId.HasValue)
                         {
@@ -437,6 +462,7 @@ public class ChatService : IChatService
                             }
                         }
                     }
+                    } // end else (not clarification)
                 }
             }
 
