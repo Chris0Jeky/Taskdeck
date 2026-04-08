@@ -62,8 +62,11 @@ public class EntityAdversarialInputTests
         Gen.Constant(new string('\t', 50)),            // many tabs
         Gen.Constant(new string('\n', 50)),            // many newlines
 
-        // Arbitrary from FsCheck
-        Arb.Generate<string>()
+        // Explicit null (IsNullOrWhiteSpace catches it, but test it deterministically)
+        Gen.Constant((string)null!),
+
+        // Arbitrary from FsCheck (filter nulls — null is already covered above)
+        Arb.Generate<string>().Where(s => s != null)
     );
 
     private static Gen<string> ValidNameGen(int maxLen) =>

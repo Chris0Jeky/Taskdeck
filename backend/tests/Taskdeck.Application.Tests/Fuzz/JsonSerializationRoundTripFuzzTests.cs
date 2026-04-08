@@ -247,20 +247,16 @@ public class JsonSerializationRoundTripFuzzTests
             Arb.From(AdversarialStringGen()),
             content =>
             {
-                // CaptureItemDto might have different structure — use a generic
-                // JSON object approach to test arbitrary content
-                var payload = new Dictionary<string, object?>
-                {
-                    ["content"] = content,
-                    ["source"] = "test",
-                    ["timestamp"] = DateTimeOffset.UtcNow
-                };
+                var dto = new CreateCaptureItemDto(
+                    BoardId: null,
+                    Text: content);
 
-                var json = JsonSerializer.Serialize(payload, JsonOptions);
-                var deserialized = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOptions);
+                var json = JsonSerializer.Serialize(dto, JsonOptions);
+                var deserialized = JsonSerializer.Deserialize<CreateCaptureItemDto>(json, JsonOptions);
 
                 deserialized.Should().NotBeNull();
-                deserialized!["content"].GetString().Should().Be(content);
+                deserialized!.Text.Should().Be(content);
+                deserialized.BoardId.Should().BeNull();
             });
     }
 }
