@@ -11,7 +11,8 @@ public class ChatMessage : Entity
         "proposal-reference",
         "error",
         "status",
-        "degraded"
+        "degraded",
+        "clarification"
     };
 
     private static readonly HashSet<string> ValidMessageTypeSet = new(ValidMessageTypes, StringComparer.Ordinal);
