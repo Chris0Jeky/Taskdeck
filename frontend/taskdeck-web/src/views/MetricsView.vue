@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '../store/boardStore'
 import { useMetricsStore } from '../store/metricsStore'
-import type { MetricsQuery } from '../types/metrics'
+import type { MetricsQuery, ForecastQuery } from '../types/metrics'
 import type { Board } from '../types/board'
 
 const boardStore = useBoardStore()
@@ -49,10 +49,26 @@ async function fetchMetrics() {
   }
 }
 
+async function fetchForecast() {
+  if (!selectedBoardId.value) return
+
+  const query: ForecastQuery = {
+    boardId: selectedBoardId.value,
+    historyDays: dateRangeDays.value,
+  }
+
+  try {
+    await metricsStore.fetchBoardForecast(query)
+  } catch {
+    // Error is surfaced by the store via toast
+  }
+}
+
 // Auto-fetch when board selection or date range changes
 watch([selectedBoardId, dateRangeDays], () => {
   if (canFetch.value) {
     void fetchMetrics()
+    void fetchForecast()
   }
 })
 
@@ -70,6 +86,28 @@ const metrics = computed(() => metricsStore.metrics)
 const loading = computed(() => metricsStore.loading)
 const error = computed(() => metricsStore.error)
 const hasData = computed(() => !!metrics.value)
+
+// Forecast helpers
+const forecast = computed(() => metricsStore.forecast)
+const forecastLoading = computed(() => metricsStore.forecastLoading)
+const forecastError = computed(() => metricsStore.forecastError)
+
+function formatDate(iso: string | null): string {
+  if (!iso) return 'Unknown'
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function daysFromNow(iso: string | null): string {
+  if (!iso) return '?'
+  const diff = Math.ceil((new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  if (diff <= 0) return 'today'
+  if (diff === 1) return '1 day'
+  return `${diff} days`
+}
 
 const maxThroughput = computed(() => {
   if (!metrics.value?.throughput.length) return 1
@@ -176,6 +214,104 @@ const maxWipCount = computed(() => {
           <span class="td-metrics__card-unit">cards blocked</span>
         </div>
       </div>
+
+      <!-- Forecast section -->
+      <section class="td-metrics__section td-metrics__forecast" aria-label="Completion forecast">
+        <h2 class="td-metrics__section-title">Completion Forecast</h2>
+
+        <div v-if="forecastLoading" class="td-metrics__forecast-loading">
+          <div class="td-metrics__spinner td-metrics__spinner--sm" />
+          <span>Computing forecast...</span>
+        </div>
+
+        <div v-else-if="forecastError" class="td-metrics__forecast-error" role="alert">
+          <p>{{ forecastError }}</p>
+          <button class="td-btn td-btn--ghost td-btn--sm" @click="fetchForecast">Retry</button>
+        </div>
+
+        <div v-else-if="forecast" class="td-metrics__forecast-content">
+          <!-- Estimate cards -->
+          <div class="td-metrics__forecast-grid">
+            <div class="td-metrics__card">
+              <span class="td-metrics__card-label">Remaining</span>
+              <span class="td-metrics__card-value">{{ forecast.remainingCards }}</span>
+              <span class="td-metrics__card-unit">cards left</span>
+            </div>
+
+            <div class="td-metrics__card">
+              <span class="td-metrics__card-label">Avg Throughput</span>
+              <span class="td-metrics__card-value">{{ forecast.averageThroughputPerDay.toFixed(2) }}</span>
+              <span class="td-metrics__card-unit">cards / day</span>
+            </div>
+
+            <div class="td-metrics__card">
+              <span class="td-metrics__card-label">Estimated Completion</span>
+              <span class="td-metrics__card-value td-metrics__card-value--date">
+                {{ forecast.estimatedCompletionDate ? formatDate(forecast.estimatedCompletionDate) : 'N/A' }}
+              </span>
+              <span v-if="forecast.estimatedCompletionDate" class="td-metrics__card-unit">
+                ~{{ daysFromNow(forecast.estimatedCompletionDate) }} from now
+              </span>
+            </div>
+
+            <div class="td-metrics__card">
+              <span class="td-metrics__card-label">Data Points</span>
+              <span class="td-metrics__card-value">{{ forecast.dataPointCount }}</span>
+              <span class="td-metrics__card-unit">over {{ forecast.historyDaysUsed }} days</span>
+            </div>
+          </div>
+
+          <!-- Confidence band -->
+          <div v-if="forecast.confidenceBand" class="td-metrics__confidence">
+            <h3 class="td-metrics__confidence-title">Confidence Range</h3>
+            <div class="td-metrics__confidence-band">
+              <div class="td-metrics__confidence-row">
+                <span class="td-metrics__confidence-label td-metrics__confidence-label--optimistic">Optimistic</span>
+                <span class="td-metrics__confidence-date">
+                  {{ formatDate(forecast.confidenceBand.lowEstimate) }}
+                </span>
+                <span class="td-metrics__confidence-rate">
+                  ({{ forecast.confidenceBand.highThroughputPerDay.toFixed(2) }} cards/day)
+                </span>
+              </div>
+              <div class="td-metrics__confidence-row td-metrics__confidence-row--expected">
+                <span class="td-metrics__confidence-label">Expected</span>
+                <span class="td-metrics__confidence-date">
+                  {{ formatDate(forecast.confidenceBand.expectedEstimate) }}
+                </span>
+                <span class="td-metrics__confidence-rate">
+                  ({{ forecast.confidenceBand.expectedThroughputPerDay.toFixed(2) }} cards/day)
+                </span>
+              </div>
+              <div class="td-metrics__confidence-row">
+                <span class="td-metrics__confidence-label td-metrics__confidence-label--pessimistic">Pessimistic</span>
+                <span class="td-metrics__confidence-date">
+                  {{ formatDate(forecast.confidenceBand.highEstimate) }}
+                </span>
+                <span class="td-metrics__confidence-rate">
+                  ({{ forecast.confidenceBand.lowThroughputPerDay.toFixed(2) }} cards/day)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Caveats -->
+          <div v-if="forecast.caveats.length > 0" class="td-metrics__caveats" role="note">
+            <h3 class="td-metrics__caveats-title">Caveats</h3>
+            <ul class="td-metrics__caveats-list">
+              <li v-for="(caveat, i) in forecast.caveats" :key="i">{{ caveat }}</li>
+            </ul>
+          </div>
+
+          <!-- Assumptions -->
+          <details class="td-metrics__assumptions">
+            <summary class="td-metrics__assumptions-summary">Assumptions ({{ forecast.assumptions.length }})</summary>
+            <ul class="td-metrics__assumptions-list">
+              <li v-for="(assumption, i) in forecast.assumptions" :key="i">{{ assumption }}</li>
+            </ul>
+          </details>
+        </div>
+      </section>
 
       <!-- Throughput chart -->
       <section class="td-metrics__section" aria-label="Throughput trend">
@@ -573,6 +709,155 @@ const maxWipCount = computed(() => {
 
 .td-metrics__row--blocked td {
   color: var(--td-color-danger, #e53e3e);
+}
+
+/* Forecast */
+.td-metrics__forecast {
+  background: var(--td-surface-container);
+  border: 1px solid var(--td-border-ghost);
+  border-radius: var(--td-radius-lg);
+  padding: var(--td-space-6);
+}
+
+.td-metrics__forecast-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-sm);
+}
+
+.td-metrics__spinner--sm {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.td-metrics__forecast-error {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+  color: var(--td-color-danger, #e53e3e);
+  font-size: var(--td-font-sm);
+}
+
+.td-metrics__forecast-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--td-space-4);
+  margin-bottom: var(--td-space-6);
+}
+
+.td-metrics__card-value--date {
+  font-size: var(--td-font-lg);
+}
+
+.td-metrics__confidence {
+  margin-bottom: var(--td-space-5);
+}
+
+.td-metrics__confidence-title {
+  font-size: var(--td-font-sm);
+  font-weight: 700;
+  color: var(--td-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: var(--td-space-3);
+}
+
+.td-metrics__confidence-band {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+  padding: var(--td-space-4);
+  background: var(--td-surface-container-high);
+  border-radius: var(--td-radius-md);
+  border: 1px solid var(--td-border-ghost);
+}
+
+.td-metrics__confidence-row {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  gap: var(--td-space-3);
+  align-items: center;
+  font-size: var(--td-font-sm);
+}
+
+.td-metrics__confidence-row--expected {
+  font-weight: 700;
+  color: var(--td-text-primary);
+}
+
+.td-metrics__confidence-label {
+  font-weight: 600;
+  color: var(--td-text-secondary);
+}
+
+.td-metrics__confidence-label--optimistic {
+  color: var(--td-color-success, #38a169);
+}
+
+.td-metrics__confidence-label--pessimistic {
+  color: var(--td-color-danger, #e53e3e);
+}
+
+.td-metrics__confidence-date {
+  color: var(--td-text-primary);
+}
+
+.td-metrics__confidence-rate {
+  color: var(--td-text-tertiary);
+  font-size: var(--td-font-xs);
+}
+
+.td-metrics__caveats {
+  margin-bottom: var(--td-space-4);
+  padding: var(--td-space-4);
+  background: rgba(237, 137, 54, 0.08);
+  border-left: 3px solid var(--td-color-ember);
+  border-radius: 0 var(--td-radius-md) var(--td-radius-md) 0;
+}
+
+.td-metrics__caveats-title {
+  font-size: var(--td-font-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--td-color-ember);
+  margin-bottom: var(--td-space-2);
+}
+
+.td-metrics__caveats-list {
+  list-style: disc;
+  padding-left: var(--td-space-5);
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+}
+
+.td-metrics__caveats-list li {
+  margin-bottom: var(--td-space-1);
+}
+
+.td-metrics__assumptions {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-tertiary);
+}
+
+.td-metrics__assumptions-summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--td-text-secondary);
+  padding: var(--td-space-2) 0;
+}
+
+.td-metrics__assumptions-list {
+  list-style: disc;
+  padding-left: var(--td-space-5);
+  margin-top: var(--td-space-2);
+}
+
+.td-metrics__assumptions-list li {
+  margin-bottom: var(--td-space-1);
 }
 
 /* Responsive */
