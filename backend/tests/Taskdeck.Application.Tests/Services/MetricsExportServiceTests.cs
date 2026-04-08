@@ -186,4 +186,15 @@ public class MetricsExportServiceTests
     {
         MetricsExportService.SanitizeCsvField("==+cmd").Should().Be("cmd");
     }
+
+    [Theory]
+    [InlineData("hello\n=CMD|'/C calc'!A0", "\"hello\nCMD|'/C calc'!A0\"")]
+    [InlineData("line1\n+cmd\nline3", "\"line1\ncmd\nline3\"")]
+    [InlineData("safe\nsafe2", "\"safe\nsafe2\"")]
+    [InlineData("ok\n@evil", "\"ok\nevil\"")]
+    [InlineData("a\n\t\r=bad", "\"a\nbad\"")]
+    public void SanitizeCsvField_ShouldStripDangerousCharsFromEmbeddedLines(string input, string expected)
+    {
+        MetricsExportService.SanitizeCsvField(input).Should().Be(expected);
+    }
 }

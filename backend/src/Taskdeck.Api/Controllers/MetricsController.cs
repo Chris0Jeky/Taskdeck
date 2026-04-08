@@ -74,6 +74,7 @@ public class MetricsController : AuthenticatedControllerBase
     /// <param name="from">Start of date range (ISO 8601).</param>
     /// <param name="to">End of date range (ISO 8601).</param>
     /// <param name="labelId">Optional label filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>CSV file download.</returns>
     /// <response code="200">CSV file returned.</response>
     /// <response code="400">Invalid query parameters.</response>
@@ -90,7 +91,8 @@ public class MetricsController : AuthenticatedControllerBase
         Guid boardId,
         [FromQuery] DateTimeOffset? from,
         [FromQuery] DateTimeOffset? to,
-        [FromQuery] Guid? labelId)
+        [FromQuery] Guid? labelId,
+        CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
@@ -100,7 +102,7 @@ public class MetricsController : AuthenticatedControllerBase
         var fromDate = from ?? toDate.AddDays(-30);
 
         var query = new BoardMetricsQuery(boardId, fromDate, toDate, labelId);
-        var result = await _exportService.ExportCsvAsync(query, userId);
+        var result = await _exportService.ExportCsvAsync(query, userId, cancellationToken);
 
         if (!result.IsSuccess)
             return result.ToErrorActionResult();

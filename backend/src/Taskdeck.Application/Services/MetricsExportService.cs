@@ -39,10 +39,13 @@ public class MetricsExportService : IMetricsExportService
         var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         var fileName = $"board-metrics-{metrics.BoardId:N}-{timestamp}.csv";
 
-        return Result.Success(new MetricsExportResult(
-            Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray(),
-            fileName,
-            "text/csv"));
+        var bom = Encoding.UTF8.GetPreamble();
+        var csvBytes = Encoding.UTF8.GetBytes(csv);
+        var content = new byte[bom.Length + csvBytes.Length];
+        bom.CopyTo(content, 0);
+        csvBytes.CopyTo(content, bom.Length);
+
+        return Result.Success(new MetricsExportResult(content, fileName, "text/csv"));
     }
 
     internal static string BuildCsv(BoardMetricsResponse metrics)
@@ -106,7 +109,8 @@ public class MetricsExportService : IMetricsExportService
 
     /// <summary>
     /// Sanitize a field for safe CSV inclusion.
-    /// - Strips CSV injection characters (=, +, -, @, tab, carriage return) from the start.
+    /// - Strips CSV injection characters (=, +, -, @, tab, carriage return) from the start
+    ///   of the value AND from the start of each embedded line (after \n or \r\n).
     /// - Quotes the field if it contains commas, quotes, or newlines.
     /// - Doubles internal quote characters.
     /// </summary>
@@ -115,12 +119,11 @@ public class MetricsExportService : IMetricsExportService
         if (string.IsNullOrEmpty(value))
             return value;
 
-        // Strip leading characters that could trigger formula injection in spreadsheet apps
-        var sanitized = value;
-        while (sanitized.Length > 0 && IsDangerousLeadingChar(sanitized[0]))
-        {
-            sanitized = sanitized[1..];
-        }
+        // Strip leading characters that could trigger formula injection in spreadsheet apps.
+        // Apply to each line within the value to prevent injection via embedded newlines
+        // (e.g. "hello\n=CMD|'/C calc'!A0" must sanitize the second line too).
+        var sanitized = StripDangerousLeadingChars(value);
+        sanitized = SanitizeEmbeddedLines(sanitized);
 
         // If the field contains special CSV characters, quote it
         var needsQuoting = sanitized.Contains(',') ||
@@ -134,6 +137,35 @@ public class MetricsExportService : IMetricsExportService
         }
 
         return sanitized;
+    }
+
+    private static string StripDangerousLeadingChars(string s)
+    {
+        var i = 0;
+        while (i < s.Length && IsDangerousLeadingChar(s[i]))
+            i++;
+        return i == 0 ? s : s[i..];
+    }
+
+    /// <summary>
+    /// For each line after the first within a multi-line value, strip leading
+    /// dangerous characters so that embedded newlines cannot smuggle formula prefixes.
+    /// </summary>
+    private static string SanitizeEmbeddedLines(string value)
+    {
+        if (!value.Contains('\n') && !value.Contains('\r'))
+            return value;
+
+        var lines = value.Split('\n');
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            // Handle \r\n: the \r will be at the end of the previous line's split,
+            // but also strip dangerous chars that appear after a bare \n.
+            lines[i] = StripDangerousLeadingChars(line);
+        }
+
+        return string.Join('\n', lines);
     }
 
     private static bool IsDangerousLeadingChar(char c)
