@@ -39,6 +39,13 @@ public class ForecastingService : IForecastingService
         "done", "complete", "completed", "finished", "closed", "shipped", "released"
     };
 
+    /// <summary>
+    /// Compiled regex for extracting target_column GUID from audit log change strings.
+    /// Static to avoid recompilation per audit entry (up to MaxAuditEntries per forecast).
+    /// </summary>
+    private static readonly Regex TargetColumnRegex =
+        new(@"target_column=([0-9a-fA-F\-]{36})", RegexOptions.Compiled);
+
     public ForecastingService(
         IUnitOfWork unitOfWork,
         IAuthorizationService authorizationService)
@@ -116,7 +123,7 @@ public class ForecastingService : IForecastingService
         }
 
         // --- Compute statistics ---
-        var (avgThroughput, stdDev) = ComputeThroughputStatistics(dailyThroughput);
+        var (avgThroughput, stdDev) = ComputeThroughputStatistics(dailyThroughput, historyDays);
         var dataPointCount = dailyThroughput.Count;
 
         // --- Compute average cycle time from recent completions ---
@@ -243,6 +250,8 @@ public class ForecastingService : IForecastingService
     /// <summary>
     /// Compute daily throughput: for each day in the history window,
     /// count how many cards were moved to the done column.
+    /// Only counts the *last* move to done per card to avoid inflating throughput
+    /// when cards bounce between columns (e.g. Done → In Progress → Done).
     /// Only includes days with at least one completion (sparse representation).
     /// </summary>
     internal static List<DailyThroughputPoint> ComputeDailyThroughput(
@@ -255,14 +264,18 @@ public class ForecastingService : IForecastingService
 
         foreach (var (_, moves) in cardMoveAudits)
         {
-            foreach (var (timestamp, targetColumnId) in moves)
-            {
-                if (targetColumnId != doneColumnId) continue;
+            // Only count the last move to done per card to avoid double-counting
+            // cards that bounced between columns.
+            var lastDoneMove = moves
+                .Where(m => m.TargetColumnId == doneColumnId)
+                .OrderByDescending(m => m.Timestamp)
+                .FirstOrDefault();
 
-                var day = timestamp.UtcDateTime.Date;
-                completionsByDay.TryGetValue(day, out var count);
-                completionsByDay[day] = count + 1;
-            }
+            if (lastDoneMove.Timestamp == default) continue;
+
+            var day = lastDoneMove.Timestamp.UtcDateTime.Date;
+            completionsByDay.TryGetValue(day, out var count);
+            completionsByDay[day] = count + 1;
         }
 
         return completionsByDay
@@ -274,37 +287,47 @@ public class ForecastingService : IForecastingService
     /// <summary>
     /// Compute mean and standard deviation of daily throughput.
     /// Uses the full history window (including zero-throughput days) as the denominator
-    /// for an accurate per-day average.
+    /// for an accurate per-day average, preventing inflated rates when completions
+    /// are bursty within a longer observation period.
     /// </summary>
+    /// <param name="dailyThroughput">Sparse daily throughput points (only days with completions).</param>
+    /// <param name="historyWindowDays">
+    /// Total number of days in the requested history window. Used as the denominator
+    /// for mean and std dev to avoid inflating rates when completions cluster.
+    /// </param>
     internal static (double Mean, double StdDev) ComputeThroughputStatistics(
-        List<DailyThroughputPoint> dailyThroughput)
+        List<DailyThroughputPoint> dailyThroughput,
+        int historyWindowDays)
     {
-        if (dailyThroughput.Count == 0)
+        if (dailyThroughput.Count == 0 || historyWindowDays <= 0)
             return (0, 0);
+
+        var spanDays = Math.Max(historyWindowDays, 1);
 
         // Total completions over the window
         var totalCompletions = dailyThroughput.Sum(d => d.Count);
-
-        // Span: from earliest data point to latest, inclusive
-        var earliest = dailyThroughput.Min(d => d.Date);
-        var latest = dailyThroughput.Max(d => d.Date);
-        var spanDays = Math.Max((latest - earliest).Days + 1, 1);
 
         var mean = (double)totalCompletions / spanDays;
 
         if (spanDays == 1)
             return (mean, 0);
 
-        // Compute std dev over the full span (including zero days)
-        // Use dictionary for O(1) lookup per day instead of O(n) FirstOrDefault
+        // Compute std dev over the full history window (including zero days).
+        // Use dictionary for O(1) lookup per day.
         var countByDate = dailyThroughput.ToDictionary(d => d.Date, d => d.Count);
+
+        // Sum squared differences for days that have data
         var sumSquaredDiff = 0.0;
-        for (var day = earliest; day <= latest; day = day.AddDays(1))
+        int daysAccountedFor = 0;
+        foreach (var kvp in countByDate)
         {
-            var dayCount = countByDate.GetValueOrDefault(day, 0);
-            var diff = dayCount - mean;
+            var diff = kvp.Value - mean;
             sumSquaredDiff += diff * diff;
+            daysAccountedFor++;
         }
+        // Add squared differences for all zero-throughput days
+        var zeroDays = spanDays - daysAccountedFor;
+        sumSquaredDiff += zeroDays * (mean * mean);
 
         var variance = sumSquaredDiff / spanDays; // population std dev (not sample)
         var stdDev = Math.Sqrt(variance);
@@ -394,7 +417,7 @@ public class ForecastingService : IForecastingService
 
     internal static Guid? ParseTargetColumnId(string changes)
     {
-        var match = Regex.Match(changes, @"target_column=([0-9a-fA-F\-]{36})");
+        var match = TargetColumnRegex.Match(changes);
         if (match.Success && Guid.TryParse(match.Groups[1].Value, out var guid))
             return guid;
         return null;

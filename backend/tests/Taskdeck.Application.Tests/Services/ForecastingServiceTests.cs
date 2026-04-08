@@ -356,6 +356,31 @@ public class ForecastingServiceTests
         result.Should().BeEmpty();
     }
 
+    [Fact]
+    public void ComputeDailyThroughput_ShouldNotDoubleCount_WhenCardBouncesToDone()
+    {
+        var doneColId = Guid.NewGuid();
+        var inProgressColId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var cardId = Guid.NewGuid();
+
+        // Card moves: Done → In Progress → Done (should count as 1, not 2)
+        var audits = new Dictionary<Guid, List<(DateTimeOffset, Guid)>>
+        {
+            [cardId] = new()
+            {
+                (now.AddDays(-3), doneColId),
+                (now.AddDays(-2), inProgressColId),
+                (now.AddDays(-1), doneColId)
+            }
+        };
+
+        var result = ForecastingService.ComputeDailyThroughput(audits, doneColId, now.AddDays(-7), now);
+
+        // Should only count 1 completion (the last move to done), not 2
+        result.Sum(d => d.Count).Should().Be(1);
+    }
+
     #endregion
 
     #region Static Method Tests — ComputeThroughputStatistics
@@ -373,7 +398,8 @@ public class ForecastingServiceTests
             new(today, 2)
         };
 
-        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points);
+        // 5-day span matches history window
+        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points, 5);
 
         // 14 completions over 5 days = 2.8/day
         mean.Should().BeApproximately(2.8, 0.01);
@@ -384,7 +410,7 @@ public class ForecastingServiceTests
     public void ComputeThroughputStatistics_ShouldReturnZero_ForEmptyList()
     {
         var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(
-            new List<ForecastingService.DailyThroughputPoint>());
+            new List<ForecastingService.DailyThroughputPoint>(), 30);
 
         mean.Should().Be(0);
         stdDev.Should().Be(0);
@@ -398,7 +424,8 @@ public class ForecastingServiceTests
             new(DateTime.UtcNow.Date, 5)
         };
 
-        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points);
+        // Single point in a 1-day window
+        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points, 1);
 
         mean.Should().Be(5);
         stdDev.Should().Be(0);
@@ -408,17 +435,17 @@ public class ForecastingServiceTests
     public void ComputeThroughputStatistics_ShouldIncludeZeroDays_InAverage()
     {
         var today = DateTime.UtcNow.Date;
-        // 2 days with completions but 3-day span (middle day has 0)
+        // 2 days with completions in a 30-day window
         var points = new List<ForecastingService.DailyThroughputPoint>
         {
             new(today.AddDays(-2), 3),
             new(today, 3)
         };
 
-        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points);
+        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points, 30);
 
-        // 6 completions over 3 days (including zero day) = 2/day
-        mean.Should().BeApproximately(2.0, 0.01);
+        // 6 completions over 30-day window = 0.2/day
+        mean.Should().BeApproximately(0.2, 0.01);
         stdDev.Should().BeGreaterThan(0);
     }
 
@@ -433,7 +460,8 @@ public class ForecastingServiceTests
             new(today, 3)
         };
 
-        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points);
+        // 3-day window matches data span
+        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(points, 3);
 
         mean.Should().BeApproximately(3.0, 0.01);
         stdDev.Should().BeApproximately(0, 0.01);
@@ -443,25 +471,15 @@ public class ForecastingServiceTests
     public void ComputeThroughputStatistics_ShouldProduceNonNegativeValues()
     {
         var today = DateTime.UtcNow.Date;
-        // Extreme outlier pattern
-        var points = new List<ForecastingService.DailyThroughputPoint>
-        {
-            new(today.AddDays(-4), 100),
-            new(today.AddDays(-3), 0),
-            new(today.AddDays(-2), 0),
-            new(today.AddDays(-1), 0),
-            new(today, 1)
-        };
 
-        // Note: the points list only has 2 entries (days with completions)
-        // but span covers 5 days
+        // Sparse points in a 30-day window
         var sparsePoints = new List<ForecastingService.DailyThroughputPoint>
         {
             new(today.AddDays(-4), 100),
             new(today, 1)
         };
 
-        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(sparsePoints);
+        var (mean, stdDev) = ForecastingService.ComputeThroughputStatistics(sparsePoints, 30);
 
         mean.Should().BeGreaterThan(0);
         stdDev.Should().BeGreaterOrEqualTo(0);
@@ -469,6 +487,27 @@ public class ForecastingServiceTests
         double.IsNaN(stdDev).Should().BeFalse();
         double.IsInfinity(mean).Should().BeFalse();
         double.IsInfinity(stdDev).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ComputeThroughputStatistics_ShouldUsHistoryWindow_NotDataSpan()
+    {
+        var today = DateTime.UtcNow.Date;
+        // Bursty pattern: all completions in last 3 days of a 30-day window
+        var points = new List<ForecastingService.DailyThroughputPoint>
+        {
+            new(today.AddDays(-2), 10),
+            new(today.AddDays(-1), 10),
+            new(today, 10)
+        };
+
+        // With full 30-day window, mean should be 30/30 = 1.0/day
+        var (mean30, _) = ForecastingService.ComputeThroughputStatistics(points, 30);
+        mean30.Should().BeApproximately(1.0, 0.01);
+
+        // With 3-day window, mean should be 30/3 = 10.0/day
+        var (mean3, _) = ForecastingService.ComputeThroughputStatistics(points, 3);
+        mean3.Should().BeApproximately(10.0, 0.01);
     }
 
     #endregion
