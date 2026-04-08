@@ -11,9 +11,9 @@ namespace Taskdeck.Api.Middleware;
 
 /// <summary>
 /// Middleware that authenticates MCP HTTP requests using API keys.
-/// Extracts a Bearer token from the Authorization header, validates it against
-/// the ApiKeys table using constant-time hash comparison, and sets the user ID
-/// in HttpContext.Items for <see cref="HttpUserContextProvider"/>.
+/// Extracts a Bearer token from the Authorization header, hashes it with SHA-256,
+/// looks up the hash in the ApiKeys table, and sets the user ID in
+/// HttpContext.Items for <see cref="HttpUserContextProvider"/>.
 ///
 /// Only active on the MCP endpoint path (/mcp). REST API endpoints continue
 /// to use JWT authentication.
@@ -86,8 +86,9 @@ public sealed class ApiKeyMiddleware
             var reason = apiKey.RevokedAt is not null ? "revoked" : "expired";
             _logger.LogWarning("MCP API key authentication failed: key is {Reason} (id: {KeyId})",
                 reason, apiKey.Id);
+            // Return generic message to avoid leaking key state (revoked vs expired)
             await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
-                $"API key is {reason}.");
+                "Invalid API key.");
             return;
         }
 
@@ -121,7 +122,7 @@ public sealed class ApiKeyMiddleware
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static async Task UpdateLastUsedAsync(TaskdeckDbContext dbContext, Guid keyId)
+    private async Task UpdateLastUsedAsync(TaskdeckDbContext dbContext, Guid keyId)
     {
         try
         {
@@ -132,9 +133,10 @@ public sealed class ApiKeyMiddleware
                     .SetProperty(k => k.LastUsedAt, DateTimeOffset.UtcNow)
                     .SetProperty(k => k.UpdatedAt, DateTimeOffset.UtcNow));
         }
-        catch
+        catch (Exception ex)
         {
             // Non-critical: if usage tracking fails, authentication still succeeds.
+            _logger.LogDebug(ex, "Failed to update API key last-used timestamp for key {KeyId}", keyId);
         }
     }
 

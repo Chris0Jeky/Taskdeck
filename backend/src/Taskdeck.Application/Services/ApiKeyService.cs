@@ -99,11 +99,11 @@ public class ApiKeyService
     /// <summary>Generate a plaintext API key with tdsk_ prefix.</summary>
     public static string GenerateKey()
     {
-        var randomBytes = RandomNumberGenerator.GetBytes(RandomPartLength);
         var sb = new StringBuilder(ApiKey.KeyPrefix, ApiKey.RawKeyLength);
-        foreach (var b in randomBytes)
+        for (int i = 0; i < RandomPartLength; i++)
         {
-            sb.Append(Base62Chars[b % Base62Chars.Length]);
+            // Use RandomNumberGenerator.GetInt32 to avoid modulo bias
+            sb.Append(Base62Chars[RandomNumberGenerator.GetInt32(Base62Chars.Length)]);
         }
         return sb.ToString();
     }
