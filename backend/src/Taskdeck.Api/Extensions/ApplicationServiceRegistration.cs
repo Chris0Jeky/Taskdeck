@@ -59,6 +59,10 @@ public static class ApplicationServiceRegistration
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IAuthorizationService>()));
+        services.AddScoped<IForecastingService>(sp =>
+            new ForecastingService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetRequiredService<IAuthorizationService>()));
         services.AddScoped<AgentProfileService>();
         services.AddScoped<AgentRunService>();
         services.AddScoped<SignalRBoardRealtimeNotifier>();
