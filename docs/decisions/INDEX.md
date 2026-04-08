@@ -23,3 +23,4 @@
 | [0019](ADR-0019-mcp-server-official-sdk-embedded-hosting.md) | MCP Server — Official SDK with Embedded Hosting | Accepted | 2026-04-01 |
 | [0020](ADR-0020-plugin-extension-architecture.md) | Plugin/Extension Architecture RFC and Sandboxing Constraints | Proposed | 2026-04-01 |
 | [0021](ADR-0021-jwt-invalidation-user-active-middleware.md) | JWT Invalidation — User-Active Middleware over Token Blocklist | Accepted | 2026-04-03 |
+| [0022](ADR-0022-analytics-export-csv-first-pdf-deferred.md) | Analytics Export — CSV First, PDF Deferred | Accepted | 2026-04-08 |
