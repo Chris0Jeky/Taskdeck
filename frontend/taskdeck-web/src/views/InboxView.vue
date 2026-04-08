@@ -810,6 +810,8 @@ onUnmounted(() => {
           v-if="hashLoadFailedItemId && !selectedItemId"
           class="td-inbox__detail-feedback"
           data-testid="inbox-detail-error"
+          role="alert"
+          aria-live="assertive"
         >
           <TdInlineAlert variant="error">
             Unable to load capture detail.
