@@ -51,7 +51,7 @@ test('first-run path should guide home to capture to review to execute to board'
   await expect(page.getByText('What is Inbox for?')).toBeVisible()
   await expect(page.getByText('No capture items yet')).toBeVisible()
 
-  await page.locator('.td-placeholder__actions').getByRole('button', { name: 'Open Today' }).click()
+  await page.getByTestId('inbox-empty-state').getByRole('button', { name: 'Open Today' }).click()
   await expect(page).toHaveURL(/\/workspace\/today$/)
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
   await expect(page.getByText('What is Today for?')).toBeVisible()

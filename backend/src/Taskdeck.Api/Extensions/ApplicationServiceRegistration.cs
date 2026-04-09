@@ -60,6 +60,9 @@ public static class ApplicationServiceRegistration
                 sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IAuthorizationService>()));
         services.AddScoped<ApiKeyService>();
+        services.AddScoped<IMetricsExportService>(sp =>
+            new MetricsExportService(
+                sp.GetRequiredService<IBoardMetricsService>()));
         services.AddScoped<AgentProfileService>();
         services.AddScoped<AgentRunService>();
         services.AddScoped<SignalRBoardRealtimeNotifier>();

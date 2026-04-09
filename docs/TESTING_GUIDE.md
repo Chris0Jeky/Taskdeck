@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-05
+Last Updated: 2026-04-08
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,21 +10,21 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-04)
+## Current Verified Totals (2026-04-08)
 
-- Backend: ~3070+ passing (estimated based on ~300 new tests from PRs `#732`–`#739` + ~586 new tests from PRs `#740`–`#755` + ~78 webhook tests from PRs `#750`/`#756` + ~32 new tests from PRs `#765`–`#770`/`#776` + ~52 new backend tests from PRs `#771`–`#779`)
-  - Domain: ~620+ (174 new entity state machine tests + 45 archive lifecycle domain tests)
-  - Application: ~1560+ (101 LLM edge cases + 64 export/import + 51 metrics accuracy + 4 streaming token usage + 6 tool argument replay + 3 DataExport logging + 17 tool-calling refinements + 15 export streaming + 18 resilience/degraded-mode tests)
-  - API integration: ~830+ (5 ChangePassword + 38 data isolation + 24 worker + 67 controller + 44 auth + 7 golden-path + 42 MCP + 19 SignalR + 57 error contract + 29 archive lifecycle + 10 metrics controller + 36 notification tests + 11 webhook HMAC + 22 webhook SSRF/delivery/repository + 19 OAuth token lifecycle)
+- Backend: ~3460+ passing (verified across individual PR test runs from `#787`–`#793` wave)
+  - Domain: ~700+ (77 new FsCheck adversarial entity tests + 11 ApiKey entity tests)
+  - Application: ~1680+ (29 JSON fuzz round-trip + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification)
+  - API integration: ~960+ (8 metrics export integration + 80 adversarial input API + 20 API key integration + 13 concurrency stress)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: ~1734 passing (~133 test files)
+- Frontend unit: ~1891 passing (~140+ test files; +7 inbox primitive + 16 fast-check input sanitization + 9 store resilience property tests)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys): default required lane passing
-- Combined automated total: ~4830+ passing (backend ~3070+ + frontend unit ~1734 + E2E)
+- Combined automated total: ~5370+ passing (backend ~3460+ + frontend unit ~1891 + E2E)
 
 Verification note:
-- backend totals are estimated after three 2026-04-04 waves; wave 1 (`#732`–`#739`, ~300 new tests), wave 2 (`#740`–`#755`, ~586 new tests with adversarial review), and wave 3 (`#750`/`#756`, ~50+ net new webhook tests: 11 HMAC + endpoint guard extensions + service/signature/worker/domain tests); each PR verified green individually; full-suite recertification needed
-- frontend unit totals: **~1734 passing** as of 2026-04-05 post-wave 5 (up from 1592 pre-waves 4+5); wave 4: 33 new tests from `#725`/`#765` (19 HTTP interceptor + 14 router integration); wave 5: 83 view tests (`#716`/`#775`), 91 store integration tests (`#711`/`#777`), 16 resilience tests (`#720`/`#778`); verified via `npx vitest --run` after adversarial review fixes
+- backend totals are based on individual PR test runs from the 2026-04-08 wave (`#787`–`#793`); PR #791 reported 3,460 tests, PR #792 reported 3,450 tests; the highest reliable count is ~3,460+ across the wave; each PR verified green individually
+- frontend unit totals: **~1891 passing** as of 2026-04-08 (up from ~1734 pre-wave); 2026-04-08 wave added: 7 inbox primitive tests (`#249`/`#788`), 16 fast-check input sanitization tests + 9 store resilience property tests (`#717`/`#789`); verified via `npx vitest --run` after adversarial review fixes
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
@@ -136,18 +136,18 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 | Priority | Issues | Theme | Status |
 |----------|--------|-------|--------|
 | I | ~~`#703`~~ | Capture → triage → proposal → review → board end-to-end golden path | **Delivered** (`#735`) |
-| II | ~~`#699`~~, ~~`#700`~~, ~~`#702`~~, ~~`#704`~~, `#705`, ~~`#707`~~, `#723`, `#725` | Infrastructure repos, worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor | **5 of 8 delivered** |
-| III | ~~`#701`~~, ~~`#706`~~, ~~`#708`~~, ~~`#709`~~, ~~`#710`~~, `#711`, `#712`, ~~`#713`~~, ~~`#714`~~, ~~`#715`~~, `#716`, ~~`#718`~~, ~~`#719`~~, `#720`, ~~`#726`~~ | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **11 of 15 delivered** |
-| IV | `#717` | Property-based and adversarial input tests (extends `#89`) | Open |
+| II | ~~`#699`~~, ~~`#700`~~, ~~`#702`~~, ~~`#704`~~, ~~`#705`~~, ~~`#707`~~, ~~`#723`~~, ~~`#725`~~ | Infrastructure repos, worker, controller gaps, data isolation, concurrency, auth, OAuth, frontend HTTP interceptor | **8 of 8 delivered** |
+| III | ~~`#701`~~, ~~`#706`~~, ~~`#708`~~, ~~`#709`~~, ~~`#710`~~, ~~`#711`~~, ~~`#712`~~, ~~`#713`~~, ~~`#714`~~, ~~`#715`~~, ~~`#716`~~, ~~`#718`~~, ~~`#719`~~, ~~`#720`~~, ~~`#726`~~ | Domain state machines, SignalR, proposal lifecycle, LLM tool-calling, webhooks, frontend stores/views, export/import, error contracts, archive, metrics, notifications, resilience | **15 of 15 delivered** |
+| IV | ~~`#717`~~ | Property-based and adversarial input tests (extends `#89`) | **Delivered** (`#789`) |
 
-**Wave progress**: 17 of 25 issues delivered (plus SEC-20 fix). ~960+ new tests across three delivery waves. 8 issues remain open: `#705`, `#711`, `#712`, `#716`, `#717`, `#720`, `#723`, `#725`.
+**Wave progress**: 25 of 25 issues delivered (plus SEC-20 fix). ~1350+ new tests across six delivery waves. **Wave complete.** Final deliveries: concurrency stress tests (`#705`/`#793` — 13 tests), property-based adversarial tests (`#717`/`#789` — 211 tests).
 
 ### Key Gaps Identified (updated 2026-04-04)
 
 - ~~**Infrastructure repositories**~~: 7 classes now have 77 integration tests (`#699`/`#730`); remaining repositories still untested
 - ~~**`LlmQueueToProposalWorker`**~~: **RESOLVED** — 24 integration tests delivered (`#700`/`#734`) covering happy path, error/retry, cancellation, fair-batch, and capture triage paths
 - ~~**Cross-user data isolation**~~: **RESOLVED** — 38 integration tests delivered (`#704`/`#733`) covering all major API boundaries; 3 false-positive tests caught and fixed in adversarial review
-- **Frontend HTTP interceptor and router auth guard**: crossed by every request, zero test coverage (`#725` open); note — router auth guard now has unit tests from `#748` but interceptor remains untested
+- ~~**Frontend HTTP interceptor and router auth guard**~~: **RESOLVED** — 33 tests delivered (`#725`/`#765`): 19 HTTP interceptor tests + 14 router integration tests
 - ~~**Golden path**~~: **RESOLVED** — 7 integration tests delivered (`#703`/`#735`) proving full capture → triage → proposal → review → board pipeline
 - ~~**Domain entity state machines**~~: **RESOLVED** — 174 exhaustive tests delivered (`#701`/`#740`) covering CommandRun, ArchiveItem, ChatSession, UserPreference, NotificationPreference, CardLabel, CardCommentMention
 - ~~**SignalR hub integration**~~: **RESOLVED** — 19 integration tests delivered (`#706`/`#751`) covering auth, presence, multi-user, authorization, and edge cases
@@ -922,3 +922,50 @@ New test files:
 - `InboxView.spec.ts` (+21 tests): single-item triage action states (per status variant), bulk action bar visibility and count, batchBusy disabled state, select-all behavior; all assertions on DOM state
 
 Frontend suite total after this wave: **1592 passing** (up from 1496 pre-wave).
+
+## Feature, Analytics, MCP, Chat, Testing, and UX Wave (PRs #787–#793, delivered 2026-04-08)
+
+Tracking issues: `#78`, `#79`, `#249`, `#576`, `#654`, `#705`, `#717`
+
+New test coverage (~390+ new tests total):
+
+### Backend
+
+- `MetricsExportServiceTests.cs` (21 unit tests + 5 adversarial-review injection tests): CSV structure validation, all 5 sections, CSV injection prevention vectors including embedded newlines
+- `MetricsExportApiTests.cs` (8 integration tests): auth, cross-user isolation, empty board, date range, Content-Disposition headers
+- `ForecastingServiceTests.cs` (32 tests): validation, authorization, edge cases (zero throughput, no done column, single data point, large card counts, bounce deduplication, history-window-vs-span)
+- `ApiKey` domain tests (11 tests): entity construction, SHA-256 hashing, `tdsk_` prefix, revocation, expiration
+- API key integration tests (20 tests): auth, key lifecycle (create/list/revoke), cross-user isolation, MCP endpoint access
+- `ClarificationDetectorTests.cs` (22 tests + 6 false-positive regression): pattern detection, skip phrases, round counting, prompt building, strong/weak signal split
+- `ChatServiceClarificationTests.cs` (7 tests): service-level clarification flow, round enforcement, skip behavior
+- `ConcurrencyRaceConditionStressTests.cs` (13 tests): queue claim races, card conflicts, proposal approval races, rate limiting, multi-user stress
+- `EntityAdversarialInputTests.cs` (77 FsCheck tests): Board, Card, Column, Label, AutomationProposal with adversarial strings, boundary lengths, GUID validation
+- `JsonSerializationRoundTripFuzzTests.cs` (29 tests): serialize/deserialize identity, GUID format variations, DateTime boundaries, malformed JSON
+- `AdversarialInputApiTests.cs` (80 tests): no 500s from adversarial input across all major endpoints, malformed JSON, wrong content types, concurrent adversarial
+
+### Frontend
+
+- `InboxView.spec.ts` (+7 tests): primitive-driven loading/error/empty state assertions, skeleton detection, retry button
+- `inputSanitization.spec.ts` (16 fast-check tests): card titles, search queries, board names, chat messages, URL encoding, JSON round-trip, Unicode edge cases
+- `storeResilience.spec.ts` (9 fast-check tests): random action sequences on board store, API error handling, adversarial content
+
+### Dependencies added
+
+- Backend: `FsCheck` and `FsCheck.Xunit` (for property-based testing, extending existing pattern)
+- Frontend: `fast-check` (dev dependency, for property-based testing)
+
+### Key adversarial review findings fixed
+
+- **HIGH**: CSV injection via embedded newlines in export (`#787`), throughput double-counting in forecasting (`#790`), false-positive clarification heuristic (`#791`)
+- **MEDIUM**: Key-existence oracle + modulo bias in API key generation (`#792`), capture DTO round-trip test (`#789`), history window denominator (`#790`), CancellationToken forwarding (`#787`)
+- Fixed test quality issues: misleading doc comments, weak assertions, non-thread-safe variables, redundant ARIA roles, missing screen reader announcements
+
+Backend suite total after this wave: **~3,460+ passing**. Frontend suite total: **~1,891 passing**. Combined: **~5,370+**.
+
+### Test expansion wave (`#721`) completion
+
+This wave delivered the final 2 issues from the rigorous test expansion wave (`#721`):
+- `#705` — Concurrency and race condition stress tests (13 tests)
+- `#717` — Property-based and adversarial input tests (211 tests)
+
+**All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.

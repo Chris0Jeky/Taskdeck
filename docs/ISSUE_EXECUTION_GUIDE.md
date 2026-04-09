@@ -261,8 +261,8 @@ Execution note (demo rehearsal runtime issues):
 ### Stage 3: Priority III - Expansion Wave
 
 1. `#77` ANL-01 metrics dashboard
-2. `#78` ANL-02 exportable reports
-3. `#79` ANL-03 forecasting/capacity heuristics
+2. `#78` ANL-02 exportable reports (delivered `#787`)
+3. `#79` ANL-03 forecasting/capacity heuristics (delivered `#790`)
 4. `#80` SEC-05 OWASP baseline hardening (delivered)
 5. `#81` SEC-06 API rate limiting (includes capture endpoint scope extension, delivered)
 6. `#82` SEC-07 SSO/OIDC + optional MFA
@@ -280,7 +280,7 @@ Execution note (demo rehearsal runtime issues):
 18. `#244` UI-02 shared UI primitives foundation
 19. `#246` UI-04 AppShell premium reskin (no behavior changes)
 20. `#247` UI-05 board card/surface polish pass
-21. `#249` UI-07 inbox premium primitives pass
+21. `#249` UI-07 inbox premium primitives pass (delivered `#788`)
 22. `#248` UI-06 drag/drop premium behavior + keyboard alternatives
 23. `#250` PERF-08 frontend interaction latency budgets + instrumentation
 24. `#329` MVP-03 lower-priority secondary MVP follow-through tracker

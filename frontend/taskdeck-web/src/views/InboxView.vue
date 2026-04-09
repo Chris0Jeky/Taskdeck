@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import CaptureModal from '../components/common/CaptureModal.vue'
+import { TdBadge, TdEmptyState, TdInlineAlert, TdSkeleton, TdSpinner } from '../components/ui'
 import { useCaptureStore } from '../store/captureStore'
 import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureSourceValue, CaptureStatusValue } from '../types/capture'
@@ -168,15 +169,15 @@ function statusLabel(status: CaptureStatusValue): string {
   return String(status)
 }
 
-function statusChipClass(status: CaptureStatusValue): string {
-  if (status === 0 || status === 'New') return 'td-status-chip--new'
-  if (status === 1 || status === 'Triaging') return 'td-status-chip--triaging'
-  if (status === 2 || status === 'Triaged') return 'td-status-chip--triaging'
-  if (status === 3 || status === 'ProposalCreated') return 'td-status-chip--triaging'
-  if (status === 4 || status === 'Converted') return 'td-status-chip--converted'
-  if (status === 5 || status === 'Ignored') return 'td-status-chip--ignored'
-  if (status === 6 || status === 'Failed') return 'td-status-chip--failed'
-  return ''
+function statusBadgeVariant(status: CaptureStatusValue): 'primary' | 'warning' | 'success' | 'error' | 'default' {
+  if (status === 0 || status === 'New') return 'primary'
+  if (status === 1 || status === 'Triaging') return 'warning'
+  if (status === 2 || status === 'Triaged') return 'warning'
+  if (status === 3 || status === 'ProposalCreated') return 'warning'
+  if (status === 4 || status === 'Converted') return 'success'
+  if (status === 5 || status === 'Ignored') return 'default'
+  if (status === 6 || status === 'Failed') return 'error'
+  return 'default'
 }
 
 function sourceLabel(source: CaptureSourceValue): string {
@@ -681,33 +682,67 @@ onUnmounted(() => {
           </button>
         </div>
 
+        <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- dynamic role (listbox/group) + tabindex="0" makes this interactive -->
         <div
           ref="parentRef"
           class="td-inbox__list"
           tabindex="0"
-          :role="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError ? 'listbox' : undefined"
+          :role="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError ? 'listbox' : 'group'"
           aria-label="Inbox items"
           :aria-activedescendant="activeDescendantId"
           @keydown="handleKeydown"
         >
-          <div v-if="captureStore.loadingList" class="td-placeholder">Loading inbox items...</div>
-          <div v-else-if="captureStore.listError" class="td-alert td-alert--error">{{ captureStore.listError }}</div>
-          <div v-else-if="!captureStore.hasItems" class="td-placeholder td-placeholder--empty-state">
-            <h3>No capture items yet</h3>
-            <p>Capture a note or transcript to get started. Once triage runs, proposals will appear in Review.</p>
-            <div class="td-placeholder__actions">
-              <button
-                class="td-btn td-btn--primary td-btn--sm"
-                aria-label="Open capture modal to add a new inbox item"
-                @click="openCaptureModal"
-              >
-                + New Capture
-              </button>
-              <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
-              <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/today')">Open Today</button>
-              <button class="td-btn td-btn--secondary td-btn--sm" @click="openReview">Open Review</button>
+          <div v-if="captureStore.loadingList" class="td-inbox__skeleton-list" data-testid="inbox-loading-skeleton" role="status">
+            <span class="sr-only">Loading inbox items...</span>
+            <div v-for="n in 5" :key="n" class="td-inbox__skeleton-row">
+              <div class="td-inbox__skeleton-head">
+                <TdSkeleton width="60px" height="18px" />
+                <TdSkeleton width="48px" height="18px" />
+              </div>
+              <TdSkeleton width="85%" height="14px" />
+              <TdSkeleton width="55%" height="14px" />
+              <TdSkeleton width="100px" height="12px" />
             </div>
           </div>
+          <div v-else-if="captureStore.listError" class="td-inbox__list-error" data-testid="inbox-list-error">
+            <TdInlineAlert variant="error">
+              <p>{{ captureStore.listError }}</p>
+            </TdInlineAlert>
+            <button
+              class="td-btn td-btn--secondary td-btn--sm td-inbox__retry-btn"
+              data-testid="inbox-retry-btn"
+              @click="loadInbox"
+            >
+              Retry
+            </button>
+          </div>
+          <TdEmptyState
+            v-else-if="!captureStore.hasItems"
+            title="No capture items yet"
+            description="Capture a note or transcript to get started. Once triage runs, proposals will appear in Review."
+            data-testid="inbox-empty-state"
+          >
+            <template #icon>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3 8l9-5 9 5v8l-9 5-9-5V8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M3 8l9 5m0 0l9-5m-9 5v9" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              </svg>
+            </template>
+            <template #action>
+              <div class="td-inbox__empty-actions">
+                <button
+                  class="td-btn td-btn--primary td-btn--sm"
+                  aria-label="Open capture modal to add a new inbox item"
+                  @click="openCaptureModal"
+                >
+                  + New Capture
+                </button>
+                <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/home')">Open Home</button>
+                <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/today')">Open Today</button>
+                <button class="td-btn td-btn--secondary td-btn--sm" @click="openReview">Open Review</button>
+              </div>
+            </template>
+          </TdEmptyState>
 
           <div
             v-if="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError"
@@ -744,6 +779,7 @@ onUnmounted(() => {
                       selectedItemId === items[virtualRow.index]!.id ? 'td-inbox-row--selected' : ''
                     ]"
                     role="option"
+                    tabindex="-1"
                     :aria-selected="selectedItemId === items[virtualRow.index]!.id"
                     @mouseenter="setActiveIndex(virtualRow.index)"
                     @focusin="setActiveIndex(virtualRow.index)"
@@ -759,8 +795,8 @@ onUnmounted(() => {
                         :checked="selectedIds.has(items[virtualRow.index]!.id)"
                         @click.stop="toggleItemSelection(items[virtualRow.index]!.id)"
                       />
-                      <span :class="['td-status-chip', statusChipClass(items[virtualRow.index]!.status)]">{{ statusLabel(items[virtualRow.index]!.status) }}</span>
-                      <span class="td-meta-chip">{{ sourceLabel(items[virtualRow.index]!.source) }}</span>
+                      <TdBadge :variant="statusBadgeVariant(items[virtualRow.index]!.status)" size="sm">{{ statusLabel(items[virtualRow.index]!.status) }}</TdBadge>
+                      <TdBadge variant="default" size="sm">{{ sourceLabel(items[virtualRow.index]!.source) }}</TdBadge>
                     </div>
                     <p class="td-inbox-row__excerpt">{{ items[virtualRow.index]!.textExcerpt }}</p>
                     <p class="td-inbox-row__meta">{{ new Date(items[virtualRow.index]!.createdAt).toLocaleString() }}</p>
@@ -775,40 +811,65 @@ onUnmounted(() => {
       <section class="td-inbox__detail-panel" aria-label="Capture item detail" aria-live="polite">
         <div
           v-if="hashLoadFailedItemId && !selectedItemId"
-          class="td-placeholder td-placeholder--detail"
-          role="alert"
-          aria-live="assertive"
+          class="td-inbox__detail-feedback"
+          data-testid="inbox-detail-error"
         >
-          Unable to load capture detail.
+          <TdInlineAlert variant="error">
+            Unable to load capture detail.
+          </TdInlineAlert>
         </div>
-        <div v-else-if="!selectedItemId" class="td-placeholder td-placeholder--detail">
-          Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it.
+        <div v-else-if="!selectedItemId" class="td-inbox__detail-feedback" data-testid="inbox-detail-placeholder">
+          <TdEmptyState
+            title="No item selected"
+            description="Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it."
+          >
+            <template #icon>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M8 10h8M8 14h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </template>
+          </TdEmptyState>
         </div>
         <div
           v-else-if="captureStore.loadingDetail && !selectedItem"
-          class="td-placeholder td-placeholder--detail-loading"
+          class="td-inbox__detail-feedback"
+          data-testid="inbox-detail-loading"
+          role="status"
         >
-          Loading detail...
+          <span class="sr-only">Loading capture detail...</span>
+          <div class="td-inbox__detail-skeleton">
+            <TdSkeleton width="40%" height="20px" />
+            <TdSkeleton width="60%" height="14px" />
+            <TdSkeleton width="100%" height="200px" />
+            <div class="td-inbox__detail-skeleton-actions">
+              <TdSkeleton width="100px" height="32px" />
+              <TdSkeleton width="80px" height="32px" />
+            </div>
+          </div>
         </div>
-        <div v-else-if="!selectedItem" class="td-placeholder td-placeholder--detail">
-          Unable to load capture detail.
+        <div v-else-if="!selectedItem" class="td-inbox__detail-feedback" data-testid="inbox-detail-missing">
+          <TdInlineAlert variant="error">
+            Unable to load capture detail.
+          </TdInlineAlert>
         </div>
 
         <article v-else class="td-inbox-detail">
           <header class="td-inbox-detail__header">
             <div>
               <h2>Capture Detail</h2>
-              <p class="td-inbox-detail__meta">
-                {{ statusLabel(selectedItem.status) }} | {{ sourceLabel(selectedItem.source) }} | created
-                {{ new Date(selectedItem.createdAt).toLocaleString() }}
-              </p>
+              <div class="td-inbox-detail__meta">
+                <TdBadge :variant="statusBadgeVariant(selectedItem.status)" size="sm">{{ statusLabel(selectedItem.status) }}</TdBadge>
+                <TdBadge variant="default" size="sm">{{ sourceLabel(selectedItem.source) }}</TdBadge>
+                <span class="td-inbox-detail__timestamp">{{ new Date(selectedItem.createdAt).toLocaleString() }}</span>
+              </div>
             </div>
             <button class="td-btn td-btn--ghost" @click="closeDetail">Close (Esc)</button>
           </header>
 
           <div class="td-inbox-detail__content">
-            <div v-if="captureStore.loadingDetail" class="td-placeholder td-placeholder--detail-loading">
-              Loading detail...
+            <div v-if="captureStore.loadingDetail" class="td-inbox-detail__spinner">
+              <TdSpinner label="Refreshing detail..." />
             </div>
             <template v-else-if="isEditingSuggestion">
               <label for="inbox-edit-text" class="td-inbox-detail__edit-label">Capture Text</label>
@@ -860,27 +921,30 @@ onUnmounted(() => {
             </template>
           </div>
 
-          <div
+          <TdInlineAlert
             v-if="selectedItem.status === 6 || selectedItem.status === 'Failed'"
-            class="td-inbox-detail__error-banner"
+            variant="error"
             data-testid="capture-error-banner"
-            role="alert"
           >
             <p class="td-inbox-detail__error-title">Triage failed</p>
-            <p v-if="selectedItem.errorMessage" class="td-inbox-detail__error-message">{{ selectedItem.errorMessage }}</p>
+            <p v-if="selectedItem.errorMessage" class="td-inbox-detail__error-msg">{{ selectedItem.errorMessage }}</p>
             <p class="td-inbox-detail__error-hint">
               You can edit the text and retry, or ignore this capture if it is no longer needed.
             </p>
-          </div>
+          </TdInlineAlert>
 
-          <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link">
-            <span>A proposed board update is ready for approval.</span>
-            <button
-              class="td-btn td-btn--primary td-btn--sm"
-              @click="openProposal(selectedItem.provenance.proposalId)"
-            >
-              Open in Review
-            </button>
+          <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link" data-testid="inbox-proposal-link">
+            <TdInlineAlert variant="success">
+              <div class="td-inbox-detail__proposal-link-content">
+                <span>A proposed board update is ready for approval.</span>
+                <button
+                  class="td-btn td-btn--primary td-btn--sm"
+                  @click="openProposal(selectedItem.provenance.proposalId)"
+                >
+                  Open in Review
+                </button>
+              </div>
+            </TdInlineAlert>
           </div>
 
           <footer class="td-inbox-detail__actions">
@@ -1097,47 +1161,50 @@ onUnmounted(() => {
   margin-bottom: var(--td-space-2);
 }
 
-/* ─── Status / meta chips ─── */
+/* ─── Skeleton loading ─── */
 
-.td-status-chip,
-.td-meta-chip {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  border-radius: var(--td-radius-sm);
-  padding: 2px 8px;
-  border: 0.5px solid var(--td-border-default);
-  background: var(--td-surface-container-highest);
-  color: var(--td-text-secondary);
+.td-inbox__skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+  padding: var(--td-space-3);
 }
 
-.td-status-chip--failed {
-  background: var(--td-color-error-light);
-  color: var(--td-color-error);
-  border-color: var(--td-color-error);
+.td-inbox__skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+  padding: var(--td-space-3);
+  border: 0.5px solid var(--td-border-ghost);
+  border-radius: var(--td-radius-md);
 }
 
-.td-status-chip--converted {
-  background: var(--td-color-success-light);
-  color: var(--td-color-success);
-  border-color: var(--td-color-success);
+.td-inbox__skeleton-head {
+  display: flex;
+  gap: var(--td-space-2);
 }
 
-.td-status-chip--triaging {
-  background: var(--td-color-warning-light);
-  color: var(--td-color-warning);
-  border-color: var(--td-color-warning);
+/* ─── List error ─── */
+
+.td-inbox__list-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--td-space-3);
+  padding: var(--td-space-4);
 }
 
-.td-status-chip--ignored {
-  /* Muted gray — inherits base chip styles, no override needed */
+.td-inbox__retry-btn {
+  align-self: center;
 }
 
-.td-status-chip--new {
-  background: var(--td-color-ember-dim);
-  color: var(--td-color-ember);
-  border-color: var(--td-color-ember);
+/* ─── Empty state actions ─── */
+
+.td-inbox__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--td-space-2);
+  justify-content: center;
 }
 
 .td-inbox-row__checkbox {
@@ -1196,9 +1263,44 @@ onUnmounted(() => {
 }
 
 .td-inbox-detail__meta {
-  color: var(--td-text-secondary);
-  font-size: var(--td-font-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
   margin-top: var(--td-space-1);
+  flex-wrap: wrap;
+}
+
+.td-inbox-detail__timestamp {
+  color: var(--td-text-tertiary);
+  font-size: var(--td-font-xs);
+}
+
+.td-inbox-detail__spinner {
+  display: flex;
+  justify-content: center;
+  padding: var(--td-space-6);
+}
+
+.td-inbox__detail-feedback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: var(--td-space-4);
+}
+
+.td-inbox__detail-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+  width: 100%;
+}
+
+.td-inbox__detail-skeleton-actions {
+  display: flex;
+  gap: var(--td-space-2);
+  justify-content: flex-end;
 }
 
 .td-inbox-detail__content {
@@ -1278,30 +1380,22 @@ onUnmounted(() => {
   justify-content: flex-end;
 }
 
-/* ─── Error banner (Failed captures) ─── */
-
-.td-inbox-detail__error-banner {
-  background: rgba(255, 77, 77, 0.08);
-  border: 0.5px solid rgba(255, 77, 77, 0.25);
-  border-radius: var(--td-radius-md);
-  padding: var(--td-space-3) var(--td-space-4);
-}
+/* ─── Error banner (Failed captures) — text styles inside TdInlineAlert ─── */
 
 .td-inbox-detail__error-title {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
-  color: var(--td-color-ember, #ff4d4d);
-  margin: 0 0 var(--td-space-2) 0;
+  margin: 0 0 var(--td-space-1) 0;
   font-weight: 600;
 }
 
-.td-inbox-detail__error-message {
+.td-inbox-detail__error-msg {
   color: var(--td-text-primary);
   font-size: var(--td-font-sm);
   line-height: 1.5;
-  margin: 0 0 var(--td-space-2) 0;
+  margin: 0 0 var(--td-space-1) 0;
   word-break: break-word;
 }
 
@@ -1312,81 +1406,16 @@ onUnmounted(() => {
   margin: 0;
 }
 
-.td-inbox-detail__proposal-link {
-  display: inline-flex;
+.td-inbox-detail__proposal-link-content {
+  display: flex;
   align-items: center;
   gap: var(--td-space-2);
   font-size: var(--td-font-sm);
-  color: var(--td-text-secondary);
-  background: var(--td-surface-container, #201f1f);
-  border: 0.5px solid var(--td-border-ghost);
-  border-radius: var(--td-radius-md);
-  padding: var(--td-space-2) var(--td-space-3);
-}
-
-/* ─── Placeholder / empty states ─── */
-
-.td-placeholder {
-  color: var(--td-text-tertiary);
-  padding: var(--td-space-6);
-  text-align: center;
-}
-
-.td-placeholder--empty-state {
-  display: flex;
-  flex-direction: column;
-  gap: var(--td-space-2);
-  align-items: center;
-  justify-content: center;
-  border: 0.5px solid var(--td-border-ghost);
-  border-radius: var(--td-radius-md);
-  margin: var(--td-space-4);
-  padding: var(--td-space-6);
-}
-
-.td-placeholder--empty-state h3 {
-  margin: 0;
-  color: var(--td-text-primary);
-  font-family: 'Manrope', system-ui, sans-serif;
-}
-
-.td-placeholder--empty-state p {
-  margin: 0;
-  max-width: 320px;
-  line-height: 1.6;
-  color: var(--td-text-tertiary);
-}
-
-.td-placeholder__actions {
-  display: flex;
   flex-wrap: wrap;
-  gap: var(--td-space-2);
-  margin-top: var(--td-space-2);
 }
 
-.td-placeholder--detail {
-  padding-top: calc(var(--td-space-8) * 2);
-  color: var(--td-text-tertiary);
-}
-
-.td-placeholder--detail-loading {
-  color: var(--td-text-tertiary);
-  padding: var(--td-space-6);
-  text-align: center;
-}
-
-/* ─── Alerts ─── */
-
-.td-alert {
-  border-radius: var(--td-radius-md);
-  padding: var(--td-space-3);
-}
-
-.td-alert--error {
-  background: rgba(255, 77, 77, 0.08);
-  color: var(--td-color-ember, #ff4d4d);
-  border: 0.5px solid rgba(255, 77, 77, 0.2);
-}
+/* ─── Shared primitive overrides are intentionally minimal ─── */
+/* Loading, empty, and error states now use TdSpinner, TdEmptyState, TdInlineAlert */
 
 /* .td-btn variants are global (src/style.css) */
 
@@ -1469,13 +1498,13 @@ onUnmounted(() => {
     justify-content: center;
   }
 
-  .td-inbox-detail__proposal-link {
+  .td-inbox-detail__proposal-link-content {
     flex-direction: column;
     align-items: stretch;
     text-align: center;
   }
 
-  .td-inbox-detail__proposal-link .td-btn {
+  .td-inbox-detail__proposal-link-content .td-btn {
     min-height: 44px;
     justify-content: center;
   }
@@ -1484,17 +1513,12 @@ onUnmounted(() => {
     padding: var(--td-space-3);
   }
 
-  .td-placeholder--empty-state {
-    margin: var(--td-space-2);
-    padding: var(--td-space-4);
-  }
-
-  .td-placeholder__actions {
+  .td-inbox__empty-actions {
     flex-direction: column;
     width: 100%;
   }
 
-  .td-placeholder__actions .td-btn {
+  .td-inbox__empty-actions .td-btn {
     width: 100%;
     min-height: 44px;
     justify-content: center;

@@ -42,6 +42,7 @@ function handleBlur() {
 <template>
   <div
     class="td-tooltip-wrapper"
+    role="presentation"
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
     @focusin="handleFocus"

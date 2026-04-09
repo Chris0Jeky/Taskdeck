@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using FsCheck;
+using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
@@ -22,7 +23,7 @@ public class StarterPackManifestFuzzTests
     public Property ValidateJson_NeverThrows_OnArbitraryString()
     {
         return Prop.ForAll(
-            Arb.From<string>(),
+            ArbMap.Default.ArbFor<string>(),
             input =>
             {
                 // The validator should gracefully handle any string input
@@ -212,9 +213,9 @@ public class StarterPackManifestFuzzTests
     /// </summary>
     private static Arbitrary<StarterPackManifestDto> RandomManifestDtoArb()
     {
-        var gen = Arb.From<string>().Generator.SelectMany(schemaVer =>
-            Arb.From<string>().Generator.SelectMany(packId =>
-            Arb.From<string>().Generator.Select(displayName =>
+        var gen = ArbMap.Default.ArbFor<string>().Generator.SelectMany(schemaVer =>
+            ArbMap.Default.ArbFor<string>().Generator.SelectMany(packId =>
+            ArbMap.Default.ArbFor<string>().Generator.Select(displayName =>
             {
                 var dto = new StarterPackManifestDto
                 {
