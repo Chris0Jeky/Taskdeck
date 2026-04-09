@@ -68,7 +68,7 @@ cd frontend/taskdeck-web
 npm run mutation:test
 ```
 
-Report: `frontend/taskdeck-web/reports/mutation.html`
+Report: `frontend/taskdeck-web/reports/mutation/mutation.html`
 
 ### CI
 
@@ -104,7 +104,9 @@ When mutation testing reveals surviving mutants:
 1. **File an issue** with the label `test-hardening` and link to the mutation report artifact
 2. **Categorize** surviving mutants by triage priority (see above)
 3. **Bundle fixes**: Group related assertion improvements into a single PR per module rather than one PR per mutant
-4. **Do not chase 100%**: Some surviving mutants are acceptable (e.g., log messages, cosmetic formatting). Document intentional exclusions in the config's `excluded-mutations` or `ignored-methods`.
+4. **Do not chase 100%**: Some surviving mutants are acceptable (e.g., log messages, cosmetic formatting). Document intentional exclusions:
+   - **Backend (Stryker.NET)**: Use `excluded-mutations` or `ignored-methods` in `backend/stryker-config.json`
+   - **Frontend (Stryker JS)**: Adjust `mutate` glob patterns in `stryker.config.mjs` or use inline `// Stryker disable` comments in source files
 
 ## Scope Expansion Roadmap
 

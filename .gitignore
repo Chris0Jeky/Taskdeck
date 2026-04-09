@@ -133,4 +133,4 @@ drill-artifacts/
 # Stryker mutation testing output
 StrykerOutput/
 stryker-tmp/
-frontend/*/reports/mutation*
+frontend/*/reports/mutation/
