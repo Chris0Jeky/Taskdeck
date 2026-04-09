@@ -66,14 +66,20 @@ function startOidcLogin(providerName: string) {
   window.location.href = `${apiBase}/auth/oidc/${encodeURIComponent(providerName)}/login?returnUrl=${encodeURIComponent(returnUrl)}`
 }
 
-async function handleOAuthCode(code: string) {
+async function handleOAuthCode(code: string, provider: string | undefined) {
   oauthExchanging.value = true
   formError.value = null
   try {
-    await session.exchangeOAuthCode(code)
+    // Both GitHub OAuth and OIDC callbacks share the same short-lived code store.
+    // Use the OIDC exchange endpoint for OIDC providers; GitHub exchange otherwise.
+    if (provider && provider !== 'github') {
+      await session.exchangeOidcCode(code)
+    } else {
+      await session.exchangeOAuthCode(code)
+    }
     navigateAfterLogin()
   } catch {
-    formError.value = session.error || 'GitHub sign-in failed. Please try again.'
+    formError.value = session.error || 'Sign-in failed. Please try again.'
   } finally {
     oauthExchanging.value = false
   }
@@ -89,14 +95,15 @@ onMounted(async () => {
     return
   }
 
-  // Check for OAuth code in query params (returned from GitHub callback)
+  // Check for OAuth/OIDC code in query params (returned from callback)
   // Safely extract first value — route.query values can be string | string[]
   const oauthCode = [route.query.oauth_code].flat()[0]
   if (oauthCode) {
+    const oauthProvider = [route.query.oauth_provider].flat()[0] ?? undefined
     // Clean the code from the URL to prevent reuse on refresh — await to ensure
     // the URL is updated before the exchange call (prevents confusing errors on refresh)
-    await router.replace({ path: route.path, query: { ...route.query, oauth_code: undefined } })
-    await handleOAuthCode(oauthCode)
+    await router.replace({ path: route.path, query: { ...route.query, oauth_code: undefined, oauth_provider: undefined } })
+    await handleOAuthCode(oauthCode, oauthProvider)
     return
   }
 
