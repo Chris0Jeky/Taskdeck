@@ -999,7 +999,7 @@ Observability and scalability:
   - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
   - backup/restore disaster-recovery playbook (`#86`)
   - staged rollout policy (`#101`), SBOM/provenance (`#103`), cost guardrails (`#104`)
-  - cloud target topology and autoscaling ADR (`#111`)
+  - cloud target topology and autoscaling ADR (`#111`, delivered — ADR-0023 defines ECS Fargate topology, autoscaling policy, SLO targets, health check contract, and cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
 
 UX and operability (reconciled from product notes):
 - escape behavior now follows a top-surface-first contract; maintain regression coverage as new overlays and panels are introduced
