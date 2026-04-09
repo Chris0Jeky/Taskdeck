@@ -26,7 +26,9 @@
     "test:e2e:audit:headed": "node -e \"process.env.TASKDECK_RUN_AUDIT='1';require('child_process').execSync('npx playwright test tests/e2e/manual-audit.spec.ts --headed --reporter=line',{stdio:'inherit',env:process.env})\"",
     "test:e2e:concurrency": "playwright test tests/e2e/concurrency.spec.ts --reporter=line",
     "test:e2e:live-llm:headed": "playwright test tests/e2e/live-llm.spec.ts --headed --reporter=line",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:visual": "playwright test --config playwright.visual.config.ts",
+    "test:visual:update": "playwright test --config playwright.visual.config.ts --update-snapshots"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
