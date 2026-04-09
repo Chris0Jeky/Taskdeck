@@ -75,6 +75,27 @@ public class AutomationProposalServiceEdgeCaseTests
     }
 
     [Fact]
+    public async Task ApproveProposalAsync_ShouldReturnConflict_WhenConcurrentDecisionWins()
+    {
+        var proposal = CreatePendingProposal();
+
+        _proposalRepoMock
+            .Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _unitOfWorkMock
+            .Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DomainException(ErrorCodes.Conflict, "The requested change conflicted with a concurrent update."));
+
+        var result = await _service.ApproveProposalAsync(proposal.Id, Guid.NewGuid());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ApproveProposalAsync_ShouldReturnNotFound_WhenProposalDoesNotExist()
     {
         _proposalRepoMock
