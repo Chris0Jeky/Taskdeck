@@ -25,7 +25,7 @@ Automated checks (run via `scripts/deploy/smoke-test.sh`):
 - [ ] **S1**: Health endpoint returns 200: `GET /health/ready`
 - [ ] **S2**: API root responds: `GET /api/` returns non-error response
 - [ ] **S3**: Authentication flow works: `POST /api/auth/register` or `POST /api/auth/login` returns 200/201
-- [ ] **S4**: Board CRUD: Create board, list boards, verify board appears
+- [ ] **S4**: Board endpoint auth gate: `GET /api/boards` returns 401 when unauthenticated
 - [ ] **S5**: Frontend loads: `GET /` returns HTML with expected `<title>` or root element
 - [ ] **S6**: SignalR negotiation: `POST /hubs/boards/negotiate` returns connection info (may return 401 for unauthenticated; non-5xx is pass)
 - [ ] **S7**: Static assets served: Frontend CSS/JS bundles return 200
