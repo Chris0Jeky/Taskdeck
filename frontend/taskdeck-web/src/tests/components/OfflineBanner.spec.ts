@@ -49,7 +49,7 @@ describe('OfflineBanner', () => {
 
     const wrapper = mount(OfflineBannerFresh)
     expect(wrapper.text()).toContain('You are offline')
-    expect(wrapper.text()).toContain('sync when reconnected')
+    expect(wrapper.text()).toContain('changes cannot be saved until you reconnect')
   })
 
   it('shows banner when going offline via window event', async () => {

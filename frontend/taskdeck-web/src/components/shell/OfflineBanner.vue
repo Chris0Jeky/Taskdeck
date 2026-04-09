@@ -17,7 +17,7 @@ const { isOnline } = useOnlineStatus()
         cloud_off
       </span>
       <span class="td-offline-banner__text">
-        You are offline. Cached data is available. Changes will sync when reconnected.
+        You are offline. Some cached data is still available, but changes cannot be saved until you reconnect.
       </span>
     </div>
   </Transition>
