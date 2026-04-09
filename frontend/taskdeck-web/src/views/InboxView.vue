@@ -682,11 +682,12 @@ onUnmounted(() => {
           </button>
         </div>
 
+        <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- dynamic role (listbox/group) + tabindex="0" makes this interactive -->
         <div
           ref="parentRef"
           class="td-inbox__list"
           tabindex="0"
-          :role="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError ? 'listbox' : undefined"
+          :role="captureStore.hasItems && !captureStore.loadingList && !captureStore.listError ? 'listbox' : 'group'"
           aria-label="Inbox items"
           :aria-activedescendant="activeDescendantId"
           @keydown="handleKeydown"
@@ -778,6 +779,7 @@ onUnmounted(() => {
                       selectedItemId === items[virtualRow.index]!.id ? 'td-inbox-row--selected' : ''
                     ]"
                     role="option"
+                    tabindex="-1"
                     :aria-selected="selectedItemId === items[virtualRow.index]!.id"
                     @mouseenter="setActiveIndex(virtualRow.index)"
                     @focusin="setActiveIndex(virtualRow.index)"

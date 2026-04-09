@@ -708,7 +708,7 @@ describe('InboxView', () => {
 
     expect(listbox.attributes('aria-activedescendant')).toBe('td-inbox-option-1')
     const options = wrapper.findAll('[role="option"]')
-    expect(options[0]?.attributes('tabindex')).toBeUndefined()
+    expect(options[0]?.attributes('tabindex')).toBe('-1')
     expect(options[1]?.attributes('id')).toBe('td-inbox-option-1')
   })
 
