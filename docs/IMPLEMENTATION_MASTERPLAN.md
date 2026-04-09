@@ -1215,6 +1215,7 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Test suite baseline counts recertified 2026-04-08: backend ~3,460+ passing, frontend ~1,891 passing, combined ~5,370+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
+20. **Cross-browser and mobile E2E matrix expansion (2026-04-09)**: `#87` delivered — Playwright config expanded with 5 projects (chromium, firefox, webkit, mobile-chrome/Pixel 7, mobile-safari/iPhone 14); tag-based test filtering (`@cross-browser`, `@mobile`, `@quarantine`); 5 cross-browser tests + 4 mobile viewport tests; `reusable-e2e-cross-browser.yml` workflow runs full matrix nightly and on `testing` label; PR gate stays chromium-only for fast feedback; flaky test policy at `docs/testing/FLAKY_TEST_POLICY.md`; `docs/TESTING_GUIDE.md` updated with cross-browser section.
 
 ## Documentation Operating Model
 Active docs:
