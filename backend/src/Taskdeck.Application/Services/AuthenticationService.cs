@@ -367,7 +367,7 @@ public class AuthenticationService : IAuthenticationService
         }
     }
 
-    private string GenerateJwtToken(User user)
+    public string GenerateJwtToken(User user)
     {
         if (!TryValidateJwtSettings(out var jwtValidationError))
             throw new DomainException(ErrorCodes.UnexpectedError, jwtValidationError);
