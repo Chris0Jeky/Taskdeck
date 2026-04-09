@@ -146,25 +146,33 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "oauth-cleanup");
 
-        // Insert expired codes directly into the database
-        using var scope = _factory.Services.CreateScope();
-        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-
         var expiredCode1 = $"cleanup-expired-1-{Guid.NewGuid():N}";
         var expiredCode2 = $"cleanup-expired-2-{Guid.NewGuid():N}";
         var validCode = $"cleanup-valid-{Guid.NewGuid():N}";
 
-        await InsertAuthCodeDirectly(scope, expiredCode1, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(-30));
-        await InsertAuthCodeDirectly(scope, expiredCode2, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(-5));
-        await InsertAuthCodeDirectly(scope, validCode, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(60));
+        // Insert codes in one scope
+        using (var insertScope = _factory.Services.CreateScope())
+        {
+            await InsertAuthCodeDirectly(insertScope, expiredCode1, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(-30));
+            await InsertAuthCodeDirectly(insertScope, expiredCode2, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(-5));
+            await InsertAuthCodeDirectly(insertScope, validCode, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(60));
+        }
 
-        // Run cleanup
-        var deleted = await uow.OAuthAuthCodes.DeleteExpiredAsync(DateTimeOffset.UtcNow);
-        deleted.Should().BeGreaterThanOrEqualTo(2, "at least the two expired codes should be deleted");
+        // Run cleanup in a separate scope (fresh DbContext)
+        using (var cleanupScope = _factory.Services.CreateScope())
+        {
+            var uow = cleanupScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var deleted = await uow.OAuthAuthCodes.DeleteExpiredAsync(DateTimeOffset.UtcNow);
+            deleted.Should().BeGreaterThanOrEqualTo(2, "at least the two expired codes should be deleted");
+        }
 
-        // The valid code should still be retrievable
-        var remainingCode = await uow.OAuthAuthCodes.GetByCodeAsync(validCode);
-        remainingCode.Should().NotBeNull("valid code should survive cleanup");
+        // Verify in yet another scope
+        using (var verifyScope = _factory.Services.CreateScope())
+        {
+            var uow = verifyScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var remainingCode = await uow.OAuthAuthCodes.GetByCodeAsync(validCode);
+            remainingCode.Should().NotBeNull("valid code should survive cleanup");
+        }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -431,21 +439,17 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     {
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
 
-        // Use raw SQL to bypass the domain entity validation (which rejects past expiry dates)
-        await db.Database.ExecuteSqlRawAsync(
-            "INSERT INTO OAuthAuthCodes (Id, Code, UserId, Token, Purpose, ProviderData, ExpiresAt, IsConsumed, ConsumedAt, CreatedAt, UpdatedAt) " +
-            "VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10})",
-            Guid.NewGuid().ToString(),
-            code,
-            userId.ToString(),
-            token,
-            "login",
-            (string?)null!,
-            expiresAt.ToString("o"),
-            false,
-            (string?)null!,
-            DateTimeOffset.UtcNow.ToString("o"),
-            DateTimeOffset.UtcNow.ToString("o"));
+        // Create a valid auth code first, then adjust ExpiresAt via reflection
+        // for testing expired codes (constructor rejects past dates).
+        var futureExpiry = DateTimeOffset.UtcNow.AddSeconds(600);
+        var authCode = new OAuthAuthCode(code, userId, token, futureExpiry);
+
+        // Override ExpiresAt to the desired value (may be in the past for testing)
+        var expiresAtProp = typeof(OAuthAuthCode).GetProperty("ExpiresAt");
+        expiresAtProp!.SetValue(authCode, expiresAt);
+
+        db.OAuthAuthCodes.Add(authCode);
+        await db.SaveChangesAsync();
     }
 
     private static string CreateCustomJwt(

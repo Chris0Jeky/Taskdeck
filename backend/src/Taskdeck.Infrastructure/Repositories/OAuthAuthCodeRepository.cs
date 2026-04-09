@@ -17,10 +17,35 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
             .FirstOrDefaultAsync(e => e.Code == code, cancellationToken);
     }
 
+    public async Task<bool> TryConsumeAtomicAsync(string code, CancellationToken cancellationToken = default)
+    {
+        // Atomic UPDATE ensures only one concurrent request can consume a code.
+        // The WHERE clause filters on IsConsumed = 0 so the second requester gets 0 affected rows.
+        var now = DateTimeOffset.UtcNow;
+        var affected = await _context.Database.ExecuteSqlRawAsync(
+            "UPDATE OAuthAuthCodes SET IsConsumed = 1, ConsumedAt = {0}, UpdatedAt = {1} WHERE Code = {2} AND IsConsumed = 0",
+            now.ToString("o"),
+            now.ToString("o"),
+            code);
+
+        return affected > 0;
+    }
+
     public async Task<int> DeleteExpiredAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
     {
-        return await _context.Set<OAuthAuthCode>()
-            .Where(e => e.ExpiresAt < cutoff)
-            .ExecuteDeleteAsync(cancellationToken);
+        // EF Core 8 with SQLite cannot translate DateTimeOffset comparisons in LINQ
+        // queries. Load all codes and filter in memory for cleanup.
+        // Auth codes are short-lived and few in number, so this is acceptable.
+        var allCodes = await _context.Set<OAuthAuthCode>()
+            .ToListAsync(cancellationToken);
+
+        var expired = allCodes.Where(e => e.ExpiresAt < cutoff).ToList();
+
+        if (expired.Count == 0)
+            return 0;
+
+        _context.Set<OAuthAuthCode>().RemoveRange(expired);
+        await _context.SaveChangesAsync(cancellationToken);
+        return expired.Count;
     }
 }

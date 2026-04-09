@@ -264,6 +264,7 @@ public class AuthController : AuthenticatedControllerBase
         if (string.IsNullOrWhiteSpace(request.Code))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Code is required"));
 
+        // Read the code first to check purpose and expiry
         var authCode = await _unitOfWork.OAuthAuthCodes.GetByCodeAsync(request.Code);
         if (authCode == null)
             return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
@@ -271,13 +272,16 @@ public class AuthController : AuthenticatedControllerBase
         if (authCode.IsLinkingCode)
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "This code is for account linking, not login"));
 
-        if (!authCode.TryConsume())
-        {
-            var message = authCode.IsExpired ? "Code has expired" : "Invalid or expired code";
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, message));
-        }
+        if (authCode.IsExpired)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Code has expired"));
 
-        await _unitOfWork.SaveChangesAsync();
+        if (authCode.IsConsumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
+
+        // Atomically consume the code — prevents race conditions with concurrent requests
+        var consumed = await _unitOfWork.OAuthAuthCodes.TryConsumeAtomicAsync(request.Code);
+        if (!consumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
 
         // Look up the user to build the AuthResultDto
         var user = await _unitOfWork.Users.GetByIdAsync(authCode.UserId);
@@ -318,7 +322,7 @@ public class AuthController : AuthenticatedControllerBase
         if (string.IsNullOrWhiteSpace(request.Code))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Link code is required"));
 
-        // Look up and consume the link code
+        // Look up and validate the link code
         var authCode = await _unitOfWork.OAuthAuthCodes.GetByCodeAsync(request.Code);
         if (authCode == null)
             return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired link code"));
@@ -326,13 +330,16 @@ public class AuthController : AuthenticatedControllerBase
         if (!authCode.IsLinkingCode)
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "This code is for login, not account linking"));
 
-        if (!authCode.TryConsume())
-        {
-            var message = authCode.IsExpired ? "Link code has expired" : "Invalid or expired link code";
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, message));
-        }
+        if (authCode.IsExpired)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Link code has expired"));
 
-        await _unitOfWork.SaveChangesAsync();
+        if (authCode.IsConsumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired link code"));
+
+        // Atomically consume the code
+        var consumed = await _unitOfWork.OAuthAuthCodes.TryConsumeAtomicAsync(request.Code);
+        if (!consumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired link code"));
 
         // Parse the provider data from the link code
         if (string.IsNullOrWhiteSpace(authCode.ProviderData))

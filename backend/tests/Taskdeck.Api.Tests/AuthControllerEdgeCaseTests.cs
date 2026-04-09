@@ -67,22 +67,26 @@ public class AuthControllerEdgeCaseTests
 
         // Create a valid auth code
         var code = "test-replay-code";
-        var authCode = new OAuthAuthCode(code, Guid.NewGuid(), "fake-token", DateTimeOffset.UtcNow.AddSeconds(60));
+        var userId = Guid.NewGuid();
+        var authCode = new OAuthAuthCode(code, userId, "fake-token", DateTimeOffset.UtcNow.AddSeconds(60));
 
         var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
-        // First call returns the code, second call returns null (code was consumed)
-        var callCount = 0;
         authCodeRepoMock.Setup(r => r.GetByCodeAsync(code, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(authCode);
+
+        // First TryConsumeAtomicAsync returns true (consumed), second returns false (already consumed)
+        var consumeCallCount = 0;
+        authCodeRepoMock.Setup(r => r.TryConsumeAtomicAsync(code, It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
-                callCount++;
-                return callCount == 1 ? authCode : null;
+                consumeCallCount++;
+                return consumeCallCount == 1;
             });
 
         var userRepoMock = new Mock<IUserRepository>();
         var testUser = new User("testuser", "test@test.com", BCrypt.Net.BCrypt.HashPassword("pass"));
-        SetUserId(testUser, authCode.UserId);
-        userRepoMock.Setup(r => r.GetByIdAsync(authCode.UserId, It.IsAny<CancellationToken>()))
+        SetUserId(testUser, userId);
+        userRepoMock.Setup(r => r.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(testUser);
 
         uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
@@ -92,7 +96,7 @@ public class AuthControllerEdgeCaseTests
         var first = await controller.ExchangeCode(new ExchangeCodeRequest(code));
         first.Should().BeOfType<OkObjectResult>();
 
-        // Second exchange with same code — should fail (code not found by mock)
+        // Second exchange with same code — should fail (atomic consume returns false)
         var second = await controller.ExchangeCode(new ExchangeCodeRequest(code));
         second.Should().BeOfType<UnauthorizedObjectResult>();
     }
