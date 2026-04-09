@@ -118,6 +118,8 @@ public class AuthController : AuthenticatedControllerBase
     /// <summary>
     /// Initiates GitHub OAuth login flow. Only available when GitHub OAuth is configured.
     /// Pass mode=link to start an account-linking flow instead of login.
+    /// When mode=link, the caller MUST be authenticated (JWT required) so the link code
+    /// is bound to their identity, preventing CSRF attacks.
     /// </summary>
     [HttpGet("github/login")]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
@@ -132,14 +134,18 @@ public class AuthController : AuthenticatedControllerBase
 
         var properties = new Microsoft.AspNetCore.Authentication.AuthenticationProperties
         {
-            RedirectUri = Url.Action(nameof(GitHubCallback), new { returnUrl, mode }),
+            RedirectUri = Url.Action(nameof(GitHubCallback), new { returnUrl }),
             Items = { { "LoginProvider", "GitHub" } }
         };
 
-        // Store mode in the auth properties so the callback can detect linking
+        // Account-linking mode: require authentication and bind to caller's identity
         if (mode == "link")
         {
+            if (!TryGetCurrentUserId(out var callerUserId, out _))
+                return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Authentication required for account linking"));
+
             properties.Items["mode"] = "link";
+            properties.Items["link_user_id"] = callerUserId.ToString();
         }
 
         return Challenge(properties, "GitHub");
@@ -150,7 +156,7 @@ public class AuthController : AuthenticatedControllerBase
     /// </summary>
     [HttpGet("github/callback")]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
-    public async Task<IActionResult> GitHubCallback([FromQuery] string? returnUrl = null, [FromQuery] string? mode = null)
+    public async Task<IActionResult> GitHubCallback([FromQuery] string? returnUrl = null)
     {
         if (!_gitHubOAuthSettings.IsConfigured)
             return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, "GitHub OAuth is not configured"));
@@ -181,17 +187,30 @@ public class AuthController : AuthenticatedControllerBase
         // Sign out the temporary cookie used during the OAuth handshake
         await HttpContext.SignOutAsync("GitHub");
 
-        // Determine if this is a link flow. Prefer the OAuth state (tamper-proof)
-        // over the query string parameter, but fall back to query string for compat.
-        var isLinkMode = mode == "link";
-        if (authenticateResult.Properties?.Items.TryGetValue("mode", out var stateMode) == true)
+        // Determine if this is a link flow from the tamper-proof OAuth state ONLY.
+        // Never trust the query string for mode detection -- attacker could append ?mode=link.
+        var isLinkMode = false;
+        Guid linkUserId = Guid.Empty;
+        if (authenticateResult.Properties?.Items.TryGetValue("mode", out var stateMode) == true
+            && stateMode == "link")
         {
-            isLinkMode = stateMode == "link";
+            isLinkMode = true;
+            if (authenticateResult.Properties.Items.TryGetValue("link_user_id", out var linkUserIdStr)
+                && Guid.TryParse(linkUserIdStr, out var parsedLinkUserId))
+            {
+                linkUserId = parsedLinkUserId;
+            }
         }
 
-        // Account linking flow: store the GitHub identity as a link code
+        // Account linking flow: store the GitHub identity as a link code bound to the user
         if (isLinkMode)
         {
+            if (linkUserId == Guid.Empty)
+            {
+                return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError,
+                    "Account linking requires an authenticated session"));
+            }
+
             var linkCode = GenerateAuthCode();
             var providerData = JsonSerializer.Serialize(new
             {
@@ -203,6 +222,7 @@ public class AuthController : AuthenticatedControllerBase
 
             var linkAuthCode = OAuthAuthCode.CreateForLinking(
                 code: linkCode,
+                initiatingUserId: linkUserId,
                 providerData: providerData,
                 expiresAt: DateTimeOffset.UtcNow.AddSeconds(60));
 
@@ -238,19 +258,19 @@ public class AuthController : AuthenticatedControllerBase
         if (!result.IsSuccess)
             return result.ToErrorActionResult();
 
-        // Store the authorization code in the database instead of in-memory.
-        // This survives restarts and works with multi-instance deployments.
+        // Store only the user ID in the auth code -- JWT is re-issued at exchange time.
+        // This avoids storing plaintext JWTs in the database.
         var code = GenerateAuthCode();
         var authCode = new OAuthAuthCode(
             code: code,
             userId: result.Value.User.Id,
-            token: result.Value.Token,
+            token: "placeholder", // Not stored; JWT re-issued at exchange
             expiresAt: DateTimeOffset.UtcNow.AddSeconds(60));
 
         await _unitOfWork.OAuthAuthCodes.AddAsync(authCode);
         await _unitOfWork.SaveChangesAsync();
 
-        // Best-effort cleanup of expired codes (runs in the same request scope)
+        // Best-effort cleanup of expired/consumed codes (runs in the same request scope)
         await CleanupExpiredCodesAsync();
 
         var safeReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)
@@ -264,37 +284,34 @@ public class AuthController : AuthenticatedControllerBase
     /// <summary>
     /// Exchanges a short-lived OAuth authorization code for a JWT token.
     /// The code is single-use and expires after 60 seconds.
+    /// JWT is re-issued fresh at exchange time -- never stored in the database.
     /// </summary>
     [HttpPost("github/exchange")]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
     public async Task<IActionResult> ExchangeCode([FromBody] ExchangeCodeRequest request)
     {
+        // Use a single generic error message for all failure modes to prevent
+        // attackers from enumerating codes or determining their state.
+        const string genericError = "Invalid or expired code";
+
         if (string.IsNullOrWhiteSpace(request.Code))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Code is required"));
 
-        // Read the code first to check purpose and expiry
+        // Read the code to check purpose (pre-filter before atomic consume)
         var authCode = await _unitOfWork.OAuthAuthCodes.GetByCodeAsync(request.Code);
-        if (authCode == null)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
+        if (authCode == null || authCode.IsLinkingCode || authCode.IsExpired || authCode.IsConsumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
 
-        if (authCode.IsLinkingCode)
-            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "This code is for account linking, not login"));
-
-        if (authCode.IsExpired)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Code has expired"));
-
-        if (authCode.IsConsumed)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
-
-        // Atomically consume the code — prevents race conditions with concurrent requests
+        // Atomically consume the code — prevents race conditions with concurrent requests.
+        // The SQL also enforces expiry check to close the TOCTOU window.
         var consumed = await _unitOfWork.OAuthAuthCodes.TryConsumeAtomicAsync(request.Code);
         if (!consumed)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
 
-        // Look up the user to build the AuthResultDto
+        // Look up the user and re-issue a fresh JWT (never stored in DB)
         var user = await _unitOfWork.Users.GetByIdAsync(authCode.UserId);
         if (user == null)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "User not found"));
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
 
         var userDto = new UserDto(
             user.Id,
@@ -305,12 +322,16 @@ public class AuthController : AuthenticatedControllerBase
             user.CreatedAt,
             user.UpdatedAt);
 
-        return Ok(new AuthResultDto(authCode.Token, userDto));
+        // Re-issue JWT at exchange time instead of reading stored token
+        var freshToken = _authService.GenerateJwtToken(user);
+
+        return Ok(new AuthResultDto(freshToken, userDto));
     }
 
     /// <summary>
     /// Exchanges a link code and associates the GitHub account with the authenticated user.
-    /// Requires a valid JWT session.
+    /// Requires a valid JWT session. The link code must have been initiated by the same user
+    /// (CSRF protection: code is bound to the initiating user's identity).
     /// </summary>
     [HttpPost("github/link")]
     [Authorize]
@@ -321,6 +342,8 @@ public class AuthController : AuthenticatedControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> LinkGitHub([FromBody] LinkExchangeRequest request)
     {
+        const string genericError = "Invalid or expired link code";
+
         if (!_gitHubOAuthSettings.IsConfigured)
             return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, "GitHub OAuth is not configured"));
 
@@ -330,24 +353,21 @@ public class AuthController : AuthenticatedControllerBase
         if (string.IsNullOrWhiteSpace(request.Code))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Link code is required"));
 
-        // Look up and validate the link code
+        // Look up and validate the link code with uniform error messages
         var authCode = await _unitOfWork.OAuthAuthCodes.GetByCodeAsync(request.Code);
-        if (authCode == null)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired link code"));
+        if (authCode == null || !authCode.IsLinkingCode || authCode.IsExpired || authCode.IsConsumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
 
-        if (!authCode.IsLinkingCode)
-            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "This code is for login, not account linking"));
+        // CSRF protection: verify the link code was initiated by the same user who is
+        // exchanging it. This prevents an attacker from generating a link code and
+        // tricking a victim into exchanging it.
+        if (authCode.UserId != callerUserId)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
 
-        if (authCode.IsExpired)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Link code has expired"));
-
-        if (authCode.IsConsumed)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired link code"));
-
-        // Atomically consume the code
+        // Atomically consume the code (also checks expiry in SQL to close TOCTOU window)
         var consumed = await _unitOfWork.OAuthAuthCodes.TryConsumeAtomicAsync(request.Code);
         if (!consumed)
-            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired link code"));
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
 
         // Parse the provider data from the link code
         if (string.IsNullOrWhiteSpace(authCode.ProviderData))
