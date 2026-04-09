@@ -21,9 +21,9 @@ Cloud costs are tracked across six dimensions. Each dimension maps to a billing 
 | Attribute | Value |
 |---|---|
 | Billing source | AWS EC2 on-demand or reserved instance hours |
-| Current baseline | Single `t3.medium` (dev), `t3.large` (staging/prod) per `DEPLOYMENT_TERRAFORM_BASELINE.md` |
+| Current baseline | Single `t3.small` (dev), `t3.medium` (staging), `t3.large` (prod) per Terraform env tfvars examples |
 | Application metric | None (infrastructure-level only) |
-| Estimated monthly cost | $30-70 (single-node, on-demand) |
+| Estimated monthly cost | $15-70 (single-node, on-demand: ~$15 t3.small, ~$30 t3.medium, ~$60 t3.large) |
 | Scaling driver | User concurrency, background worker load |
 
 ### 2. Storage (EBS + S3)

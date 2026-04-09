@@ -72,7 +72,7 @@ Is the cost spike from LLM API usage?
    - Are there tool-calling loops (same tool called repeatedly with identical arguments)?
    - Is the `ClarificationDetector` being bypassed, causing extra rounds?
 3. Check for configuration drift:
-   - Was `LlmToolCalling:MaxRounds` increased from the default?
+   - Was `LlmToolCalling:Enabled` changed? (Note: `MaxRounds` is a compile-time constant of 5 in `ToolCallingChatOrchestrator`, not configurable at runtime.)
    - Was `LlmQuota:GlobalBudgetCeilingTokens` raised or removed?
    - Was a more expensive model configured (e.g., GPT-4o instead of GPT-4o-mini)?
 4. Check LLM provider dashboard (OpenAI/Gemini) for independent cost confirmation.
@@ -118,12 +118,12 @@ Listed from least disruptive to most disruptive:
 
 | Priority | Action | Impact | How to execute |
 |---|---|---|---|
-| 1 | Tighten global rate limits | All users get stricter quotas | Reduce `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` globally (these are global config keys, not per-user); individual abusive users can be blocked entirely via per-user kill-switch |
-| 2 | Reduce tool-calling rounds | Fewer tool calls per conversation, less capable but cheaper | Set `LlmToolCalling:MaxRounds` from 5 to 2-3 via config |
+| 1 | Tighten global rate limits | All users get stricter quotas | Reduce `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` in appsettings.json and restart API, or set environment variables (e.g., `LlmQuota__RequestsPerHour=30`) and restart. These are global config keys affecting all users. Individual abusive users can be blocked entirely via per-user kill-switch. |
+| 2 | Reduce tool-calling rounds | Fewer tool calls per conversation, less capable but cheaper | `MaxRounds` is currently a compile-time constant (5) in `ToolCallingChatOrchestrator`. Requires code change and redeployment. **Gap**: consider making this configurable via `LlmToolCalling:MaxRounds` (see backlog). As a workaround, disable tool-calling entirely by setting `LlmToolCalling:Enabled` to `false` in appsettings and restarting. |
 | 3 | Switch to cheaper model | Potentially lower quality responses | Change `Llm:OpenAi:Model` to a cheaper variant |
-| 4 | Activate surface kill-switch | One LLM surface disabled (e.g., Chat only) | `POST /api/llm/kill-switch` with `KillSwitchScope: Surface` |
-| 5 | Activate per-user kill-switch | Specific abusive user blocked from LLM | `POST /api/llm/kill-switch` with `KillSwitchScope: Identity` |
-| 6 | Activate global kill-switch | All LLM features disabled; non-LLM features unaffected | `POST /api/llm/kill-switch` with `KillSwitchScope: Global` |
+| 4 | Activate surface kill-switch | One LLM surface disabled (e.g., Chat only) | **API requires admin role (not yet implemented; returns 403).** Workaround: add surface name to `LlmKillSwitch:KilledSurfaces` array in appsettings (e.g., `["Chat"]`) and restart API. When admin API is available: `POST /api/llm/killswitch` with body `{ "scope": "Surface", "target": "<surface>", "enabled": true, "reason": "..." }` |
+| 5 | Activate per-user kill-switch | Specific abusive user blocked from LLM | `POST /api/llm/killswitch` with body `{ "scope": "Identity", "target": "<userId>", "enabled": true, "reason": "..." }` (caller can only target their own userId; admin cross-user support pending) |
+| 6 | Activate global kill-switch | All LLM features disabled; non-LLM features unaffected | **API requires admin role (not yet implemented; returns 403).** Workaround: set `LlmKillSwitch:GlobalKill` to `true` in appsettings and restart API. When admin API is available: `POST /api/llm/killswitch` with body `{ "scope": "Global", "target": null, "enabled": true, "reason": "..." }` |
 | 7 | Switch all users to Mock provider | LLM features return deterministic mock responses | Set `Llm:Provider` to `Mock`, restart API |
 
 ### Logging Cost Mitigation Actions
@@ -200,7 +200,7 @@ For use when immediate action is needed and there is no time for full triage:
 
 | Scenario | Immediate action | Command / Config |
 |---|---|---|
-| LLM cost runaway | Activate global kill-switch | `POST /api/llm/kill-switch` — `{ "scope": "Global", "active": true, "reason": "Cost emergency" }` |
+| LLM cost runaway | Activate global kill-switch | **Note**: Global scope requires admin role (not yet implemented via API; returns 403). **Workaround**: set `LlmKillSwitch:GlobalKill` to `true` in appsettings.json and restart API. If admin API is available: `POST /api/llm/killswitch` with body `{ "scope": "Global", "target": null, "enabled": true, "reason": "Cost emergency" }` |
 | Logging cost spike | Raise log level to Error | Set `Logging:LogLevel:Default` to `Error`, restart API |
 | Storage filling up | Identify and remove large files | `du -sh /var/lib/taskdeck/*` then assess |
 | Unknown cost source | Check AWS Cost Explorer | AWS Console → Billing → Cost Explorer → Group by Service |
