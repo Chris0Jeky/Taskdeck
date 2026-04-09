@@ -7,7 +7,7 @@ import { boardsApi } from '../../api/boardsApi'
 import { cardsApi } from '../../api/cardsApi'
 import { labelsApi } from '../../api/labelsApi'
 import { captureApi } from '../../api/captureApi'
-import type { Board, Card, Column } from '../../types/board'
+import type { Board, Column } from '../../types/board'
 
 /**
  * Store resilience property tests.
