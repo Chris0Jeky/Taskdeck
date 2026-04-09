@@ -351,6 +351,26 @@ Note:
 - If backend tests unexpectedly bind to a live LLM provider in local Development, force deterministic mock mode before running the suite:
   - PowerShell: `$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/Taskdeck.sln -c Release -m:1`
 
+## Container Integration Tests (Testcontainers)
+
+Run container-backed integration tests against ephemeral PostgreSQL (requires Docker):
+
+```bash
+dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release
+```
+
+Run a specific test class:
+
+```bash
+dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release --filter "FullyQualifiedName~BoardCrudIntegrationTests"
+```
+
+Note:
+- Docker must be running. Verify with `docker info`.
+- First run downloads the `postgres:16-alpine` image (~80MB); subsequent runs use the cached image.
+- Tests are parallel-safe: each test class gets its own isolated database within a shared PostgreSQL container.
+- See `docs/testing/TESTCONTAINERS_GUIDE.md` for full setup and authoring guide.
+
 ## Frontend Unit + Build
 
 ```bash
