@@ -1,59 +1,26 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
+import { registerSW } from 'virtual:pwa-register'
 
 const showUpdatePrompt = ref(false)
-let swRegistration: ServiceWorkerRegistration | null = null
 
-function applyUpdate() {
-  if (swRegistration?.waiting) {
-    // Tell the waiting SW to activate. The controllerchange listener
-    // below will reload the page once the new SW takes over —
-    // reloading here directly would race the activation and could
-    // serve the page from the old SW.
-    swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' })
-  }
+// registerSW returns a callback that sends SKIP_WAITING to the waiting SW
+// and triggers a page reload via the controlling/controllerchange lifecycle
+// managed internally by workbox-window.
+const updateSW = registerSW({
+  onNeedRefresh() {
+    showUpdatePrompt.value = true
+  },
+})
+
+async function applyUpdate() {
   showUpdatePrompt.value = false
+  await updateSW()
 }
 
 function dismissUpdate() {
   showUpdatePrompt.value = false
 }
-
-onMounted(() => {
-  if (!('serviceWorker' in navigator)) return
-
-  // Listen for SW updates from vite-plugin-pwa's auto-registration.
-  // The plugin registers the SW and we hook into the update lifecycle.
-  navigator.serviceWorker.ready.then((registration) => {
-    swRegistration = registration
-
-    // If there is already a waiting worker, prompt immediately
-    if (registration.waiting) {
-      showUpdatePrompt.value = true
-    }
-
-    // Listen for new service workers installing
-    registration.addEventListener('updatefound', () => {
-      const newWorker = registration.installing
-      if (!newWorker) return
-
-      newWorker.addEventListener('statechange', () => {
-        // When the new SW is installed and waiting, prompt the user
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-          showUpdatePrompt.value = true
-        }
-      })
-    })
-  })
-
-  // When the new SW activates and takes over, reload can happen
-  let refreshing = false
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing) return
-    refreshing = true
-    window.location.reload()
-  })
-})
 </script>
 
 <template>
@@ -61,7 +28,7 @@ onMounted(() => {
     <div
       v-if="showUpdatePrompt"
       class="td-sw-update"
-      role="alert"
+      role="status"
       aria-live="polite"
     >
       <span class="material-symbols-outlined td-sw-update__icon" aria-hidden="true">

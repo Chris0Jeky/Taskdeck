@@ -10,6 +10,11 @@ export default defineConfig({
       // 'prompt' prevents the new SW from auto-activating; SwUpdatePrompt.vue
       // shows a banner asking the user to reload when a new version is waiting.
       registerType: 'prompt',
+      // SwUpdatePrompt.vue imports from 'virtual:pwa-register', which makes
+      // vite-plugin-pwa skip the auto-injected registerSW.js script.  Keeping
+      // 'auto' here means: use the virtual module when it's imported, otherwise
+      // fall back to injecting a <script>.  Since we always import the virtual
+      // module, no injected script is generated.
       injectRegister: 'auto',
       // Disable SW in dev mode to avoid interfering with HMR / hot reload.
       devOptions: {
@@ -40,8 +45,10 @@ export default defineConfig({
                 maxEntries: 100,
               },
               networkTimeoutSeconds: 10,
+              // Only cache same-origin 200 responses — status 0 (opaque) would
+              // cache empty bodies from cross-origin requests.
               cacheableResponse: {
-                statuses: [0, 200],
+                statuses: [200],
               },
             },
           },
@@ -93,7 +100,7 @@ export default defineConfig({
         icons: [
           {
             src: 'icons/icon-192.svg',
-            sizes: '192x192',
+            sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any',
           },
@@ -105,7 +112,7 @@ export default defineConfig({
           },
           {
             src: 'icons/icon-512.svg',
-            sizes: '512x512',
+            sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any',
           },
@@ -117,7 +124,7 @@ export default defineConfig({
           },
           {
             src: 'icons/icon-maskable-512.svg',
-            sizes: '512x512',
+            sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'maskable',
           },
