@@ -107,6 +107,16 @@ jobs:
       dotnet-version: 8.0.x
       node-version: 24.13.1
 
+  e2e-cross-browser:
+    name: E2E Cross-Browser Matrix
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-e2e-cross-browser.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+
   load-concurrency-harness:
     name: Load and Concurrency Harness
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))

@@ -1,0 +1,101 @@
+name: Reusable E2E Cross-Browser Matrix
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version used for E2E backend setup
+        required: false
+        default: "8.0.x"
+        type: string
+      node-version:
+        description: Node.js version used for E2E frontend setup
+        required: false
+        default: "24.13.1"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  e2e-cross-browser:
+    name: E2E (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - chromium
+          - firefox
+          - webkit
+          - mobile-chrome
+          - mobile-safari
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Install frontend dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ matrix.project }}-${{ hashFiles('frontend/taskdeck-web/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        working-directory: frontend/taskdeck-web
+        run: npx playwright install --with-deps
+
+      - name: Remove stale E2E database
+        working-directory: frontend/taskdeck-web
+        run: node -e "require('fs').rmSync('taskdeck.e2e.ci.db',{force:true});"
+
+      - name: Run Playwright tests (${{ matrix.project }})
+        timeout-minutes: 15
+        working-directory: frontend/taskdeck-web
+        env:
+          CI: "true"
+          TASKDECK_E2E_DB: taskdeck.e2e.ci.db
+          TASKDECK_RUN_DEMO: "0"
+        run: npx playwright test --project=${{ matrix.project }} --reporter=line
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: frontend/taskdeck-web/playwright-report
+          if-no-files-found: ignore
+
+      - name: Upload Playwright test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results-${{ matrix.project }}
+          path: frontend/taskdeck-web/test-results
+          if-no-files-found: ignore
