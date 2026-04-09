@@ -953,7 +953,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
-- Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
+- Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, ~~`#104`~~ (delivered), `#105`, `#111`
 - Test maturity: `#87`, `#88`, `#89` (property/fuzz pilot delivered; extended by `#717`), `#90`, `#91`; rigorous expansion wave tracker at `#721`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
@@ -1005,7 +1005,7 @@ Covered by seeded issues:
 - MCP integration smoke/regression harness: `#141` (delivered)
 - Staged rollout policy (blue/green/canary): `#101`
 - SBOM/release provenance: `#103`
-- Cost guardrails: `#104`
+- Cost guardrails: `#104` (delivered 2026-04-09): cloud cost observability framework, feature cost hotspot registry, budget breach runbook, ADR-0023
 - Backup/restore disaster recovery: `#86`
 - OpenTelemetry metrics/tracing and alerting runbook: `#68`
 - Load/concurrency harness and budgets: `#70` (delivered)
