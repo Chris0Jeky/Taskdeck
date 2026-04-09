@@ -252,6 +252,8 @@ public class CardRepository : Repository<Card>, ICardRepository
         if (materializedBoardIds.Count == 0)
             return [];
 
+        const int maxResults = 500;
+
         return await _dbSet
             .AsNoTracking()
             .Where(c =>
@@ -263,6 +265,7 @@ public class CardRepository : Repository<Card>, ICardRepository
             .Include(c => c.Column)
             .OrderBy(c => c.DueDate)
             .ThenBy(c => c.BoardId)
+            .Take(maxResults)
             .ToListAsync(cancellationToken);
     }
 }

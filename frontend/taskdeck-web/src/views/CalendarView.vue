@@ -48,6 +48,7 @@ async function fetchCalendar() {
     const to = endOfMonth(viewDate.value).toISOString()
     calendarData.value = await workspaceApi.getCalendar(from, to)
   } catch (e: unknown) {
+    calendarData.value = null
     const msg = e instanceof Error ? e.message : 'Failed to load calendar data'
     error.value = msg
   } finally {
@@ -83,7 +84,7 @@ const calendarWeeks = computed(() => {
 
   const weeks: { date: Date; dateKey: string; isCurrentMonth: boolean; isToday: boolean }[][] = []
   const today = new Date()
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const todayKey = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
 
   let cursor = new Date(gridStart)
   while (cursor <= lastDay || weeks.length === 0 || weeks[weeks.length - 1].length < 7) {

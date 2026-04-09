@@ -301,7 +301,7 @@ public class WorkspaceService : IWorkspaceService
                 c.DueDate!.Value,
                 c.IsBlocked,
                 c.BlockReason,
-                c.DueDate!.Value < referenceTime,
+                ResolveDueBucket(c.DueDate, referenceTime) == TodayDueBucket.Overdue,
                 c.UpdatedAt))
             .ToList();
 
