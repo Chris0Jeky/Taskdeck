@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test'
+import { defineConfig, devices } from '@playwright/test'
 import {
   buildHttpOrigin,
   defaultFrontendHost,
@@ -56,6 +56,54 @@ export default defineConfig({
     baseURL: frontendBaseUrl,
     trace: 'retain-on-failure',
   },
+
+  /* ---------------------------------------------------------------------------
+   * Browser & device projects
+   *
+   * Tagging strategy (see docs/testing/FLAKY_TEST_POLICY.md):
+   *   @smoke          — quick PR gate (Chromium-only, default)
+   *   @cross-browser  — full browser matrix (nightly / manual)
+   *   @mobile         — mobile viewport scenarios (nightly / manual)
+   *
+   * CI behaviour:
+   *   PR (ci-required)     → "chromium" project only (grep excludes @mobile)
+   *   Nightly / manual     → all projects via reusable-e2e-cross-browser.yml
+   * -----------------------------------------------------------------------*/
+  projects: [
+    /* --- Desktop browsers --- */
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      /* Default project: runs all tests except @mobile-only scenarios.
+       * Existing untagged tests continue to run here unchanged. */
+      grepInvert: /@mobile/,
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+      /* Only tests explicitly tagged @cross-browser run on Firefox. */
+      grep: /@cross-browser/,
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+      /* Only tests explicitly tagged @cross-browser run on WebKit. */
+      grep: /@cross-browser/,
+    },
+    /* --- Mobile viewports --- */
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 7'] },
+      /* Only tests tagged @mobile run on mobile viewports. */
+      grep: /@mobile/,
+    },
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 14'] },
+      grep: /@mobile/,
+    },
+  ],
+
   webServer: [
     {
       command: 'dotnet run --no-launch-profile --project ../../backend/src/Taskdeck.Api/Taskdeck.Api.csproj',
