@@ -38,6 +38,7 @@ public class UnitOfWork : IUnitOfWork
         IKnowledgeDocumentRepository knowledgeDocuments,
         IKnowledgeChunkRepository knowledgeChunks,
         IExternalLoginRepository externalLogins,
+        IOAuthAuthCodeRepository oauthAuthCodes,
         IApiKeyRepository apiKeys)
     {
         _context = context;
@@ -66,6 +67,7 @@ public class UnitOfWork : IUnitOfWork
         KnowledgeDocuments = knowledgeDocuments;
         KnowledgeChunks = knowledgeChunks;
         ExternalLogins = externalLogins;
+        OAuthAuthCodes = oauthAuthCodes;
         ApiKeys = apiKeys;
     }
 
@@ -94,6 +96,7 @@ public class UnitOfWork : IUnitOfWork
     public IKnowledgeDocumentRepository KnowledgeDocuments { get; }
     public IKnowledgeChunkRepository KnowledgeChunks { get; }
     public IExternalLoginRepository ExternalLogins { get; }
+    public IOAuthAuthCodeRepository OAuthAuthCodes { get; }
     public IApiKeyRepository ApiKeys { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
