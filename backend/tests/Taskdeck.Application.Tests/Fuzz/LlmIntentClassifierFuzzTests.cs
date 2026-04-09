@@ -1,5 +1,6 @@
 using FluentAssertions;
 using FsCheck;
+using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Taskdeck.Application.Services;
 
@@ -19,7 +20,7 @@ public class LlmIntentClassifierFuzzTests
     public Property Classify_NeverThrows_OnArbitraryString()
     {
         return Prop.ForAll(
-            Arb.From<string>(),
+            ArbMap.Default.ArbFor<string>(),
             input =>
             {
                 var act = () => LlmIntentClassifier.Classify(input);
@@ -31,7 +32,7 @@ public class LlmIntentClassifierFuzzTests
     public Property Classify_AlwaysReturnsTuple()
     {
         return Prop.ForAll(
-            Arb.From<string>(),
+            ArbMap.Default.ArbFor<string>(),
             input =>
             {
                 var (isActionable, actionIntent) = LlmIntentClassifier.Classify(input);

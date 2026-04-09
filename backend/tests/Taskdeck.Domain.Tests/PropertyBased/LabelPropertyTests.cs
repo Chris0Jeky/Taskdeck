@@ -1,5 +1,6 @@
 using FluentAssertions;
 using FsCheck;
+using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -120,7 +121,7 @@ public class LabelPropertyTests
     private static Arbitrary<string> ValidHexColorArb()
     {
         var hexChars = "0123456789abcdefABCDEF".ToCharArray();
-        var gen = Gen.ArrayOf(6, Gen.Elements(hexChars))
+        var gen = Gen.ArrayOf(Gen.Elements(hexChars), 6)
             .Select(chars => "#" + new string(chars));
         return Arb.From(gen);
     }
@@ -152,8 +153,8 @@ public class LabelPropertyTests
     {
         var gen = Gen.Choose(1, 30)
             .SelectMany(len =>
-                Gen.ArrayOf(len, Gen.Elements(
-                    'a', 'b', 'c', 'A', 'B', 'C', '1', '2', '3', ' ', '-', '_'))
+                Gen.ArrayOf(Gen.Elements(
+                    'a', 'b', 'c', 'A', 'B', 'C', '1', '2', '3', ' ', '-', '_'), len)
                 .Select(chars => new string(chars)))
             .Where(s => !string.IsNullOrWhiteSpace(s));
         return Arb.From(gen);
