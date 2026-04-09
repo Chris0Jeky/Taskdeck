@@ -33,7 +33,8 @@ public class OAuthAuthCode : Entity
     public Guid UserId { get; private set; }
 
     /// <summary>
-    /// The pre-serialized JWT token to return on successful exchange (login flow only).
+    /// Legacy field kept for schema compatibility. No longer populated with real JWTs --
+    /// tokens are re-issued at exchange time from the stored UserId.
     /// </summary>
     public string Token { get; private set; } = string.Empty;
 
@@ -67,6 +68,8 @@ public class OAuthAuthCode : Entity
 
     /// <summary>
     /// Creates an auth code for the login flow (token exchange).
+    /// Token parameter is accepted for backward compatibility but is no longer stored;
+    /// JWTs are re-issued at exchange time from the UserId.
     /// </summary>
     public OAuthAuthCode(string code, Guid userId, string token, DateTimeOffset expiresAt)
         : base()
@@ -82,16 +85,21 @@ public class OAuthAuthCode : Entity
 
         Code = code;
         UserId = userId;
-        Token = token;
+        Token = string.Empty; // Never store actual JWT in DB — re-issue at exchange time
         Purpose = "login";
         ExpiresAt = expiresAt;
     }
 
     /// <summary>
     /// Creates an auth code for the account linking flow (provider identity exchange).
+    /// The initiatingUserId binds this code to the user who started the link flow,
+    /// preventing CSRF attacks where an attacker's GitHub is linked to a victim's account.
     /// </summary>
-    public static OAuthAuthCode CreateForLinking(string code, string providerData, DateTimeOffset expiresAt)
+    public static OAuthAuthCode CreateForLinking(string code, Guid initiatingUserId, string providerData, DateTimeOffset expiresAt)
     {
+        if (initiatingUserId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Initiating user ID is required for linking");
+
         if (string.IsNullOrWhiteSpace(providerData))
             throw new DomainException(ErrorCodes.ValidationError, "Provider data cannot be empty for linking");
 
@@ -101,7 +109,7 @@ public class OAuthAuthCode : Entity
         var entity = new OAuthAuthCode
         {
             Code = code,
-            UserId = Guid.Empty,
+            UserId = initiatingUserId,
             Token = string.Empty,
             Purpose = "link",
             ProviderData = providerData,
