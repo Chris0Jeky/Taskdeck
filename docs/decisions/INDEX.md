@@ -24,4 +24,9 @@
 | [0020](ADR-0020-plugin-extension-architecture.md) | Plugin/Extension Architecture RFC and Sandboxing Constraints | Proposed | 2026-04-01 |
 | [0021](ADR-0021-jwt-invalidation-user-active-middleware.md) | JWT Invalidation — User-Active Middleware over Token Blocklist | Accepted | 2026-04-03 |
 | [0022](ADR-0022-analytics-export-csv-first-pdf-deferred.md) | Analytics Export — CSV First, PDF Deferred | Accepted | 2026-04-08 |
-| [0023](ADR-0023-cloud-cost-observability.md) | Cloud Cost Observability and Budget-Guardrail Automation | Accepted | 2026-04-09 |
+| [0023](ADR-0023-sqlite-to-postgresql-migration-strategy.md) | SQLite-to-PostgreSQL Migration Strategy | Accepted | 2026-04-09 |
+| [0024](ADR-0024-distributed-caching-cache-aside.md) | Distributed Caching — Cache-Aside with Redis/InMemory Fallback | Accepted | 2026-04-09 |
+| [0025](ADR-0025-signalr-scaleout-redis-backplane.md) | SignalR Scale-Out — Redis Backplane | Accepted | 2026-04-09 |
+| [0026](ADR-0026-cloud-cost-observability.md) | Cloud Cost Observability and Budget Guardrails | Accepted | 2026-04-09 |
+| [0027](ADR-0027-cloud-target-topology-autoscaling.md) | Cloud Target Topology and Autoscaling Reference Architecture | Accepted | 2026-04-09 |
+| [0028](ADR-0023-cloud-cost-observability.md) | Cloud Cost Observability and Budget-Guardrail Automation | Accepted | 2026-04-09 |
