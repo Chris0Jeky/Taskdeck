@@ -231,6 +231,44 @@ public class NoteImportServiceTests
         result.Value.Items[0].SourceType.Should().Be("markdown");
     }
 
+    [Fact]
+    public async Task ImportMarkdownAsync_ShouldFail_WhenAllSectionsFail()
+    {
+        _captureServiceMock
+            .Setup(s => s.CreateAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CreateCaptureItemDto>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have access to this board"));
+
+        var content = "# Section One\nBody of section one\n\n# Section Two\nBody of section two";
+        var request = new MarkdownImportRequestDto("notes.md", content);
+
+        var result = await _sut.ImportMarkdownAsync(Guid.NewGuid(), request);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("failed to import");
+    }
+
+    [Fact]
+    public async Task ImportMarkdownAsync_ShouldReturnTruncatedExternalRef_InResponseItems()
+    {
+        SetupCaptureServiceReturnsSuccess();
+
+        // Use a heading long enough that after md:// prefix the ref would be very long
+        var request = new MarkdownImportRequestDto("notes.md", "# Short Heading\nBody text");
+
+        var result = await _sut.ImportMarkdownAsync(Guid.NewGuid(), request);
+
+        result.IsSuccess.Should().BeTrue();
+        // The sourceRef in the response should not exceed MaxExternalRefLength
+        foreach (var item in result.Value.Items)
+        {
+            item.SourceRef.Should().NotBeNull();
+            item.SourceRef!.Length.Should().BeLessOrEqualTo(CaptureRequestContract.MaxExternalRefLength);
+        }
+    }
+
     // --- Web clip import tests ---
 
     [Fact]

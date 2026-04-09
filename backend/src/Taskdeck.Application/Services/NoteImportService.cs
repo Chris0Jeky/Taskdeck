@@ -84,6 +84,9 @@ public sealed class NoteImportService : INoteImportService
         }
 
         var items = new List<NoteImportItemResultDto>();
+        var sectionsAttempted = 0;
+        string? lastErrorCode = null;
+        string? lastErrorMessage = null;
 
         foreach (var section in sections)
         {
@@ -97,6 +100,8 @@ public sealed class NoteImportService : INoteImportService
             if (string.IsNullOrWhiteSpace(captureText))
                 continue;
 
+            sectionsAttempted++;
+
             // Truncate to CaptureRequestContract max if needed
             if (captureText.Length > CaptureRequestContract.MaxRawTextLength)
             {
@@ -109,22 +114,35 @@ public sealed class NoteImportService : INoteImportService
                 titleHint = titleHint[..MaxTitleLength];
             }
 
+            var truncatedRef = TruncateExternalRef(externalRef);
+
             var dto = new CreateCaptureItemDto(
                 request.BoardId,
                 captureText,
                 Source: CaptureSource.MarkdownImport.ToString(),
                 TitleHint: titleHint,
-                ExternalRef: TruncateExternalRef(externalRef));
+                ExternalRef: truncatedRef);
 
             var result = await _captureService.CreateAsync(userId, dto, cancellationToken);
             if (!result.IsSuccess)
+            {
+                lastErrorCode = result.ErrorCode;
+                lastErrorMessage = result.ErrorMessage;
                 continue;
+            }
 
             items.Add(new NoteImportItemResultDto(
                 result.Value.Id,
                 BuildExcerpt(captureText, 200),
                 "markdown",
-                externalRef));
+                truncatedRef));
+        }
+
+        if (items.Count == 0 && sectionsAttempted > 0)
+        {
+            return Result.Failure<NoteImportResultDto>(
+                lastErrorCode ?? ErrorCodes.UnexpectedError,
+                $"All {sectionsAttempted} section(s) failed to import. Last error: {lastErrorMessage ?? "unknown"}");
         }
 
         return Result.Success(new NoteImportResultDto(items.Count, items));
