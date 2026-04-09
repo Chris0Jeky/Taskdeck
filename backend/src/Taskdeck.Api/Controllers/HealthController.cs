@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Health;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.DTOs;
@@ -16,15 +17,18 @@ public class HealthController : ControllerBase
     private readonly IServiceProvider _serviceProvider;
     private readonly WorkerSettings _workerSettings;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
+    private readonly RedisBackplaneHealthCheck _redisHealthCheck;
 
     public HealthController(
         IServiceProvider serviceProvider,
         WorkerSettings workerSettings,
-        WorkerHeartbeatRegistry workerHeartbeatRegistry)
+        WorkerHeartbeatRegistry workerHeartbeatRegistry,
+        RedisBackplaneHealthCheck redisHealthCheck)
     {
         _serviceProvider = serviceProvider;
         _workerSettings = workerSettings;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
+        _redisHealthCheck = redisHealthCheck;
     }
 
     [HttpGet("live")]
@@ -93,6 +97,25 @@ public class HealthController : ControllerBase
         catch (Exception ex)
         {
             checks["queue"] = new { status = "Unhealthy", error = ex.Message };
+            isReady = false;
+        }
+
+        // SignalR backplane (Redis) health check
+        try
+        {
+            var redisStatus = await _redisHealthCheck.CheckAsync(ct);
+            checks["signalrBackplane"] = redisStatus;
+
+            // Unhealthy Redis degrades overall readiness only when Redis is configured.
+            // NotConfigured is normal for local/single-instance deployments.
+            if (redisStatus.Status == "Unhealthy")
+            {
+                isReady = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            checks["signalrBackplane"] = new { status = "Unhealthy", error = ex.Message };
             isReady = false;
         }
 
