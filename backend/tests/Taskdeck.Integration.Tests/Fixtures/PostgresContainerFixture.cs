@@ -7,7 +7,7 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 
 /// <summary>
 /// xUnit collection fixture that manages a single PostgreSQL Testcontainer
-/// for the lifetime of a test collection. Each test class that uses this
+/// for the lifetime of a test collection. Each test method that uses this
 /// fixture gets its own <see cref="TaskdeckDbContext"/> with a fresh
 /// database schema — no cross-test contamination.
 ///
@@ -15,9 +15,13 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 ///   - One container per collection (not per test) to keep startup cost manageable.
 ///   - Schema is created via <c>EnsureCreated()</c> from the EF Core model
 ///     rather than running SQLite-specific migrations, ensuring provider parity.
-///   - Each test class gets an isolated database by using a unique database
-///     name within the same PostgreSQL server instance.
+///   - Each test method gets an isolated database by using a unique database
+///     name within the same PostgreSQL server instance (xUnit 2.x creates a
+///     new class instance per test method, so <c>InitializeAsync()</c> runs
+///     once per test).
 ///   - The container is torn down deterministically via <see cref="IAsyncLifetime"/>.
+///   - Databases created within the container are not individually dropped;
+///     they are cleaned up when the container is removed at the end of the run.
 /// </summary>
 public sealed class PostgresContainerFixture : IAsyncLifetime
 {
@@ -60,13 +64,13 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
     /// <summary>
     /// Stops and removes the PostgreSQL container. Called once per test collection.
+    /// Always disposes the container regardless of <see cref="IsAvailable"/> —
+    /// if StartAsync() threw after partial initialization, the container still
+    /// needs cleanup. DisposeAsync() is safe to call on a never-started container.
     /// </summary>
     public async Task DisposeAsync()
     {
-        if (IsAvailable)
-        {
-            await _container.DisposeAsync();
-        }
+        await _container.DisposeAsync();
     }
 
     /// <summary>
