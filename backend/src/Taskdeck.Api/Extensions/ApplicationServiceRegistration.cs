@@ -59,6 +59,10 @@ public static class ApplicationServiceRegistration
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IAuthorizationService>()));
+        services.AddScoped<IForecastingService>(sp =>
+            new ForecastingService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetRequiredService<IAuthorizationService>()));
         services.AddScoped<IMetricsExportService>(sp =>
             new MetricsExportService(
                 sp.GetRequiredService<IBoardMetricsService>()));
