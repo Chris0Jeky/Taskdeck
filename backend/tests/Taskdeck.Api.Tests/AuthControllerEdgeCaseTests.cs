@@ -275,7 +275,7 @@ public class AuthControllerEdgeCaseTests
     public async Task Login_ShouldReturn401_WhenBodyIsNull()
     {
         var authService = CreateMockAuthService();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockUserContext().Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object);
 
         var result = await controller.Login(null);
 
@@ -288,7 +288,7 @@ public class AuthControllerEdgeCaseTests
     public async Task Login_ShouldReturn401_WhenFieldsEmpty()
     {
         var authService = CreateMockAuthService();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockUserContext().Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object);
 
         var result = await controller.Login(new LoginDto("", ""));
 
@@ -305,7 +305,7 @@ public class AuthControllerEdgeCaseTests
     {
         var authServiceMock = CreateMockAuthService();
         var gitHubSettings = CreateGitHubSettings(gitHubConfigured);
-        return new AuthController(authServiceMock.Object, gitHubSettings, new OidcSettings(), CreateMockUserContext().Object);
+        return new AuthController(authServiceMock.Object, gitHubSettings, new OidcSettings(), CreateMockMfaService(), CreateMockUserContext().Object);
     }
 
     private static Mock<AuthenticationService> CreateMockAuthService()
@@ -325,6 +325,15 @@ public class AuthControllerEdgeCaseTests
         mock.Setup(u => u.UserId).Returns(Guid.NewGuid().ToString());
         mock.Setup(u => u.IsAuthenticated).Returns(true);
         return mock;
+    }
+
+    private static MfaService CreateMockMfaService()
+    {
+        var unitOfWorkMock = new Mock<IUnitOfWork>();
+        unitOfWorkMock.Setup(u => u.Users).Returns(new Mock<IUserRepository>().Object);
+        unitOfWorkMock.Setup(u => u.MfaCredentials).Returns(new Mock<IMfaCredentialRepository>().Object);
+        var policySettings = new MfaPolicySettings();
+        return new MfaService(unitOfWorkMock.Object, policySettings);
     }
 
     private static GitHubOAuthSettings CreateGitHubSettings(bool configured)
