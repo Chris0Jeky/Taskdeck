@@ -116,14 +116,15 @@ public class AuthController : AuthenticatedControllerBase
     }
 
     /// <summary>
-    /// Initiates GitHub OAuth login flow. Only available when GitHub OAuth is configured.
-    /// Pass mode=link to start an account-linking flow instead of login.
-    /// When mode=link, the caller MUST be authenticated (JWT required) so the link code
-    /// is bound to their identity, preventing CSRF attacks.
+    /// Initiates GitHub OAuth login or account-linking flow. Only available when GitHub OAuth is configured.
+    /// The flow is determined entirely from server-side state: if the caller is already authenticated
+    /// (carries a valid JWT), this starts an account-linking flow bound to their identity; otherwise
+    /// it starts a normal login flow. The client must NOT supply a mode parameter -- the server
+    /// derives the intent from authentication state to prevent user-controlled bypass.
     /// </summary>
     [HttpGet("github/login")]
     [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
-    public IActionResult GitHubLogin([FromQuery] string? returnUrl = null, [FromQuery] string? mode = null)
+    public IActionResult GitHubLogin([FromQuery] string? returnUrl = null)
     {
         if (!_gitHubOAuthSettings.IsConfigured)
             return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, "GitHub OAuth is not configured"));
@@ -138,12 +139,13 @@ public class AuthController : AuthenticatedControllerBase
             Items = { { "LoginProvider", "GitHub" } }
         };
 
-        // Account-linking mode: require authentication and bind to caller's identity
-        if (mode == "link")
+        // Derive flow from server-side authentication state only.
+        // Never use a user-supplied "mode" query parameter -- that would allow an attacker
+        // to bypass or force the sensitive account-linking branch (CWE-807 / CodeQL
+        // "user-controlled bypass of sensitive method").
+        // If the caller is already authenticated (valid JWT), treat this as a link request.
+        if (TryGetCurrentUserId(out var callerUserId, out _))
         {
-            if (!TryGetCurrentUserId(out var callerUserId, out _))
-                return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Authentication required for account linking"));
-
             properties.Items["mode"] = "link";
             properties.Items["link_user_id"] = callerUserId.ToString();
         }

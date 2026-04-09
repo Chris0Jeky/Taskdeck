@@ -165,6 +165,65 @@ public class AuthControllerEdgeCaseTests
     }
 
     // ─────────────────────────────────────────────────────────
+    // GitHub login — flow selection must use server-side auth state
+    // (regression for CodeQL CWE-807: user-controlled bypass)
+    // ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GitHubLogin_UnauthenticatedCaller_StartsNormalLoginFlow()
+    {
+        // Arrange — controller with an unauthenticated user context
+        var (uow, authService) = CreateMockAuthServiceWithUow();
+        var userContext = CreateMockUserContext(authenticated: false);
+        var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
+        authCodeRepoMock.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OAuthAuthCode?)null);
+        uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), userContext.Object, uow.Object);
+
+        var urlHelper = new Mock<IUrlHelper>();
+        urlHelper.Setup(u => u.IsLocalUrl(It.IsAny<string>())).Returns(true);
+        urlHelper.Setup(u => u.Action(It.IsAny<Microsoft.AspNetCore.Mvc.Routing.UrlActionContext>())).Returns("/auth/callback");
+        controller.Url = urlHelper.Object;
+
+        // Act
+        var result = controller.GitHubLogin();
+
+        // Assert — a ChallengeResult is returned (not Unauthorized)
+        // and the link mode items must NOT be present (flow driven by auth state, not user input)
+        var challenge = result.Should().BeOfType<ChallengeResult>().Subject;
+        challenge.Properties!.Items.Should().NotContainKey("mode");
+        challenge.Properties.Items.Should().NotContainKey("link_user_id");
+    }
+
+    [Fact]
+    public void GitHubLogin_AuthenticatedCaller_StartsLinkFlowFromServerState()
+    {
+        // Arrange — controller with an authenticated user context (server-side state)
+        var callerId = Guid.NewGuid();
+        var (uow, authService) = CreateMockAuthServiceWithUow();
+        var userContext = CreateMockUserContext(authenticated: true, userId: callerId);
+        var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
+        authCodeRepoMock.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OAuthAuthCode?)null);
+        uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), userContext.Object, uow.Object);
+
+        var urlHelper = new Mock<IUrlHelper>();
+        urlHelper.Setup(u => u.IsLocalUrl(It.IsAny<string>())).Returns(true);
+        urlHelper.Setup(u => u.Action(It.IsAny<Microsoft.AspNetCore.Mvc.Routing.UrlActionContext>())).Returns("/auth/callback");
+        controller.Url = urlHelper.Object;
+
+        // Act — no mode query parameter supplied; flow must be determined server-side
+        var result = controller.GitHubLogin();
+
+        // Assert — link mode must be set from the server-side JWT identity, not user input
+        var challenge = result.Should().BeOfType<ChallengeResult>().Subject;
+        challenge.Properties!.Items.Should().ContainKey("mode").WhoseValue.Should().Be("link");
+        challenge.Properties.Items.Should().ContainKey("link_user_id").WhoseValue.Should().Be(callerId.ToString());
+    }
+
+    // ─────────────────────────────────────────────────────────
     // TokenValidationMiddleware — account deletion during active session
     // ─────────────────────────────────────────────────────────
 
@@ -333,11 +392,11 @@ public class AuthControllerEdgeCaseTests
         return (unitOfWorkMock, authServiceMock);
     }
 
-    private static Mock<IUserContext> CreateMockUserContext()
+    private static Mock<IUserContext> CreateMockUserContext(bool authenticated = true, Guid? userId = null)
     {
         var mock = new Mock<IUserContext>();
-        mock.Setup(u => u.UserId).Returns(Guid.NewGuid().ToString());
-        mock.Setup(u => u.IsAuthenticated).Returns(true);
+        mock.Setup(u => u.IsAuthenticated).Returns(authenticated);
+        mock.Setup(u => u.UserId).Returns(authenticated ? (userId ?? Guid.NewGuid()).ToString() : null!);
         return mock;
     }
 
