@@ -937,7 +937,8 @@ Observability and scalability:
 - out-of-code/platform execution is now tracked, but not yet fully shipped:
   - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
   - backup/restore disaster-recovery playbook (`#86`)
-  - staged rollout policy (`#101`), SBOM/provenance (`#103`), cost guardrails (`#104`)
+  - staged rollout policy (`#101`), SBOM/provenance (`#103`)
+  - ~~cost guardrails (`#104`)~~ **delivered** (2026-04-09): cloud cost observability framework with six cost dimensions (compute, storage, LLM API, logging, network, CI/CD), three-tier budget alert thresholds (70%/90%/100%), monthly cost review workflow with checklist, feature cost hotspot registry covering 6 high-variance features (LLM API, logging, database, SignalR, CI/CD, MCP transport), budget breach runbook with detection-triage-mitigation-review phases, Terraform budget alert template, and ADR-0023
   - cloud target topology and autoscaling ADR (`#111`)
 
 UX and operability (reconciled from product notes):
