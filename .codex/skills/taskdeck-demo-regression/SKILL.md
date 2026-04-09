@@ -1,6 +1,6 @@
 ---
 name: taskdeck-demo-regression
-description: Validate Taskdeck with the smallest evidence path that proves the change. Use when a task needs seeded demo state, Playwright proof, screenshots, or stakeholder walkthrough evidence, especially for the golden path or first-run surfaces.
+description: Validate Taskdeck with the smallest evidence path that proves the change. Use when a task needs seeded demo state, Playwright proof, screenshots, or stakeholder walkthrough evidence.
 ---
 
 # Taskdeck Demo Regression
@@ -42,4 +42,3 @@ Record:
 
 - a small code-path change is already fully proven by nearby automated tests
 - the task is final doc sync rather than evidence gathering
-

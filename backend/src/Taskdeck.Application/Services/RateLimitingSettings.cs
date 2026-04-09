@@ -6,6 +6,7 @@ public sealed class RateLimitingSettings
     public RateLimitPolicySettings AuthPerIp { get; set; } = new(20, 60);
     public RateLimitPolicySettings HotPathPerUser { get; set; } = new(30, 60);
     public RateLimitPolicySettings CaptureWritePerUser { get; set; } = new(10, 60);
+    public RateLimitPolicySettings McpPerApiKey { get; set; } = new(60, 60);
 }
 
 public sealed class RateLimitPolicySettings
