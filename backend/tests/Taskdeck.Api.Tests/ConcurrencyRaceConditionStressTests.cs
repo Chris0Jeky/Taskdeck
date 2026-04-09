@@ -963,27 +963,35 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         await observer.InvokeAsync("JoinBoard", board.Id);
         await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
 
-        // Editor joins and starts editing
+        // Editor joins and starts editing.
+        // Not using 'await using' because we need to control when disposal happens
+        // to simulate an abrupt disconnect. The try/finally ensures cleanup on failure.
         var editorConn = SignalRTestHelper.CreateBoardsHubConnection(_factory, editor.Token);
-        editorConn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
-        await editorConn.StartAsync();
-        await editorConn.InvokeAsync("JoinBoard", board.Id);
-        await SignalRTestHelper.WaitForEventsAsync(observerEvents, 2); // join event
+        try
+        {
+            editorConn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
+            await editorConn.StartAsync();
+            await editorConn.InvokeAsync("JoinBoard", board.Id);
+            await SignalRTestHelper.WaitForEventsAsync(observerEvents, 2); // join event
 
-        observerEvents.Clear();
-        await editorConn.InvokeAsync("SetEditingCard", board.Id, card!.Id);
+            observerEvents.Clear();
+            await editorConn.InvokeAsync("SetEditingCard", board.Id, card!.Id);
 
-        // Wait for editing presence update
-        var editingEvents = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
-        var editorMember = editingEvents.Last().Members
-            .FirstOrDefault(m => m.UserId == editor.UserId);
-        editorMember.Should().NotBeNull("editor should be visible in presence");
-        editorMember!.EditingCardId.Should().Be(card.Id,
-            "editor should show as editing the card");
+            // Wait for editing presence update
+            var editingEvents = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
+            var editorMember = editingEvents.Last().Members
+                .FirstOrDefault(m => m.UserId == editor.UserId);
+            editorMember.Should().NotBeNull("editor should be visible in presence");
+            editorMember!.EditingCardId.Should().Be(card.Id,
+                "editor should show as editing the card");
 
-        // Abrupt disconnect (no LeaveBoard, no SetEditingCard(null))
-        observerEvents.Clear();
-        await editorConn.DisposeAsync();
+            // Abrupt disconnect (no LeaveBoard, no SetEditingCard(null))
+            observerEvents.Clear();
+        }
+        finally
+        {
+            await editorConn.DisposeAsync();
+        }
 
         // Owner should receive a snapshot without the editor
         var afterDisconnect = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1,
