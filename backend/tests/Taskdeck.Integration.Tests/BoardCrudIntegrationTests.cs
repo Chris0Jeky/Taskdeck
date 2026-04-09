@@ -18,9 +18,10 @@ public class BoardCrudIntegrationTests : PostgresIntegrationTestBase
     {
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CreateBoard_ShouldPersistAndRetrieve()
     {
+        SkipIfDockerUnavailable();
         var user = new User("boardcrud-user1", "boardcrud1@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -37,9 +38,10 @@ public class BoardCrudIntegrationTests : PostgresIntegrationTestBase
         retrieved.OwnerId.Should().Be(user.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task UpdateBoard_ShouldPersistChanges()
     {
+        SkipIfDockerUnavailable();
         var user = new User("boardcrud-user2", "boardcrud2@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -59,9 +61,10 @@ public class BoardCrudIntegrationTests : PostgresIntegrationTestBase
         reloaded.Description.Should().Be("Updated Description");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ArchiveBoard_ShouldPersistArchivedState()
     {
+        SkipIfDockerUnavailable();
         var user = new User("boardcrud-user3", "boardcrud3@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -79,9 +82,10 @@ public class BoardCrudIntegrationTests : PostgresIntegrationTestBase
         reloaded!.IsArchived.Should().BeTrue();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ListBoards_ShouldReturnAllBoards()
     {
+        SkipIfDockerUnavailable();
         var user = new User("boardcrud-user4", "boardcrud4@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -97,9 +101,10 @@ public class BoardCrudIntegrationTests : PostgresIntegrationTestBase
         boards.Should().Contain(b => b.Id == board2.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task TransferBoardOwnership_ShouldUpdateOwner()
     {
+        SkipIfDockerUnavailable();
         var user1 = new User("boardcrud-user5", "boardcrud5@example.com", "hash123");
         var user2 = new User("boardcrud-user6", "boardcrud6@example.com", "hash123");
         Db.Users.AddRange(user1, user2);

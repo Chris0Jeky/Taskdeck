@@ -35,12 +35,27 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Whether Docker was detected and the container started successfully.
+    /// Tests should check this before accessing the container.
+    /// </summary>
+    public bool IsAvailable { get; private set; }
+
+    /// <summary>
     /// Starts the PostgreSQL container. Called once per test collection.
+    /// If Docker is not available, the container is not started and
+    /// <see cref="IsAvailable"/> remains false — tests should skip gracefully.
     /// </summary>
     public async Task InitializeAsync()
     {
+        if (!DockerAvailableCheck.IsAvailable)
+        {
+            IsAvailable = false;
+            return;
+        }
+
         await _container.StartAsync();
         _baseConnectionString = _container.GetConnectionString();
+        IsAvailable = true;
     }
 
     /// <summary>
@@ -48,7 +63,10 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
     /// </summary>
     public async Task DisposeAsync()
     {
-        await _container.DisposeAsync();
+        if (IsAvailable)
+        {
+            await _container.DisposeAsync();
+        }
     }
 
     /// <summary>

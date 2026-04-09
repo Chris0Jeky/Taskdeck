@@ -19,9 +19,10 @@ public class ProposalLifecycleIntegrationTests : PostgresIntegrationTestBase
     {
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CreateProposal_WithOperations_ShouldPersist()
     {
+        SkipIfDockerUnavailable();
         var user = new User("proposal-user1", "proposal1@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();
@@ -55,9 +56,10 @@ public class ProposalLifecycleIntegrationTests : PostgresIntegrationTestBase
         retrieved.Operations[0].TargetType.Should().Be("card");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ApproveProposal_ShouldPersistApprovedState()
     {
+        SkipIfDockerUnavailable();
         var user = new User("proposal-user2", "proposal2@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();
@@ -84,9 +86,10 @@ public class ProposalLifecycleIntegrationTests : PostgresIntegrationTestBase
         reloaded.DecidedAt.Should().NotBeNull();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task RejectProposal_ShouldPersistRejectedState()
     {
+        SkipIfDockerUnavailable();
         var user = new User("proposal-user3", "proposal3@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();
@@ -112,9 +115,10 @@ public class ProposalLifecycleIntegrationTests : PostgresIntegrationTestBase
         reloaded.FailureReason.Should().Be("Too destructive");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ApproveAndApply_ShouldCompleteFullLifecycle()
     {
+        SkipIfDockerUnavailable();
         var user = new User("proposal-user4", "proposal4@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();
@@ -154,9 +158,10 @@ public class ProposalLifecycleIntegrationTests : PostgresIntegrationTestBase
         reloaded.Operations.Should().HaveCount(1);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task FilterProposals_ByStatus_ShouldReturnCorrectSubset()
     {
+        SkipIfDockerUnavailable();
         var user = new User("proposal-user5", "proposal5@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();

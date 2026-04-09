@@ -18,9 +18,10 @@ public class IsolationClassA : PostgresIntegrationTestBase
 {
     public IsolationClassA(PostgresContainerFixture fixture) : base(fixture) { }
 
-    [Fact]
+    [SkippableFact]
     public async Task ClassA_ShouldNotSeeClassBData()
     {
+        SkipIfDockerUnavailable();
         var user = new User("isolation-a-user", "isolation-a@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -43,9 +44,10 @@ public class IsolationClassB : PostgresIntegrationTestBase
 {
     public IsolationClassB(PostgresContainerFixture fixture) : base(fixture) { }
 
-    [Fact]
+    [SkippableFact]
     public async Task ClassB_ShouldNotSeeClassAData()
     {
+        SkipIfDockerUnavailable();
         var user = new User("isolation-b-user", "isolation-b@example.com", "hash123");
         Db.Users.Add(user);
 

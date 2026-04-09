@@ -18,9 +18,10 @@ public class CardOperationsIntegrationTests : PostgresIntegrationTestBase
     {
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CreateCard_InColumn_ShouldPersistWithRelationships()
     {
+        SkipIfDockerUnavailable();
         var user = new User("cardops-user1", "cardops1@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -45,9 +46,10 @@ public class CardOperationsIntegrationTests : PostgresIntegrationTestBase
         retrieved.ColumnId.Should().Be(column.Id);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task UpdateCard_ShouldPersistChanges()
     {
+        SkipIfDockerUnavailable();
         var user = new User("cardops-user2", "cardops2@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -73,9 +75,10 @@ public class CardOperationsIntegrationTests : PostgresIntegrationTestBase
         reloaded.Description.Should().Be("Updated Description");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task MultipleCards_InSameColumn_ShouldMaintainOrder()
     {
+        SkipIfDockerUnavailable();
         var user = new User("cardops-user3", "cardops3@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -103,9 +106,10 @@ public class CardOperationsIntegrationTests : PostgresIntegrationTestBase
         cards[2].Title.Should().Be("Third Card");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task DeleteCard_ShouldRemoveFromDatabase()
     {
+        SkipIfDockerUnavailable();
         var user = new User("cardops-user4", "cardops4@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -129,9 +133,10 @@ public class CardOperationsIntegrationTests : PostgresIntegrationTestBase
         deleted.Should().BeNull();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Card_WithDueDate_ShouldPersistTimestamp()
     {
+        SkipIfDockerUnavailable();
         var user = new User("cardops-user5", "cardops5@example.com", "hash123");
         Db.Users.Add(user);
 

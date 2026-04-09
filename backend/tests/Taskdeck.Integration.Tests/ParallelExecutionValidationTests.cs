@@ -20,9 +20,10 @@ public class ParallelExecutionValidationTests : PostgresIntegrationTestBase
     {
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ConcurrentBoardCreation_ShouldNotCauseRaceConditions()
     {
+        SkipIfDockerUnavailable();
         var user = new User("parallel-user1", "parallel1@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();
@@ -56,9 +57,10 @@ public class ParallelExecutionValidationTests : PostgresIntegrationTestBase
         allBoards.Should().HaveCount(boardCount);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ConcurrentCardCreation_AcrossColumns_ShouldMaintainIntegrity()
     {
+        SkipIfDockerUnavailable();
         var user = new User("parallel-user2", "parallel2@example.com", "hash123");
         Db.Users.Add(user);
 
@@ -88,9 +90,10 @@ public class ParallelExecutionValidationTests : PostgresIntegrationTestBase
         (cardsInA + cardsInB).Should().Be(cardCount);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task RapidProposalStateTransitions_ShouldNotLoseData()
     {
+        SkipIfDockerUnavailable();
         var user = new User("parallel-user3", "parallel3@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();

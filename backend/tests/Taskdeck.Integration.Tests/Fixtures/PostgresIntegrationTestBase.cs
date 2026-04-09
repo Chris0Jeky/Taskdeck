@@ -8,6 +8,10 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 /// receives a fresh, isolated <see cref="TaskdeckDbContext"/> that is
 /// disposed after all tests in the class complete.
 ///
+/// When Docker is not available, tests are skipped gracefully via
+/// <see cref="SkipIfDockerUnavailable"/> rather than failing — this allows
+/// <c>dotnet test backend/Taskdeck.sln</c> to pass on machines without Docker.
+///
 /// Usage:
 /// <code>
 /// [Collection(PostgresTestCollection.Name)]
@@ -18,7 +22,7 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 ///     [Fact]
 ///     public async Task MyTest()
 ///     {
-///         // Use Db property for database operations
+///         SkipIfDockerUnavailable();
 ///         Db.Boards.Add(new Board("test", "desc"));
 ///         await Db.SaveChangesAsync();
 ///     }
@@ -41,18 +45,28 @@ public abstract class PostgresIntegrationTestBase : IAsyncLifetime
     }
 
     /// <summary>
+    /// Whether the PostgreSQL container is available for this test class.
+    /// </summary>
+    protected bool IsDockerAvailable => _fixture.IsAvailable;
+
+    /// <summary>
     /// The isolated <see cref="TaskdeckDbContext"/> for this test class.
     /// Backed by a unique PostgreSQL database within the shared container.
     /// </summary>
     protected TaskdeckDbContext Db => _db ?? throw new InvalidOperationException(
-        "DbContext is not available. Ensure InitializeAsync has completed.");
+        "DbContext is not available. Ensure Docker is running and InitializeAsync has completed.");
 
     /// <summary>
     /// Called by xUnit before the first test in the class runs.
-    /// Creates the isolated database and schema.
+    /// Creates the isolated database and schema. Skips if Docker is not available.
     /// </summary>
     public Task InitializeAsync()
     {
+        if (!_fixture.IsAvailable)
+        {
+            return Task.CompletedTask;
+        }
+
         _db = _fixture.CreateDbContext();
         return Task.CompletedTask;
     }
@@ -68,5 +82,15 @@ public abstract class PostgresIntegrationTestBase : IAsyncLifetime
         {
             await _db.DisposeAsync();
         }
+    }
+
+    /// <summary>
+    /// Skips the current test if Docker is not available on the host.
+    /// Call at the start of each test method. Uses SkippableFact's
+    /// <c>Skip.If</c> to report the test as skipped rather than failed.
+    /// </summary>
+    protected static void SkipIfDockerUnavailable()
+    {
+        Skip.If(!DockerAvailableCheck.IsAvailable, DockerAvailableCheck.SkipReason);
     }
 }
