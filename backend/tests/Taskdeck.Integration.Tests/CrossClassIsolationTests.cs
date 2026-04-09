@@ -7,10 +7,11 @@ using Xunit;
 namespace Taskdeck.Integration.Tests;
 
 /// <summary>
-/// Tests that verify cross-class database isolation. Each test class in this
-/// file uses its own database instance within the shared PostgreSQL container.
-/// They insert known data and then verify they cannot see each other's data,
-/// proving that the Testcontainers fixture provides true isolation.
+/// Tests that verify per-test database isolation. Each test method gets its
+/// own database instance within the shared PostgreSQL container (xUnit 2.x
+/// creates a new class instance per test method). These tests insert known
+/// data and then verify they cannot see each other's data, proving that the
+/// Testcontainers fixture provides true per-test isolation.
 /// </summary>
 
 [Collection(PostgresTestCollection.Name)]

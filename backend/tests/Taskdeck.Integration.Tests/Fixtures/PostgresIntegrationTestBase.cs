@@ -4,9 +4,10 @@ using Xunit;
 namespace Taskdeck.Integration.Tests.Fixtures;
 
 /// <summary>
-/// Base class for PostgreSQL-backed integration tests. Each derived class
+/// Base class for PostgreSQL-backed integration tests. Each test method
 /// receives a fresh, isolated <see cref="TaskdeckDbContext"/> that is
-/// disposed after all tests in the class complete.
+/// disposed after the test completes (xUnit 2.x creates a new class
+/// instance per test method, so each test gets its own database).
 ///
 /// When Docker is not available, tests are skipped gracefully via
 /// <see cref="SkipIfDockerUnavailable"/> rather than failing — this allows
@@ -19,7 +20,7 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 /// {
 ///     public MyTests(PostgresContainerFixture fixture) : base(fixture) { }
 ///
-///     [Fact]
+///     [SkippableFact]
 ///     public async Task MyTest()
 ///     {
 ///         SkipIfDockerUnavailable();
@@ -29,10 +30,8 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 /// }
 /// </code>
 ///
-/// Thread safety: Each test class instance gets its own DbContext
-/// (backed by its own database), so parallel test classes are safe.
-/// Tests within the same class share the DbContext and must not
-/// run in parallel (xUnit default for a single class).
+/// Thread safety: Each test method gets its own DbContext instance
+/// (backed by its own database), so parallel test execution is safe.
 /// </summary>
 public abstract class PostgresIntegrationTestBase : IAsyncLifetime
 {
@@ -57,8 +56,9 @@ public abstract class PostgresIntegrationTestBase : IAsyncLifetime
         "DbContext is not available. Ensure Docker is running and InitializeAsync has completed.");
 
     /// <summary>
-    /// Called by xUnit before the first test in the class runs.
-    /// Creates the isolated database and schema. Skips if Docker is not available.
+    /// Called by xUnit before each test method runs (xUnit 2.x creates a new
+    /// instance per test). Creates an isolated database and schema.
+    /// Skips if Docker is not available.
     /// </summary>
     public Task InitializeAsync()
     {
@@ -72,7 +72,7 @@ public abstract class PostgresIntegrationTestBase : IAsyncLifetime
     }
 
     /// <summary>
-    /// Called by xUnit after the last test in the class completes.
+    /// Called by xUnit after each test method completes.
     /// Disposes the DbContext (the database remains in the container
     /// until the container itself is torn down).
     /// </summary>
