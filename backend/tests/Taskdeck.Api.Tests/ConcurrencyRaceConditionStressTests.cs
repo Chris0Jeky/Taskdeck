@@ -578,6 +578,10 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                          + (results["reject"] == HttpStatusCode.OK ? 1 : 0);
         successCount.Should().Be(1,
             "exactly one of approve/reject should succeed in a race");
+        results.Values.Should().OnlyContain(status => status == HttpStatusCode.OK || status == HttpStatusCode.Conflict,
+            "the losing proposal decision should be rejected with a conflict");
+        results.Values.Should().Contain(HttpStatusCode.Conflict,
+            "the losing proposal decision should return 409 Conflict");
 
         // Verify final state is consistent
         var proposalResp = await client.GetAsync($"/api/automation/proposals/{proposalId}");
