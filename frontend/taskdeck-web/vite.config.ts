@@ -7,8 +7,14 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' prevents the new SW from auto-activating; SwUpdatePrompt.vue
+      // shows a banner asking the user to reload when a new version is waiting.
+      registerType: 'prompt',
       injectRegister: 'auto',
+      // Disable SW in dev mode to avoid interfering with HMR / hot reload.
+      devOptions: {
+        enabled: false,
+      },
       workbox: {
         // Precache app shell assets (JS, CSS, HTML, icons)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
@@ -17,6 +23,10 @@ export default defineConfig({
         globIgnores: ['icons/**'],
         // Clean stale caches on SW activation
         cleanupOutdatedCaches: true,
+        // SPA fallback: serve index.html for navigation requests to unmatched
+        // routes (e.g. deep links like /workspace/boards/xyz when offline).
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/mcp/],
         // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
         // retain cached responses. Fresh data is always preferred when online.
         runtimeCaching: [
@@ -71,24 +81,45 @@ export default defineConfig({
       manifest: {
         name: 'Taskdeck',
         short_name: 'Taskdeck',
-        description: 'Local-first execution workspace for developers',
-        theme_color: '#1e293b',
-        background_color: '#0f172a',
+        description: 'Local-first execution workspace for developers. Near-zero-friction capture with review-first automation.',
+        theme_color: '#131313',
+        background_color: '#131313',
         display: 'standalone',
+        orientation: 'any',
         scope: '/',
-        start_url: '/',
+        start_url: '/workspace/home',
+        lang: 'en',
+        categories: ['productivity', 'utilities'],
         icons: [
+          {
+            src: 'icons/icon-192.svg',
+            sizes: '192x192',
+            type: 'image/svg+xml',
+            purpose: 'any',
+          },
           {
             src: 'icons/icon-192x192.png',
             sizes: '192x192',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: 'icons/icon-512.svg',
+            sizes: '512x512',
+            type: 'image/svg+xml',
+            purpose: 'any',
           },
           {
             src: 'icons/icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: 'icons/icon-maskable-512.svg',
+            sizes: '512x512',
+            type: 'image/svg+xml',
+            purpose: 'maskable',
           },
         ],
       },
