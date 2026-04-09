@@ -24,3 +24,4 @@
 | [0020](ADR-0020-plugin-extension-architecture.md) | Plugin/Extension Architecture RFC and Sandboxing Constraints | Proposed | 2026-04-01 |
 | [0021](ADR-0021-jwt-invalidation-user-active-middleware.md) | JWT Invalidation — User-Active Middleware over Token Blocklist | Accepted | 2026-04-03 |
 | [0022](ADR-0022-analytics-export-csv-first-pdf-deferred.md) | Analytics Export — CSV First, PDF Deferred | Accepted | 2026-04-08 |
+| [0023](ADR-0023-cloud-target-topology-autoscaling.md) | Cloud Target Topology and Autoscaling Reference Architecture | Proposed | 2026-04-09 |
