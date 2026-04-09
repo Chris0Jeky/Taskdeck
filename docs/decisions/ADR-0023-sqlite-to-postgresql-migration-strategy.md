@@ -30,7 +30,7 @@ The migration strategy is:
 
 3. **Schema migration**: EF Core migrations remain the source of truth. A PostgreSQL migration bundle will be generated from the same model. SQLite-specific constructs (e.g., `AUTOINCREMENT`, FTS5 virtual tables) will need provider-conditional handling.
 
-4. **Data migration**: A documented runbook covers one-time data export from SQLite and import into PostgreSQL, with row-count and checksum verification.
+4. **Data migration**: A documented runbook covers one-time data export from SQLite and import into PostgreSQL, with row-count and foreign-key integrity verification.
 
 ## Alternatives Considered
 

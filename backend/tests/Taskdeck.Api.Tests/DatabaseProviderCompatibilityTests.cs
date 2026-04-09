@@ -330,7 +330,8 @@ public class DatabaseProviderCompatibilityTests : IClassFixture<TestWebApplicati
 
         db.ChangeTracker.Clear();
 
-        // Exact match should be case-sensitive
+        // Exact equality (==) is case-sensitive on both SQLite and PostgreSQL.
+        // This confirms both providers agree on the behavior.
         var exactMatch = await db.Cards
             .Where(c => c.BoardId == board.Id && c.Title == "IMPORTANT TASK")
             .ToListAsync();

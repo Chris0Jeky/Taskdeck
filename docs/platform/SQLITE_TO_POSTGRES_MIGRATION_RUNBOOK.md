@@ -51,9 +51,13 @@ This runbook provides step-by-step instructions for migrating an existing Taskde
    UNION ALL SELECT 'AgentProfiles', COUNT(*) FROM AgentProfiles
    UNION ALL SELECT 'AgentRuns', COUNT(*) FROM AgentRuns
    UNION ALL SELECT 'KnowledgeDocuments', COUNT(*) FROM KnowledgeDocuments
-   UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM ExternalLogins;
+   UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM ExternalLogins
+   UNION ALL SELECT 'ApiKeys', COUNT(*) FROM ApiKeys;
    SQL
    ```
+
+   **Note**: The `__EFMigrationsHistory` table tracks applied EF Core migrations. It is populated automatically by `dotnet ef database update` in Step 1 and should **not** be exported or imported as data — the schema step handles it.
+
 4. **Provision the PostgreSQL database**:
    ```bash
    psql -h <host> -U <admin_user> -c "CREATE DATABASE taskdeck ENCODING 'UTF8' LC_COLLATE 'en_US.UTF-8';"
@@ -120,11 +124,14 @@ sqlite3 -header -csv taskdeck.db "SELECT * FROM AgentRunEvents;" > migration-exp
 sqlite3 -header -csv taskdeck.db "SELECT * FROM KnowledgeDocuments;" > migration-export/KnowledgeDocuments.csv
 sqlite3 -header -csv taskdeck.db "SELECT * FROM KnowledgeChunks;" > migration-export/KnowledgeChunks.csv
 sqlite3 -header -csv taskdeck.db "SELECT * FROM ExternalLogins;" > migration-export/ExternalLogins.csv
+sqlite3 -header -csv taskdeck.db "SELECT * FROM ApiKeys;" > migration-export/ApiKeys.csv
 ```
 
 ## Step 3: Import Data into PostgreSQL
 
-**Important**: Import tables in dependency order (parents before children) to respect foreign key constraints. Disable triggers during import for performance.
+**Important**: Import tables in dependency order (parents before children) to respect foreign key constraints.
+
+**Schema note**: EF Core Npgsql creates tables in the `public` schema by default with PascalCase names. Before importing, verify the table names match by running `\dt` in `psql`. If a custom schema was configured, adjust the table names in the import script accordingly.
 
 ```bash
 # Order matters: parent tables first, then child tables
@@ -159,6 +166,7 @@ TABLES=(
   KnowledgeDocuments
   KnowledgeChunks
   ExternalLogins
+  ApiKeys
 )
 
 PGCONN="host=<host> dbname=taskdeck user=taskdeck_app password=<password>"
@@ -212,7 +220,10 @@ UNION ALL SELECT 'OutboundWebhookDeliveries', COUNT(*) FROM "OutboundWebhookDeli
 UNION ALL SELECT 'AgentProfiles', COUNT(*) FROM "AgentProfiles"
 UNION ALL SELECT 'AgentRuns', COUNT(*) FROM "AgentRuns"
 UNION ALL SELECT 'KnowledgeDocuments', COUNT(*) FROM "KnowledgeDocuments"
-UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM "ExternalLogins";
+UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM "ExternalLogins"
+UNION ALL SELECT 'NotificationPreferences', COUNT(*) FROM "NotificationPreferences"
+UNION ALL SELECT 'CommandRunLogs', COUNT(*) FROM "CommandRunLogs"
+UNION ALL SELECT 'ApiKeys', COUNT(*) FROM "ApiKeys";
 SQL
 ```
 
