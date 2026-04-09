@@ -84,11 +84,23 @@ public static class DependencyInjection
                 break;
 
             case "inmemory":
-            default:
                 services.AddSingleton<ICacheService>(sp =>
                     new InMemoryCacheService(
                         sp.GetRequiredService<ILogger<InMemoryCacheService>>(),
                         cacheSettings.KeyPrefix));
+                break;
+
+            default:
+                // Log a warning so operators notice configuration typos (e.g., "Rediss" or "inmem")
+                // instead of silently falling back to InMemory.
+                services.AddSingleton<ICacheService>(sp =>
+                {
+                    var logger = sp.GetRequiredService<ILogger<InMemoryCacheService>>();
+                    logger.LogWarning(
+                        "Unknown cache provider '{Provider}', falling back to InMemory. Valid values: Redis, InMemory, None",
+                        cacheSettings.Provider);
+                    return new InMemoryCacheService(logger, cacheSettings.KeyPrefix);
+                });
                 break;
         }
 
