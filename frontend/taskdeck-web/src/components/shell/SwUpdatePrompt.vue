@@ -6,11 +6,13 @@ let swRegistration: ServiceWorkerRegistration | null = null
 
 function applyUpdate() {
   if (swRegistration?.waiting) {
+    // Tell the waiting SW to activate. The controllerchange listener
+    // below will reload the page once the new SW takes over —
+    // reloading here directly would race the activation and could
+    // serve the page from the old SW.
     swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' })
   }
   showUpdatePrompt.value = false
-  // Reload after the new service worker takes over
-  window.location.reload()
 }
 
 function dismissUpdate() {
