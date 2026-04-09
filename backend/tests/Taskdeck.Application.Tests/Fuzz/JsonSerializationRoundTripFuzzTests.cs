@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using FsCheck;
+using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Taskdeck.Application.DTOs;
 using Xunit;
@@ -43,7 +44,7 @@ public class JsonSerializationRoundTripFuzzTests
         Gen.Constant("{\"nested\": \"json\"}"),
         Gen.Constant("[1,2,3]"),
         Gen.Constant(""),
-        Arb.Generate<string>().Where(s => s != null)
+        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
     );
 
     // ─────────────────────── BoardDto round-trip ───────────────────────

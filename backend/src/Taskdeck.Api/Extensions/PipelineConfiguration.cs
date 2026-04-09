@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
@@ -82,6 +83,11 @@ public static class PipelineConfiguration
             }
         });
 
+        // API key authentication for MCP HTTP transport (/mcp path).
+        // Must run before UseAuthentication so MCP requests are handled by API key auth,
+        // not JWT auth. Non-MCP requests pass through unaffected.
+        app.UseMiddleware<ApiKeyMiddleware>();
+
         app.UseAuthentication();
         // Reject tokens for deleted/deactivated users or tokens issued before invalidation.
         // Must run after UseAuthentication (so JWT is parsed) and before UseAuthorization.
@@ -94,6 +100,15 @@ public static class PipelineConfiguration
 
         app.MapControllers();
         app.MapHub<BoardsHub>("/hubs/boards");
+
+        // MCP Streamable HTTP endpoint for external AI agent integration.
+        // Authenticated via ApiKeyMiddleware (Bearer tdsk_... tokens).
+        // Rate limiting applied per API key user identity.
+        var mcpEndpoint = app.MapMcp();
+        if (rateLimitingSettings.Enabled)
+        {
+            mcpEndpoint.RequireRateLimiting(RateLimiting.RateLimitingPolicyNames.McpPerApiKey);
+        }
 
         // SPA fallback: any route not matched by a controller or hub endpoint returns index.html,
         // enabling Vue Router's client-side navigation. API (/api/*) and hub (/hubs/*) routes
