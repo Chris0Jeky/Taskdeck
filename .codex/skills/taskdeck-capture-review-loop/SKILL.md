@@ -1,6 +1,6 @@
 ---
 name: taskdeck-capture-review-loop
-description: Protect Taskdeck's core capture to review to explicit apply to board loop. Use when touching Inbox, capture, triage, automation proposals, proposal summaries, approve-reject-execute behavior, provenance, or board handoff semantics across backend or frontend.
+description: Protect Taskdeck's core capture-review-apply-board loop. Use when touching Inbox, capture, triage, automation proposals, proposal summaries, approve-reject-execute behavior, provenance, or board handoff semantics across backend or frontend.
 ---
 
 # Taskdeck Capture Review Loop
@@ -56,4 +56,3 @@ Prefer a mix of:
 
 - the work is generic shell or navigation polish with no impact on capture, review, execute, provenance, or board handoff semantics
 - the work is only demo harness evidence
-

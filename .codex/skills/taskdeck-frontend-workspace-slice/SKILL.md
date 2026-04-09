@@ -43,7 +43,7 @@ Prefer changes that reinforce the shipped path:
 
 ## Pairing rule
 
-If the task changes capture, proposal review, provenance, or explicit board handoff semantics, use `taskdeck-capture-review-loop` alongside this skill. Keep this skill focused on shell, navigation, and workspace coherence.
+If the task changes capture, proposal review, provenance, or explicit board handoff semantics, use `taskdeck-capture-review-loop` alongside this skill.
 
 ## Multi-agent split
 
@@ -57,4 +57,3 @@ Good parallel splits:
 
 - the task is backend-only
 - the main risk is in capture, proposal, execute, or provenance semantics rather than workspace UX
-
