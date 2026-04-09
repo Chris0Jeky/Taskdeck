@@ -1215,6 +1215,7 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Test suite baseline counts recertified 2026-04-08: backend ~3,460+ passing, frontend ~1,891 passing, combined ~5,370+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
+20. **Mutation testing pilot** (`#90`): Stryker.NET (backend Domain) and Stryker JS (frontend captureStore/boardStore) configured with non-blocking weekly CI lane; policy at `docs/testing/MUTATION_TESTING_POLICY.md`; scope expansion to Application layer and additional stores planned after baseline calibration from first 3-4 runs.
 
 ## Documentation Operating Model
 Active docs:
