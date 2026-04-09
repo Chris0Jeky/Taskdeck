@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Services;
 using Taskdeck.Application.Interfaces;
@@ -11,7 +12,15 @@ public static class ApplicationServiceRegistration
 {
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
-        services.AddScoped<BoardService>();
+        services.AddScoped<BoardService>(sp =>
+            new BoardService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetService<IAuthorizationService>(),
+                sp.GetService<IBoardRealtimeNotifier>(),
+                sp.GetService<IHistoryService>(),
+                sp.GetService<ICacheService>(),
+                sp.GetService<CacheSettings>(),
+                sp.GetService<ILogger<BoardService>>()));
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
         services.AddScoped<CardCommentService>();

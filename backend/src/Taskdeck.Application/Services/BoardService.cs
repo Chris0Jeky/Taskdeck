@@ -1,4 +1,6 @@
-﻿using Taskdeck.Application.DTOs;
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -13,6 +15,9 @@ public class BoardService
     private readonly IAuthorizationService? _authorizationService;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
     private readonly IHistoryService? _historyService;
+    private readonly ICacheService? _cacheService;
+    private readonly CacheSettings? _cacheSettings;
+    private readonly ILogger<BoardService> _logger;
 
     public BoardService(IUnitOfWork unitOfWork)
         : this(unitOfWork, authorizationService: null, realtimeNotifier: null, historyService: null)
@@ -23,12 +28,18 @@ public class BoardService
         IUnitOfWork unitOfWork,
         IAuthorizationService? authorizationService,
         IBoardRealtimeNotifier? realtimeNotifier = null,
-        IHistoryService? historyService = null)
+        IHistoryService? historyService = null,
+        ICacheService? cacheService = null,
+        CacheSettings? cacheSettings = null,
+        ILogger<BoardService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
         _realtimeNotifier = realtimeNotifier ?? NoOpBoardRealtimeNotifier.Instance;
         _historyService = historyService;
+        _cacheService = cacheService;
+        _cacheSettings = cacheSettings ?? new CacheSettings();
+        _logger = logger ?? NullLogger<BoardService>.Instance;
     }
 
     private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
@@ -67,11 +78,31 @@ public class BoardService
 
     public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        // Try cache first
+        if (_cacheService is not null)
+        {
+            var cacheKey = CacheKeys.BoardDetail(id);
+            var cached = await _cacheService.GetAsync<BoardDetailDto>(cacheKey, cancellationToken);
+            if (cached is not null)
+            {
+                return Result.Success(cached);
+            }
+        }
+
         var board = await _unitOfWork.Boards.GetByIdWithDetailsAsync(id, cancellationToken);
         if (board == null)
             return Result.Failure<BoardDetailDto>(ErrorCodes.NotFound, $"Board with ID {id} not found");
 
-        return Result.Success(MapToDetailDto(board));
+        var dto = MapToDetailDto(board);
+
+        // Populate cache
+        if (_cacheService is not null)
+        {
+            var ttl = TimeSpan.FromSeconds(_cacheSettings!.BoardDetailTtlSeconds);
+            await _cacheService.SetAsync(CacheKeys.BoardDetail(id), dto, ttl, cancellationToken);
+        }
+
+        return Result.Success(dto);
     }
 
     public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, Guid actingUserId, CancellationToken cancellationToken = default)
@@ -99,12 +130,33 @@ public class BoardService
         if (actingUserId == Guid.Empty)
             return Result.Failure<IEnumerable<BoardDto>>(ErrorCodes.ValidationError, "Acting user ID cannot be empty");
 
+        // Only cache un-filtered, non-archived list (the most common request)
+        var canCache = _cacheService is not null && string.IsNullOrEmpty(searchText) && !includeArchived;
+
+        if (canCache)
+        {
+            var cacheKey = CacheKeys.BoardListForUser(actingUserId);
+            var cached = await _cacheService!.GetAsync<List<BoardDto>>(cacheKey, cancellationToken);
+            if (cached is not null)
+            {
+                return Result.Success<IEnumerable<BoardDto>>(cached);
+            }
+        }
+
         var candidateBoardIds = (await _unitOfWork.Boards.SearchIdsAsync(searchText, includeArchived, cancellationToken)).ToList();
 
         if (_authorizationService is null)
         {
             var boards = await _unitOfWork.Boards.GetByIdsAsync(candidateBoardIds, cancellationToken);
-            return Result.Success(boards.Select(MapToDto));
+            var dtos = boards.Select(MapToDto).ToList();
+
+            if (canCache)
+            {
+                var ttl = TimeSpan.FromSeconds(_cacheSettings!.BoardListTtlSeconds);
+                await _cacheService!.SetAsync(CacheKeys.BoardListForUser(actingUserId), dtos, ttl, cancellationToken);
+            }
+
+            return Result.Success<IEnumerable<BoardDto>>(dtos);
         }
 
         var visibleBoardIdsResult = await _authorizationService.GetReadableBoardIdsAsync(
@@ -117,8 +169,15 @@ public class BoardService
 
         var visibleBoardIds = visibleBoardIdsResult.Value.ToList();
         var visibleBoards = await _unitOfWork.Boards.GetByIdsAsync(visibleBoardIds, cancellationToken);
+        var result = visibleBoards.Select(MapToDto).ToList();
 
-        return Result.Success<IEnumerable<BoardDto>>(visibleBoards.Select(MapToDto));
+        if (canCache)
+        {
+            var ttl = TimeSpan.FromSeconds(_cacheSettings!.BoardListTtlSeconds);
+            await _cacheService!.SetAsync(CacheKeys.BoardListForUser(actingUserId), result, ttl, cancellationToken);
+        }
+
+        return Result.Success<IEnumerable<BoardDto>>(result);
     }
 
     public async Task<Result> DeleteBoardAsync(Guid id, CancellationToken cancellationToken = default)
@@ -151,6 +210,10 @@ public class BoardService
                 new BoardRealtimeEvent(board.Id, "board", "created", board.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
             await SafeLogAsync("board", board.Id, AuditAction.Created, ownerId, $"name={board.Name}");
+
+            // Invalidate board list cache for the owner
+            if (ownerId.HasValue)
+                await InvalidateBoardListCacheAsync(ownerId.Value, cancellationToken);
 
             return Result.Success(MapToDto(board));
         }
@@ -197,6 +260,12 @@ public class BoardService
                 await SafeLogAsync("board", board.Id, AuditAction.Unarchived, changes: changeSummary);
             else
                 await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: changeSummary);
+
+            // Invalidate board detail cache and board list caches
+            await InvalidateBoardDetailCacheAsync(board.Id, cancellationToken);
+            if (board.OwnerId.HasValue)
+                await InvalidateBoardListCacheAsync(board.OwnerId.Value, cancellationToken);
+
             return Result.Success(MapToDto(board));
         }
         catch (DomainException ex)
@@ -238,6 +307,12 @@ public class BoardService
             new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
             cancellationToken);
         await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
+
+        // Invalidate caches
+        await InvalidateBoardDetailCacheAsync(board.Id, cancellationToken);
+        if (board.OwnerId.HasValue)
+            await InvalidateBoardListCacheAsync(board.OwnerId.Value, cancellationToken);
+
         return Result.Success();
     }
 
@@ -272,6 +347,18 @@ public class BoardService
             board.CreatedAt,
             board.UpdatedAt
         );
+    }
+
+    private async Task InvalidateBoardDetailCacheAsync(Guid boardId, CancellationToken cancellationToken)
+    {
+        if (_cacheService is null) return;
+        await _cacheService.RemoveAsync(CacheKeys.BoardDetail(boardId), cancellationToken);
+    }
+
+    private async Task InvalidateBoardListCacheAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (_cacheService is null) return;
+        await _cacheService.RemoveAsync(CacheKeys.BoardListForUser(userId), cancellationToken);
     }
 
     private BoardDetailDto MapToDetailDto(Board board)
