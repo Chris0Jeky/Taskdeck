@@ -11,7 +11,10 @@ public static class SettingsRegistration
         out ObservabilitySettings observabilitySettings,
         out RateLimitingSettings rateLimitingSettings,
         out JwtSettings jwtSettings,
-        out GitHubOAuthSettings gitHubOAuthSettings)
+        out GitHubOAuthSettings gitHubOAuthSettings,
+        out SentrySettings sentrySettings,
+        out TelemetrySettings telemetrySettings,
+        out AnalyticsSettings analyticsSettings)
     {
         observabilitySettings = configuration
             .GetSection("Observability")
@@ -48,6 +51,24 @@ public static class SettingsRegistration
         var sandboxSettings = configuration.GetSection("DevelopmentSandbox").Get<DevelopmentSandboxSettings>() ?? new DevelopmentSandboxSettings();
         sandboxSettings.Enabled = sandboxSettings.Enabled && environment.IsDevelopment();
         services.AddSingleton(sandboxSettings);
+
+        sentrySettings = configuration
+            .GetSection("Sentry")
+            .Get<SentrySettings>() ?? new SentrySettings();
+        services.AddSingleton(sentrySettings);
+
+        telemetrySettings = configuration
+            .GetSection("Telemetry")
+            .Get<TelemetrySettings>() ?? new TelemetrySettings();
+        services.AddSingleton(telemetrySettings);
+
+        analyticsSettings = configuration
+            .GetSection("Analytics")
+            .Get<AnalyticsSettings>() ?? new AnalyticsSettings();
+        services.AddSingleton(analyticsSettings);
+
+        // Register telemetry event service (opt-in guard is internal to the service)
+        services.AddSingleton<ITelemetryEventService, TelemetryEventService>();
 
         return services;
     }
