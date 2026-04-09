@@ -77,7 +77,11 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
       /* Default project: runs all tests except @mobile-only scenarios.
-       * Existing untagged tests continue to run here unchanged. */
+       * Existing untagged tests continue to run here unchanged.
+       *
+       * NOTE: @cross-browser tests also run here (in PR gate via ci-required).
+       * Adding more @cross-browser tests will increase PR gate time.
+       * Keep @cross-browser count lean to preserve fast PR feedback. */
       grepInvert: /@mobile/,
     },
     {
