@@ -261,6 +261,17 @@ Any of the following triggers an immediate rollback:
 | Manual abort | Release owner or on-call decision | Human judgment |
 | Database migration failure | Migration throws or leaves schema inconsistent | Startup logs |
 
+## Database Migration Safety
+
+Taskdeck uses EF Core auto-migration on API startup. When blue and green slots share the same SQLite database volume, migrations must be **forward-compatible**:
+
+- **Additive-only migrations**: Add new columns with defaults, add new tables. Never remove or rename columns that the current live version depends on.
+- **Two-phase migration pattern**: If a breaking schema change is required, split it across two releases: (1) add the new schema alongside the old, (2) remove the old schema after the previous version is fully retired.
+- **Migration order**: The idle slot starts first and applies any pending migrations. If the migration fails, the idle slot will not become healthy and the deployment is blocked at Phase 3 step 4 (health check).
+- **Shared database risk**: During the canary window, both slots read/write the same database. If the new migration alters behavior for existing data, ensure the active slot can still function with the migrated schema.
+
+If blue and green are deployed on separate hosts with separate databases (e.g., in a future multi-node topology), migration safety is simplified since each slot has its own schema lifecycle.
+
 ## Emergency Hotfix Override
 
 For critical production incidents where the standard workflow would take too long:
