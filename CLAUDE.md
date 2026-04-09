@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What Is Taskdeck
 
-A local-first execution workspace for developers. Core thesis: near-zero-friction capture with review-first (proposal-based) automation — no silent or destructive mutations. Local persistence via SQLite.
+A local-first execution workspace for developers. Core thesis: near-zero-friction capture with review-first (proposal-based) automation -- no silent or destructive mutations. Local persistence via SQLite.
 
 ## Required Reading Before Changes
 
-1. `docs/STATUS.md` — source of truth for current shipped state (always read first)
-2. `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery history, planned work, roadmap sequencing, and strategic intentions
-3. `docs/GOLDEN_PRINCIPLES.md` — stable invariants and guardrails
-4. `AGENTS.md` — full contributor protocol, definition of done, output expectations
+1. `docs/STATUS.md` -- source of truth for current shipped state (always read first)
+2. `docs/IMPLEMENTATION_MASTERPLAN.md` -- delivery history, planned work, roadmap sequencing, and strategic intentions
+3. `docs/GOLDEN_PRINCIPLES.md` -- stable invariants and guardrails
+4. `AGENTS.md` -- full contributor protocol, definition of done, output expectations
 
 Precedence when instructions conflict: `docs/STATUS.md` > `AGENTS.md` > this file.
 
@@ -63,9 +63,9 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 
 ## Architecture
 
-### Backend — Clean Architecture layers in `backend/src/`
+### Backend -- Clean Architecture layers in `backend/src/`
 
-- **Taskdeck.Domain**: Core entities and business rules. No infrastructure dependencies — keep it pure.
+- **Taskdeck.Domain**: Core entities and business rules. No infrastructure dependencies -- keep it pure.
 - **Taskdeck.Application**: Use cases and services. Depends only on Domain.
 - **Taskdeck.Infrastructure**: Persistence (EF Core + SQLite), external adapters. Implements interfaces defined in Application/Domain.
 - **Taskdeck.Api**: ASP.NET Core HTTP endpoints, integration layer, auth, SignalR hubs. Wires everything up via DI.
@@ -73,10 +73,10 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 
 Tests mirror this layout in `backend/tests/` with an additional `Taskdeck.Architecture.Tests` project for structural enforcement.
 
-### Frontend — `frontend/taskdeck-web/src/`
+### Frontend -- `frontend/taskdeck-web/src/`
 
 - **views/**: Route-level pages (BoardView, InboxView, ReviewView, TodayView, HomeView, etc.)
-- **store/**: Pinia stores — boardStore, captureStore, queueStore, sessionStore, workspaceStore, notificationStore, etc.
+- **store/**: Pinia stores -- boardStore, captureStore, queueStore, sessionStore, workspaceStore, notificationStore, etc.
 - **api/**: HTTP client modules for backend communication
 - **composables/**: Shared Vue composition functions
 - **components/**: Reusable UI components
@@ -137,18 +137,18 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 
 **How to create an ADR**: Use the next available number (`ADR-NNNN`), follow the template (Context, Decision, Alternatives, Consequences, References), and add the entry to `docs/decisions/INDEX.md`. Mark status as `Proposed` until ratified, then `Accepted`.
 
-**Do not skip ADRs** for decisions that affect architecture, security posture, or cross-cutting conventions — even when the change is small, the reasoning matters for future contributors who weren't in the conversation.
+**Do not skip ADRs** for decisions that affect architecture, security posture, or cross-cutting conventions -- even when the change is small, the reasoning matters for future contributors who weren't in the conversation.
 
 ## Key Docs
 
-- `docs/STATUS.md` — current shipped reality (what is true now)
-- `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery history, roadmap, and planned work (what was done and what comes next)
-- `docs/GOLDEN_PRINCIPLES.md` — stable invariants
-- `docs/decisions/INDEX.md` — architecture decision records
-- `docs/TESTING_GUIDE.md` — test operations reference
-- `docs/ISSUE_EXECUTION_GUIDE.md` — dependency-aware issue execution order
-- `docs/MCP_TOOLING_GUIDE.md` — MCP tool selection rules
-- `AGENTS.md` — full contributor protocol
+- `docs/STATUS.md` -- current shipped reality (what is true now)
+- `docs/IMPLEMENTATION_MASTERPLAN.md` -- delivery history, roadmap, and planned work (what was done and what comes next)
+- `docs/GOLDEN_PRINCIPLES.md` -- stable invariants
+- `docs/decisions/INDEX.md` -- architecture decision records
+- `docs/TESTING_GUIDE.md` -- test operations reference
+- `docs/ISSUE_EXECUTION_GUIDE.md` -- dependency-aware issue execution order
+- `docs/MCP_TOOLING_GUIDE.md` -- MCP tool selection rules
+- `AGENTS.md` -- full contributor protocol
 
 ## Worktree Isolation for Parallel Agents
 
@@ -156,7 +156,7 @@ When launching subagents with `isolation: "worktree"`, follow the protocol in `d
 - NEVER include absolute paths to the main checkout in worktree agent prompts
 - First agent action: run the inline worktree guard from the protocol
 - All file paths must use the exported `$WT_PROJECT_DIR` variable
-- Shell state does not persist between Bash tool calls — agents must use absolute paths
+- Shell state does not persist between Bash tool calls -- agents must use absolute paths
 - After agents complete, verify main checkout is still clean on the default branch
 
 ## Windows Notes
