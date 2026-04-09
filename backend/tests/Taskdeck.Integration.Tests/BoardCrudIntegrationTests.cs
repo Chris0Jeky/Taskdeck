@@ -96,7 +96,7 @@ public class BoardCrudIntegrationTests : PostgresIntegrationTestBase
 
         var boards = await Db.Boards.ToListAsync();
 
-        boards.Should().HaveCountGreaterThanOrEqualTo(2);
+        boards.Should().HaveCount(2);
         boards.Should().Contain(b => b.Id == board1.Id);
         boards.Should().Contain(b => b.Id == board2.Id);
     }
