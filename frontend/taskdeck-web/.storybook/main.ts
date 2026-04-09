@@ -1,18 +1,21 @@
 import type { StorybookConfig } from '@storybook/vue3-vite'
 
+function isPwaPlugin(plugin: unknown): boolean {
+  if (plugin && typeof plugin === 'object' && 'name' in plugin) {
+    const name = (plugin as { name: string }).name
+    return name.includes('pwa') || name.includes('workbox') || name.includes('PWA')
+  }
+  return false
+}
+
 function stripPwaPlugins(plugins: unknown[]): unknown[] {
   return plugins.filter((plugin) => {
-    // Handle arrays (some Vite plugins return arrays of sub-plugins)
+    // Some Vite plugins (including VitePWA) return arrays of sub-plugins.
+    // Check each element to decide whether the whole array should be dropped.
     if (Array.isArray(plugin)) {
-      return false // PWA returns an array; but be safe, check names
+      return !plugin.some(isPwaPlugin)
     }
-    if (plugin && typeof plugin === 'object' && 'name' in plugin) {
-      const name = (plugin as { name: string }).name
-      if (name.includes('pwa') || name.includes('workbox') || name.includes('PWA')) {
-        return false
-      }
-    }
-    return true
+    return !isPwaPlugin(plugin)
   })
 }
 
