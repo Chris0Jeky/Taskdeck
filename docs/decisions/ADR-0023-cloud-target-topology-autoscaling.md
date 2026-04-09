@@ -107,10 +107,10 @@ SignalR WebSocket connections are long-lived and stateful. The ALB must route al
 
 ### Worker Extraction
 
-The current architecture runs `LlmQueueToProposalWorker` and `HousekeepingWorker` as `IHostedService` instances inside the API process. For the cloud topology:
+The current architecture runs three `BackgroundService` workers inside the API process: `LlmQueueToProposalWorker`, `ProposalHousekeepingWorker`, and `OutboundWebhookDeliveryWorker`. For the cloud topology:
 
-1. Extract workers into a separate ECS service sharing the same container image but started with a `--worker` flag (or environment variable `TASKDECK_ROLE=worker`).
-2. Workers claim queue items using database-level `SELECT ... FOR UPDATE SKIP LOCKED` (PostgreSQL) to prevent duplicate processing across worker instances.
+1. Extract all three workers into a separate ECS service sharing the same container image but started with a `--worker` flag (or environment variable `TASKDECK_ROLE=worker`).
+2. Workers claim queue items using database-level `SELECT ... FOR UPDATE SKIP LOCKED` (PostgreSQL) to prevent duplicate processing across worker instances. This applies to LLM queue items and outbound webhook delivery events.
 3. The API service no longer runs background workers, simplifying its scaling and health model.
 4. Worker health is monitored via the existing heartbeat mechanism (`taskdeck.worker.heartbeat.staleness` metric).
 
@@ -158,7 +158,7 @@ Implementation notes:
 - Liveness is lightweight: returns 200 if the ASP.NET request pipeline can execute. No dependency checks (to avoid cascade failures where a DB outage kills all API tasks).
 - Readiness checks actual dependency connectivity. A task that fails readiness stops receiving traffic but is not killed (allowing transient DB/Redis issues to self-heal).
 - Startup probe gives migrations up to 5 minutes to complete. During rolling deployments, old tasks continue serving while new tasks run migrations.
-- The existing `/health/ready` endpoint (used by the Docker Compose deployment) should be refactored to serve as the readiness probe, with `/health/live` and `/health/startup` added.
+- The existing `/health/live` and `/health/ready` endpoints (in `HealthController`) already serve liveness and readiness roles. `/health/ready` should be extended to include a Redis connectivity check once the Redis backplane is introduced. Only `/health/startup` needs to be added as a new endpoint.
 
 ### SLO Targets
 
@@ -224,7 +224,7 @@ These estimates assume startup-stage traffic (< 1000 DAU, < 100 concurrent users
 Cost notes:
 - This estimate intentionally uses the smallest instance sizes. Costs will increase with scaling but remain manageable at startup volumes.
 - **NAT Gateway is the second-largest line item** after Fargate compute. To reduce this cost, consider VPC endpoints for ECR and S3 (eliminating NAT for those services) or a shared NAT instance for dev/staging environments.
-- **RDS db.t4g.micro** (2 vCPUs, 1 GB RAM) may be undersized once PostgreSQL connection pooling is configured for 2-8 concurrent API tasks plus 1-3 workers. Plan to upgrade to db.t4g.small (2 vCPUs, 2 GB RAM, ~$50/month Multi-AZ) early if connection or memory pressure appears.
+- **RDS db.t4g.micro** (2 vCPUs, 1 GB RAM) has a `max_connections` of approximately 112. EF Core's default connection pool is 100 connections per `NpgsqlDataSource`, so 2+ API tasks will exceed this limit without mitigation. **Connection pooling middleware (RDS Proxy at ~$20/month, or PgBouncer as a sidecar container) is a prerequisite for horizontal scaling**, not an optimization. Alternatively, reduce the EF Core `MaxPoolSize` in the connection string (e.g., to 10-20 per task) and upgrade to db.t4g.small (2 vCPUs, 2 GB RAM, ~$50/month Multi-AZ) early.
 - The single largest cost driver at scale will be RDS (database), followed by NAT Gateway data transfer charges for LLM API calls.
 
 ### Rollback Strategy
@@ -290,7 +290,7 @@ Cost notes:
 - **Clear scaling path**: Horizontal API scaling behind ALB supports traffic growth without architecture changes.
 - **Managed services reduce ops burden**: RDS, ElastiCache, ALB, and CloudFront eliminate most infrastructure maintenance tasks.
 - **Health check contract enables zero-downtime deployments**: Liveness/readiness/startup separation prevents routing traffic to unhealthy or migrating instances.
-- **Cost-efficient at startup scale**: ~$106/month total infrastructure cost is sustainable for a bootstrapped product.
+- **Cost-efficient at startup scale**: ~$147-152/month total infrastructure cost is sustainable for a bootstrapped product.
 - **Kubernetes-portable**: The topology can migrate to EKS without application changes when scale justifies it.
 
 ### Negative
@@ -312,8 +312,8 @@ These concrete tasks should be created as GitHub issues to implement this ADR:
 
 1. **PostgreSQL migration** (`#84` — already tracked): Migrate from SQLite to PostgreSQL. Prerequisite for all horizontal scaling.
 2. **Redis backplane for SignalR**: Add `Microsoft.AspNetCore.SignalR.StackExchangeRedis` package, configure connection string, test cross-instance event delivery.
-3. **Worker extraction**: Add `--worker` / `TASKDECK_ROLE=worker` startup mode. Extract `IHostedService` registrations to worker-only startup. Implement `SELECT ... FOR UPDATE SKIP LOCKED` queue claiming.
-4. **Health check refactor**: Split existing `/health/ready` into `/health/live`, `/health/ready`, and `/health/startup`. Add dependency checks (PostgreSQL ping, Redis ping) to readiness. Add migration status to startup.
+3. **Worker extraction**: Add `--worker` / `TASKDECK_ROLE=worker` startup mode. Extract all three `BackgroundService` registrations (`LlmQueueToProposalWorker`, `ProposalHousekeepingWorker`, `OutboundWebhookDeliveryWorker`) to worker-only startup. Implement `SELECT ... FOR UPDATE SKIP LOCKED` queue claiming for LLM queue items and webhook deliveries.
+4. **Health check extension**: The existing `/health/live` and `/health/ready` endpoints already serve liveness and readiness roles. Extend `/health/ready` to include a Redis connectivity check once the Redis backplane is introduced. Add a new `/health/startup` endpoint that verifies EF Core migrations are complete and initial seed data is present.
 5. **ALB + ECS Terraform module**: Extend `deploy/terraform/aws/` with ALB, ECS cluster, task definitions, service definitions, and autoscaling policies.
 6. **CDN deployment for SPA**: Configure CloudFront distribution with S3 origin for frontend static assets. Remove frontend container from ECS (SPA served from CDN, not a container).
 7. **CI/CD pipeline for ECS**: Extend GitHub Actions to build images, push to ECR, and trigger ECS service update with rolling deployment.

@@ -42,6 +42,9 @@ ECS Cluster: taskdeck-prod
     |   |   |-- CPU: 256 (0.25 vCPU)
     |   |   |-- Memory: 512 MB
     |   |   |-- Environment: TASKDECK_ROLE=worker
+    |   |   |-- Workers: LlmQueueToProposalWorker,
+    |   |   |            ProposalHousekeepingWorker,
+    |   |   |            OutboundWebhookDeliveryWorker
     |   |   |-- Health check: process-level (ECS default)
     |   |   |-- Log driver: awslogs -> /ecs/taskdeck-worker
     |-- Desired count: 1
@@ -257,7 +260,8 @@ All secrets are stored in AWS Secrets Manager (not SSM Parameter Store) for the 
 | Alarm | Metric | Threshold | Action |
 |-------|--------|-----------|--------|
 | **API high CPU** | ECS CPUUtilization (api service) | > 80% for 5 min | SNS -> ops email/Slack |
-| **API high latency** | ALB TargetResponseTime p95 | > 500ms for 5 min | SNS -> ops email/Slack |
+| **API latency SLO breach** | ALB TargetResponseTime p95 | > 300ms for 5 min | SNS -> ops email/Slack |
+| **API latency critical** | ALB TargetResponseTime p95 | > 500ms for 3 min | SNS -> ops email/Slack (page) |
 | **API 5xx rate** | ALB HTTPCode_Target_5XX_Count | > 10/min for 3 min | SNS -> ops email/Slack |
 | **API unhealthy targets** | ALB UnHealthyHostCount | > 0 for 2 min | SNS -> ops email/Slack |
 | **DB high CPU** | RDS CPUUtilization | > 80% for 10 min | SNS -> ops email/Slack |
