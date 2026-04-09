@@ -10,12 +10,99 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Mcp;
 
-// ── MCP stdio mode ──────────────────────────────────────────────────────────
-// When launched with "--mcp", run as a stdio MCP server instead of a web API.
-// This path intentionally skips JWT, CORS, SignalR, rate limiting, and the
-// HTTP pipeline — none of those are meaningful over a local stdio connection.
+// ── MCP modes ───────────────────────────────────────────────────────────────
+// When launched with "--mcp", run as an MCP server instead of the full web API.
+//   --mcp                          → stdio transport (default, for Claude Code / Cursor)
+//   --mcp --transport http         → HTTP transport with API key auth (for cloud/remote)
+//   --mcp --transport http --port 5001 → HTTP transport on a specific port
 if (args.Contains("--mcp"))
 {
+    var transport = "stdio";
+    for (int i = 0; i < args.Length - 1; i++)
+    {
+        if (string.Equals(args[i], "--transport", StringComparison.OrdinalIgnoreCase))
+            transport = args[i + 1].ToLowerInvariant();
+    }
+
+    if (transport == "http")
+    {
+        // ── MCP HTTP mode ───────────────────────────────────────────────────
+        // Minimal web server exposing only the MCP endpoint with API key auth.
+        // No controllers, no SignalR, no Swagger, no frontend — just MCP.
+        var mcpPort = 5001;
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(args[i + 1], out var parsedPort))
+                mcpPort = parsedPort;
+        }
+
+        var mcpHttpBuilder = WebApplication.CreateBuilder(args);
+        mcpHttpBuilder.WebHost.UseUrls($"http://localhost:{mcpPort}");
+
+        // Infrastructure (DbContext, Repositories, UoW)
+        mcpHttpBuilder.Services.AddInfrastructure(mcpHttpBuilder.Configuration);
+
+        // Register Application services needed by MCP resources and tools.
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.AuthorizationService>();
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.IAuthorizationService>(
+            sp => sp.GetRequiredService<Taskdeck.Application.Services.AuthorizationService>());
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
+            new Taskdeck.Application.Services.BoardService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetService<Taskdeck.Application.Services.IAuthorizationService>()));
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.ColumnService>();
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.CardService>();
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.LabelService>();
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.AutomationProposalService>();
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.IAutomationProposalService>(
+            sp => sp.GetRequiredService<Taskdeck.Application.Services.AutomationProposalService>());
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.CaptureService>();
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.ICaptureService>(
+            sp => sp.GetRequiredService<Taskdeck.Application.Services.CaptureService>());
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.NotificationService>();
+        mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.INotificationService>(
+            sp => sp.GetRequiredService<Taskdeck.Application.Services.NotificationService>());
+
+        // HTTP identity: maps API key to user via HttpUserContextProvider.
+        mcpHttpBuilder.Services.AddHttpContextAccessor();
+        mcpHttpBuilder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
+
+        // MCP server: HTTP transport + all resources and tools.
+        mcpHttpBuilder.Services.AddMcpServer()
+            .WithHttpTransport()
+            .WithResources<BoardResources>()
+            .WithResources<CaptureResources>()
+            .WithResources<ProposalResources>()
+            .WithTools<ReadTools>()
+            .WithTools<WriteTools>()
+            .WithTools<ProposalTools>();
+
+        var mcpHttpApp = mcpHttpBuilder.Build();
+
+        // Apply EF Core migrations before starting.
+        using (var scope = mcpHttpApp.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
+            dbContext.Database.Migrate();
+        }
+
+        // API key authentication for MCP requests.
+        mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
+
+        // Map the MCP endpoint.
+        mcpHttpApp.MapMcp();
+
+        var mcpHttpLogger = mcpHttpApp.Services.GetRequiredService<ILogger<Program>>();
+        mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on port {Port}", mcpPort);
+
+        await mcpHttpApp.RunAsync();
+        return;
+    }
+
+    // ── MCP stdio mode ──────────────────────────────────────────────────────
+    // This path intentionally skips JWT, CORS, SignalR, rate limiting, and the
+    // HTTP pipeline — none of those are meaningful over a local stdio connection.
     var mcpHost = Host.CreateDefaultBuilder(args)
         .ConfigureAppConfiguration((_, config) =>
         {
@@ -84,7 +171,7 @@ if (args.Contains("--mcp"))
     await mcpHost.RunAsync();
     return;
 }
-// ── End MCP stdio mode ───────────────────────────────────────────────────────
+// ── End MCP modes ───────────────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);
 
