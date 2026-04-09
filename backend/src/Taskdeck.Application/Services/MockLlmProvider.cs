@@ -5,6 +5,24 @@ namespace Taskdeck.Application.Services;
 
 public class MockLlmProvider : ILlmProvider
 {
+    /// <summary>
+    /// Patterns that trigger clarification behavior in the mock provider.
+    /// These simulate ambiguous requests where the LLM would need more details.
+    /// </summary>
+    private static readonly string[] AmbiguousPatterns =
+    {
+        "onboarding tasks",
+        "create tasks for",
+        "set up tasks",
+        "add some tasks",
+        "create some cards",
+        "add cards for",
+        "make tasks for",
+        "organize my",
+        "help me plan",
+        "set up a project"
+    };
+
     public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
     {
         var lastUserMessage = request.Messages
@@ -12,6 +30,29 @@ public class MockLlmProvider : ILlmProvider
             ?.Content ?? "";
 
         var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
+
+        // Check if this is an ambiguous request that should trigger clarification.
+        // The system prompt indicates whether we should force best-effort.
+        var isForcingBestEffort = request.SystemPrompt?.Contains("Do NOT ask any more questions") == true;
+        var isAmbiguous = !isForcingBestEffort && IsAmbiguousRequest(lastUserMessage);
+
+        if (isAmbiguous)
+        {
+            var clarificationContent = "I can help with that! Could you tell me:\n" +
+                                       "1. How many tasks/cards should I create?\n" +
+                                       "2. What specific areas or topics should they cover?\n" +
+                                       "3. Which column should they go in?";
+
+            return Task.FromResult(new LlmCompletionResult(
+                clarificationContent,
+                TokensUsed: lastUserMessage.Length / 4 + clarificationContent.Length / 4,
+                IsActionable: false,
+                ActionIntent: null,
+                Provider: "Mock",
+                Model: "mock-default",
+                IsClarificationRequest: true
+            ));
+        }
 
         // When actionable intent is detected, attempt to extract structured
         // instructions from the natural language message. This bridges the gap
@@ -39,6 +80,12 @@ public class MockLlmProvider : ILlmProvider
             Model: "mock-default",
             Instructions: instructions
         ));
+    }
+
+    private static bool IsAmbiguousRequest(string message)
+    {
+        var lower = message.ToLowerInvariant();
+        return AmbiguousPatterns.Any(p => lower.Contains(p, StringComparison.Ordinal));
     }
 
     public async IAsyncEnumerable<LlmTokenEvent> StreamAsync(ChatCompletionRequest request, [EnumeratorCancellation] CancellationToken ct = default)

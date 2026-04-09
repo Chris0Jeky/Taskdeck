@@ -36,7 +36,7 @@ public class ChatMessageTests
             messageType: "custom");
 
         act.Should().Throw<DomainException>()
-            .WithMessage("MessageType must be one of: text, proposal-reference, error, status, degraded")
+            .WithMessage("MessageType must be one of: text, proposal-reference, error, status, degraded, clarification")
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
     }
 

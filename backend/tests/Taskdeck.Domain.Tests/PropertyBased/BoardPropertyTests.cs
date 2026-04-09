@@ -1,5 +1,6 @@
 using FluentAssertions;
 using FsCheck;
+using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -151,8 +152,8 @@ public class BoardPropertyTests
     {
         var gen = Gen.Choose(1, 100)
             .SelectMany(len =>
-                Gen.ArrayOf(len, Gen.Elements(
-                    'a', 'b', 'c', 'A', 'B', 'C', '1', '2', '3', ' ', '-', '_'))
+                Gen.ArrayOf(Gen.Elements(
+                    'a', 'b', 'c', 'A', 'B', 'C', '1', '2', '3', ' ', '-', '_'), len)
                 .Select(chars => new string(chars)))
             .Where(s => !string.IsNullOrWhiteSpace(s));
         return Arb.From(gen);

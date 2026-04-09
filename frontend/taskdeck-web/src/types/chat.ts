@@ -2,7 +2,7 @@ export type ChatSessionStatus = 'Active' | 'Archived'
 export type ChatSessionStatusValue = ChatSessionStatus | number
 export type ChatRole = 'User' | 'Assistant' | 'System'
 export type ChatRoleValue = ChatRole | number
-export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status' | 'degraded' | 'parse-hint'
+export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status' | 'degraded' | 'parse-hint' | 'clarification'
 
 export interface ParseHintPayload {
   supportedPatterns: string[]

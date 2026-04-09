@@ -2,16 +2,21 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '../store/boardStore'
 import { useMetricsStore } from '../store/metricsStore'
+import { useToastStore } from '../store/toastStore'
+import { metricsApi } from '../api/metricsApi'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 import type { MetricsQuery, ForecastQuery } from '../types/metrics'
 import type { Board } from '../types/board'
 
 const boardStore = useBoardStore()
 const metricsStore = useMetricsStore()
+const toast = useToastStore()
 
 const selectedBoardId = ref<string>('')
 const dateRangeDays = ref(30)
 const boards = ref<Board[]>([])
 const boardsLoading = ref(false)
+const exporting = ref(false)
 
 const fromDate = computed(() => {
   const d = new Date()
@@ -80,6 +85,24 @@ onMounted(async () => {
     selectedBoardId.value = boards.value[0].id
   }
 })
+
+async function exportCsv() {
+  if (!selectedBoardId.value) return
+  exporting.value = true
+  try {
+    const query: MetricsQuery = {
+      boardId: selectedBoardId.value,
+      from: fromDate.value,
+      to: toDate.value,
+    }
+    await metricsApi.exportBoardMetricsCsv(query)
+  } catch (e: unknown) {
+    const { message } = getErrorDisplay(e, 'Failed to export CSV')
+    toast.error(message)
+  } finally {
+    exporting.value = false
+  }
+}
 
 // Computed helpers for the template
 const metrics = computed(() => metricsStore.metrics)
@@ -160,6 +183,17 @@ const maxWipCount = computed(() => {
           <option :value="60">Last 60 days</option>
           <option :value="90">Last 90 days</option>
         </select>
+      </div>
+
+      <div class="td-metrics__filter-group td-metrics__filter-group--action">
+        <button
+          class="td-btn td-btn--secondary td-btn--sm"
+          :disabled="!hasData || exporting"
+          @click="exportCsv"
+          title="Export current metrics as CSV"
+        >
+          {{ exporting ? 'Exporting...' : 'Export CSV' }}
+        </button>
       </div>
     </section>
 
@@ -471,6 +505,11 @@ const maxWipCount = computed(() => {
   color: var(--td-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+.td-metrics__filter-group--action {
+  justify-content: flex-end;
+  align-self: flex-end;
 }
 
 .td-metrics__select {
