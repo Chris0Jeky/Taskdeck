@@ -150,14 +150,17 @@ builder.Services.AddSwaggerGen(options =>
     }
 });
 
-// Bind configuration settings (observability, rate limiting, security headers, JWT, etc.)
+// Bind configuration settings (observability, rate limiting, security headers, JWT, Sentry, telemetry, analytics)
 builder.Services.AddTaskdeckSettings(
     builder.Configuration,
     builder.Environment,
     out var observabilitySettings,
     out var rateLimitingSettings,
     out var jwtSettings,
-    out var gitHubOAuthSettings);
+    out var gitHubOAuthSettings,
+    out var sentrySettings,
+    out _,  // telemetrySettings — registered in DI by AddTaskdeckSettings
+    out _); // analyticsSettings — registered in DI by AddTaskdeckSettings
 
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -189,6 +192,9 @@ builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings);
 
 // Add OpenTelemetry observability
 builder.Services.AddTaskdeckObservability(observabilitySettings);
+
+// Add Sentry error tracking (config-gated, disabled by default)
+builder.AddTaskdeckSentry(sentrySettings);
 
 // Add worker services (LLM queue, proposal housekeeping, outbound webhooks)
 builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
