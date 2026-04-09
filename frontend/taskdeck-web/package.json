@@ -39,6 +39,11 @@
     "vue-router": "^4.6.3",
     "ws": "^8.20.0"
   },
+  "overrides": {
+    "vite-plugin-pwa": {
+      "vite": "$vite"
+    }
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",
     "@eslint/js": "^10.0.1",
