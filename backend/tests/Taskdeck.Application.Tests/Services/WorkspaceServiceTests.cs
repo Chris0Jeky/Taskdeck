@@ -528,14 +528,12 @@ public class WorkspaceServiceTests
     public async Task GetCalendarAsync_ShouldReturnCardsWithDueDates()
     {
         var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
         var columnId = Guid.NewGuid();
         var from = new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero);
         var to = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
 
-        var board = new Board(boardId, userId, "Test Board");
-        var column = new Column(columnId, boardId, "In Progress", 0);
-        var card = new Card(boardId, columnId, "Test Card", dueDate: new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero));
+        var board = new Board("Test Board", ownerId: userId);
+        var card = new Card(board.Id, columnId, "Test Card", dueDate: new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero));
 
         _boardRepositoryMock
             .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
@@ -555,21 +553,20 @@ public class WorkspaceServiceTests
         result.Value.TotalCards.Should().Be(1);
         result.Value.Cards.Should().HaveCount(1);
         result.Value.Cards[0].Title.Should().Be("Test Card");
-        result.Value.Cards[0].BoardId.Should().Be(boardId);
+        result.Value.Cards[0].BoardId.Should().Be(board.Id);
     }
 
     [Fact]
     public async Task GetCalendarAsync_ShouldMarkOverdueCards()
     {
         var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
         var columnId = Guid.NewGuid();
         var from = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var to = new DateTimeOffset(2020, 2, 1, 0, 0, 0, TimeSpan.Zero);
 
-        var board = new Board(boardId, userId, "Test Board");
+        var board = new Board("Test Board", ownerId: userId);
         var pastDueDate = new DateTimeOffset(2020, 1, 15, 0, 0, 0, TimeSpan.Zero);
-        var card = new Card(boardId, columnId, "Past Due Card", dueDate: pastDueDate);
+        var card = new Card(board.Id, columnId, "Past Due Card", dueDate: pastDueDate);
 
         _boardRepositoryMock
             .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
@@ -593,13 +590,12 @@ public class WorkspaceServiceTests
     public async Task GetCalendarAsync_ShouldIncludeBlockedStatus()
     {
         var userId = Guid.NewGuid();
-        var boardId = Guid.NewGuid();
         var columnId = Guid.NewGuid();
         var from = DateTimeOffset.UtcNow;
         var to = from.AddDays(30);
 
-        var board = new Board(boardId, userId, "Test Board");
-        var card = new Card(boardId, columnId, "Blocked Card", dueDate: from.AddDays(5));
+        var board = new Board("Test Board", ownerId: userId);
+        var card = new Card(board.Id, columnId, "Blocked Card", dueDate: from.AddDays(5));
         card.Block("Waiting on dependency");
 
         _boardRepositoryMock
