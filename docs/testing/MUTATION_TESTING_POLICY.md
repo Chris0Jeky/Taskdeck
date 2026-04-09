@@ -19,7 +19,7 @@ This is a **quality signal**, not a gatekeeping mechanism. Mutation testing comp
 
 ### Frontend (Stryker JS/TS)
 
-- **Target**: `src/store/captureStore.ts` and `src/store/boardStore.ts`
+- **Target**: `src/store/captureStore.ts`, `src/store/boardStore.ts`, and `src/store/board/*.ts` (board store submodules)
 - **Test runner**: Vitest
 - **Rationale**: These two Pinia stores are the core data flow layer for the capture-to-board pipeline. Mutations here have direct product impact on the golden path.
 - **Config**: `frontend/taskdeck-web/stryker.config.mjs`

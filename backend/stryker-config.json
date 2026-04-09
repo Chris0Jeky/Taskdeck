@@ -18,11 +18,6 @@
       "low": 60,
       "break": 0
     },
-    "mutate": [
-      "src/Taskdeck.Domain/**/*.cs",
-      "!src/Taskdeck.Domain/obj/**",
-      "!src/Taskdeck.Domain/bin/**"
-    ],
     "language-version": "latest",
     "concurrency": 4,
     "output": "StrykerOutput",

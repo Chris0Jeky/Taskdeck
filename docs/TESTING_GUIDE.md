@@ -167,7 +167,7 @@ Mutation testing is available as a non-blocking quality signal for detecting wea
 ### Scope
 
 - **Backend**: Stryker.NET targeting `Taskdeck.Domain` (entity state machines, validation, business rules)
-- **Frontend**: Stryker JS targeting `captureStore.ts` and `boardStore.ts` (core data flow stores)
+- **Frontend**: Stryker JS targeting `captureStore.ts`, `boardStore.ts`, and `board/*.ts` submodules (core data flow stores)
 
 ### Running locally
 

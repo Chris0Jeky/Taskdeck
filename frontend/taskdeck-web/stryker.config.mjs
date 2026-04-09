@@ -16,6 +16,7 @@ const config = {
   mutate: [
     'src/store/captureStore.ts',
     'src/store/boardStore.ts',
+    'src/store/board/*.ts',
   ],
   tempDirName: 'stryker-tmp',
   cleanTempDir: 'always',
