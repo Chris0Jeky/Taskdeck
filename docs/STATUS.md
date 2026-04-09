@@ -134,7 +134,7 @@ Direction guardrails (explicit):
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core 8.0.14 + SQLite (aligned to net8.0 TFM as of `#760`/`#767`)
 - Core controllers: boards, columns, cards, labels
-- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search, metrics, data-portability
+- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search, metrics, data-portability, note-import, telemetry, api-keys, forecast
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
@@ -168,7 +168,9 @@ Direction guardrails (explicit):
   - JWT middleware is wired
   - `ActiveUserValidationMiddleware` checks user active status on every authenticated request (30-second in-memory cache, invalidated on deletion/deactivation); tokens issued before account deletion/deactivation are rejected even if JWT is unexpired
   - `[Authorize]` currently enforced on boards, columns, cards, labels, export/import, audit, llm-queue, board-access, users, chat, notifications, automation-proposals, archive, ops-cli, and logs controllers
-  - GitHub OAuth login (`CLD-03`): environment-gated OAuth middleware activates only when `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` are configured; `ExternalLogin` entity links GitHub accounts to users without auto-linking by email (prevents account takeover); OAuth callback uses short-lived single-use authorization codes to avoid JWT exposure in URLs; frontend LoginView conditionally shows "Sign in with GitHub" button based on `/api/auth/providers` response; full test coverage in Domain, Application, and frontend layers
+  - GitHub OAuth login (`CLD-03`): environment-gated OAuth middleware activates only when `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` are configured; `ExternalLogin` entity links GitHub accounts to users without auto-linking by email (prevents account takeover); OAuth callback uses short-lived single-use authorization codes (now DB-backed with atomic consumption, replacing in-memory `ConcurrentDictionary`); PKCE enabled via `UsePkce = true`; account linking endpoints allow existing users to link/unlink GitHub identity from settings; frontend LoginView conditionally shows "Sign in with GitHub" button based on `/api/auth/providers` response; full test coverage in Domain, Application, and frontend layers
+  - OIDC/SSO integration (`SEC-07`): config-gated pluggable OIDC provider support (Microsoft Entra ID, Google, generic OIDC) via `IOidcProviderFactory`; OIDC login/callback/exchange with open-redirect protection; cross-provider identity isolation (`provider + providerUserId` unique key); no auto-linking by email; disabled by default
+  - TOTP MFA (`SEC-07`): optional MFA via `MfaPolicy` configuration; TOTP setup with QR URI and 8 bcrypt-hashed recovery codes; constant-time comparison; replay protection; `MfaChallengeModal` gates sensitive actions when policy requires
 
 ### Frontend
 
@@ -182,7 +184,9 @@ Direction guardrails (explicit):
   - notifications (inbox + read-state actions)
   - ops (cli/endpoints/logs)
   - metrics (board throughput, cycle time, WIP, blocked trends, CSV export, heuristic forecasting with confidence bands)
-  - settings (profile/preferences/access/export-import)
+  - calendar (monthly grid + timeline modes for due-date cards with overdue/blocked indicators)
+  - agents (agent profiles, runs, run-detail timeline — visible in agent workspace mode only)
+  - settings (profile/preferences/access/export-import/linked-accounts/mfa-setup/telemetry-consent)
   - archive
 - Current navigation is now partially product-shaped:
   - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
@@ -202,6 +206,10 @@ Direction guardrails (explicit):
   - board realtime subscription lifecycle (SignalR join/leave/reconnect with polling fallback)
   - batch triage and suggestion editing for inbox artifacts
   - keyboard card movement (Alt+Arrow) and move-to action menu on cards
+- Storybook baseline: Storybook 10.3.5 with stories for all 17 Td* primitives; `npm run storybook` (dev :6006) and `npm run storybook:build` scripts
+- Note-style import: markdown file upload (heading-based section splitting) and web clip paste intake tabs in ExportImportView; all content routes through capture pipeline
+- OIDC login buttons: config-gated SSO buttons on LoginView for configured OIDC providers
+- Error tracking: config-gated Sentry browser SDK, Plausible/Umami analytics script injection, telemetry consent UI in settings
 - Cross-cutting UI infrastructure:
   - command palette with global search (Ctrl+K): live cross-board search for boards and cards via `/api/search`, with 200ms debounced queries, abort-on-supersede, and keyboard-first grouped results navigation
   - feature flags, correlation IDs, toasts, keyboard shortcuts
@@ -269,6 +277,24 @@ Ten parallel worktree agents delivered platform hardening, testing infrastructur
 
 **ADR numbering note**: All 5 PRs that created ADRs originally used ADR-0023. The canonical numbering is ADR-0023 (SQLite migration) through ADR-0027 (cloud topology). PR branches need ADR file renames during merge to match this index.
 
+## Feature, Security, and Ops Expansion Wave (2026-04-09, PRs `#806`–`#813`, 8 issues)
+
+Eight parallel worktree agents delivered new features, security infrastructure, ops tooling, and developer experience improvements across 8 PRs. Each PR received two rounds of adversarial review (original self-review + independent cold review). The independent round caught 9 CRITICAL and 11 HIGH findings — all resolved before merge.
+
+**Features:**
+- **UX-08 Calendar/timeline views** (`#94`/`#810`): `WorkspaceService.GetCalendarAsync` with board-access-scoped date-range card query (90-day cap, 500-result limit); `CardRepository.GetByDueDateRangeAsync`; `GET /api/workspace/calendar?from=&to=` endpoint defaulting to current month; frontend `CalendarView.vue` with grid mode (monthly calendar, color-coded due-date cards, overflow "+N more") and timeline mode (chronological date-grouped list); month navigation, status indicators (on-track/overdue/blocked), drill-down to board/card; loading/error/empty states; ARIA grid roles; sidebar nav item; 8 backend + 20+ frontend tests; adversarial review fixed UTC timezone mismatch, overdue logic inconsistency, and unbounded query results
+- **INT-05 Note-style import and web clip intake** (`#334`/`#809`): `NoteImportService` with markdown heading-based section splitting and web clip metadata intake; `CaptureSource.MarkdownImport` and `CaptureSource.WebClip` enum values; `NoteImportController` with `POST /api/import/notes/markdown` and `POST /api/import/notes/webclip` (auth + rate limiting); all imported content routes through `ICaptureService.CreateAsync` (GP-06 compliant — no silent board mutations); provenance via `ExternalRef` (filename/URL) and `TitleHint`; frontend markdown upload and web clip paste tabs in `ExportImportView`; security: path traversal validation, URL scheme restriction (http/https only), no outbound requests (no SSRF), content as plain text (no XSS); 38 backend + 6 frontend tests; adversarial review fixed silent success on all-sections-fail and ExternalRef overflow
+- **AGT-03 Agents/Runs surfaces** (`#338`/`#808`): `AgentsView.vue` (profile list with status badges), `AgentRunsView.vue` (run list per agent with proposal linkage), `AgentRunDetailView.vue` (vertical event timeline with human-readable labels, JSON payload display, proposal navigation); `agentStore` Pinia store with 3 data slices; `agentApi` HTTP client with enum normalization for backend integer serialization; 3 lazy-loaded routes under `/workspace/agents` gated to `agent` workspace mode; sidebar nav item with `primaryModes: ['agent']`; loading/error/empty states throughout; 42 frontend tests; adversarial review confirmed clean (no CRITICAL/HIGH)
+- **UI-12 Storybook baseline** (`#251`/`#807`): Storybook 10.3.5 (`@storybook/vue3-vite`) configured for Vue 3 + Vite 8; stories for all 17 Td* UI primitives (TdButton, TdIconButton, TdInput, TdTextarea, TdSelect, TdFieldWrapper, TdDialog, TdDropdown, TdPopover, TdTooltip, TdToast, TdInlineAlert, TdSpinner, TdSkeleton, TdBadge, TdTag, TdEmptyState) showing key state variants; design token CSS import + obsidian theme background; `viteFinal` hook strips PWA plugin for storybook builds; `npm run storybook` (dev server :6006) and `npm run storybook:build` scripts; adversarial review confirmed clean
+
+**Security & Auth:**
+- **SEC-07 SSO/OIDC with MFA** (`#82`/`#813`): configurable OIDC provider support (Microsoft Entra ID, Google, generic OIDC) via `IOidcProviderFactory` with pluggable registration; OIDC is config-gated and disabled by default; OIDC login/callback/exchange endpoints with open-redirect protection and short-lived single-use authorization codes; TOTP-based MFA (RFC 6238) with setup (secret + QR URI + 8 recovery codes), confirm, verify, and disable endpoints; recovery codes bcrypt-hashed at rest; constant-time comparison and replay protection; `MfaPolicy` configuration (`EnableMfaSetup`, `RequireMfaForSensitiveActions`) gating password change and account deletion; frontend OIDC login buttons on LoginView (config-gated), `MfaSetup.vue` settings component, `MfaChallengeModal.vue` for protected actions; no auto-linking by email (prevents account takeover); ADR-0029 documents design decisions; 30+ backend tests; adversarial review fixed dead MFA enforcement code, permanent user lockout via DisableAsync, and OIDC endpoint routing
+- **CLD-03 OAuth PKCE and account linking** (`#676`/`#812`): DB-backed auth code store replacing in-memory `ConcurrentDictionary` — `OAuthAuthCode` entity with EF migration, `IOAuthAuthCodeRepository` with atomic `TryConsumeAtomicAsync` (raw SQL `UPDATE WHERE IsConsumed = 0 AND ExpiresAt > now`); PKCE support via `UsePkce = true` in ASP.NET Core 8 OAuth middleware; account linking endpoints (`POST /api/auth/github/link`, `DELETE /api/auth/github/link`, `GET /api/auth/linked-accounts`) with conflict detection and session verification; frontend Linked Accounts section in `ProfileSettingsView` with Link/Unlink buttons and avatar display; 24+ backend tests; adversarial review fixed CSRF on account linking, TOCTOU in expiry check, JWT plaintext in DB, DoS via full-table load, and unbounded table growth
+
+**Ops & Observability:**
+- **OPS-09 Staged deployment workflow** (`#101`/`#806`): ADR-0028 documents blue/green + canary deployment strategy with rollback criteria; `docs/ops/DEPLOYMENT_WORKFLOW.md` canonical 4-phase workflow (build verification → staging → production canary → production promotion) with rollback procedures, database migration safety, emergency hotfix override, and ownership/escalation model; `docs/ops/RELEASE_CHECKLIST.md` versioned smoke verification (7 pre-deploy + 9 automated staging + 7 manual staging + 7 canary + 6 post-promotion + 5 post-release checks) with failure response matrix; `scripts/deploy/smoke-test.sh` portable smoke test (9 automated checks: health, API, auth, board auth gate, frontend, SignalR, static assets, security headers, container restart detection); `.github/workflows/cd-staging-gate.yml` with `production` environment manual approval gate; adversarial review fixed script injection in CI workflow and unscoped container checks
+- **OBS-02 Error tracking and product analytics** (`#549`/`#811`): config-gated Sentry SDK for backend (`Sentry.AspNetCore` with `BeforeSend` PII scrubbing for emails/JWTs, `ServerName` blanked) and frontend; opt-in product telemetry service (`TelemetryEventService`) aligned with `docs/product/TELEMETRY_TAXONOMY.md` — property key allowlist (15 safe keys), max 10 properties, 200-char value truncation; `TelemetryController` with anonymous config endpoint and authenticated events endpoint; Plausible/Umami analytics script injection (`useAnalyticsScript`) with HTTPS-only URL validation; Pinia `telemetryStore` with consent management, event buffering, and flush; DNT/GPC privacy signal detection prevents auto-restore of consent; telemetry consent toggle in `ProfileSettingsView`; `docs/ops/OBSERVABILITY_SETUP.md` configuration guide; all telemetry opt-in and disabled by default; 38 backend + 25 frontend tests; adversarial review fixed Sentry PII leak, arbitrary properties injection, XSS via script URL, and DNT non-compliance
+
 ## Phase Progress (Reconciled)
 
 Progress is tracked against `filesAndResources/taskdeck_technical_design_document.md`.
@@ -308,7 +334,7 @@ Completed in Phase 4:
 - DEBT-03 database export/import (`#54`): sandbox-gated SQLite file export/import endpoints with payload signature/size validation and file-replacement rollback guardrails
 
 Remaining for Phase 4 completion:
-- UX/operator hardening for remaining keyboard/accessibility/discoverability gaps (WCAG baseline delivered, conversational refinement `#576` delivered)
+- UX/operator hardening for remaining keyboard/accessibility/discoverability gaps (WCAG baseline delivered, conversational refinement `#576` delivered, calendar views `#94` delivered, agent surfaces `#338` delivered)
 - product-legibility hardening so the app teaches the `capture -> review -> board` loop without relying on demo scripts or internal docs
 
 ## Future Expansion Backlog Snapshot (2026-02-18)
