@@ -1,6 +1,4 @@
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+import http from './http'
 
 export interface SentryClientConfig {
   enabled: boolean
@@ -43,12 +41,12 @@ export interface TelemetryBatchResponse {
 
 export const telemetryApi = {
   async getConfig(): Promise<ClientTelemetryConfig> {
-    const response = await axios.get<ClientTelemetryConfig>(`${API_BASE}/api/telemetry/config`)
-    return response.data
+    const { data } = await http.get<ClientTelemetryConfig>('/telemetry/config')
+    return data
   },
 
   async sendEvents(events: TelemetryEventPayload[]): Promise<TelemetryBatchResponse> {
-    const response = await axios.post<TelemetryBatchResponse>(`${API_BASE}/api/telemetry/events`, { events })
-    return response.data
+    const { data } = await http.post<TelemetryBatchResponse>('/telemetry/events', { events })
+    return data
   },
 }
