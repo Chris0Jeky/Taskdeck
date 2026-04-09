@@ -16,7 +16,7 @@ using AuthenticationService = Taskdeck.Application.Services.AuthenticationServic
 
 namespace Taskdeck.Api.Controllers;
 
-public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string? MfaCode = null);
 public record ExchangeCodeRequest(string Code);
 
 /// <summary>
@@ -31,6 +31,7 @@ public class AuthController : AuthenticatedControllerBase
     private readonly AuthenticationService _authService;
     private readonly GitHubOAuthSettings _gitHubOAuthSettings;
     private readonly OidcSettings _oidcSettings;
+    private readonly MfaService _mfaService;
 
     // Short-lived, single-use authorization codes to avoid exposing JWT in URLs.
     // Key: code, Value: (token, expiry). Codes expire after 60 seconds.
@@ -40,12 +41,14 @@ public class AuthController : AuthenticatedControllerBase
         AuthenticationService authService,
         GitHubOAuthSettings gitHubOAuthSettings,
         OidcSettings oidcSettings,
+        MfaService mfaService,
         IUserContext userContext)
         : base(userContext)
     {
         _authService = authService;
         _gitHubOAuthSettings = gitHubOAuthSettings;
         _oidcSettings = oidcSettings;
+        _mfaService = mfaService;
     }
 
     /// <summary>
@@ -99,11 +102,13 @@ public class AuthController : AuthenticatedControllerBase
     /// <summary>
     /// Change the password for the authenticated caller.
     /// The target user is always derived from the JWT — client-supplied user IDs are not accepted.
+    /// When MFA is enabled and RequireMfaForSensitiveActions is true, a valid MFA code is required.
     /// </summary>
-    /// <param name="request">Current and new password.</param>
+    /// <param name="request">Current password, new password, and optional MFA code.</param>
     /// <response code="204">Password changed successfully.</response>
     /// <response code="400">Validation error.</response>
     /// <response code="401">Not authenticated or current password is incorrect.</response>
+    /// <response code="403">MFA verification required but not provided or invalid.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("change-password")]
     [Authorize]
@@ -111,11 +116,25 @@ public class AuthController : AuthenticatedControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
             return errorResult!;
+
+        // Enforce MFA for sensitive actions when policy requires it
+        if (await _mfaService.IsMfaRequiredForSensitiveActionAsync(callerUserId))
+        {
+            if (string.IsNullOrWhiteSpace(request.MfaCode))
+                return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(
+                    ErrorCodes.Forbidden, "MFA verification is required for this action"));
+
+            var mfaResult = await _mfaService.VerifyCodeAsync(callerUserId, request.MfaCode);
+            if (!mfaResult.IsSuccess)
+                return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(
+                    ErrorCodes.AuthenticationFailed, "Invalid MFA verification code"));
+        }
 
         var result = await _authService.ChangePasswordAsync(callerUserId, request.CurrentPassword, request.NewPassword);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
@@ -344,7 +363,7 @@ public class AuthController : AuthenticatedControllerBase
             : "/";
 
         var separator = safeReturnUrl.Contains('?') ? "&" : "?";
-        return Redirect($"{safeReturnUrl}{separator}oauth_code={Uri.EscapeDataString(code)}");
+        return Redirect($"{safeReturnUrl}{separator}oauth_code={Uri.EscapeDataString(code)}&oauth_provider=oidc");
     }
 
     /// <summary>
