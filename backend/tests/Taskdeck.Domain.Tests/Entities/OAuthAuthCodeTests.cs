@@ -19,7 +19,7 @@ public class OAuthAuthCodeTests
 
         authCode.Code.Should().Be(code);
         authCode.UserId.Should().Be(userId);
-        authCode.Token.Should().Be(token);
+        authCode.Token.Should().BeEmpty("JWT is never stored in DB — re-issued at exchange time");
         authCode.ExpiresAt.Should().Be(expiresAt);
         authCode.IsConsumed.Should().BeFalse();
         authCode.ConsumedAt.Should().BeNull();
@@ -122,37 +122,45 @@ public class OAuthAuthCodeTests
     [Fact]
     public void CreateForLinking_ValidParameters_CreatesEntity()
     {
+        var initiatingUserId = Guid.NewGuid();
         var providerData = "{\"provider\":\"GitHub\",\"providerUserId\":\"12345\"}";
         var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
 
-        var linkCode = OAuthAuthCode.CreateForLinking("link-code", providerData, expiresAt);
+        var linkCode = OAuthAuthCode.CreateForLinking("link-code", initiatingUserId, providerData, expiresAt);
 
         linkCode.Code.Should().Be("link-code");
         linkCode.Purpose.Should().Be("link");
         linkCode.IsLinkingCode.Should().BeTrue();
         linkCode.ProviderData.Should().Be(providerData);
-        linkCode.UserId.Should().Be(Guid.Empty);
+        linkCode.UserId.Should().Be(initiatingUserId);
         linkCode.Token.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CreateForLinking_EmptyUserId_Throws()
+    {
+        var act = () => OAuthAuthCode.CreateForLinking("code", Guid.Empty, "{}", DateTimeOffset.UtcNow.AddSeconds(60));
+        act.Should().Throw<DomainException>().WithMessage("*Initiating user ID is required*");
     }
 
     [Fact]
     public void CreateForLinking_EmptyProviderData_Throws()
     {
-        var act = () => OAuthAuthCode.CreateForLinking("code", "", DateTimeOffset.UtcNow.AddSeconds(60));
+        var act = () => OAuthAuthCode.CreateForLinking("code", Guid.NewGuid(), "", DateTimeOffset.UtcNow.AddSeconds(60));
         act.Should().Throw<DomainException>().WithMessage("*Provider data cannot be empty*");
     }
 
     [Fact]
     public void CreateForLinking_PastExpiry_Throws()
     {
-        var act = () => OAuthAuthCode.CreateForLinking("code", "{}", DateTimeOffset.UtcNow.AddSeconds(-10));
+        var act = () => OAuthAuthCode.CreateForLinking("code", Guid.NewGuid(), "{}", DateTimeOffset.UtcNow.AddSeconds(-10));
         act.Should().Throw<DomainException>().WithMessage("*Expiry must be in the future*");
     }
 
     [Fact]
     public void CreateForLinking_TryConsume_WorksCorrectly()
     {
-        var linkCode = OAuthAuthCode.CreateForLinking("link-code", "{}", DateTimeOffset.UtcNow.AddSeconds(60));
+        var linkCode = OAuthAuthCode.CreateForLinking("link-code", Guid.NewGuid(), "{}", DateTimeOffset.UtcNow.AddSeconds(60));
 
         var consumed = linkCode.TryConsume();
 
