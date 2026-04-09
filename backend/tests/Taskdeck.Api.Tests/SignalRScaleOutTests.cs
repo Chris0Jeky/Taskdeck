@@ -134,7 +134,7 @@ public class SignalRScaleOutTests
     {
         var config = BuildConfig(new Dictionary<string, string?>());
         var logger = new InMemoryLogger<RedisBackplaneHealthCheck>();
-        var healthCheck = new RedisBackplaneHealthCheck(config, logger);
+        using var healthCheck = new RedisBackplaneHealthCheck(config, logger);
 
         var result = await healthCheck.CheckAsync();
 
@@ -143,7 +143,7 @@ public class SignalRScaleOutTests
         result.LatencyMs.Should().BeNull();
     }
 
-    [Fact]
+    [Fact(Timeout = 10_000)]
     public async Task HealthCheck_ReturnsUnhealthy_WhenRedisUnreachable()
     {
         var config = BuildConfig(new Dictionary<string, string?>
@@ -153,7 +153,7 @@ public class SignalRScaleOutTests
             ["SignalR:Redis:ConnectionString"] = "127.0.0.1:1,connectTimeout=1000,abortConnect=True"
         });
         var logger = new InMemoryLogger<RedisBackplaneHealthCheck>();
-        var healthCheck = new RedisBackplaneHealthCheck(config, logger);
+        using var healthCheck = new RedisBackplaneHealthCheck(config, logger);
 
         var result = await healthCheck.CheckAsync();
 
