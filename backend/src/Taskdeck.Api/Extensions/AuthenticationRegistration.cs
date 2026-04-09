@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OAuth.Claims;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Application.Services;
@@ -16,7 +17,8 @@ public static class AuthenticationRegistration
     public static IServiceCollection AddTaskdeckAuthentication(
         this IServiceCollection services,
         JwtSettings jwtSettings,
-        GitHubOAuthSettings? gitHubOAuthSettings = null)
+        GitHubOAuthSettings? gitHubOAuthSettings = null,
+        OidcSettings? oidcSettings = null)
     {
         if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey) ||
             jwtSettings.SecretKey.Length < 32 ||
@@ -111,6 +113,41 @@ public static class AuthenticationRegistration
                 // OAuthHandler fetches UserInformationEndpoint automatically
                 // and applies ClaimActions — no custom OnCreatingTicket needed.
             });
+        }
+
+        // Environment-gated: add OIDC providers when configured
+        if (oidcSettings != null)
+        {
+            foreach (var provider in oidcSettings.ConfiguredProviders)
+            {
+                var schemeName = $"Oidc_{provider.Name}";
+                var callbackPath = !string.IsNullOrWhiteSpace(provider.CallbackPath)
+                    ? provider.CallbackPath
+                    : $"/api/auth/oidc/{provider.Name.ToLowerInvariant()}/oauth-redirect";
+
+                authBuilder.AddOpenIdConnect(schemeName, provider.DisplayName, options =>
+                {
+                    options.Authority = provider.Authority;
+                    options.ClientId = provider.ClientId;
+                    options.ClientSecret = provider.ClientSecret;
+                    options.CallbackPath = callbackPath;
+                    options.ResponseType = "code";
+                    options.SaveTokens = false;
+                    options.GetClaimsFromUserInfoEndpoint = true;
+
+                    options.Scope.Clear();
+                    foreach (var scope in provider.Scopes)
+                    {
+                        options.Scope.Add(scope);
+                    }
+
+                    // Map standard OIDC claims to ClaimTypes
+                    options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "sub");
+                    options.ClaimActions.MapJsonKey(ClaimTypes.Name, "preferred_username");
+                    options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
+                    options.ClaimActions.MapJsonKey("name", "name");
+                });
+            }
         }
 
         return services;

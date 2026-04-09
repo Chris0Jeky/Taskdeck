@@ -18,6 +18,7 @@ namespace Taskdeck.Api.Controllers;
 
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public record ExchangeCodeRequest(string Code);
+public record OidcExchangeCodeRequest(string Code, string Provider);
 
 /// <summary>
 /// Authentication endpoints — register, login, change password, and GitHub OAuth flow.
@@ -30,16 +31,22 @@ public class AuthController : AuthenticatedControllerBase
 {
     private readonly AuthenticationService _authService;
     private readonly GitHubOAuthSettings _gitHubOAuthSettings;
+    private readonly OidcSettings _oidcSettings;
 
     // Short-lived, single-use authorization codes to avoid exposing JWT in URLs.
     // Key: code, Value: (token, expiry). Codes expire after 60 seconds.
     private static readonly ConcurrentDictionary<string, (AuthResultDto Result, DateTimeOffset Expiry)> _authCodes = new();
 
-    public AuthController(AuthenticationService authService, GitHubOAuthSettings gitHubOAuthSettings, IUserContext userContext)
+    public AuthController(
+        AuthenticationService authService,
+        GitHubOAuthSettings gitHubOAuthSettings,
+        OidcSettings oidcSettings,
+        IUserContext userContext)
         : base(userContext)
     {
         _authService = authService;
         _gitHubOAuthSettings = gitHubOAuthSettings;
+        _oidcSettings = oidcSettings;
     }
 
     /// <summary>
@@ -229,15 +236,136 @@ public class AuthController : AuthenticatedControllerBase
     }
 
     /// <summary>
-    /// Returns whether GitHub OAuth login is available on this instance.
+    /// Returns available authentication providers on this instance.
     /// </summary>
     [HttpGet("providers")]
     public IActionResult GetProviders()
     {
+        var oidcProviders = _oidcSettings.ConfiguredProviders
+            .Select(p => new OidcProviderInfoDto(p.Name, p.DisplayName))
+            .ToList();
+
         return Ok(new
         {
-            GitHub = _gitHubOAuthSettings.IsConfigured
+            GitHub = _gitHubOAuthSettings.IsConfigured,
+            Oidc = oidcProviders
         });
+    }
+
+    /// <summary>
+    /// Initiates OIDC login flow for a named provider. Only available when the provider is configured.
+    /// </summary>
+    [HttpGet("oidc/{providerName}/login")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    public IActionResult OidcLogin(string providerName, [FromQuery] string? returnUrl = null)
+    {
+        var provider = _oidcSettings.ConfiguredProviders
+            .FirstOrDefault(p => string.Equals(p.Name, providerName, StringComparison.OrdinalIgnoreCase));
+
+        if (provider == null)
+            return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, $"OIDC provider '{providerName}' is not configured"));
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && !Url.IsLocalUrl(returnUrl))
+            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Invalid return URL"));
+
+        var schemeName = $"Oidc_{provider.Name}";
+        var properties = new AuthenticationProperties
+        {
+            RedirectUri = Url.Action(nameof(OidcCallback), new { providerName = provider.Name, returnUrl }),
+            Items = { { "LoginProvider", provider.Name } }
+        };
+
+        return Challenge(properties, schemeName);
+    }
+
+    /// <summary>
+    /// Handles the OIDC callback, creates/links the user, and redirects with a short-lived code.
+    /// </summary>
+    [HttpGet("oidc/{providerName}/callback")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    public async Task<IActionResult> OidcCallback(string providerName, [FromQuery] string? returnUrl = null)
+    {
+        var provider = _oidcSettings.ConfiguredProviders
+            .FirstOrDefault(p => string.Equals(p.Name, providerName, StringComparison.OrdinalIgnoreCase));
+
+        if (provider == null)
+            return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, $"OIDC provider '{providerName}' is not configured"));
+
+        var schemeName = $"Oidc_{provider.Name}";
+        var authenticateResult = await HttpContext.AuthenticateAsync(schemeName);
+        if (!authenticateResult.Succeeded || authenticateResult.Principal == null)
+        {
+            return Unauthorized(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                $"OIDC authentication with '{provider.DisplayName}' failed"));
+        }
+
+        var claims = authenticateResult.Principal.Claims.ToList();
+        var providerUserId = claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var username = claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Name)?.Value
+                       ?? claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+        var email = claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Email)?.Value;
+        var displayName = claims.FirstOrDefault(c => c.Type == "name")?.Value;
+
+        if (string.IsNullOrWhiteSpace(providerUserId))
+        {
+            return Unauthorized(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                $"OIDC provider '{provider.DisplayName}' did not return a user identifier"));
+        }
+
+        if (string.IsNullOrWhiteSpace(email))
+            email = $"{provider.Name.ToLowerInvariant()}-{providerUserId}@external.taskdeck.local";
+
+        if (string.IsNullOrWhiteSpace(username))
+            username = $"{provider.Name.ToLowerInvariant()}-user-{providerUserId}";
+
+        var dto = new ExternalLoginDto(
+            Provider: $"oidc_{provider.Name}",
+            ProviderUserId: providerUserId,
+            Username: username,
+            Email: email,
+            DisplayName: displayName,
+            AvatarUrl: null);
+
+        var result = await _authService.ExternalLoginAsync(dto);
+
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        // Sign out the temporary cookie used during the OIDC handshake
+        await HttpContext.SignOutAsync(schemeName);
+
+        var code = GenerateAuthCode();
+        _authCodes[code] = (result.Value, DateTimeOffset.UtcNow.AddSeconds(60));
+        CleanupExpiredCodes();
+
+        var safeReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)
+            ? returnUrl
+            : "/";
+
+        var separator = safeReturnUrl.Contains('?') ? "&" : "?";
+        return Redirect($"{safeReturnUrl}{separator}oauth_code={Uri.EscapeDataString(code)}");
+    }
+
+    /// <summary>
+    /// Exchanges a short-lived OIDC authorization code for a JWT token.
+    /// Reuses the same code store as GitHub OAuth.
+    /// </summary>
+    [HttpPost("oidc/exchange")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    public IActionResult OidcExchangeCode([FromBody] ExchangeCodeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Code is required"));
+
+        if (!_authCodes.TryRemove(request.Code, out var entry))
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Invalid or expired code"));
+
+        if (DateTimeOffset.UtcNow > entry.Expiry)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, "Code has expired"));
+
+        return Ok(entry.Result);
     }
 
     private static string GenerateAuthCode()
