@@ -16,11 +16,19 @@ public sealed class RedisBackplaneHealthCheck
     private readonly string? _connectionString;
     private readonly ILogger<RedisBackplaneHealthCheck> _logger;
 
+    /// <summary>
+    /// Cached health status to avoid creating a new Redis connection on every
+    /// health probe. Refreshed at most once per <see cref="CacheDuration"/>.
+    /// </summary>
+    private RedisHealthStatus? _cachedStatus;
+    private DateTimeOffset _cachedAt = DateTimeOffset.MinValue;
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
+
     public RedisBackplaneHealthCheck(
         IConfiguration configuration,
         ILogger<RedisBackplaneHealthCheck> logger)
     {
-        _connectionString = configuration["SignalR:Redis:ConnectionString"];
+        _connectionString = configuration[Extensions.SignalRRegistration.RedisConnectionStringKey];
         _logger = logger;
     }
 
@@ -31,6 +39,13 @@ public sealed class RedisBackplaneHealthCheck
         if (!IsConfigured)
         {
             return new RedisHealthStatus("NotConfigured", null);
+        }
+
+        // Return cached result when still fresh to avoid opening a new Redis
+        // connection on every health probe (called by load balancers, k8s, etc.).
+        if (_cachedStatus is not null && DateTimeOffset.UtcNow - _cachedAt < CacheDuration)
+        {
+            return _cachedStatus;
         }
 
         try
@@ -46,12 +61,18 @@ public sealed class RedisBackplaneHealthCheck
 
             _logger.LogDebug("Redis backplane health check: PING responded in {Latency}ms", pong.TotalMilliseconds);
 
-            return new RedisHealthStatus("Healthy", null, pong.TotalMilliseconds);
+            var result = new RedisHealthStatus("Healthy", null, pong.TotalMilliseconds);
+            _cachedStatus = result;
+            _cachedAt = DateTimeOffset.UtcNow;
+            return result;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis backplane health check failed");
-            return new RedisHealthStatus("Unhealthy", ex.Message);
+            var result = new RedisHealthStatus("Unhealthy", ex.Message);
+            _cachedStatus = result;
+            _cachedAt = DateTimeOffset.UtcNow;
+            return result;
         }
     }
 }
