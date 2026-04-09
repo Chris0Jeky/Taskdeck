@@ -20,7 +20,6 @@ const config = {
   ],
   tempDirName: 'stryker-tmp',
   cleanTempDir: 'always',
-  concurrency: 4,
   timeoutMS: 60000,
   timeoutFactor: 2.5,
 }
