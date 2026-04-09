@@ -27,8 +27,14 @@ public sealed class InMemoryCacheService : ICacheService, IDisposable
         _logger = logger;
         _keyPrefix = keyPrefix;
 
-        // Sweep expired entries every 60 seconds
-        _sweepTimer = new Timer(_ => SweepExpiredEntries(), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+        // Sweep expired entries every 60 seconds.
+        // Timer callback is wrapped in try/catch to prevent unhandled exceptions
+        // from terminating the timer permanently.
+        _sweepTimer = new Timer(_ =>
+        {
+            try { SweepExpiredEntries(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Cache sweep timer callback error"); }
+        }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
     }
 
     public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
@@ -74,6 +80,13 @@ public sealed class InMemoryCacheService : ICacheService, IDisposable
             if (_cache.Count >= MaxEntries)
             {
                 SweepExpiredEntries();
+
+                // If still at capacity after sweeping expired entries, evict oldest entries
+                // to enforce the hard limit and prevent unbounded memory growth.
+                if (_cache.Count >= MaxEntries)
+                {
+                    EvictOldestEntries(MaxEntries / 10); // Evict 10% to create headroom
+                }
             }
 
             var serialized = JsonSerializer.Serialize(value);
@@ -160,6 +173,32 @@ public sealed class InMemoryCacheService : ICacheService, IDisposable
         if (swept > 0)
         {
             _logger.LogDebug("Cache sweep removed {SweptCount} expired entries", swept);
+        }
+    }
+
+    /// <summary>
+    /// Evicts the entries closest to expiry to make room when the cache is at capacity
+    /// and no expired entries remain to sweep. This is a simple eviction policy that
+    /// approximates LRU by removing entries with the shortest remaining TTL.
+    /// </summary>
+    private void EvictOldestEntries(int count)
+    {
+        var toEvict = _cache
+            .OrderBy(kvp => kvp.Value.ExpiresAtUtc)
+            .Take(count)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        var evicted = 0;
+        foreach (var key in toEvict)
+        {
+            if (_cache.TryRemove(key, out _))
+                evicted++;
+        }
+
+        if (evicted > 0)
+        {
+            _logger.LogWarning("Cache at capacity ({MaxEntries}), evicted {EvictedCount} entries to create headroom", MaxEntries, evicted);
         }
     }
 
