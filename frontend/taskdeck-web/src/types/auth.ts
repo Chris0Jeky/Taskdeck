@@ -42,3 +42,11 @@ export interface SessionState {
 export interface AuthProviders {
   gitHub: boolean
 }
+
+export interface LinkedAccount {
+  provider: string
+  providerUserId: string
+  displayName: string | null
+  avatarUrl: string | null
+  linkedAt: string
+}

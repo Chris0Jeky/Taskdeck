@@ -1,5 +1,5 @@
 import http from './http'
-import type { LoginRequest, RegisterRequest, ChangePasswordRequest, AuthResponse, AuthProviders } from '../types/auth'
+import type { LoginRequest, RegisterRequest, ChangePasswordRequest, AuthResponse, AuthProviders, LinkedAccount } from '../types/auth'
 
 export const authApi = {
   async login(credentials: LoginRequest): Promise<AuthResponse> {
@@ -24,5 +24,19 @@ export const authApi = {
   async exchangeOAuthCode(code: string): Promise<AuthResponse> {
     const { data } = await http.post<AuthResponse>('/auth/github/exchange', { code })
     return data
+  },
+
+  async getLinkedAccounts(): Promise<LinkedAccount[]> {
+    const { data } = await http.get<LinkedAccount[]>('/auth/linked-accounts')
+    return data
+  },
+
+  async linkGitHub(code: string): Promise<LinkedAccount> {
+    const { data } = await http.post<LinkedAccount>('/auth/github/link', { code })
+    return data
+  },
+
+  async unlinkGitHub(): Promise<void> {
+    await http.delete('/auth/github/link')
   },
 }
