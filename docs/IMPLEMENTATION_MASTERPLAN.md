@@ -620,6 +620,13 @@ Delivered in the latest cycle:
     - resilience/degraded-mode tests (`#720`/`#778`): 34 tests (18 backend + 16 frontend); adversarial review fixed CI blocker (unused import), double-invocation anti-pattern, and timing race
     - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
     - TST-32–TST-57 wave: 23 of 25 issues now delivered (added `#723`/`#769` and `#725`/`#765` from parallel wave); remaining open: `#705`, `#717`; frontend suite ~1734 passing
+130. SignalR scale-out readiness (`#105`, PLAT-03, 2026-04-09):
+    - ADR-0023 documents Redis backplane strategy with alternatives analysis (Azure SignalR Service, custom message bus, sticky sessions)
+    - `Microsoft.AspNetCore.SignalR.StackExchangeRedis` 8.0.25 added with conditional activation: Redis backplane enabled when `SignalR:Redis:ConnectionString` configured, in-memory fallback when absent
+    - `RedisBackplaneHealthCheck` reports NotConfigured/Healthy/Unhealthy in `/health/ready` endpoint
+    - `SignalRRegistration` extension replaces bare `AddSignalR()` with configurable builder
+    - operational runbook at `docs/platform/SIGNALR_SCALEOUT_RUNBOOK.md` covers Docker Compose multi-instance, load balancer WebSocket config, failure scenarios, and rollback
+    - 14 new tests: configuration detection, logging, health check states, readiness endpoint integration, hub negotiate preservation
 
 130. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
     - 10 parallel worktree agents delivered platform hardening, testing infrastructure, ops documentation, and PWA readiness with two rounds of adversarial review per PR (22 CRITICAL + 32 HIGH findings caught and resolved)
@@ -967,7 +974,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
-- Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
+- Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, ~~`#105` (SignalR scale-out — delivered, ADR-0023)~~, `#111`
 - Test maturity: `#87`, `#88`, `#89` (property/fuzz pilot delivered; extended by `#717`), `#90`, `#91`; rigorous expansion wave tracker at `#721`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
