@@ -143,6 +143,10 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
         No personal information, card content, board names, or user-generated text is ever collected.
         Telemetry is <strong>off by default</strong> and requires your explicit opt-in.
       </p>
+      <p v-if="telemetry.privacySignalActive" class="td-telemetry-status td-telemetry-status--dnt">
+        Your browser has Do Not Track or Global Privacy Control enabled.
+        Telemetry consent is not auto-restored across sessions. You may still opt in below.
+      </p>
       <div class="td-flag-row">
         <label for="telemetry-consent" class="td-flag-label">
           Enable anonymous telemetry
@@ -231,6 +235,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .td-telemetry-status { font-size: var(--td-font-sm); margin-top: var(--td-space-3); padding: var(--td-space-2) var(--td-space-3); border-radius: var(--td-radius-md); }
 .td-telemetry-status--on { background: var(--td-color-success-light); color: var(--td-color-success); }
 .td-telemetry-status--off { background: var(--td-surface-tertiary); color: var(--td-text-secondary); }
+.td-telemetry-status--dnt { background: var(--td-color-warning-light, #fef3cd); color: var(--td-color-warning, #856404); }
 .td-telemetry-details { margin-top: var(--td-space-4); }
 .td-telemetry-summary { cursor: pointer; font-size: var(--td-font-sm); color: var(--td-text-secondary); font-weight: 500; }
 .td-telemetry-list { font-size: var(--td-font-sm); color: var(--td-text-secondary); padding-left: var(--td-space-6); margin-top: var(--td-space-2); list-style: disc; }

@@ -11,6 +11,20 @@ const FLUSH_INTERVAL_MS = 30_000 // 30 seconds
 const MAX_BUFFER_SIZE = 200
 
 /**
+ * Checks whether the browser signals Do Not Track (DNT) or
+ * Global Privacy Control (GPC). When either is active, telemetry
+ * consent should not be auto-restored from localStorage.
+ */
+function browserSignalsPrivacy(): boolean {
+  if (typeof navigator === 'undefined') return false
+  // GPC has legal force under CCPA — respect it unconditionally
+  if ((navigator as Record<string, unknown>).globalPrivacyControl === true) return true
+  // DNT is advisory but we respect it as a privacy-first product
+  if (navigator.doNotTrack === '1') return true
+  return false
+}
+
+/**
  * Generates a random UUID v4 for anonymous session identification.
  * This ID is rotated on every app load — it is NOT tied to user identity.
  */
@@ -40,6 +54,9 @@ export const useTelemetryStore = defineStore('telemetry', () => {
 
   /** Anonymous session ID, rotated per app load */
   const sessionId = ref(generateSessionId())
+
+  /** Whether the browser has DNT or GPC active */
+  const privacySignalActive = ref(browserSignalsPrivacy())
 
   /** Buffered events waiting to be flushed */
   const eventBuffer = ref<TelemetryEventPayload[]>([])
@@ -76,8 +93,14 @@ export const useTelemetryStore = defineStore('telemetry', () => {
 
   // ── Actions ─────────────────────────────────────────────────────────
 
-  /** Restore consent from localStorage */
+  /** Restore consent from localStorage. Does NOT auto-restore if DNT/GPC is active. */
   function restoreConsent() {
+    if (privacySignalActive.value) {
+      // Browser signals privacy preference — do not auto-restore consent.
+      // User must explicitly opt in again each session.
+      consentGiven.value = false
+      return
+    }
     const stored = localStorage.getItem(CONSENT_KEY)
     consentGiven.value = stored === 'true'
   }
@@ -200,6 +223,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     configLoaded,
     sessionId,
     eventBuffer,
+    privacySignalActive,
 
     // Computed
     isActive,
