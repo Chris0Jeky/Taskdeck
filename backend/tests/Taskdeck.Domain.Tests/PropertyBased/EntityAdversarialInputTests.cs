@@ -1,5 +1,6 @@
 using FluentAssertions;
 using FsCheck;
+using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -66,15 +67,17 @@ public class EntityAdversarialInputTests
         Gen.Constant((string)null!),
 
         // Arbitrary from FsCheck (filter nulls — null is already covered above)
-        Arb.Generate<string>().Where(s => s != null)
+        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
     );
 
     private static Gen<string> ValidNameGen(int maxLen) =>
         Gen.Choose(1, maxLen)
             .SelectMany(len =>
-                Gen.ArrayOf(len, Gen.Elements(
-                    'a', 'b', 'c', 'X', 'Y', 'Z', '1', '2', '-', '_', ' ', '.'))
-                .Select(chars => new string(chars)))
+                Gen.Elements(
+                    'a', 'b', 'c', 'X', 'Y', 'Z', '1', '2', '-', '_', ' ', '.')
+                .Select(c => c.ToString())
+                .ArrayOf(len)
+                .Select(parts => string.Concat(parts)))
             .Where(s => !string.IsNullOrWhiteSpace(s));
 
     // ─────────────────────── Board adversarial tests ───────────────────────
@@ -339,7 +342,7 @@ public class EntityAdversarialInputTests
     public Property Column_WipLimit_BoundaryValues()
     {
         return Prop.ForAll(
-            Arb.From<int>(),
+            ArbMap.Default.ArbFor<int>(),
             wipLimit =>
             {
                 try
