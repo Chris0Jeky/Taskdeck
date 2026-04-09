@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/stryker-config.schema.json",
+  "stryker-config": {
+    "project": "Taskdeck.Domain.csproj",
+    "test-projects": [
+      "tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj"
+    ],
+    "solution": "Taskdeck.sln",
+    "mutation-level": "Standard",
+    "reporters": [
+      "html",
+      "json",
+      "progress",
+      "cleartext"
+    ],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 0
+    },
+    "mutate": [
+      "src/Taskdeck.Domain/**/*.cs",
+      "!src/Taskdeck.Domain/obj/**",
+      "!src/Taskdeck.Domain/bin/**"
+    ],
+    "language-version": "latest",
+    "concurrency": 4,
+    "output": "StrykerOutput",
+    "log-to-file": false,
+    "verbosity": "info",
+    "ignored-methods": [],
+    "excluded-mutations": []
+  }
+}
