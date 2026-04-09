@@ -14,6 +14,11 @@ Hardening verification follow-through:
 Terraform follow-through:
 - `#102` OPS-10 Terraform/IaC baseline (`docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md`)
 
+Staged deployment workflow:
+- `#101` OPS-09 staged deployment with blue/green and canary (`docs/ops/DEPLOYMENT_WORKFLOW.md`)
+- Release verification checklist: `docs/ops/RELEASE_CHECKLIST.md`
+- ADR: `ADR-0028`
+
 ## Files
 
 - `deploy/docker/backend.Dockerfile`
