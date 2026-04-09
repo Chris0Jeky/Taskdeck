@@ -22,6 +22,14 @@ public class OAuthAuthCodeConfiguration : IEntityTypeConfiguration<OAuthAuthCode
         builder.Property(e => e.Token)
             .IsRequired();
 
+        builder.Property(e => e.Purpose)
+            .IsRequired()
+            .HasMaxLength(20)
+            .HasDefaultValue("login");
+
+        builder.Property(e => e.ProviderData)
+            .HasMaxLength(4096);
+
         builder.Property(e => e.ExpiresAt)
             .IsRequired();
 
@@ -43,12 +51,5 @@ public class OAuthAuthCodeConfiguration : IEntityTypeConfiguration<OAuthAuthCode
 
         // Index for TTL cleanup queries
         builder.HasIndex(e => e.ExpiresAt);
-
-        // Foreign key to Users — cascade delete so deleted users
-        // don't leave orphaned codes
-        builder.HasOne<User>()
-            .WithMany()
-            .HasForeignKey(e => e.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
     }
 }

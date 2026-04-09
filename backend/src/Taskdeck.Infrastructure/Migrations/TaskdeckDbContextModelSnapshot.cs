@@ -1325,6 +1325,17 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("ProviderData")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("login");
+
                     b.Property<string>("Token")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -1341,8 +1352,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("ExpiresAt");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("OAuthAuthCodes", (string)null);
                 });
@@ -1810,15 +1819,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.OAuthAuthCode", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.OutboundWebhookDelivery", b =>

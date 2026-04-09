@@ -19,6 +19,8 @@ namespace Taskdeck.Infrastructure.Migrations
                     Code = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
                     UserId = table.Column<Guid>(type: "TEXT", nullable: false),
                     Token = table.Column<string>(type: "TEXT", nullable: false),
+                    Purpose = table.Column<string>(type: "TEXT", maxLength: 20, nullable: false, defaultValue: "login"),
+                    ProviderData = table.Column<string>(type: "TEXT", maxLength: 4096, nullable: true),
                     ExpiresAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     IsConsumed = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
                     ConsumedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
@@ -28,12 +30,6 @@ namespace Taskdeck.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_OAuthAuthCodes", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_OAuthAuthCodes_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateIndex(
@@ -46,11 +42,6 @@ namespace Taskdeck.Infrastructure.Migrations
                 name: "IX_OAuthAuthCodes_ExpiresAt",
                 table: "OAuthAuthCodes",
                 column: "ExpiresAt");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_OAuthAuthCodes_UserId",
-                table: "OAuthAuthCodes",
-                column: "UserId");
         }
 
         /// <inheritdoc />

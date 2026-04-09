@@ -6,6 +6,7 @@ namespace Taskdeck.Domain.Entities;
 /// <summary>
 /// A short-lived, single-use authorization code issued after OAuth callback.
 /// Stored in the database to survive restarts and support multi-instance deployments.
+/// Supports both login (Token populated) and account-linking (ProviderData populated) flows.
 /// </summary>
 public class OAuthAuthCode : Entity
 {
@@ -27,14 +28,25 @@ public class OAuthAuthCode : Entity
     }
 
     /// <summary>
-    /// The user ID this code authenticates.
+    /// The user ID this code authenticates (login flow) or Guid.Empty (link flow).
     /// </summary>
     public Guid UserId { get; private set; }
 
     /// <summary>
-    /// The pre-serialized JWT token to return on successful exchange.
+    /// The pre-serialized JWT token to return on successful exchange (login flow only).
     /// </summary>
     public string Token { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The purpose of this code: "login" or "link".
+    /// </summary>
+    public string Purpose { get; private set; } = "login";
+
+    /// <summary>
+    /// JSON-serialized provider identity data for account linking flows.
+    /// Contains provider, providerUserId, displayName, avatarUrl.
+    /// </summary>
+    public string? ProviderData { get; private set; }
 
     /// <summary>
     /// When this code expires and can no longer be exchanged.
@@ -53,6 +65,9 @@ public class OAuthAuthCode : Entity
 
     private OAuthAuthCode() : base() { }
 
+    /// <summary>
+    /// Creates an auth code for the login flow (token exchange).
+    /// </summary>
     public OAuthAuthCode(string code, Guid userId, string token, DateTimeOffset expiresAt)
         : base()
     {
@@ -68,13 +83,42 @@ public class OAuthAuthCode : Entity
         Code = code;
         UserId = userId;
         Token = token;
+        Purpose = "login";
         ExpiresAt = expiresAt;
+    }
+
+    /// <summary>
+    /// Creates an auth code for the account linking flow (provider identity exchange).
+    /// </summary>
+    public static OAuthAuthCode CreateForLinking(string code, string providerData, DateTimeOffset expiresAt)
+    {
+        if (string.IsNullOrWhiteSpace(providerData))
+            throw new DomainException(ErrorCodes.ValidationError, "Provider data cannot be empty for linking");
+
+        if (expiresAt <= DateTimeOffset.UtcNow)
+            throw new DomainException(ErrorCodes.ValidationError, "Expiry must be in the future");
+
+        var entity = new OAuthAuthCode
+        {
+            Code = code,
+            UserId = Guid.Empty,
+            Token = string.Empty,
+            Purpose = "link",
+            ProviderData = providerData,
+            ExpiresAt = expiresAt
+        };
+        return entity;
     }
 
     /// <summary>
     /// Returns true if this code has expired.
     /// </summary>
     public bool IsExpired => DateTimeOffset.UtcNow > ExpiresAt;
+
+    /// <summary>
+    /// Returns true if this is a linking code (not a login code).
+    /// </summary>
+    public bool IsLinkingCode => Purpose == "link";
 
     /// <summary>
     /// Attempts to consume this code. Returns false if already consumed or expired.
