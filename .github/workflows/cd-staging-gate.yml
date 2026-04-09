@@ -1,0 +1,208 @@
+# =============================================================================
+# CD Staging Gate — Automated staging deployment verification and production
+# promotion gate. Implements Phase 1-2 of the staged deployment workflow
+# (docs/ops/DEPLOYMENT_WORKFLOW.md) with a manual approval gate for Phase 3.
+#
+# Triggers:
+#   - Release published (automatic)
+#   - Manual workflow dispatch (for re-runs or pre-release validation)
+#
+# ADR: ADR-0028 (Staged Deployment — Blue/Green with Canary Verification)
+# Issue: #101 (OPS-09)
+# =============================================================================
+
+name: CD Staging Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Container image tag to deploy (e.g., v0.2.0)"
+        required: true
+        type: string
+      skip_smoke:
+        description: "Skip smoke tests (emergency only)"
+        required: false
+        type: boolean
+        default: false
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cd-staging-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Phase 1: Build Verification
+  # -----------------------------------------------------------------------
+  build-verification:
+    name: "Phase 1: Build Verification"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image_tag: ${{ steps.resolve-tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve image tag
+        id: resolve-tag
+        run: |
+          if [[ -n "${{ inputs.image_tag }}" ]]; then
+            TAG="${{ inputs.image_tag }}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="$(git describe --tags --always)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved image tag: $TAG"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Restore and build backend
+        run: |
+          dotnet restore backend/Taskdeck.sln
+          dotnet build backend/Taskdeck.sln -c Release --no-restore
+
+      - name: Install and build frontend
+        working-directory: frontend/taskdeck-web
+        run: |
+          npm ci
+          npx vite build
+
+      - name: Build container images
+        run: |
+          docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:${{ steps.resolve-tag.outputs.tag }} .
+          docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:${{ steps.resolve-tag.outputs.tag }} .
+
+      - name: Verify compose configuration
+        run: |
+          TASKDECK_JWT_SECRET=ci-staging-gate-secret \
+          docker compose -f deploy/docker-compose.yml --profile baseline config > /dev/null
+
+      - name: Write Phase 1 summary
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ## Phase 1: Build Verification -- PASSED
+
+          - **Image tag**: \`${{ steps.resolve-tag.outputs.tag }}\`
+          - Backend: restore + build (Release) passed
+          - Frontend: npm ci + vite build passed
+          - Container images: built successfully
+          - Compose config: validated
+          EOF
+
+  # -----------------------------------------------------------------------
+  # Phase 2: Staging Smoke Tests
+  # -----------------------------------------------------------------------
+  staging-smoke:
+    name: "Phase 2: Staging Smoke Tests"
+    needs: build-verification
+    if: ${{ !inputs.skip_smoke }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build container images
+        run: |
+          docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
+          docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
+
+      - name: Start stack
+        run: |
+          TASKDECK_JWT_SECRET=ci-staging-smoke-secret \
+          docker compose -f deploy/docker-compose.yml --profile baseline up -d
+
+      - name: Wait for services to be ready
+        run: |
+          echo "Waiting for services to start..."
+          for attempt in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health/ready > /dev/null 2>&1; then
+              echo "Services ready after $((attempt * 5)) seconds"
+              break
+            fi
+            if [[ "$attempt" -eq 30 ]]; then
+              echo "Services failed to start within 150 seconds" >&2
+              docker compose -f deploy/docker-compose.yml --profile baseline logs
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Run smoke tests
+        run: |
+          bash scripts/deploy/smoke-test.sh http://localhost:8080
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "--- Container status ---"
+          docker compose -f deploy/docker-compose.yml --profile baseline ps
+          echo ""
+          echo "--- Container logs ---"
+          docker compose -f deploy/docker-compose.yml --profile baseline logs --tail=100
+
+      - name: Stop stack
+        if: always()
+        run: |
+          docker compose -f deploy/docker-compose.yml --profile baseline down -v
+
+      - name: Write Phase 2 summary
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ## Phase 2: Staging Smoke Tests -- PASSED
+
+          - **Image tag**: \`${{ needs.build-verification.outputs.image_tag }}\`
+          - All S1-S9 smoke checks passed
+          - Stack started, verified, and cleaned up
+          EOF
+
+  # -----------------------------------------------------------------------
+  # Production Promotion Gate (manual approval)
+  # -----------------------------------------------------------------------
+  promotion-gate:
+    name: "Phase 3: Production Promotion Gate"
+    needs: [build-verification, staging-smoke]
+    if: always() && needs.build-verification.result == 'success' && (needs.staging-smoke.result == 'success' || needs.staging-smoke.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Promotion approved
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ## Phase 3: Production Promotion Gate -- APPROVED
+
+          - **Image tag**: \`${{ needs.build-verification.outputs.image_tag }}\`
+          - Build verification: passed
+          - Staging smoke: ${{ needs.staging-smoke.result }}
+          - Manual approval: granted
+          - **Next step**: Execute Phase 3 (canary deployment) and Phase 4 (promotion) per \`docs/ops/DEPLOYMENT_WORKFLOW.md\`
+          EOF
+          echo "Production promotion approved for tag: ${{ needs.build-verification.outputs.image_tag }}"
+          echo "Follow the deployment workflow in docs/ops/DEPLOYMENT_WORKFLOW.md for Phases 3-4."
