@@ -1,6 +1,6 @@
-import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession } from './support/authSession'
+import { addCard, addColumn, columnByName, createBoard } from './support/boardUiHelpers'
 
 /**
  * Mobile-responsive E2E tests.
@@ -14,51 +14,6 @@ import { registerAndAttachSession } from './support/authSession'
 test.beforeEach(async ({ page, request }) => {
   await registerAndAttachSession(page, request, 'mobile')
 })
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function createBoard(page: Page, boardName: string) {
-  await page.goto('/workspace/boards')
-  await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
-  await page.getByRole('button', { name: '+ New Board' }).click()
-  await page.getByPlaceholder('Board name').fill(boardName)
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
-  await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
-}
-
-async function addColumn(page: Page, columnName: string) {
-  await page.getByRole('button', { name: '+ Add Column' }).click()
-  await page.getByPlaceholder('Column name').fill(columnName)
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
-}
-
-function columnByName(page: Page, columnName: string) {
-  return page
-    .locator('[data-column-id]')
-    .filter({ has: page.getByRole('heading', { name: columnName, exact: true }) })
-    .first()
-}
-
-async function addCard(page: Page, columnName: string, cardTitle: string) {
-  const column = columnByName(page, columnName)
-  await column.getByRole('button', { name: 'Add Card' }).click()
-  const addCardInput = column.getByPlaceholder('Enter card title...')
-  await expect(addCardInput).toBeVisible()
-  await addCardInput.fill(cardTitle)
-  const createCardResponse = page.waitForResponse((response) =>
-    response.request().method() === 'POST'
-    && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
-    && response.ok())
-  await column.getByRole('button', { name: 'Add', exact: true }).click()
-  await createCardResponse
-  await expect(
-    page.locator('[data-card-id]').filter({ hasText: cardTitle }).first(),
-  ).toBeVisible()
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -111,31 +66,23 @@ test('@mobile card editing modal should fit within mobile viewport', async ({ pa
   const viewportSize = page.viewportSize()
   expect(viewportSize).not.toBeNull()
 
-  // The modal/dialog container should not overflow the viewport width
+  // The modal/dialog container should not overflow the viewport width.
+  // Use the dialog role locator which must exist since "Edit Card" heading is visible.
   const modal = page.locator('[role="dialog"], .td-card-edit-modal, .td-modal').first()
-  const modalExists = await modal.count()
-  if (modalExists > 0) {
-    const modalBox = await modal.boundingBox()
-    if (modalBox) {
-      // Modal should not exceed viewport width
-      expect(modalBox.x + modalBox.width).toBeLessThanOrEqual(viewportSize!.width + 2)
-      // Modal should have a reasonable minimum width on mobile
-      expect(modalBox.width).toBeGreaterThan(200)
-    }
-  }
-
-  // Card title field should be visible and editable
-  const titleInput = page.locator('#card-title, [name="title"], input[type="text"]').first()
-  if (await titleInput.count() > 0) {
-    await expect(titleInput).toBeVisible()
-  }
+  await expect(modal).toBeVisible()
+  const modalBox = await modal.boundingBox()
+  expect(modalBox).not.toBeNull()
+  // Modal should not exceed viewport width
+  expect(modalBox!.x + modalBox!.width).toBeLessThanOrEqual(viewportSize!.width + 2)
+  // Modal should have a reasonable minimum width on mobile
+  expect(modalBox!.width).toBeGreaterThan(200)
 
   // Close the modal
   await page.keyboard.press('Escape')
   await expect(editHeading).not.toBeVisible()
 })
 
-test('@mobile sidebar navigation should remain accessible on small screen', async ({ page }) => {
+test('@mobile workspace views should render correctly on small screen', async ({ page }) => {
   await page.goto('/workspace/home')
   await expect(page).toHaveURL(/\/workspace\/home$/)
 
