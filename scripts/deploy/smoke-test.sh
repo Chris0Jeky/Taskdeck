@@ -17,7 +17,10 @@
 # Issue: #101 (OPS-09)
 # =============================================================================
 
-set -euo pipefail
+# Note: -e is intentionally omitted so that individual check failures do not
+# abort the script before the summary is printed. -u and -o pipefail still
+# catch real programming errors (unset variables, broken pipes).
+set -uo pipefail
 
 BASE_URL="${1:?Usage: smoke-test.sh <base-url>}"
 # Strip trailing slash
