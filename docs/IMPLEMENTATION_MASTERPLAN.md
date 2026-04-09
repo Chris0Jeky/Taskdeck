@@ -798,7 +798,7 @@ These continue in parallel where they protect trust, performance, or operator po
 - managed-key LLM control plane and abuse controls: `#235`, `#237` (pending), `#238` (operator tooling groundwork delivered; live-traffic wiring pending), `#239` (delivered), `#240` (delivered)
 - premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling; UX feedback wave 1 (`#628`) delivered: sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages (`#615`), review collapsible sections with risk color-coding (`#626`); wave 2 delivered: capture triage delimiters (`#614`), chat truncation (`#616`), notification type differentiation/grouping/batch actions (`#625`), search pagination (`#610`), CI-extended path triggers (`#608`); hardening wave (2026-04-03) delivered: label manager dark theme (`#684`), human-readable proposal diffs (`#682`), expired proposal handling (`#678`+`#690`), chat health banner three-state (`#679`), dead workspace routes fixed (`#681`)
 - long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
-- platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
+- platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`; PWA/offline readiness delivered (`#95`): `vite-plugin-pwa` + Workbox `generateSW` with 84 precached entries, runtime caching (NetworkFirst for API, CacheFirst for static, StaleWhileRevalidate for fonts), SPA navigateFallback, `useOnlineStatus` composable, `OfflineBanner` + `SwUpdatePrompt` components in AppShell, installability-ready manifest, offline behavior documented in `docs/platform/PWA_OFFLINE_BEHAVIOR.md`; 18 new tests (11 composable + 7 component)
 - deferred outreach CRM expansion: `#262` to `#268`
 
 ## Release Framing
@@ -827,7 +827,7 @@ Master tracker: `#531`.
   - landing page on custom domain
 
 - `v0.3.0` **In Your Pocket** (target: Week 6-9):
-  - PWA manifest + service worker (`#540` → `#541`, `#542`)
+  - ~~PWA manifest + service worker (`#540` → `#541`, `#542`)~~ — baseline delivered in `#95`: Workbox generateSW with precaching, runtime caching, SPA navigateFallback, offline banner, SW update prompt, installability-ready manifest
   - mobile-responsive CSS for core flows (`#543`)
   - bottom tab navigation for mobile
   - touch-optimized capture modal
