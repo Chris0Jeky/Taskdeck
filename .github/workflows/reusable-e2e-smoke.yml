@@ -73,7 +73,7 @@ jobs:
           CI: "true"
           TASKDECK_E2E_DB: taskdeck.e2e.ci.db
           TASKDECK_RUN_DEMO: "0"
-        run: npx playwright test --reporter=line
+        run: npx playwright test --project=chromium --reporter=line
 
       - name: Upload Playwright report
         if: failure()

@@ -52,6 +52,8 @@ export default defineConfig({
   },
   retries: process.env.CI ? 0 : 0,
   reporter: process.env.CI ? [['line'], ['github'], ['html', { open: 'never' }]] : 'list',
+  /* Exclude quarantined tests from all projects (see docs/testing/FLAKY_TEST_POLICY.md). */
+  grepInvert: /@quarantine/,
   use: {
     baseURL: frontendBaseUrl,
     trace: 'retain-on-failure',
