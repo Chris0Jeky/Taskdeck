@@ -209,39 +209,6 @@ public class AuthenticationService : IAuthenticationService
         }
     }
 
-    public async Task<Result<LinkedAccountDto>> LinkExternalLoginAsync(Guid userId, string provider)
-    {
-        try
-        {
-            if (userId == Guid.Empty)
-                return Result.Failure<LinkedAccountDto>(ErrorCodes.ValidationError, "User ID is required");
-
-            if (string.IsNullOrWhiteSpace(provider))
-                return Result.Failure<LinkedAccountDto>(ErrorCodes.ValidationError, "Provider is required");
-
-            var user = await _unitOfWork.Users.GetByIdAsync(userId);
-            if (user == null)
-                return Result.Failure<LinkedAccountDto>(ErrorCodes.NotFound, "User not found");
-
-            if (!user.IsActive)
-                return Result.Failure<LinkedAccountDto>(ErrorCodes.Forbidden, "User account is inactive");
-
-            // Check if user already has a linked account for this provider
-            var existingLogins = await _unitOfWork.ExternalLogins.GetByUserIdAsync(userId);
-            if (existingLogins.Any(l => l.Provider == provider))
-                return Result.Failure<LinkedAccountDto>(ErrorCodes.Conflict, $"Account is already linked to {provider}");
-
-            // Return a placeholder indicating the link flow should proceed via OAuth
-            // The actual linking happens in CompleteAccountLinkAsync after OAuth callback
-            return Result.Failure<LinkedAccountDto>(ErrorCodes.ValidationError,
-                "Account linking requires completing the OAuth flow. Use the GitHub login redirect with mode=link.");
-        }
-        catch (DomainException ex)
-        {
-            return Result.Failure<LinkedAccountDto>(ex.ErrorCode, ex.Message);
-        }
-    }
-
     public async Task<Result<LinkedAccountDto>> CompleteAccountLinkAsync(Guid userId, string provider, string providerUserId, string? displayName, string? avatarUrl)
     {
         try

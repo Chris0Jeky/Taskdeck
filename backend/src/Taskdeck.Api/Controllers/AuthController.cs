@@ -181,8 +181,16 @@ public class AuthController : AuthenticatedControllerBase
         // Sign out the temporary cookie used during the OAuth handshake
         await HttpContext.SignOutAsync("GitHub");
 
+        // Determine if this is a link flow. Prefer the OAuth state (tamper-proof)
+        // over the query string parameter, but fall back to query string for compat.
+        var isLinkMode = mode == "link";
+        if (authenticateResult.Properties?.Items.TryGetValue("mode", out var stateMode) == true)
+        {
+            isLinkMode = stateMode == "link";
+        }
+
         // Account linking flow: store the GitHub identity as a link code
-        if (mode == "link")
+        if (isLinkMode)
         {
             var linkCode = GenerateAuthCode();
             var providerData = JsonSerializer.Serialize(new
@@ -242,8 +250,8 @@ public class AuthController : AuthenticatedControllerBase
         await _unitOfWork.OAuthAuthCodes.AddAsync(authCode);
         await _unitOfWork.SaveChangesAsync();
 
-        // Best-effort cleanup of expired codes
-        _ = CleanupExpiredCodesAsync();
+        // Best-effort cleanup of expired codes (runs in the same request scope)
+        await CleanupExpiredCodesAsync();
 
         var safeReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)
             ? returnUrl
