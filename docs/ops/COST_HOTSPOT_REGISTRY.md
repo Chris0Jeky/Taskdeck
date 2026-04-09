@@ -50,7 +50,7 @@ Each hotspot follows this structure:
 | Chat with 5 tool rounds (max) | ~5,500 | ~1,200 | ~$0.00155 |
 | Capture triage (per item) | ~300 | ~150 | ~$0.00014 |
 
-These estimates assume GPT-4o-mini pricing ($0.15/1M input, $0.60/1M output). Gemini 2.5 Flash has similar pricing. Actual costs depend on conversation length, board context size, and tool result sizes.
+These estimates assume approximate GPT-4o-mini pricing ($0.15/1M input, $0.60/1M output) as a reference baseline. Gemini 2.5 Flash pricing differs and should be checked against current Google pricing. All provider prices should be verified against the current pricing pages at deployment time — LLM pricing changes frequently. Actual costs depend on conversation length, board context size, and tool result sizes.
 
 ### Monthly Projections
 

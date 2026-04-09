@@ -42,7 +42,7 @@ Cloud costs are tracked across six dimensions. Each dimension maps to a billing 
 |---|---|
 | Billing source | Provider API usage (OpenAI, Google Gemini) |
 | Application metric | `ILlmQuotaService` token usage records, `taskdeck.llm.tokens.used` |
-| Current baseline | GPT-4o-mini: ~$0.15/1M input tokens, ~$0.60/1M output tokens; Gemini 2.5 Flash: ~$0.15/1M input tokens, ~$0.60/1M output tokens |
+| Current baseline | GPT-4o-mini: ~$0.15/1M input tokens, ~$0.60/1M output tokens (reference baseline; verify against current OpenAI pricing). Gemini 2.5 Flash: pricing varies, verify against current Google pricing. |
 | Estimated monthly cost | $5-50 (light usage, 10-50 active users) to $200-500 (heavy usage, 100+ users with tool-calling) |
 | Scaling driver | Chat messages per user, tool-calling rounds per message (max 5), capture triage volume |
 
@@ -62,10 +62,10 @@ LLM costs are the highest-variance dimension. See `docs/ops/COST_HOTSPOT_REGISTR
 
 | Attribute | Value |
 |---|---|
-| Billing source | AWS data transfer out, inter-AZ traffic (if multi-AZ) |
+| Billing source | AWS data transfer out, inter-AZ traffic (if multi-AZ), Route 53 hosted zones and DNS queries |
 | Application metric | Response payload sizes (approximated from API metrics) |
-| Estimated monthly cost | $1-10 (single-AZ, moderate traffic) |
-| Scaling driver | API response volume, SignalR WebSocket traffic, export downloads |
+| Estimated monthly cost | $1-10 (single-AZ, moderate traffic) + ~$0.50/hosted zone/month for DNS |
+| Scaling driver | API response volume, SignalR WebSocket traffic, export downloads, DNS query volume |
 
 ### 6. CI/CD and Artifact Storage
 
@@ -114,6 +114,8 @@ These are starting points for a small-team deployment. Adjust after the first 2-
 
 ### Alert Owners
 
+For a solo-operator deployment (the current Taskdeck posture), the operator owns all cost dimensions. The table below applies when the team scales to multiple roles:
+
 | Cost dimension | Primary owner | Escalation |
 |---|---|---|
 | Compute | Infrastructure lead | Project maintainers |
@@ -122,8 +124,6 @@ These are starting points for a small-team deployment. Adjust after the first 2-
 | Logging/telemetry | Infrastructure lead | Project maintainers |
 | Network | Infrastructure lead | Project maintainers |
 | CI/CD | DevOps lead | Project maintainers |
-
-For a solo-operator deployment, all ownership defaults to the operator.
 
 ---
 
@@ -219,6 +219,15 @@ resource "aws_budgets_budget" "taskdeck_monthly" {
   limit_amount = var.monthly_budget_limit
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
+
+  time_period_start = "2026-04-01_00:00"
+
+  # Optional: scope budget to specific resources using cost filters.
+  # Uncomment and adapt if the AWS account hosts non-Taskdeck resources.
+  # cost_filter {
+  #   name   = "TagKeyValue"
+  #   values = ["user:Project$taskdeck-${var.environment}"]
+  # }
 
   notification {
     comparison_operator       = "GREATER_THAN"

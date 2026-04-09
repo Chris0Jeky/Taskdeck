@@ -14,7 +14,7 @@ Three characteristics make proactive cost observability essential:
 
 2. **Local-first heritage means no existing cloud cost discipline**: The team has never operated cloud infrastructure at scale. Without explicit budget guardrails, cost surprises are likely during the v0.2.0 cloud launch.
 
-3. **Several features have superlinear cost scaling**: Logging volume, LLM token consumption, database storage, and SignalR connection counts all grow faster than user count under realistic usage patterns.
+3. **Several features have superlinear or high-variance cost scaling**: LLM token consumption grows superlinearly with usage (tool-calling multiplies per-message cost), logging volume scales with request count and verbosity configuration, and database storage grows continuously with audit trail accumulation. Even linearly-scaling features like SignalR connections become cost-relevant at scale.
 
 Issue #104 (OPS-12) requires establishing cost visibility, budget alerting, and mitigation playbooks before cloud deployment begins.
 

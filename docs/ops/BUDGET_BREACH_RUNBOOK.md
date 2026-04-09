@@ -118,7 +118,7 @@ Listed from least disruptive to most disruptive:
 
 | Priority | Action | Impact | How to execute |
 |---|---|---|---|
-| 1 | Rate-limit top consumers | Affected users get 429 responses | Reduce `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` for specific users via kill-switch |
+| 1 | Tighten global rate limits | All users get stricter quotas | Reduce `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` globally (these are global config keys, not per-user); individual abusive users can be blocked entirely via per-user kill-switch |
 | 2 | Reduce tool-calling rounds | Fewer tool calls per conversation, less capable but cheaper | Set `LlmToolCalling:MaxRounds` from 5 to 2-3 via config |
 | 3 | Switch to cheaper model | Potentially lower quality responses | Change `Llm:OpenAi:Model` to a cheaper variant |
 | 4 | Activate surface kill-switch | One LLM surface disabled (e.g., Chat only) | `POST /api/llm/kill-switch` with `KillSwitchScope: Surface` |
@@ -148,7 +148,7 @@ Listed from least disruptive to most disruptive:
 
 | Priority | Action | Impact | How to execute |
 |---|---|---|---|
-| 1 | Run SQLite VACUUM | Reclaims space from deleted records, brief lock | `sqlite3 /var/lib/taskdeck/taskdeck.db "VACUUM;"` |
+| 1 | Run SQLite VACUUM | Reclaims space from deleted records; requires exclusive lock and temporarily doubles disk usage during execution — schedule during low-traffic window | `sqlite3 /var/lib/taskdeck/taskdeck.db "VACUUM;"` |
 | 2 | Reduce S3 version retention | Fewer backup versions kept | Lower noncurrent version expiry from 90 days |
 | 3 | Delete old export artifacts | Users lose access to old exports | Implement S3 lifecycle rule for export objects |
 | 4 | Archive old data | Audit trail or chat history moved to cold storage | Implement data archival pipeline (future work) |
