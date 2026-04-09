@@ -1,6 +1,6 @@
 ---
 name: taskdeck-repo-onramp
-description: Orient to the Taskdeck repo before editing. Use when starting a Taskdeck session, entering an unfamiliar area, reconciling a broad request against current shipped reality or roadmap constraints, or turning a vague task into a scoped implementation plan.
+description: Orient to the Taskdeck repo before editing. Use when starting a session, entering an unfamiliar area, reconciling a broad request against current reality, or turning a vague task into a scoped plan.
 ---
 
 # Taskdeck Repo Onramp
@@ -9,17 +9,17 @@ Establish current Taskdeck truth before editing code or docs.
 
 ## Read first
 
-1. `AGENTS.md`
-2. `docs/STATUS.md`
-3. `docs/IMPLEMENTATION_MASTERPLAN.md`
-4. `docs/GOLDEN_PRINCIPLES.md`
-5. `docs/ISSUE_EXECUTION_GUIDE.md`
-6. `docs/MCP_TOOLING_GUIDE.md`
+1. `CLAUDE.md`
+2. `AGENTS.md`
+3. `docs/STATUS.md`
+4. `docs/IMPLEMENTATION_MASTERPLAN.md`
+5. `docs/GOLDEN_PRINCIPLES.md`
+6. `docs/ISSUE_EXECUTION_GUIDE.md`
 7. `docs/TESTING_GUIDE.md`
 
-Read these only when relevant:
+Read when relevant:
 
-- `docs/START_HERE.md` for product-facing or UX-facing work
+- `docs/START_HERE.md` for product-facing or UX work
 - `docs/GITHUB_PROJECT_AUTOMATION.md` for issue, PR, or project-ops work
 - feature-specific docs for the touched slice
 
@@ -32,7 +32,7 @@ Extract only what the current task needs:
 - constraints that must not be broken
 - likely files, layers, tests, and docs affected
 
-Treat these as fixed unless the task explicitly changes them:
+Fixed truths unless the task explicitly changes them:
 
 - capture should stay low-friction
 - automation stays review-first
@@ -54,20 +54,13 @@ Write a short plan covering:
 
 If work spans concerns, split by ownership:
 
-- backend implementation
-- frontend implementation
-- docs or verification
+- backend implementation agent
+- frontend implementation agent
+- docs or verification agent
 
 Keep one coordinator responsible for synthesis and final verification.
 
-## Tool posture
-
-- follow MCP-first guidance from `docs/MCP_TOOLING_GUIDE.md`
-- use `rg` for repo search on Windows
-- do not guess current repo truth when active docs already define it
-
 ## Do not use this skill when
 
-- the task is already tightly scoped in a familiar area and you can move straight to a more specific Taskdeck skill
+- the task is already tightly scoped in a familiar area
 - you only need final verification or doc sync
-

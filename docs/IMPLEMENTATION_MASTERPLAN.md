@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-08
+Last Updated: 2026-04-09
 <br>
 Planning Horizon: Next 8 to 12 weeks  
 Companion Active Docs:
@@ -621,6 +621,20 @@ Delivered in the latest cycle:
     - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
     - TST-32–TST-57 wave: 23 of 25 issues now delivered (added `#723`/`#769` and `#725`/`#765` from parallel wave); remaining open: `#705`, `#717`; frontend suite ~1734 passing
 
+130. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
+    - 10 parallel worktree agents delivered platform hardening, testing infrastructure, ops documentation, and PWA readiness with two rounds of adversarial review per PR (22 CRITICAL + 32 HIGH findings caught and resolved)
+    - **PLAT-01** SQLite-to-PostgreSQL migration strategy (`#84`/`#801`): ADR-0023 (PostgreSQL target), migration runbook, 20 provider compatibility tests; review caught phantom table, 5 missing tables, FTS5 crash
+    - **PLAT-02** Distributed caching (`#85`/`#805`): ADR-0024 (cache-aside), `ICacheService` with Redis/InMemory/NoOp implementations, board list caching, 32 tests; review removed unsafe board-detail cache, fixed permanent Redis disable
+    - **PLAT-03** SignalR scale-out (`#105`/`#803`): ADR-0025 (Redis backplane), conditional `AddTaskdeckSignalR`, health check, runbook, 14 tests; review fixed per-probe connection creation, thread-unsafe fields
+    - **TST-02** Cross-browser E2E matrix (`#87`/`#800`): Firefox/WebKit/mobile projects, tagging strategy, 9 tests, CI workflows, flaky test policy; review fixed CI gate timeout, extracted shared helpers
+    - **TST-03** Visual regression harness (`#88`/`#797`): Playwright `toHaveScreenshot()`, 7 visual tests, CI artifact upload, policy doc; review fixed wrong placeholder (guaranteed test failures), double extensions
+    - **TST-05** Mutation testing pilot (`#90`/`#796`): Stryker.NET + Stryker JS configs, weekly CI workflow (non-blocking), policy doc; review removed broken schema URL, invalid properties
+    - **TST-06** Ephemeral DBs via Testcontainers (`#91`/`#804`): `Taskdeck.Integration.Tests` project, PostgreSQL containers, per-test isolation, 20 tests, Docker skip; review fixed DbContext race condition, deadlock
+    - **UX-09** PWA/offline readiness (`#95`/`#802`): VitePWA, service worker, `useOnlineStatus` composable, offline banner, SW update prompt, 18 tests; review eliminated double-reload race, fixed misleading text
+    - **OPS-12** Cloud cost observability (`#104`/`#798`): ADR-0026, cost framework, hotspot registry, breach runbook; review fixed phantom config keys, wrong API endpoints
+    - **OPS-14** Cloud topology ADR (`#111`/`#799`): ADR-0027 (ECS Fargate), autoscaling policy, SLO targets, ~$147-152/month estimate, reference architecture; review fixed cost inconsistency, missing worker, health check accuracy
+    - ADR numbering: PRs originally all created ADR-0023; canonical numbering is ADR-0023 (PLAT-01) through ADR-0027 (OPS-14); file renames needed during merge
+
 ## Current Planning Pivot (2026-03-07)
 
 The 2026-03-06 MVP expansion review packages change the next-cycle emphasis without invalidating the current architecture.
@@ -1215,6 +1229,7 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
 12. Test suite baseline counts recertified 2026-04-08: backend ~3,460+ passing, frontend ~1,891 passing, combined ~5,370+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
+20. **Platform expansion wave (2026-04-09)**: 10 issues (`#84`, `#85`, `#87`, `#88`, `#90`, `#91`, `#95`, `#104`, `#105`, `#111`) across 10 PRs (`#796`–`#805`) delivered platform hardening (PLAT-01/02/03), testing infrastructure (TST-02/03/05/06), PWA readiness (UX-09), and ops documentation (OPS-12/14). 5 new ADRs (ADR-0023 through ADR-0027). Two rounds of adversarial review per PR caught 22 CRITICAL + 32 HIGH issues, all resolved. New test projects: `Taskdeck.Integration.Tests` (Testcontainers). New CI workflows: cross-browser matrix, visual regression, mutation testing, container integration. New infra: `ICacheService`, SignalR Redis backplane, VitePWA service worker.
 
 ## Documentation Operating Model
 Active docs:
