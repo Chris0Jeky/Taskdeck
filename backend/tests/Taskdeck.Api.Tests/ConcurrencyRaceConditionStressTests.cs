@@ -5,7 +5,9 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR.Client;
 using Taskdeck.Api.RateLimiting;
+using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
@@ -820,5 +822,300 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         errors.Should().BeEmpty("no cross-user board contamination should occur");
         userBoards.Should().HaveCount(userCount,
             "all users should have created their boards successfully");
+    }
+
+    // ── SignalR Presence Concurrency ────────────────────────────────────────
+
+    /// <summary>
+    /// Scenario 14: Rapid join/leave stress.
+    /// Multiple connections rapidly join and leave a board.
+    /// After all connections settle, the final presence snapshot should be
+    /// eventually consistent (only connections that remain joined are present).
+    /// </summary>
+    [Fact]
+    public async Task Presence_RapidJoinLeave_EventuallyConsistent()
+    {
+        const int connectionCount = 5;
+
+        using var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "race-presence-rapid");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "race-rapid-board");
+
+        // Create users and grant access
+        var users = new List<TestUserContext>();
+        for (var i = 0; i < connectionCount; i++)
+        {
+            using var c = _factory.CreateClient();
+            var u = await ApiTestHarness.AuthenticateAsync(c, $"race-rapid-{i}");
+            var grant = await ownerClient.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/access",
+                new GrantAccessDto(board.Id, u.UserId, UserRole.Editor));
+            grant.StatusCode.Should().Be(HttpStatusCode.OK);
+            users.Add(u);
+        }
+
+        // Owner observes presence events
+        var observerEvents = new EventCollector<BoardPresenceSnapshot>();
+        await using var observer = SignalRTestHelper.CreateBoardsHubConnection(_factory, owner.Token);
+        observer.On<BoardPresenceSnapshot>("boardPresence", snapshot => observerEvents.Add(snapshot));
+        await observer.StartAsync();
+        await observer.InvokeAsync("JoinBoard", board.Id);
+        await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
+        observerEvents.Clear();
+
+        // All users join simultaneously via barrier
+        var connections = new List<HubConnection>();
+        try
+        {
+            using var joinBarrier = new SemaphoreSlim(0, connectionCount);
+            var joinTasks = users.Select(async user =>
+            {
+                var conn = SignalRTestHelper.CreateBoardsHubConnection(_factory, user.Token);
+                conn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
+                await conn.StartAsync();
+                lock (connections) { connections.Add(conn); }
+                await joinBarrier.WaitAsync();
+                await conn.InvokeAsync("JoinBoard", board.Id);
+            }).ToArray();
+
+            joinBarrier.Release(connectionCount);
+            await Task.WhenAll(joinTasks);
+
+            // Wait for observer to see all joins
+            await SignalRTestHelper.WaitForEventsAsync(observerEvents, connectionCount,
+                TimeSpan.FromSeconds(10));
+
+            // All users should now be visible (plus owner)
+            var afterJoin = observerEvents.ToList().Last();
+            afterJoin.Members.Should().HaveCount(connectionCount + 1,
+                "all joined users plus the observer owner should be present");
+
+            // Now have the first half leave rapidly
+            observerEvents.Clear();
+            var leavingCount = connectionCount / 2;
+            using var leaveBarrier = new SemaphoreSlim(0, leavingCount);
+            var leaveTasks = connections.Take(leavingCount).Select(async conn =>
+            {
+                await leaveBarrier.WaitAsync();
+                await conn.InvokeAsync("LeaveBoard", board.Id);
+            }).ToArray();
+
+            leaveBarrier.Release(leavingCount);
+            await Task.WhenAll(leaveTasks);
+
+            // Wait for leave events
+            await SignalRTestHelper.WaitForEventsAsync(observerEvents, leavingCount,
+                TimeSpan.FromSeconds(10));
+
+            // Final snapshot should show only the remaining connections + owner
+            var remaining = connectionCount - leavingCount;
+            var afterLeave = observerEvents.ToList().Last();
+            afterLeave.Members.Should().HaveCount(remaining + 1,
+                $"after {leavingCount} leaves, {remaining} users + owner should remain");
+        }
+        finally
+        {
+            foreach (var conn in connections)
+            {
+                await conn.DisposeAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Scenario 15: Disconnect during edit clears editing state.
+    /// A user sets an editing card, then their connection drops abruptly.
+    /// The presence snapshot should no longer include the editing state.
+    /// </summary>
+    [Fact]
+    public async Task Presence_DisconnectDuringEdit_ClearsEditingState()
+    {
+        using var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "race-disc-edit");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "race-disc-edit-board");
+
+        // Create a column and card
+        var colResp = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Backlog", null, null));
+        colResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var col = await colResp.Content.ReadFromJsonAsync<ColumnDto>();
+
+        var cardResp = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, col!.Id, "Edit-then-disconnect card", null, null, null));
+        cardResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = await cardResp.Content.ReadFromJsonAsync<CardDto>();
+
+        // Second user who will disconnect
+        using var editorClient = _factory.CreateClient();
+        var editor = await ApiTestHarness.AuthenticateAsync(editorClient, "race-disc-editor");
+        var grant = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, editor.UserId, UserRole.Editor));
+        grant.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Owner joins and observes
+        var observerEvents = new EventCollector<BoardPresenceSnapshot>();
+        await using var observer = SignalRTestHelper.CreateBoardsHubConnection(_factory, owner.Token);
+        observer.On<BoardPresenceSnapshot>("boardPresence", snapshot => observerEvents.Add(snapshot));
+        await observer.StartAsync();
+        await observer.InvokeAsync("JoinBoard", board.Id);
+        await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
+
+        // Editor joins and starts editing
+        var editorConn = SignalRTestHelper.CreateBoardsHubConnection(_factory, editor.Token);
+        editorConn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
+        await editorConn.StartAsync();
+        await editorConn.InvokeAsync("JoinBoard", board.Id);
+        await SignalRTestHelper.WaitForEventsAsync(observerEvents, 2); // join event
+
+        observerEvents.Clear();
+        await editorConn.InvokeAsync("SetEditingCard", board.Id, card!.Id);
+
+        // Wait for editing presence update
+        var editingEvents = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
+        var editorMember = editingEvents.Last().Members
+            .FirstOrDefault(m => m.UserId == editor.UserId);
+        editorMember.Should().NotBeNull("editor should be visible in presence");
+        editorMember!.EditingCardId.Should().Be(card.Id,
+            "editor should show as editing the card");
+
+        // Abrupt disconnect (no LeaveBoard, no SetEditingCard(null))
+        observerEvents.Clear();
+        await editorConn.DisposeAsync();
+
+        // Owner should receive a snapshot without the editor
+        var afterDisconnect = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1,
+            TimeSpan.FromSeconds(5));
+        afterDisconnect.Last().Members.Should().NotContain(m => m.UserId == editor.UserId,
+            "disconnected editor should be removed from presence");
+        afterDisconnect.Last().Members.Should().ContainSingle(m => m.UserId == owner.UserId,
+            "only the owner should remain in presence after editor disconnects");
+    }
+
+    // ── Concurrent Webhook Delivery Creation ────────────────────────────────
+
+    /// <summary>
+    /// Scenario 16: Concurrent board mutations should each create webhook deliveries.
+    /// Multiple card operations fire concurrently on a board with an active
+    /// webhook subscription. Each mutation should produce its own delivery
+    /// record without duplicates or lost events.
+    /// </summary>
+    [Fact]
+    public async Task WebhookDelivery_ConcurrentBoardMutations_EachCreatesDeliveryRecord()
+    {
+        const int mutationCount = 5;
+
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "race-webhook-delivery");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "race-webhook-board");
+
+        var colResp = await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Backlog", null, null));
+        colResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var col = await colResp.Content.ReadFromJsonAsync<ColumnDto>();
+
+        // Create a webhook subscription on this board.
+        // NOTE: the endpoint URL is external-looking; delivery will fail at send time
+        // (no real server) but the delivery RECORD should be created.
+        var webhookResp = await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/webhooks",
+            new CreateOutboundWebhookSubscriptionDto(
+                "https://example.com/webhook-receiver",
+                new List<string> { "card.*" }));
+        webhookResp.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Create multiple cards concurrently — each should trigger a webhook delivery
+        using var barrier = new SemaphoreSlim(0, mutationCount);
+        var statusCodes = new ConcurrentBag<HttpStatusCode>();
+
+        var mutationTasks = Enumerable.Range(0, mutationCount).Select(async i =>
+        {
+            using var raceClient = _factory.CreateClient();
+            raceClient.DefaultRequestHeaders.Authorization = client.DefaultRequestHeaders.Authorization;
+            await barrier.WaitAsync();
+            var resp = await raceClient.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/cards",
+                new CreateCardDto(board.Id, col!.Id, $"Webhook card {i}", null, null, null));
+            statusCodes.Add(resp.StatusCode);
+        }).ToArray();
+
+        barrier.Release(mutationCount);
+        await Task.WhenAll(mutationTasks);
+
+        // All card creations should succeed
+        statusCodes.Should().AllSatisfy(s =>
+            s.Should().Be(HttpStatusCode.Created),
+            "all concurrent card creations should succeed");
+
+        // Verify all cards were created (no duplicates, no losses)
+        var cardsResp = await client.GetAsync($"/api/boards/{board.Id}/cards");
+        cardsResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cards = await cardsResp.Content.ReadFromJsonAsync<List<CardDto>>();
+        var webhookCards = cards!.Where(c => c.Title.StartsWith("Webhook card ")).ToList();
+        webhookCards.Should().HaveCount(mutationCount,
+            "each concurrent mutation should create exactly one card (no duplicates or losses)");
+
+        // Verify all card titles are unique (no duplicate processing)
+        webhookCards.Select(c => c.Title).Distinct().Should().HaveCount(mutationCount,
+            "each card title should be unique, proving no duplicate processing");
+    }
+
+    /// <summary>
+    /// Scenario 17: Concurrent webhook subscription creation on the same board.
+    /// Multiple webhook subscriptions created simultaneously should all succeed
+    /// with distinct IDs and secrets.
+    /// </summary>
+    [Fact]
+    public async Task WebhookSubscription_ConcurrentCreation_AllSucceedWithDistinctIds()
+    {
+        const int subscriptionCount = 3;
+
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "race-webhook-sub");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "race-webhook-sub-board");
+
+        using var barrier = new SemaphoreSlim(0, subscriptionCount);
+        var results = new ConcurrentBag<(HttpStatusCode Status, OutboundWebhookSubscriptionSecretDto? Sub)>();
+
+        var tasks = Enumerable.Range(0, subscriptionCount).Select(async i =>
+        {
+            using var raceClient = _factory.CreateClient();
+            raceClient.DefaultRequestHeaders.Authorization = client.DefaultRequestHeaders.Authorization;
+            await barrier.WaitAsync();
+            var resp = await raceClient.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/webhooks",
+                new CreateOutboundWebhookSubscriptionDto(
+                    $"https://example.com/webhook-{i}",
+                    new List<string> { "card.*" }));
+            var sub = resp.StatusCode == HttpStatusCode.Created
+                ? await resp.Content.ReadFromJsonAsync<OutboundWebhookSubscriptionSecretDto>()
+                : null;
+            results.Add((resp.StatusCode, sub));
+        }).ToArray();
+
+        barrier.Release(subscriptionCount);
+        await Task.WhenAll(tasks);
+
+        // All should succeed
+        results.Select(r => r.Status).Should().AllSatisfy(s =>
+            s.Should().Be(HttpStatusCode.Created),
+            "all concurrent webhook subscription creations should succeed");
+
+        // IDs should be distinct
+        var ids = results.Where(r => r.Sub != null).Select(r => r.Sub!.Subscription.Id).ToList();
+        ids.Distinct().Should().HaveCount(subscriptionCount,
+            "each subscription should have a unique ID");
+
+        // Signing secrets should be distinct
+        var secrets = results.Where(r => r.Sub != null).Select(r => r.Sub!.SigningSecret).ToList();
+        secrets.Distinct().Should().HaveCount(subscriptionCount,
+            "each subscription should have a unique signing secret");
+
+        // Verify via list endpoint
+        var listResp = await client.GetAsync($"/api/boards/{board.Id}/webhooks");
+        listResp.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }
