@@ -33,16 +33,21 @@ public static class DockerAvailableCheck
                 {
                     FileName = "docker",
                     Arguments = "info",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
+                    // Do NOT redirect stdout/stderr — reading them before
+                    // WaitForExit is required to avoid a deadlock when the
+                    // OS pipe buffer fills, and we don't need the output.
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 }
             };
 
             process.Start();
-            process.WaitForExit(TimeSpan.FromSeconds(10));
-            return process.ExitCode == 0;
+            var exited = process.WaitForExit(TimeSpan.FromSeconds(10));
+            // If the process didn't exit within the timeout, ExitCode
+            // would throw — treat timeout as "Docker unavailable".
+            return exited && process.ExitCode == 0;
         }
         catch
         {
