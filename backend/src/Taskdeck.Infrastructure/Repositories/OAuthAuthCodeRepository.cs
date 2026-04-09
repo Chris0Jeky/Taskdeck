@@ -20,32 +20,32 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
     public async Task<bool> TryConsumeAtomicAsync(string code, CancellationToken cancellationToken = default)
     {
         // Atomic UPDATE ensures only one concurrent request can consume a code.
-        // The WHERE clause filters on IsConsumed = 0 so the second requester gets 0 affected rows.
+        // The WHERE clause enforces ALL invariants atomically:
+        //   - IsConsumed = 0: single-use semantics (second requester gets 0 rows)
+        //   - ExpiresAt > now: prevents TOCTOU race where expiry passes between
+        //     the application-level check and the SQL execution
+        //
+        // EF Core SQLite stores DateTimeOffset as "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm" format.
+        // We must use the same format for string comparison to work correctly.
         var now = DateTimeOffset.UtcNow;
+        var nowStr = now.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
         var affected = await _context.Database.ExecuteSqlRawAsync(
-            "UPDATE OAuthAuthCodes SET IsConsumed = 1, ConsumedAt = {0}, UpdatedAt = {1} WHERE Code = {2} AND IsConsumed = 0",
-            now.ToString("o"),
-            now.ToString("o"),
-            code);
+            "UPDATE OAuthAuthCodes SET IsConsumed = 1, ConsumedAt = {0}, UpdatedAt = {1} WHERE Code = {2} AND IsConsumed = 0 AND ExpiresAt > {3}",
+            nowStr, nowStr, code, nowStr);
 
         return affected > 0;
     }
 
     public async Task<int> DeleteExpiredAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
     {
-        // EF Core 8 with SQLite cannot translate DateTimeOffset comparisons in LINQ
-        // queries. Load all codes and filter in memory for cleanup.
-        // Auth codes are short-lived and few in number, so this is acceptable.
-        var allCodes = await _context.Set<OAuthAuthCode>()
-            .ToListAsync(cancellationToken);
+        // Use raw SQL to avoid loading all rows into memory (DoS risk with large tables).
+        // Deletes both expired codes AND consumed codes to prevent unbounded table growth.
+        // EF Core SQLite stores DateTimeOffset as "yyyy-MM-dd HH:mm:ss.fffffff+HH:mm".
+        var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
+        var affected = await _context.Database.ExecuteSqlRawAsync(
+            "DELETE FROM OAuthAuthCodes WHERE ExpiresAt < {0} OR IsConsumed = 1",
+            cutoffStr);
 
-        var expired = allCodes.Where(e => e.ExpiresAt < cutoff).ToList();
-
-        if (expired.Count == 0)
-            return 0;
-
-        _context.Set<OAuthAuthCode>().RemoveRange(expired);
-        await _context.SaveChangesAsync(cancellationToken);
-        return expired.Count;
+        return affected;
     }
 }
