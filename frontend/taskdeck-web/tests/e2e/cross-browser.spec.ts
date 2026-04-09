@@ -1,6 +1,6 @@
-import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession } from './support/authSession'
+import { addCard, addColumn, columnByName, createBoard } from './support/boardUiHelpers'
 
 /**
  * Cross-browser E2E tests.
@@ -9,57 +9,13 @@ import { registerAndAttachSession } from './support/authSession'
  * and validate that critical user journeys work consistently across engines.
  *
  * Tag: @cross-browser — filtered by project grep in playwright.config.ts.
- * On Chromium these also run alongside the regular suite.
+ * On Chromium these also run alongside the regular suite (PR gate includes
+ * @cross-browser tests; be mindful of count to avoid slowing PR feedback).
  */
 
 test.beforeEach(async ({ page, request }) => {
   await registerAndAttachSession(page, request, 'xbrowser')
 })
-
-// ---------------------------------------------------------------------------
-// Helpers (kept local to avoid coupling with smoke.spec helpers)
-// ---------------------------------------------------------------------------
-
-async function createBoard(page: Page, boardName: string) {
-  await page.goto('/workspace/boards')
-  await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
-  await page.getByRole('button', { name: '+ New Board' }).click()
-  await page.getByPlaceholder('Board name').fill(boardName)
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page).toHaveURL(/\/workspace\/boards\/[a-f0-9-]+$/)
-  await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
-}
-
-async function addColumn(page: Page, columnName: string) {
-  await page.getByRole('button', { name: '+ Add Column' }).click()
-  await page.getByPlaceholder('Column name').fill(columnName)
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
-}
-
-function columnByName(page: Page, columnName: string) {
-  return page
-    .locator('[data-column-id]')
-    .filter({ has: page.getByRole('heading', { name: columnName, exact: true }) })
-    .first()
-}
-
-async function addCard(page: Page, columnName: string, cardTitle: string) {
-  const column = columnByName(page, columnName)
-  await column.getByRole('button', { name: 'Add Card' }).click()
-  const addCardInput = column.getByPlaceholder('Enter card title...')
-  await expect(addCardInput).toBeVisible()
-  await addCardInput.fill(cardTitle)
-  const createCardResponse = page.waitForResponse((response) =>
-    response.request().method() === 'POST'
-    && /\/api\/boards\/[a-f0-9-]+\/cards$/i.test(response.url())
-    && response.ok())
-  await column.getByRole('button', { name: 'Add', exact: true }).click()
-  await createCardResponse
-  await expect(
-    page.locator('[data-card-id]').filter({ hasText: cardTitle }).first(),
-  ).toBeVisible()
-}
 
 // ---------------------------------------------------------------------------
 // Tests — critical journeys that must work identically across browsers
