@@ -143,6 +143,16 @@ const navCatalog: NavItem[] = [
     keywords: 'chat automation assistant board context',
   },
   {
+    id: 'calendar',
+    label: 'Calendar',
+    icon: 'D',
+    path: '/workspace/calendar',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'calendar timeline planning due dates schedule deadlines',
+  },
+  {
     id: 'metrics',
     label: 'Metrics',
     icon: 'M',
