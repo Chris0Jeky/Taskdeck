@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -20,6 +21,10 @@ public class MfaService
     private const int TotpCodeLength = 6;
     private const string TotpAlgorithm = "SHA1"; // Standard for Google Authenticator compatibility
     private const string Issuer = "Taskdeck";
+
+    // TOTP replay protection: tracks recently used codes to prevent reuse within the validity window.
+    // Key: "userId:code:timeStep", Value: expiry. Cleaned up lazily.
+    private static readonly ConcurrentDictionary<string, DateTimeOffset> _usedCodes = new();
 
     public MfaService(IUnitOfWork unitOfWork, MfaPolicySettings policySettings)
     {
@@ -98,7 +103,7 @@ public class MfaService
         if (credential.IsConfirmed)
             return Result.Failure(ErrorCodes.Conflict, "MFA is already confirmed");
 
-        if (!ValidateTotp(credential.Secret, code))
+        if (!ValidateTotp(credential.Secret, code, userId))
             return Result.Failure(ErrorCodes.AuthenticationFailed, "Invalid verification code. Please try again.");
 
         credential.Confirm();
@@ -132,7 +137,7 @@ public class MfaService
         if (credential == null)
             return Result.Failure(ErrorCodes.NotFound, "MFA credential not found");
 
-        if (!ValidateTotp(credential.Secret, code))
+        if (!ValidateTotp(credential.Secret, code, userId))
             return Result.Failure(ErrorCodes.AuthenticationFailed, "Invalid verification code");
 
         user.DisableMfa();
@@ -162,7 +167,7 @@ public class MfaService
             return Result.Failure(ErrorCodes.NotFound, "MFA credential not found or not confirmed");
 
         // Try TOTP code first
-        if (ValidateTotp(credential.Secret, code))
+        if (ValidateTotp(credential.Secret, code, userId))
             return Result.Success();
 
         // Try recovery code
@@ -189,7 +194,7 @@ public class MfaService
 
     // ── TOTP Implementation ─────────────────────────────────────────────
 
-    internal bool ValidateTotp(string base32Secret, string code)
+    internal bool ValidateTotp(string base32Secret, string code, Guid? userId = null)
     {
         if (string.IsNullOrWhiteSpace(code) || code.Length != TotpCodeLength)
             return false;
@@ -201,12 +206,38 @@ public class MfaService
 
         for (var i = -_policySettings.TotpToleranceSteps; i <= _policySettings.TotpToleranceSteps; i++)
         {
-            var expectedCode = ComputeTotp(secretBytes, currentStep + i);
-            if (ConstantTimeEquals(code, expectedCode))
-                return true;
+            var step = currentStep + i;
+            var expectedCode = ComputeTotp(secretBytes, step);
+            if (!ConstantTimeEquals(code, expectedCode))
+                continue;
+
+            // Replay protection: reject codes already used in this time step
+            if (userId.HasValue)
+            {
+                var replayKey = $"{userId.Value}:{code}:{step}";
+                if (_usedCodes.ContainsKey(replayKey))
+                    return false;
+
+                // Mark code as used with expiry = 2 * tolerance * timeStep
+                var expirySeconds = (2 * _policySettings.TotpToleranceSteps + 1) * timeStep;
+                _usedCodes[replayKey] = DateTimeOffset.UtcNow.AddSeconds(expirySeconds);
+                CleanupExpiredUsedCodes();
+            }
+
+            return true;
         }
 
         return false;
+    }
+
+    private static void CleanupExpiredUsedCodes()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var kvp in _usedCodes)
+        {
+            if (now > kvp.Value)
+                _usedCodes.TryRemove(kvp.Key, out _);
+        }
     }
 
     private static string ComputeTotp(byte[] secret, long timeCounter)
@@ -242,7 +273,7 @@ public class MfaService
 
     private bool TryUseRecoveryCode(MfaCredential credential, string code)
     {
-        if (string.IsNullOrWhiteSpace(credential.RecoveryCodes))
+        if (string.IsNullOrWhiteSpace(credential.RecoveryCodes) || credential.RecoveryCodes == "EXHAUSTED")
             return false;
 
         var hashedCodes = credential.RecoveryCodes.Split(',').ToList();
@@ -255,7 +286,7 @@ public class MfaService
             hashedCodes.RemoveAt(i);
             credential.SetRecoveryCodes(hashedCodes.Count > 0
                 ? string.Join(",", hashedCodes)
-                : " "); // Keep non-empty to satisfy domain validation
+                : "EXHAUSTED"); // Sentinel value when all recovery codes are used
             return true;
         }
 

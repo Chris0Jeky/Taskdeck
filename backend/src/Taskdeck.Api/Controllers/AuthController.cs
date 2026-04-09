@@ -18,7 +18,6 @@ namespace Taskdeck.Api.Controllers;
 
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public record ExchangeCodeRequest(string Code);
-public record OidcExchangeCodeRequest(string Code, string Provider);
 
 /// <summary>
 /// Authentication endpoints — register, login, change password, and GitHub OAuth flow.
