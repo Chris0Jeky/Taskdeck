@@ -1,6 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
-using Taskdeck.Application.DTOs;
+﻿using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
@@ -17,7 +15,6 @@ public class BoardService
     private readonly IHistoryService? _historyService;
     private readonly ICacheService? _cacheService;
     private readonly CacheSettings? _cacheSettings;
-    private readonly ILogger<BoardService> _logger;
 
     public BoardService(IUnitOfWork unitOfWork)
         : this(unitOfWork, authorizationService: null, realtimeNotifier: null, historyService: null)
@@ -30,8 +27,7 @@ public class BoardService
         IBoardRealtimeNotifier? realtimeNotifier = null,
         IHistoryService? historyService = null,
         ICacheService? cacheService = null,
-        CacheSettings? cacheSettings = null,
-        ILogger<BoardService>? logger = null)
+        CacheSettings? cacheSettings = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
@@ -39,7 +35,6 @@ public class BoardService
         _historyService = historyService;
         _cacheService = cacheService;
         _cacheSettings = cacheSettings ?? new CacheSettings();
-        _logger = logger ?? NullLogger<BoardService>.Instance;
     }
 
     private async Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)

@@ -179,6 +179,6 @@ public sealed class RedisCacheService : ICacheService, IDisposable
     private void LogCacheMetric(string outcome, string keyPrefix)
     {
         var resource = keyPrefix.Split(':').FirstOrDefault() ?? "unknown";
-        _logger.LogInformation("CacheMetric outcome={Outcome} resource={Resource}", outcome, resource);
+        _logger.LogDebug("CacheMetric outcome={Outcome} resource={Resource}", outcome, resource);
     }
 }

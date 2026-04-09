@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Services;
 using Taskdeck.Application.Interfaces;
@@ -19,8 +18,7 @@ public static class ApplicationServiceRegistration
                 sp.GetService<IBoardRealtimeNotifier>(),
                 sp.GetService<IHistoryService>(),
                 sp.GetService<ICacheService>(),
-                sp.GetService<CacheSettings>(),
-                sp.GetService<ILogger<BoardService>>()));
+                sp.GetService<CacheSettings>()));
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
         services.AddScoped<CardCommentService>();

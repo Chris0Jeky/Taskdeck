@@ -115,13 +115,13 @@ public class InMemoryCacheServiceTests : IDisposable
         await _cache.GetAsync<TestData>("missing");
         await _cache.GetAsync<TestData>("metrickey");
 
-        var infoLogs = _logger.Entries
-            .Where(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Information)
+        var debugLogs = _logger.Entries
+            .Where(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Debug)
             .Select(e => e.Message)
             .ToList();
 
-        infoLogs.Should().Contain(m => m.Contains("outcome=miss"));
-        infoLogs.Should().Contain(m => m.Contains("outcome=hit"));
+        debugLogs.Should().Contain(m => m.Contains("outcome=miss"));
+        debugLogs.Should().Contain(m => m.Contains("outcome=hit"));
     }
 
     [Fact]

@@ -134,6 +134,7 @@ public sealed class InMemoryCacheService : ICacheService, IDisposable
     public void Dispose()
     {
         _sweepTimer.Dispose();
+        _cache.Clear();
     }
 
     /// <summary>
@@ -166,7 +167,7 @@ public sealed class InMemoryCacheService : ICacheService, IDisposable
     {
         // Extract the resource type from the key for tagging (e.g., "boards" from "boards:user:...")
         var resource = keyPrefix.Split(':').FirstOrDefault() ?? "unknown";
-        _logger.LogInformation("CacheMetric outcome={Outcome} resource={Resource}", outcome, resource);
+        _logger.LogDebug("CacheMetric outcome={Outcome} resource={Resource}", outcome, resource);
     }
 
     private sealed record CacheEntry(string SerializedValue, DateTime ExpiresAtUtc);
