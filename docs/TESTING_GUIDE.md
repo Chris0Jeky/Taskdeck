@@ -160,6 +160,35 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 - ~~**Webhook HMAC signature verification**~~: **RESOLVED** — 11 tests delivered (`#726`/`#750`) covering header format, HMAC round-trip, wrong-key rejection, secret rotation, timing-safe comparison
 - ~~**Webhook delivery reliability and SSRF**~~: **RESOLVED** — 78 webhook tests across 9 files delivered (`#710`/`#756`) covering retry/backoff, dead-letter, SSRF boundary conditions (private IPv4/IPv6 ranges via `OutboundWebhookEndpointGuardTests`)
 
+## Mutation Testing Pilot (TST-05, `#90`)
+
+Mutation testing is available as a non-blocking quality signal for detecting weak assertions and test gaps.
+
+### Scope
+
+- **Backend**: Stryker.NET targeting `Taskdeck.Domain` (entity state machines, validation, business rules)
+- **Frontend**: Stryker JS targeting `captureStore.ts` and `boardStore.ts` (core data flow stores)
+
+### Running locally
+
+```bash
+# Backend (requires dotnet-stryker global tool)
+cd backend
+dotnet stryker --config-file stryker-config.json
+
+# Frontend
+cd frontend/taskdeck-web
+npm run mutation:test
+```
+
+### CI
+
+Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. Reports uploaded as artifacts.
+
+### Policy and triage
+
+See `docs/testing/MUTATION_TESTING_POLICY.md` for threshold strategy, report interpretation, and follow-up process.
+
 ### Relationship to Existing Test Issues
 
 - Extends `#254` (testing harness improvement wave, delivered)
