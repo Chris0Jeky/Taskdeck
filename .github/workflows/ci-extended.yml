@@ -107,6 +107,14 @@ jobs:
       dotnet-version: 8.0.x
       node-version: 24.13.1
 
+  visual-regression:
+    name: Visual Regression
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (contains(github.event.pull_request.labels.*.name, 'testing') || contains(github.event.pull_request.labels.*.name, 'visual')))
+    uses: ./.github/workflows/reusable-visual-regression.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+
   load-concurrency-harness:
     name: Load and Concurrency Harness
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
