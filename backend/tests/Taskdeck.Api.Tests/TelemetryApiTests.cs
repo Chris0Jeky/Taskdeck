@@ -46,8 +46,8 @@ public class TelemetryApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task PostEvents_ShouldRequireAuth()
     {
-        // Attempt without auth should fail
-        var unauthClient = new HttpClient { BaseAddress = _client.BaseAddress };
+        // _client from factory has no auth headers by default — this verifies
+        // that the endpoint rejects unauthenticated requests.
         var response = await _client.PostAsJsonAsync("/api/telemetry/events", new
         {
             events = new[]
