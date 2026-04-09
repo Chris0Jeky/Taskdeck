@@ -43,15 +43,23 @@ export async function waitForVisualStability(page: Page): Promise<void> {
 }
 
 /**
- * Hide dynamic content that changes between runs (timestamps, random IDs, etc.)
- * to prevent false-positive screenshot diffs.
+ * Hide dynamic content that changes between runs to prevent false-positive
+ * screenshot diffs. Also applies global animation/transition suppression
+ * and hides platform-specific scrollbars.
+ *
+ * Note: The timestamp selectors below ([data-testid="timestamp"], time, etc.)
+ * are forward-looking — the current codebase renders timestamps as inline text
+ * in plain <span>/<p> tags without data-testid attributes or <time> elements.
+ * If timestamp-bearing elements are added to tested views in the future, add
+ * appropriate data-testid attributes to the Vue components so this helper
+ * can hide them.
  */
 export async function hideDynamicContent(page: Page): Promise<void> {
   await page.evaluate(() => {
     const style = document.createElement('style')
     style.setAttribute('data-visual-test', 'true')
     style.textContent = `
-      /* Hide elements that contain timestamps or relative time */
+      /* Hide elements that contain timestamps or relative time (forward-looking) */
       [data-testid="timestamp"],
       [data-testid="relative-time"],
       time {

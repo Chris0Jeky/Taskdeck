@@ -53,11 +53,11 @@ All animations are disabled through multiple layers:
 
 ### Dynamic Content
 
-The `hideDynamicContent()` helper hides:
+The `hideDynamicContent()` helper applies the following rules:
 
-- Timestamp elements (via `[data-testid="timestamp"]`, `time` tags)
-- Blinking cursors (transparent caret color)
-- Platform-specific scrollbars
+- **Timestamp selectors** (forward-looking): `[data-testid="timestamp"]`, `[data-testid="relative-time"]`, `time` tags are hidden via `visibility: hidden`. Note: the current codebase renders timestamps as inline text in plain `<span>`/`<p>` tags without these attributes, so these selectors are not yet effective. When adding visual tests for populated views, add `data-testid="timestamp"` to the relevant Vue components.
+- **Blinking cursors**: transparent caret color on all elements
+- **Platform-specific scrollbars**: hidden via `::-webkit-scrollbar` and `scrollbar-width: none`
 
 ### Network Stability
 
@@ -112,10 +112,17 @@ When a legitimate UI change causes visual test failures:
 
 For CI, baselines must be generated on `ubuntu-latest` to match the CI environment. If baselines were generated on a different OS, CI will fail due to font rendering differences.
 
-To regenerate CI-compatible baselines:
-1. Push a branch with `--update-snapshots` temporarily added to the CI command
-2. Download the generated screenshots from the CI artifacts
-3. Place them in the correct `__screenshots__` directory
+The CI workflow automatically detects when no baselines exist and runs with `--update-snapshots` to generate them. The generated baselines are uploaded as the `visual-regression-baselines` artifact. To bootstrap baselines for the first time or after a full reset:
+
+1. Push the branch and trigger the visual regression CI job
+2. Download the `visual-regression-baselines` artifact from the CI run
+3. Place the files in `frontend/taskdeck-web/tests/visual/__screenshots__/`
+4. Commit and push
+
+To regenerate CI-compatible baselines after intentional UI changes:
+1. Download the `visual-regression-diffs` artifact from the failing CI run
+2. Review the `*-actual.png` images to verify the changes are intentional
+3. Download the actual images and place them as the new baselines in `__screenshots__/`
 4. Commit and push
 
 Alternatively, if you have access to an identical Ubuntu environment (Docker, WSL2 with matching fonts), generate baselines there.
