@@ -56,11 +56,15 @@ jobs:
 
       - name: Resolve image tag
         id: resolve-tag
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [[ -n "${{ inputs.image_tag }}" ]]; then
-            TAG="${{ inputs.image_tag }}"
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            TAG="${{ github.event.release.tag_name }}"
+          if [[ -n "$INPUT_TAG" ]]; then
+            TAG="$INPUT_TAG"
+          elif [[ "$EVENT_NAME" == "release" ]]; then
+            TAG="$RELEASE_TAG"
           else
             TAG="$(git describe --tags --always)"
           fi

@@ -79,7 +79,7 @@ check_http_contains() {
     local response
     response=$(curl -s --max-time 30 "$url" 2>/dev/null) || response=""
 
-    if echo "$response" | grep -qi "$expected"; then
+    if echo "$response" | grep -qiF "$expected"; then
         log "PASS  $label (response contains '$expected')"
         PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -176,8 +176,10 @@ check_header "S8b: X-Frame-Options" "$BASE_URL/" "X-Frame-Options"
 check_header "S8c: Content-Security-Policy" "$BASE_URL/" "Content-Security-Policy"
 
 # --- S9: Container health (only if docker is available) ---
+# Filter to Taskdeck project containers to avoid false positives from unrelated
+# containers on shared hosts.
 if command -v docker >/dev/null 2>&1; then
-    restart_count=$(docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -c "Restarting" || true)
+    restart_count=$(docker ps --filter "label=com.docker.compose.project=taskdeck" --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -c "Restarting" || true)
     if [[ "$restart_count" -eq 0 ]]; then
         log "PASS  S9: No containers restarting"
         PASS_COUNT=$((PASS_COUNT + 1))
