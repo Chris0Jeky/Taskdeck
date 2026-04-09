@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using FsCheck;
+using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Taskdeck.Application.DTOs;
 
@@ -45,7 +46,7 @@ public class ExportImportContractFuzzTests
     public Property ImportBoardDto_Deserialize_NeverThrows_OnArbitraryJson()
     {
         return Prop.ForAll(
-            Arb.From<string>(),
+            ArbMap.Default.ArbFor<string>(),
             json =>
             {
                 // Deserialization of arbitrary strings should either succeed or throw JsonException,
