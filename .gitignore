@@ -129,3 +129,8 @@ docs/WIP/Taskdeck_Demo_Capability_Specification.md
 /.claude/worktrees
 /node_modules/.vite/vitest
 drill-artifacts/
+
+# Stryker mutation testing output
+StrykerOutput/
+stryker-tmp/
+frontend/*/reports/mutation/

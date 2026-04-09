@@ -91,7 +91,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r \".tool_input.file_path // empty\"); if echo \"$FILE\" | grep -qE \"\\.(vue|ts)$\"; then if echo \"$FILE\" | grep -q \"frontend/taskdeck-web\"; then echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Vue/TS file edited: $FILE — consider running typecheck if making multiple related edits.\\\"}}\"; fi; fi; exit 0'",
+            "command": "bash -c 'INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r \".tool_input.file_path // empty\"); if echo \"$FILE\" | grep -qE \"\\.(vue|ts)$\"; then if echo \"$FILE\" | grep -q \"frontend/taskdeck-web\"; then echo \"{\\\"hookSpecificOutput\\\": {\\\"hookEventName\\\": \\\"PostToolUse\\\", \\\"additionalContext\\\": \\\"Vue/TS file edited: $FILE -- consider running typecheck if making multiple related edits.\\\"}}\"; fi; fi; exit 0'",
             "timeout": 5
           }
         ]

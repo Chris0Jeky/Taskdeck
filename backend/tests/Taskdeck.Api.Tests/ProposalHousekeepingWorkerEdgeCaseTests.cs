@@ -341,6 +341,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public IKnowledgeDocumentRepository KnowledgeDocuments => null!;
         public IKnowledgeChunkRepository KnowledgeChunks => null!;
         public IExternalLoginRepository ExternalLogins => null!;
+        public IApiKeyRepository ApiKeys => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {

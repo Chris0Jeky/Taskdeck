@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-08
+Last Updated: 2026-04-09
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -30,6 +30,73 @@ Verification note:
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
 - significant test growth in 2026-04-04 wave 4 (PRs `#765`–`#770`, `#776`, 7 issues): OAuth token lifecycle integration (19 backend tests, `#723`/`#769`), tool argument replay (6 backend tests, `#673`/`#770`), streaming chat token usage (4 backend tests, `#763`/`#768`), DataExport exception logging (3 backend tests, `#759`/`#766`), Agent API 500 fix (2 un-skipped tests, `#758`/`#776`), frontend HTTP interceptor + router auth guard tests (33 new tests, `#725`/`#765`); all 7 PRs received two rounds of adversarial review with review-fix commits addressing CI failures, performance bugs, resource leaks, misleading test names, and weak assertions
 - significant test growth in 2026-04-04 wave 5 (PRs `#771`–`#779`, 8 issues, ~258 new tests): tool-calling Phase 3 refinements (17 backend tests, `#651`/`#773`), export streaming (15 backend tests, `#670`/`#774`), resilience/degraded-mode (34 tests: 18 backend + 16 frontend, `#720`/`#778`), frontend view vitest coverage (83 tests across 6 views, `#716`/`#775`), Pinia store integration (91 tests across 6 stores, `#711`/`#777`), E2E error state expansion (25 Playwright scenarios, `#712`/`#772`), accessibility lint (105 warnings → 0, `#762`/`#779`), vendored dependency cleanup (`#761`/`#771`); all 8 PRs received two rounds of adversarial review
+
+## Platform Expansion Testing Capabilities (2026-04-09)
+
+The platform expansion wave (PRs `#796`–`#805`) delivered four new testing capabilities:
+
+### Cross-Browser and Mobile E2E Matrix (TST-02, `#87`/`#800`)
+
+Playwright config expanded with 5 projects: `chromium` (all tests), `firefox`/`webkit` (`@cross-browser` only), `mobile-chrome` Pixel 7/`mobile-safari` iPhone 14 (`@mobile` only). Global `@quarantine` tag exclusion.
+
+Run commands:
+```bash
+cd frontend/taskdeck-web
+npx playwright test --project=chromium               # PR gate (default)
+npx playwright test --project=firefox                 # Firefox cross-browser
+npx playwright test --grep @mobile                    # All mobile tests
+npx playwright test                                   # Full matrix (nightly)
+```
+
+Tagging convention: `@smoke` (quick CI), `@cross-browser` (multi-browser), `@mobile` (viewport), `@quarantine` (flaky, excluded). See `docs/testing/FLAKY_TEST_POLICY.md`.
+
+CI: `reusable-e2e-cross-browser.yml` in nightly + extended (testing label/manual). PR gate stays Chromium-only.
+
+### Visual Regression Testing (TST-03, `#88`/`#797`)
+
+Playwright `toHaveScreenshot()` with dedicated config: 1280x720 viewport, animations disabled, 0.5% pixel tolerance, light color scheme.
+
+Run commands:
+```bash
+cd frontend/taskdeck-web
+npx playwright test --config playwright.visual.config.ts              # Run visual tests
+npx playwright test --config playwright.visual.config.ts --update-snapshots  # Update baselines
+```
+
+7 visual tests: board (empty + populated), command palette (open + search), archive, inbox, home. Policy at `docs/testing/VISUAL_REGRESSION_POLICY.md`.
+
+CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uploads diff artifacts on failure.
+
+### Mutation Testing (TST-05, `#90`/`#796`)
+
+Backend (Stryker.NET): targets `Taskdeck.Domain` with `Taskdeck.Domain.Tests`. Thresholds: break=60, high=80.
+Frontend (Stryker JS): targets `captureStore`, `boardStore`, and `board/*.ts` submodules with vitest runner.
+
+Run commands:
+```bash
+# Backend
+cd backend && dotnet tool install dotnet-stryker && dotnet stryker
+# Frontend
+cd frontend/taskdeck-web && npm run mutation:test
+```
+
+CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. Non-blocking, reports uploaded as artifacts. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
+
+### Container Integration Tests (TST-06, `#91`/`#804`)
+
+New `Taskdeck.Integration.Tests` project using `Testcontainers.PostgreSql` for ephemeral database isolation. Each test method gets a fresh PostgreSQL database. Requires Docker.
+
+Run commands:
+```bash
+# Run all (skips gracefully without Docker)
+dotnet test backend/tests/Taskdeck.Integration.Tests -c Release
+# Run alongside main suite (integration tests auto-skip without Docker)
+dotnet test backend/Taskdeck.sln -c Release -m:1
+```
+
+20 integration tests: Board CRUD, Card operations, Proposal lifecycle, cross-class isolation, parallel execution. Guide at `docs/testing/TESTCONTAINERS_GUIDE.md`.
+
+CI: `reusable-container-integration.yml` in extended CI (testing label).
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -159,6 +226,35 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 - ~~**Notification delivery**~~: **RESOLVED** — 36 tests delivered (`#719`/`#746`) covering all 5 types, deduplication, preference filtering, cross-user isolation, batch operations
 - ~~**Webhook HMAC signature verification**~~: **RESOLVED** — 11 tests delivered (`#726`/`#750`) covering header format, HMAC round-trip, wrong-key rejection, secret rotation, timing-safe comparison
 - ~~**Webhook delivery reliability and SSRF**~~: **RESOLVED** — 78 webhook tests across 9 files delivered (`#710`/`#756`) covering retry/backoff, dead-letter, SSRF boundary conditions (private IPv4/IPv6 ranges via `OutboundWebhookEndpointGuardTests`)
+
+## Mutation Testing Pilot (TST-05, `#90`)
+
+Mutation testing is available as a non-blocking quality signal for detecting weak assertions and test gaps.
+
+### Scope
+
+- **Backend**: Stryker.NET targeting `Taskdeck.Domain` (entity state machines, validation, business rules)
+- **Frontend**: Stryker JS targeting `captureStore.ts`, `boardStore.ts`, and `board/*.ts` submodules (core data flow stores)
+
+### Running locally
+
+```bash
+# Backend (requires dotnet-stryker global tool)
+cd backend
+dotnet stryker --config-file stryker-config.json
+
+# Frontend
+cd frontend/taskdeck-web
+npm run mutation:test
+```
+
+### CI
+
+Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. Reports uploaded as artifacts.
+
+### Policy and triage
+
+See `docs/testing/MUTATION_TESTING_POLICY.md` for threshold strategy, report interpretation, and follow-up process.
 
 ### Relationship to Existing Test Issues
 

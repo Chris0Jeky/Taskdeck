@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-08
+Last Updated: 2026-04-09
 <br>
 Status Owner: Repository maintainers  
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -116,6 +116,8 @@ Current constraints are mostly hardening and consistency:
   - **Concurrency and race condition stress tests** (`#705`/`#793`): 13 stress tests in `ConcurrencyRaceConditionStressTests.cs` covering queue claim races (double-triage, stale timestamp, batch concurrent), card update conflicts (concurrent moves, stale-write 409, last-writer-wins), column reorder race, proposal approval races (double-approve, approve+reject, double-execute), rate limiting under load (burst beyond limit, cross-user isolation), and multi-user board stress; uses `SemaphoreSlim` barriers with `WaitAsync` for true simultaneity and separate `HttpClient` per task; SQLite write serialization limitations documented; adversarial review fixed misleading doc comments, tightened weak assertions, and replaced non-thread-safe variables with `ConcurrentDictionary`
   - **Property-based and adversarial input tests** (`#717`/`#789`): 211 tests across 5 files — 77 FsCheck domain entity tests (adversarial strings: unicode, null bytes, BOM, ZWSP, RTL override, surrogate pairs, XSS, SQL injection; boundary lengths; GUID/position validation), 29 JSON serialization round-trip fuzz tests (GUID format variations, DateTime boundaries, malformed JSON, large payloads), 80 API adversarial integration tests (no 500s from any adversarial input across board/card/column/capture/auth/search endpoints, malformed JSON, wrong content types, concurrent adversarial requests), 16 fast-check frontend input sanitization property tests, 9 store resilience property tests; `fast-check` added as frontend dev dependency; adversarial review fixed capture payload round-trip testing wrong DTO and null handling inconsistency in FsCheck generators
   - **Inbox premium primitives** (`#249`/`#788`): `InboxView.vue` reworked to use shared UI primitive components — `TdSkeleton` for loading states, `TdInlineAlert` for errors, `TdEmptyState` for empty list, `TdBadge` for status chips, `TdSpinner` for detail refresh; ~65 lines of redundant CSS removed; 7 new vitest tests; adversarial review fixed skeleton screen reader announcements (added `role="status"` and sr-only labels) and redundant `role="alert"` nesting
+
+- Mutation testing pilot now delivered (`#90`): Stryker.NET targeting `Taskdeck.Domain` (backend) and Stryker JS targeting `captureStore`/`boardStore` (frontend); non-blocking weekly CI lane (`.github/workflows/mutation-testing.yml`); policy and triage guidance at `docs/testing/MUTATION_TESTING_POLICY.md`; 60% low / 80% high thresholds with 0% break (triage signal, not enforcement gate); scope expansion roadmap covers Application layer and additional frontend stores
 
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
@@ -243,6 +245,30 @@ Direction guardrails (explicit):
 - Shared maintainability utilities:
   - `buildQueryString` for API query construction across filter-driven endpoints
   - `getErrorMessage` for consistent API/store error extraction
+
+## Platform Expansion Wave (2026-04-09, PRs `#796`–`#805`, 10 issues)
+
+Ten parallel worktree agents delivered platform hardening, testing infrastructure, ops documentation, and PWA readiness across 10 PRs with two rounds of adversarial review per PR. All CRITICAL and HIGH findings were resolved.
+
+**Architecture & Platform:**
+- **PLAT-01 SQLite-to-PostgreSQL migration strategy** (`#84`/`#801`): ADR-0023 recommends PostgreSQL as production target; migration runbook at `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` with dependency-ordered export/import, FTS5 blocker warning, rollback procedure; 20 provider compatibility tests in `DatabaseProviderCompatibilityTests.cs` covering CRUD, DateTimeOffset, GUID, collation, Unicode; adversarial review caught phantom ApiKeys table, 5 missing tables, FTS5 crash risk
+- **PLAT-02 Distributed caching** (`#85`/`#805`): ADR-0024 documents cache-aside pattern; `ICacheService` interface in Application layer; `InMemoryCacheService` (ConcurrentDictionary + sweep timer + 10K cap), `RedisCacheService` (lazy reconnect, safe degradation), `NoOpCacheService`; board list caching with 60s TTL and write-through invalidation; `CacheSettings` config binding; 32 tests; adversarial review removed stale board-detail cache (columns mutated by non-cache-aware services), fixed permanent Redis disable on transient failure, added eviction and timer safety
+- **PLAT-03 SignalR scale-out** (`#105`/`#803`): ADR-0025 documents Redis backplane strategy; conditional `AddTaskdeckSignalR` extension with `SignalR:Redis:ConnectionString` toggle; `RedisBackplaneHealthCheck` with 30s cache and three-state reporting (NotConfigured/Healthy/Unhealthy); runbook at `docs/platform/SIGNALR_SCALEOUT_RUNBOOK.md`; 14 tests; adversarial review replaced per-probe ConnectionMultiplexer with singleton lazy connection, fixed thread-unsafe cache fields, corrected ADR Degraded/Unhealthy mismatch
+
+**Testing Infrastructure:**
+- **TST-02 Cross-browser E2E matrix** (`#87`/`#800`): Playwright config expanded with Firefox, WebKit, mobile-chrome (Pixel 7), mobile-safari (iPhone 14) projects; `@smoke`/`@cross-browser`/`@mobile`/`@quarantine` tagging strategy; 5 cross-browser + 4 mobile viewport tests with shared `boardUiHelpers.ts`; `reusable-e2e-cross-browser.yml` wired into nightly/extended CI; flaky test policy at `docs/testing/FLAKY_TEST_POLICY.md`; adversarial review fixed CI gate timeout, extracted duplicated helpers, removed conditional assertions
+- **TST-03 Visual regression harness** (`#88`/`#797`): Playwright visual comparison via `toHaveScreenshot()` with dedicated `playwright.visual.config.ts` (1280x720, animations disabled, 0.5% threshold); 7 visual tests across board, command palette, archive, inbox, home views; `reusable-visual-regression.yml` with diff artifact upload; policy at `docs/testing/VISUAL_REGRESSION_POLICY.md`; adversarial review fixed wrong command palette placeholder (would fail all palette tests), double `.png.png` extensions, added CI baseline generation
+- **TST-05 Mutation testing pilot** (`#90`/`#796`): Stryker.NET config targeting `Taskdeck.Domain` (60/80/0 thresholds); frontend Stryker JS config targeting `captureStore`/`boardStore` + board submodules (~1400 lines) with vitest runner; `mutation-testing.yml` weekly schedule + manual dispatch (non-blocking); policy at `docs/testing/MUTATION_TESTING_POLICY.md`; adversarial review removed broken schema URL, invalid config properties, fixed CI shellcheck violations, corrected concurrency over-subscription
+- **TST-06 Ephemeral DBs via Testcontainers** (`#91`/`#804`): new `Taskdeck.Integration.Tests` project with `Testcontainers.PostgreSql` 4.11.0; `PostgresContainerFixture` with per-test database isolation via counter-based `CREATE DATABASE`; `DockerAvailableCheck` with `SkippableFact` for graceful skip without Docker; 20 integration tests across Board CRUD, Card operations, Proposal lifecycle, cross-class isolation, parallel execution; `reusable-container-integration.yml` wired into extended CI; guide at `docs/testing/TESTCONTAINERS_GUIDE.md`; adversarial review fixed race condition (shared DbContext across tasks), deadlock in Docker check, container disposal on partial start
+
+**PWA & Offline:**
+- **UX-09 PWA/offline readiness** (`#95`/`#802`): VitePWA integration with `prompt` registerType, `navigateFallback` with `/api/`+`/mcp` denylist, `NetworkFirst` API caching + `CacheFirst` static assets; `useOnlineStatus` composable with reactive `navigator.onLine` tracking; `OfflineBanner` component with ARIA `role="status"`; `SwUpdatePrompt` component via `virtual:pwa-register` for controlled SW update lifecycle; offline behavior doc at `docs/platform/PWA_OFFLINE_BEHAVIOR.md`; 18 tests (11 composable + 7 component); adversarial review eliminated duplicate SW lifecycle handlers (double-reload race), fixed misleading sync text, corrected opaque response caching and SVG icon sizes
+
+**Ops & Architecture Documentation:**
+- **OPS-12 Cloud cost observability** (`#104`/`#798`): ADR-0026 documents proactive cost observability decision; framework at `docs/ops/CLOUD_COST_OBSERVABILITY.md` (6 cost dimensions, 3-tier alerts at 70/90/100%, monthly review workflow, Terraform budget template); hotspot registry at `docs/ops/COST_HOTSPOT_REGISTRY.md` (6 features with per-request LLM costs, monthly projections at 4 usage levels); breach runbook at `docs/ops/BUDGET_BREACH_RUNBOOK.md` (5-phase playbook); adversarial review fixed phantom config keys, wrong API endpoint, incorrect JSON payload, compute instance types
+- **OPS-14 Cloud topology ADR** (`#111`/`#799`): ADR-0027 documents container-based ECS Fargate topology; autoscaling policy (CPU 65%/25%, 1000 req/min, 500 WS connections); health checks (liveness/readiness/startup); SLO targets (99.5% availability, p95 read <300ms, write <800ms); cost estimate ~$147-152/month; reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` (VPC layout, ECS tasks, CI/CD pipeline, DR strategy); adversarial review fixed cost inconsistency, missing worker service, latency alarm gap, health check endpoint accuracy, connection pooling risk
+
+**ADR numbering note**: All 5 PRs that created ADRs originally used ADR-0023. The canonical numbering is ADR-0023 (SQLite migration) through ADR-0027 (cloud topology). PR branches need ADR file renames during merge to match this index.
 
 ## Phase Progress (Reconciled)
 
@@ -864,6 +890,15 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 - label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`) for PRs that touch `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`
 - label/manual-triggered demo director smoke lane (`automation` label or `workflow_dispatch`) via `.github/workflows/reusable-demo-director-smoke.yml`; docs-only PRs still need manual dispatch because `ci-extended.yml` path filters do not watch `docs/**`
 - label/manual-triggered load/concurrency harness lane via `.github/workflows/reusable-load-concurrency-harness.yml`
+- label/manual-triggered cross-browser E2E matrix lane via `.github/workflows/reusable-e2e-cross-browser.yml` (5-project parallel matrix: Chromium, Firefox, WebKit, mobile-chrome, mobile-safari)
+- label/manual-triggered visual regression lane via `.github/workflows/reusable-visual-regression.yml` (Playwright `toHaveScreenshot()` with diff artifact upload; `testing`/`visual` label)
+- label/manual-triggered container integration lane via `.github/workflows/reusable-container-integration.yml` (Testcontainers PostgreSQL; `testing` label)
+
+Mutation testing workflow: `.github/workflows/mutation-testing.yml`
+
+- Weekly schedule (Sunday 04:00 UTC) + manual dispatch
+- Backend Stryker.NET (Domain) + Frontend Stryker JS (captureStore/boardStore)
+- Non-blocking; HTML/JSON reports uploaded as 30-day artifacts
 
 Release workflow: `.github/workflows/ci-release.yml`
 

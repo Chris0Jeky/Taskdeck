@@ -595,6 +595,7 @@ public class WorkerResilienceTests
         public IKnowledgeDocumentRepository KnowledgeDocuments => null!;
         public IKnowledgeChunkRepository KnowledgeChunks => null!;
         public IExternalLoginRepository ExternalLogins => null!;
+        public IApiKeyRepository ApiKeys => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -629,6 +630,7 @@ public class WorkerResilienceTests
         public IKnowledgeDocumentRepository KnowledgeDocuments => null!;
         public IKnowledgeChunkRepository KnowledgeChunks => null!;
         public IExternalLoginRepository ExternalLogins => null!;
+        public IApiKeyRepository ApiKeys => null!;
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

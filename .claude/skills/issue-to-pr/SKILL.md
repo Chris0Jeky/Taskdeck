@@ -87,7 +87,7 @@ Provide the PR URL and the handoff summary from `taskdeck-verification-doc-sync`
 
 ## Guardrails
 
-- do not merge the PR — leave it for human review
+- do not merge the PR -- leave it for human review
 - do not skip tests
 - if the issue is ambiguous, ask the user before implementing
 - if the issue is too large for one PR, propose a split and implement the first slice
