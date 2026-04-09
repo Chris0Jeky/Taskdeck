@@ -119,7 +119,7 @@ public class MfaService
     }
 
     /// <summary>
-    /// Disables MFA for a user. Requires a valid TOTP code for security.
+    /// Disables MFA for a user. Requires a valid TOTP code or recovery code for security.
     /// </summary>
     public async Task<Result> DisableAsync(Guid userId, string code)
     {
@@ -137,7 +137,11 @@ public class MfaService
         if (credential == null)
             return Result.Failure(ErrorCodes.NotFound, "MFA credential not found");
 
-        if (!ValidateTotp(credential.Secret, code, userId))
+        // Try TOTP code first, then fall back to recovery code
+        var totpValid = ValidateTotp(credential.Secret, code, userId);
+        var recoveryValid = !totpValid && TryUseRecoveryCode(credential, code);
+
+        if (!totpValid && !recoveryValid)
             return Result.Failure(ErrorCodes.AuthenticationFailed, "Invalid verification code");
 
         user.DisableMfa();
