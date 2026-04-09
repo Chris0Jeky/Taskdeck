@@ -26,54 +26,63 @@ This ADR defines the target cloud topology, autoscaling policy, health check con
 Deploy Taskdeck as a container-based service using a managed container platform (AWS ECS Fargate as the primary recommendation, with Railway/Render/Fly.io as lighter-weight alternatives for the earliest cloud milestone). The topology separates concerns into distinct scaling units:
 
 ```
-                                 +------------------+
-                                 |   CloudFront     |
-                                 |   (SPA + CDN)    |
-                                 +--------+---------+
-                                          |
-                              +-----------+-----------+
-                              |    Route 53 (DNS)     |
-                              |  taskdeck.example.com |
-                              +-----------+-----------+
-                                          |
-                              +-----------+-----------+
-                              | Application Load      |
-                              | Balancer (ALB)        |
-                              | - TLS termination     |
-                              | - /api/* -> API TG    |
-                              | - /hubs/* -> API TG   |
-                              |   (sticky sessions)   |
-                              | - /health/* -> API TG |
-                              +-----------+-----------+
-                                          |
-                    +---------------------+---------------------+
-                    |                                           |
-          +---------+---------+                     +-----------+---------+
-          |  API Service      |                     |  Worker Service     |
-          |  (ECS Fargate)    |                     |  (ECS Fargate)      |
-          |                   |                     |                     |
-          |  Min: 2 tasks     |                     |  Desired: 1 task    |
-          |  Max: 8 tasks     |                     |  Max: 3 tasks       |
-          |                   |                     |                     |
-          |  - ASP.NET API    |                     |  - LLM Queue Worker |
-          |  - SignalR hubs   |                     |  - Housekeeping     |
-          |  - Health checks  |                     |  - Proposal expiry  |
-          +--------+----------+                     +----------+----------+
-                   |                                           |
-          +--------+-------------------------------------------+--------+
-          |                         |                                   |
-+---------+---------+    +----------+----------+            +-----------+---------+
-|  PostgreSQL       |    |  Redis              |            |  S3                 |
-|  (RDS)            |    |  (ElastiCache)      |            |  (Object Storage)   |
-|                   |    |                     |            |                     |
-|  - db.t4g.micro   |    |  - cache.t4g.micro  |            |  - Backups          |
-|    (start)        |    |  - Single node      |            |  - Data exports     |
-|  - Multi-AZ:      |    |  - SignalR backplane |            |  - GDPR packages    |
-|    standby only   |    |  - Rate limiting    |            |                     |
-|  - Automated      |    |  - Session cache    |            |                     |
-|    backups        |    |                     |            |                     |
-+-------------------+    +---------------------+            +---------------------+
+                            +-------------------+
+                            |     Browser       |
+                            +--------+----------+
+                                     |
+                    +----------------+----------------+
+                    |                                  |
+        (static assets)                     (API + WebSocket)
+                    |                                  |
+    +---------------+----------+         +-------------+----------+
+    |  CloudFront (CDN)        |         |  Route 53 (DNS)        |
+    |  - S3 origin (SPA)       |         |  api.taskdeck.example  |
+    |  - Edge-cached assets    |         +-------------+----------+
+    |  - /index.html no-cache  |                       |
+    +--------------------------+         +-------------+----------+
+                                         | Application Load       |
+                                         | Balancer (ALB)         |
+                                         | - TLS termination      |
+                                         | - /api/* -> API TG     |
+                                         | - /hubs/* -> API TG    |
+                                         |   (sticky sessions)    |
+                                         | - /health/* -> API TG  |
+                                         +-------------+----------+
+                                                       |
+                                         +-------------+----------+
+                                         |  API Service            |
+                                         |  (ECS Fargate)          |
+                                         |                         |
+                                         |  Min: 2 / Max: 8 tasks |
+                                         |  - ASP.NET API          |
+                                         |  - SignalR hubs         |
+                                         |  - Health checks        |
+                                         +---+--------+-------+---+
+                                             |        |       |
+          +----------------------------------+        |       |
+          |                  +--------------------+   |       |
+          |                  |                        |       |
++---------+---------+  +-----+--------+  +------------+--+   |
+|  PostgreSQL       |  |  Redis       |  |  S3            |   |
+|  (RDS)            |  |  (ElastiCache)|  |  (Object Store)|   |
+|  - db.t4g.micro   |  |  - Backplane |  |  - Backups     |   |
+|  - Multi-AZ       |  |  - Rate limit|  |  - Exports     |   |
+|  - Auto backups   |  |  - Cache     |  |  - GDPR        |   |
++---------+---------+  +-----+--------+  +---------------+   |
+          |                  |                                |
+          +------------------+---+                            |
+                                 |                            |
+                    +------------+-------------+              |
+                    |  Worker Service           | <-----------+
+                    |  (ECS Fargate)            |  (shared data layer)
+                    |  Desired: 1 / Max: 3 tasks|
+                    |  - LLM Queue Worker       |
+                    |  - Housekeeping           |
+                    |  - Proposal expiry        |
+                    +---------------------------+
 ```
+
+Note: The browser has two parallel paths. Static SPA assets are served from CloudFront (CDN), while API and WebSocket requests route through DNS -> ALB -> API Service. The Worker Service has no load balancer; it connects directly to the data layer (PostgreSQL, Redis, S3) and processes queue items internally.
 
 ### Component Responsibilities
 
@@ -201,15 +210,22 @@ These estimates assume startup-stage traffic (< 1000 DAU, < 100 concurrent users
 |-----------|--------------|----------------------|
 | ECS Fargate (API, 2 tasks) | 0.5 vCPU, 1 GB RAM each | ~$30 |
 | ECS Fargate (Worker, 1 task) | 0.25 vCPU, 0.5 GB RAM | ~$8 |
-| RDS PostgreSQL | db.t4g.micro, Multi-AZ standby, 20 GB | ~$28 |
+| RDS PostgreSQL | db.t4g.micro, Multi-AZ standby, 20 GB gp3 | ~$28 |
 | ElastiCache Redis | cache.t4g.micro, single node | ~$12 |
 | ALB | Base cost + LCU hours | ~$20 |
+| NAT Gateway | Single AZ, ~10 GB processed/month | ~$35 |
 | CloudFront | 50 GB transfer/month | ~$5 |
 | S3 | < 1 GB storage | ~$1 |
 | Route 53 | 1 hosted zone + health checks | ~$2 |
-| **Total** | | **~$106/month** |
+| ECR | Image storage, < 5 GB | ~$1 |
+| CloudWatch Logs | Log ingestion + 30-day retention | ~$5-10 |
+| **Total** | | **~$147-152/month** |
 
-This estimate intentionally uses the smallest instance sizes. Costs will increase with scaling but remain manageable at startup volumes. The single largest cost driver at scale will be RDS (database), which can be right-sized based on actual query load.
+Cost notes:
+- This estimate intentionally uses the smallest instance sizes. Costs will increase with scaling but remain manageable at startup volumes.
+- **NAT Gateway is the second-largest line item** after Fargate compute. To reduce this cost, consider VPC endpoints for ECR and S3 (eliminating NAT for those services) or a shared NAT instance for dev/staging environments.
+- **RDS db.t4g.micro** (2 vCPUs, 1 GB RAM) may be undersized once PostgreSQL connection pooling is configured for 2-8 concurrent API tasks plus 1-3 workers. Plan to upgrade to db.t4g.small (2 vCPUs, 2 GB RAM, ~$50/month Multi-AZ) early if connection or memory pressure appears.
+- The single largest cost driver at scale will be RDS (database), followed by NAT Gateway data transfer charges for LLM API calls.
 
 ### Rollback Strategy
 

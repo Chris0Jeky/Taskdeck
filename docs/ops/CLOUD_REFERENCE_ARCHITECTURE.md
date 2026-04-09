@@ -246,6 +246,8 @@ All secrets are stored in AWS Secrets Manager (not SSM Parameter Store) for the 
 - Rotation policy: JWT secret rotated quarterly, database password rotated monthly (RDS native rotation).
 - No secrets are baked into Docker images or stored in environment variable files.
 
+**Migration note**: The current Terraform single-node baseline (`docs/ops/DEPLOYMENT_TERRAFORM_BASELINE.md`) uses SSM Parameter Store for the JWT secret (`jwt_secret_ssm_parameter_name`). The cloud topology moves to Secrets Manager because ECS has native Secrets Manager integration for task definition secrets injection, and Secrets Manager supports automatic rotation. The migration step should move the JWT secret from SSM to Secrets Manager and update the Terraform modules accordingly. Both can coexist during the transition period.
+
 ---
 
 ## Monitoring and Alerting
