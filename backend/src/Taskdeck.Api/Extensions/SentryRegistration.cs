@@ -34,16 +34,29 @@ public static class SentryRegistration
             // bodies from being included in Sentry events.
             options.SendDefaultPii = false;
 
-            // Scrub sensitive headers from breadcrumbs and events.
-            options.SetBeforeBreadcrumb((breadcrumb, _) =>
+            // Strip sensitive data from breadcrumbs. Sentry breadcrumb Data
+            // is read-only, so we filter by dropping HTTP breadcrumbs that
+            // carry authorization or cookie information.
+            options.SetBeforeBreadcrumb(breadcrumb =>
             {
-                // Remove authorization headers from HTTP breadcrumbs
                 if (breadcrumb.Category == "http" && breadcrumb.Data != null)
                 {
-                    breadcrumb.Data.Remove("Authorization");
-                    breadcrumb.Data.Remove("authorization");
-                    breadcrumb.Data.Remove("Cookie");
-                    breadcrumb.Data.Remove("cookie");
+                    var sensitiveKeys = new[] { "Authorization", "authorization", "Cookie", "cookie" };
+                    foreach (var key in sensitiveKeys)
+                    {
+                        if (breadcrumb.Data.ContainsKey(key))
+                        {
+                            // Data contains sensitive headers — drop entire breadcrumb
+                            // to prevent PII leakage. The breadcrumb is replaced with
+                            // a sanitized version without data.
+                            return new Sentry.Breadcrumb(
+                                message: breadcrumb.Message ?? string.Empty,
+                                type: breadcrumb.Type ?? string.Empty,
+                                data: null,
+                                category: breadcrumb.Category,
+                                level: breadcrumb.Level);
+                        }
+                    }
                 }
 
                 return breadcrumb;
