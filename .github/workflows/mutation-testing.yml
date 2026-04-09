@@ -1,0 +1,120 @@
+# =============================================================================
+# Mutation Testing — manual/nightly lane for mutation score tracking.
+# NOT a PR gate. Runs on manual dispatch and weekly schedule.
+# Reports uploaded as artifacts for triage, not enforcement.
+# =============================================================================
+
+name: Mutation Testing
+
+on:
+  schedule:
+    # Weekly on Sunday at 04:00 UTC — avoids overlap with nightly CI at 03:25.
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      backend_only:
+        description: 'Run backend mutation testing only'
+        required: false
+        type: boolean
+        default: false
+      frontend_only:
+        description: 'Run frontend mutation testing only'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-mutation:
+    name: Backend Mutation (Stryker.NET)
+    if: ${{ !inputs.frontend_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Stryker.NET
+        run: dotnet tool install --global dotnet-stryker
+
+      - name: Restore solution
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Run Stryker.NET
+        working-directory: backend
+        run: dotnet stryker --config-file stryker-config.json
+
+      - name: Upload Stryker report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-net-report
+          path: backend/StrykerOutput/**/reports/
+          retention-days: 30
+
+  frontend-mutation:
+    name: Frontend Mutation (Stryker JS)
+    if: ${{ !inputs.backend_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/taskdeck-web
+        run: npm ci
+
+      - name: Run Stryker
+        working-directory: frontend/taskdeck-web
+        run: npx stryker run
+
+      - name: Upload Stryker report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-js-report
+          path: frontend/taskdeck-web/reports/
+          retention-days: 30
+
+  summary:
+    name: Mutation Testing Summary
+    if: always()
+    needs: [backend-mutation, frontend-mutation]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report status
+        env:
+          BACKEND_RESULT: ${{ needs.backend-mutation.result || 'skipped' }}
+          FRONTEND_RESULT: ${{ needs.frontend-mutation.result || 'skipped' }}
+        run: |
+          {
+            echo "## Mutation Testing Results"
+            echo ""
+            echo "| Lane | Status |"
+            echo "|------|--------|"
+            echo "| Backend (Stryker.NET) | ${BACKEND_RESULT} |"
+            echo "| Frontend (Stryker JS) | ${FRONTEND_RESULT} |"
+            echo ""
+            echo "Download HTML/JSON reports from the **Artifacts** section above."
+            echo ""
+            echo "See [Mutation Testing Policy](docs/testing/MUTATION_TESTING_POLICY.md) for threshold strategy and triage guidance."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -620,8 +620,23 @@ Delivered in the latest cycle:
     - resilience/degraded-mode tests (`#720`/`#778`): 34 tests (18 backend + 16 frontend); adversarial review fixed CI blocker (unused import), double-invocation anti-pattern, and timing race
     - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
     - TST-32–TST-57 wave: 23 of 25 issues now delivered (added `#723`/`#769` and `#725`/`#765` from parallel wave); remaining open: `#705`, `#717`; frontend suite ~1734 passing
+130. Ephemeral integration databases via Testcontainers (`#91`, 2026-04-09):
+    - new `Taskdeck.Integration.Tests` project with `Testcontainers.PostgreSql` (4.11.0) and `Npgsql.EntityFrameworkCore.PostgreSQL` (8.0.11)
+    - `PostgresContainerFixture` manages a shared ephemeral PostgreSQL 16 container per xUnit collection; each test method gets its own isolated database via counter-based `CREATE DATABASE`
+    - schema created via `EnsureCreated()` from the EF Core model (not SQLite migrations) for PostgreSQL provider parity
+    - `PostgresIntegrationTestBase` base class provides `Db` property with `IAsyncLifetime` setup/teardown
+    - 20 integration tests across 7 test classes: Board CRUD (5), Card operations (5), Proposal lifecycle (5), per-test isolation verification (2), parallel execution validation (3)
+    - CI workflow `reusable-container-integration.yml` added to ci-extended lane (label: testing); runs on ubuntu-latest with Docker
+    - documentation at `docs/testing/TESTCONTAINERS_GUIDE.md`
+131. SignalR scale-out readiness (`#105`, PLAT-03, 2026-04-09):
+    - ADR-0023 documents Redis backplane strategy with alternatives analysis (Azure SignalR Service, custom message bus, sticky sessions)
+    - `Microsoft.AspNetCore.SignalR.StackExchangeRedis` 8.0.25 added with conditional activation: Redis backplane enabled when `SignalR:Redis:ConnectionString` configured, in-memory fallback when absent
+    - `RedisBackplaneHealthCheck` reports NotConfigured/Healthy/Unhealthy in `/health/ready` endpoint
+    - `SignalRRegistration` extension replaces bare `AddSignalR()` with configurable builder
+    - operational runbook at `docs/platform/SIGNALR_SCALEOUT_RUNBOOK.md` covers Docker Compose multi-instance, load balancer WebSocket config, failure scenarios, and rollback
+    - 14 new tests: configuration detection, logging, health check states, readiness endpoint integration, hub negotiate preservation
 
-130. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
+132. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
     - 10 parallel worktree agents delivered platform hardening, testing infrastructure, ops documentation, and PWA readiness with two rounds of adversarial review per PR (22 CRITICAL + 32 HIGH findings caught and resolved)
     - **PLAT-01** SQLite-to-PostgreSQL migration strategy (`#84`/`#801`): ADR-0023 (PostgreSQL target), migration runbook, 20 provider compatibility tests; review caught phantom table, 5 missing tables, FTS5 crash
     - **PLAT-02** Distributed caching (`#85`/`#805`): ADR-0024 (cache-aside), `ICacheService` with Redis/InMemory/NoOp implementations, board list caching, 32 tests; review removed unsafe board-detail cache, fixed permanent Redis disable
@@ -798,7 +813,7 @@ These continue in parallel where they protect trust, performance, or operator po
 - managed-key LLM control plane and abuse controls: `#235`, `#237` (pending), `#238` (operator tooling groundwork delivered; live-traffic wiring pending), `#239` (delivered), `#240` (delivered)
 - premium UI foundations and reskin wave: `#242` to `#250` (plus optional `#251`); foundations delivered: `#243` UI-02 shared primitives, `#245` UI-03 stack spike, `#250` PERF-08 budgets; appshell reskin (`#499`) and board/card polish (`#501`) now shipped with design-token-based styling; UX feedback wave 1 (`#628`) delivered: sidebar footer pinned (`#623`), card drag layout shift eliminated (`#621`), starter-pack modal migrated to design tokens (`#612`), capture triage error messages (`#615`), review collapsible sections with risk color-coding (`#626`); wave 2 delivered: capture triage delimiters (`#614`), chat truncation (`#616`), notification type differentiation/grouping/batch actions (`#625`), search pagination (`#610`), CI-extended path triggers (`#608`); hardening wave (2026-04-03) delivered: label manager dark theme (`#684`), human-readable proposal diffs (`#682`), expired proposal handling (`#678`+`#690`), chat health banner three-state (`#679`), dead workspace routes fixed (`#681`)
 - long-list responsiveness and related UX scale follow-through: `#213` (delivered — inbox + activity virtualized; board cards deferred due to drag-and-drop conflicts)
-- platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`
+- platform, ops, testing, and maturity backlog: `#84` to `#111`, `#87` to `#91`; PWA/offline readiness delivered (`#95`): `vite-plugin-pwa` + Workbox `generateSW` with 84 precached entries, runtime caching (NetworkFirst for API, CacheFirst for static, StaleWhileRevalidate for fonts), SPA navigateFallback, `useOnlineStatus` composable, `OfflineBanner` + `SwUpdatePrompt` components in AppShell, installability-ready manifest, offline behavior documented in `docs/platform/PWA_OFFLINE_BEHAVIOR.md`; 18 new tests (11 composable + 7 component)
 - deferred outreach CRM expansion: `#262` to `#268`
 
 ## Release Framing
@@ -827,7 +842,7 @@ Master tracker: `#531`.
   - landing page on custom domain
 
 - `v0.3.0` **In Your Pocket** (target: Week 6-9):
-  - PWA manifest + service worker (`#540` → `#541`, `#542`)
+  - ~~PWA manifest + service worker (`#540` → `#541`, `#542`)~~ — baseline delivered in `#95`: Workbox generateSW with precaching, runtime caching, SPA navigateFallback, offline banner, SW update prompt, installability-ready manifest
   - mobile-responsive CSS for core flows (`#543`)
   - bottom tab navigation for mobile
   - touch-optimized capture modal
@@ -888,7 +903,7 @@ Master tracker: `#531`.
 - Analysis follow-through wave tracker: `#151`
 - Capture realignment wave: `#199` to `#211` (delivered); logging redaction follow-through `#212` is delivered, and remaining linked performance follow-through is `#213`
 - Testing harness guardrails wave (`#254` to `#260`) is delivered; follow-up improvements now route through normal hardening issues
-- Rigorous test expansion wave (`#721` tracker, `#699`–`#720`, `#722`–`#726`): 22 issues seeded 2026-04-03 from systematic codebase audit covering infrastructure repository integration tests, untested workers, controller HTTP gaps, cross-user data isolation proof, concurrency stress, auth edge cases, domain state machines, SignalR hub integration, proposal lifecycle edge cases, LLM tool-calling boundaries, webhook SSRF, frontend store/view gaps, E2E scenarios, export/import round-trips, error contracts, resilience testing, and property-based/adversarial input testing; golden path integration test (`#703`) is highest-signal individual item; first delivery: ~~`#699`~~ infrastructure repo integration tests (77 tests, 7 classes, PR `#730`)
+- Rigorous test expansion wave (`#721` tracker, `#699`–`#720`, `#722`–`#726`): 22 issues seeded 2026-04-03 from systematic codebase audit covering infrastructure repository integration tests, untested workers, controller HTTP gaps, cross-user data isolation proof, concurrency stress, auth edge cases, domain state machines, SignalR hub integration, proposal lifecycle edge cases, LLM tool-calling boundaries, webhook SSRF, frontend store/view gaps, E2E scenarios, export/import round-trips, error contracts, resilience testing, and property-based/adversarial input testing; golden path integration test (`#703`) is highest-signal individual item; first delivery: ~~`#699`~~ infrastructure repo integration tests (77 tests, 7 classes, PR `#730`); proposal decision race regression now treats the losing update as a `409 Conflict` through proposal `UpdatedAt` concurrency
 - Provider-agnostic LLM runtime expansion (`OpenAI` + `Gemini`) and demo setup hardening: `#232` (delivered)
 - Managed-key LLM control-plane tracker and foundations: `#235`, `#236` (delivered), `#237`
 - CI/workflow topology expansion and governance track: `#168`
@@ -967,7 +982,7 @@ Seeded from `docs/strategy/00_MASTER_STRATEGY.md` and companion pillar documents
 
 ### Priority IV (Expansion Tranche: Platform, Test, UX, Docs Maturity)
 
-- Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, `#105`, `#111`
+- Platform and ops maturity: `#84`, `#85`, `#86`, `#101`, `#102`, `#103`, `#104`, ~~`#105` (SignalR scale-out — delivered, ADR-0023)~~, `#111`
 - Test maturity: `#87`, `#88`, `#89` (property/fuzz pilot delivered; extended by `#717`), `#90`, `#91`; rigorous expansion wave tracker at `#721`
 - UX and onboarding maturity: `#92`, `#93`, `#94`, `#95`
 - Frontend responsiveness maturity: `#213`
@@ -1030,7 +1045,7 @@ Covered by seeded issues:
   - reusable dependency-security signal workflow now normalizes backend/frontend scan results for PR/manual, nightly, and release contexts; remaining follow-through is limited to future automation escalation (for example auto-ticketing or stricter PR gating) rather than baseline policy definition
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`
-- Cloud target topology and autoscaling ADR: `#111`
+- Cloud target topology and autoscaling ADR: `#111` (delivered — ADR-0023 defines ECS Fargate topology with ALB, RDS PostgreSQL, ElastiCache Redis, CloudFront CDN; autoscaling policy with CPU/request-rate/connection thresholds; health check contract; SLO targets; cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
 - CI workflow topology expansion/governance baseline: `#168`
 
 Outstanding strategy-level gap to monitor:
@@ -1228,8 +1243,11 @@ Additional P1 issues from the same session (tracked in `#510`–`#515`) cover ex
 19. **Feature, analytics, MCP, chat, testing, and UX expansion wave (2026-04-08)**: 7 issues across 7 PRs (`#787`–`#793`) with two rounds of adversarial review per PR (~390+ new tests). Key deliveries: exportable analytics CSV (`#78`/`#787` — `MetricsExportService` with CSV injection protection, `ADR-0022` deferring PDF, 29 tests, adversarial review caught embedded-newline injection HIGH), forecasting service (`#79`/`#790` — heuristic `ForecastingService` with rolling-average throughput, std-dev confidence bands, frontend MetricsView section, 32 tests, adversarial review caught throughput double-counting HIGH + history window bug), MCP HTTP transport + API key auth (`#654`/`#792` — `ApiKey` entity with SHA-256, `ApiKeyMiddleware`, `HttpUserContextProvider`, `MapMcp()`, REST key management, rate limiting, 31 tests, adversarial review caught key-existence oracle + modulo bias), conversational refinement loop (`#576`/`#791` — `ClarificationDetector` with strong/weak signal split, max 2 rounds + skip, Mock simulation, frontend badge + skip button, 41 tests, adversarial review caught false-positive heuristic HIGH), concurrency stress tests (`#705`/`#793` — 13 `SemaphoreSlim`-barrier stress tests for queue claims, card conflicts, proposal races, rate limiting, multi-user), property-based adversarial tests (`#717`/`#789` — 211 FsCheck + fast-check tests across domain/API/frontend, no 500s from any input), inbox premium primitives (`#249`/`#788` — `TdSkeleton`/`TdInlineAlert`/`TdEmptyState`/`TdBadge` rework, 7 tests). Test expansion wave (`#721`) progress: 25 of 25 issues now delivered (this wave closed `#705` and `#717`). Additional issues closed: `#78`, `#79`, `#249`, `#576`, `#654`.
 10. Keep issue `#107` synchronized as the single wave index and maintain one-priority-label-per-issue discipline (`Priority I` to `Priority V`).
 11. Treat the demo-expansion migration wave (`#297` -> `#302`) as delivered; route any further demo-tooling work through normal scoped follow-up issues such as `#311`, `#354`, `#355`, and `#369` instead of reopening the migration batches.
-12. Test suite baseline counts recertified 2026-04-08: backend ~3,460+ passing, frontend ~1,891 passing, combined ~5,370+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
+12. Test suite baseline counts recertified 2026-04-09: backend ~3,600+ passing, frontend ~1,984+ passing, combined ~5,600+. Rigorous test expansion wave (`#721`) fully delivered (25/25 issues).
+13. **Mutation testing pilot** (`#90`): Stryker.NET (backend Domain) and Stryker JS (frontend captureStore/boardStore) configured with non-blocking weekly CI lane; policy at `docs/testing/MUTATION_TESTING_POLICY.md`; scope expansion to Application layer and additional stores planned after baseline calibration from first 3-4 runs.
 20. **Platform expansion wave (2026-04-09)**: 10 issues (`#84`, `#85`, `#87`, `#88`, `#90`, `#91`, `#95`, `#104`, `#105`, `#111`) across 10 PRs (`#796`–`#805`) delivered platform hardening (PLAT-01/02/03), testing infrastructure (TST-02/03/05/06), PWA readiness (UX-09), and ops documentation (OPS-12/14). 5 new ADRs (ADR-0023 through ADR-0027). Two rounds of adversarial review per PR caught 22 CRITICAL + 32 HIGH issues, all resolved. New test projects: `Taskdeck.Integration.Tests` (Testcontainers). New CI workflows: cross-browser matrix, visual regression, mutation testing, container integration. New infra: `ICacheService`, SignalR Redis backplane, VitePWA service worker.
+21. **Feature, security, and ops expansion wave (2026-04-09)**: 8 issues (`#82`, `#94`, `#101`, `#251`, `#334`, `#338`, `#549`, `#676`) across 8 PRs (`#806`–`#813`) delivered calendar/timeline views (UX-08), staged deployment workflow (OPS-09, ADR-0028), Storybook baseline (UI-12), note-style import (INT-05), agent mode surfaces (AGT-03), error tracking/analytics (OBS-02), OAuth PKCE + account linking (CLD-03), and SSO/OIDC + MFA (SEC-07, ADR-0029). Two rounds of adversarial review per PR (self + independent cold review); the independent round caught 9 CRITICAL and 11 HIGH findings — all resolved. ~231+ new tests. New controllers: NoteImport, Telemetry. New frontend views: CalendarView, AgentsView, AgentRunsView, AgentRunDetailView. New auth infra: DB-backed auth codes, PKCE, OIDC provider factory, TOTP MFA. New dev tooling: Storybook 10.3.5 with 17 primitive stories. New ops: 4-phase deployment workflow, smoke test script, CD staging gate CI workflow, observability setup guide.
+22. Test suite baseline counts recertified 2026-04-09: backend ~3,600+ passing, frontend ~1,984+ passing, combined ~5,600+.
 
 ## Documentation Operating Model
 Active docs:

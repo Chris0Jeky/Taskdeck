@@ -119,3 +119,10 @@ jobs:
       k6-vus: "20"
       k6-duration: "90s"
       k6-user-pool: "6"
+
+  container-integration:
+    name: Container Integration (Testcontainers)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
+    uses: ./.github/workflows/reusable-container-integration.yml
+    with:
+      dotnet-version: 8.0.x
