@@ -14,11 +14,26 @@ const SCRIPT_ID = 'taskdeck-analytics-script'
 export function useAnalyticsScript() {
   const telemetry = useTelemetryStore()
 
+  function isValidScriptUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url)
+      return parsed.protocol === 'https:'
+    } catch {
+      return false
+    }
+  }
+
   function injectScript() {
     if (document.getElementById(SCRIPT_ID)) return
 
     const config = telemetry.analyticsConfig
     if (!config) return
+
+    // Only allow HTTPS URLs to prevent javascript:, data:, or blob: injection
+    if (!isValidScriptUrl(config.scriptUrl)) {
+      console.warn('[Taskdeck] Analytics script URL rejected: must be HTTPS', config.scriptUrl)
+      return
+    }
 
     const script = document.createElement('script')
     script.id = SCRIPT_ID
