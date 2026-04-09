@@ -111,6 +111,31 @@ const parseHintsByMessageId = computed(() => {
   return map
 })
 
+const lastMessageIsClarification = computed(() => {
+  const msgs = sortedMessages.value
+  if (msgs.length === 0) return false
+  const last = msgs[msgs.length - 1]
+  return last.messageType === 'clarification' && normalizeChatRole(last.role) === 'Assistant'
+})
+
+async function handleSkipClarification() {
+  if (!selectedSession.value) return
+  try {
+    sendingMessage.value = true
+    await chatApi.sendMessage(selectedSession.value.id, {
+      content: 'Just do your best',
+      requestProposal: requestProposal.value,
+    })
+    messageContent.value = ''
+    requestProposal.value = false
+    await loadSession(selectedSession.value.id)
+  } catch (e: unknown) {
+    toast.error(getErrorDisplay(e, 'Failed to send message').message)
+  } finally {
+    sendingMessage.value = false
+  }
+}
+
 const selectedSessionBoardName = computed(() => {
   const boardId = selectedSession.value?.boardId?.trim()
   if (!boardId) {
@@ -652,7 +677,10 @@ watch(
               v-for="message in sortedMessages"
               :key="message.id"
               class="td-message"
-              :class="{ 'td-message--degraded': message.messageType === 'degraded' }"
+              :class="{
+                'td-message--degraded': message.messageType === 'degraded',
+                'td-message--clarification': message.messageType === 'clarification'
+              }"
               :data-message-type="message.messageType"
             >
               <div class="td-message-header">
@@ -661,6 +689,9 @@ watch(
               </div>
               <div v-if="message.messageType === 'degraded'" class="td-message-degraded-warning">
                 Degraded response{{ message.degradedReason ? `: ${message.degradedReason}` : '' }}
+              </div>
+              <div v-if="message.messageType === 'clarification'" class="td-message-clarification-badge">
+                Asking for clarification
               </div>
               <template v-if="message.messageType === 'parse-hint' && getParseHint(message)">
                 <div
@@ -772,6 +803,16 @@ watch(
           </div>
 
           <div class="td-chat-compose">
+            <div v-if="lastMessageIsClarification" class="td-clarification-skip">
+              <span class="td-clarification-skip__hint">The assistant is asking for more details.</span>
+              <button
+                class="td-btn td-btn--secondary td-btn--sm"
+                :disabled="sendingMessage"
+                @click="handleSkipClarification"
+              >
+                Skip, just do your best
+              </button>
+            </div>
             <textarea
               v-model="messageContent"
               aria-label="Automation instruction"
@@ -1131,6 +1172,34 @@ watch(
   color: var(--td-color-warning, #d69e2e);
   font-weight: 600;
   margin-bottom: var(--td-space-1);
+}
+
+.td-message--clarification {
+  border-left: 3px solid var(--td-color-info, #3182ce);
+  padding-left: var(--td-space-2);
+}
+
+.td-message-clarification-badge {
+  font-size: var(--td-font-xs);
+  color: var(--td-color-info, #3182ce);
+  font-weight: 600;
+  margin-bottom: var(--td-space-1);
+}
+
+.td-clarification-skip {
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-2);
+  padding: var(--td-space-2);
+  background: var(--td-bg-secondary, #f7fafc);
+  border: 1px solid var(--td-color-info, #3182ce);
+  border-radius: var(--td-radius, 6px);
+}
+
+.td-clarification-skip__hint {
+  font-size: var(--td-font-sm);
+  color: var(--td-text-secondary);
+  flex: 1;
 }
 
 .td-chat-compose {
