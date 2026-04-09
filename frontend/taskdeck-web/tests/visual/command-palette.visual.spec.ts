@@ -42,9 +42,6 @@ test('command palette with search results', async ({ page }) => {
   // Type a search query to filter commands
   await paletteInput.fill('board')
 
-  // Wait for results to render
-  await page.waitForTimeout(300)
-
   await prepareForScreenshot(page)
 
   await expect(page).toHaveScreenshot('command-palette-search.png')

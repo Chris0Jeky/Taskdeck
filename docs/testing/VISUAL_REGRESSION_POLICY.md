@@ -39,8 +39,8 @@ These settings are configured in `playwright.visual.config.ts`:
 
 Font rendering varies significantly across operating systems (macOS, Windows, Linux). The visual tests use:
 
-- **Platform-specific baselines**: Snapshot paths include the platform identifier so each OS has its own reference images. CI runs on `ubuntu-latest`, so the canonical baselines are Linux-rendered.
-- **Elevated color threshold**: The `threshold: 0.3` setting absorbs sub-pixel anti-aliasing differences.
+- **Single canonical platform**: Baselines are generated on `ubuntu-latest` (matching CI). Local development on other OSes should use `npm run test:visual:update` to generate local baselines, but only ubuntu-generated baselines should be committed. This avoids cross-platform baseline conflicts.
+- **Elevated color threshold**: The `threshold: 0.3` setting absorbs sub-pixel anti-aliasing differences that may still occur within the same OS (e.g., different GPU drivers on CI runners).
 - **maxDiffPixelRatio tolerance**: Up to 0.5% of pixels can differ without failing.
 
 ### Animations and Transitions
