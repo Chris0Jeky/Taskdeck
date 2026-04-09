@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue'
 import { useSessionStore } from '../store/sessionStore'
 import { useFeatureFlagStore } from '../store/featureFlagStore'
+import { useTelemetryStore } from '../store/telemetryStore'
 import type { FeatureFlags } from '../types/feature-flags'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import { normalizeBoardRole } from '../utils/roles'
 
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
+const telemetry = useTelemetryStore()
 
 const currentPassword = ref('')
 const newPassword = ref('')
@@ -133,6 +135,48 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
       </form>
     </section>
 
+    <!-- Telemetry & Privacy Section -->
+    <section class="td-settings__section">
+      <h2 class="td-section-title">Telemetry &amp; Privacy</h2>
+      <p class="td-section-desc">
+        Taskdeck can collect anonymous usage data to help improve the product.
+        No personal information, card content, board names, or user-generated text is ever collected.
+        Telemetry is <strong>off by default</strong> and requires your explicit opt-in.
+      </p>
+      <div class="td-flag-row">
+        <label for="telemetry-consent" class="td-flag-label">
+          Enable anonymous telemetry
+        </label>
+        <input
+          id="telemetry-consent"
+          type="checkbox"
+          :checked="telemetry.consentGiven"
+          @change="telemetry.setConsent(($event.target as HTMLInputElement).checked)"
+          class="td-checkbox"
+        />
+      </div>
+      <p v-if="telemetry.consentGiven" class="td-telemetry-status td-telemetry-status--on">
+        Telemetry is enabled. Anonymous usage events will be sent periodically.
+      </p>
+      <p v-else class="td-telemetry-status td-telemetry-status--off">
+        Telemetry is disabled. No usage data is collected or sent.
+      </p>
+      <details class="td-telemetry-details">
+        <summary class="td-telemetry-summary">What data is collected?</summary>
+        <ul class="td-telemetry-list">
+          <li>Page navigation events (which pages are visited, not content)</li>
+          <li>Feature usage counts (captures, proposals, board loads)</li>
+          <li>Error codes (no error messages or stack traces)</li>
+          <li>Workspace mode and app version</li>
+          <li>Anonymous session ID (rotated on each app restart)</li>
+        </ul>
+        <p class="td-telemetry-note">
+          We never collect: card titles, board names, usernames, emails, passwords,
+          file paths, or any user-generated content.
+        </p>
+      </details>
+    </section>
+
     <!-- Feature Flags Section -->
     <section class="td-settings__section">
       <h2 class="td-section-title">Feature Flags</h2>
@@ -184,4 +228,12 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .td-flag-row { display: flex; justify-content: space-between; align-items: center; padding: var(--td-space-2) 0; }
 .td-flag-label { font-size: var(--td-font-sm); color: var(--td-text-primary); }
 .td-checkbox { width: 18px; height: 18px; cursor: pointer; }
+.td-telemetry-status { font-size: var(--td-font-sm); margin-top: var(--td-space-3); padding: var(--td-space-2) var(--td-space-3); border-radius: var(--td-radius-md); }
+.td-telemetry-status--on { background: var(--td-color-success-light); color: var(--td-color-success); }
+.td-telemetry-status--off { background: var(--td-surface-tertiary); color: var(--td-text-secondary); }
+.td-telemetry-details { margin-top: var(--td-space-4); }
+.td-telemetry-summary { cursor: pointer; font-size: var(--td-font-sm); color: var(--td-text-secondary); font-weight: 500; }
+.td-telemetry-list { font-size: var(--td-font-sm); color: var(--td-text-secondary); padding-left: var(--td-space-6); margin-top: var(--td-space-2); list-style: disc; }
+.td-telemetry-list li { margin-bottom: var(--td-space-1); }
+.td-telemetry-note { font-size: var(--td-font-xs); color: var(--td-text-tertiary); margin-top: var(--td-space-2); font-style: italic; }
 </style>
