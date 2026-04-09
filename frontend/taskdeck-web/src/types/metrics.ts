@@ -42,3 +42,32 @@ export interface MetricsQuery {
   to?: string
   labelId?: string
 }
+
+export interface ConfidenceBand {
+  lowEstimate: string | null
+  expectedEstimate: string
+  highEstimate: string | null
+  lowThroughputPerDay: number
+  expectedThroughputPerDay: number
+  highThroughputPerDay: number
+}
+
+export interface BoardForecastResponse {
+  boardId: string
+  remainingCards: number
+  completedCards: number
+  averageThroughputPerDay: number
+  throughputStdDev: number
+  averageCycleTimeDays: number
+  estimatedCompletionDate: string | null
+  confidenceBand: ConfidenceBand | null
+  dataPointCount: number
+  historyDaysUsed: number
+  assumptions: string[]
+  caveats: string[]
+}
+
+export interface ForecastQuery {
+  boardId: string
+  historyDays?: number
+}

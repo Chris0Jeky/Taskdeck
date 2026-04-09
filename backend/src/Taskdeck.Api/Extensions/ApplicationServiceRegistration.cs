@@ -60,6 +60,10 @@ public static class ApplicationServiceRegistration
                 sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IAuthorizationService>()));
         services.AddScoped<ApiKeyService>();
+        services.AddScoped<IForecastingService>(sp =>
+            new ForecastingService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetRequiredService<IAuthorizationService>()));
         services.AddScoped<IMetricsExportService>(sp =>
             new MetricsExportService(
                 sp.GetRequiredService<IBoardMetricsService>()));
