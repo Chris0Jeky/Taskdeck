@@ -28,7 +28,7 @@
     "test:e2e:live-llm:headed": "playwright test tests/e2e/live-llm.spec.ts --headed --reporter=line",
     "test:e2e:headed": "playwright test --headed",
     "test:visual": "playwright test --config playwright.visual.config.ts",
-    "test:visual:update": "playwright test --config playwright.visual.config.ts --update-snapshots"
+    "test:visual:update": "playwright test --config playwright.visual.config.ts --update-snapshots",
     "mutation:test": "npx stryker run"
   },
   "dependencies": {
