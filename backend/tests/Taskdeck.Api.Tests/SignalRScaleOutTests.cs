@@ -148,8 +148,9 @@ public class SignalRScaleOutTests
     {
         var config = BuildConfig(new Dictionary<string, string?>
         {
-            // Use a non-routable address to guarantee connection failure
-            ["SignalR:Redis:ConnectionString"] = "192.0.2.1:6379,connectTimeout=500,abortConnect=True"
+            // localhost port 1 returns immediate connection refused on all platforms,
+            // while non-routable IPs (e.g. 192.0.2.1) hang on Linux CI.
+            ["SignalR:Redis:ConnectionString"] = "127.0.0.1:1,connectTimeout=1000,abortConnect=True"
         });
         var logger = new InMemoryLogger<RedisBackplaneHealthCheck>();
         var healthCheck = new RedisBackplaneHealthCheck(config, logger);

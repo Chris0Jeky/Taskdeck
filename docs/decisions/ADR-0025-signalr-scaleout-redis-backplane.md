@@ -1,4 +1,4 @@
-# ADR-0023: SignalR Scale-Out — Redis Backplane
+# ADR-0025: SignalR Scale-Out — Redis Backplane
 
 - **Status**: Accepted
 - **Date**: 2026-04-09
