@@ -6,7 +6,9 @@ namespace Taskdeck.Domain.Entities;
 /// <summary>
 /// Stores a TOTP-based MFA credential for a user.
 /// Each user may have at most one active TOTP credential.
-/// The shared secret is stored encrypted at rest by the infrastructure layer.
+/// WARNING: The shared secret is currently stored as plaintext in the database.
+/// A future enhancement should add an EF Core value converter with Data Protection
+/// or AES-GCM encryption before this feature is used in production deployments.
 /// </summary>
 public class MfaCredential : Entity
 {
