@@ -1030,7 +1030,7 @@ Covered by seeded issues:
   - reusable dependency-security signal workflow now normalizes backend/frontend scan results for PR/manual, nightly, and release contexts; remaining follow-through is limited to future automation escalation (for example auto-ticketing or stricter PR gating) rather than baseline policy definition
 - Secrets/configuration management baseline: `#110`
 - DB migration strategy and cache strategy: `#84`, `#85`
-- Cloud target topology and autoscaling ADR: `#111`
+- Cloud target topology and autoscaling ADR: `#111` (delivered — ADR-0023 defines ECS Fargate topology with ALB, RDS PostgreSQL, ElastiCache Redis, CloudFront CDN; autoscaling policy with CPU/request-rate/connection thresholds; health check contract; SLO targets; cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
 - CI workflow topology expansion/governance baseline: `#168`
 
 Outstanding strategy-level gap to monitor:
