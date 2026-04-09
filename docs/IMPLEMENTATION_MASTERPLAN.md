@@ -620,6 +620,11 @@ Delivered in the latest cycle:
     - resilience/degraded-mode tests (`#720`/`#778`): 34 tests (18 backend + 16 frontend); adversarial review fixed CI blocker (unused import), double-invocation anti-pattern, and timing race
     - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
     - TST-32–TST-57 wave: 23 of 25 issues now delivered (added `#723`/`#769` and `#725`/`#765` from parallel wave); remaining open: `#705`, `#717`; frontend suite ~1734 passing
+130. SQLite-to-PostgreSQL production migration strategy (`#84`, 2026-04-09):
+    - ADR-0023: recommends PostgreSQL as target production DB provider; documents alternatives (SQL Server, CockroachDB, MySQL) and tradeoffs; SQLite retained for local dev and CI
+    - migration runbook at `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md`: schema export via EF Core migrations, CSV-based data export/import in dependency order, row-count and foreign-key integrity verification, smoke test checklist, rollback procedure, security considerations
+    - 20-test provider-compatibility harness (`DatabaseProviderCompatibilityTests`): CRUD on Board/Card/Proposal, DateTimeOffset fidelity, GUID storage and FK joins, string collation, ordering, pagination, enum storage, aggregates, boolean filtering, concurrent inserts, Unicode; documents SQLite `DateTimeOffset` ORDER BY limitation
+    - PostgreSQL tests opt-in via `TASKDECK_TEST_POSTGRES_CONNECTION` environment variable (future CI integration)
 
 ## Current Planning Pivot (2026-03-07)
 
