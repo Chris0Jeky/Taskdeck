@@ -21,12 +21,12 @@ test('command palette open state', async ({ page }) => {
   await page.keyboard.press('Control+k')
 
   // Wait for the palette to be visible (search input)
-  const paletteInput = page.getByPlaceholder('Search commands, boards, cards...')
+  const paletteInput = page.getByPlaceholder('Type a command or search boards and cards...')
   await expect(paletteInput).toBeVisible()
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('command-palette-open.png')
+  await expect(page).toHaveScreenshot('command-palette-open')
 })
 
 test('command palette with search results', async ({ page }) => {
@@ -36,7 +36,7 @@ test('command palette with search results', async ({ page }) => {
   // Open command palette
   await page.keyboard.press('Control+k')
 
-  const paletteInput = page.getByPlaceholder('Search commands, boards, cards...')
+  const paletteInput = page.getByPlaceholder('Type a command or search boards and cards...')
   await expect(paletteInput).toBeVisible()
 
   // Type a search query to filter commands
@@ -44,5 +44,5 @@ test('command palette with search results', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('command-palette-search.png')
+  await expect(page).toHaveScreenshot('command-palette-search')
 })
