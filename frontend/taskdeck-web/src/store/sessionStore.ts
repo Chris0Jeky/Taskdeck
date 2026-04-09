@@ -220,6 +220,24 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  async function exchangeOidcCode(code: string) {
+    try {
+      loading.value = true
+      error.value = null
+      const response = await authApi.exchangeOidcCode(code)
+      setSession(response)
+      toast.success('Signed in successfully')
+      return response
+    } catch (e: unknown) {
+      const msg = getErrorMessage(e, 'SSO sign-in failed')
+      error.value = msg
+      toast.error(msg)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   function logout() {
     clearSession()
     toast.info('Logged out')
@@ -249,6 +267,7 @@ export const useSessionStore = defineStore('session', () => {
     register,
     changePassword,
     exchangeOAuthCode,
+    exchangeOidcCode,
     logout,
     restoreSession,
     clearSession,

@@ -10,11 +10,14 @@ const router = useRouter()
 const route = useRoute()
 const session = useSessionStore()
 
+import type { OidcProviderInfo } from '../types/auth'
+
 const username = ref('')
 const password = ref('')
 const formError = ref<string | null>(null)
 const submitting = ref(false)
 const githubAvailable = ref(false)
+const oidcProviders = ref<OidcProviderInfo[]>([])
 const oauthExchanging = ref(false)
 
 function navigateAfterLogin() {
@@ -54,6 +57,15 @@ function startGitHubLogin() {
   window.location.href = `${apiBase}/auth/github/login?returnUrl=${encodeURIComponent(returnUrl)}`
 }
 
+function startOidcLogin(providerName: string) {
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+  const redirect = [route.query.redirect].flat()[0]
+  const returnUrl = redirect
+    ? `/login?redirect=${encodeURIComponent(redirect)}`
+    : '/login'
+  window.location.href = `${apiBase}/auth/oidc/${encodeURIComponent(providerName)}/login?returnUrl=${encodeURIComponent(returnUrl)}`
+}
+
 async function handleOAuthCode(code: string) {
   oauthExchanging.value = true
   formError.value = null
@@ -88,12 +100,13 @@ onMounted(async () => {
     return
   }
 
-  // Check if GitHub OAuth is available (non-blocking)
+  // Check available auth providers (non-blocking)
   try {
     const providers = await authApi.getProviders()
     githubAvailable.value = providers.gitHub === true
+    oidcProviders.value = Array.isArray(providers.oidc) ? providers.oidc : []
   } catch {
-    // Silently ignore — GitHub button simply won't appear
+    // Silently ignore — provider buttons simply won't appear
   }
 })
 </script>
@@ -118,8 +131,9 @@ onMounted(async () => {
         </div>
 
         <template v-else>
-          <div v-if="githubAvailable" class="td-oauth-section">
+          <div v-if="githubAvailable || oidcProviders.length > 0" class="td-oauth-section">
             <button
+              v-if="githubAvailable"
               type="button"
               class="td-btn td-btn--github"
               @click="startGitHubLogin"
@@ -129,6 +143,17 @@ onMounted(async () => {
                 <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
               </svg>
               Sign in with GitHub
+            </button>
+
+            <button
+              v-for="provider in oidcProviders"
+              :key="provider.name"
+              type="button"
+              class="td-btn td-btn--oidc"
+              @click="startOidcLogin(provider.name)"
+              :disabled="submitting"
+            >
+              Sign in with {{ provider.displayName }}
             </button>
 
             <div class="td-auth-divider">
@@ -345,6 +370,32 @@ onMounted(async () => {
 
 .td-github-icon {
   flex-shrink: 0;
+}
+
+.td-btn--oidc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--td-space-2) var(--td-space-4);
+  background: var(--td-surface-container);
+  color: var(--td-text-primary);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  font-size: var(--td-font-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--td-transition-fast);
+}
+
+.td-btn--oidc:hover:not(:disabled) {
+  background: var(--td-surface-elevated);
+  border-color: var(--td-border-focus);
+}
+
+.td-btn--oidc:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .td-auth-divider {
