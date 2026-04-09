@@ -10,6 +10,7 @@ namespace Taskdeck.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/telemetry")]
+[Authorize]
 public class TelemetryController : ControllerBase
 {
     private readonly ITelemetryEventService _telemetryEventService;
@@ -68,7 +69,6 @@ public class TelemetryController : ControllerBase
     /// if telemetry is disabled on the server.
     /// </summary>
     [HttpPost("events")]
-    [Authorize]
     public IActionResult RecordEvents([FromBody] TelemetryBatchRequest request)
     {
         if (!_telemetryEventService.IsEnabled)
