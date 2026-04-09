@@ -26,9 +26,4 @@ public sealed class CacheSettings
     /// Default TTL in seconds for board list cache entries.
     /// </summary>
     public int BoardListTtlSeconds { get; set; } = 60;
-
-    /// <summary>
-    /// Default TTL in seconds for board detail cache entries.
-    /// </summary>
-    public int BoardDetailTtlSeconds { get; set; } = 120;
 }

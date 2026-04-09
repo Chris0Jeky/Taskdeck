@@ -7,11 +7,9 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public static class CacheKeys
 {
-    /// <summary>
-    /// Cache key for board detail (includes columns).
-    /// Format: board:{boardId}:detail
-    /// </summary>
-    public static string BoardDetail(Guid boardId) => $"board:{boardId}:detail";
+    // NOTE: BoardDetail is intentionally NOT cached. BoardDetailDto includes columns
+    // with card counts, and ColumnService/CardService mutate that data without cache
+    // awareness. Caching board detail would serve stale column/card information.
 
     /// <summary>
     /// Cache key for a user's board list (default, non-filtered, non-archived).

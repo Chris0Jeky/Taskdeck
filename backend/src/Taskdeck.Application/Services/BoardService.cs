@@ -73,31 +73,15 @@ public class BoardService
 
     public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        // Try cache first
-        if (_cacheService is not null)
-        {
-            var cacheKey = CacheKeys.BoardDetail(id);
-            var cached = await _cacheService.GetAsync<BoardDetailDto>(cacheKey, cancellationToken);
-            if (cached is not null)
-            {
-                return Result.Success(cached);
-            }
-        }
-
+        // NOTE: Board detail is intentionally NOT cached because BoardDetailDto includes
+        // columns with card counts. ColumnService and CardService mutate this data without
+        // cache awareness, so caching here would serve stale column/card information.
+        // Board *list* caching is safe because BoardDto excludes columns and card counts.
         var board = await _unitOfWork.Boards.GetByIdWithDetailsAsync(id, cancellationToken);
         if (board == null)
             return Result.Failure<BoardDetailDto>(ErrorCodes.NotFound, $"Board with ID {id} not found");
 
-        var dto = MapToDetailDto(board);
-
-        // Populate cache
-        if (_cacheService is not null)
-        {
-            var ttl = TimeSpan.FromSeconds(_cacheSettings!.BoardDetailTtlSeconds);
-            await _cacheService.SetAsync(CacheKeys.BoardDetail(id), dto, ttl, cancellationToken);
-        }
-
-        return Result.Success(dto);
+        return Result.Success(MapToDetailDto(board));
     }
 
     public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, Guid actingUserId, CancellationToken cancellationToken = default)
@@ -114,6 +98,13 @@ public class BoardService
         return await GetBoardDetailAsync(id, cancellationToken);
     }
 
+    /// <summary>
+    /// Lists boards without user-scoped authorization. Not cached because this overload
+    /// has no user identity to scope the cache key, and caching an unscoped result could
+    /// serve stale data when user-specific caches are invalidated independently.
+    /// The user-scoped <see cref="ListBoardsAsync(Guid, string?, bool, CancellationToken)"/>
+    /// overload IS cached.
+    /// </summary>
     public async Task<Result<IEnumerable<BoardDto>>> ListBoardsAsync(string? searchText = null, bool includeArchived = false, CancellationToken cancellationToken = default)
     {
         var boards = await _unitOfWork.Boards.SearchAsync(searchText, includeArchived, cancellationToken);
@@ -256,8 +247,7 @@ public class BoardService
             else
                 await SafeLogAsync("board", board.Id, AuditAction.Updated, changes: changeSummary);
 
-            // Invalidate board detail cache and board list caches
-            await InvalidateBoardDetailCacheAsync(board.Id, cancellationToken);
+            // Invalidate board list cache for the owner
             if (board.OwnerId.HasValue)
                 await InvalidateBoardListCacheAsync(board.OwnerId.Value, cancellationToken);
 
@@ -303,8 +293,7 @@ public class BoardService
             cancellationToken);
         await SafeLogAsync("board", board.Id, AuditAction.Archived, changes: $"name={board.Name}");
 
-        // Invalidate caches
-        await InvalidateBoardDetailCacheAsync(board.Id, cancellationToken);
+        // Invalidate board list cache for the owner
         if (board.OwnerId.HasValue)
             await InvalidateBoardListCacheAsync(board.OwnerId.Value, cancellationToken);
 
@@ -342,12 +331,6 @@ public class BoardService
             board.CreatedAt,
             board.UpdatedAt
         );
-    }
-
-    private async Task InvalidateBoardDetailCacheAsync(Guid boardId, CancellationToken cancellationToken)
-    {
-        if (_cacheService is null) return;
-        await _cacheService.RemoveAsync(CacheKeys.BoardDetail(boardId), cancellationToken);
     }
 
     private async Task InvalidateBoardListCacheAsync(Guid userId, CancellationToken cancellationToken)
