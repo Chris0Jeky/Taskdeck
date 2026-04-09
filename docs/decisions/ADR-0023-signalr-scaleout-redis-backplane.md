@@ -18,7 +18,7 @@ Use **Redis backplane** via `Microsoft.AspNetCore.SignalR.StackExchangeRedis` as
 
 2. **Configuration**: Redis connection string is provided via `appsettings.json`, environment variables (`SignalR__Redis__ConnectionString`), or `appsettings.local.json`. No secrets are logged at any verbosity level.
 
-3. **Health observability**: A dedicated Redis health check reports the backplane connection status in the `/health/ready` endpoint as `Healthy`, `Degraded` (configured but unreachable), or `NotConfigured`.
+3. **Health observability**: A dedicated Redis health check reports the backplane connection status in the `/health/ready` endpoint as `Healthy`, `Unhealthy` (configured but unreachable), or `NotConfigured`.
 
 4. **Failure semantics**: If the Redis backplane becomes unreachable after startup, SignalR degrades to instance-local delivery (clients on the same instance still receive events). StackExchange.Redis handles automatic reconnection with configurable retry. No data loss occurs because SignalR events are ephemeral (not durably queued).
 

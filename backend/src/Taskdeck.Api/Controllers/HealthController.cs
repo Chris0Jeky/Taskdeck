@@ -115,7 +115,7 @@ public class HealthController : ControllerBase
         }
         catch (Exception ex)
         {
-            checks["signalrBackplane"] = new { status = "Unhealthy", error = ex.Message };
+            checks["signalrBackplane"] = new RedisHealthStatus("Unhealthy", ex.Message);
             isReady = false;
         }
 
