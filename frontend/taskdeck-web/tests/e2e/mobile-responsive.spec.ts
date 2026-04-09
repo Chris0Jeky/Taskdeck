@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession } from './support/authSession'
-import { addCard, addColumn, columnByName, createBoard } from './support/boardUiHelpers'
+import { addCard, addColumn, createBoard } from './support/boardUiHelpers'
 
 /**
  * Mobile-responsive E2E tests.
