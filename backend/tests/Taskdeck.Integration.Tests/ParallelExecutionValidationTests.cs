@@ -7,11 +7,10 @@ using Xunit;
 namespace Taskdeck.Integration.Tests;
 
 /// <summary>
-/// Validates that parallel test execution is race-free. These tests create
-/// data concurrently within a single database to prove that EF Core contexts
-/// are properly isolated per operation. Each test in this class uses its own
-/// isolated database (from the fixture), so cross-test contamination cannot
-/// occur even when xUnit runs multiple test classes in parallel.
+/// Validates that rapid sequential database operations are race-free. Each
+/// test method gets its own isolated database (xUnit 2.x creates a new class
+/// instance per test), so cross-test contamination cannot occur even when
+/// xUnit runs multiple test methods in parallel.
 /// </summary>
 [Collection(PostgresTestCollection.Name)]
 public class ParallelExecutionValidationTests : PostgresIntegrationTestBase
@@ -21,32 +20,24 @@ public class ParallelExecutionValidationTests : PostgresIntegrationTestBase
     }
 
     [SkippableFact]
-    public async Task ConcurrentBoardCreation_ShouldNotCauseRaceConditions()
+    public async Task SequentialBoardCreation_ShouldProduceUniqueIds()
     {
         SkipIfDockerUnavailable();
         var user = new User("parallel-user1", "parallel1@example.com", "hash123");
         Db.Users.Add(user);
         await Db.SaveChangesAsync();
 
+        // DbContext is NOT thread-safe, so we serialize all operations.
+        // This validates that rapid sequential Add + SaveChanges produces
+        // unique, correctly-persisted boards without collisions.
         const int boardCount = 10;
-        var tasks = Enumerable.Range(0, boardCount).Select(async i =>
+        var boardIds = new List<Guid>();
+        for (var i = 0; i < boardCount; i++)
         {
-            // Each concurrent operation uses the shared Db context sequentially
-            // within its own task, but they are all awaited together.
-            // This validates that the EF Core change tracker handles
-            // sequential Add + SaveChanges within overlapping async flows.
-            var board = new Board($"Parallel Board {i}", $"Created by task {i}", user.Id);
+            var board = new Board($"Parallel Board {i}", $"Created by iteration {i}", user.Id);
             Db.Boards.Add(board);
             await Db.SaveChangesAsync();
-            return board.Id;
-        });
-
-        // Note: EF Core DbContext is NOT thread-safe, so we must serialize access.
-        // The await above ensures only one operation is in-flight at a time.
-        var boardIds = new List<Guid>();
-        foreach (var task in tasks)
-        {
-            boardIds.Add(await task);
+            boardIds.Add(board.Id);
         }
 
         // Verify all boards were created without collisions
