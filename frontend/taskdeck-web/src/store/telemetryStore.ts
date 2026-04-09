@@ -9,6 +9,9 @@ import type {
 const CONSENT_KEY = 'taskdeck_telemetry_consent'
 const FLUSH_INTERVAL_MS = 30_000 // 30 seconds
 const MAX_BUFFER_SIZE = 200
+type PrivacyAwareNavigator = Navigator & {
+  globalPrivacyControl?: boolean
+}
 
 /**
  * Checks whether the browser signals Do Not Track (DNT) or
@@ -18,9 +21,10 @@ const MAX_BUFFER_SIZE = 200
 function browserSignalsPrivacy(): boolean {
   if (typeof navigator === 'undefined') return false
   // GPC has legal force under CCPA — respect it unconditionally
-  if ((navigator as Record<string, unknown>).globalPrivacyControl === true) return true
+  const browserNavigator = navigator as PrivacyAwareNavigator
+  if (browserNavigator.globalPrivacyControl === true) return true
   // DNT is advisory but we respect it as a privacy-first product
-  if (navigator.doNotTrack === '1') return true
+  if (browserNavigator.doNotTrack === '1') return true
   return false
 }
 
