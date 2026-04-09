@@ -62,7 +62,7 @@ test('empty board view', async ({ page }) => {
   await createBoard(page, 'Visual Test Board')
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('board-empty.png')
+  await expect(page).toHaveScreenshot('board-empty')
 })
 
 test('board with columns and cards', async ({ page }) => {
@@ -79,5 +79,5 @@ test('board with columns and cards', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('board-populated.png')
+  await expect(page).toHaveScreenshot('board-populated')
 })

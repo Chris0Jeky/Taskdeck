@@ -18,5 +18,5 @@ test('home view default state', async ({ page }) => {
 
   await prepareForScreenshot(page)
 
-  await expect(page).toHaveScreenshot('home-default.png')
+  await expect(page).toHaveScreenshot('home-default')
 })
