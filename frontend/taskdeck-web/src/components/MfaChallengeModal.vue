@@ -44,18 +44,28 @@ function cancel() {
 
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="td-mfa-modal__overlay" @click.self="cancel">
+    <div v-if="props.visible" class="td-mfa-modal__overlay">
+      <button
+        type="button"
+        class="td-mfa-modal__backdrop"
+        aria-label="Close verification dialog"
+        @click="cancel"
+      />
       <div class="td-mfa-modal" role="dialog" aria-modal="true" aria-labelledby="mfa-modal-title">
         <h2 id="mfa-modal-title" class="td-mfa-modal__title">Verification Required</h2>
         <p class="td-mfa-modal__description">
-          {{ actionLabel || 'This action' }} requires two-factor verification.
+          {{ props.actionLabel || 'This action' }} requires two-factor verification.
           Enter the code from your authenticator app.
         </p>
 
         <div v-if="error" class="td-mfa-modal__error" role="alert">{{ error }}</div>
 
         <form @submit.prevent="verify" class="td-mfa-modal__form">
+          <label for="mfa-challenge-code" class="td-visually-hidden">
+            Six-digit verification code
+          </label>
           <input
+            id="mfa-challenge-code"
             v-model="code"
             type="text"
             inputmode="numeric"
@@ -64,7 +74,6 @@ function cancel() {
             placeholder="000000"
             class="td-input td-mfa-modal__code-input"
             autocomplete="one-time-code"
-            autofocus
           />
           <div class="td-mfa-modal__actions">
             <button
@@ -92,14 +101,23 @@ function cancel() {
 .td-mfa-modal__overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
 
+.td-mfa-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
 .td-mfa-modal {
+  position: relative;
   background: var(--td-glass-bg);
   backdrop-filter: blur(var(--td-glass-blur));
   border: 0.5px solid var(--td-border-ghost);
@@ -186,5 +204,17 @@ function cancel() {
 
 .td-btn--secondary:hover:not(:disabled) {
   background: var(--td-surface-elevated);
+}
+
+.td-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>

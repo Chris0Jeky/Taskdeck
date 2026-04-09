@@ -127,7 +127,11 @@ onMounted(loadStatus)
 
       <p class="td-mfa-setup__step">3. Enter the 6-digit code from your authenticator app:</p>
       <div class="td-mfa-setup__verify-form">
+        <label for="mfa-setup-code" class="td-visually-hidden">
+          Setup verification code
+        </label>
         <input
+          id="mfa-setup-code"
           v-model="verifyCode"
           type="text"
           inputmode="numeric"
@@ -165,7 +169,11 @@ onMounted(loadStatus)
       <div v-else class="td-mfa-setup__disable-form">
         <p>Enter a verification code to disable MFA:</p>
         <div class="td-mfa-setup__verify-form">
+          <label for="mfa-disable-code" class="td-visually-hidden">
+            Disable verification code
+          </label>
           <input
+            id="mfa-disable-code"
             v-model="disableCode"
             type="text"
             inputmode="numeric"
@@ -342,5 +350,17 @@ onMounted(loadStatus)
 
 .td-btn--secondary:hover:not(:disabled) {
   background: var(--td-surface-elevated);
+}
+
+.td-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>
