@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
@@ -101,6 +103,13 @@ public class UnitOfWork : IUnitOfWork
         try
         {
             return await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new DomainException(
+                ErrorCodes.Conflict,
+                "The requested change conflicted with a concurrent update.",
+                ex);
         }
         catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))
         {

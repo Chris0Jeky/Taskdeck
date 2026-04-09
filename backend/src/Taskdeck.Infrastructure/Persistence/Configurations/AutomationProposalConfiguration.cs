@@ -66,7 +66,8 @@ public class AutomationProposalConfiguration : IEntityTypeConfiguration<Automati
             .IsRequired();
 
         builder.Property(ap => ap.UpdatedAt)
-            .IsRequired();
+            .IsRequired()
+            .IsConcurrencyToken();
 
         builder.HasMany(ap => ap.Operations)
             .WithOne(o => o.Proposal)
