@@ -102,14 +102,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Report status
+        env:
+          BACKEND_RESULT: ${{ needs.backend-mutation.result || 'skipped' }}
+          FRONTEND_RESULT: ${{ needs.frontend-mutation.result || 'skipped' }}
         run: |
-          echo "## Mutation Testing Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Lane | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend (Stryker.NET) | ${{ needs.backend-mutation.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend (Stryker JS) | ${{ needs.frontend-mutation.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Download HTML/JSON reports from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "See [Mutation Testing Policy](docs/testing/MUTATION_TESTING_POLICY.md) for threshold strategy and triage guidance." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Mutation Testing Results"
+            echo ""
+            echo "| Lane | Status |"
+            echo "|------|--------|"
+            echo "| Backend (Stryker.NET) | ${BACKEND_RESULT} |"
+            echo "| Frontend (Stryker JS) | ${FRONTEND_RESULT} |"
+            echo ""
+            echo "Download HTML/JSON reports from the **Artifacts** section above."
+            echo ""
+            echo "See [Mutation Testing Policy](docs/testing/MUTATION_TESTING_POLICY.md) for threshold strategy and triage guidance."
+          } >> "$GITHUB_STEP_SUMMARY"
