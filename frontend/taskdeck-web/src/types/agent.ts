@@ -1,5 +1,8 @@
 export type AgentScopeType = 'Workspace' | 'Board'
 
+/** Raw value from backend -- may be a numeric enum index or a string */
+export type AgentScopeTypeValue = AgentScopeType | number
+
 export type AgentRunStatus =
   | 'Queued'
   | 'GatheringContext'
@@ -10,6 +13,41 @@ export type AgentRunStatus =
   | 'Completed'
   | 'Failed'
   | 'Cancelled'
+
+/** Raw value from backend -- may be a numeric enum index or a string */
+export type AgentRunStatusValue = AgentRunStatus | number
+
+const scopeTypeByIndex: readonly AgentScopeType[] = ['Workspace', 'Board'] as const
+
+const runStatusByIndex: readonly AgentRunStatus[] = [
+  'Queued',
+  'GatheringContext',
+  'Planning',
+  'ProposalCreated',
+  'WaitingForReview',
+  'Applying',
+  'Completed',
+  'Failed',
+  'Cancelled',
+] as const
+
+/** Normalize a scope type from the backend (may arrive as number or string) */
+export function normalizeScopeType(value: AgentScopeTypeValue): AgentScopeType {
+  if (typeof value === 'number') {
+    return scopeTypeByIndex[value] ?? 'Workspace'
+  }
+  const found = scopeTypeByIndex.find((v) => v.toLowerCase() === value.toLowerCase())
+  return found ?? 'Workspace'
+}
+
+/** Normalize a run status from the backend (may arrive as number or string) */
+export function normalizeRunStatus(value: AgentRunStatusValue): AgentRunStatus {
+  if (typeof value === 'number') {
+    return runStatusByIndex[value] ?? 'Queued'
+  }
+  const found = runStatusByIndex.find((v) => v.toLowerCase() === value.toLowerCase())
+  return found ?? 'Queued'
+}
 
 export interface AgentProfile {
   id: string
