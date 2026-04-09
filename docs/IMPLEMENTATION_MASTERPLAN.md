@@ -620,7 +620,15 @@ Delivered in the latest cycle:
     - resilience/degraded-mode tests (`#720`/`#778`): 34 tests (18 backend + 16 frontend); adversarial review fixed CI blocker (unused import), double-invocation anti-pattern, and timing race
     - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
     - TST-32–TST-57 wave: 23 of 25 issues now delivered (added `#723`/`#769` and `#725`/`#765` from parallel wave); remaining open: `#705`, `#717`; frontend suite ~1734 passing
-130. SignalR scale-out readiness (`#105`, PLAT-03, 2026-04-09):
+130. Ephemeral integration databases via Testcontainers (`#91`, 2026-04-09):
+    - new `Taskdeck.Integration.Tests` project with `Testcontainers.PostgreSql` (4.11.0) and `Npgsql.EntityFrameworkCore.PostgreSQL` (8.0.11)
+    - `PostgresContainerFixture` manages a shared ephemeral PostgreSQL 16 container per xUnit collection; each test method gets its own isolated database via counter-based `CREATE DATABASE`
+    - schema created via `EnsureCreated()` from the EF Core model (not SQLite migrations) for PostgreSQL provider parity
+    - `PostgresIntegrationTestBase` base class provides `Db` property with `IAsyncLifetime` setup/teardown
+    - 20 integration tests across 7 test classes: Board CRUD (5), Card operations (5), Proposal lifecycle (5), per-test isolation verification (2), parallel execution validation (3)
+    - CI workflow `reusable-container-integration.yml` added to ci-extended lane (label: testing); runs on ubuntu-latest with Docker
+    - documentation at `docs/testing/TESTCONTAINERS_GUIDE.md`
+131. SignalR scale-out readiness (`#105`, PLAT-03, 2026-04-09):
     - ADR-0023 documents Redis backplane strategy with alternatives analysis (Azure SignalR Service, custom message bus, sticky sessions)
     - `Microsoft.AspNetCore.SignalR.StackExchangeRedis` 8.0.25 added with conditional activation: Redis backplane enabled when `SignalR:Redis:ConnectionString` configured, in-memory fallback when absent
     - `RedisBackplaneHealthCheck` reports NotConfigured/Healthy/Unhealthy in `/health/ready` endpoint
@@ -628,7 +636,7 @@ Delivered in the latest cycle:
     - operational runbook at `docs/platform/SIGNALR_SCALEOUT_RUNBOOK.md` covers Docker Compose multi-instance, load balancer WebSocket config, failure scenarios, and rollback
     - 14 new tests: configuration detection, logging, health check states, readiness endpoint integration, hub negotiate preservation
 
-130. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
+132. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
     - 10 parallel worktree agents delivered platform hardening, testing infrastructure, ops documentation, and PWA readiness with two rounds of adversarial review per PR (22 CRITICAL + 32 HIGH findings caught and resolved)
     - **PLAT-01** SQLite-to-PostgreSQL migration strategy (`#84`/`#801`): ADR-0023 (PostgreSQL target), migration runbook, 20 provider compatibility tests; review caught phantom table, 5 missing tables, FTS5 crash
     - **PLAT-02** Distributed caching (`#85`/`#805`): ADR-0024 (cache-aside), `ICacheService` with Redis/InMemory/NoOp implementations, board list caching, 32 tests; review removed unsafe board-detail cache, fixed permanent Redis disable
