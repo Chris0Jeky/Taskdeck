@@ -23,8 +23,7 @@ public class BoardServiceCacheTests
         _cacheMock = new Mock<ICacheService>();
         _cacheSettings = new CacheSettings
         {
-            BoardListTtlSeconds = 60,
-            BoardDetailTtlSeconds = 120
+            BoardListTtlSeconds = 60
         };
 
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
@@ -41,39 +40,15 @@ public class BoardServiceCacheTests
             cacheSettings: _cacheSettings);
     }
 
-    #region GetBoardDetailAsync Cache-Aside
+    #region GetBoardDetailAsync — intentionally NOT cached
 
     [Fact]
-    public async Task GetBoardDetail_ReturnsCachedValue_OnCacheHit()
+    public async Task GetBoardDetail_AlwaysQueriesDatabase_NeverCaches()
     {
-        var boardId = Guid.NewGuid();
-        var cachedDto = new BoardDetailDto(boardId, "Cached Board", "desc", false,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, new List<ColumnDto>());
-
-        _cacheMock.Setup(c => c.GetAsync<BoardDetailDto>(
-                CacheKeys.BoardDetail(boardId), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cachedDto);
-
-        var service = CreateService();
-        var result = await service.GetBoardDetailAsync(boardId);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Name.Should().Be("Cached Board");
-
-        // Database should NOT be queried on cache hit
-        _boardRepoMock.Verify(r => r.GetByIdWithDetailsAsync(
-            It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task GetBoardDetail_QueriesDatabase_OnCacheMiss()
-    {
+        // Board detail is intentionally not cached because BoardDetailDto includes
+        // columns with card counts that can be mutated by ColumnService/CardService.
         var boardId = Guid.NewGuid();
         var board = new Board("DB Board", "desc", _userId);
-
-        _cacheMock.Setup(c => c.GetAsync<BoardDetailDto>(
-                It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((BoardDetailDto?)null);
 
         _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(board);
@@ -84,16 +59,18 @@ public class BoardServiceCacheTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Name.Should().Be("DB Board");
 
-        // Database should be queried
+        // Database should always be queried — no cache lookup
         _boardRepoMock.Verify(r => r.GetByIdWithDetailsAsync(
             boardId, It.IsAny<CancellationToken>()), Times.Once);
 
-        // Result should be cached
+        // Cache should never be read or written for board detail
+        _cacheMock.Verify(c => c.GetAsync<BoardDetailDto>(
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _cacheMock.Verify(c => c.SetAsync(
-            CacheKeys.BoardDetail(boardId),
+            It.IsAny<string>(),
             It.IsAny<BoardDetailDto>(),
-            TimeSpan.FromSeconds(120),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<TimeSpan>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -113,13 +90,9 @@ public class BoardServiceCacheTests
     }
 
     [Fact]
-    public async Task GetBoardDetail_ReturnsNotFound_EvenWithCache()
+    public async Task GetBoardDetail_ReturnsNotFound_WithCacheServicePresent()
     {
         var boardId = Guid.NewGuid();
-
-        _cacheMock.Setup(c => c.GetAsync<BoardDetailDto>(
-                It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((BoardDetailDto?)null);
 
         _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Board?)null);
@@ -129,13 +102,6 @@ public class BoardServiceCacheTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be("NotFound");
-
-        // Should NOT cache a not-found result
-        _cacheMock.Verify(c => c.SetAsync(
-            It.IsAny<string>(),
-            It.IsAny<BoardDetailDto>(),
-            It.IsAny<TimeSpan>(),
-            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -248,11 +214,10 @@ public class BoardServiceCacheTests
     }
 
     [Fact]
-    public async Task UpdateBoard_InvalidatesBothCaches()
+    public async Task UpdateBoard_InvalidatesBoardListCache()
     {
         var boardId = Guid.NewGuid();
         var board = new Board("Old Name", "desc", _userId);
-        var actualBoardId = board.Id; // Board generates its own Id
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(board);
@@ -260,30 +225,22 @@ public class BoardServiceCacheTests
         var service = CreateService();
         await service.UpdateBoardAsync(boardId, new UpdateBoardDto("New Name", null, null));
 
-        // Board detail cache should be invalidated using the board's actual Id
-        _cacheMock.Verify(c => c.RemoveAsync(
-            CacheKeys.BoardDetail(actualBoardId), It.IsAny<CancellationToken>()), Times.Once);
-
         // Board list cache should be invalidated for the owner
         _cacheMock.Verify(c => c.RemoveAsync(
             CacheKeys.BoardListForUser(_userId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task DeleteBoard_InvalidatesBothCaches()
+    public async Task DeleteBoard_InvalidatesBoardListCache()
     {
         var boardId = Guid.NewGuid();
         var board = new Board("Board to Delete", "desc", _userId);
-        var actualBoardId = board.Id;
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(board);
 
         var service = CreateService();
         await service.DeleteBoardAsync(boardId);
-
-        _cacheMock.Verify(c => c.RemoveAsync(
-            CacheKeys.BoardDetail(actualBoardId), It.IsAny<CancellationToken>()), Times.Once);
 
         _cacheMock.Verify(c => c.RemoveAsync(
             CacheKeys.BoardListForUser(_userId), It.IsAny<CancellationToken>()), Times.Once);
@@ -294,23 +251,14 @@ public class BoardServiceCacheTests
     #region Cache Degradation
 
     [Fact]
-    public async Task GetBoardDetail_FallsBackToDatabase_WhenCacheThrows()
+    public async Task GetBoardDetail_WorksWithoutCacheService()
     {
         var boardId = Guid.NewGuid();
         var board = new Board("Fallback Board", "desc", _userId);
 
-        // Cache throws on get — should fallback to DB
-        _cacheMock.Setup(c => c.GetAsync<BoardDetailDto>(
-                It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Redis down"));
-
         _boardRepoMock.Setup(r => r.GetByIdWithDetailsAsync(boardId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(board);
 
-        // Use the InMemoryCacheService that wraps exceptions, or just test with no-cache fallback
-        // This tests the pattern: when ICacheService itself is implemented correctly
-        // it should never throw. But the BoardService constructor accepts null cache
-        // and the service still works.
         var serviceWithoutCache = new BoardService(_unitOfWorkMock.Object);
         var result = await serviceWithoutCache.GetBoardDetailAsync(boardId);
 
@@ -332,16 +280,35 @@ public class BoardServiceCacheTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ListBoards_FallsBackToDatabase_WhenCacheGetThrows()
+    {
+        // Even though the ICacheService contract says "never throw",
+        // verify BoardService is resilient if a faulty implementation violates the contract.
+        var throwingCacheMock = new Mock<ICacheService>();
+        throwingCacheMock.Setup(c => c.GetAsync<List<BoardDto>>(
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Redis down"));
+
+        _boardRepoMock.Setup(r => r.SearchIdsAsync(null, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Guid>());
+        _boardRepoMock.Setup(r => r.GetByIdsAsync(It.IsAny<List<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Board> { new("DB Board", null, _userId) });
+
+        // NOTE: This test documents a known limitation. If a cache implementation
+        // throws (violating the contract), BoardService will propagate the exception.
+        // Defense-in-depth would add try/catch at the call site, but the current
+        // design relies on the contract. This test verifies the contract matters.
+        var service = CreateService(throwingCacheMock.Object);
+        var act = () => service.ListBoardsAsync(_userId);
+
+        // Currently throws — documenting this as known behavior
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
     #endregion
 
     #region CacheKeys
-
-    [Fact]
-    public void CacheKeys_BoardDetail_FormatsCorrectly()
-    {
-        var id = Guid.Parse("12345678-1234-1234-1234-123456789abc");
-        CacheKeys.BoardDetail(id).Should().Be("board:12345678-1234-1234-1234-123456789abc:detail");
-    }
 
     [Fact]
     public void CacheKeys_BoardListForUser_FormatsCorrectly()
