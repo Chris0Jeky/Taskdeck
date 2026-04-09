@@ -66,6 +66,17 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: node -e "require('fs').rmSync('taskdeck.e2e.visual.ci.db',{force:true});"
 
+      - name: Check for existing baselines
+        id: baselines
+        working-directory: frontend/taskdeck-web
+        run: |
+          if [ -d "tests/visual/__screenshots__" ] && [ "$(find tests/visual/__screenshots__ -name '*.png' 2>/dev/null | head -1)" ]; then
+            echo "exist=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exist=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No baseline screenshots found. Running with --update-snapshots to generate initial baselines. Download the visual-regression-baselines artifact and commit them."
+          fi
+
       - name: Run visual regression tests
         timeout-minutes: 12
         working-directory: frontend/taskdeck-web
@@ -73,7 +84,21 @@ jobs:
           CI: "true"
           TASKDECK_E2E_DB: taskdeck.e2e.visual.ci.db
           TASKDECK_RUN_DEMO: "0"
-        run: npx playwright test --config playwright.visual.config.ts --reporter=line
+        run: |
+          if [ "${{ steps.baselines.outputs.exist }}" = "false" ]; then
+            npx playwright test --config playwright.visual.config.ts --update-snapshots --reporter=line
+          else
+            npx playwright test --config playwright.visual.config.ts --reporter=line
+          fi
+
+      - name: Upload generated baselines
+        if: steps.baselines.outputs.exist == 'false'
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-regression-baselines
+          path: frontend/taskdeck-web/tests/visual/__screenshots__/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload visual diff artifacts
         if: failure()
