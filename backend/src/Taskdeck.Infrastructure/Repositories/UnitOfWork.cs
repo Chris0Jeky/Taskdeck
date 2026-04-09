@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
@@ -37,7 +38,8 @@ public class UnitOfWork : IUnitOfWork
         IAgentRunRepository agentRuns,
         IKnowledgeDocumentRepository knowledgeDocuments,
         IKnowledgeChunkRepository knowledgeChunks,
-        IExternalLoginRepository externalLogins)
+        IExternalLoginRepository externalLogins,
+        IApiKeyRepository apiKeys)
     {
         _context = context;
         Boards = boards;
@@ -65,6 +67,7 @@ public class UnitOfWork : IUnitOfWork
         KnowledgeDocuments = knowledgeDocuments;
         KnowledgeChunks = knowledgeChunks;
         ExternalLogins = externalLogins;
+        ApiKeys = apiKeys;
     }
 
     public IBoardRepository Boards { get; }
@@ -92,12 +95,20 @@ public class UnitOfWork : IUnitOfWork
     public IKnowledgeDocumentRepository KnowledgeDocuments { get; }
     public IKnowledgeChunkRepository KnowledgeChunks { get; }
     public IExternalLoginRepository ExternalLogins { get; }
+    public IApiKeyRepository ApiKeys { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             return await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new DomainException(
+                ErrorCodes.Conflict,
+                "Record was updated by another session. Refresh and retry your action.",
+                ex);
         }
         catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))
         {
