@@ -620,6 +620,14 @@ Delivered in the latest cycle:
     - resilience/degraded-mode tests (`#720`/`#778`): 34 tests (18 backend + 16 frontend); adversarial review fixed CI blocker (unused import), double-invocation anti-pattern, and timing race
     - E2E error state expansion (`#712`/`#772`): 25 Playwright scenarios across 3 spec files using `page.route()` interception; adversarial review fixed CI blocker (unused import), route glob, and 3 vacuous assertions
     - TST-32–TST-57 wave: 23 of 25 issues now delivered (added `#723`/`#769` and `#725`/`#765` from parallel wave); remaining open: `#705`, `#717`; frontend suite ~1734 passing
+130. Ephemeral integration databases via Testcontainers (`#91`, 2026-04-09):
+    - new `Taskdeck.Integration.Tests` project with `Testcontainers.PostgreSql` (4.11.0) and `Npgsql.EntityFrameworkCore.PostgreSQL` (8.0.11)
+    - `PostgresContainerFixture` manages a shared ephemeral PostgreSQL 16 container per xUnit collection; each test class gets its own isolated database via counter-based `CREATE DATABASE`
+    - schema created via `EnsureCreated()` from the EF Core model (not SQLite migrations) for PostgreSQL provider parity
+    - `PostgresIntegrationTestBase` base class provides `Db` property with `IAsyncLifetime` setup/teardown
+    - 17 integration tests across 5 test classes: Board CRUD (5), Card operations (5), Proposal lifecycle (5), cross-class isolation verification (2), parallel execution validation (3)
+    - CI workflow `reusable-container-integration.yml` added to ci-extended lane (label: testing); runs on ubuntu-latest with Docker
+    - documentation at `docs/testing/TESTCONTAINERS_GUIDE.md`
 
 ## Current Planning Pivot (2026-03-07)
 
