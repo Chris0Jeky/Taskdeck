@@ -6,10 +6,10 @@
 
 ## Context
 
-Issue #85 (PLAT-02) requires a distributed caching strategy with well-defined cache-invalidation semantics. Taskdeck's board listing and board detail endpoints are high-read, low-write paths that benefit from caching. The system is local-first with SQLite persistence, so the caching layer must degrade gracefully when no external cache is available.
+Issue #85 (PLAT-02) requires a distributed caching strategy with well-defined cache-invalidation semantics. Taskdeck's board listing endpoint is a high-read, low-write path that benefits from caching. The system is local-first with SQLite persistence, so the caching layer must degrade gracefully when no external cache is available.
 
 Key requirements:
-- Cache hot read paths (board listing, board detail) to reduce database load
+- Cache hot read paths (board listing) to reduce database load
 - Define explicit TTL, key strategy, and invalidation triggers
 - Cache failures must never break correctness — safe degradation to no-cache mode
 - Observability: hit/miss/error metrics for cache effectiveness analysis
@@ -20,7 +20,7 @@ Key requirements:
 Adopt the **cache-aside** (lazy-loading) pattern with two interchangeable implementations:
 
 1. **Redis-backed** (`RedisCacheService`) for production/multi-instance deployments
-2. **In-memory** (`InMemoryCacheService`) using `IMemoryCache` for local dev and test
+2. **In-memory** (`InMemoryCacheService`) using `ConcurrentDictionary` with periodic sweep for local dev and test
 
 The abstraction lives in `Taskdeck.Application` as `ICacheService`. Implementations live in `Taskdeck.Infrastructure`.
 
@@ -34,19 +34,18 @@ Write: Mutate DB → invalidate cache key(s)
 ### Key Strategy
 
 - Board list: `boards:user:{userId}` (user-scoped because board visibility depends on authorization)
-- Board detail: `board:{boardId}:detail`
 - Keys are prefixed with `td:` namespace to avoid collisions in shared Redis instances
+- Board detail is intentionally NOT cached: `BoardDetailDto` includes columns with card counts, and `ColumnService`/`CardService` mutate that data without cache awareness. Caching board detail would serve stale column/card information after sibling-service mutations.
 
 ### TTL Policy
 
 - Board list: 60 seconds (short TTL — list changes frequently with board creation/archival)
-- Board detail: 120 seconds (moderate TTL — board detail changes less frequently than list composition)
 - All TTLs are configurable via `appsettings.json`
 
 ### Invalidation Triggers
 
-- Board create/update/delete/archive/unarchive: invalidate `board:{id}:detail` + all `boards:user:*` keys for that board's accessible users
-- For simplicity in the initial implementation, board list cache is invalidated by a pattern-based approach (invalidate the acting user's list cache on mutation)
+- Board create/update/delete/archive/unarchive: invalidate `boards:user:{ownerId}` cache for the board owner
+- For simplicity in the initial implementation, board list cache is invalidated per-owner (invalidate the acting user's list cache on mutation)
 
 ### Safe Degradation
 
@@ -73,7 +72,7 @@ Write: Mutate DB → invalidate cache key(s)
 
 ## Consequences
 
-- Board listing and detail endpoints gain cache-aside behavior with measurable hit rates
+- Board listing endpoint gains cache-aside behavior with measurable hit rates (board detail intentionally excluded — see Key Strategy)
 - New `ICacheService` abstraction available for future hot paths (cards, columns, proposals)
 - Redis becomes an optional infrastructure dependency (not required for local dev)
 - Cache invalidation correctness must be maintained as new board mutation paths are added
