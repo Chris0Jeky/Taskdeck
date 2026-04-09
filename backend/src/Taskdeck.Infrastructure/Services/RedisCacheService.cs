@@ -8,41 +8,29 @@ namespace Taskdeck.Infrastructure.Services;
 /// <summary>
 /// Redis-backed cache implementation for production/multi-instance deployments.
 /// All operations degrade safely on connection failure — no exceptions propagated to callers.
-/// Uses StackExchange.Redis with lazy connection multiplexer.
+/// Uses StackExchange.Redis with reconnection support — transient Redis outages do not
+/// permanently disable the cache.
 /// </summary>
 public sealed class RedisCacheService : ICacheService, IDisposable
 {
-    private readonly Lazy<ConnectionMultiplexer?> _lazyConnection;
+    private readonly string _connectionString;
     private readonly ILogger<RedisCacheService> _logger;
     private readonly string _keyPrefix;
-    private bool _disposed;
+    private readonly object _connectionLock = new();
+    private volatile ConnectionMultiplexer? _connection;
+    private volatile bool _disposed;
+
+    /// <summary>
+    /// Minimum interval between reconnection attempts to avoid reconnection storms.
+    /// </summary>
+    private static readonly TimeSpan ReconnectMinInterval = TimeSpan.FromSeconds(15);
+    private DateTime _lastConnectAttemptUtc = DateTime.MinValue;
 
     public RedisCacheService(string connectionString, ILogger<RedisCacheService> logger, string keyPrefix = "td")
     {
+        _connectionString = connectionString;
         _logger = logger;
         _keyPrefix = keyPrefix;
-
-        // Lazy initialization: connection is established on first cache access,
-        // not at startup. This prevents startup failures when Redis is unavailable.
-        _lazyConnection = new Lazy<ConnectionMultiplexer?>(() =>
-        {
-            try
-            {
-                var options = ConfigurationOptions.Parse(connectionString);
-                options.AbortOnConnectFail = false;  // Allow startup without Redis
-                options.ConnectTimeout = 3000;       // 3 second connect timeout
-                options.SyncTimeout = 1000;          // 1 second sync timeout
-                options.AsyncTimeout = 1000;         // 1 second async timeout
-                var connection = ConnectionMultiplexer.Connect(options);
-                _logger.LogInformation("Redis cache connected successfully");
-                return connection;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Redis cache connection failed — operating in degraded (no-cache) mode");
-                return null;
-            }
-        });
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
@@ -118,7 +106,7 @@ public sealed class RedisCacheService : ICacheService, IDisposable
     public async Task RemoveByPrefixAsync(string keyPrefix, CancellationToken cancellationToken = default)
     {
         var fullPrefix = BuildKey(keyPrefix);
-        var connection = _lazyConnection.Value;
+        var connection = GetConnection();
         if (connection is null) return;
 
         try
@@ -150,17 +138,23 @@ public sealed class RedisCacheService : ICacheService, IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        if (_lazyConnection.IsValueCreated)
+        try
         {
-            _lazyConnection.Value?.Dispose();
+            _connection?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Exception during Redis connection disposal");
         }
     }
 
     private IDatabase? GetDatabase()
     {
+        if (_disposed) return null;
+
         try
         {
-            var connection = _lazyConnection.Value;
+            var connection = GetConnection();
             if (connection is null || !connection.IsConnected)
             {
                 return null;
@@ -171,6 +165,65 @@ public sealed class RedisCacheService : ICacheService, IDisposable
         {
             _logger.LogWarning(ex, "Redis connection unavailable — operating in degraded mode");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets or establishes the Redis connection. Unlike the previous Lazy-based approach,
+    /// this retries connection on failure (with a backoff interval) so transient Redis
+    /// outages do not permanently disable caching.
+    /// </summary>
+    private ConnectionMultiplexer? GetConnection()
+    {
+        if (_disposed) return null;
+
+        var conn = _connection;
+        if (conn is not null && conn.IsConnected)
+            return conn;
+
+        // Throttle reconnection attempts to avoid storms
+        if (DateTime.UtcNow - _lastConnectAttemptUtc < ReconnectMinInterval)
+            return conn; // Return stale connection (or null) — don't retry yet
+
+        lock (_connectionLock)
+        {
+            // Double-check after acquiring lock
+            if (_disposed) return null;
+            conn = _connection;
+            if (conn is not null && conn.IsConnected)
+                return conn;
+
+            if (DateTime.UtcNow - _lastConnectAttemptUtc < ReconnectMinInterval)
+                return conn;
+
+            _lastConnectAttemptUtc = DateTime.UtcNow;
+
+            try
+            {
+                // Dispose old broken connection if any
+                var old = _connection;
+                var options = ConfigurationOptions.Parse(_connectionString);
+                options.AbortOnConnectFail = false;  // Allow startup without Redis
+                options.ConnectTimeout = 3000;       // 3 second connect timeout
+                options.SyncTimeout = 1000;          // 1 second sync timeout
+                options.AsyncTimeout = 1000;         // 1 second async timeout
+                _connection = ConnectionMultiplexer.Connect(options);
+                _logger.LogInformation("Redis cache connected successfully");
+
+                // Dispose old connection after successful replacement
+                if (old is not null && !ReferenceEquals(old, _connection))
+                {
+                    try { old.Dispose(); }
+                    catch (Exception) { /* best-effort cleanup */ }
+                }
+
+                return _connection;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis cache connection failed — operating in degraded (no-cache) mode");
+                return null;
+            }
         }
     }
 
