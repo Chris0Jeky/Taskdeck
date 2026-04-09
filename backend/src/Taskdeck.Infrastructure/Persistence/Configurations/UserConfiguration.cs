@@ -34,6 +34,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.TokenInvalidatedAt)
             .IsRequired(false);
 
+        builder.Property(u => u.MfaEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+
         builder.Property(u => u.CreatedAt)
             .IsRequired();
 

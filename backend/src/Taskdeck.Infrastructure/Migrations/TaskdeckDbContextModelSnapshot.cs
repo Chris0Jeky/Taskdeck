@@ -1060,6 +1060,41 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("KnowledgeDocuments", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.MfaCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsConfirmed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecoveryCodes")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Secret")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("MfaCredentials", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.Label", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1438,6 +1473,11 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("MfaEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -1697,6 +1737,15 @@ namespace Taskdeck.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ExternalLogin", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.MfaCredential", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", null)
                         .WithMany()
