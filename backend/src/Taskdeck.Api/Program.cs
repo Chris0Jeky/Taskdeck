@@ -172,6 +172,18 @@ builder.Services.AddLlmProviders(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdeck.Infrastructure.Identity.UserContext>();
 
+// Register MCP HTTP transport (Streamable HTTP alongside REST on the same Kestrel instance).
+// The HttpUserContextProvider resolves user identity from the API key set by ApiKeyMiddleware.
+builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
+builder.Services.AddMcpServer()
+    .WithHttpTransport()
+    .WithResources<BoardResources>()
+    .WithResources<CaptureResources>()
+    .WithResources<ProposalResources>()
+    .WithTools<ReadTools>()
+    .WithTools<WriteTools>()
+    .WithTools<ProposalTools>();
+
 // Add JWT Authentication (with optional GitHub OAuth)
 builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings);
 
