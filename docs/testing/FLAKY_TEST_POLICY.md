@@ -76,11 +76,12 @@ test('@quarantine @cross-browser flaky board reload test', async ({ page }) => {
 })
 ```
 
-The Playwright config excludes `@quarantine` from all CI projects via `grepInvert`. The test still runs locally for debugging.
+The Playwright config excludes `@quarantine` from all CI projects via a top-level `grepInvert` in `playwright.config.ts`. The test still runs locally for debugging (pass `--grep="@quarantine"` explicitly to override).
 
-To add quarantine exclusion to all projects, add this to `playwright.config.ts` in the top-level `use` block or per-project:
+The top-level exclusion is already configured:
 
 ```typescript
+// playwright.config.ts (top level)
 grepInvert: /@quarantine/,
 ```
 
