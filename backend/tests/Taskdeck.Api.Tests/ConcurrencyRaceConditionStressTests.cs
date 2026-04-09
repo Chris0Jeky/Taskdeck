@@ -497,15 +497,15 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         barrier.Release(2);
         await Task.WhenAll(approveTasks);
 
-        var codes = statusCodes.ToList();
-        var successCount = codes.Count(s => s == HttpStatusCode.OK);
-        var failCount = codes.Count(s => s != HttpStatusCode.OK);
+          var codes = statusCodes.ToList();
+          var successCount = codes.Count(s => s == HttpStatusCode.OK);
+          var conflictCount = codes.Count(s => s == HttpStatusCode.Conflict);
 
-        // Exactly one should succeed, one should fail
-        successCount.Should().Be(1,
-            "exactly one concurrent approve should succeed");
-        failCount.Should().Be(1,
-            "the second concurrent approve should fail");
+          // Exactly one should succeed, one should fail
+          successCount.Should().Be(1,
+              "exactly one concurrent approve should succeed");
+          conflictCount.Should().Be(1,
+              "the losing concurrent approve should return 409 conflict");
     }
 
     /// <summary>
@@ -573,11 +573,15 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         barrier.Release(2);
         await Task.WhenAll(approveTask, rejectTask);
 
-        // Exactly one should succeed
-        var successCount = (results["approve"] == HttpStatusCode.OK ? 1 : 0)
-                         + (results["reject"] == HttpStatusCode.OK ? 1 : 0);
-        successCount.Should().Be(1,
-            "exactly one of approve/reject should succeed in a race");
+          // Exactly one should succeed
+          var successCount = (results["approve"] == HttpStatusCode.OK ? 1 : 0)
+                           + (results["reject"] == HttpStatusCode.OK ? 1 : 0);
+          var conflictCount = (results["approve"] == HttpStatusCode.Conflict ? 1 : 0)
+                           + (results["reject"] == HttpStatusCode.Conflict ? 1 : 0);
+          successCount.Should().Be(1,
+              "exactly one of approve/reject should succeed in a race");
+          conflictCount.Should().Be(1,
+              "the losing proposal decision should return 409 conflict");
 
         // Verify final state is consistent
         var proposalResp = await client.GetAsync($"/api/automation/proposals/{proposalId}");
