@@ -13,14 +13,15 @@ namespace Taskdeck.Api.Tests;
 /// Provider-compatibility test harness validating that critical persistence
 /// operations produce consistent results across database providers.
 ///
-/// By default, tests run against SQLite (the CI default). When the environment
-/// variable TASKDECK_TEST_POSTGRES_CONNECTION is set, a parallel PostgreSQL
-/// run can be configured via a provider-switching factory.
+/// Currently all tests run against SQLite only (the CI and local default).
+/// PostgreSQL testing is a future TODO: when TASKDECK_TEST_POSTGRES_CONNECTION
+/// is set, a provider-switching factory should be added to run these same
+/// tests against PostgreSQL. That env var is not yet consumed by any code.
 ///
 /// Covers: CRUD on core entities (Board, Card, Column, Proposal), query
 /// patterns used in application services, date/time round-trip fidelity,
 /// string collation behavior, GUID storage, nullable field handling, and
-/// concurrent-write safety.
+/// batch-write safety.
 ///
 /// Related: ADR-0023, issue #84 (PLAT-01).
 /// </summary>
@@ -362,17 +363,20 @@ public class DatabaseProviderCompatibilityTests : IClassFixture<TestWebApplicati
 
         db.ChangeTracker.Clear();
 
-        // EF Core LIKE translation: Contains maps to SQL LIKE '%value%'
-        // SQLite LIKE is case-insensitive for ASCII by default
-        // PostgreSQL LIKE is case-sensitive; ILIKE is case-insensitive
-        // This test documents the SQLite baseline behavior
+        // EF Core translates Contains() to case-sensitive matching on both
+        // SQLite (via instr() or LIKE with PRAGMA case_sensitive_like) and
+        // PostgreSQL (via LIKE '%value%'). Both providers match only "Fix login bug"
+        // for Contains("login") — "Add LOGIN feature" does NOT match.
+        // For case-insensitive search on PostgreSQL, use EF.Functions.ILike().
+        // For case-insensitive search on SQLite, raw LIKE (without EF Core) is
+        // case-insensitive for ASCII, but EF Core's translation is case-sensitive.
         var containsLogin = await db.Cards
             .Where(c => c.BoardId == board.Id && c.Title.Contains("login"))
             .ToListAsync();
 
-        // SQLite LIKE is case-insensitive for ASCII, so both match
-        containsLogin.Count.Should().BeGreaterThanOrEqualTo(1,
-            "at least the lowercase 'login' card should match");
+        // EF Core's Contains() is case-sensitive on both SQLite and PostgreSQL
+        containsLogin.Count.Should().Be(1,
+            "EF Core Contains() is case-sensitive — only exact-case 'login' matches");
     }
 
     // ─── Nullable field handling ────────────────────────────────────
@@ -745,10 +749,17 @@ public class DatabaseProviderCompatibilityTests : IClassFixture<TestWebApplicati
         archived[0].Id.Should().Be(archivedBoard.Id);
     }
 
-    // ─── Concurrent writes (basic safety) ───────────────────────────
+    // ─── Batch writes (basic safety) ───────────────────────────────
 
+    /// <summary>
+    /// Validates that a batch of inserts in a single SaveChangesAsync call
+    /// persists all rows correctly. This is NOT a true concurrency test —
+    /// it uses a single DbContext on a single thread. Real multi-context
+    /// concurrent write testing should be added when PostgreSQL support
+    /// is available (SQLite uses database-level write locking).
+    /// </summary>
     [Fact]
-    public async Task ConcurrentInserts_DoNotLoseData()
+    public async Task BatchInsert_DoesNotLoseData()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -761,7 +772,7 @@ public class DatabaseProviderCompatibilityTests : IClassFixture<TestWebApplicati
         db.Columns.Add(column);
         await db.SaveChangesAsync();
 
-        // Insert 20 cards sequentially (SQLite doesn't support true concurrent writes)
+        // Insert 20 cards in a single batch (not truly concurrent)
         var cardIds = new List<Guid>();
         for (int i = 0; i < 20; i++)
         {

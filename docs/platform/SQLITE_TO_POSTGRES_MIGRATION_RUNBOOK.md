@@ -51,8 +51,12 @@ This runbook provides step-by-step instructions for migrating an existing Taskde
    UNION ALL SELECT 'AgentProfiles', COUNT(*) FROM AgentProfiles
    UNION ALL SELECT 'AgentRuns', COUNT(*) FROM AgentRuns
    UNION ALL SELECT 'KnowledgeDocuments', COUNT(*) FROM KnowledgeDocuments
+   UNION ALL SELECT 'KnowledgeChunks', COUNT(*) FROM KnowledgeChunks
    UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM ExternalLogins
-   UNION ALL SELECT 'ApiKeys', COUNT(*) FROM ApiKeys;
+   UNION ALL SELECT 'CardCommentMentions', COUNT(*) FROM CardCommentMentions
+   UNION ALL SELECT 'CommandRunLogs', COUNT(*) FROM CommandRunLogs
+   UNION ALL SELECT 'AgentRunEvents', COUNT(*) FROM AgentRunEvents
+   UNION ALL SELECT 'NotificationPreferences', COUNT(*) FROM NotificationPreferences;
    SQL
    ```
 
@@ -68,6 +72,22 @@ This runbook provides step-by-step instructions for migrating an existing Taskde
 ## Step 1: Apply PostgreSQL Schema via EF Core Migrations
 
 Configure the application to target PostgreSQL and apply migrations.
+
+> **Warning — FTS5 migration blocker**: The migration `AddKnowledgeDocumentsAndFts` contains
+> raw SQLite-specific SQL (`CREATE VIRTUAL TABLE ... USING fts5`, `CREATE TRIGGER`). These
+> statements will fail on PostgreSQL. Before running `dotnet ef database update`, you must
+> add provider-conditional guards to that migration:
+>
+> ```csharp
+> if (migrationBuilder.ActiveProvider == "Microsoft.EntityFrameworkCore.Sqlite")
+> {
+>     migrationBuilder.Sql(@"CREATE VIRTUAL TABLE IF NOT EXISTS ...");
+>     migrationBuilder.Sql(@"CREATE TRIGGER IF NOT EXISTS ...");
+> }
+> ```
+>
+> Apply the same guard to the `Down()` method. See the "Full-Text Search Migration Note"
+> section below for PostgreSQL FTS setup guidance.
 
 ```bash
 # Set the connection string for PostgreSQL
@@ -124,7 +144,6 @@ sqlite3 -header -csv taskdeck.db "SELECT * FROM AgentRunEvents;" > migration-exp
 sqlite3 -header -csv taskdeck.db "SELECT * FROM KnowledgeDocuments;" > migration-export/KnowledgeDocuments.csv
 sqlite3 -header -csv taskdeck.db "SELECT * FROM KnowledgeChunks;" > migration-export/KnowledgeChunks.csv
 sqlite3 -header -csv taskdeck.db "SELECT * FROM ExternalLogins;" > migration-export/ExternalLogins.csv
-sqlite3 -header -csv taskdeck.db "SELECT * FROM ApiKeys;" > migration-export/ApiKeys.csv
 ```
 
 ## Step 3: Import Data into PostgreSQL
@@ -134,6 +153,9 @@ sqlite3 -header -csv taskdeck.db "SELECT * FROM ApiKeys;" > migration-export/Api
 **Schema note**: EF Core Npgsql creates tables in the `public` schema by default with PascalCase names. Before importing, verify the table names match by running `\dt` in `psql`. If a custom schema was configured, adjust the table names in the import script accordingly.
 
 ```bash
+# Disable FK constraint checking during bulk import to avoid ordering issues
+psql "$PGCONN" -c "SET session_replication_role = replica;"
+
 # Order matters: parent tables first, then child tables
 TABLES=(
   Users
@@ -166,7 +188,6 @@ TABLES=(
   KnowledgeDocuments
   KnowledgeChunks
   ExternalLogins
-  ApiKeys
 )
 
 PGCONN="host=<host> dbname=taskdeck user=taskdeck_app password=<password>"
@@ -184,6 +205,9 @@ for table in "${TABLES[@]}"; do
     echo "Skipping ${table} (empty or missing CSV)."
   fi
 done
+
+# Re-enable FK constraint checking
+psql "$PGCONN" -c "SET session_replication_role = DEFAULT;"
 ```
 
 **GUID column handling**: SQLite stores GUIDs as text strings. PostgreSQL with Npgsql maps `Guid` properties to the native `uuid` type. EF Core's Npgsql provider accepts standard UUID text format (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), so CSV import should work directly. If you encounter format errors, verify the GUID format in the CSV matches PostgreSQL's expected input.
@@ -220,10 +244,12 @@ UNION ALL SELECT 'OutboundWebhookDeliveries', COUNT(*) FROM "OutboundWebhookDeli
 UNION ALL SELECT 'AgentProfiles', COUNT(*) FROM "AgentProfiles"
 UNION ALL SELECT 'AgentRuns', COUNT(*) FROM "AgentRuns"
 UNION ALL SELECT 'KnowledgeDocuments', COUNT(*) FROM "KnowledgeDocuments"
+UNION ALL SELECT 'KnowledgeChunks', COUNT(*) FROM "KnowledgeChunks"
 UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM "ExternalLogins"
 UNION ALL SELECT 'NotificationPreferences', COUNT(*) FROM "NotificationPreferences"
 UNION ALL SELECT 'CommandRunLogs', COUNT(*) FROM "CommandRunLogs"
-UNION ALL SELECT 'ApiKeys', COUNT(*) FROM "ApiKeys";
+UNION ALL SELECT 'CardCommentMentions', COUNT(*) FROM "CardCommentMentions"
+UNION ALL SELECT 'AgentRunEvents', COUNT(*) FROM "AgentRunEvents";
 SQL
 ```
 
@@ -319,6 +345,13 @@ These differences are handled by EF Core's provider abstraction but are worth no
 ## Full-Text Search Migration Note
 
 The current `KnowledgeDocuments` and `KnowledgeChunks` tables use SQLite FTS5 for full-text search. PostgreSQL uses a different FTS mechanism (`tsvector`/`tsquery`). The `IKnowledgeSearchService` interface abstracts this, so the migration requires a PostgreSQL-specific implementation of that interface — no domain or application layer changes.
+
+Key details for the FTS migration:
+
+- **`KnowledgeDocumentsFts`** is a SQLite FTS5 virtual table. It does **not** exist in the EF Core model and should **not** be exported or imported. It is populated by a SQLite trigger (`KnowledgeDocuments_ai`) that also does not exist in PostgreSQL.
+- **Do not export** `KnowledgeDocumentsFts` — it is not a regular table and `SELECT *` on an FTS5 table may produce unexpected results.
+- For PostgreSQL, full-text search can be implemented using `tsvector`/`tsquery` columns with GIN indexes, or using `pg_trgm` for simpler similarity-based search. The PostgreSQL-specific `IKnowledgeSearchService` implementation is a separate work item.
+- Until the PostgreSQL FTS implementation is built, knowledge document search will be non-functional on PostgreSQL. The `KnowledgeDocuments` and `KnowledgeChunks` data tables themselves will migrate normally.
 
 ## Security Considerations
 
