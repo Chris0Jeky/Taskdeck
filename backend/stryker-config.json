@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/stryker-config.schema.json",
   "stryker-config": {
     "project": "Taskdeck.Domain.csproj",
     "test-projects": [
@@ -19,9 +18,6 @@
       "break": 0
     },
     "language-version": "latest",
-    "concurrency": 4,
-    "output": "StrykerOutput",
-    "log-to-file": false,
     "verbosity": "info",
     "ignored-methods": [],
     "excluded-mutations": []
