@@ -1,6 +1,6 @@
 ---
 name: taskdeck-verification-doc-sync
-description: Finish a Taskdeck change with the right checks and doc updates. Use at the end of implementation to choose verification scope, decide whether canonical docs changed, and prepare the repo's required handoff summary.
+description: Finish a Taskdeck change with the right checks and doc updates. Use at the end of implementation to choose verification scope, decide whether canonical docs changed, and prepare the required handoff summary.
 ---
 
 # Taskdeck Verification And Doc Sync
@@ -34,7 +34,7 @@ Update `docs/STATUS.md` and `docs/IMPLEMENTATION_MASTERPLAN.md` only when one of
 - shipped product or engineering reality changed
 - the active roadmap or next-step sequencing changed
 
-Do not touch them for narrow local-tooling changes, draft-doc improvements, or evidence-only work. Update `AGENTS.md`, testing docs, product docs, or the specific touched document instead.
+Do not touch them for narrow local-tooling changes, draft-doc improvements, or evidence-only work.
 
 ## Required handoff shape
 
@@ -52,4 +52,3 @@ Provide:
 - a path is verified if you only reasoned about it
 - a feature is shipped if only demo tooling changed
 - canonical docs are current if implementation changed and the source-of-truth docs were left stale
-

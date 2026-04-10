@@ -2,7 +2,7 @@
 
 Last Updated: 2026-04-09
 Issue: `#104` OPS-12 Cloud cost observability and budget-guardrail automation
-ADR: ADR-0023
+ADR: ADR-0026
 
 ---
 
@@ -21,7 +21,7 @@ Cloud costs are tracked across six dimensions. Each dimension maps to a billing 
 | Attribute | Value |
 |---|---|
 | Billing source | AWS EC2 on-demand or reserved instance hours |
-| Current baseline | Single `t3.medium` (dev), `t3.large` (staging/prod) per `DEPLOYMENT_TERRAFORM_BASELINE.md` |
+| Current baseline | Single `t3.small` (dev), `t3.medium` (staging), `t3.large` (prod) per `DEPLOYMENT_TERRAFORM_BASELINE.md` |
 | Application metric | None (infrastructure-level only) |
 | Estimated monthly cost | $30-70 (single-node, on-demand) |
 | Scaling driver | User concurrency, background worker load |
@@ -41,8 +41,8 @@ Cloud costs are tracked across six dimensions. Each dimension maps to a billing 
 | Attribute | Value |
 |---|---|
 | Billing source | Provider API usage (OpenAI, Google Gemini) |
-| Application metric | `ILlmQuotaService` token usage records, `taskdeck.llm.tokens.used` |
-| Current baseline | GPT-4o-mini: ~$0.15/1M input tokens, ~$0.60/1M output tokens (reference baseline; verify against current OpenAI pricing). Gemini 2.5 Flash: pricing varies, verify against current Google pricing. |
+| Application metric | Persisted `ILlmQuotaService` usage records and quota summaries |
+| Current baseline | GPT-4o-mini: ~$0.15/1M input tokens, ~$0.60/1M output tokens (reference baseline; verify against current OpenAI pricing). Gemini 2.5 Flash pricing differs and should be verified separately against current Google pricing. |
 | Estimated monthly cost | $5-50 (light usage, 10-50 active users) to $200-500 (heavy usage, 100+ users with tool-calling) |
 | Scaling driver | Chat messages per user, tool-calling rounds per message (max 5), capture triage volume |
 
@@ -109,12 +109,12 @@ These are starting points for a small-team deployment. Adjust after the first 2-
 **Application-level LLM cost alerts** (supplementary):
 
 - The existing `ILlmQuotaService` tracks per-user token consumption.
-- Add a daily aggregate check: if total LLM token spend across all users exceeds `(monthly_budget * 0.70) / 30` on any single day, emit a warning log and optional webhook notification.
+- Add a daily aggregate warning heuristic: if total LLM token spend across all users exceeds the projected daily share of the monthly budget on any single day, emit a warning log and optional webhook notification. Compare the spike against month-to-date trend before escalating because bursty usage can create false positives.
 - The `LlmQuota:GlobalBudgetCeilingTokens` config key provides a hard daily ceiling (see `docs/security/MANAGED_KEY_USAGE_POLICY.md`).
 
 ### Alert Owners
 
-For a solo-operator deployment (the current Taskdeck posture), the operator owns all cost dimensions. The table below applies when the team scales to multiple roles:
+**For the current solo-operator deployment, the operator owns all cost dimensions directly.** The table below applies when the team scales to multiple roles:
 
 | Cost dimension | Primary owner | Escalation |
 |---|---|---|
@@ -193,12 +193,12 @@ An anomaly is any cost spike that exceeds 150% of the expected daily spend for a
 
 Deploy alongside the existing observability dashboard (see `docs/ops/OBSERVABILITY_BASELINE.md`).
 
-1. **Monthly spend by dimension** — stacked bar chart, one bar per dimension per month.
-2. **Daily spend trend** — line chart showing daily total spend with 70%/90% budget threshold lines.
-3. **LLM token consumption** — line chart of daily token usage (input + output), broken down by provider (OpenAI, Gemini, Mock).
-4. **LLM cost per user (top 10)** — horizontal bar chart of top token consumers.
-5. **Storage growth** — line chart of database file size and S3 total object size over time.
-6. **Logging ingestion volume** — line chart of daily log bytes ingested.
+1. **Monthly spend by dimension** Ã¢â‚¬â€ stacked bar chart, one bar per dimension per month.
+2. **Daily spend trend** Ã¢â‚¬â€ line chart showing daily total spend with 70%/90% budget threshold lines.
+3. **LLM token consumption** Ã¢â‚¬â€ line chart of daily token usage (input + output), broken down by provider (OpenAI, Gemini, Mock).
+4. **LLM cost per user (top 10)** Ã¢â‚¬â€ horizontal bar chart of top token consumers.
+5. **Storage growth** Ã¢â‚¬â€ line chart of database file size and S3 total object size over time.
+6. **Logging ingestion volume** Ã¢â‚¬â€ line chart of daily log bytes ingested.
 
 ### Implementation Path
 
@@ -221,6 +221,7 @@ resource "aws_budgets_budget" "taskdeck_monthly" {
   time_unit    = "MONTHLY"
 
   time_period_start = "2026-04-01_00:00"
+  time_period_end   = "2099-12-31_23:59"
 
   # Optional: scope budget to specific resources using cost filters.
   # Uncomment and adapt if the AWS account hosts non-Taskdeck resources.
@@ -272,7 +273,7 @@ This template can be added to the existing Terraform module at `deploy/terraform
 
 ## References
 
-- ADR-0023: Cloud Cost Observability and Budget-Guardrail Automation
+- ADR-0026: Cloud Cost Observability and Budget Guardrails
 - Feature cost hotspot registry: `docs/ops/COST_HOTSPOT_REGISTRY.md`
 - Budget breach runbook: `docs/ops/BUDGET_BREACH_RUNBOOK.md`
 - Observability baseline: `docs/ops/OBSERVABILITY_BASELINE.md`

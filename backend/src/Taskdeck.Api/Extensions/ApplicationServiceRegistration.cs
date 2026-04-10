@@ -1,3 +1,4 @@
+using Taskdeck.Api.Health;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Services;
 using Taskdeck.Application.Interfaces;
@@ -59,6 +60,7 @@ public static class ApplicationServiceRegistration
             new BoardMetricsService(
                 sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IAuthorizationService>()));
+        services.AddScoped<ApiKeyService>();
         services.AddScoped<IForecastingService>(sp =>
             new ForecastingService(
                 sp.GetRequiredService<IUnitOfWork>(),
@@ -72,6 +74,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
+        services.AddSingleton<RedisBackplaneHealthCheck>();
 
         // Agent tool registry (singleton — populated once at startup, read concurrently)
         var toolRegistry = new TaskdeckToolRegistry();

@@ -1,4 +1,4 @@
-# ADR-0023: Cloud Cost Observability and Budget-Guardrail Automation
+# ADR-0026: Cloud Cost Observability and Budget Guardrails
 
 - **Status**: Accepted
 - **Date**: 2026-04-09
@@ -6,15 +6,15 @@
 
 ## Context
 
-Taskdeck is transitioning from a purely local-first SQLite tool to a cloud-hosted deployment model (see ADR-0014, platform expansion strategy). Cloud hosting introduces ongoing variable costs that do not exist in local-first operation: compute instances, LLM API calls, storage growth, logging/telemetry volume, and network egress.
+Taskdeck is transitioning from a purely local-first SQLite tool to a cloud-hosted deployment model (see ADR-0014, platform expansion strategy). Cloud hosting introduces ongoing variable costs that do not exist in local-first operation: compute instances, LLM API calls, storage growth, logging/telemetry volume, network egress, and DNS/domain hosting.
 
 Three characteristics make proactive cost observability essential:
 
-1. **LLM API calls are high-variance**: A single user session with tool-calling can generate 5+ provider round-trips. With OpenAI GPT-4o-mini at ~$0.00088 per 3-round conversation (documented in SPIKE_618), costs scale unpredictably with user adoption and chat complexity.
+1. **LLM API calls are high-variance**: A single user session with tool-calling can generate 5+ provider round-trips. OpenAI GPT-4o-mini and Gemini 2.5 Flash have different pricing structures, so they must be tracked separately rather than treated as equivalent. The GPT-4o-mini reference model in SPIKE_618 cost roughly $0.00088 per 3-round conversation, but that estimate is only a baseline.
 
 2. **Local-first heritage means no existing cloud cost discipline**: The team has never operated cloud infrastructure at scale. Without explicit budget guardrails, cost surprises are likely during the v0.2.0 cloud launch.
 
-3. **Several features have superlinear or high-variance cost scaling**: LLM token consumption grows superlinearly with usage (tool-calling multiplies per-message cost), logging volume scales with request count and verbosity configuration, and database storage grows continuously with audit trail accumulation. Even linearly-scaling features like SignalR connections become cost-relevant at scale.
+3. **Several features have high-variance cost scaling**: LLM token consumption grows faster than request count when tool-calling multiplies per-message cost, logging volume scales with request count and verbosity configuration, and database storage grows continuously with audit trail accumulation. Even linearly-scaling features like SignalR connections become cost-relevant at scale.
 
 Issue #104 (OPS-12) requires establishing cost visibility, budget alerting, and mitigation playbooks before cloud deployment begins.
 
@@ -22,16 +22,16 @@ Issue #104 (OPS-12) requires establishing cost visibility, budget alerting, and 
 
 Establish a proactive cloud cost observability framework with three layers:
 
-1. **Cost telemetry and dashboards**: Define cost dimensions (compute, storage, LLM API, logging, network), track them through cloud provider billing APIs and application-level metrics, and maintain a monthly cost review workflow.
+1. **Cost telemetry and dashboards**: Define cost dimensions (compute, storage, LLM API, logging, network, CI/CD), track them through cloud provider billing APIs and application-level metrics, and maintain a monthly cost review workflow.
 
 2. **Budget alert thresholds**: Implement tiered alerting at 70% (warning), 90% (critical), and 100% (hard cap) of monthly budget. Alerts route to documented owners with escalation paths.
 
 3. **Feature-level cost hotspot registry**: Maintain a living document mapping high-variance features to their cost drivers, scaling behavior, mitigation levers, and action owners. This registry is reviewed monthly alongside the cost dashboard.
 
 Supporting artifacts:
-- `docs/ops/CLOUD_COST_OBSERVABILITY.md` — framework, dimensions, review workflow
-- `docs/ops/COST_HOTSPOT_REGISTRY.md` — feature-level cost risk tracking
-- `docs/ops/BUDGET_BREACH_RUNBOOK.md` — detection-to-resolution playbook
+- `docs/ops/CLOUD_COST_OBSERVABILITY.md` - framework, dimensions, review workflow
+- `docs/ops/COST_HOTSPOT_REGISTRY.md` - feature-level cost risk tracking
+- `docs/ops/BUDGET_BREACH_RUNBOOK.md` - detection-to-resolution playbook
 
 ## Alternatives Considered
 
@@ -54,7 +54,7 @@ Supporting artifacts:
 **Negative**:
 - Monthly review workflow adds operational overhead (estimated 30-60 minutes per review).
 - Cost estimates in the hotspot registry are approximations that require calibration against real production data.
-- Alert thresholds may need tuning during initial cloud operation — too sensitive causes alert fatigue, too loose defeats the purpose.
+- Alert thresholds may need tuning during initial cloud operation - too sensitive causes alert fatigue, too loose defeats the purpose.
 
 **Neutral**:
 - Cost observability artifacts become part of the ops documentation surface that must be maintained alongside infrastructure changes.

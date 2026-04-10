@@ -26,7 +26,8 @@
     "test:e2e:audit:headed": "node -e \"process.env.TASKDECK_RUN_AUDIT='1';require('child_process').execSync('npx playwright test tests/e2e/manual-audit.spec.ts --headed --reporter=line',{stdio:'inherit',env:process.env})\"",
     "test:e2e:concurrency": "playwright test tests/e2e/concurrency.spec.ts --reporter=line",
     "test:e2e:live-llm:headed": "playwright test tests/e2e/live-llm.spec.ts --headed --reporter=line",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "mutation:test": "npx stryker run"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
@@ -53,6 +54,8 @@
     "@types/node": "^25.5.2",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.46.2",
+    "@stryker-mutator/core": "^8.7.1",
+    "@stryker-mutator/vitest-runner": "^8.7.1",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vitest/coverage-v8": "^4.1.3",
     "@vitest/ui": "^4.1.2",

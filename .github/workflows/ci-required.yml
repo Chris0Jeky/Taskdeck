@@ -21,7 +21,8 @@
 #     ├── reusable-backend-solution.yml (label: testing)
 #     ├── reusable-e2e-smoke.yml (label: testing)
 #     ├── reusable-demo-director-smoke.yml (label: automation)
-#     └── reusable-load-concurrency-harness.yml (label: testing)
+#     ├── reusable-load-concurrency-harness.yml (label: testing)
+#     └── reusable-container-integration.yml (label: testing) — Testcontainers PostgreSQL
 #
 #   ci-nightly.yml           scheduled regression (03:25 UTC daily)
 #     ├── reusable-openapi-guardrail.yml

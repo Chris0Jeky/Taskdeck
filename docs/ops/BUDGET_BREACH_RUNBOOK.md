@@ -26,9 +26,9 @@ Step-by-step playbook for responding to cloud cost budget breaches. Covers detec
 
 Budget breach alerts arrive through one of these channels:
 
-1. **AWS Budgets SNS notification** — email or integration (Slack/PagerDuty) when infrastructure spend crosses a threshold.
-2. **Application-level LLM quota alert** — log warning when daily aggregate LLM token spend exceeds the projected daily share of the monthly budget.
-3. **Manual discovery** — spotted during monthly cost review or ad-hoc billing console check.
+1. **AWS Budgets SNS notification** Ã¢â‚¬â€ email or integration (Slack/PagerDuty) when infrastructure spend crosses a threshold.
+2. **Application-level LLM quota alert** Ã¢â‚¬â€ log warning when daily aggregate LLM token spend exceeds the projected daily share of the monthly budget. Treat this as a warning heuristic and compare it against month-to-date trend before escalation because bursty usage can create false positives.
+3. **Manual discovery** Ã¢â‚¬â€ spotted during monthly cost review or ad-hoc billing console check.
 
 ### Detection Checklist
 
@@ -48,17 +48,17 @@ Goal: Determine the root cause and assess ongoing impact within the response tim
 
 ```
 Is the cost spike from LLM API usage?
-├── Yes → Go to "LLM Cost Triage"
-├── No
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "LLM Cost Triage"
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ No
     Is the cost spike from logging/telemetry?
-    ├── Yes → Go to "Logging Cost Triage"
-    ├── No
+    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "Logging Cost Triage"
+    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ No
         Is the cost spike from compute?
-        ├── Yes → Go to "Compute Cost Triage"
-        ├── No
+        Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "Compute Cost Triage"
+        Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ No
             Is the cost spike from storage?
-            ├── Yes → Go to "Storage Cost Triage"
-            └── No → Go to "General Cost Triage"
+            Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "Storage Cost Triage"
+            Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ No Ã¢â€ â€™ Go to "General Cost Triage"
 ```
 
 ### LLM Cost Triage
@@ -72,7 +72,7 @@ Is the cost spike from LLM API usage?
    - Are there tool-calling loops (same tool called repeatedly with identical arguments)?
    - Is the `ClarificationDetector` being bypassed, causing extra rounds?
 3. Check for configuration drift:
-   - Was `LlmToolCalling:MaxRounds` increased from the default?
+   - Was `LlmToolCalling:Enabled` disabled, or did a code change lower `ToolCallingChatOrchestrator.MaxRounds`?
    - Was `LlmQuota:GlobalBudgetCeilingTokens` raised or removed?
    - Was a more expensive model configured (e.g., GPT-4o instead of GPT-4o-mini)?
 4. Check LLM provider dashboard (OpenAI/Gemini) for independent cost confirmation.
@@ -88,15 +88,15 @@ Is the cost spike from LLM API usage?
 ### Compute Cost Triage
 
 1. Check if the instance type was changed or a larger instance provisioned.
-2. Check CPU and memory utilization — is the instance right-sized?
+2. Check CPU and memory utilization Ã¢â‚¬â€ is the instance right-sized?
 3. Check if additional instances were spun up (manual or auto-scaling drift).
 4. Check for zombie processes or stuck background workers consuming resources.
 
 ### Storage Cost Triage
 
 1. Check EBS volume size and utilization.
-2. Check S3 bucket size — is the noncurrent version expiry policy working?
-3. Check SQLite database file size — has it grown unexpectedly?
+2. Check S3 bucket size Ã¢â‚¬â€ is the noncurrent version expiry policy working?
+3. Check SQLite database file size Ã¢â‚¬â€ has it grown unexpectedly?
 4. Check for large export artifacts or backup files accumulating.
 
 ### General Cost Triage
@@ -119,11 +119,11 @@ Listed from least disruptive to most disruptive:
 | Priority | Action | Impact | How to execute |
 |---|---|---|---|
 | 1 | Tighten global rate limits | All users get stricter quotas | Reduce `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` globally (these are global config keys, not per-user); individual abusive users can be blocked entirely via per-user kill-switch |
-| 2 | Reduce tool-calling rounds | Fewer tool calls per conversation, less capable but cheaper | Set `LlmToolCalling:MaxRounds` from 5 to 2-3 via config |
+| 2 | Reduce tool-calling rounds | Fewer tool calls per conversation, less capable but cheaper | Disable tool-calling via `LlmToolCalling:Enabled = false` or ship a code change to lower `ToolCallingChatOrchestrator.MaxRounds`; there is no runtime `MaxRounds` config knob today |
 | 3 | Switch to cheaper model | Potentially lower quality responses | Change `Llm:OpenAi:Model` to a cheaper variant |
-| 4 | Activate surface kill-switch | One LLM surface disabled (e.g., Chat only) | `POST /api/llm/kill-switch` with `KillSwitchScope: Surface` |
-| 5 | Activate per-user kill-switch | Specific abusive user blocked from LLM | `POST /api/llm/kill-switch` with `KillSwitchScope: Identity` |
-| 6 | Activate global kill-switch | All LLM features disabled; non-LLM features unaffected | `POST /api/llm/kill-switch` with `KillSwitchScope: Global` |
+| 4 | Activate surface kill-switch | One LLM surface disabled (e.g., Chat only) | `POST /api/llm/killswitch` with `{ "scope": "Surface", "target": "Chat", "enabled": true, "reason": "Cost emergency" }` (currently returns 403 until admin support exists) |
+| 5 | Activate per-user kill-switch | Specific abusive user blocked from LLM | `POST /api/llm/killswitch` with `{ "scope": "Identity", "target": "<userId>", "enabled": true, "reason": "Cost emergency" }` |
+| 6 | Activate global kill-switch | All LLM features disabled; non-LLM features unaffected | `POST /api/llm/killswitch` with `{ "scope": "Global", "target": null, "enabled": true, "reason": "Cost emergency" }` (currently returns 403 until admin support exists; use the `LlmKillSwitch__GlobalKill` config fallback where appropriate) |
 | 7 | Switch all users to Mock provider | LLM features return deterministic mock responses | Set `Llm:Provider` to `Mock`, restart API |
 
 ### Logging Cost Mitigation Actions
@@ -148,7 +148,7 @@ Listed from least disruptive to most disruptive:
 
 | Priority | Action | Impact | How to execute |
 |---|---|---|---|
-| 1 | Run SQLite VACUUM | Reclaims space from deleted records; requires exclusive lock and temporarily doubles disk usage during execution — schedule during low-traffic window | `sqlite3 /var/lib/taskdeck/taskdeck.db "VACUUM;"` |
+| 1 | Run SQLite VACUUM | Reclaims space from deleted records; requires exclusive lock and temporarily doubles disk usage during execution Ã¢â‚¬â€ schedule during low-traffic window | `sqlite3 /var/lib/taskdeck/taskdeck.db "VACUUM;"` |
 | 2 | Reduce S3 version retention | Fewer backup versions kept | Lower noncurrent version expiry from 90 days |
 | 3 | Delete old export artifacts | Users lose access to old exports | Implement S3 lifecycle rule for export objects |
 | 4 | Archive old data | Audit trail or chat history moved to cold storage | Implement data archival pipeline (future work) |
@@ -200,10 +200,10 @@ For use when immediate action is needed and there is no time for full triage:
 
 | Scenario | Immediate action | Command / Config |
 |---|---|---|
-| LLM cost runaway | Activate global kill-switch | `POST /api/llm/kill-switch` — `{ "scope": "Global", "active": true, "reason": "Cost emergency" }` |
+| LLM cost runaway | Activate global kill-switch | `POST /api/llm/killswitch` - `{ "scope": "Global", "target": null, "enabled": true, "reason": "Cost emergency" }` |
 | Logging cost spike | Raise log level to Error | Set `Logging:LogLevel:Default` to `Error`, restart API |
 | Storage filling up | Identify and remove large files | `du -sh /var/lib/taskdeck/*` then assess |
-| Unknown cost source | Check AWS Cost Explorer | AWS Console → Billing → Cost Explorer → Group by Service |
+| Unknown cost source | Check AWS Cost Explorer | AWS Console Ã¢â€ â€™ Billing Ã¢â€ â€™ Cost Explorer Ã¢â€ â€™ Group by Service |
 
 ---
 
