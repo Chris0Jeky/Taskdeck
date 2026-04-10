@@ -783,7 +783,7 @@ Focus:
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
 - LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` byte budget with binary search — 17 new tests, PR `#773`); ~~`#673`~~ delivered (argument replay — `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay uses real arguments, 6 new tests, PR `#770`)
-- MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; ~~`#653`~~ delivered (full inventory — 9 resources + 11 tools, PR `#739`); remaining: `#654` (HTTP + auth), `#655` (production hardening, deferred)
+- MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; ~~`#653`~~ delivered (full inventory — 9 resources + 11 tools, PR `#739`); ~~`#654`~~ delivered (HTTP transport + API key auth — `ApiKey` entity, `ApiKeyMiddleware`, `HttpUserContextProvider`, `ApiKeysController`, `--mcp --transport http --port` startup mode, CLI `api-key create/list/revoke`, rate limiting, 43 tests, PRs `#792`+`#654`); remaining: `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
 Exit Criteria:
@@ -855,7 +855,7 @@ Master tracker: `#531`.
   - email notification delivery
   - activity feed per board
   - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered → ~~`#650`~~ delivered → ~~`#651`~~ delivered)
-  - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered → `#653`→`#654`)
+  - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered → ~~`#653`~~ delivered → ~~`#654`~~ delivered)
 
 - `v0.5.0` **Power Up** (target: Week 15-20):
   - platform installers (Inno Setup, DMG, AppImage)
@@ -961,10 +961,10 @@ Master tracker: `#531`.
 - MCP server implementation wave (from completed spike `#619`):
   - `#648` tracker
   - ~~`#652` Phase 1: minimal prototype — one resource + stdio + Claude Code~~ (delivered 2026-04-01, PR `#664`)
-  - `#653` Phase 2: full resource + tool inventory (2-3 weeks)
-  - `#654` Phase 3: HTTP transport + API key auth (1-2 weeks)
+  - ~~`#653` Phase 2: full resource + tool inventory~~ (delivered 2026-04-04, PR `#739`)
+  - ~~`#654` Phase 3: HTTP transport + API key auth~~ (delivered 2026-04-08+, PRs `#792`+`#654`)
   - `#655` Phase 4: production hardening (deferred to v0.4.0+ demand, `Priority IV`)
-  - Dependency chain: ~~`#652`~~ → `#653` → `#654` → `#655`
+  - Dependency chain: ~~`#652`~~ → ~~`#653`~~ → ~~`#654`~~ → `#655`
   - Phase 2 mirrors LLM tool-calling tool abstractions; shared Application layer services
 
 ### Platform Expansion Wave (2026-03-29 — Priority II)
