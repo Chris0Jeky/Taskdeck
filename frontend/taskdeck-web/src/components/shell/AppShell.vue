@@ -5,6 +5,8 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import CaptureModal from '../common/CaptureModal.vue'
+import OfflineBanner from './OfflineBanner.vue'
+import SwUpdatePrompt from './SwUpdatePrompt.vue'
 import ShellSidebar from './ShellSidebar.vue'
 import ShellTopbar from './ShellTopbar.vue'
 import ShellCommandPalette from './ShellCommandPalette.vue'
@@ -173,6 +175,8 @@ onUnmounted(() => {
     />
 
     <div class="td-main-container">
+      <OfflineBanner />
+      <SwUpdatePrompt />
       <div class="td-mobile-topbar">
         <button
           class="td-mobile-topbar__hamburger"
