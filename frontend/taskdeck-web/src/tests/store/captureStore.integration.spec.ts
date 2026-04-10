@@ -5,7 +5,7 @@
  * captureApi) catches any shape mismatches introduced between what the API
  * module returns and what the store state accepts.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useCaptureStore } from '../../store/captureStore'
@@ -61,6 +61,10 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   // ── listItems → store.items ───────────────────────────────────────────────
@@ -262,6 +266,128 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       await expect(store.updateSuggestion('c-9', { text: 'new' })).rejects.toBeInstanceOf(Error)
 
       expect(store.actionError).toBe('Failed to update capture text')
+    })
+  })
+
+  // ── createItem — API 500 error ─────────────────────────────────────────
+
+  describe('createItem — server error', () => {
+    it('does not add a phantom summary when the API rejects with 500', async () => {
+      vi.mocked(http.post).mockRejectedValue({ response: { status: 500, data: { message: 'Internal Server Error' } } })
+
+      const store = useCaptureStore()
+      await expect(store.createItem({ boardId: null, text: 'will fail' })).rejects.toBeDefined()
+
+      expect(store.items).toHaveLength(0)
+      // getErrorDisplay mock returns the fallback when error lacks .message
+      expect(store.actionError).toBe('Failed to capture item')
+    })
+  })
+
+  // ── fetchItems — sorting query forwarding ────────────────────────────────
+
+  describe('fetchItems — query parameters', () => {
+    it('forwards boardId filter to the API URL', async () => {
+      vi.mocked(http.get).mockResolvedValue({ data: [] })
+
+      const store = useCaptureStore()
+      await store.fetchItems({ boardId: 'board-abc' })
+
+      const calledUrl: string = vi.mocked(http.get).mock.calls[0][0] as string
+      expect(calledUrl).toContain('boardId=board-abc')
+    })
+
+    it('combines multiple query parameters in the URL', async () => {
+      vi.mocked(http.get).mockResolvedValue({ data: [] })
+
+      const store = useCaptureStore()
+      await store.fetchItems({ status: 'New', limit: 25 })
+
+      const calledUrl: string = vi.mocked(http.get).mock.calls[0][0] as string
+      expect(calledUrl).toContain('status=New')
+      expect(calledUrl).toContain('limit=25')
+    })
+  })
+
+  // ── cancelItem ────────────────────────────────────────────────────────────
+
+  describe('cancelItem', () => {
+    it('posts to cancel endpoint then refreshes detail', async () => {
+      vi.mocked(http.post).mockResolvedValue({ data: undefined })
+      const cancelled = makeDetailPayload({ id: 'c-cancel', status: 'Failed' })
+      vi.mocked(http.get).mockResolvedValue({ data: cancelled })
+
+      const store = useCaptureStore()
+      await store.cancelItem('c-cancel')
+
+      expect(http.post).toHaveBeenCalledWith(expect.stringContaining('/capture/items/c-cancel/cancel'))
+      expect(store.detailById['c-cancel']?.status).toBe('Failed')
+    })
+
+    it('sets actionError when cancel POST fails', async () => {
+      vi.mocked(http.post).mockRejectedValue(new Error('cancel failed'))
+
+      const store = useCaptureStore()
+      await expect(store.cancelItem('c-bad')).rejects.toBeInstanceOf(Error)
+
+      expect(store.actionError).toBe('Failed to cancel capture item')
+    })
+  })
+
+  // ── pollTriageCompletion — triage polling lifecycle ───────────────────────
+
+  describe('pollTriageCompletion', () => {
+    it('polls until the item reaches a terminal status, then clears triagePollingItemId', async () => {
+      vi.useFakeTimers()
+
+      const store = useCaptureStore()
+      let callCount = 0
+      vi.mocked(http.get).mockImplementation(async () => {
+        callCount++
+        if (callCount < 3) {
+          return { data: makeDetailPayload({ id: 'c-poll', status: 'Triaging' }) }
+        }
+        return { data: makeDetailPayload({ id: 'c-poll', status: 'Triaged' }) }
+      })
+
+      const stop = store.pollTriageCompletion('c-poll')
+      expect(store.triagePollingItemId).toBe('c-poll')
+
+      // Advance through 3 poll intervals (2s each)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      // After reaching 'Triaged' (terminal), polling should have stopped
+      expect(store.triagePollingItemId).toBeNull()
+      expect(store.detailById['c-poll']?.status).toBe('Triaged')
+
+      stop() // cleanup
+      vi.useRealTimers()
+    })
+
+    it('stops polling when the stop function is called', async () => {
+      vi.useFakeTimers()
+
+      const store = useCaptureStore()
+      vi.mocked(http.get).mockResolvedValue({ data: makeDetailPayload({ id: 'c-stop', status: 'Triaging' }) })
+
+      const stop = store.pollTriageCompletion('c-stop')
+      expect(store.triagePollingItemId).toBe('c-stop')
+
+      // Advance one interval
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      // Stop the poll manually
+      stop()
+      expect(store.triagePollingItemId).toBeNull()
+
+      // Clear mocks and advance time — no more calls should happen
+      vi.clearAllMocks()
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(http.get).not.toHaveBeenCalled()
+
+      vi.useRealTimers()
     })
   })
 
