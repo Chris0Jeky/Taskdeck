@@ -1,5 +1,5 @@
 import type { Preview } from '@storybook/vue3-vite'
-import '../src/design-tokens.css'
+import '../src/style.css'
 
 const preview: Preview = {
   parameters: {
@@ -16,7 +16,7 @@ const preview: Preview = {
     (story) => ({
       components: { story },
       template: `
-        <div style="font-family: 'Inter', system-ui, -apple-system, sans-serif; padding: 1rem;">
+        <div style="padding: 1rem;">
           <story />
         </div>
       `,

@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite'
-import { ref } from 'vue'
 import TdPopover from '../components/ui/TdPopover.vue'
 import TdButton from '../components/ui/TdButton.vue'
 
@@ -29,17 +28,16 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
-  render: () => ({
+  render: (args) => ({
     components: { TdPopover, TdButton },
     setup() {
-      const isOpen = ref(false)
-      return { isOpen }
+      return { args }
     },
     template: `
       <div style="padding: 2rem;">
-        <TdPopover :open="isOpen" @close="isOpen = false">
+        <TdPopover :open="args.open" :align="args.align" :position="args.position" @close="args.open = false">
           <template #trigger>
-            <TdButton variant="secondary" @click="isOpen = !isOpen">Show info</TdButton>
+            <TdButton variant="secondary" @click="args.open = !args.open">Show info</TdButton>
           </template>
           <p style="margin: 0; color: var(--td-text-primary); font-size: var(--td-font-sm);">
             Popover content can include any elements.
@@ -51,17 +49,16 @@ export const Default: Story = {
 }
 
 export const TopPosition: Story = {
-  render: () => ({
+  render: (args) => ({
     components: { TdPopover, TdButton },
     setup() {
-      const isOpen = ref(false)
-      return { isOpen }
+      return { args }
     },
     template: `
       <div style="padding: 6rem 2rem 2rem;">
-        <TdPopover :open="isOpen" position="top" @close="isOpen = false">
+        <TdPopover :open="args.open" :align="args.align" :position="args.position" @close="args.open = false">
           <template #trigger>
-            <TdButton variant="secondary" @click="isOpen = !isOpen">Show above</TdButton>
+            <TdButton variant="secondary" @click="args.open = !args.open">Show above</TdButton>
           </template>
           <p style="margin: 0; color: var(--td-text-primary); font-size: var(--td-font-sm);">
             This popover appears above the trigger.
@@ -73,17 +70,16 @@ export const TopPosition: Story = {
 }
 
 export const CenterAligned: Story = {
-  render: () => ({
+  render: (args) => ({
     components: { TdPopover, TdButton },
     setup() {
-      const isOpen = ref(false)
-      return { isOpen }
+      return { args }
     },
     template: `
       <div style="padding: 2rem; display: flex; justify-content: center;">
-        <TdPopover :open="isOpen" align="center" @close="isOpen = false">
+        <TdPopover :open="args.open" :align="args.align" :position="args.position" @close="args.open = false">
           <template #trigger>
-            <TdButton variant="secondary" @click="isOpen = !isOpen">Center aligned</TdButton>
+            <TdButton variant="secondary" @click="args.open = !args.open">Center aligned</TdButton>
           </template>
           <p style="margin: 0; color: var(--td-text-primary); font-size: var(--td-font-sm);">
             Centered popover content.

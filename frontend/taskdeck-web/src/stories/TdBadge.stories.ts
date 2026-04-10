@@ -60,7 +60,7 @@ export const Warning: Story = {
   }),
 }
 
-export const ErrorBadge: Story = {
+export const Error: Story = {
   args: { variant: 'error' },
   render: (args) => ({
     components: { TdBadge },

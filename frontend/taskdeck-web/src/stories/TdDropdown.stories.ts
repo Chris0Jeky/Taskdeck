@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite'
-import { ref } from 'vue'
 import TdDropdown from '../components/ui/TdDropdown.vue'
 import TdButton from '../components/ui/TdButton.vue'
 
@@ -24,21 +23,20 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Default: Story = {
-  render: () => ({
+  render: (args) => ({
     components: { TdDropdown, TdButton },
     setup() {
-      const isOpen = ref(false)
-      return { isOpen }
+      return { args }
     },
     template: `
       <div style="padding: 1rem;">
-        <TdDropdown :open="isOpen" @close="isOpen = false">
+        <TdDropdown :open="args.open" :align="args.align" @close="args.open = false">
           <template #trigger>
-            <TdButton variant="secondary" @click="isOpen = !isOpen">Actions</TdButton>
+            <TdButton variant="secondary" @click="args.open = !args.open">Actions</TdButton>
           </template>
-          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="isOpen = false">Edit</button>
-          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="isOpen = false">Duplicate</button>
-          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-color-error); cursor: pointer; font-size: var(--td-font-sm);" @click="isOpen = false">Delete</button>
+          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="args.open = false">Edit</button>
+          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="args.open = false">Duplicate</button>
+          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-color-error); cursor: pointer; font-size: var(--td-font-sm);" @click="args.open = false">Delete</button>
         </TdDropdown>
       </div>
     `,
@@ -46,21 +44,20 @@ export const Default: Story = {
 }
 
 export const AlignRight: Story = {
-  render: () => ({
+  render: (args) => ({
     components: { TdDropdown, TdButton },
     setup() {
-      const isOpen = ref(false)
-      return { isOpen }
+      return { args }
     },
     template: `
       <div style="padding: 1rem; display: flex; justify-content: flex-end;">
-        <TdDropdown :open="isOpen" align="right" @close="isOpen = false">
+        <TdDropdown :open="args.open" :align="args.align" @close="args.open = false">
           <template #trigger>
-            <TdButton variant="secondary" @click="isOpen = !isOpen">Menu</TdButton>
+            <TdButton variant="secondary" @click="args.open = !args.open">Menu</TdButton>
           </template>
-          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="isOpen = false">Settings</button>
-          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="isOpen = false">Profile</button>
-          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="isOpen = false">Logout</button>
+          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="args.open = false">Settings</button>
+          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="args.open = false">Profile</button>
+          <button style="display: block; width: 100%; text-align: left; padding: 0.4rem 0.8rem; background: none; border: none; color: var(--td-text-primary); cursor: pointer; font-size: var(--td-font-sm);" @click="args.open = false">Logout</button>
         </TdDropdown>
       </div>
     `,
