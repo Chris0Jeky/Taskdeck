@@ -24,6 +24,12 @@ if (args.Contains("--mcp"))
             transport = args[i + 1].ToLowerInvariant();
     }
 
+    if (transport != "stdio" && transport != "http")
+    {
+        Console.Error.WriteLine($"Error: unknown transport '{transport}'. Supported values: stdio, http");
+        return;
+    }
+
     if (transport == "http")
     {
         // ── MCP HTTP mode ───────────────────────────────────────────────────
@@ -33,7 +39,8 @@ if (args.Contains("--mcp"))
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase)
-                && int.TryParse(args[i + 1], out var parsedPort))
+                && int.TryParse(args[i + 1], out var parsedPort)
+                && parsedPort is >= 1 and <= 65535)
                 mcpPort = parsedPort;
         }
 
