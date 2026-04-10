@@ -23,7 +23,7 @@ Cloud costs are tracked across six dimensions. Each dimension maps to a billing 
 | Billing source | AWS EC2 on-demand or reserved instance hours |
 | Current baseline | Single `t3.small` (dev), `t3.medium` (staging), `t3.large` (prod) per `DEPLOYMENT_TERRAFORM_BASELINE.md` |
 | Application metric | None (infrastructure-level only) |
-| Estimated monthly cost | $30-70 (single-node, on-demand) |
+| Estimated monthly cost | $15-70 (single-node, on-demand: ~$15 t3.small, ~$30 t3.medium, ~$60 t3.large) |
 | Scaling driver | User concurrency, background worker load |
 
 ### 2. Storage (EBS + S3)
@@ -193,12 +193,12 @@ An anomaly is any cost spike that exceeds 150% of the expected daily spend for a
 
 Deploy alongside the existing observability dashboard (see `docs/ops/OBSERVABILITY_BASELINE.md`).
 
-1. **Monthly spend by dimension** Ã¢â‚¬â€ stacked bar chart, one bar per dimension per month.
-2. **Daily spend trend** Ã¢â‚¬â€ line chart showing daily total spend with 70%/90% budget threshold lines.
-3. **LLM token consumption** Ã¢â‚¬â€ line chart of daily token usage (input + output), broken down by provider (OpenAI, Gemini, Mock).
-4. **LLM cost per user (top 10)** Ã¢â‚¬â€ horizontal bar chart of top token consumers.
-5. **Storage growth** Ã¢â‚¬â€ line chart of database file size and S3 total object size over time.
-6. **Logging ingestion volume** Ã¢â‚¬â€ line chart of daily log bytes ingested.
+1. **Monthly spend by dimension** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â stacked bar chart, one bar per dimension per month.
+2. **Daily spend trend** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart showing daily total spend with 70%/90% budget threshold lines.
+3. **LLM token consumption** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart of daily token usage (input + output), broken down by provider (OpenAI, Gemini, Mock).
+4. **LLM cost per user (top 10)** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â horizontal bar chart of top token consumers.
+5. **Storage growth** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart of database file size and S3 total object size over time.
+6. **Logging ingestion volume** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â line chart of daily log bytes ingested.
 
 ### Implementation Path
 

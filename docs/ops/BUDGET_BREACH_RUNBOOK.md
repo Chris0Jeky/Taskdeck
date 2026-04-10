@@ -26,9 +26,9 @@ Step-by-step playbook for responding to cloud cost budget breaches. Covers detec
 
 Budget breach alerts arrive through one of these channels:
 
-1. **AWS Budgets SNS notification** Ã¢â‚¬â€ email or integration (Slack/PagerDuty) when infrastructure spend crosses a threshold.
-2. **Application-level LLM quota alert** Ã¢â‚¬â€ log warning when daily aggregate LLM token spend exceeds the projected daily share of the monthly budget. Treat this as a warning heuristic and compare it against month-to-date trend before escalation because bursty usage can create false positives.
-3. **Manual discovery** Ã¢â‚¬â€ spotted during monthly cost review or ad-hoc billing console check.
+1. **AWS Budgets SNS notification** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â email or integration (Slack/PagerDuty) when infrastructure spend crosses a threshold.
+2. **Application-level LLM quota alert** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â log warning when daily aggregate LLM token spend exceeds the projected daily share of the monthly budget. Treat this as a warning heuristic and compare it against month-to-date trend before escalation because bursty usage can create false positives.
+3. **Manual discovery** ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â spotted during monthly cost review or ad-hoc billing console check.
 
 ### Detection Checklist
 
@@ -48,17 +48,17 @@ Goal: Determine the root cause and assess ongoing impact within the response tim
 
 ```
 Is the cost spike from LLM API usage?
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "LLM Cost Triage"
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ No
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Yes ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Go to "LLM Cost Triage"
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ No
     Is the cost spike from logging/telemetry?
-    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "Logging Cost Triage"
-    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ No
+    ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Yes ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Go to "Logging Cost Triage"
+    ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ No
         Is the cost spike from compute?
-        Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "Compute Cost Triage"
-        Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ No
+        ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Yes ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Go to "Compute Cost Triage"
+        ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ No
             Is the cost spike from storage?
-            Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Yes Ã¢â€ â€™ Go to "Storage Cost Triage"
-            Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ No Ã¢â€ â€™ Go to "General Cost Triage"
+            ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Yes ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Go to "Storage Cost Triage"
+            ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ No ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Go to "General Cost Triage"
 ```
 
 ### LLM Cost Triage
@@ -88,15 +88,15 @@ Is the cost spike from LLM API usage?
 ### Compute Cost Triage
 
 1. Check if the instance type was changed or a larger instance provisioned.
-2. Check CPU and memory utilization Ã¢â‚¬â€ is the instance right-sized?
+2. Check CPU and memory utilization ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â is the instance right-sized?
 3. Check if additional instances were spun up (manual or auto-scaling drift).
 4. Check for zombie processes or stuck background workers consuming resources.
 
 ### Storage Cost Triage
 
 1. Check EBS volume size and utilization.
-2. Check S3 bucket size Ã¢â‚¬â€ is the noncurrent version expiry policy working?
-3. Check SQLite database file size Ã¢â‚¬â€ has it grown unexpectedly?
+2. Check S3 bucket size ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â is the noncurrent version expiry policy working?
+3. Check SQLite database file size ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â has it grown unexpectedly?
 4. Check for large export artifacts or backup files accumulating.
 
 ### General Cost Triage
@@ -148,7 +148,7 @@ Listed from least disruptive to most disruptive:
 
 | Priority | Action | Impact | How to execute |
 |---|---|---|---|
-| 1 | Run SQLite VACUUM | Reclaims space from deleted records; requires exclusive lock and temporarily doubles disk usage during execution Ã¢â‚¬â€ schedule during low-traffic window | `sqlite3 /var/lib/taskdeck/taskdeck.db "VACUUM;"` |
+| 1 | Run SQLite VACUUM | Reclaims space from deleted records; requires exclusive lock and temporarily doubles disk usage during execution ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â schedule during low-traffic window | `sqlite3 /var/lib/taskdeck/taskdeck.db "VACUUM;"` |
 | 2 | Reduce S3 version retention | Fewer backup versions kept | Lower noncurrent version expiry from 90 days |
 | 3 | Delete old export artifacts | Users lose access to old exports | Implement S3 lifecycle rule for export objects |
 | 4 | Archive old data | Audit trail or chat history moved to cold storage | Implement data archival pipeline (future work) |
@@ -203,7 +203,7 @@ For use when immediate action is needed and there is no time for full triage:
 | LLM cost runaway | Activate global kill-switch | `POST /api/llm/killswitch` - `{ "scope": "Global", "target": null, "enabled": true, "reason": "Cost emergency" }` |
 | Logging cost spike | Raise log level to Error | Set `Logging:LogLevel:Default` to `Error`, restart API |
 | Storage filling up | Identify and remove large files | `du -sh /var/lib/taskdeck/*` then assess |
-| Unknown cost source | Check AWS Cost Explorer | AWS Console Ã¢â€ â€™ Billing Ã¢â€ â€™ Cost Explorer Ã¢â€ â€™ Group by Service |
+| Unknown cost source | Check AWS Cost Explorer | AWS Console ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Billing ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Cost Explorer ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Group by Service |
 
 ---
 
