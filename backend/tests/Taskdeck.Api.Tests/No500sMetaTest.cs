@@ -57,11 +57,6 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
         return new string(chars);
     }
 
-    private static string RandomGuidString()
-    {
-        return Guid.NewGuid().ToString();
-    }
-
     // ─────────────────────── Board creation sweep ───────────────────────
 
     [Fact]

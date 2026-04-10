@@ -250,6 +250,11 @@ public class CaptureProvenanceRoundTripFuzzTests
 
     private static Arbitrary<CaptureProvenanceV1> CaptureProvenanceArb()
     {
+        var promptVersionGen = Gen.Elements("v1.0", "v2.1", "v0.99-beta", "prompt-edge-case");
+        var providerGen = Gen.Elements("mock", "openai", "gemini", "anthropic");
+        var modelGen = Gen.Elements("mock-model", "gpt-4", "gemini-pro", "claude-3");
+        var surfaceGen = Gen.Elements("inbox", "chat", "api", "cli", "import");
+
         var gen = Gen.OneOf(
             Gen.Constant(true),
             Gen.Constant(false)
@@ -257,23 +262,26 @@ public class CaptureProvenanceRoundTripFuzzTests
         {
             if (!hasOptionals)
             {
-                return Gen.Constant(new CaptureProvenanceV1(Guid.NewGuid()));
+                return Gen.Fresh(() => new CaptureProvenanceV1(Guid.NewGuid()));
             }
 
-            return Gen.Fresh(() =>
-                new CaptureProvenanceV1(
-                    Guid.NewGuid(),
-                    TriageRunId: Guid.NewGuid(),
-                    ProposalId: Guid.NewGuid(),
-                    PromptVersion: "v1.0",
-                    Provider: "mock",
-                    Model: "mock-model",
-                    RequestedByUserId: Guid.NewGuid(),
-                    CorrelationId: Guid.NewGuid().ToString(),
-                    SourceSurface: "inbox",
-                    BoardId: Guid.NewGuid(),
-                    SessionId: Guid.NewGuid(),
-                    ConvertedAt: DateTimeOffset.UtcNow));
+            return promptVersionGen.SelectMany(pv =>
+                providerGen.SelectMany(provider =>
+                modelGen.SelectMany(model =>
+                surfaceGen.Select(surface =>
+                    new CaptureProvenanceV1(
+                        Guid.NewGuid(),
+                        TriageRunId: Guid.NewGuid(),
+                        ProposalId: Guid.NewGuid(),
+                        PromptVersion: pv,
+                        Provider: provider,
+                        Model: model,
+                        RequestedByUserId: Guid.NewGuid(),
+                        CorrelationId: Guid.NewGuid().ToString(),
+                        SourceSurface: surface,
+                        BoardId: Guid.NewGuid(),
+                        SessionId: Guid.NewGuid(),
+                        ConvertedAt: DateTimeOffset.UtcNow)))));
         });
 
         return Arb.From(gen);
