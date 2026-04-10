@@ -5,10 +5,14 @@ import AgentRunDetailView from '../../views/AgentRunDetailView.vue'
 import type { AgentProfile, AgentRunDetail } from '../../types/agent'
 
 const mockPush = vi.fn()
+const routeParams = reactive({
+  agentId: 'profile-1',
+  runId: 'run-1',
+})
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush }),
-  useRoute: () => ({ params: { agentId: 'profile-1', runId: 'run-1' } }),
+  useRoute: () => ({ params: routeParams }),
 }))
 
 const MOCK_PROFILE: AgentProfile = {
@@ -95,6 +99,8 @@ async function waitForUi() {
 describe('AgentRunDetailView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    routeParams.agentId = 'profile-1'
+    routeParams.runId = 'run-1'
     mockAgentStore.profiles = [MOCK_PROFILE]
     mockAgentStore.runDetail = null
     mockAgentStore.runDetailLoading = false
@@ -145,11 +151,11 @@ describe('AgentRunDetailView', () => {
     const items = wrapper.findAll('.td-timeline__item')
     expect(items).toHaveLength(3)
     expect(items[0].text()).toContain('Run started')
-    expect(items[0].text()).toContain('Step 1')
+    expect(items[0].text()).toContain('Sequence 1')
     expect(items[1].text()).toContain('Context gathered')
-    expect(items[1].text()).toContain('Step 2')
+    expect(items[1].text()).toContain('Sequence 2')
     expect(items[2].text()).toContain('Run completed')
-    expect(items[2].text()).toContain('Step 3')
+    expect(items[2].text()).toContain('Sequence 3')
   })
 
   it('renders event payload when non-empty', async () => {
@@ -179,7 +185,10 @@ describe('AgentRunDetailView', () => {
     await waitForUi()
 
     await wrapper.find('.td-run-detail__proposal-link').trigger('click')
-    expect(mockPush).toHaveBeenCalledWith('/workspace/review?proposalId=proposal-1')
+    expect(mockPush).toHaveBeenCalledWith({
+      path: '/workspace/review',
+      query: { proposalId: 'proposal-1' },
+    })
   })
 
   it('does not show proposal link when proposalId is null', async () => {
@@ -234,6 +243,20 @@ describe('AgentRunDetailView', () => {
 
     wrapper.unmount()
     expect(mockAgentStore.clearRunDetail).toHaveBeenCalled()
+  })
+
+  it('refetches run detail when route params change', async () => {
+    const wrapper = mount(AgentRunDetailView)
+    await waitForUi()
+
+    mockAgentStore.fetchRunDetail.mockClear()
+    routeParams.runId = 'run-2'
+    await waitForUi()
+
+    expect(mockAgentStore.clearRunDetail).toHaveBeenCalled()
+    expect(mockAgentStore.fetchRunDetail).toHaveBeenCalledWith('profile-1', 'run-2')
+
+    wrapper.unmount()
   })
 
   it('shows empty timeline when no events exist', async () => {

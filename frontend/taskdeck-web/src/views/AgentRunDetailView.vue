@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAgentStore } from '../store/agentStore'
 import { runStatusLabels, runStatusVariant, isTerminalStatus } from '../types/agent'
@@ -31,6 +31,19 @@ const sortedEvents = computed<AgentRunEvent[]>(() => {
   return [...run.value.events].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
 })
 
+const timelineItems = computed(() =>
+  sortedEvents.value.map((event) => {
+    const parsedPayload = parsePayloadSafe(event.payload)
+
+    return {
+      ...event,
+      eventLabel: describeEvent(event),
+      sequenceLabel: `Sequence ${event.sequenceNumber + 1}`,
+      payloadText: parsedPayload ? JSON.stringify(parsedPayload, null, 2) : null,
+    }
+  }),
+)
+
 onMounted(async () => {
   try {
     if (agentStore.profiles.length === 0) {
@@ -39,6 +52,23 @@ onMounted(async () => {
     if (agentId.value && runId.value) {
       await agentStore.fetchRunDetail(agentId.value, runId.value)
     }
+  } catch {
+    // Error is surfaced via store state and toast
+  }
+})
+
+watch([agentId, runId], async (newValues, oldValues) => {
+  const [newAgentId, newRunId] = newValues
+  const [oldAgentId, oldRunId] = oldValues ?? []
+
+  if (!newAgentId || !newRunId || (newAgentId === oldAgentId && newRunId === oldRunId)) {
+    return
+  }
+
+  agentStore.clearRunDetail()
+
+  try {
+    await agentStore.fetchRunDetail(newAgentId, newRunId)
   } catch {
     // Error is surfaced via store state and toast
   }
@@ -54,7 +84,10 @@ function goBack() {
 
 function goToProposal() {
   if (run.value?.proposalId) {
-    void router.push(`/workspace/review?proposalId=${run.value.proposalId}`)
+    void router.push({
+      path: '/workspace/review',
+      query: { proposalId: run.value.proposalId },
+    })
   }
 }
 
@@ -74,24 +107,25 @@ function getStatusClass(status: AgentRunStatus): string {
   return `td-run-status--${runStatusVariant[status] ?? 'neutral'}`
 }
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  'run.started': 'Run started',
+  'context.gathered': 'Context gathered from workspace',
+  'plan.created': 'Plan created',
+  'step.started': 'Step started',
+  'step.completed': 'Step completed',
+  'proposal.created': 'Proposal created for review',
+  'proposal.approved': 'Proposal approved by user',
+  'proposal.rejected': 'Proposal rejected by user',
+  'changes.applied': 'Changes applied to board',
+  'run.completed': 'Run completed successfully',
+  'run.failed': 'Run failed',
+  'run.cancelled': 'Run cancelled',
+  'error': 'Error occurred',
+}
+
 /** Translates raw event types into human-readable product language */
 function describeEvent(event: AgentRunEvent): string {
-  const typeMap: Record<string, string> = {
-    'run.started': 'Run started',
-    'context.gathered': 'Context gathered from workspace',
-    'plan.created': 'Plan created',
-    'step.started': 'Step started',
-    'step.completed': 'Step completed',
-    'proposal.created': 'Proposal created for review',
-    'proposal.approved': 'Proposal approved by user',
-    'proposal.rejected': 'Proposal rejected by user',
-    'changes.applied': 'Changes applied to board',
-    'run.completed': 'Run completed successfully',
-    'run.failed': 'Run failed',
-    'run.cancelled': 'Run cancelled',
-    'error': 'Error occurred',
-  }
-  return typeMap[event.eventType] ?? event.eventType
+  return EVENT_TYPE_LABELS[event.eventType] ?? event.eventType
 }
 
 function parsePayloadSafe(payload: string): Record<string, unknown> | null {
@@ -187,7 +221,7 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 
       <ol v-else class="td-timeline" role="list">
         <li
-          v-for="event in sortedEvents"
+          v-for="event in timelineItems"
           :key="event.id"
           class="td-timeline__item"
           role="listitem"
@@ -195,7 +229,7 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
           <div class="td-timeline__marker" aria-hidden="true" />
           <div class="td-timeline__content">
             <div class="td-timeline__header">
-              <span class="td-timeline__event-type">{{ describeEvent(event) }}</span>
+              <span class="td-timeline__event-type">{{ event.eventLabel }}</span>
               <time
                 class="td-timeline__time"
                 :datetime="event.timestamp"
@@ -204,11 +238,11 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
                 {{ formatTimestamp(event.timestamp) }}
               </time>
             </div>
-            <div class="td-timeline__seq">Step {{ event.sequenceNumber + 1 }}</div>
+            <div class="td-timeline__seq">{{ event.sequenceLabel }}</div>
             <pre
-              v-if="parsePayloadSafe(event.payload)"
+              v-if="event.payloadText"
               class="td-timeline__payload"
-            >{{ JSON.stringify(parsePayloadSafe(event.payload), null, 2) }}</pre>
+            >{{ event.payloadText }}</pre>
           </div>
         </li>
       </ol>
