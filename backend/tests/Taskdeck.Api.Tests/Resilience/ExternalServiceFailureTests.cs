@@ -27,9 +27,10 @@ public class ExternalServiceFailureTests : IClassFixture<TestWebApplicationFacto
     public async Task LocalRegistration_ShouldWork_RegardlessOfExternalOAuthState()
     {
         // Local auth (register + login) should not depend on any external service.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
         var response = await _client.PostAsJsonAsync(
             "/api/auth/register",
-            new CreateUserDto("ext-resilience-user", "ext-resilience@example.com", "password123"));
+            new CreateUserDto($"ext-resilience-{suffix}", $"ext-resilience-{suffix}@example.com", "password123"));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "local registration should succeed regardless of external service state");
@@ -44,15 +45,17 @@ public class ExternalServiceFailureTests : IClassFixture<TestWebApplicationFacto
     public async Task LocalLogin_ShouldWork_RegardlessOfExternalOAuthState()
     {
         // Register first.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var username = $"ext-login-{suffix}";
         var registerResponse = await _client.PostAsJsonAsync(
             "/api/auth/register",
-            new CreateUserDto("ext-login-resilience", "ext-login-resilience@example.com", "password123"));
+            new CreateUserDto(username, $"ext-login-{suffix}@example.com", "password123"));
         registerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Login should work via local path regardless of external service availability.
         var loginResponse = await _client.PostAsJsonAsync(
             "/api/auth/login",
-            new LoginDto("ext-login-resilience", "password123"));
+            new LoginDto(username, "password123"));
 
         loginResponse.StatusCode.Should().Be(HttpStatusCode.OK,
             "local login should succeed regardless of external service state");
