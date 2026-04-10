@@ -134,3 +134,4 @@ drill-artifacts/
 StrykerOutput/
 stryker-tmp/
 frontend/*/reports/mutation/
+/.worktrees
