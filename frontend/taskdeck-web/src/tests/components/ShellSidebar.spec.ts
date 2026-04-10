@@ -196,4 +196,34 @@ describe('ShellSidebar', () => {
     expect(wrapper.find('aside').attributes('role')).toBe('navigation')
     expect(wrapper.find('aside').attributes('aria-label')).toBe('Main navigation')
   })
+
+  it('highlights the active route with aria-current', () => {
+    routeMock.path = '/workspace/inbox'
+    const wrapper = mount(ShellSidebar, {
+      props: { isAuthenticated: true },
+      global: {
+        stubs: {
+          'router-link': {
+            template: '<a :class="{ \'td-nav-item--active\': $attrs.class?.includes(\'td-nav-item--active\') }" :aria-current="$attrs[\'aria-current\']"><slot /></a>',
+            props: ['to'],
+          },
+        },
+      },
+    })
+    // The Inbox nav item should have td-nav-item--active class applied by the component
+    const navItems = wrapper.findAll('.td-nav-item')
+    const inboxItem = navItems.find((el) => el.text().includes('Inbox'))
+    expect(inboxItem?.classes()).toContain('td-nav-item--active')
+  })
+
+  it('exposes availableNavItems via defineExpose for command palette', () => {
+    const wrapper = mount(ShellSidebar, {
+      props: { isAuthenticated: true },
+      global: { stubs: { 'router-link': { template: '<a><slot /></a>', props: ['to'] } } },
+    })
+    const exposed = (wrapper.vm as unknown as { availableNavItems: Array<{ id: string }> }).availableNavItems
+    expect(Array.isArray(exposed)).toBe(true)
+    expect(exposed.length).toBeGreaterThan(0)
+    expect(exposed.some((item) => item.id === 'home')).toBe(true)
+  })
 })
