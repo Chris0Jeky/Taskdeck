@@ -56,8 +56,8 @@ describe('WorkspaceHelpCallout', () => {
       },
     })
     const dismissBtn = wrapper.findAll('button').find((b) => b.text().includes('Hide this guide'))
-    expect(dismissBtn).toBeDefined()
-    await dismissBtn!.trigger('click')
+    expect(dismissBtn).toBeTruthy()
+    await dismissBtn?.trigger('click')
     expect(mockDismiss).toHaveBeenCalledTimes(1)
   })
 
@@ -84,8 +84,8 @@ describe('WorkspaceHelpCallout', () => {
       },
     })
     const replayBtn = wrapper.findAll('button').find((b) => b.text().includes('Show page guide'))
-    expect(replayBtn).toBeDefined()
-    await replayBtn!.trigger('click')
+    expect(replayBtn).toBeTruthy()
+    await replayBtn?.trigger('click')
     expect(mockReplay).toHaveBeenCalledTimes(1)
   })
 
@@ -107,7 +107,7 @@ describe('WorkspaceHelpCallout', () => {
     expect(wrapper.text()).toContain('Get Started')
   })
 
-  it('uses custom dismiss and replay labels', () => {
+  it('uses custom dismiss label when visible', () => {
     visibleRef.value = true
     const wrapper = mount(WorkspaceHelpCallout, {
       props: {
@@ -118,7 +118,21 @@ describe('WorkspaceHelpCallout', () => {
       },
     })
     const dismissBtn = wrapper.findAll('button').find((b) => b.text().includes('Got it'))
-    expect(dismissBtn).toBeDefined()
+    expect(dismissBtn).toBeTruthy()
+  })
+
+  it('uses custom replay label when dismissed', () => {
+    visibleRef.value = false
+    const wrapper = mount(WorkspaceHelpCallout, {
+      props: {
+        topic: 'board',
+        title: 'Board',
+        description: 'Desc',
+        replayLabel: 'Bring it back',
+      },
+    })
+    const replayBtn = wrapper.findAll('button').find((b) => b.text().includes('Bring it back'))
+    expect(replayBtn).toBeTruthy()
   })
 
   it('sets data-help-topic attribute on root element', () => {
