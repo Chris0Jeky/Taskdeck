@@ -1,6 +1,6 @@
 # ADR-0023: SQLite-to-PostgreSQL Production Migration Strategy
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
 
@@ -24,13 +24,13 @@ The project needs a clear provider choice, a migration path, and a compatibility
 
 The migration strategy is:
 
-1. **Provider abstraction via EF Core**: The application already uses EF Core with repository interfaces defined in the Application layer. No domain-layer changes are required. The Infrastructure layer's `DependencyInjection.AddInfrastructure()` will gain a configuration switch (`DatabaseProvider`) to select between `Sqlite` and `PostgreSQL`.
+1. **Provider target decision now, runtime switch later**: PostgreSQL is the production target, but the current application runtime still hard-wires `UseSqlite()` in `Taskdeck.Infrastructure.DependencyInjection`. Adding runtime provider selection and Npgsql registration is follow-up implementation work, not something this ADR PR ships.
 
-2. **Dual-provider compatibility testing**: A test harness validates that critical persistence operations (CRUD, queries, date/time handling, string collation, GUID storage) produce consistent results across SQLite and PostgreSQL. Tests run against SQLite in CI by default; PostgreSQL tests are opt-in via environment variable (`TASKDECK_TEST_POSTGRES_CONNECTION`).
+2. **SQLite-backed compatibility baseline first**: `DatabaseProviderCompatibilityTests` establishes the persistence behaviors that PostgreSQL support must preserve. Today those tests run against SQLite only. A future follow-up can add a provider-switching test factory and opt-in PostgreSQL execution once the runtime path exists.
 
-3. **Schema migration**: EF Core migrations remain the source of truth. A PostgreSQL migration bundle will be generated from the same model. SQLite-specific constructs (e.g., `AUTOINCREMENT`, FTS5 virtual tables) will need provider-conditional handling.
+3. **Schema migration remains blocked on follow-up implementation**: EF Core migrations stay the source of truth, but PostgreSQL schema application cannot be treated as ready until SQLite-only migration SQL (notably the FTS5 migration) is wrapped in provider-conditional logic and the application/test infrastructure can actually build `UseNpgsql()` contexts.
 
-4. **Data migration**: A documented runbook covers one-time data export from SQLite and import into PostgreSQL, with row-count and foreign-key integrity verification.
+4. **Data migration planning uses row-count and foreign-key integrity verification**: The runbook documents dependency-ordered export/import and verification steps, but it is explicitly preparatory until the provider-switching and PostgreSQL-safe migration work lands.
 
 ## Alternatives Considered
 
@@ -66,15 +66,15 @@ The migration strategy is:
 - Native `uuid`, `timestamptz`, `jsonb`, and full-text search types align well with the existing domain model (GUIDs, DateTimeOffset, JSON metadata columns, knowledge document FTS).
 - EF Core's Npgsql provider is mature, Microsoft-co-maintained, and supports all EF Core features used in the project.
 - Managed PostgreSQL is available on AWS (RDS/Aurora), Azure (Flexible Server), and GCP (Cloud SQL) with sub-$20/month entry points.
-- The dual-provider test harness catches regressions before they reach production.
+- The SQLite-backed compatibility harness documents the persistence behaviors that PostgreSQL support must preserve.
 - CockroachDB remains a future option due to PostgreSQL wire compatibility.
 
 ### Negative
 
-- The `Npgsql.EntityFrameworkCore.PostgreSQL` package must be added to Infrastructure.
-- SQLite-specific constructs (FTS5 virtual tables in `KnowledgeDocuments`) require provider-conditional migration code.
-- CI will eventually need a PostgreSQL service container for opt-in integration tests.
-- Two migration bundles (SQLite + PostgreSQL) must be maintained until SQLite-only mode is deprecated.
+- The runtime application projects do not yet reference `Npgsql.EntityFrameworkCore.PostgreSQL` or expose a provider-selection path.
+- SQLite-specific constructs (FTS5 virtual tables in `KnowledgeDocuments`) require provider-conditional migration code before PostgreSQL schema creation is possible.
+- CI and the API test factory do not yet have a PostgreSQL execution path.
+- The current runbook is therefore a preparatory operator document, not a fully executable migration recipe.
 
 ### Neutral
 

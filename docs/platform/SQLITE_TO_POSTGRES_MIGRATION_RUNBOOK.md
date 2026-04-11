@@ -6,6 +6,11 @@
 
 This runbook provides step-by-step instructions for migrating an existing Taskdeck SQLite database to PostgreSQL. It is intended for operators deploying Taskdeck to a hosted environment.
 
+> **Current repository state**: this is a preparatory runbook, not a fully executable cutover guide yet.
+> The application runtime still hard-wires SQLite in `Taskdeck.Infrastructure.DependencyInjection`, and
+> the `AddKnowledgeDocumentsAndFts` migration contains SQLite-only FTS5 SQL. Treat this document as the
+> canonical operator checklist for the follow-up implementation work needed to make PostgreSQL migration real.
+
 ---
 
 ## Prerequisites
@@ -53,6 +58,7 @@ This runbook provides step-by-step instructions for migrating an existing Taskde
    UNION ALL SELECT 'KnowledgeDocuments', COUNT(*) FROM KnowledgeDocuments
    UNION ALL SELECT 'KnowledgeChunks', COUNT(*) FROM KnowledgeChunks
    UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM ExternalLogins
+   UNION ALL SELECT 'ApiKeys', COUNT(*) FROM ApiKeys
    UNION ALL SELECT 'CardCommentMentions', COUNT(*) FROM CardCommentMentions
    UNION ALL SELECT 'CommandRunLogs', COUNT(*) FROM CommandRunLogs
    UNION ALL SELECT 'AgentRunEvents', COUNT(*) FROM AgentRunEvents
@@ -66,12 +72,22 @@ This runbook provides step-by-step instructions for migrating an existing Taskde
    ```bash
    psql -h <host> -U <admin_user> -c "CREATE DATABASE taskdeck ENCODING 'UTF8' LC_COLLATE 'en_US.UTF-8';"
    psql -h <host> -U <admin_user> -c "CREATE USER taskdeck_app WITH PASSWORD '<strong-password>';"
-   psql -h <host> -U <admin_user> -c "GRANT ALL PRIVILEGES ON DATABASE taskdeck TO taskdeck_app;"
+   psql -h <host> -U <admin_user> -c "GRANT CONNECT ON DATABASE taskdeck TO taskdeck_app;"
+   psql -h <host> -U <admin_user> -d taskdeck -c "GRANT USAGE, CREATE ON SCHEMA public TO taskdeck_app;"
+   psql -h <host> -U <admin_user> -d taskdeck -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO taskdeck_app;"
+   psql -h <host> -U <admin_user> -d taskdeck -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO taskdeck_app;"
    ```
+
+   Use `CREATE` on the schema only while bootstrapping the PostgreSQL schema with EF Core. After the schema is in place, tighten the application user back to DML-only permissions if migrations are handled by an admin/operator identity.
 
 ## Step 1: Apply PostgreSQL Schema via EF Core Migrations
 
-Configure the application to target PostgreSQL and apply migrations.
+Prepare the application to target PostgreSQL and apply migrations.
+
+> **Blocked today**: `Taskdeck.Infrastructure.DependencyInjection.AddInfrastructure()` still calls
+> `UseSqlite()` unconditionally. There is no shipped `Taskdeck__DatabaseProvider` switch or runtime
+> `UseNpgsql()` path in the application projects yet, so the commands below are follow-up implementation
+> steps rather than something the current branch can execute successfully as-is.
 
 > **Warning — FTS5 migration blocker**: The migration `AddKnowledgeDocumentsAndFts` contains
 > raw SQLite-specific SQL (`CREATE VIRTUAL TABLE ... USING fts5`, `CREATE TRIGGER`). These
@@ -90,14 +106,11 @@ Configure the application to target PostgreSQL and apply migrations.
 > section below for PostgreSQL FTS setup guidance.
 
 ```bash
-# Set the connection string for PostgreSQL
-export ConnectionStrings__DefaultConnection="Host=<host>;Database=taskdeck;Username=taskdeck_app;Password=<password>"
-export Taskdeck__DatabaseProvider="PostgreSQL"
-
-# Apply EF Core migrations to the empty PostgreSQL database
-dotnet ef database update \
-  --project backend/src/Taskdeck.Infrastructure \
-  --startup-project backend/src/Taskdeck.Api
+# Follow-up implementation required before this step can work:
+# 1. Add Npgsql to the runtime application infrastructure path
+# 2. Add configuration-based provider selection in AddInfrastructure()
+# 3. Guard SQLite-only migration SQL with ActiveProvider checks
+# 4. Then run the PostgreSQL schema apply command against the empty database
 ```
 
 Verify the schema was created:
@@ -144,6 +157,7 @@ sqlite3 -header -csv taskdeck.db "SELECT * FROM AgentRunEvents;" > migration-exp
 sqlite3 -header -csv taskdeck.db "SELECT * FROM KnowledgeDocuments;" > migration-export/KnowledgeDocuments.csv
 sqlite3 -header -csv taskdeck.db "SELECT * FROM KnowledgeChunks;" > migration-export/KnowledgeChunks.csv
 sqlite3 -header -csv taskdeck.db "SELECT * FROM ExternalLogins;" > migration-export/ExternalLogins.csv
+sqlite3 -header -csv taskdeck.db "SELECT * FROM ApiKeys;" > migration-export/ApiKeys.csv
 ```
 
 ## Step 3: Import Data into PostgreSQL
@@ -153,9 +167,6 @@ sqlite3 -header -csv taskdeck.db "SELECT * FROM ExternalLogins;" > migration-exp
 **Schema note**: EF Core Npgsql creates tables in the `public` schema by default with PascalCase names. Before importing, verify the table names match by running `\dt` in `psql`. If a custom schema was configured, adjust the table names in the import script accordingly.
 
 ```bash
-# Disable FK constraint checking during bulk import to avoid ordering issues
-psql "$PGCONN" -c "SET session_replication_role = replica;"
-
 # Order matters: parent tables first, then child tables
 TABLES=(
   Users
@@ -188,6 +199,7 @@ TABLES=(
   KnowledgeDocuments
   KnowledgeChunks
   ExternalLogins
+  ApiKeys
 )
 
 PGCONN="host=<host> dbname=taskdeck user=taskdeck_app password=<password>"
@@ -206,9 +218,11 @@ for table in "${TABLES[@]}"; do
   fi
 done
 
-# Re-enable FK constraint checking
-psql "$PGCONN" -c "SET session_replication_role = DEFAULT;"
 ```
+
+Managed PostgreSQL services often do not allow blanket trigger disabling, and `session_replication_role`
+is generally too privileged for an application migration user. Keep constraints enabled, import in
+dependency order, and treat any FK failure as a migration defect to fix before retrying.
 
 **GUID column handling**: SQLite stores GUIDs as text strings. PostgreSQL with Npgsql maps `Guid` properties to the native `uuid` type. EF Core's Npgsql provider accepts standard UUID text format (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), so CSV import should work directly. If you encounter format errors, verify the GUID format in the CSV matches PostgreSQL's expected input.
 
@@ -246,6 +260,7 @@ UNION ALL SELECT 'AgentRuns', COUNT(*) FROM "AgentRuns"
 UNION ALL SELECT 'KnowledgeDocuments', COUNT(*) FROM "KnowledgeDocuments"
 UNION ALL SELECT 'KnowledgeChunks', COUNT(*) FROM "KnowledgeChunks"
 UNION ALL SELECT 'ExternalLogins', COUNT(*) FROM "ExternalLogins"
+UNION ALL SELECT 'ApiKeys', COUNT(*) FROM "ApiKeys"
 UNION ALL SELECT 'NotificationPreferences', COUNT(*) FROM "NotificationPreferences"
 UNION ALL SELECT 'CommandRunLogs', COUNT(*) FROM "CommandRunLogs"
 UNION ALL SELECT 'CardCommentMentions', COUNT(*) FROM "CardCommentMentions"
@@ -289,8 +304,8 @@ All orphan counts must be **zero**. If any are non-zero, the migration has data 
 
 1. Configure the application for PostgreSQL:
    ```bash
-   export ConnectionStrings__DefaultConnection="Host=<host>;Database=taskdeck;Username=taskdeck_app;Password=<password>"
-   export Taskdeck__DatabaseProvider="PostgreSQL"
+   # Requires the follow-up runtime provider switch described in Step 1.
+   # The current codebase cannot run the API against PostgreSQL yet.
    ```
 2. Start the application:
    ```bash
@@ -313,7 +328,6 @@ If the migration fails or the application does not function correctly against Po
 1. **Stop the application** targeting PostgreSQL.
 2. **Restore the SQLite configuration**:
    ```bash
-   unset Taskdeck__DatabaseProvider
    export ConnectionStrings__DefaultConnection="Data Source=taskdeck.db"
    ```
 3. **Restore the SQLite backup** if the original file was modified:
@@ -342,6 +356,10 @@ These differences are handled by EF Core's provider abstraction but are worth no
 | Concurrency | Database-level write lock | Row-level locking |
 | Max connections | Single writer | Configurable (default 100) |
 
+**Sequence note**: the current Taskdeck schema uses GUID primary keys, so no PostgreSQL sequence reset
+step is needed after import. If future tables introduce integer identity columns, add `setval(...)`
+calls after the CSV import to advance those sequences to the current max values.
+
 ## Full-Text Search Migration Note
 
 The current `KnowledgeDocuments` and `KnowledgeChunks` tables use SQLite FTS5 for full-text search. PostgreSQL uses a different FTS mechanism (`tsvector`/`tsquery`). The `IKnowledgeSearchService` interface abstracts this, so the migration requires a PostgreSQL-specific implementation of that interface — no domain or application layer changes.
@@ -356,6 +374,7 @@ Key details for the FTS migration:
 ## Security Considerations
 
 - **Never store database credentials in source control.** Use environment variables, secrets managers (AWS Secrets Manager, Azure Key Vault), or mounted secret files.
+- Prefer `~/.pgpass`, `PGPASSFILE`, or a secrets-mounted appsettings file over inline passwords in shell history when running `psql` commands.
 - **Use TLS for PostgreSQL connections** in production (`SslMode=Require` in the connection string).
 - **Restrict the `taskdeck_app` database user** to only the permissions needed (SELECT, INSERT, UPDATE, DELETE on application tables). Do not grant `SUPERUSER` or `CREATEDB`.
 - **The migration-export directory contains all application data** including password hashes. Delete it securely after a successful migration:

@@ -14,9 +14,8 @@ namespace Taskdeck.Api.Tests;
 /// operations produce consistent results across database providers.
 ///
 /// Currently all tests run against SQLite only (the CI and local default).
-/// PostgreSQL testing is a future TODO: when TASKDECK_TEST_POSTGRES_CONNECTION
-/// is set, a provider-switching factory should be added to run these same
-/// tests against PostgreSQL. That env var is not yet consumed by any code.
+/// PostgreSQL execution is a future follow-up once the API/runtime wiring
+/// supports UseNpgsql() and the test factory can select providers explicitly.
 ///
 /// Covers: CRUD on core entities (Board, Card, Column, Proposal), query
 /// patterns used in application services, date/time round-trip fidelity,
