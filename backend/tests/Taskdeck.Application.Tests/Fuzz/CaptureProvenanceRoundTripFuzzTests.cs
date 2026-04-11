@@ -282,7 +282,7 @@ public class CaptureProvenanceRoundTripFuzzTests
                         BoardId: Guid.NewGuid(),
                         SessionId: Guid.NewGuid(),
                         // Use a fixed timestamp for deterministic reproduction with FsCheck seeds
-                        ConvertedAt: new DateTimeOffset(2026, 4, 10, 12, 0, 0, TimeSpan.Zero)))));
+                        ConvertedAt: new DateTimeOffset(2026, 4, 10, 12, 0, 0, TimeSpan.Zero))))));
         });
 
         return Arb.From(gen);
