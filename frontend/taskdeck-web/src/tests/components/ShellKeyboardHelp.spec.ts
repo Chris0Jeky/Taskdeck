@@ -1,10 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShellKeyboardHelp from '../../components/shell/ShellKeyboardHelp.vue'
-
-vi.mock('../../composables/useEscapeStack', () => ({
-  registerEscapeHandler: vi.fn(() => vi.fn()),
-}))
 
 function mountHelp(visible: boolean) {
   return mount(ShellKeyboardHelp, {
