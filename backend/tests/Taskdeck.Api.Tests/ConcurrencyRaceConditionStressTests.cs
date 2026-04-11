@@ -6,10 +6,12 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Xunit;
@@ -24,7 +26,7 @@ namespace Taskdeck.Api.Tests;
 /// - Rate limiting under load (burst beyond limit, cross-user isolation under load)
 ///
 /// Uses Task.WhenAll with multiple HttpClient instances for HTTP-level concurrency.
-/// Uses SemaphoreSlim barriers to ensure truly simultaneous execution.
+/// Uses Barrier / SemaphoreSlim to coordinate truly simultaneous execution.
 ///
 /// NOTE: SQLite uses file-level locking for writes, so true write-contention races
 /// may serialize at the database level. These tests validate the application-layer
@@ -827,6 +829,35 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
     // ── SignalR Presence Concurrency ────────────────────────────────────────
 
     /// <summary>
+    /// Polls the observer's event collector until a snapshot with the expected
+    /// member count appears, or the timeout elapses. This avoids flakiness
+    /// from checking only the last event, which may not reflect the settled state.
+    /// </summary>
+    private static async Task<BoardPresenceSnapshot> WaitForPresenceCountAsync(
+        EventCollector<BoardPresenceSnapshot> events,
+        int expectedMemberCount,
+        TimeSpan? timeout = null)
+    {
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(10);
+        var deadline = DateTimeOffset.UtcNow + effectiveTimeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var snapshot = events.ToList().LastOrDefault();
+            if (snapshot is not null && snapshot.Members.Count == expectedMemberCount)
+            {
+                return snapshot;
+            }
+
+            await Task.Delay(50);
+        }
+
+        var last = events.ToList().LastOrDefault();
+        var actualCount = last?.Members.Count ?? 0;
+        throw new TimeoutException(
+            $"Expected presence snapshot with {expectedMemberCount} members but last snapshot had {actualCount} within {effectiveTimeout.TotalSeconds}s.");
+    }
+
+    /// <summary>
     /// Scenario 14: Rapid join/leave stress.
     /// Multiple connections rapidly join and leave a board.
     /// After all connections settle, the final presence snapshot should be
@@ -841,12 +872,12 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "race-presence-rapid");
         var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "race-rapid-board");
 
-        // Create users and grant access
+        // Create users and grant access — reuse a single HttpClient for setup
+        using var setupClient = _factory.CreateClient();
         var users = new List<TestUserContext>();
         for (var i = 0; i < connectionCount; i++)
         {
-            using var c = _factory.CreateClient();
-            var u = await ApiTestHarness.AuthenticateAsync(c, $"race-rapid-{i}");
+            var u = await ApiTestHarness.AuthenticateAsync(setupClient, $"race-rapid-{i}");
             var grant = await ownerClient.PostAsJsonAsync(
                 $"/api/boards/{board.Id}/access",
                 new GrantAccessDto(board.Id, u.UserId, UserRole.Editor));
@@ -863,53 +894,51 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
         observerEvents.Clear();
 
-        // All users join simultaneously via barrier
+        // All users join simultaneously via Barrier for true synchronization.
+        // Unlike SemaphoreSlim, Barrier ensures all participants reach the
+        // barrier point before any of them proceed past it.
         var connections = new List<HubConnection>();
         try
         {
-            using var joinBarrier = new SemaphoreSlim(0, connectionCount);
+            using var joinBarrier = new Barrier(connectionCount + 1);
             var joinTasks = users.Select(async user =>
             {
                 var conn = SignalRTestHelper.CreateBoardsHubConnection(_factory, user.Token);
                 conn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
                 await conn.StartAsync();
                 lock (connections) { connections.Add(conn); }
-                await joinBarrier.WaitAsync();
+                joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
                 await conn.InvokeAsync("JoinBoard", board.Id);
             }).ToArray();
 
-            joinBarrier.Release(connectionCount);
+            joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(joinTasks);
 
-            // Wait for observer to see all joins
-            await SignalRTestHelper.WaitForEventsAsync(observerEvents, connectionCount,
-                TimeSpan.FromSeconds(10));
-
-            // All users should now be visible (plus owner)
-            var afterJoin = observerEvents.ToList().Last();
+            // Poll until the observer snapshot settles at the expected member count
+            // (all joined users plus the owner). This avoids flakiness from
+            // intermediate snapshots that don't yet reflect all joins.
+            var afterJoin = await WaitForPresenceCountAsync(
+                observerEvents, connectionCount + 1, TimeSpan.FromSeconds(10));
             afterJoin.Members.Should().HaveCount(connectionCount + 1,
                 "all joined users plus the observer owner should be present");
 
             // Now have the first half leave rapidly
             observerEvents.Clear();
             var leavingCount = connectionCount / 2;
-            using var leaveBarrier = new SemaphoreSlim(0, leavingCount);
+            using var leaveBarrier = new Barrier(leavingCount + 1);
             var leaveTasks = connections.Take(leavingCount).Select(async conn =>
             {
-                await leaveBarrier.WaitAsync();
+                leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
                 await conn.InvokeAsync("LeaveBoard", board.Id);
             }).ToArray();
 
-            leaveBarrier.Release(leavingCount);
+            leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(leaveTasks);
 
-            // Wait for leave events
-            await SignalRTestHelper.WaitForEventsAsync(observerEvents, leavingCount,
-                TimeSpan.FromSeconds(10));
-
-            // Final snapshot should show only the remaining connections + owner
+            // Poll until the snapshot settles at the expected remaining count
             var remaining = connectionCount - leavingCount;
-            var afterLeave = observerEvents.ToList().Last();
+            var afterLeave = await WaitForPresenceCountAsync(
+                observerEvents, remaining + 1, TimeSpan.FromSeconds(10));
             afterLeave.Members.Should().HaveCount(remaining + 1,
                 $"after {leavingCount} leaves, {remaining} users + owner should remain");
         }
@@ -964,34 +993,29 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
 
         // Editor joins and starts editing.
-        // Not using 'await using' because we need to control when disposal happens
-        // to simulate an abrupt disconnect. The try/finally ensures cleanup on failure.
-        var editorConn = SignalRTestHelper.CreateBoardsHubConnection(_factory, editor.Token);
-        try
-        {
-            editorConn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
-            await editorConn.StartAsync();
-            await editorConn.InvokeAsync("JoinBoard", board.Id);
-            await SignalRTestHelper.WaitForEventsAsync(observerEvents, 2); // join event
+        // We use 'await using' so the connection is always disposed (even if an
+        // assertion throws). The abrupt disconnect is simulated by disposing
+        // without calling LeaveBoard or SetEditingCard(null) first.
+        await using var editorConn = SignalRTestHelper.CreateBoardsHubConnection(_factory, editor.Token);
+        editorConn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
+        await editorConn.StartAsync();
+        await editorConn.InvokeAsync("JoinBoard", board.Id);
+        await SignalRTestHelper.WaitForEventsAsync(observerEvents, 2); // join event
 
-            observerEvents.Clear();
-            await editorConn.InvokeAsync("SetEditingCard", board.Id, card!.Id);
+        observerEvents.Clear();
+        await editorConn.InvokeAsync("SetEditingCard", board.Id, card!.Id);
 
-            // Wait for editing presence update
-            var editingEvents = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
-            var editorMember = editingEvents.Last().Members
-                .FirstOrDefault(m => m.UserId == editor.UserId);
-            editorMember.Should().NotBeNull("editor should be visible in presence");
-            editorMember!.EditingCardId.Should().Be(card.Id,
-                "editor should show as editing the card");
+        // Wait for editing presence update
+        var editingEvents = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
+        var editorMember = editingEvents.Last().Members
+            .FirstOrDefault(m => m.UserId == editor.UserId);
+        editorMember.Should().NotBeNull("editor should be visible in presence");
+        editorMember!.EditingCardId.Should().Be(card.Id,
+            "editor should show as editing the card");
 
-            // Abrupt disconnect (no LeaveBoard, no SetEditingCard(null))
-            observerEvents.Clear();
-        }
-        finally
-        {
-            await editorConn.DisposeAsync();
-        }
+        // Abrupt disconnect (no LeaveBoard, no SetEditingCard(null))
+        observerEvents.Clear();
+        await editorConn.DisposeAsync();
 
         // Owner should receive a snapshot without the editor
         var afterDisconnect = await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1,
@@ -1034,23 +1058,26 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 "https://example.com/webhook-receiver",
                 new List<string> { "card.*" }));
         webhookResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var webhookSub = await webhookResp.Content.ReadFromJsonAsync<OutboundWebhookSubscriptionSecretDto>();
+        webhookSub.Should().NotBeNull("webhook subscription should have been created");
 
-        // Create multiple cards concurrently — each should trigger a webhook delivery
-        using var barrier = new SemaphoreSlim(0, mutationCount);
+        // Create multiple cards concurrently — each should trigger a webhook delivery.
+        // Use Barrier for true synchronization instead of SemaphoreSlim.
+        using var barrier = new Barrier(mutationCount + 1);
         var statusCodes = new ConcurrentBag<HttpStatusCode>();
 
         var mutationTasks = Enumerable.Range(0, mutationCount).Select(async i =>
         {
             using var raceClient = _factory.CreateClient();
             raceClient.DefaultRequestHeaders.Authorization = client.DefaultRequestHeaders.Authorization;
-            await barrier.WaitAsync();
+            barrier.SignalAndWait(TimeSpan.FromSeconds(10));
             var resp = await raceClient.PostAsJsonAsync(
                 $"/api/boards/{board.Id}/cards",
                 new CreateCardDto(board.Id, col!.Id, $"Webhook card {i}", null, null, null));
             statusCodes.Add(resp.StatusCode);
         }).ToArray();
 
-        barrier.Release(mutationCount);
+        barrier.SignalAndWait(TimeSpan.FromSeconds(10));
         await Task.WhenAll(mutationTasks);
 
         // All card creations should succeed
@@ -1069,6 +1096,31 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // Verify all card titles are unique (no duplicate processing)
         webhookCards.Select(c => c.Title).Distinct().Should().HaveCount(mutationCount,
             "each card title should be unique, proving no duplicate processing");
+
+        // Verify that webhook delivery records were actually created in the database.
+        // Poll with a short timeout because the notifier enqueues deliveries
+        // asynchronously after the HTTP response returns.
+        using var scope = _factory.Services.CreateScope();
+        var deliveryRepo = scope.ServiceProvider.GetRequiredService<IOutboundWebhookDeliveryRepository>();
+
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+        IReadOnlyList<OutboundWebhookDelivery> deliveries = [];
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            deliveries = await deliveryRepo.GetBySubscriptionAsync(
+                webhookSub!.Subscription.Id, limit: mutationCount + 5);
+            if (deliveries.Count >= mutationCount)
+            {
+                break;
+            }
+
+            await Task.Delay(100);
+        }
+
+        deliveries.Should().HaveCountGreaterThanOrEqualTo(mutationCount,
+            $"each of the {mutationCount} card mutations should have created a webhook delivery record");
+        deliveries.Select(d => d.Id).Distinct().Should().HaveCount(deliveries.Count,
+            "each delivery record should have a unique ID");
     }
 
     /// <summary>
@@ -1085,14 +1137,15 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         await ApiTestHarness.AuthenticateAsync(client, "race-webhook-sub");
         var board = await ApiTestHarness.CreateBoardAsync(client, "race-webhook-sub-board");
 
-        using var barrier = new SemaphoreSlim(0, subscriptionCount);
+        // Use Barrier for true synchronization instead of SemaphoreSlim
+        using var barrier = new Barrier(subscriptionCount + 1);
         var results = new ConcurrentBag<(HttpStatusCode Status, OutboundWebhookSubscriptionSecretDto? Sub)>();
 
         var tasks = Enumerable.Range(0, subscriptionCount).Select(async i =>
         {
             using var raceClient = _factory.CreateClient();
             raceClient.DefaultRequestHeaders.Authorization = client.DefaultRequestHeaders.Authorization;
-            await barrier.WaitAsync();
+            barrier.SignalAndWait(TimeSpan.FromSeconds(10));
             var resp = await raceClient.PostAsJsonAsync(
                 $"/api/boards/{board.Id}/webhooks",
                 new CreateOutboundWebhookSubscriptionDto(
@@ -1104,7 +1157,7 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             results.Add((resp.StatusCode, sub));
         }).ToArray();
 
-        barrier.Release(subscriptionCount);
+        barrier.SignalAndWait(TimeSpan.FromSeconds(10));
         await Task.WhenAll(tasks);
 
         // All should succeed
@@ -1122,8 +1175,21 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         secrets.Distinct().Should().HaveCount(subscriptionCount,
             "each subscription should have a unique signing secret");
 
-        // Verify via list endpoint
+        // Verify via list endpoint: parse response and verify distinct IDs and count
         var listResp = await client.GetAsync($"/api/boards/{board.Id}/webhooks");
         listResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listedSubs = await listResp.Content.ReadFromJsonAsync<List<OutboundWebhookSubscriptionDto>>()
+            ?? throw new InvalidOperationException("list endpoint returned null subscription data");
+        listedSubs.Should().HaveCountGreaterThanOrEqualTo(subscriptionCount,
+            $"list endpoint should return at least {subscriptionCount} subscriptions");
+        listedSubs.Select(s => s.Id).Distinct().Should().HaveCountGreaterThanOrEqualTo(subscriptionCount,
+            "listed subscriptions should have distinct IDs");
+
+        // Cross-check: all IDs from creation should appear in the list
+        foreach (var createdId in ids)
+        {
+            listedSubs.Should().Contain(s => s.Id == createdId,
+                $"subscription {createdId} created concurrently should appear in the list endpoint");
+        }
     }
 }
