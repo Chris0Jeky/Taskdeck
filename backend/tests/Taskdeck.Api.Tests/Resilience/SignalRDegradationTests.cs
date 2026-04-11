@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
@@ -85,8 +84,12 @@ public class SignalRDegradationTests : IClassFixture<TestWebApplicationFactory>
             $"/api/boards/{board.Id}/access",
             new GrantAccessDto(board.Id, user2.UserId, UserRole.Editor));
 
+        var presenceCollector = new EventCollector<BoardPresenceSnapshot>();
+
         await using var connection1 = SignalRTestHelper.CreateBoardsHubConnection(_factory, user1.Token);
         await using var connection2 = SignalRTestHelper.CreateBoardsHubConnection(_factory, user2.Token);
+
+        connection1.On<BoardPresenceSnapshot>("boardPresence", snapshot => presenceCollector.Add(snapshot));
 
         await connection1.StartAsync();
         await connection2.StartAsync();
@@ -95,8 +98,8 @@ public class SignalRDegradationTests : IClassFixture<TestWebApplicationFactory>
         await connection1.InvokeAsync("JoinBoard", board.Id);
         await connection2.InvokeAsync("JoinBoard", board.Id);
 
-        // Give a moment for presence events to propagate.
-        await Task.Delay(500);
+        // Wait for presence events to confirm both clients joined (event-based, not timing-based).
+        await SignalRTestHelper.WaitForEventsAsync(presenceCollector, 2, TimeSpan.FromSeconds(3));
 
         // Client 1 causes an error by trying to join a non-existent board.
         var act = () => connection1.InvokeAsync("JoinBoard", Guid.NewGuid());
