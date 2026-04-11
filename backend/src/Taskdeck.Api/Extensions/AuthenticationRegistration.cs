@@ -1,9 +1,11 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Http;
 using Microsoft.IdentityModel.Tokens;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Application.Services;
@@ -14,6 +16,8 @@ namespace Taskdeck.Api.Extensions;
 
 public static class AuthenticationRegistration
 {
+    public const string ExternalAuthenticationScheme = "External";
+
     public static IServiceCollection AddTaskdeckAuthentication(
         this IServiceCollection services,
         JwtSettings jwtSettings,
@@ -28,7 +32,21 @@ public static class AuthenticationRegistration
             return services;
         }
 
-        var authBuilder = services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        var authBuilder = services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultSignInScheme = ExternalAuthenticationScheme;
+            })
+            .AddCookie(ExternalAuthenticationScheme, options =>
+            {
+                options.Cookie.Name = ".Taskdeck.ExternalAuth";
+                options.Cookie.HttpOnly = true;
+                options.Cookie.SameSite = SameSiteMode.Lax;
+                options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+                options.SlidingExpiration = false;
+            })
             .AddJwtBearer(options =>
             {
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -92,6 +110,7 @@ public static class AuthenticationRegistration
         {
             authBuilder.AddOAuth("GitHub", options =>
             {
+                options.SignInScheme = ExternalAuthenticationScheme;
                 options.ClientId = gitHubOAuthSettings.ClientId;
                 options.ClientSecret = gitHubOAuthSettings.ClientSecret;
                 options.AuthorizationEndpoint = "https://github.com/login/oauth/authorize";
@@ -127,6 +146,7 @@ public static class AuthenticationRegistration
 
                 authBuilder.AddOpenIdConnect(schemeName, provider.DisplayName, options =>
                 {
+                    options.SignInScheme = ExternalAuthenticationScheme;
                     options.Authority = provider.Authority;
                     options.ClientId = provider.ClientId;
                     options.ClientSecret = provider.ClientSecret;

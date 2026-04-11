@@ -107,13 +107,17 @@ onMounted(loadStatus)
     <!-- Setup in progress -->
     <div v-else-if="setupResponse" class="td-mfa-setup__wizard">
       <p class="td-mfa-setup__step">
-        1. Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.)
+        1. Add this shared secret to your authenticator app (Google Authenticator, Authy, etc.)
       </p>
       <div class="td-mfa-setup__qr">
         <code class="td-mfa-setup__secret">{{ setupResponse.sharedSecret }}</code>
         <p class="td-mfa-setup__hint">
-          Or manually enter this secret in your authenticator app.
+          Enter this secret manually in your authenticator app.
         </p>
+        <details class="td-mfa-setup__provisioning">
+          <summary>Show provisioning URI</summary>
+          <code class="td-mfa-setup__provisioning-uri">{{ setupResponse.qrCodeUri }}</code>
+        </details>
       </div>
 
       <p class="td-mfa-setup__step">2. Save these recovery codes in a safe place:</p>
@@ -275,6 +279,26 @@ onMounted(loadStatus)
   font-size: var(--td-font-xs);
   color: var(--td-text-tertiary);
   margin-top: var(--td-space-2);
+}
+
+.td-mfa-setup__provisioning {
+  margin-top: var(--td-space-3);
+  text-align: left;
+}
+
+.td-mfa-setup__provisioning summary {
+  cursor: pointer;
+  color: var(--td-text-secondary);
+  font-size: var(--td-font-xs);
+}
+
+.td-mfa-setup__provisioning-uri {
+  display: block;
+  margin-top: var(--td-space-2);
+  font-size: var(--td-font-xs);
+  line-height: 1.4;
+  word-break: break-all;
+  user-select: all;
 }
 
 .td-mfa-setup__recovery-codes {

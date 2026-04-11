@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import type { OidcProviderInfo } from '../types/auth'
 import { useSessionStore } from '../store/sessionStore'
 import { authApi } from '../api/authApi'
 import { sanitizeInternalRedirect } from '../utils/navigation'
@@ -9,8 +10,6 @@ import { isDemoMode } from '../utils/demoMode'
 const router = useRouter()
 const route = useRoute()
 const session = useSessionStore()
-
-import type { OidcProviderInfo } from '../types/auth'
 
 const username = ref('')
 const password = ref('')
@@ -134,7 +133,7 @@ onMounted(async () => {
 
       <template v-if="!isDemoMode">
         <div v-if="oauthExchanging" class="td-oauth-exchanging">
-          <p>Completing GitHub sign-in...</p>
+          <p>Completing sign-in...</p>
         </div>
 
         <template v-else>

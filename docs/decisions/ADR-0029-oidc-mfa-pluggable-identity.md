@@ -1,6 +1,6 @@
-# ADR-0028: SSO/OIDC Integration with Optional MFA Policy
+# ADR-0029: OIDC/SSO Integration with Optional TOTP MFA
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-04-09
 - **Deciders**: Project maintainers
 

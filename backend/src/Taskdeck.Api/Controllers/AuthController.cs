@@ -217,7 +217,7 @@ public class AuthController : AuthenticatedControllerBase
             return result.ToErrorActionResult();
 
         // Sign out the temporary cookie used during the OAuth handshake
-        await HttpContext.SignOutAsync("GitHub");
+        await HttpContext.SignOutAsync(AuthenticationRegistration.ExternalAuthenticationScheme);
 
         // Security: Do NOT put the JWT in the URL. Use a short-lived, single-use
         // authorization code that the frontend exchanges via POST.
@@ -352,7 +352,7 @@ public class AuthController : AuthenticatedControllerBase
             return result.ToErrorActionResult();
 
         // Sign out the temporary cookie used during the OIDC handshake
-        await HttpContext.SignOutAsync(schemeName);
+        await HttpContext.SignOutAsync(AuthenticationRegistration.ExternalAuthenticationScheme);
 
         var code = GenerateAuthCode();
         _authCodes[code] = (result.Value, DateTimeOffset.UtcNow.AddSeconds(60));
