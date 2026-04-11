@@ -338,51 +338,48 @@ public class QueryBoundaryValueTests
 
     // ─────────────────────── Entity Touch property ───────────────────────
 
-    [Property(MaxTest = MaxTests)]
-    public Property AnyValidEntity_Touch_AdvancesUpdatedAt()
+    // Verifies that entity mutations always set UpdatedAt.
+    // Uses individual [Fact] tests instead of a property-based test to avoid
+    // Thread.Sleep(1) * 200 iterations performance cost and timestamp resolution issues.
+
+    [Fact]
+    public void Board_Update_SetsUpdatedAt()
     {
-        return Prop.ForAll(
-            Arb.From(Gen.Elements("board", "card", "column", "label")),
-            entityType =>
-            {
-                DateTimeOffset initialUpdatedAt;
-                DateTimeOffset afterUpdatedAt;
+        var board = new Board("Test");
+        var initialUpdatedAt = board.UpdatedAt;
+        // Ensure clock advances past timer resolution
+        Thread.Sleep(16);
+        board.Update(name: "Updated");
+        board.UpdatedAt.Should().BeAfter(initialUpdatedAt);
+    }
 
-                switch (entityType)
-                {
-                    case "board":
-                        var board = new Board("Test");
-                        initialUpdatedAt = board.UpdatedAt;
-                        Thread.Sleep(1);
-                        board.Update(name: "Updated");
-                        afterUpdatedAt = board.UpdatedAt;
-                        break;
-                    case "card":
-                        var card = new Card(Guid.NewGuid(), Guid.NewGuid(), "Title");
-                        initialUpdatedAt = card.UpdatedAt;
-                        Thread.Sleep(1);
-                        card.Update(description: "Updated");
-                        afterUpdatedAt = card.UpdatedAt;
-                        break;
-                    case "column":
-                        var col = new Column(Guid.NewGuid(), "Col", 0);
-                        initialUpdatedAt = col.UpdatedAt;
-                        Thread.Sleep(1);
-                        col.SetPosition(1);
-                        afterUpdatedAt = col.UpdatedAt;
-                        break;
-                    case "label":
-                        var label = new Label(Guid.NewGuid(), "Label", "#FF0000");
-                        initialUpdatedAt = label.UpdatedAt;
-                        Thread.Sleep(1);
-                        label.Update(name: "Updated");
-                        afterUpdatedAt = label.UpdatedAt;
-                        break;
-                    default:
-                        throw new InvalidOperationException($"Unknown entity type: {entityType}");
-                }
+    [Fact]
+    public void Card_Update_SetsUpdatedAt()
+    {
+        var card = new Card(Guid.NewGuid(), Guid.NewGuid(), "Title");
+        var initialUpdatedAt = card.UpdatedAt;
+        Thread.Sleep(16);
+        card.Update(description: "Updated");
+        card.UpdatedAt.Should().BeAfter(initialUpdatedAt);
+    }
 
-                afterUpdatedAt.Should().BeOnOrAfter(initialUpdatedAt);
-            });
+    [Fact]
+    public void Column_SetPosition_SetsUpdatedAt()
+    {
+        var col = new Column(Guid.NewGuid(), "Col", 0);
+        var initialUpdatedAt = col.UpdatedAt;
+        Thread.Sleep(16);
+        col.SetPosition(1);
+        col.UpdatedAt.Should().BeAfter(initialUpdatedAt);
+    }
+
+    [Fact]
+    public void Label_Update_SetsUpdatedAt()
+    {
+        var label = new Label(Guid.NewGuid(), "Label", "#FF0000");
+        var initialUpdatedAt = label.UpdatedAt;
+        Thread.Sleep(16);
+        label.Update(name: "Updated");
+        label.UpdatedAt.Should().BeAfter(initialUpdatedAt);
     }
 }
