@@ -279,7 +279,7 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       await expect(store.createItem({ boardId: null, text: 'will fail' })).rejects.toBeDefined()
 
       expect(store.items).toHaveLength(0)
-      // getErrorDisplay mock returns the fallback when error lacks .message
+      // getErrorDisplay is mocked to always return the fallback string
       expect(store.actionError).toBe('Failed to capture item')
     })
   })
@@ -293,8 +293,7 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       const store = useCaptureStore()
       await store.fetchItems({ boardId: 'board-abc' })
 
-      const calledUrl: string = vi.mocked(http.get).mock.calls[0][0] as string
-      expect(calledUrl).toContain('boardId=board-abc')
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('boardId=board-abc'))
     })
 
     it('combines multiple query parameters in the URL', async () => {
@@ -303,9 +302,8 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       const store = useCaptureStore()
       await store.fetchItems({ status: 'New', limit: 25 })
 
-      const calledUrl: string = vi.mocked(http.get).mock.calls[0][0] as string
-      expect(calledUrl).toContain('status=New')
-      expect(calledUrl).toContain('limit=25')
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('status=New'))
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('limit=25'))
     })
   })
 
@@ -361,6 +359,8 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       // After reaching 'Triaged' (terminal), polling should have stopped
       expect(store.triagePollingItemId).toBeNull()
       expect(store.detailById['c-poll']?.status).toBe('Triaged')
+      // Verify the expected number of poll attempts executed
+      expect(callCount).toBe(3)
 
       stop() // cleanup
       vi.useRealTimers()
