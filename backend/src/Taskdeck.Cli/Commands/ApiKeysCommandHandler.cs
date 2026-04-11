@@ -150,18 +150,24 @@ internal sealed class ApiKeysCommandHandler
         }
     }
 
+    /// <summary>
+    /// Returns the CLI system actor's user ID, creating the actor if it does not exist.
+    /// Looks up by email (not username) to prevent identity hijacking: the
+    /// <c>@system.taskdeck</c> domain is non-routable and cannot be registered
+    /// through the normal authentication flow, which checks email uniqueness.
+    /// </summary>
     private async Task<Guid> GetOrCreateCliActorIdAsync()
     {
-        const string actorUsername = "taskdeck_cli_actor";
-        const string actorEmail = "taskdeck-cli-actor@local.taskdeck";
-
-        var existingActor = await _unitOfWork.Users.GetByUsernameAsync(actorUsername);
+        var existingActor = await _unitOfWork.Users.GetByEmailAsync(CliActorIdentity.ActorEmail);
         if (existingActor is not null)
         {
             return existingActor.Id;
         }
 
-        var actor = new User(actorUsername, actorEmail, Guid.NewGuid().ToString("N"));
+        var actor = new User(
+            CliActorIdentity.ActorUsername,
+            CliActorIdentity.ActorEmail,
+            Guid.NewGuid().ToString("N"));
         await _unitOfWork.Users.AddAsync(actor);
         await _unitOfWork.SaveChangesAsync();
         return actor.Id;
