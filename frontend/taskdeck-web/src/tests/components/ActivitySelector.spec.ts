@@ -111,8 +111,8 @@ describe('ActivitySelector', () => {
   it('emits fetch when Fetch button is clicked', async () => {
     const wrapper = mount(ActivitySelector, { props: defaultProps })
     const fetchBtn = wrapper.findAll('button').find((b) => b.text() === 'Fetch')
-    expect(fetchBtn).toBeDefined()
-    await fetchBtn!.trigger('click')
+    expect(fetchBtn).toBeTruthy()
+    await fetchBtn?.trigger('click')
     expect(wrapper.emitted('fetch')).toHaveLength(1)
   })
 
@@ -121,7 +121,8 @@ describe('ActivitySelector', () => {
       props: { ...defaultProps, canFetch: false },
     })
     const fetchBtn = wrapper.findAll('button').find((b) => b.text() === 'Fetch')
-    expect(fetchBtn!.attributes('disabled')).toBeDefined()
+    expect(fetchBtn).toBeTruthy()
+    expect(fetchBtn?.attributes('disabled')).toBeDefined()
   })
 
   it('shows loading helper text when loadingEntitySource is true', () => {
@@ -145,7 +146,8 @@ describe('ActivitySelector', () => {
       props: { ...defaultProps, selectedIdForCopy: 'abc-123', selectedIdLabel: 'Board ID' },
     })
     const copyBtn = wrapper.findAll('button').find((b) => b.text().includes('Copy Raw ID'))
-    await copyBtn!.trigger('click')
+    expect(copyBtn).toBeTruthy()
+    await copyBtn?.trigger('click')
     expect(wrapper.emitted('copyId')).toHaveLength(1)
   })
 })
