@@ -36,16 +36,36 @@ if (args.Contains("--mcp"))
         // Minimal web server exposing only the MCP endpoint with API key auth.
         // No controllers, no SignalR, no Swagger, no frontend — just MCP.
         var mcpPort = 5001;
+        var mcpHost = "0.0.0.0";
+        var portSpecified = false;
         for (int i = 0; i < args.Length - 1; i++)
         {
-            if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase)
-                && int.TryParse(args[i + 1], out var parsedPort)
-                && parsedPort is >= 1 and <= 65535)
-                mcpPort = parsedPort;
+            if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase))
+            {
+                portSpecified = true;
+                if (int.TryParse(args[i + 1], out var parsedPort)
+                    && parsedPort is >= 1 and <= 65535)
+                {
+                    mcpPort = parsedPort;
+                }
+                else
+                {
+                    Console.Error.WriteLine($"Error: invalid --port value '{args[i + 1]}'. Must be an integer between 1 and 65535.");
+                    return;
+                }
+            }
+            else if (string.Equals(args[i], "--host", StringComparison.OrdinalIgnoreCase))
+            {
+                mcpHost = args[i + 1];
+            }
         }
 
         var mcpHttpBuilder = WebApplication.CreateBuilder(args);
-        mcpHttpBuilder.WebHost.UseUrls($"http://localhost:{mcpPort}");
+
+        // Load appsettings.local.json for locally-generated secrets (mirrors stdio mode).
+        mcpHttpBuilder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
+
+        mcpHttpBuilder.WebHost.UseUrls($"http://{mcpHost}:{mcpPort}");
 
         // Infrastructure (DbContext, Repositories, UoW)
         mcpHttpBuilder.Services.AddInfrastructure(mcpHttpBuilder.Configuration);
@@ -57,7 +77,7 @@ if (args.Contains("--mcp"))
         mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
             new Taskdeck.Application.Services.BoardService(
                 sp.GetRequiredService<IUnitOfWork>(),
-                sp.GetService<Taskdeck.Application.Services.IAuthorizationService>()));
+                sp.GetRequiredService<Taskdeck.Application.Services.IAuthorizationService>()));
         mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.ColumnService>();
         mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.CardService>();
         mcpHttpBuilder.Services.AddScoped<Taskdeck.Application.Services.LabelService>();
@@ -74,6 +94,17 @@ if (args.Contains("--mcp"))
         // HTTP identity: maps API key to user via HttpUserContextProvider.
         mcpHttpBuilder.Services.AddHttpContextAccessor();
         mcpHttpBuilder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
+
+        // Rate limiting: register the McpPerApiKey policy for per-key throttling.
+        var mcpRateLimitingSettings = mcpHttpBuilder.Configuration
+            .GetSection("RateLimiting")
+            .Get<Taskdeck.Application.Services.RateLimitingSettings>()
+            ?? new Taskdeck.Application.Services.RateLimitingSettings();
+        mcpHttpBuilder.Services.AddSingleton(mcpRateLimitingSettings);
+        if (mcpRateLimitingSettings.Enabled)
+        {
+            mcpHttpBuilder.Services.AddTaskdeckRateLimiting(mcpRateLimitingSettings);
+        }
 
         // MCP server: HTTP transport + all resources and tools.
         mcpHttpBuilder.Services.AddMcpServer()
@@ -97,11 +128,21 @@ if (args.Contains("--mcp"))
         // API key authentication for MCP requests.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
 
-        // Map the MCP endpoint.
-        mcpHttpApp.MapMcp();
+        // Apply rate limiting before endpoint routing.
+        if (mcpRateLimitingSettings.Enabled)
+        {
+            mcpHttpApp.UseRateLimiter();
+        }
+
+        // Map the MCP endpoint with per-API-key rate limiting.
+        var mcpEndpoint = mcpHttpApp.MapMcp();
+        if (mcpRateLimitingSettings.Enabled)
+        {
+            mcpEndpoint.RequireRateLimiting(Taskdeck.Api.RateLimiting.RateLimitingPolicyNames.McpPerApiKey);
+        }
 
         var mcpHttpLogger = mcpHttpApp.Services.GetRequiredService<ILogger<Program>>();
-        mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on port {Port}", mcpPort);
+        mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on http://{Host}:{Port}", mcpHost, mcpPort);
 
         await mcpHttpApp.RunAsync();
         return;
@@ -139,7 +180,7 @@ if (args.Contains("--mcp"))
             services.AddScoped<Taskdeck.Application.Services.BoardService>(sp =>
                 new Taskdeck.Application.Services.BoardService(
                     sp.GetRequiredService<IUnitOfWork>(),
-                    sp.GetService<Taskdeck.Application.Services.IAuthorizationService>()));
+                    sp.GetRequiredService<Taskdeck.Application.Services.IAuthorizationService>()));
             services.AddScoped<Taskdeck.Application.Services.ColumnService>();
             services.AddScoped<Taskdeck.Application.Services.CardService>();
             services.AddScoped<Taskdeck.Application.Services.LabelService>();
