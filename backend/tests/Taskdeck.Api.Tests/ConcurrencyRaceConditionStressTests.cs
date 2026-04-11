@@ -1117,8 +1117,8 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             await Task.Delay(100);
         }
 
-        deliveries.Should().HaveCountGreaterThanOrEqualTo(mutationCount,
-            $"each of the {mutationCount} card mutations should have created a webhook delivery record");
+        deliveries.Should().HaveCount(mutationCount,
+            $"each of the {mutationCount} card mutations should create exactly one webhook delivery record");
         deliveries.Select(d => d.Id).Distinct().Should().HaveCount(deliveries.Count,
             "each delivery record should have a unique ID");
     }
