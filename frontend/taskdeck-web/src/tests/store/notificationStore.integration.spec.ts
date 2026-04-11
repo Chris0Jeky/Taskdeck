@@ -210,6 +210,8 @@ describe('notificationStore — integration (real notificationsApi, mocked HTTP)
   })
 
   // ── unread count behavior ──────────────────────────────────────────────
+  // The store does not expose an unreadCount computed; these tests document
+  // the expected derivation from the notifications array after store actions.
 
   describe('unread count behavior', () => {
     it('unread count derives from isRead=false notifications after fetch', async () => {
