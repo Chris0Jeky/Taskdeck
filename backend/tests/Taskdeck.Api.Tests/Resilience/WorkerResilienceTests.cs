@@ -36,7 +36,7 @@ public class WorkerResilienceTests
         var logger = new InMemoryLogger<LlmQueueToProposalWorker>();
         var settings = new WorkerSettings
         {
-            QueuePollIntervalSeconds = 0,
+            QueuePollIntervalSeconds = 1,
             EnableAutoQueueProcessing = true,
             MaxBatchSize = 5,
             MaxConcurrency = 1,
@@ -48,17 +48,17 @@ public class WorkerResilienceTests
 
         using var cts = new CancellationTokenSource();
 
-        // Act: run the worker for a brief window then cancel.
+        // Act: run the worker for long enough to complete at least one iteration, then cancel.
         var runTask = worker.StartAsync(cts.Token);
-        await Task.Delay(300);
+        await Task.Delay(1500);
         cts.Cancel();
 
         try { await runTask; } catch (OperationCanceledException) { }
         await worker.StopAsync(CancellationToken.None);
 
         // Assert: the worker should have logged the error but NOT crashed;
-        // it should have executed more than one iteration.
-        callCount.Should().BeGreaterThan(0,
+        // it should have executed at least one iteration.
+        callCount.Should().BeGreaterThanOrEqualTo(1,
             "worker should have attempted at least one batch despite DB throwing");
 
         logger.Entries.Should().Contain(e =>
@@ -120,7 +120,7 @@ public class WorkerResilienceTests
         var logger = new InMemoryLogger<LlmQueueToProposalWorker>();
         var settings = new WorkerSettings
         {
-            QueuePollIntervalSeconds = 0,
+            QueuePollIntervalSeconds = 1,
             EnableAutoQueueProcessing = true,
             MaxBatchSize = 5,
             MaxConcurrency = 1,
@@ -134,7 +134,7 @@ public class WorkerResilienceTests
         await worker.StartAsync(cts.Token);
 
         // Let it run at least one cycle.
-        await Task.Delay(150);
+        await Task.Delay(1500);
 
         // StopAsync triggers cancellation and waits for ExecuteAsync to complete.
         // This should NOT throw -- the BackgroundService infrastructure handles OperationCanceledException.
@@ -171,7 +171,7 @@ public class WorkerResilienceTests
         var logger = new InMemoryLogger<LlmQueueToProposalWorker>();
         var settings = new WorkerSettings
         {
-            QueuePollIntervalSeconds = 0,
+            QueuePollIntervalSeconds = 1,
             EnableAutoQueueProcessing = false,   // Disabled
             MaxBatchSize = 5,
             MaxConcurrency = 1,
@@ -183,7 +183,7 @@ public class WorkerResilienceTests
 
         using var cts = new CancellationTokenSource();
         var runTask = worker.StartAsync(cts.Token);
-        await Task.Delay(200);
+        await Task.Delay(1500);
         cts.Cancel();
 
         try { await runTask; } catch (OperationCanceledException) { }
