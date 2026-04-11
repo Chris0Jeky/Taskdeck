@@ -36,13 +36,11 @@ if (args.Contains("--mcp"))
         // Minimal web server exposing only the MCP endpoint with API key auth.
         // No controllers, no SignalR, no Swagger, no frontend — just MCP.
         var mcpPort = 5001;
-        var mcpHost = "0.0.0.0";
-        var portSpecified = false;
+        var mcpBindHost = "0.0.0.0";
         for (int i = 0; i < args.Length - 1; i++)
         {
             if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase))
             {
-                portSpecified = true;
                 if (int.TryParse(args[i + 1], out var parsedPort)
                     && parsedPort is >= 1 and <= 65535)
                 {
@@ -56,7 +54,7 @@ if (args.Contains("--mcp"))
             }
             else if (string.Equals(args[i], "--host", StringComparison.OrdinalIgnoreCase))
             {
-                mcpHost = args[i + 1];
+                mcpBindHost = args[i + 1];
             }
         }
 
@@ -65,7 +63,7 @@ if (args.Contains("--mcp"))
         // Load appsettings.local.json for locally-generated secrets (mirrors stdio mode).
         mcpHttpBuilder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: false);
 
-        mcpHttpBuilder.WebHost.UseUrls($"http://{mcpHost}:{mcpPort}");
+        mcpHttpBuilder.WebHost.UseUrls($"http://{mcpBindHost}:{mcpPort}");
 
         // Infrastructure (DbContext, Repositories, UoW)
         mcpHttpBuilder.Services.AddInfrastructure(mcpHttpBuilder.Configuration);
@@ -142,7 +140,7 @@ if (args.Contains("--mcp"))
         }
 
         var mcpHttpLogger = mcpHttpApp.Services.GetRequiredService<ILogger<Program>>();
-        mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on http://{Host}:{Port}", mcpHost, mcpPort);
+        mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on http://{Host}:{Port}", mcpBindHost, mcpPort);
 
         await mcpHttpApp.RunAsync();
         return;
