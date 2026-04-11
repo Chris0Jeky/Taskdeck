@@ -242,7 +242,11 @@ public class LlmProviderDegradationTests : IClassFixture<TestWebApplicationFacto
             ChatCompletionRequest request,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            await Task.Delay(TimeSpan.FromSeconds(60), ct);
+            // Use a short internal timeout to avoid hanging for 60 seconds if a test
+            // hits the streaming endpoint. Cancels quickly like CompleteAsync does.
+            using var internalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            internalCts.CancelAfter(TimeSpan.FromMilliseconds(50));
+            await Task.Delay(TimeSpan.FromSeconds(60), internalCts.Token);
             yield return new LlmTokenEvent("timeout", true);
         }
 
@@ -266,10 +270,8 @@ public class LlmProviderDegradationTests : IClassFixture<TestWebApplicationFacto
             [EnumeratorCancellation] CancellationToken ct = default)
         {
             await Task.CompletedTask;
-            throw new InvalidOperationException("Simulated stream crash");
-#pragma warning disable CS0162
+            ThrowStreamCrash();
             yield break;
-#pragma warning restore CS0162
         }
 
         public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
@@ -277,6 +279,9 @@ public class LlmProviderDegradationTests : IClassFixture<TestWebApplicationFacto
 
         public Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
             => Task.FromResult(new LlmHealthStatus(false, "ThrowingStub", "Provider threw exception", IsProbed: true));
+
+        private static void ThrowStreamCrash()
+            => throw new InvalidOperationException("Simulated stream crash");
     }
 
     /// <summary>
@@ -292,10 +297,8 @@ public class LlmProviderDegradationTests : IClassFixture<TestWebApplicationFacto
             [EnumeratorCancellation] CancellationToken ct = default)
         {
             await Task.CompletedTask;
-            throw new InvalidOperationException("All providers are down");
-#pragma warning disable CS0162
+            ThrowProvidersDown();
             yield break;
-#pragma warning restore CS0162
         }
 
         public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
@@ -303,5 +306,8 @@ public class LlmProviderDegradationTests : IClassFixture<TestWebApplicationFacto
 
         public Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
             => Task.FromResult(new LlmHealthStatus(false, "Dead", "All providers are unavailable", IsProbed: true));
+
+        private static void ThrowProvidersDown()
+            => throw new InvalidOperationException("All providers are down");
     }
 }
