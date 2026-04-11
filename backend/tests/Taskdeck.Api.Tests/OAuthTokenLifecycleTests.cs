@@ -501,7 +501,11 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
 
         // Use POST for change-password; GET for everything else. Either way should 401 before body validation.
         var response = endpoint.Contains("change-password")
-            ? await expiredClient.PostAsJsonAsync(endpoint, new { CurrentPassword = "x", NewPassword = "y" })
+            ? await expiredClient.PostAsJsonAsync(endpoint, new
+            {
+                CurrentPassword = "password123",
+                NewPassword = "NewSecurePassword!789"
+            })
             : await expiredClient.GetAsync(endpoint);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
