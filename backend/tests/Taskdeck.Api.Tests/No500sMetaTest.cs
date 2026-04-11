@@ -34,24 +34,27 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
 
     // ─────────────────────── Random content generators ───────────────────────
 
-    private static readonly Random Rng = new(42); // deterministic seed for reproducibility
+    // Use a per-test Random instance for deterministic reproducibility.
+    // Static Random is not thread-safe; per-method instantiation avoids races.
+    private static Random CreateRng() => new(42);
 
-    private static string RandomString(int minLen, int maxLen)
+    private static string RandomString(Random rng, int minLen, int maxLen)
     {
-        var length = Rng.Next(minLen, maxLen + 1);
+        var length = rng.Next(minLen, maxLen + 1);
         var chars = new char[length];
         for (int i = 0; i < length; i++)
         {
-            // Mix of ASCII, unicode, and control chars
-            var category = Rng.Next(10);
+            // Mix of ASCII, unicode, control chars, and null bytes
+            var category = rng.Next(11);
             chars[i] = category switch
             {
-                0 => (char)Rng.Next(1, 32),               // control chars (skip null)
-                1 => (char)Rng.Next(0x4E00, 0x4F00),      // CJK
-                2 => (char)Rng.Next(0x0600, 0x0700),      // Arabic
-                3 => (char)Rng.Next(0x0300, 0x0370),      // combining diacriticals
-                4 => (char)Rng.Next(0x2000, 0x2070),      // general punctuation / special
-                _ => (char)Rng.Next(0x20, 0x7F),          // printable ASCII
+                0 => '\0',                                 // null byte
+                1 => (char)rng.Next(1, 32),                // control chars (skip null)
+                2 => (char)rng.Next(0x4E00, 0x4F00),       // CJK
+                3 => (char)rng.Next(0x0600, 0x0700),       // Arabic
+                4 => (char)rng.Next(0x0300, 0x0370),       // combining diacriticals
+                5 => (char)rng.Next(0x2000, 0x2070),       // general punctuation / special
+                _ => (char)rng.Next(0x20, 0x7F),           // printable ASCII
             };
         }
         return new string(chars);
@@ -63,25 +66,18 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
     public async Task BoardCreation_100RandomPayloads_Never500()
     {
         await EnsureAuthenticatedAsync();
+        var rng = CreateRng();
 
         for (int i = 0; i < 100; i++)
         {
-            var name = RandomString(0, 200);
-            var description = Rng.Next(2) == 0 ? null : RandomString(0, 2000);
+            var name = RandomString(rng, 0, 200);
+            var description = rng.Next(2) == 0 ? null : RandomString(rng, 0, 2000);
 
             var response = await _client.PostAsJsonAsync("/api/boards",
                 new CreateBoardDto(name, description));
 
             ((int)response.StatusCode).Should().BeLessThan(500,
                 $"Board creation returned 500 on iteration {i} for name [{name.Length} chars]");
-
-            // Verify no stack trace in response body
-            if ((int)response.StatusCode >= 500)
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                body.Should().NotContain("System.", "500 response should not contain stack traces");
-                body.Should().NotContain("at Taskdeck.", "500 response should not contain stack traces");
-            }
         }
     }
 
@@ -91,23 +87,18 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
     public async Task CaptureCreation_100RandomPayloads_Never500()
     {
         await EnsureAuthenticatedAsync();
+        var rng = CreateRng();
 
         for (int i = 0; i < 100; i++)
         {
-            var text = RandomString(0, 25_000);
-            var boardId = Rng.Next(3) == 0 ? (Guid?)Guid.NewGuid() : null;
+            var text = RandomString(rng, 0, 25_000);
+            var boardId = rng.Next(3) == 0 ? (Guid?)Guid.NewGuid() : null;
 
             var response = await _client.PostAsJsonAsync("/api/capture/items",
                 new CreateCaptureItemDto(boardId, text));
 
             ((int)response.StatusCode).Should().BeLessThan(500,
                 $"Capture creation returned 500 on iteration {i} for text [{text.Length} chars]");
-
-            if ((int)response.StatusCode >= 500)
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                body.Should().NotContain("System.", "500 response should not contain stack traces");
-            }
         }
     }
 
@@ -117,6 +108,7 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
     public async Task CardCreation_RandomPayloads_Never500()
     {
         await EnsureAuthenticatedAsync();
+        var rng = CreateRng();
 
         // Create a board and column for card tests
         var boardResponse = await _client.PostAsJsonAsync("/api/boards",
@@ -132,8 +124,8 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
 
         for (int i = 0; i < 50; i++)
         {
-            var title = RandomString(0, 300);
-            var description = Rng.Next(2) == 0 ? null : RandomString(0, 3000);
+            var title = RandomString(rng, 0, 300);
+            var description = rng.Next(2) == 0 ? null : RandomString(rng, 0, 3000);
 
             var response = await _client.PostAsJsonAsync(
                 $"/api/boards/{board.Id}/cards",
@@ -150,10 +142,11 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
     public async Task Search_50RandomQueries_Never500()
     {
         await EnsureAuthenticatedAsync();
+        var rng = CreateRng();
 
         for (int i = 0; i < 50; i++)
         {
-            var query = RandomString(0, 500);
+            var query = RandomString(rng, 0, 500);
 
             var response = await _client.GetAsync(
                 $"/api/search?q={Uri.EscapeDataString(query)}");
@@ -175,15 +168,17 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
         boardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var board = await boardResponse.Content.ReadFromJsonAsync<BoardDto>();
 
+        var rng = CreateRng();
+
         for (int i = 0; i < 50; i++)
         {
-            var name = RandomString(0, 100);
-            var wipLimit = Rng.Next(4) switch
+            var name = RandomString(rng, 0, 100);
+            var wipLimit = rng.Next(4) switch
             {
                 0 => (int?)null,
                 1 => 0,
                 2 => -1,
-                _ => Rng.Next(1, 1000)
+                _ => rng.Next(1, 1000)
             };
 
             var response = await _client.PostAsJsonAsync(
@@ -207,13 +202,15 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
         boardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var board = await boardResponse.Content.ReadFromJsonAsync<BoardDto>();
 
+        var rng = CreateRng();
+
         for (int i = 0; i < 50; i++)
         {
-            var name = RandomString(0, 50);
-            var color = Rng.Next(3) switch
+            var name = RandomString(rng, 0, 50);
+            var color = rng.Next(3) switch
             {
-                0 => RandomString(0, 10),       // random string, not a valid hex
-                1 => $"#{Rng.Next(0xFFFFFF):X6}", // valid hex
+                0 => RandomString(rng, 0, 10),     // random string, not a valid hex
+                1 => $"#{rng.Next(0xFFFFFF):X6}",   // valid hex
                 _ => ""
             };
 
@@ -234,7 +231,7 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
     [InlineData("GET", "/api/capture/items")]
     [InlineData("GET", "/api/automation/proposals")]
     [InlineData("GET", "/api/notifications")]
-    public async Task AuthenticatedEndpoints_NeverReturn500WithStackTrace(string method, string path)
+    public async Task AuthenticatedEndpoints_NeverReturn500(string method, string path)
     {
         await EnsureAuthenticatedAsync();
 
@@ -249,13 +246,8 @@ public class No500sMetaTest : IClassFixture<TestWebApplicationFactory>
                 new StringContent("{}", Encoding.UTF8, "application/json"));
         }
 
-        if ((int)response.StatusCode >= 500)
-        {
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().NotContain("StackTrace",
-                $"{method} {path} returned 500 with stack trace exposed");
-            body.Should().NotContain("at Taskdeck.",
-                $"{method} {path} returned 500 with internal exception details exposed");
-        }
+        // Fail the test when any 500 is returned -- this is the core "no 500s" assertion.
+        ((int)response.StatusCode).Should().BeLessThan(500,
+            $"{method} {path} returned {(int)response.StatusCode}");
     }
 }
