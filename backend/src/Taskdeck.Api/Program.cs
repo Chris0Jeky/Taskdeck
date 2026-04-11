@@ -101,7 +101,13 @@ using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
 
 // Add services to the container
 builder.Services.AddControllers();
-builder.Services.AddSignalR();
+
+// SignalR with optional Redis backplane (see ADR-0023)
+using (var signalRLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+{
+    var signalRLogger = signalRLoggerFactory.CreateLogger("SignalR");
+    builder.Services.AddTaskdeckSignalR(builder.Configuration, signalRLogger);
+}
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {

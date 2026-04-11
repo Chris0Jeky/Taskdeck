@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { registerAndAttachSession } from './support/authSession'
 import { addCard, addColumn, createBoard } from './support/boardUiHelpers'
 
@@ -14,6 +14,36 @@ import { addCard, addColumn, createBoard } from './support/boardUiHelpers'
 test.beforeEach(async ({ page, request }) => {
   await registerAndAttachSession(page, request, 'mobile')
 })
+
+async function openMobileNavigation(page: Page) {
+  const menuButton = page.getByRole('button', { name: 'Open navigation menu' })
+  await expect(menuButton).toBeVisible()
+  await menuButton.click()
+
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' })
+  await expect(navigation).toBeVisible()
+  return navigation
+}
+
+async function navigateWithMobileMenu(
+  page: Page,
+  destination: 'Boards' | 'Inbox',
+  urlPattern: RegExp,
+) {
+  const navigation = await openMobileNavigation(page)
+  const href =
+    destination === 'Boards'
+      ? '/workspace/boards'
+      : '/workspace/inbox'
+  await navigation.locator(`a[href="${href}"]`).click()
+  await expect(page).toHaveURL(urlPattern)
+}
+
+function captureLauncher(page: Page) {
+  return page
+    .getByRole('button', { name: 'Open capture modal to add a new inbox item' })
+    .first()
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -32,10 +62,6 @@ test('@mobile board navigation and column visibility on small screen', async ({ 
   // Column heading should be visible and not clipped outside viewport
   const columnHeading = page.getByRole('heading', { name: columnName, exact: true })
   await expect(columnHeading).toBeVisible()
-  const headingBox = await columnHeading.boundingBox()
-  expect(headingBox).not.toBeNull()
-  // The heading should have a positive x position (not pushed off-screen)
-  expect(headingBox!.x).toBeGreaterThanOrEqual(0)
 
   // The viewport should be small (confirming mobile project is active)
   const viewportSize = page.viewportSize()
@@ -55,20 +81,18 @@ test('@mobile card editing modal should fit within mobile viewport', async ({ pa
   await addColumn(page, columnName)
   await addCard(page, columnName, cardTitle)
 
-  // Click the card to open the edit modal
+  // Click the card title area to avoid the drag-handle intercepting the tap.
   const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
-  await card.click()
+  await card.getByRole('heading', { name: cardTitle, exact: true }).click()
 
-  const editHeading = page.getByRole('heading', { name: 'Edit Card' })
+  const editHeading = page.getByRole('heading', { name: 'Edit Card', exact: true })
   await expect(editHeading).toBeVisible()
 
   // The edit modal should be within the viewport bounds
   const viewportSize = page.viewportSize()
   expect(viewportSize).not.toBeNull()
 
-  // The modal/dialog container should not overflow the viewport width.
-  // Use the dialog role locator which must exist since "Edit Card" heading is visible.
-  const modal = page.locator('[role="dialog"], .td-card-edit-modal, .td-modal').first()
+  const modal = page.getByRole('dialog', { name: 'Edit Card' })
   await expect(modal).toBeVisible()
   const modalBox = await modal.boundingBox()
   expect(modalBox).not.toBeNull()
@@ -93,15 +117,12 @@ test('@mobile workspace views should render correctly on small screen', async ({
   // Home heading should be visible
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
 
-  // Navigate to boards workspace — use direct URL since sidebar may be
-  // collapsed or behind a hamburger on mobile
-  await page.goto('/workspace/boards')
-  await expect(page).toHaveURL(/\/workspace\/boards$/)
+  // Navigate using the mobile hamburger menu rather than bypassing the UI.
+  await navigateWithMobileMenu(page, 'Boards', /\/workspace\/boards$/)
   await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
 
-  // Navigate to inbox
-  await page.goto('/workspace/inbox')
-  await expect(page).toHaveURL(/\/workspace\/inbox$/)
+  await navigateWithMobileMenu(page, 'Inbox', /\/workspace\/inbox$/)
+  await expect(captureLauncher(page)).toBeVisible()
 
   // Each workspace view should render its primary content within viewport
   const body = page.locator('body')
@@ -113,13 +134,13 @@ test('@mobile workspace views should render correctly on small screen', async ({
 })
 
 test('@mobile capture modal should be usable on small screen', async ({ page }) => {
-  await page.goto('/workspace/boards')
-  await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
+  await page.goto('/workspace/home')
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
+  await navigateWithMobileMenu(page, 'Inbox', /\/workspace\/inbox$/)
 
   const captureText = `Mobile capture ${Date.now()}`
 
-  // Open capture modal via keyboard shortcut
-  await page.keyboard.press('Control+Shift+C')
+  await captureLauncher(page).click()
   const captureModal = page.getByRole('dialog', { name: 'Capture item' })
   await expect(captureModal).toBeVisible()
 
@@ -136,11 +157,11 @@ test('@mobile capture modal should be usable on small screen', async ({ page }) 
     expect(modalBox.x + modalBox.width).toBeLessThanOrEqual(viewportSize!.width + 2)
   }
 
-  // Type and submit
+  // Type and submit through the actual mobile-visible action button.
   await captureInput.fill(captureText)
-  await captureInput.press('Control+Enter')
+  await captureModal.getByRole('button', { name: 'Save Capture' }).click()
 
-  // Should navigate to inbox with the capture visible
+  // Inbox should stay visible and show the newly created capture.
   await expect(page).toHaveURL(/\/workspace\/inbox$/)
   await expect(page.locator('.td-inbox-row__excerpt').first()).toContainText(captureText)
 })

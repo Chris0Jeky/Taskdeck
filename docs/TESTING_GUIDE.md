@@ -10,26 +10,41 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-08)
+## Current Verified Totals (2026-04-09)
 
-- Backend: ~3460+ passing (verified across individual PR test runs from `#787`–`#793` wave)
-  - Domain: ~700+ (77 new FsCheck adversarial entity tests + 11 ApiKey entity tests)
-  - Application: ~1680+ (29 JSON fuzz round-trip + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification)
-  - API integration: ~960+ (8 metrics export integration + 80 adversarial input API + 20 API key integration + 13 concurrency stress)
+- Backend: ~3600+ passing (verified across individual PR test runs from `#806`–`#813` wave; PR #813 reported 3,805 tests)
+  - Domain: ~740+ (77 FsCheck adversarial entity tests + 11 ApiKey entity tests + 15 OAuthAuthCode tests + 8 MfaCredential tests + NoteImport domain)
+  - Application: ~1780+ (29 JSON fuzz round-trip + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
+  - API integration: ~1060+ (8 metrics export + 80 adversarial input + 20 API key + 13 concurrency stress + 9 telemetry config/integration + 4 telemetry API + 13 OIDC/auth integration + 9 OAuth token lifecycle)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: ~1891 passing (~140+ test files; +7 inbox primitive + 16 fast-check input sanitization + 9 store resilience property tests)
+- Frontend unit: ~1984+ passing (~165+ test files; +42 agent views/store + 6 noteImportApi + 20+ CalendarView + 25 telemetry store/api + ProfileSettingsView updates)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys): default required lane passing
-- Combined automated total: ~5370+ passing (backend ~3460+ + frontend unit ~1891 + E2E)
+- Combined automated total: ~5600+ passing (backend ~3600+ + frontend unit ~1984+ + E2E)
 
 Verification note:
-- backend totals are based on individual PR test runs from the 2026-04-08 wave (`#787`–`#793`); PR #791 reported 3,460 tests, PR #792 reported 3,450 tests; the highest reliable count is ~3,460+ across the wave; each PR verified green individually
-- frontend unit totals: **~1891 passing** as of 2026-04-08 (up from ~1734 pre-wave); 2026-04-08 wave added: 7 inbox primitive tests (`#249`/`#788`), 16 fast-check input sanitization tests + 9 store resilience property tests (`#717`/`#789`); verified via `npx vitest --run` after adversarial review fixes
+- backend totals are based on individual PR test runs from the 2026-04-09 wave (`#806`–`#813`); PR #813 reported 3,805 tests, PR #811 reported 3,800 tests; the highest reliable count is ~3,600+ across the wave; each PR verified green individually; ~138+ new backend tests from the 8-PR wave
+- frontend unit totals: **~1984+ passing** as of 2026-04-09 (up from ~1891 pre-wave); 2026-04-09 wave added: 42 agent views/store tests (`#338`/`#808`), 6 noteImportApi tests (`#334`/`#809`), 20+ CalendarView tests (`#94`/`#810`), 25 telemetry store/api tests (`#549`/`#811`), plus ProfileSettingsView and LoginView updates for MFA/OIDC/linking (`#82`/`#813`, `#676`/`#812`); verified via `npx vitest --run` after adversarial review fixes
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
 - significant test growth in 2026-04-04 wave 4 (PRs `#765`–`#770`, `#776`, 7 issues): OAuth token lifecycle integration (19 backend tests, `#723`/`#769`), tool argument replay (6 backend tests, `#673`/`#770`), streaming chat token usage (4 backend tests, `#763`/`#768`), DataExport exception logging (3 backend tests, `#759`/`#766`), Agent API 500 fix (2 un-skipped tests, `#758`/`#776`), frontend HTTP interceptor + router auth guard tests (33 new tests, `#725`/`#765`); all 7 PRs received two rounds of adversarial review with review-fix commits addressing CI failures, performance bugs, resource leaks, misleading test names, and weak assertions
 - significant test growth in 2026-04-04 wave 5 (PRs `#771`–`#779`, 8 issues, ~258 new tests): tool-calling Phase 3 refinements (17 backend tests, `#651`/`#773`), export streaming (15 backend tests, `#670`/`#774`), resilience/degraded-mode (34 tests: 18 backend + 16 frontend, `#720`/`#778`), frontend view vitest coverage (83 tests across 6 views, `#716`/`#775`), Pinia store integration (91 tests across 6 stores, `#711`/`#777`), E2E error state expansion (25 Playwright scenarios, `#712`/`#772`), accessibility lint (105 warnings → 0, `#762`/`#779`), vendored dependency cleanup (`#761`/`#771`); all 8 PRs received two rounds of adversarial review
+
+## Feature/Security Expansion Wave Testing (2026-04-09, PRs `#806`–`#813`)
+
+The feature and security expansion wave (PRs `#806`–`#813`) added ~231+ new tests across 8 PRs. Each PR received two rounds of adversarial review (self + independent cold review); the independent round caught 9 CRITICAL and 11 HIGH issues — all fixed.
+
+New test categories:
+- **Calendar endpoint**: 8 backend tests covering date range validation, board-access scoping, overdue/blocked status, empty results
+- **Note import**: 38 backend unit tests for markdown section splitting, web clip intake, validation, provenance; 6 frontend API client tests
+- **Agent surfaces**: 42 frontend tests across agentStore (15), AgentsView (8), AgentRunsView (8), AgentRunDetailView (11)
+- **Telemetry/observability**: 25 backend unit tests (opt-in enforcement, event validation, property allowlist) + 13 backend integration tests (DI, endpoints) + 25 frontend tests (consent, store buffering, API)
+- **OAuth PKCE/account linking**: 24+ backend tests covering DB-backed auth codes, atomic consumption, PKCE, account linking conflicts
+- **SSO/OIDC/MFA**: 30+ backend tests covering TOTP validation, email collision, cross-provider isolation, username deduplication, MFA policy, recovery codes
+- **Staged deployment**: smoke test script with 9 automated checks (health, API, auth, frontend, SignalR, static assets, security headers, container restart)
+
+Storybook (non-test tooling): `npm run storybook` runs 17 Td* primitive stories; `npm run storybook:build` produces static output.
 
 ## Platform Expansion Testing Capabilities (2026-04-09)
 
@@ -227,6 +242,35 @@ Security finding during audit: `#722` (SEC-20) — `ChangePassword` endpoint doe
 - ~~**Webhook HMAC signature verification**~~: **RESOLVED** — 11 tests delivered (`#726`/`#750`) covering header format, HMAC round-trip, wrong-key rejection, secret rotation, timing-safe comparison
 - ~~**Webhook delivery reliability and SSRF**~~: **RESOLVED** — 78 webhook tests across 9 files delivered (`#710`/`#756`) covering retry/backoff, dead-letter, SSRF boundary conditions (private IPv4/IPv6 ranges via `OutboundWebhookEndpointGuardTests`)
 
+## Mutation Testing Pilot (TST-05, `#90`)
+
+Mutation testing is available as a non-blocking quality signal for detecting weak assertions and test gaps.
+
+### Scope
+
+- **Backend**: Stryker.NET targeting `Taskdeck.Domain` (entity state machines, validation, business rules)
+- **Frontend**: Stryker JS targeting `captureStore.ts`, `boardStore.ts`, and `board/*.ts` submodules (core data flow stores)
+
+### Running locally
+
+```bash
+# Backend (requires dotnet-stryker global tool)
+cd backend
+dotnet stryker --config-file stryker-config.json
+
+# Frontend
+cd frontend/taskdeck-web
+npm run mutation:test
+```
+
+### CI
+
+Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. Reports uploaded as artifacts.
+
+### Policy and triage
+
+See `docs/testing/MUTATION_TESTING_POLICY.md` for threshold strategy, report interpretation, and follow-up process.
+
 ### Relationship to Existing Test Issues
 
 - Extends `#254` (testing harness improvement wave, delivered)
@@ -417,6 +461,26 @@ Note:
 - If `Debug` runs fail with file-lock errors, stop running `Taskdeck.Api` processes or use `-c Release`.
 - If backend tests unexpectedly bind to a live LLM provider in local Development, force deterministic mock mode before running the suite:
   - PowerShell: `$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/Taskdeck.sln -c Release -m:1`
+
+## Container Integration Tests (Testcontainers)
+
+Run container-backed integration tests against ephemeral PostgreSQL (requires Docker):
+
+```bash
+dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release
+```
+
+Run a specific test class:
+
+```bash
+dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release --filter "FullyQualifiedName~BoardCrudIntegrationTests"
+```
+
+Note:
+- Docker must be running. Verify with `docker info`.
+- First run downloads the `postgres:16-alpine` image (~80MB); subsequent runs use the cached image.
+- Tests are parallel-safe: each test class gets its own isolated database within a shared PostgreSQL container.
+- See `docs/testing/TESTCONTAINERS_GUIDE.md` for full setup and authoring guide.
 
 ## Frontend Unit + Build
 

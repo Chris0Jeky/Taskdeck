@@ -75,18 +75,19 @@ public class AutomationProposalServiceEdgeCaseTests
     }
 
     [Fact]
-    public async Task ApproveProposalAsync_ShouldReturnConflict_WhenConcurrentDecisionWins()
+    public async Task ApproveProposalAsync_ShouldReturnConflict_WhenSaveChangesDetectsConcurrency()
     {
         var proposal = CreatePendingProposal();
+        var deciderId = Guid.NewGuid();
 
         _proposalRepoMock
             .Setup(r => r.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
         _unitOfWorkMock
             .Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new DomainException(ErrorCodes.Conflict, "The requested change conflicted with a concurrent update."));
+            .ThrowsAsync(new DomainException(ErrorCodes.Conflict, "Record was updated by another session."));
 
-        var result = await _service.ApproveProposalAsync(proposal.Id, Guid.NewGuid());
+        var result = await _service.ApproveProposalAsync(proposal.Id, deciderId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Conflict);
