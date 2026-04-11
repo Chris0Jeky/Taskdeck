@@ -79,11 +79,13 @@ describe('ActivityResults', () => {
       props: { emptyStateTitle: 'No Activity', emptyStateBody: 'Nothing.' },
     })
     const reviewBtn = wrapper.findAll('button').find((b) => b.text() === 'Open Review')
-    await reviewBtn!.trigger('click')
+    expect(reviewBtn).toBeTruthy()
+    await reviewBtn?.trigger('click')
     expect(wrapper.emitted('navigate')?.[0]).toEqual(['/workspace/review'])
 
     const boardsBtn = wrapper.findAll('button').find((b) => b.text() === 'Open Boards')
-    await boardsBtn!.trigger('click')
+    expect(boardsBtn).toBeTruthy()
+    await boardsBtn?.trigger('click')
     expect(wrapper.emitted('navigate')?.[1]).toEqual(['/workspace/boards'])
   })
 
