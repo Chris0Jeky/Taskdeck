@@ -298,7 +298,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
       expect(store.loading).toBe(false)
     })
 
-    it('retains original column and position when move API rejects with 409 (snap-back)', async () => {
+    it('retains original column and position when move API rejects with 409', async () => {
       const store = useBoardStore()
       const card = makeCardPayload({ id: 'card-snap', columnId: 'col-1', position: 0 })
       store.currentBoardCards = [card]
@@ -307,7 +307,8 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
 
       await expect(store.moveCard('board-1', 'card-snap', 'col-2', 3)).rejects.toBeDefined()
 
-      // The card should still be in the store (not removed) and in the original column
+      // moveCard calls the API before updating local state (no optimistic mutation),
+      // so on rejection the card is never modified — verify it remains intact
       const storedCard = store.currentBoardCards.find(c => c.id === 'card-snap')
       expect(storedCard).toBeDefined()
       expect(storedCard?.columnId).toBe('col-1')
