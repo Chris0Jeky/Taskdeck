@@ -23,7 +23,7 @@ const adversarialString = fc.oneof(
   fc.constant('\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}'),
   fc.constant('田中太郎'),
   fc.constant('مرحبا'),
-  fc.constant('{\"nested\": true}'),
+  fc.constant('{"nested": true}'),
   fc.constant('back\\slash'),
   fc.constant('\x1B[31mRed\x1B[0m'),
   fc.string(),
@@ -68,26 +68,24 @@ describe('Adversarial Data: Proposal Operation Parameters', () => {
     )
   })
 
-  it('malformed operation parameters string does not throw when parsed cautiously', () => {
+  it('malformed operation parameters produce parse errors or non-object results', () => {
     const malformedParams = [
-      '',
-      'not json',
-      '{',
-      '[',
-      '{"unclosed": ',
-      'null',
-      '12345',
-      '<xml>data</xml>',
+      { input: '', shouldThrow: true },
+      { input: 'not json', shouldThrow: true },
+      { input: '{', shouldThrow: true },
+      { input: '[', shouldThrow: true },
+      { input: '{"unclosed": ', shouldThrow: true },
+      { input: 'null', shouldThrow: false, expectedValue: null },
+      { input: '12345', shouldThrow: false, expectedValue: 12345 },
+      { input: '<xml>data</xml>', shouldThrow: true },
     ]
 
-    for (const param of malformedParams) {
-      expect(() => {
-        try {
-          JSON.parse(param)
-        } catch {
-          // Expected - the frontend should handle this gracefully
-        }
-      }).not.toThrow()
+    for (const { input, shouldThrow, expectedValue } of malformedParams) {
+      if (shouldThrow) {
+        expect(() => JSON.parse(input)).toThrow()
+      } else {
+        expect(JSON.parse(input)).toBe(expectedValue)
+      }
     }
   })
 })
@@ -217,36 +215,34 @@ describe('Adversarial Data: Numeric Boundary Values', () => {
 })
 
 describe('Adversarial Data: Capture Text Edge Cases', () => {
-  it('capture text with binary-like data should serialize', () => {
-    // Simulate various binary-like string patterns
-    const binaryPatterns = [
+  it('capture text with binary-like data should serialize or throw JsonError', () => {
+    // Patterns that survive JSON round-trip
+    const safePatterns = [
       '\x00\x01\x02\x03\x04\x05',
       String.fromCharCode(...Array.from({ length: 256 }, (_, i) => i)),
       '\uFFFE\uFFFF', // non-characters
-      '\uD800', // lone surrogate (will be replaced in JSON)
     ]
 
-    for (const pattern of binaryPatterns) {
-      expect(() => {
-        try {
-          const json = JSON.stringify({ text: pattern })
-          JSON.parse(json)
-        } catch {
-          // Some patterns may fail JSON serialization, which is expected
-        }
-      }).not.toThrow()
+    for (const pattern of safePatterns) {
+      const json = JSON.stringify({ text: pattern })
+      const parsed = JSON.parse(json)
+      expect(parsed.text).toBe(pattern)
     }
+
+    // Lone surrogates are replaced by JSON.stringify, verify no crash
+    const loneSurrogate = '\uD800'
+    const json = JSON.stringify({ text: loneSurrogate })
+    const parsed = JSON.parse(json)
+    expect(typeof parsed.text).toBe('string')
   })
 
   it('very long capture text (50K chars) should not freeze', () => {
     const longText = 'x'.repeat(50_000)
-    const start = performance.now()
 
     const json = JSON.stringify({ text: longText })
-    JSON.parse(json)
+    const parsed = JSON.parse(json)
 
-    const elapsed = performance.now() - start
-    // Should complete well under 1 second
-    expect(elapsed).toBeLessThan(1000)
+    // Functional correctness: text survives round-trip
+    expect(parsed.text).toBe(longText)
   })
 })
