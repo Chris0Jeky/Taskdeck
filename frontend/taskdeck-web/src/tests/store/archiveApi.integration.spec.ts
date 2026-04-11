@@ -64,8 +64,7 @@ describe('archiveApi — integration (mocked HTTP)', () => {
 
       await archiveApi.getItems({ entityType: 'card' })
 
-      const calledUrl = vi.mocked(http.get).mock.calls[0][0] as string
-      expect(calledUrl).toContain('entityType=card')
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('entityType=card'))
     })
 
     it('appends boardId filter to the query string', async () => {
@@ -73,8 +72,7 @@ describe('archiveApi — integration (mocked HTTP)', () => {
 
       await archiveApi.getItems({ boardId: 'board-xyz' })
 
-      const calledUrl = vi.mocked(http.get).mock.calls[0][0] as string
-      expect(calledUrl).toContain('boardId=board-xyz')
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('boardId=board-xyz'))
     })
 
     it('appends status filter to the query string', async () => {
@@ -82,8 +80,7 @@ describe('archiveApi — integration (mocked HTTP)', () => {
 
       await archiveApi.getItems({ status: 'Available' })
 
-      const calledUrl = vi.mocked(http.get).mock.calls[0][0] as string
-      expect(calledUrl).toContain('status=Available')
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('status=Available'))
     })
 
     it('combines multiple filters in the query string', async () => {
@@ -91,10 +88,9 @@ describe('archiveApi — integration (mocked HTTP)', () => {
 
       await archiveApi.getItems({ entityType: 'card', boardId: 'board-1', limit: 50 })
 
-      const calledUrl = vi.mocked(http.get).mock.calls[0][0] as string
-      expect(calledUrl).toContain('entityType=card')
-      expect(calledUrl).toContain('boardId=board-1')
-      expect(calledUrl).toContain('limit=50')
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('entityType=card'))
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('boardId=board-1'))
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('limit=50'))
     })
 
     it('propagates errors from the HTTP layer', async () => {
@@ -141,9 +137,14 @@ describe('archiveApi — integration (mocked HTTP)', () => {
         conflictStrategy: 0,
       })
 
-      const calledUrl = vi.mocked(http.post).mock.calls[0][0] as string
-      expect(calledUrl).toContain('card%2Ftype')
-      expect(calledUrl).toContain('id%2Bspecial')
+      expect(http.post).toHaveBeenCalledWith(
+        expect.stringContaining('card%2Ftype'),
+        expect.any(Object),
+      )
+      expect(http.post).toHaveBeenCalledWith(
+        expect.stringContaining('id%2Bspecial'),
+        expect.any(Object),
+      )
     })
 
     it('returns failure result when the backend rejects the restore', async () => {
