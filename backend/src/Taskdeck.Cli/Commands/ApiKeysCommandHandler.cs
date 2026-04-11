@@ -130,16 +130,28 @@ internal sealed class ApiKeysCommandHandler
                 return ExitCodes.Success;
             }
 
-            // Revoke by name: find the first active key with this name
+            // Revoke by name: find active keys with this name
             var keys = await _apiKeyService.ListKeysAsync(userId);
-            var target = keys.FirstOrDefault(k => k.Name == name && k.IsActive);
-            if (target is null)
+            var matches = keys.Where(k => k.Name == name && k.IsActive).ToList();
+            if (matches.Count == 0)
             {
                 return ConsoleOutput.PrintFailure(
                     ErrorCodes.NotFound,
                     $"No active API key found with name '{name}'.");
             }
 
+            if (matches.Count > 1)
+            {
+                // Ambiguous: multiple active keys share this name — require --id.
+                Console.Error.WriteLine($"Multiple active keys found with name '{name}'. Use --id to specify which key to revoke:");
+                foreach (var match in matches)
+                {
+                    Console.Error.WriteLine($"  --id {match.Id}  (prefix: {match.KeyPrefix_}, created: {match.CreatedAt:u})");
+                }
+                return ExitCodes.Failure;
+            }
+
+            var target = matches[0];
             await _apiKeyService.RevokeKeyAsync(target.Id, userId);
             ConsoleOutput.WriteJson(new { revoked = target.Id, name = target.Name, status = "ok" });
             return ExitCodes.Success;
