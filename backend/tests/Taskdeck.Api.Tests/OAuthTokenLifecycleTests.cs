@@ -158,17 +158,24 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         dict[expiredCode2] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(-5));
         dict[validCode] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(60));
 
-        // Trigger cleanup by calling CleanupExpiredCodes via reflection
-        var cleanupMethod = typeof(AuthController).GetMethod("CleanupExpiredCodes",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        cleanupMethod!.Invoke(null, null);
+        try
+        {
+            // Trigger cleanup by calling CleanupExpiredCodes via reflection
+            var cleanupMethod = typeof(AuthController).GetMethod("CleanupExpiredCodes",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            cleanupMethod!.Invoke(null, null);
 
-        dict.ContainsKey(expiredCode1).Should().BeFalse("expired code should be cleaned up");
-        dict.ContainsKey(expiredCode2).Should().BeFalse("expired code should be cleaned up");
-        dict.ContainsKey(validCode).Should().BeTrue("valid code should survive cleanup");
-
-        // Clean up the valid code to avoid cross-test interference
-        dict.TryRemove(validCode, out _);
+            dict.ContainsKey(expiredCode1).Should().BeFalse("expired code should be cleaned up");
+            dict.ContainsKey(expiredCode2).Should().BeFalse("expired code should be cleaned up");
+            dict.ContainsKey(validCode).Should().BeTrue("valid code should survive cleanup");
+        }
+        finally
+        {
+            // Clean up injected codes to avoid cross-test interference
+            dict.TryRemove(expiredCode1, out _);
+            dict.TryRemove(expiredCode2, out _);
+            dict.TryRemove(validCode, out _);
+        }
     }
 
     [Fact]
@@ -183,11 +190,16 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
 
         dict[code] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(-60));
 
-        // Without an exchange attempt, the expired code remains in the dictionary
-        dict.ContainsKey(code).Should().BeTrue("expired codes accumulate until cleanup is triggered");
-
-        // Clean up
-        dict.TryRemove(code, out _);
+        try
+        {
+            // Without an exchange attempt, the expired code remains in the dictionary
+            dict.ContainsKey(code).Should().BeTrue("expired codes accumulate until cleanup is triggered");
+        }
+        finally
+        {
+            // Clean up to avoid cross-test interference
+            dict.TryRemove(code, out _);
+        }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -554,28 +566,35 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         // This test documents and verifies the process-scoped nature of the auth code store.
         // A code injected into the static dictionary is visible within the same process but
         // would NOT be visible on a different instance — see #676.
+
+        // Verify the dictionary is specifically a static field on AuthController.
+        // GetField with BindingFlags.Static only returns static fields, so a non-null
+        // result already proves the field is static (no separate IsStatic check needed).
+        var field = typeof(AuthController).GetField("_authCodes",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        field.Should().NotBeNull("auth code store should be a static field on AuthController");
+
         var code = $"scaling-doc-{Guid.NewGuid():N}";
         var dict = GetAuthCodesDict();
         var dummyResult = CreateDummyAuthResult();
 
         dict[code] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(60));
 
-        // The code is visible in the same process (expected for single-instance deployment)
-        dict.ContainsKey(code).Should().BeTrue(
-            "codes are stored in a static ConcurrentDictionary, visible within the same process");
+        try
+        {
+            // The code is visible in the same process (expected for single-instance deployment)
+            dict.ContainsKey(code).Should().BeTrue(
+                "codes are stored in a static ConcurrentDictionary, visible within the same process");
 
-        // In a multi-instance deployment, this code would NOT be visible on another pod.
-        // The ConcurrentDictionary is process-local, not distributed.
-        // See #676 for the tracking issue to migrate to a distributed store (Redis/DB).
-
-        // Verify the dictionary is specifically a static field on AuthController
-        var field = typeof(AuthController).GetField("_authCodes",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        field.Should().NotBeNull("auth code store should be a static field on AuthController");
-        field!.IsStatic.Should().BeTrue("auth code store must be static (process-scoped)");
-
-        // Clean up to avoid cross-test interference
-        dict.TryRemove(code, out _);
+            // In a multi-instance deployment, this code would NOT be visible on another pod.
+            // The ConcurrentDictionary is process-local, not distributed.
+            // See #676 for the tracking issue to migrate to a distributed store (Redis/DB).
+        }
+        finally
+        {
+            // Clean up to avoid cross-test interference
+            dict.TryRemove(code, out _);
+        }
     }
 
     // ─────────────────────────────────────────────────────────
