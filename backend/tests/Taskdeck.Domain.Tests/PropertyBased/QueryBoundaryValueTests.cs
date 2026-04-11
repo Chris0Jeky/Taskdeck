@@ -132,11 +132,14 @@ public class QueryBoundaryValueTests
     }
 
     [Fact]
-    public void Card_DueDate_AcceptsNull()
+    public void Card_DueDate_NullDoesNotOverwrite()
     {
+        // Passing null for dueDate is a no-op (preserves existing value)
         var card = new Card(Guid.NewGuid(), Guid.NewGuid(), "Title");
-        card.Update(dueDate: null);
-        card.DueDate.Should().BeNull();
+        var existingDue = DateTimeOffset.UtcNow.AddDays(7);
+        card.Update(dueDate: existingDue);
+        card.Update(dueDate: null); // should not clear the due date
+        card.DueDate.Should().Be(existingDue);
     }
 
     // ─────────────────────── String: empty vs null vs whitespace vs max-length ───────────────────────
