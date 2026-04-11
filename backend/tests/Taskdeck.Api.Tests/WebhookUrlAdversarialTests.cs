@@ -119,8 +119,9 @@ public class WebhookUrlAdversarialTests : IClassFixture<TestWebApplicationFactor
             $"/api/boards/{boardId}/webhooks",
             new CreateOutboundWebhookSubscriptionDto(endpointUrl));
 
-        // Valid HTTPS URLs should either succeed or be accepted
-        ((int)response.StatusCode).Should().BeLessThan(500);
+        // Valid HTTPS URLs should be accepted (201 Created)
+        response.StatusCode.Should().Be(HttpStatusCode.Created,
+            $"Valid webhook URL '{endpointUrl}' should be accepted");
     }
 
     // ─────────────────────── Event filter adversarial ───────────────────────
