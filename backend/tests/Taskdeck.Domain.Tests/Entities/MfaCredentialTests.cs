@@ -81,6 +81,18 @@ public class MfaCredentialTests
     }
 
     [Fact]
+    public void SetRecoveryCodes_ShouldClearCodes_WhenNull()
+    {
+        var credential = new MfaCredential(Guid.NewGuid(), "JBSWY3DPEHPK3PXP");
+        credential.SetRecoveryCodes("hash1,hash2");
+
+        credential.SetRecoveryCodes(null);
+
+        credential.RecoveryCodes.Should().BeNull(
+            "null should clear recovery codes");
+    }
+
+    [Fact]
     public void Revoke_ShouldSetIsConfirmedToFalse()
     {
         var credential = new MfaCredential(Guid.NewGuid(), "JBSWY3DPEHPK3PXP");

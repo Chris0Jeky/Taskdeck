@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
+using Taskdeck.Infrastructure.Services;
 
 namespace Taskdeck.Infrastructure;
 
@@ -49,6 +51,62 @@ public static class DependencyInjection
         services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
+        // Cache service registration
+        services.AddCacheService(configuration);
+
         return services;
+    }
+
+    private static void AddCacheService(this IServiceCollection services, IConfiguration configuration)
+    {
+        var cacheSettings = configuration.GetSection("Cache").Get<CacheSettings>() ?? new CacheSettings();
+
+        switch (cacheSettings.Provider.ToLowerInvariant())
+        {
+            case "redis":
+                if (string.IsNullOrWhiteSpace(cacheSettings.RedisConnectionString))
+                {
+                    // Fallback to in-memory if Redis is configured but no connection string
+                    services.AddSingleton<ICacheService>(sp =>
+                        new InMemoryCacheService(
+                            sp.GetRequiredService<ILogger<InMemoryCacheService>>(),
+                            cacheSettings.KeyPrefix));
+                }
+                else
+                {
+                    services.AddSingleton<ICacheService>(sp =>
+                        new RedisCacheService(
+                            cacheSettings.RedisConnectionString,
+                            sp.GetRequiredService<ILogger<RedisCacheService>>(),
+                            cacheSettings.KeyPrefix));
+                }
+                break;
+
+            case "none":
+                services.AddSingleton<ICacheService>(NoOpCacheService.Instance);
+                break;
+
+            case "inmemory":
+                services.AddSingleton<ICacheService>(sp =>
+                    new InMemoryCacheService(
+                        sp.GetRequiredService<ILogger<InMemoryCacheService>>(),
+                        cacheSettings.KeyPrefix));
+                break;
+
+            default:
+                // Log a warning so operators notice configuration typos (e.g., "Rediss" or "inmem")
+                // instead of silently falling back to InMemory.
+                services.AddSingleton<ICacheService>(sp =>
+                {
+                    var logger = sp.GetRequiredService<ILogger<InMemoryCacheService>>();
+                    logger.LogWarning(
+                        "Unknown cache provider '{Provider}', falling back to InMemory. Valid values: Redis, InMemory, None",
+                        cacheSettings.Provider);
+                    return new InMemoryCacheService(logger, cacheSettings.KeyPrefix);
+                });
+                break;
+        }
+
+        services.AddSingleton(cacheSettings);
     }
 }

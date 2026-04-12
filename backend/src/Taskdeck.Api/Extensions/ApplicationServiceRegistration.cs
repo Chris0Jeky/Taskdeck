@@ -12,7 +12,14 @@ public static class ApplicationServiceRegistration
 {
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
-        services.AddScoped<BoardService>();
+        services.AddScoped<BoardService>(sp =>
+            new BoardService(
+                sp.GetRequiredService<IUnitOfWork>(),
+                sp.GetService<IAuthorizationService>(),
+                sp.GetService<IBoardRealtimeNotifier>(),
+                sp.GetService<IHistoryService>(),
+                sp.GetService<ICacheService>(),
+                sp.GetService<CacheSettings>()));
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
         services.AddScoped<CardCommentService>();
