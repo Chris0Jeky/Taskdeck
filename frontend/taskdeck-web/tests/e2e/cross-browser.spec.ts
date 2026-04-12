@@ -73,11 +73,11 @@ test('@cross-browser card edit modal open and close', async ({ page }) => {
   // Click the card title to open edit modal (avoid drag-handle intercepting click)
   const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
   await card.getByRole('heading', { name: cardTitle, exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Edit Card', exact: true })).toBeVisible()
 
   // Close with Escape
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('heading', { name: 'Edit Card' })).not.toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Edit Card', exact: true })).not.toBeVisible()
 
   // Card should still be visible after closing modal
   await expect(
