@@ -635,10 +635,15 @@ Delivered in the latest cycle:
     - `SignalRRegistration` extension replaces bare `AddSignalR()` with configurable builder
     - operational runbook at `docs/platform/SIGNALR_SCALEOUT_RUNBOOK.md` covers Docker Compose multi-instance, load balancer WebSocket config, failure scenarios, and rollback
     - 14 new tests: configuration detection, logging, health check states, readiness endpoint integration, hub negotiate preservation
+132. SQLite-to-PostgreSQL production migration strategy (`#84`, 2026-04-09):
+    - ADR-0023: recommends PostgreSQL as the production target and documents the alternatives/tradeoffs; runtime provider switching remains follow-up implementation work because `AddInfrastructure()` is still SQLite-only
+    - migration runbook at `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md`: explicit blocker notes for runtime provider wiring and SQLite-only FTS migration SQL, dependency-ordered export/import, full row-count/FK verification scope, rollback procedure, and least-privilege/security guidance
+    - 20-test SQLite-backed provider-compatibility baseline (`DatabaseProviderCompatibilityTests`): CRUD on Board/Card/Proposal, DateTimeOffset fidelity, GUID storage and FK joins, string collation, ordering, pagination, enum storage, aggregates, boolean filtering, batch inserts, Unicode; documents SQLite `DateTimeOffset` ORDER BY limitation
+    - future follow-up: add runtime `UseNpgsql()` support plus a provider-switching test factory before claiming dual-provider execution
 
-132. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
+133. Platform expansion wave delivery (PRs `#796`–`#805`, 2026-04-09):
     - 10 parallel worktree agents delivered platform hardening, testing infrastructure, ops documentation, and PWA readiness with two rounds of adversarial review per PR (22 CRITICAL + 32 HIGH findings caught and resolved)
-    - **PLAT-01** SQLite-to-PostgreSQL migration strategy (`#84`/`#801`): ADR-0023 (PostgreSQL target), migration runbook, 20 provider compatibility tests; review caught phantom table, 5 missing tables, FTS5 crash
+    - **PLAT-01** SQLite-to-PostgreSQL migration strategy (`#84`/`#801`): ADR-0023 (PostgreSQL target with runtime follow-up explicitly called out), migration runbook, 20 SQLite-backed provider compatibility baseline tests; review caught provider-switch overstatement, missing verification tables, and FTS5 crash risk
     - **PLAT-02** Distributed caching (`#85`/`#805`): ADR-0024 (cache-aside), `ICacheService` with Redis/InMemory/NoOp implementations, board list caching, 32 tests; review removed unsafe board-detail cache, fixed permanent Redis disable
     - **PLAT-03** SignalR scale-out (`#105`/`#803`): ADR-0025 (Redis backplane), conditional `AddTaskdeckSignalR`, health check, runbook, 14 tests; review fixed per-probe connection creation, thread-unsafe fields
     - **TST-02** Cross-browser E2E matrix (`#87`/`#800`): Firefox/WebKit/mobile projects, tagging strategy, 9 tests, CI workflows, flaky test policy; review fixed CI gate timeout, extracted shared helpers
