@@ -1,6 +1,4 @@
-using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
-using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
@@ -41,10 +39,10 @@ public class AuthControllerEdgeCaseTests
     // ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void ExchangeCode_ShouldReturn400_WhenCodeIsEmpty()
+    public async Task ExchangeCode_ShouldReturn400_WhenCodeIsEmpty()
     {
-        var controller = CreateAuthController();
-        var result = controller.ExchangeCode(new ExchangeCodeRequest(string.Empty));
+        var (controller, _) = CreateAuthControllerWithUnitOfWork();
+        var result = await controller.ExchangeCode(new ExchangeCodeRequest(string.Empty));
 
         var badRequest = result.Should().BeOfType<BadRequestObjectResult>().Subject;
         var error = badRequest.Value.Should().BeOfType<ApiErrorResponse>().Subject;
@@ -52,10 +50,10 @@ public class AuthControllerEdgeCaseTests
     }
 
     [Fact]
-    public void ExchangeCode_ShouldReturn401_WhenCodeIsInvalid()
+    public async Task ExchangeCode_ShouldReturn401_WhenCodeIsInvalid()
     {
-        var controller = CreateAuthController();
-        var result = controller.ExchangeCode(new ExchangeCodeRequest("nonexistent-code"));
+        var (controller, _) = CreateAuthControllerWithUnitOfWork();
+        var result = await controller.ExchangeCode(new ExchangeCodeRequest("nonexistent-code"));
 
         var unauthorized = result.Should().BeOfType<UnauthorizedObjectResult>().Subject;
         var error = unauthorized.Value.Should().BeOfType<ApiErrorResponse>().Subject;
@@ -63,44 +61,62 @@ public class AuthControllerEdgeCaseTests
     }
 
     [Fact]
-    public void ExchangeCode_ShouldPreventReplay_SecondUseOfSameCode()
+    public async Task ExchangeCode_ShouldPreventReplay_SecondUseOfSameCode()
     {
-        // Insert a code into the static dictionary via reflection
+        var (controller, uow) = CreateAuthControllerWithUnitOfWork();
+
+        // Create a valid auth code
         var code = "test-replay-code";
-        var authResult = new AuthResultDto("fake-token", new UserDto(
-            Guid.NewGuid(), "user", "user@test.com",
-            Domain.Enums.UserRole.Editor, true,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        var userId = Guid.NewGuid();
+        var authCode = new OAuthAuthCode(code, userId, "fake-token", DateTimeOffset.UtcNow.AddSeconds(60));
 
-        InjectAuthCode(code, authResult, DateTimeOffset.UtcNow.AddSeconds(60));
+        var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
+        authCodeRepoMock.Setup(r => r.GetByCodeAsync(code, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(authCode);
 
-        var controller = CreateAuthController();
+        // First TryConsumeAtomicAsync returns true (consumed), second returns false (already consumed)
+        var consumeCallCount = 0;
+        authCodeRepoMock.Setup(r => r.TryConsumeAtomicAsync(code, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                consumeCallCount++;
+                return consumeCallCount == 1;
+            });
+
+        var userRepoMock = new Mock<IUserRepository>();
+        var testUser = new User("testuser", "test@test.com", BCrypt.Net.BCrypt.HashPassword("pass"));
+        SetUserId(testUser, userId);
+        userRepoMock.Setup(r => r.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(testUser);
+
+        uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
+        uow.Setup(u => u.Users).Returns(userRepoMock.Object);
 
         // First exchange — success
-        var first = controller.ExchangeCode(new ExchangeCodeRequest(code));
+        var first = await controller.ExchangeCode(new ExchangeCodeRequest(code));
         first.Should().BeOfType<OkObjectResult>();
 
-        // Second exchange with same code — should fail (code was consumed)
-        var second = controller.ExchangeCode(new ExchangeCodeRequest(code));
+        // Second exchange with same code — should fail (atomic consume returns false)
+        var second = await controller.ExchangeCode(new ExchangeCodeRequest(code));
         second.Should().BeOfType<UnauthorizedObjectResult>();
     }
 
     [Fact]
-    public void ExchangeCode_ShouldReturn401_WhenCodeHasExpired()
+    public async Task ExchangeCode_ShouldReturn401_WhenCodeHasExpired()
     {
+        var (controller, uow) = CreateAuthControllerWithUnitOfWork();
+
+        // Create a code that is already expired by manipulating the entity via reflection
         var code = "test-expired-code";
-        var authResult = new AuthResultDto("fake-token", new UserDto(
-            Guid.NewGuid(), "user", "user@test.com",
-            Domain.Enums.UserRole.Editor, true,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        var authCode = CreateExpiredAuthCode(code);
 
-        // Inject code that expired 10 seconds ago
-        InjectAuthCode(code, authResult, DateTimeOffset.UtcNow.AddSeconds(-10));
+        var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
+        authCodeRepoMock.Setup(r => r.GetByCodeAsync(code, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(authCode);
+        uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
 
-        var controller = CreateAuthController();
-        var result = controller.ExchangeCode(new ExchangeCodeRequest(code));
+        var result = await controller.ExchangeCode(new ExchangeCodeRequest(code));
 
-        // TryRemove succeeds (code existed), then the expiry check fires — returns "Code has expired"
         var unauthorized = result.Should().BeOfType<UnauthorizedObjectResult>().Subject;
         var error = unauthorized.Value.Should().BeOfType<ApiErrorResponse>().Subject;
         error.Message.Should().Contain("expired");
@@ -109,7 +125,7 @@ public class AuthControllerEdgeCaseTests
     [Fact]
     public void GetProviders_ShouldReturnGitHubStatus()
     {
-        var controller = CreateAuthController(gitHubConfigured: true);
+        var (controller, _) = CreateAuthControllerWithUnitOfWork(gitHubConfigured: true);
         var result = controller.GetProviders();
 
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
@@ -123,7 +139,7 @@ public class AuthControllerEdgeCaseTests
     [Fact]
     public void GitHubLogin_ShouldReturn404_WhenNotConfigured()
     {
-        var controller = CreateAuthController(gitHubConfigured: false);
+        var (controller, _) = CreateAuthControllerWithUnitOfWork(gitHubConfigured: false);
         var result = controller.GitHubLogin();
 
         var notFound = result.Should().BeOfType<NotFoundObjectResult>().Subject;
@@ -134,10 +150,8 @@ public class AuthControllerEdgeCaseTests
     [Fact]
     public void GitHubLogin_ShouldReturn400_WhenReturnUrlIsExternal()
     {
-        var controller = CreateAuthController(gitHubConfigured: true);
+        var (controller, _) = CreateAuthControllerWithUnitOfWork(gitHubConfigured: true);
 
-        // The controller calls Url.IsLocalUrl which needs ActionContext setup.
-        // We set up a mock URL helper that rejects external URLs.
         var urlHelper = new Mock<IUrlHelper>();
         urlHelper.Setup(u => u.IsLocalUrl("https://evil.com/steal")).Returns(false);
         controller.Url = urlHelper.Object;
@@ -148,6 +162,65 @@ public class AuthControllerEdgeCaseTests
         var error = badRequest.Value.Should().BeOfType<ApiErrorResponse>().Subject;
         error.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         error.Message.Should().Contain("Invalid return URL");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // GitHub login — flow selection must use server-side auth state
+    // (regression for CodeQL CWE-807: user-controlled bypass)
+    // ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GitHubLogin_UnauthenticatedCaller_StartsNormalLoginFlow()
+    {
+        // Arrange — controller with an unauthenticated user context
+        var (uow, authService) = CreateMockAuthServiceWithUow();
+        var userContext = CreateMockUserContext(authenticated: false);
+        var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
+        authCodeRepoMock.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OAuthAuthCode?)null);
+        uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), userContext.Object, uow.Object);
+
+        var urlHelper = new Mock<IUrlHelper>();
+        urlHelper.Setup(u => u.IsLocalUrl(It.IsAny<string>())).Returns(true);
+        urlHelper.Setup(u => u.Action(It.IsAny<Microsoft.AspNetCore.Mvc.Routing.UrlActionContext>())).Returns("/auth/callback");
+        controller.Url = urlHelper.Object;
+
+        // Act
+        var result = controller.GitHubLogin();
+
+        // Assert — a ChallengeResult is returned (not Unauthorized)
+        // and the link mode items must NOT be present (flow driven by auth state, not user input)
+        var challenge = result.Should().BeOfType<ChallengeResult>().Subject;
+        challenge.Properties!.Items.Should().NotContainKey("mode");
+        challenge.Properties.Items.Should().NotContainKey("link_user_id");
+    }
+
+    [Fact]
+    public void GitHubLogin_AuthenticatedCaller_StartsLinkFlowFromServerState()
+    {
+        // Arrange — controller with an authenticated user context (server-side state)
+        var callerId = Guid.NewGuid();
+        var (uow, authService) = CreateMockAuthServiceWithUow();
+        var userContext = CreateMockUserContext(authenticated: true, userId: callerId);
+        var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
+        authCodeRepoMock.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OAuthAuthCode?)null);
+        uow.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(true), userContext.Object, uow.Object);
+
+        var urlHelper = new Mock<IUrlHelper>();
+        urlHelper.Setup(u => u.IsLocalUrl(It.IsAny<string>())).Returns(true);
+        urlHelper.Setup(u => u.Action(It.IsAny<Microsoft.AspNetCore.Mvc.Routing.UrlActionContext>())).Returns("/auth/callback");
+        controller.Url = urlHelper.Object;
+
+        // Act — no mode query parameter supplied; flow must be determined server-side
+        var result = controller.GitHubLogin();
+
+        // Assert — link mode must be set from the server-side JWT identity, not user input
+        var challenge = result.Should().BeOfType<ChallengeResult>().Subject;
+        challenge.Properties!.Items.Should().ContainKey("mode").WhoseValue.Should().Be("link");
+        challenge.Properties.Items.Should().ContainKey("link_user_id").WhoseValue.Should().Be(callerId.ToString());
     }
 
     // ─────────────────────────────────────────────────────────
@@ -162,7 +235,6 @@ public class AuthControllerEdgeCaseTests
         var userRepoMock = new Mock<IUserRepository>();
         unitOfWorkMock.Setup(u => u.Users).Returns(userRepoMock.Object);
 
-        // User is deleted — returns null
         userRepoMock.Setup(r => r.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((User?)null);
 
@@ -189,10 +261,7 @@ public class AuthControllerEdgeCaseTests
         var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password"));
         SetUserId(user, userId);
 
-        // Token was issued 2 hours ago
         var tokenIssuedAt = DateTimeOffset.UtcNow.AddHours(-2);
-
-        // Invalidation happened 1 hour ago
         user.InvalidateTokens();
 
         var unitOfWorkMock = new Mock<IUnitOfWork>();
@@ -220,7 +289,6 @@ public class AuthControllerEdgeCaseTests
     [Fact]
     public async Task TokenValidationMiddleware_ShouldPassThrough_WhenTokenIssuedAfterReauthentication()
     {
-        // After invalidation, a freshly issued token should still work
         var userId = Guid.NewGuid();
         var user = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password"));
         SetUserId(user, userId);
@@ -237,7 +305,6 @@ public class AuthControllerEdgeCaseTests
         RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
         var middleware = new TokenValidationMiddleware(next, NullLogger<TokenValidationMiddleware>.Instance);
 
-        // Token issued 2 seconds after invalidation
         var tokenIssuedAt = DateTimeOffset.UtcNow.AddSeconds(2);
         var context = CreateAuthenticatedContext(userId, tokenIssuedAt);
 
@@ -249,7 +316,6 @@ public class AuthControllerEdgeCaseTests
     [Fact]
     public async Task TokenValidationMiddleware_ShouldPassThrough_WhenClaimsHaveNoUserId()
     {
-        // Token with authenticated identity but no parseable userId
         var claims = new List<Claim> { new("username", "testuser") };
         var identity = new ClaimsIdentity(claims, "Bearer");
         var principal = new ClaimsPrincipal(identity);
@@ -263,7 +329,6 @@ public class AuthControllerEdgeCaseTests
 
         await middleware.InvokeAsync(context, unitOfWorkMock.Object);
 
-        // Should pass through — let downstream handle it
         nextCalled.Should().BeTrue();
     }
 
@@ -274,8 +339,8 @@ public class AuthControllerEdgeCaseTests
     [Fact]
     public async Task Login_ShouldReturn401_WhenBodyIsNull()
     {
-        var authService = CreateMockAuthService();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), CreateMockUserContext().Object);
+        var (uow, authService) = CreateMockAuthServiceWithUow();
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), CreateMockUserContext().Object, uow.Object);
 
         var result = await controller.Login(null);
 
@@ -287,8 +352,8 @@ public class AuthControllerEdgeCaseTests
     [Fact]
     public async Task Login_ShouldReturn401_WhenFieldsEmpty()
     {
-        var authService = CreateMockAuthService();
-        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), CreateMockUserContext().Object);
+        var (uow, authService) = CreateMockAuthServiceWithUow();
+        var controller = new AuthController(authService.Object, CreateGitHubSettings(false), CreateMockUserContext().Object, uow.Object);
 
         var result = await controller.Login(new LoginDto("", ""));
 
@@ -301,29 +366,37 @@ public class AuthControllerEdgeCaseTests
     // Helpers
     // ─────────────────────────────────────────────────────────
 
-    private static AuthController CreateAuthController(bool gitHubConfigured = false)
+    private static (AuthController Controller, Mock<IUnitOfWork> UnitOfWork) CreateAuthControllerWithUnitOfWork(bool gitHubConfigured = false)
     {
-        var authServiceMock = CreateMockAuthService();
+        var (unitOfWorkMock, authServiceMock) = CreateMockAuthServiceWithUow();
         var gitHubSettings = CreateGitHubSettings(gitHubConfigured);
-        return new AuthController(authServiceMock.Object, gitHubSettings, CreateMockUserContext().Object);
+
+        // Set up default OAuthAuthCodes repo that returns null (code not found)
+        var authCodeRepoMock = new Mock<IOAuthAuthCodeRepository>();
+        authCodeRepoMock.Setup(r => r.GetByCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OAuthAuthCode?)null);
+        unitOfWorkMock.Setup(u => u.OAuthAuthCodes).Returns(authCodeRepoMock.Object);
+
+        var controller = new AuthController(authServiceMock.Object, gitHubSettings, CreateMockUserContext().Object, unitOfWorkMock.Object);
+        return (controller, unitOfWorkMock);
     }
 
-    private static Mock<AuthenticationService> CreateMockAuthService()
+    private static (Mock<IUnitOfWork> UnitOfWork, Mock<AuthenticationService> AuthService) CreateMockAuthServiceWithUow()
     {
         var unitOfWorkMock = new Mock<IUnitOfWork>();
         var userRepoMock = new Mock<IUserRepository>();
         unitOfWorkMock.Setup(u => u.Users).Returns(userRepoMock.Object);
         unitOfWorkMock.Setup(u => u.ExternalLogins).Returns(new Mock<IExternalLoginRepository>().Object);
 
-        // AuthenticationService is not sealed, but its constructor requires specific params
-        return new Mock<AuthenticationService>(unitOfWorkMock.Object, DefaultJwtSettings) { CallBase = true };
+        var authServiceMock = new Mock<AuthenticationService>(unitOfWorkMock.Object, DefaultJwtSettings) { CallBase = true };
+        return (unitOfWorkMock, authServiceMock);
     }
 
-    private static Mock<IUserContext> CreateMockUserContext()
+    private static Mock<IUserContext> CreateMockUserContext(bool authenticated = true, Guid? userId = null)
     {
         var mock = new Mock<IUserContext>();
-        mock.Setup(u => u.UserId).Returns(Guid.NewGuid().ToString());
-        mock.Setup(u => u.IsAuthenticated).Returns(true);
+        mock.Setup(u => u.IsAuthenticated).Returns(authenticated);
+        mock.Setup(u => u.UserId).Returns(authenticated ? (userId ?? Guid.NewGuid()).ToString() : null!);
         return mock;
     }
 
@@ -334,13 +407,13 @@ public class AuthControllerEdgeCaseTests
             : new GitHubOAuthSettings();
     }
 
-    private static void InjectAuthCode(string code, AuthResultDto result, DateTimeOffset expiry)
+    private static OAuthAuthCode CreateExpiredAuthCode(string code)
     {
-        // Access the static _authCodes field via reflection
-        var field = typeof(AuthController).GetField("_authCodes",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        var dict = (ConcurrentDictionary<string, (AuthResultDto Result, DateTimeOffset Expiry)>)field!.GetValue(null)!;
-        dict[code] = (result, expiry);
+        // Create a valid code first, then set ExpiresAt to the past via reflection
+        var authCode = new OAuthAuthCode(code, Guid.NewGuid(), "fake-token", DateTimeOffset.UtcNow.AddSeconds(60));
+        var expiresAtProp = typeof(OAuthAuthCode).GetProperty("ExpiresAt");
+        expiresAtProp!.SetValue(authCode, DateTimeOffset.UtcNow.AddSeconds(-10));
+        return authCode;
     }
 
     private static DefaultHttpContext CreateAuthenticatedContext(Guid userId, DateTimeOffset? iat)
