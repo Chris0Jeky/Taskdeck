@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-05
+Last Updated: 2026-04-10
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -898,6 +898,225 @@ Summary scope:
 4. True-missing vs cross-user denial indistinguishability (B-90 to B-96)
 5. Error payload contract verification for auth/validation/sandbox paths (B-100 to B-110)
 6. Advanced controller families: ops/logs/users/abuse/llm-quota/agents/knowledge/webhooks/external-imports (B-130 to B-175)
+
+## Z. Outstanding PR Test Backlog (2026-04-10)
+
+This section captures testing tasks extracted from PR test plans (open PRs #797–#813 and closed PRs #768–#799) where items were marked unchecked at time of merge or remain pending on open PRs. Organized by category with source PR references.
+
+Status legend: `[ ]` = not yet performed, `[x]` = verified.
+
+---
+
+### Z1. Security: OIDC/SSO and MFA (PR #813 — open)
+
+1. [ ] Verify OIDC login flow with a test provider (e.g., Entra ID or Google).
+   - Precondition: configure `Oidc:Providers` in backend config with a real or test OIDC provider.
+   - Expected: clicking the OIDC button redirects to the provider, callback authenticates user, workspace loads.
+2. [ ] Verify MFA setup/confirm/verify/disable flow.
+   - Navigate to user settings, enable MFA setup, scan TOTP QR code in authenticator app, enter confirmation code.
+   - Expected: MFA is enabled; TOTP code required on subsequent sensitive actions; disable flow removes MFA requirement.
+3. [ ] Verify OIDC login buttons only appear when providers are configured.
+   - With no `Oidc:Providers` configured, navigate to `/login`.
+   - Expected: no OIDC buttons visible. Only username/password form.
+   - With at least one provider configured, navigate to `/login`.
+   - Expected: OIDC button(s) visible with provider display names.
+4. [ ] Verify MFA challenge modal appears for sensitive actions when `RequireMfaForSensitiveActions` is `true`.
+   - Enable MFA for a user. Attempt password change or account deletion.
+   - Expected: MFA challenge modal appears requiring TOTP code before proceeding.
+
+### Z2. Security: OAuth PKCE and Account Linking (PR #812 — open)
+
+1. [ ] Verify GitHub OAuth login still works end-to-end.
+   - Precondition: `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` configured.
+   - Click "Sign in with GitHub", authorize, verify callback completes and workspace loads.
+2. [ ] Test account linking from Settings page.
+   - Log in with username/password. Navigate to account settings. Link a GitHub account.
+   - Expected: GitHub identity linked; subsequent logins with that GitHub account land in the same user account.
+3. [ ] Verify PKCE parameters in GitHub authorization URL.
+   - Open browser dev tools Network tab. Click "Sign in with GitHub".
+   - Expected: authorization URL contains `code_challenge` and `code_challenge_method=S256` parameters.
+
+### Z3. Calendar and Timeline Views (PR #810 — open)
+
+1. [ ] Navigate to `/workspace/calendar` and verify the grid renders with cards grouped by due date.
+   - Expected: cards with due dates appear on the correct calendar days; cards without due dates are not shown.
+2. [ ] Switch to timeline mode and verify chronological grouping.
+   - Expected: cards appear in a vertical timeline ordered by due date.
+3. [ ] Click month navigation arrows and the "Today" button.
+   - Expected: calendar view shifts months correctly; Today returns to current month.
+4. [ ] Click a card in the calendar to verify board drill-down navigation.
+   - Expected: navigates to the card's board and opens the card modal.
+5. [ ] Verify empty state when no cards have due dates.
+   - Expected: helpful empty state message (not a blank page or error).
+
+### Z4. Note Import and Web Clip Intake (PR #809 — open)
+
+1. [ ] Verify markdown with multiple headings creates separate capture items in inbox.
+   - Import a markdown file with 3+ `## Heading` sections via the import API or UI.
+   - Expected: each heading section becomes a separate capture item in the inbox.
+2. [ ] Verify web clip preserves URL in provenance.
+   - Submit a web clip with a source URL via the import endpoint.
+   - Expected: capture item provenance includes the original URL.
+3. [ ] Verify imported content appears in capture inbox, not directly on board.
+   - Expected: imports go through the standard capture → triage → proposal flow, not directly to board.
+
+### Z5. Storybook Tooling Validation (PR #807 — open)
+
+1. [ ] Run `npm run storybook` and verify dev server launches and all 17 stories render.
+   - Expected: Storybook opens in browser, all `Td*` component stories load without errors.
+
+### Z6. Deployment and Operations (PRs #806, #798, #799 — open)
+
+**Staged Deployment (PR #806):**
+1. [ ] Verify `scripts/deploy/smoke-test.sh` runs successfully against a local Docker Compose stack.
+   - Run: `docker compose -f deploy/docker-compose.yml up -d --build` then `bash scripts/deploy/smoke-test.sh`
+   - Expected: all 9 automated smoke checks pass (health, API, auth, frontend, SignalR, static assets, security headers, container restart).
+2. [ ] Verify `.github/workflows/cd-staging-gate.yml` YAML is valid.
+   - Run: `docker compose -f deploy/docker-compose.yml config` or use a YAML validator.
+   - Expected: no syntax errors.
+3. [ ] Confirm ADR-0028 follows template from `docs/decisions/README.md`.
+4. [ ] Review deployment workflow for completeness against rollback criteria in ADR-0028.
+5. [ ] Verify cross-references between all new and existing deployment docs are consistent.
+
+**Cloud Cost Observability (PR #798):**
+6. [ ] Verify all cross-references between cost docs are valid (ADR links, ops doc mutual references).
+7. [ ] Verify ADR appears in `docs/decisions/INDEX.md` with correct number and status.
+8. [ ] Verify LLM cost estimates reference actual supported providers (OpenAI GPT-4o-mini, Gemini 2.5 Flash).
+9. [ ] Verify mitigation actions reference actual Taskdeck config keys and API endpoints.
+10. [ ] Verify runbook phases are actionable given the current architecture (single-node, SQLite, in-process workers).
+
+**Cloud Topology ADR (PR #799 — closed):**
+11. [ ] Verify ADR follows existing template format (matches ADR-0001 through ADR-0022 structure).
+12. [ ] Verify ADR index entry is correctly formatted and numbered.
+13. [ ] Verify topology diagram is consistent with the described components.
+14. [ ] Verify cost estimates reference current AWS pricing tiers.
+15. [ ] Verify follow-up tasks reference existing tracked issues where applicable.
+16. [ ] Verify `STATUS.md` and `IMPLEMENTATION_MASTERPLAN.md` updates are consistent.
+
+### Z7. Testing Infrastructure and Harness (PRs #804, #800, #797, #796 — open/closed)
+
+**Testcontainers (PR #804 — open):**
+1. [ ] Verify solution builds cleanly: `dotnet build backend/Taskdeck.sln -c Release`
+2. [ ] Verify existing backend tests pass: `dotnet test backend/Taskdeck.sln -c Release -m:1`
+3. [ ] Verify container integration tests pass locally with Docker running:
+   - `dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release`
+4. [ ] Verify CI extended workflow triggers on `testing` label.
+5. [ ] Verify cross-class isolation tests prove no data leakage between test classes.
+
+**Cross-Browser E2E Matrix (PR #800 — open):**
+6. [ ] Verify `npx playwright test --project=chromium` runs all existing tests (no `@mobile` exclusion regression).
+7. [ ] Verify `npx playwright test --project=firefox --grep="@cross-browser"` runs only tagged tests.
+8. [ ] Verify `npx playwright test --project=mobile-chrome --grep="@mobile"` runs only mobile-viewport tests.
+9. [ ] Verify CI required workflow still passes with `--project=chromium` flag.
+10. [ ] Verify nightly cross-browser matrix workflow YAML is valid.
+11. [ ] Review flaky test policy doc for completeness (`docs/testing/FLAKY_TEST_POLICY.md`).
+
+**Visual Regression (PR #797 — open):**
+12. [ ] Run `npm run test:visual:update` to generate initial baselines.
+    - Expected: baseline screenshots created in `tests/visual/__screenshots__/`.
+13. [ ] Verify visual tests pass after baseline generation: `npx playwright test --config playwright.visual.config.ts`
+14. [ ] Verify CI Extended pipeline runs visual regression job when `visual` label is applied.
+15. [ ] On an intentional UI change, regenerate baselines and verify diff detection works.
+
+**Mutation Testing (PR #796 — closed):**
+16. [ ] Verify Stryker.NET config is valid JSON and references correct project paths.
+17. [ ] Verify Stryker JS config exports valid options and references correct vitest config.
+18. [ ] Verify CI workflow syntax passes GitHub Actions validation.
+19. [ ] Verify mutation testing workflow is NOT listed in `ci-required.yml` (non-blocking, nightly only).
+20. [ ] Verify `StrykerOutput` directories are in `.gitignore`.
+21. [ ] Run `npm run mutation:test` locally to validate frontend Stryker setup (after `npm install`).
+22. [ ] Run `dotnet stryker --config-file stryker-config.json` locally in `backend/` to validate backend setup.
+
+### Z8. Platform: PWA and Offline Readiness (PR #802 — open)
+
+1. [ ] Verify offline banner appears when network is disconnected.
+   - Open the app, then disable network in browser DevTools.
+   - Expected: offline indicator/banner appears promptly.
+2. [ ] Verify service worker update prompt appears when deploying a new build.
+   - Deploy a code change, revisit the app in browser.
+   - Expected: "Update available" prompt appears; clicking it refreshes to the new version.
+3. [ ] Verify Chrome DevTools > Application > Manifest passes installability checks.
+   - Open DevTools > Application > Manifest.
+   - Expected: manifest is valid, icons are present, start_url is correct, app is installable.
+
+### Z9. Platform: SignalR Scale-Out (PR #803 — open)
+
+1. [ ] Verify CI pipeline passes for PR #803.
+2. [ ] Verify `/health/ready` returns `signalrBackplane: NotConfigured` on local dev (no Redis configured).
+   - Call `GET http://localhost:5000/health/ready`.
+   - Expected: response includes `signalrBackplane` component with `NotConfigured` status.
+
+### Z10. Platform: PostgreSQL Migration Compatibility (PR #801 — open)
+
+1. [ ] Verify CI pipeline passes for PR #801.
+   - Expected: all 20 `DatabaseProviderCompatibilityTests` pass in CI; no new warnings.
+
+### Z11. Forecasting and Capacity Planning (PR #790 — closed)
+
+1. [ ] Verify forecast endpoint returns correct JSON for a board with completed cards.
+   - Call `GET /api/metrics/boards/{boardId}/forecast` with bearer token.
+   - Expected: JSON with throughput forecast, confidence bands, and projected completion dates.
+2. [ ] Verify MetricsView shows forecast section with confidence bands.
+   - Navigate to `/workspace/metrics`, select a board with history.
+   - Expected: forecast section renders below the metrics charts with projected dates and confidence intervals.
+3. [ ] Verify zero-throughput board shows appropriate caveats.
+   - Select a board where no cards have ever been moved to Done.
+   - Expected: forecast section shows a caveat/warning about insufficient throughput data.
+4. [ ] Verify new board with no history shows "insufficient data" messaging.
+   - Create a brand new board, navigate to metrics.
+   - Expected: forecast section shows "insufficient data" message, not an error or crash.
+
+### Z12. Inbox Premium UX Primitives (PR #788 — closed)
+
+1. [ ] Verify skeleton loading state appears during slow network.
+   - Throttle network in DevTools to "Slow 3G". Navigate to `/workspace/inbox`.
+   - Expected: skeleton/shimmer loading placeholders appear while data loads.
+2. [ ] Verify error state renders with retry button on API failure.
+   - Block the inbox API endpoint in DevTools. Navigate to `/workspace/inbox`.
+   - Expected: error state with message and "Retry" button. Clicking retry re-fetches.
+3. [ ] Verify empty state renders correctly with action buttons.
+   - Navigate to inbox with no captures.
+   - Expected: empty state illustration/message with guidance on how to capture items.
+4. [ ] Verify dark mode compatibility (all colors use design tokens).
+   - Toggle dark mode. Navigate through inbox list and detail views.
+   - Expected: no hardcoded light-theme colors; all surfaces use design tokens.
+5. [ ] Verify responsive layout at mobile breakpoints.
+   - Resize browser to 375px width or use mobile device emulation.
+   - Expected: inbox layout adapts (no horizontal overflow, readable text, tappable targets).
+
+### Z13. CSV Export UI (PR #787 — closed)
+
+1. [ ] Verify "Export CSV" button appears in the metrics dashboard and triggers download.
+   - Navigate to `/workspace/metrics`, select a board.
+   - Expected: "Export CSV" button is visible. Clicking it downloads a `.csv` file with `schema_version=1.0` header comment.
+
+### Z14. Accessibility Regression (PR #779 — closed)
+
+1. [ ] Visual inspection: modal backdrops, board cards, inbox rows, and form inputs all function normally after a11y fixes.
+   - Navigate through key surfaces: card modal, label manager, inbox, command palette.
+   - Expected: no visual regressions from the aria/a11y attribute changes.
+2. [ ] Keyboard navigation: modals dismiss on Escape, board cards respond to Enter/Space, inbox rows respond to Enter.
+   - Use only keyboard to navigate through board → open card → close card → open command palette → close palette.
+   - Expected: all interactions work without mouse.
+
+### Z15. E2E Error/Edge Scenario Execution (PR #772 — closed)
+
+1. [ ] Verify Playwright recognizes all new specs: `npx playwright test --list` shows error-recovery, multi-board, and edge-journey specs.
+2. [ ] Run the expanded E2E suite against a live backend:
+   - `cd frontend/taskdeck-web && TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test tests/e2e/error-recovery.spec.ts tests/e2e/multi-board.spec.ts tests/e2e/edge-journeys.spec.ts --reporter=line`
+   - Expected: all scenarios pass.
+
+### Z16. Dependency Hygiene Verification (PR #771 — closed)
+
+1. [ ] Verify frontend builds after ws/p-limit override cleanup: `cd frontend/taskdeck-web && npm run build`
+   - Expected: build completes with no warnings about vendored packages.
+2. [ ] Verify typecheck passes: `cd frontend/taskdeck-web && npm run typecheck`
+   - Expected: 0 type errors.
+
+### Z17. Concurrency Stress Tests CI (PR #793 — closed)
+
+1. [ ] Verify CI pipeline passes for concurrency stress tests.
+   - Expected: all 13 `ConcurrencyRaceConditionStressTests` pass in CI without deadlocks or flakiness.
 
 ---
 

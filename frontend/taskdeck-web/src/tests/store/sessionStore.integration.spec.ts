@@ -240,6 +240,60 @@ describe('sessionStore — integration (real authApi, mocked HTTP)', () => {
     })
   })
 
+  // ── changePassword ────────────────────────────────────────────────────────
+
+  describe('changePassword', () => {
+    it('posts to /auth/change-password and clears loading on success', async () => {
+      vi.mocked(http.post).mockResolvedValue({ data: undefined })
+
+      const store = useSessionStore()
+      await store.changePassword({ currentPassword: 'old', newPassword: 'new123' })
+
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+      expect(http.post).toHaveBeenCalledWith(
+        '/auth/change-password',
+        expect.objectContaining({ currentPassword: 'old', newPassword: 'new123' }),
+      )
+    })
+
+    it('sets error when POST /auth/change-password fails', async () => {
+      vi.mocked(http.post).mockRejectedValue({
+        response: { data: { message: 'Current password is incorrect' } },
+      })
+
+      const store = useSessionStore()
+      await expect(store.changePassword({ currentPassword: 'wrong', newPassword: 'new' })).rejects.toBeDefined()
+
+      expect(store.error).toBe('Current password is incorrect')
+      expect(store.loading).toBe(false)
+    })
+  })
+
+  // ── token expiry detection ───────────────────────────────────────────────
+
+  describe('token expiry', () => {
+    it('isAuthenticated returns false when the token has expired', async () => {
+      vi.mocked(http.post).mockResolvedValue({ data: makeAuthResponse(-60) })
+
+      const store = useSessionStore()
+      // Login with an already-expired token
+      await store.login({ usernameOrEmail: 'testuser', password: 'pass' })
+
+      // The token is expired, so isAuthenticated should be false
+      expect(store.isAuthenticated).toBe(false)
+    })
+
+    it('isAuthenticated returns true when the token is still valid', async () => {
+      vi.mocked(http.post).mockResolvedValue({ data: makeAuthResponse(3600) })
+
+      const store = useSessionStore()
+      await store.login({ usernameOrEmail: 'testuser', password: 'pass' })
+
+      expect(store.isAuthenticated).toBe(true)
+    })
+  })
+
   // ── requireUserId ─────────────────────────────────────────────────────────
 
   describe('requireUserId', () => {
