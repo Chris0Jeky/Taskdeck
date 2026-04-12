@@ -290,7 +290,6 @@ public class WorkspaceService : IWorkspaceService
         var referenceTime = DateTimeOffset.UtcNow;
 
         var calendarCards = cards
-            .Where(c => c.DueDate.HasValue)
             .Select(c => new WorkspaceCalendarCardDto(
                 c.Id,
                 c.BoardId,
