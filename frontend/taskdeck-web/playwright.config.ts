@@ -81,8 +81,11 @@ export default defineConfig({
        *
        * NOTE: @cross-browser tests also run here (in PR gate via ci-required).
        * Adding more @cross-browser tests will increase PR gate time.
-       * Keep @cross-browser count lean to preserve fast PR feedback. */
-      grepInvert: /@mobile/,
+       * Keep @cross-browser count lean to preserve fast PR feedback.
+       *
+       * Combined pattern ensures quarantine exclusion is preserved
+       * (project-level grepInvert overrides the global one). */
+      grepInvert: /@mobile|@quarantine/,
     },
     {
       name: 'firefox',

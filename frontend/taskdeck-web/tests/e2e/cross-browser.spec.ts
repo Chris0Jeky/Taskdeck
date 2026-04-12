@@ -70,9 +70,9 @@ test('@cross-browser card edit modal open and close', async ({ page }) => {
   await addColumn(page, columnName)
   await addCard(page, columnName, cardTitle)
 
-  // Click card to open edit modal
+  // Click the card title to open edit modal (avoid drag-handle intercepting click)
   const card = page.locator('[data-card-id]').filter({ hasText: cardTitle }).first()
-  await card.click()
+  await card.getByRole('heading', { name: cardTitle, exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Edit Card' })).toBeVisible()
 
   // Close with Escape
