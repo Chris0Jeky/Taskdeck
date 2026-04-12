@@ -39,6 +39,7 @@ const ReviewView = () => import('../views/ReviewView.vue')
 const DevToolsView = () => import('../views/DevToolsView.vue')
 const SavedViewsView = () => import('../views/SavedViewsView.vue')
 const MetricsView = () => import('../views/MetricsView.vue')
+const CalendarView = () => import('../views/CalendarView.vue')
 const AgentsView = () => import('../views/AgentsView.vue')
 const AgentRunsView = () => import('../views/AgentRunsView.vue')
 const AgentRunDetailView = () => import('../views/AgentRunDetailView.vue')
@@ -140,6 +141,14 @@ const router = createRouter({
       path: '/workspace/metrics',
       name: 'workspace-metrics',
       component: MetricsView,
+      meta: { requiresShell: true },
+    },
+
+    // Calendar/timeline planning route
+    {
+      path: '/workspace/calendar',
+      name: 'workspace-calendar',
+      component: CalendarView,
       meta: { requiresShell: true },
     },
 

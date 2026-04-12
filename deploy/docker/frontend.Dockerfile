@@ -1,4 +1,4 @@
-FROM node:24.13.1-alpine AS build
+FROM node:24.13.1-bookworm-slim AS build
 WORKDIR /app
 
 COPY frontend/taskdeck-web/package.json frontend/taskdeck-web/package-lock.json ./

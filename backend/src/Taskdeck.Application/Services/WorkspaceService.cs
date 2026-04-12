@@ -252,6 +252,61 @@ public class WorkspaceService : IWorkspaceService
         return Result.Success(onboarding);
     }
 
+    public async Task<Result<WorkspaceCalendarDto>> GetCalendarAsync(
+        Guid userId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<WorkspaceCalendarDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        if (from >= to)
+            return Result.Failure<WorkspaceCalendarDto>(ErrorCodes.ValidationError, "The 'from' date must be before the 'to' date");
+
+        // Cap range to 90 days to prevent unbounded queries
+        var maxRange = TimeSpan.FromDays(90);
+        if (to - from > maxRange)
+            return Result.Failure<WorkspaceCalendarDto>(ErrorCodes.ValidationError, "Date range cannot exceed 90 days");
+
+        var accessibleBoards = (await _unitOfWork.Boards.GetReadableByUserIdAsync(
+                userId,
+                includeArchived: false,
+                cancellationToken))
+            .ToList();
+
+        if (accessibleBoards.Count == 0)
+        {
+            return Result.Success(new WorkspaceCalendarDto(from, to, 0, []));
+        }
+
+        var cards = (await _unitOfWork.Cards.GetByDueDateRangeAsync(
+                accessibleBoards.Select(b => b.Id),
+                from,
+                to,
+                cancellationToken))
+            .ToList();
+
+        var referenceTime = DateTimeOffset.UtcNow;
+
+        var calendarCards = cards
+            .Select(c => new WorkspaceCalendarCardDto(
+                c.Id,
+                c.BoardId,
+                c.Board?.Name ?? "Unknown",
+                c.ColumnId,
+                c.Column?.Name ?? "Unknown",
+                c.Title,
+                c.DueDate!.Value,
+                c.IsBlocked,
+                c.BlockReason,
+                ResolveDueBucket(c.DueDate, referenceTime) == TodayDueBucket.Overdue,
+                c.UpdatedAt))
+            .ToList();
+
+        return Result.Success(new WorkspaceCalendarDto(from, to, calendarCards.Count, calendarCards));
+    }
+
     private async Task<UserPreference> EnsurePreferenceAsync(Guid userId, CancellationToken cancellationToken)
     {
         return await _unitOfWork.UserPreferences.GetOrCreateDefaultByUserIdAsync(userId, cancellationToken);

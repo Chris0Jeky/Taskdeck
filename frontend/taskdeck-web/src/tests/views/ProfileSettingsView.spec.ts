@@ -40,6 +40,30 @@ vi.mock('../../store/featureFlagStore', () => ({
   }),
 }))
 
+vi.mock('../../api/authApi', () => ({
+  authApi: {
+    getProviders: vi.fn().mockResolvedValue({ gitHub: false }),
+    getLinkedAccounts: vi.fn().mockResolvedValue([]),
+    linkGitHub: vi.fn(),
+    unlinkGitHub: vi.fn(),
+  },
+}))
+
+vi.mock('../../utils/demoMode', () => ({
+  isDemoMode: false,
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    replace: vi.fn(),
+    push: vi.fn(),
+  }),
+  useRoute: () => ({
+    query: {},
+    path: '/workspace/settings',
+  }),
+}))
+
 describe('ProfileSettingsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()

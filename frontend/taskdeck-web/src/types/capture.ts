@@ -34,6 +34,8 @@ export type CaptureSource =
   | 'Voice'
   | 'MeetingIntegration'
   | 'TranscriptFile'
+  | 'MarkdownImport'
+  | 'WebClip'
 
 export type CaptureSourceValue = CaptureSource | number
 
