@@ -112,6 +112,15 @@ const navCatalog: NavItem[] = [
     keywords: 'inbox captures triage',
   },
   {
+    id: 'agents',
+    label: 'Agents',
+    icon: 'G',
+    path: '/workspace/agents',
+    flag: null,
+    primaryModes: ['agent'],
+    keywords: 'agents profiles runs automation agent mode',
+  },
+  {
     id: 'views',
     label: 'Views',
     icon: 'V',

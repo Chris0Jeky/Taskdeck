@@ -297,6 +297,23 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
 
       expect(store.loading).toBe(false)
     })
+
+    it('retains original column and position when move API rejects with 409', async () => {
+      const store = useBoardStore()
+      const card = makeCardPayload({ id: 'card-snap', columnId: 'col-1', position: 0 })
+      store.currentBoardCards = [card]
+
+      vi.mocked(http.post).mockRejectedValue({ response: { status: 409, data: { message: 'Stale position' } } })
+
+      await expect(store.moveCard('board-1', 'card-snap', 'col-2', 3)).rejects.toBeDefined()
+
+      // moveCard calls the API before updating local state (no optimistic mutation),
+      // so on rejection the card is never modified — verify it remains intact
+      const storedCard = store.currentBoardCards.find(c => c.id === 'card-snap')
+      expect(storedCard).toBeDefined()
+      expect(storedCard?.columnId).toBe('col-1')
+      expect(storedCard?.position).toBe(0)
+    })
   })
 
   describe('updateCard', () => {
@@ -322,6 +339,97 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
         '/boards/board-1/cards/card-1',
         expect.any(Object),
       )
+    })
+  })
+
+  // ── deleteCard ─────────────────────────────────────────────────────────
+
+  describe('deleteCard', () => {
+    it('calls DELETE /boards/:id/cards/:id and removes the card from local state', async () => {
+      const store = useBoardStore()
+      store.currentBoardCards = [
+        makeCardPayload({ id: 'card-del', columnId: 'col-1' }),
+        makeCardPayload({ id: 'card-keep', columnId: 'col-1' }),
+      ]
+
+      vi.mocked(http.delete).mockResolvedValue({ data: undefined })
+      await store.deleteCard('board-1', 'card-del')
+
+      expect(store.currentBoardCards.some(c => c.id === 'card-del')).toBe(false)
+      expect(store.currentBoardCards.some(c => c.id === 'card-keep')).toBe(true)
+      expect(http.delete).toHaveBeenCalledWith(expect.stringContaining('/boards/board-1/cards/card-del'))
+    })
+
+    it('does not remove a card when DELETE fails', async () => {
+      const store = useBoardStore()
+      store.currentBoardCards = [makeCardPayload({ id: 'card-fail' })]
+
+      vi.mocked(http.delete).mockRejectedValue({ response: { status: 500, data: { message: 'Server error' } } })
+      await expect(store.deleteCard('board-1', 'card-fail')).rejects.toBeDefined()
+
+      expect(store.currentBoardCards.some(c => c.id === 'card-fail')).toBe(true)
+    })
+  })
+
+  // ── column CRUD ───────────────────────────────────────────────────────────
+
+  describe('createColumn', () => {
+    it('posts to /boards/:id/columns and appends the returned column to currentBoard', async () => {
+      const store = useBoardStore()
+      store.currentBoard = {
+        id: 'board-1',
+        name: 'My Board',
+        description: '',
+        isArchived: false,
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        columns: [],
+      }
+
+      const newColumn = { id: 'col-new', name: 'Done', position: 0, wipLimit: null, cardCount: 0 }
+      vi.mocked(http.post).mockResolvedValue({ data: newColumn })
+
+      await store.createColumn('board-1', { name: 'Done', position: 0 })
+
+      expect(store.currentBoard?.columns).toHaveLength(1)
+      expect(store.currentBoard?.columns[0].name).toBe('Done')
+      expect(http.post).toHaveBeenCalledWith(
+        expect.stringContaining('/boards/board-1/columns'),
+        expect.objectContaining({ name: 'Done' }),
+      )
+    })
+  })
+
+  describe('deleteColumn', () => {
+    it('removes the column and its cards from local state', async () => {
+      const store = useBoardStore()
+      store.currentBoard = {
+        id: 'board-1',
+        name: 'My Board',
+        description: '',
+        isArchived: false,
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        columns: [
+          { id: 'col-1', name: 'Todo', position: 0, wipLimit: null, cardCount: 2 },
+          { id: 'col-2', name: 'Done', position: 1, wipLimit: null, cardCount: 0 },
+        ],
+      }
+      store.currentBoardCards = [
+        makeCardPayload({ id: 'card-a', columnId: 'col-1' }),
+        makeCardPayload({ id: 'card-b', columnId: 'col-1' }),
+        makeCardPayload({ id: 'card-c', columnId: 'col-2' }),
+      ]
+
+      vi.mocked(http.delete).mockResolvedValue({ data: undefined })
+      await store.deleteColumn('board-1', 'col-1')
+
+      // Column removed
+      expect(store.currentBoard?.columns).toHaveLength(1)
+      expect(store.currentBoard?.columns[0].id).toBe('col-2')
+      // Cards in deleted column removed
+      expect(store.currentBoardCards).toHaveLength(1)
+      expect(store.currentBoardCards[0].id).toBe('card-c')
     })
   })
 

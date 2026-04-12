@@ -254,6 +254,63 @@ describe('queueStore — integration (real queueApi, mocked HTTP)', () => {
     })
   })
 
+  // ── loading state transitions ──────────────────────────────────────────
+
+  describe('loading state transitions', () => {
+    it('sets loading=true during fetchUserRequests and clears it after', async () => {
+      let loadingDuringRequest = false
+      vi.mocked(http.get).mockImplementation(async () => {
+        // Check loading state during the request
+        const store = useQueueStore()
+        loadingDuringRequest = store.loading
+        return { data: [] }
+      })
+
+      const store = useQueueStore()
+      await store.fetchUserRequests()
+
+      expect(loadingDuringRequest).toBe(true)
+      expect(store.loading).toBe(false)
+    })
+
+    it('clears loading even when fetchUserRequests fails', async () => {
+      vi.mocked(http.get).mockRejectedValue(new Error('oops'))
+
+      const store = useQueueStore()
+      await expect(store.fetchUserRequests()).rejects.toBeInstanceOf(Error)
+
+      expect(store.loading).toBe(false)
+    })
+
+    it('sets loading=true during submitRequest and clears it after', async () => {
+      vi.mocked(http.post).mockResolvedValue({ data: makeRawRequest({ id: 'r-load' }) })
+
+      const store = useQueueStore()
+      await store.submitRequest({ requestType: 'Instruction', payload: 'test' })
+
+      expect(store.loading).toBe(false)
+    })
+  })
+
+  // ── cancelRequest preserves other items ──────────────────────────────────
+
+  describe('cancelRequest isolation', () => {
+    it('only removes the cancelled item and preserves all others', async () => {
+      const store = useQueueStore()
+      store.requests = [
+        makeRawRequest({ id: 'req-1' }),
+        makeRawRequest({ id: 'req-2' }),
+        makeRawRequest({ id: 'req-3' }),
+      ]
+
+      vi.mocked(http.post).mockResolvedValue({ data: undefined })
+      await store.cancelRequest('req-2')
+
+      expect(store.requests).toHaveLength(2)
+      expect(store.requests.map(r => r.id)).toEqual(['req-1', 'req-3'])
+    })
+  })
+
   // ── fetchStats ────────────────────────────────────────────────────────────
 
   describe('fetchStats', () => {
