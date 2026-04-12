@@ -44,7 +44,7 @@ describe('MfaSetup', () => {
     await wrapper.find('button').trigger('click')
     await waitForUi()
 
-    expect(wrapper.text()).toContain('Add this shared secret to your authenticator app')
+    expect(wrapper.text()).toContain('Add this secret to your authenticator app')
     expect(wrapper.text()).toContain('Show provisioning URI')
     expect(wrapper.text()).not.toContain('Scan the QR code below')
   })

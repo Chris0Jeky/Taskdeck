@@ -70,14 +70,14 @@ public class MfaCredentialTests
     }
 
     [Fact]
-    public void SetRecoveryCodes_ShouldThrow_WhenEmpty()
+    public void SetRecoveryCodes_ShouldClearCodes_WhenEmpty()
     {
         var credential = new MfaCredential(Guid.NewGuid(), "JBSWY3DPEHPK3PXP");
+        credential.SetRecoveryCodes("hash1,hash2,hash3");
 
-        var act = () => credential.SetRecoveryCodes("");
+        credential.SetRecoveryCodes("");
 
-        act.Should().Throw<DomainException>()
-            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+        credential.RecoveryCodes.Should().BeNull();
     }
 
     [Fact]
