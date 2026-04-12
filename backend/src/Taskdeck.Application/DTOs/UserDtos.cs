@@ -37,3 +37,10 @@ public record ExternalLoginDto(
     string Email,
     string? DisplayName = null,
     string? AvatarUrl = null);
+
+public record LinkedAccountDto(
+    string Provider,
+    string ProviderUserId,
+    string? DisplayName,
+    string? AvatarUrl,
+    DateTimeOffset LinkedAt);

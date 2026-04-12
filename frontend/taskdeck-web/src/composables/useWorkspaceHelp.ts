@@ -8,6 +8,7 @@ export const workspaceHelpTopics = [
   'review',
   'inbox',
   'board',
+  'calendar',
   'activity-selectors',
   'board-access-selectors',
   'saved-views',

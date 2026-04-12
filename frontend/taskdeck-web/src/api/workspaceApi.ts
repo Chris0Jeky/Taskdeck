@@ -1,5 +1,6 @@
 import http from './http'
 import type {
+  CalendarData,
   HomeSummary,
   TodaySummary,
   UpdateWorkspaceOnboardingDto,
@@ -16,6 +17,12 @@ export const workspaceApi = {
 
   async getTodaySummary(): Promise<TodaySummary> {
     const { data } = await http.get<TodaySummary>('/workspace/today')
+    return data
+  },
+
+  async getCalendar(from: string, to: string): Promise<CalendarData> {
+    const params = new URLSearchParams({ from, to })
+    const { data } = await http.get<CalendarData>(`/workspace/calendar?${params}`)
     return data
   },
 

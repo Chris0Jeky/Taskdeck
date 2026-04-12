@@ -27,7 +27,7 @@ if (args.Contains("--mcp"))
     if (transport != "stdio" && transport != "http")
     {
         Console.Error.WriteLine($"Error: unknown transport '{transport}'. Supported values: stdio, http");
-        return;
+        return 1;
     }
 
     if (transport == "http")
@@ -49,7 +49,7 @@ if (args.Contains("--mcp"))
                 else
                 {
                     Console.Error.WriteLine($"Error: invalid --port value '{args[i + 1]}'. Must be an integer between 1 and 65535.");
-                    return;
+                    return 1;
                 }
             }
             else if (string.Equals(args[i], "--host", StringComparison.OrdinalIgnoreCase))
@@ -143,7 +143,7 @@ if (args.Contains("--mcp"))
         mcpHttpLogger.LogInformation("Taskdeck MCP HTTP server starting on http://{Host}:{Port}", mcpBindHost, mcpPort);
 
         await mcpHttpApp.RunAsync();
-        return;
+        return 0;
     }
 
     // ── MCP stdio mode ──────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ if (args.Contains("--mcp"))
     }
 
     await mcpHost.RunAsync();
-    return;
+    return 0;
 }
 // ── End MCP modes ───────────────────────────────────────────────────────────
 
@@ -370,5 +370,6 @@ appLifetime.ApplicationStarted.Register(() =>
 });
 
 app.Run();
+return 0;
 
 public partial class Program { }

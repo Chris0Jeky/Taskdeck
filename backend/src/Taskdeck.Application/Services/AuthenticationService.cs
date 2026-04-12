@@ -209,6 +209,83 @@ public class AuthenticationService : IAuthenticationService
         }
     }
 
+    public async Task<Result<LinkedAccountDto>> CompleteAccountLinkAsync(Guid userId, string provider, string providerUserId, string? displayName, string? avatarUrl)
+    {
+        try
+        {
+            if (userId == Guid.Empty)
+                return Result.Failure<LinkedAccountDto>(ErrorCodes.ValidationError, "User ID is required");
+
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            if (user == null)
+                return Result.Failure<LinkedAccountDto>(ErrorCodes.NotFound, "User not found");
+
+            if (!user.IsActive)
+                return Result.Failure<LinkedAccountDto>(ErrorCodes.Forbidden, "User account is inactive");
+
+            // Check if this provider+userId combo is already linked to a different user
+            var existingLogin = await _unitOfWork.ExternalLogins.GetByProviderAsync(provider, providerUserId);
+            if (existingLogin != null)
+            {
+                if (existingLogin.UserId == userId)
+                    return Result.Failure<LinkedAccountDto>(ErrorCodes.Conflict, $"This {provider} account is already linked to your account");
+
+                return Result.Failure<LinkedAccountDto>(ErrorCodes.Conflict, $"This {provider} account is already linked to a different user");
+            }
+
+            // Check if user already has a linked account for this provider
+            var userLogins = await _unitOfWork.ExternalLogins.GetByUserIdAsync(userId);
+            if (userLogins.Any(l => l.Provider == provider))
+                return Result.Failure<LinkedAccountDto>(ErrorCodes.Conflict, $"Your account is already linked to a {provider} account");
+
+            var newLogin = new ExternalLogin(userId, provider, providerUserId, displayName, avatarUrl);
+            await _unitOfWork.ExternalLogins.AddAsync(newLogin);
+            await _unitOfWork.SaveChangesAsync();
+
+            return Result.Success(new LinkedAccountDto(
+                newLogin.Provider,
+                newLogin.ProviderUserId,
+                newLogin.ProviderDisplayName,
+                newLogin.AvatarUrl,
+                newLogin.CreatedAt));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<LinkedAccountDto>(ex.ErrorCode, ex.Message);
+        }
+        catch (Exception)
+        {
+            return Result.Failure<LinkedAccountDto>(ErrorCodes.UnexpectedError, "Account linking failed due to an unexpected error");
+        }
+    }
+
+    public async Task<Result> UnlinkExternalLoginAsync(Guid userId, string provider)
+    {
+        try
+        {
+            if (userId == Guid.Empty)
+                return Result.Failure(ErrorCodes.ValidationError, "User ID is required");
+
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            if (user == null)
+                return Result.Failure(ErrorCodes.NotFound, "User not found");
+
+            var logins = await _unitOfWork.ExternalLogins.GetByUserIdAsync(userId);
+            var loginToRemove = logins.FirstOrDefault(l => l.Provider == provider);
+            if (loginToRemove == null)
+                return Result.Failure(ErrorCodes.NotFound, $"No {provider} account is linked");
+
+            await _unitOfWork.ExternalLogins.DeleteAsync(loginToRemove);
+            await _unitOfWork.SaveChangesAsync();
+
+            return Result.Success();
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure(ex.ErrorCode, ex.Message);
+        }
+    }
+
     public async Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
     {
         try
@@ -290,7 +367,7 @@ public class AuthenticationService : IAuthenticationService
         }
     }
 
-    private string GenerateJwtToken(User user)
+    public string GenerateJwtToken(User user)
     {
         if (!TryValidateJwtSettings(out var jwtValidationError))
             throw new DomainException(ErrorCodes.UnexpectedError, jwtValidationError);

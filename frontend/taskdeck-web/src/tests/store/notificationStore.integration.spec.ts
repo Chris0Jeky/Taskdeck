@@ -209,6 +209,92 @@ describe('notificationStore — integration (real notificationsApi, mocked HTTP)
     })
   })
 
+  // ── unread count behavior ──────────────────────────────────────────────
+  // The store does not expose an unreadCount computed; these tests document
+  // the expected derivation from the notifications array after store actions.
+
+  describe('unread count behavior', () => {
+    it('unread count derives from isRead=false notifications after fetch', async () => {
+      const items = [
+        makeNotification({ id: 'n-1', isRead: false }),
+        makeNotification({ id: 'n-2', isRead: false }),
+        makeNotification({ id: 'n-3', isRead: true }),
+      ]
+      vi.mocked(http.get).mockResolvedValue({ data: items })
+
+      const store = useNotificationStore()
+      await store.fetchNotifications()
+
+      const unreadCount = store.notifications.filter(n => !n.isRead).length
+      expect(unreadCount).toBe(2)
+    })
+
+    it('unread count drops to 0 after markAllRead', async () => {
+      const store = useNotificationStore()
+      store.notifications = [
+        makeNotification({ id: 'n-1', isRead: false }),
+        makeNotification({ id: 'n-2', isRead: false }),
+        makeNotification({ id: 'n-3', isRead: false }),
+      ]
+
+      vi.mocked(http.post).mockResolvedValue({ data: { markedCount: 3 } })
+      await store.markAllRead()
+
+      const unreadCount = store.notifications.filter(n => !n.isRead).length
+      expect(unreadCount).toBe(0)
+    })
+
+    it('unread count decrements by 1 after marking a single notification as read', async () => {
+      const store = useNotificationStore()
+      store.notifications = [
+        makeNotification({ id: 'n-1', isRead: false }),
+        makeNotification({ id: 'n-2', isRead: false }),
+      ]
+
+      const readResponse = makeNotification({ id: 'n-1', isRead: true, readAt: '2026-02-01T00:00:00Z' })
+      vi.mocked(http.post).mockResolvedValue({ data: readResponse })
+
+      await store.markAsRead('n-1')
+
+      const unreadCount = store.notifications.filter(n => !n.isRead).length
+      expect(unreadCount).toBe(1)
+    })
+
+    it('adding a new unread notification locally increases the unread count', () => {
+      const store = useNotificationStore()
+      store.notifications = [
+        makeNotification({ id: 'n-1', isRead: true }),
+      ]
+
+      // Simulate a real-time notification arriving
+      store.notifications.unshift(makeNotification({ id: 'n-realtime', isRead: false }))
+
+      const unreadCount = store.notifications.filter(n => !n.isRead).length
+      expect(unreadCount).toBe(1)
+    })
+  })
+
+  // ── board-scoped mark all read and unread count ──────────────────────────
+
+  describe('board-scoped unread count', () => {
+    it('only marks notifications for the specified board as read, preserving others unread', async () => {
+      const store = useNotificationStore()
+      store.notifications = [
+        makeNotification({ id: 'n-1', boardId: 'board-A', isRead: false }),
+        makeNotification({ id: 'n-2', boardId: 'board-B', isRead: false }),
+        makeNotification({ id: 'n-3', boardId: 'board-A', isRead: false }),
+      ]
+
+      vi.mocked(http.post).mockResolvedValue({ data: { markedCount: 2 } })
+      await store.markAllRead('board-A')
+
+      const boardAUnread = store.notifications.filter(n => n.boardId === 'board-A' && !n.isRead).length
+      const boardBUnread = store.notifications.filter(n => n.boardId === 'board-B' && !n.isRead).length
+      expect(boardAUnread).toBe(0)
+      expect(boardBUnread).toBe(1)
+    })
+  })
+
   // ── preferences ───────────────────────────────────────────────────────────
 
   describe('fetchPreferences', () => {

@@ -463,4 +463,175 @@ public class WorkspaceServiceTests
         replayResult.Value.Visibility.Should().Be(WorkspaceOnboardingVisibilityContract.Active);
         preference.OnboardingDismissedAt.Should().BeNull();
     }
+
+    // ── GetCalendarAsync ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldReturnValidationError_WhenUserIdIsEmpty()
+    {
+        var result = await _service.GetCalendarAsync(
+            Guid.Empty,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow.AddDays(30));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("User ID cannot be empty");
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldReturnValidationError_WhenFromIsAfterTo()
+    {
+        var userId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        var result = await _service.GetCalendarAsync(userId, now.AddDays(10), now);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("'from' date must be before the 'to' date");
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldReturnValidationError_WhenRangeExceeds90Days()
+    {
+        var userId = Guid.NewGuid();
+        var from = DateTimeOffset.UtcNow;
+        var to = from.AddDays(91);
+
+        var result = await _service.GetCalendarAsync(userId, from, to);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("90 days");
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldReturnEmptyResult_WhenNoAccessibleBoards()
+    {
+        var userId = Guid.NewGuid();
+        var from = DateTimeOffset.UtcNow;
+        var to = from.AddDays(30);
+
+        _boardRepositoryMock
+            .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync([]);
+
+        var result = await _service.GetCalendarAsync(userId, from, to);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCards.Should().Be(0);
+        result.Value.Cards.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldReturnCardsWithDueDates()
+    {
+        var userId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+        var from = new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var board = new Board("Test Board", ownerId: userId);
+        var card = new Card(board.Id, columnId, "Test Card", dueDate: new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero));
+
+        _boardRepositoryMock
+            .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(new List<Board> { board });
+
+        _cardRepositoryMock
+            .Setup(r => r.GetByDueDateRangeAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                from,
+                to,
+                default))
+            .ReturnsAsync(new List<Card> { card });
+
+        var result = await _service.GetCalendarAsync(userId, from, to);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCards.Should().Be(1);
+        result.Value.Cards.Should().HaveCount(1);
+        result.Value.Cards[0].Title.Should().Be("Test Card");
+        result.Value.Cards[0].BoardId.Should().Be(board.Id);
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldMarkOverdueCards()
+    {
+        var userId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+        var from = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = new DateTimeOffset(2020, 2, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var board = new Board("Test Board", ownerId: userId);
+        var pastDueDate = new DateTimeOffset(2020, 1, 15, 0, 0, 0, TimeSpan.Zero);
+        var card = new Card(board.Id, columnId, "Past Due Card", dueDate: pastDueDate);
+
+        _boardRepositoryMock
+            .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(new List<Board> { board });
+
+        _cardRepositoryMock
+            .Setup(r => r.GetByDueDateRangeAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                from,
+                to,
+                default))
+            .ReturnsAsync(new List<Card> { card });
+
+        var result = await _service.GetCalendarAsync(userId, from, to);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Cards[0].IsOverdue.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldIncludeBlockedStatus()
+    {
+        var userId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+        var from = DateTimeOffset.UtcNow;
+        var to = from.AddDays(30);
+
+        var board = new Board("Test Board", ownerId: userId);
+        var card = new Card(board.Id, columnId, "Blocked Card", dueDate: from.AddDays(5));
+        card.Block("Waiting on dependency");
+
+        _boardRepositoryMock
+            .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(new List<Board> { board });
+
+        _cardRepositoryMock
+            .Setup(r => r.GetByDueDateRangeAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                from,
+                to,
+                default))
+            .ReturnsAsync(new List<Card> { card });
+
+        var result = await _service.GetCalendarAsync(userId, from, to);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Cards[0].IsBlocked.Should().BeTrue();
+        result.Value.Cards[0].BlockReason.Should().Be("Waiting on dependency");
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldReturnFromAndToInResponse()
+    {
+        var userId = Guid.NewGuid();
+        var from = new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+
+        _boardRepositoryMock
+            .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync([]);
+
+        var result = await _service.GetCalendarAsync(userId, from, to);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.From.Should().Be(from);
+        result.Value.To.Should().Be(to);
+    }
 }
