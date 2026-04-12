@@ -39,8 +39,29 @@ export interface SessionState {
   expiresAt: string | null
 }
 
+export interface OidcProviderInfo {
+  name: string
+  displayName: string
+}
+
 export interface AuthProviders {
   gitHub: boolean
+  oidc: OidcProviderInfo[]
+}
+
+export interface MfaStatus {
+  isEnabled: boolean
+  isSetupAvailable: boolean
+}
+
+export interface MfaSetupResponse {
+  sharedSecret: string
+  qrCodeUri: string
+  recoveryCodes: string[]
+}
+
+export interface MfaVerifyRequest {
+  code: string
 }
 
 export interface LinkedAccount {

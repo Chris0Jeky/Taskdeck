@@ -41,6 +41,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
     public DbSet<OAuthAuthCode> OAuthAuthCodes => Set<OAuthAuthCode>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<MfaCredential> MfaCredentials => Set<MfaCredential>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

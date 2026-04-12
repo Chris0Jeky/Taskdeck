@@ -45,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<IExternalLoginRepository, ExternalLoginRepository>();
         services.AddScoped<IOAuthAuthCodeRepository, OAuthAuthCodeRepository>();
         services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
+        services.AddScoped<IMfaCredentialRepository, MfaCredentialRepository>();
         services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 

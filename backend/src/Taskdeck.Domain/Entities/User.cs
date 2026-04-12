@@ -70,6 +70,11 @@ public class User : Entity
     /// </summary>
     public DateTimeOffset? TokenInvalidatedAt { get; private set; }
 
+    /// <summary>
+    /// Whether this user has MFA enabled (confirmed TOTP credential exists).
+    /// </summary>
+    public bool MfaEnabled { get; private set; }
+
     private User() : base() { }
 
     public User(string username, string email, string passwordHash, UserRole defaultRole = UserRole.Editor)
@@ -123,6 +128,18 @@ public class User : Entity
     public void Activate()
     {
         IsActive = true;
+        Touch();
+    }
+
+    public void EnableMfa()
+    {
+        MfaEnabled = true;
+        Touch();
+    }
+
+    public void DisableMfa()
+    {
+        MfaEnabled = false;
         Touch();
     }
 

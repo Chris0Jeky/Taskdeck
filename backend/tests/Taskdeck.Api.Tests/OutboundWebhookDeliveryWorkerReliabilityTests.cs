@@ -644,6 +644,7 @@ public class OutboundWebhookDeliveryWorkerReliabilityTests
         public IExternalLoginRepository ExternalLogins => null!;
         public IOAuthAuthCodeRepository OAuthAuthCodes => null!;
         public IApiKeyRepository ApiKeys => null!;
+        public IMfaCredentialRepository MfaCredentials => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(0);

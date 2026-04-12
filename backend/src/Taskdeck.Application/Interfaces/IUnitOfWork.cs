@@ -29,6 +29,7 @@ public interface IUnitOfWork
     IExternalLoginRepository ExternalLogins { get; }
     IOAuthAuthCodeRepository OAuthAuthCodes { get; }
     IApiKeyRepository ApiKeys { get; }
+    IMfaCredentialRepository MfaCredentials { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -10,12 +11,13 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260409120000_AddMfaCredentials")]
+    partial class AddMfaCredentials
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.25");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.14");
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.AgentProfile", b =>
                 {
@@ -1333,62 +1335,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("NotificationPreferences", (string)null);
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.OAuthAuthCode", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("ConsumedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsConsumed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(false);
-
-                    b.Property<string>("ProviderData")
-                        .HasMaxLength(4096)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Purpose")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("login");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.HasIndex("ExpiresAt");
-
-                    b.ToTable("OAuthAuthCodes", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.OutboundWebhookDelivery", b =>

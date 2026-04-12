@@ -12,6 +12,7 @@ public static class SettingsRegistration
         out RateLimitingSettings rateLimitingSettings,
         out JwtSettings jwtSettings,
         out GitHubOAuthSettings gitHubOAuthSettings,
+        out OidcSettings oidcSettings,
         out SentrySettings sentrySettings,
         out TelemetrySettings telemetrySettings,
         out AnalyticsSettings analyticsSettings)
@@ -47,6 +48,12 @@ public static class SettingsRegistration
 
         gitHubOAuthSettings = configuration.GetSection("GitHubOAuth").Get<GitHubOAuthSettings>() ?? new GitHubOAuthSettings();
         services.AddSingleton(gitHubOAuthSettings);
+
+        oidcSettings = configuration.GetSection("Oidc").Get<OidcSettings>() ?? new OidcSettings();
+        services.AddSingleton(oidcSettings);
+
+        var mfaPolicySettings = configuration.GetSection("MfaPolicy").Get<MfaPolicySettings>() ?? new MfaPolicySettings();
+        services.AddSingleton(mfaPolicySettings);
 
         var sandboxSettings = configuration.GetSection("DevelopmentSandbox").Get<DevelopmentSandboxSettings>() ?? new DevelopmentSandboxSettings();
         sandboxSettings.Enabled = sandboxSettings.Enabled && environment.IsDevelopment();

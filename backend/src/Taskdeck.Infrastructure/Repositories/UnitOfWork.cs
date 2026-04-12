@@ -40,7 +40,8 @@ public class UnitOfWork : IUnitOfWork
         IKnowledgeChunkRepository knowledgeChunks,
         IExternalLoginRepository externalLogins,
         IOAuthAuthCodeRepository oauthAuthCodes,
-        IApiKeyRepository apiKeys)
+        IApiKeyRepository apiKeys,
+        IMfaCredentialRepository mfaCredentials)
     {
         _context = context;
         Boards = boards;
@@ -70,6 +71,7 @@ public class UnitOfWork : IUnitOfWork
         ExternalLogins = externalLogins;
         OAuthAuthCodes = oauthAuthCodes;
         ApiKeys = apiKeys;
+        MfaCredentials = mfaCredentials;
     }
 
     public IBoardRepository Boards { get; }
@@ -99,6 +101,7 @@ public class UnitOfWork : IUnitOfWork
     public IExternalLoginRepository ExternalLogins { get; }
     public IOAuthAuthCodeRepository OAuthAuthCodes { get; }
     public IApiKeyRepository ApiKeys { get; }
+    public IMfaCredentialRepository MfaCredentials { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

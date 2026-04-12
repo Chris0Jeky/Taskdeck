@@ -297,6 +297,7 @@ builder.Services.AddTaskdeckSettings(
     out var rateLimitingSettings,
     out var jwtSettings,
     out var gitHubOAuthSettings,
+    out var oidcSettings,
     out var sentrySettings,
     out _,  // telemetrySettings — registered in DI by AddTaskdeckSettings
     out _); // analyticsSettings — registered in DI by AddTaskdeckSettings
@@ -326,8 +327,8 @@ builder.Services.AddMcpServer()
     .WithTools<WriteTools>()
     .WithTools<ProposalTools>();
 
-// Add JWT Authentication (with optional GitHub OAuth)
-builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings);
+// Add JWT Authentication (with optional GitHub OAuth and OIDC providers)
+builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings, oidcSettings);
 
 // Add OpenTelemetry observability
 builder.Services.AddTaskdeckObservability(observabilitySettings);

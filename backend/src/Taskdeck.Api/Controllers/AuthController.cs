@@ -17,7 +17,7 @@ using AuthenticationService = Taskdeck.Application.Services.AuthenticationServic
 
 namespace Taskdeck.Api.Controllers;
 
-public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string? MfaCode = null);
 public record ExchangeCodeRequest(string Code);
 public record LinkExchangeRequest(string Code);
 
@@ -32,13 +32,23 @@ public class AuthController : AuthenticatedControllerBase
 {
     private readonly AuthenticationService _authService;
     private readonly GitHubOAuthSettings _gitHubOAuthSettings;
+    private readonly OidcSettings _oidcSettings;
+    private readonly MfaService _mfaService;
     private readonly IUnitOfWork _unitOfWork;
 
-    public AuthController(AuthenticationService authService, GitHubOAuthSettings gitHubOAuthSettings, IUserContext userContext, IUnitOfWork unitOfWork)
+    public AuthController(
+        AuthenticationService authService,
+        GitHubOAuthSettings gitHubOAuthSettings,
+        OidcSettings oidcSettings,
+        MfaService mfaService,
+        IUserContext userContext,
+        IUnitOfWork unitOfWork)
         : base(userContext)
     {
         _authService = authService;
         _gitHubOAuthSettings = gitHubOAuthSettings;
+        _oidcSettings = oidcSettings;
+        _mfaService = mfaService;
         _unitOfWork = unitOfWork;
     }
 
@@ -93,11 +103,13 @@ public class AuthController : AuthenticatedControllerBase
     /// <summary>
     /// Change the password for the authenticated caller.
     /// The target user is always derived from the JWT — client-supplied user IDs are not accepted.
+    /// When MFA is enabled and RequireMfaForSensitiveActions is true, a valid MFA code is required.
     /// </summary>
-    /// <param name="request">Current and new password.</param>
+    /// <param name="request">Current password, new password, and optional MFA code.</param>
     /// <response code="204">Password changed successfully.</response>
     /// <response code="400">Validation error.</response>
     /// <response code="401">Not authenticated or current password is incorrect.</response>
+    /// <response code="403">MFA verification required but not provided or invalid.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("change-password")]
     [Authorize]
@@ -105,11 +117,25 @@ public class AuthController : AuthenticatedControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
             return errorResult!;
+
+        // Enforce MFA for sensitive actions when policy requires it
+        if (await _mfaService.IsMfaRequiredForSensitiveActionAsync(callerUserId))
+        {
+            if (string.IsNullOrWhiteSpace(request.MfaCode))
+                return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(
+                    ErrorCodes.Forbidden, "MFA verification is required for this action"));
+
+            var mfaResult = await _mfaService.VerifyCodeAsync(callerUserId, request.MfaCode);
+            if (!mfaResult.IsSuccess)
+                return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(
+                    ErrorCodes.AuthenticationFailed, "Invalid MFA verification code"));
+        }
 
         var result = await _authService.ChangePasswordAsync(callerUserId, request.CurrentPassword, request.NewPassword);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
@@ -447,15 +473,164 @@ public class AuthController : AuthenticatedControllerBase
     }
 
     /// <summary>
-    /// Returns whether GitHub OAuth login is available on this instance.
+    /// Returns available authentication providers on this instance.
     /// </summary>
     [HttpGet("providers")]
     public IActionResult GetProviders()
     {
+        var oidcProviders = _oidcSettings.ConfiguredProviders
+            .Select(p => new OidcProviderInfoDto(p.Name, p.DisplayName))
+            .ToList();
+
         return Ok(new
         {
-            GitHub = _gitHubOAuthSettings.IsConfigured
+            GitHub = _gitHubOAuthSettings.IsConfigured,
+            Oidc = oidcProviders
         });
+    }
+
+    /// <summary>
+    /// Initiates OIDC login flow for a named provider. Only available when the provider is configured.
+    /// </summary>
+    [HttpGet("oidc/{providerName}/login")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    public IActionResult OidcLogin(string providerName, [FromQuery] string? returnUrl = null)
+    {
+        var provider = _oidcSettings.ConfiguredProviders
+            .FirstOrDefault(p => string.Equals(p.Name, providerName, StringComparison.OrdinalIgnoreCase));
+
+        if (provider == null)
+            return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, $"OIDC provider '{providerName}' is not configured"));
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && !Url.IsLocalUrl(returnUrl))
+            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Invalid return URL"));
+
+        var schemeName = $"Oidc_{provider.Name}";
+        var properties = new AuthenticationProperties
+        {
+            RedirectUri = Url.Action(nameof(OidcCallback), new { providerName = provider.Name, returnUrl }),
+            Items = { { "LoginProvider", provider.Name } }
+        };
+
+        return Challenge(properties, schemeName);
+    }
+
+    /// <summary>
+    /// Handles the OIDC callback, creates/links the user, and redirects with a short-lived code.
+    /// </summary>
+    [HttpGet("oidc/{providerName}/callback")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    public async Task<IActionResult> OidcCallback(string providerName, [FromQuery] string? returnUrl = null)
+    {
+        var provider = _oidcSettings.ConfiguredProviders
+            .FirstOrDefault(p => string.Equals(p.Name, providerName, StringComparison.OrdinalIgnoreCase));
+
+        if (provider == null)
+            return NotFound(new ApiErrorResponse(ErrorCodes.NotFound, $"OIDC provider '{providerName}' is not configured"));
+
+        var schemeName = $"Oidc_{provider.Name}";
+        var authenticateResult = await HttpContext.AuthenticateAsync(schemeName);
+        if (!authenticateResult.Succeeded || authenticateResult.Principal == null)
+        {
+            return Unauthorized(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                $"OIDC authentication with '{provider.DisplayName}' failed"));
+        }
+
+        var claims = authenticateResult.Principal.Claims.ToList();
+        var providerUserId = claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var username = claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Name)?.Value
+                       ?? claims.FirstOrDefault(c => c.Type == "preferred_username")?.Value;
+        var email = claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Email)?.Value;
+        var displayName = claims.FirstOrDefault(c => c.Type == "name")?.Value;
+
+        if (string.IsNullOrWhiteSpace(providerUserId))
+        {
+            return Unauthorized(new ApiErrorResponse(
+                ErrorCodes.AuthenticationFailed,
+                $"OIDC provider '{provider.DisplayName}' did not return a user identifier"));
+        }
+
+        if (string.IsNullOrWhiteSpace(email))
+            email = $"{provider.Name.ToLowerInvariant()}-{providerUserId}@external.taskdeck.local";
+
+        if (string.IsNullOrWhiteSpace(username))
+            username = $"{provider.Name.ToLowerInvariant()}-user-{providerUserId}";
+
+        var dto = new ExternalLoginDto(
+            Provider: $"oidc_{provider.Name}",
+            ProviderUserId: providerUserId,
+            Username: username,
+            Email: email,
+            DisplayName: displayName,
+            AvatarUrl: null);
+
+        var result = await _authService.ExternalLoginAsync(dto);
+
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        // Sign out the temporary cookie used during the OIDC handshake
+        await HttpContext.SignOutAsync(AuthenticationRegistration.ExternalAuthenticationScheme);
+
+        // Store only the user ID in the auth code -- JWT is re-issued at exchange time.
+        var code = GenerateAuthCode();
+        var authCode = new OAuthAuthCode(
+            code: code,
+            userId: result.Value.User.Id,
+            token: "placeholder", // Not stored; JWT re-issued at exchange
+            expiresAt: DateTimeOffset.UtcNow.AddSeconds(60));
+
+        await _unitOfWork.OAuthAuthCodes.AddAsync(authCode);
+        await _unitOfWork.SaveChangesAsync();
+
+        // Best-effort cleanup of expired/consumed codes
+        await CleanupExpiredCodesAsync();
+
+        var safeReturnUrl = !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)
+            ? returnUrl
+            : "/";
+
+        var separator = safeReturnUrl.Contains('?') ? "&" : "?";
+        return Redirect($"{safeReturnUrl}{separator}oauth_code={Uri.EscapeDataString(code)}&oauth_provider=oidc");
+    }
+
+    /// <summary>
+    /// Exchanges a short-lived OIDC authorization code for a JWT token.
+    /// Reuses the same database-backed code store as GitHub OAuth.
+    /// </summary>
+    [HttpPost("oidc/exchange")]
+    [EnableRateLimiting(RateLimitingPolicyNames.AuthPerIp)]
+    public async Task<IActionResult> OidcExchangeCode([FromBody] ExchangeCodeRequest request)
+    {
+        const string genericError = "Invalid or expired code";
+
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Code is required"));
+
+        var authCode = await _unitOfWork.OAuthAuthCodes.GetByCodeAsync(request.Code);
+        if (authCode == null || authCode.IsLinkingCode || authCode.IsExpired || authCode.IsConsumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
+
+        var consumed = await _unitOfWork.OAuthAuthCodes.TryConsumeAtomicAsync(request.Code);
+        if (!consumed)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
+
+        var user = await _unitOfWork.Users.GetByIdAsync(authCode.UserId);
+        if (user == null)
+            return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
+
+        var userDto = new UserDto(
+            user.Id,
+            user.Username,
+            user.Email,
+            user.DefaultRole,
+            user.IsActive,
+            user.CreatedAt,
+            user.UpdatedAt);
+
+        var freshToken = _authService.GenerateJwtToken(user);
+        return Ok(new AuthResultDto(freshToken, userDto));
     }
 
     private static string GenerateAuthCode()
