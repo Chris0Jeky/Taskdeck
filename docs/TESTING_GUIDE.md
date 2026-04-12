@@ -596,6 +596,80 @@ cd frontend/taskdeck-web
 npm run test:e2e:audit:headed
 ```
 
+## Cross-Browser and Mobile E2E Testing
+
+### Browser Projects
+
+The Playwright config defines five projects:
+
+| Project | Device Descriptor | When It Runs |
+|---------|------------------|--------------|
+| `chromium` | Desktop Chrome | Every PR (ci-required), nightly, manual |
+| `firefox` | Desktop Firefox | Nightly, manual dispatch, `testing` label |
+| `webkit` | Desktop Safari | Nightly, manual dispatch, `testing` label |
+| `mobile-chrome` | Pixel 7 | Nightly, manual dispatch, `testing` label |
+| `mobile-safari` | iPhone 14 | Nightly, manual dispatch, `testing` label |
+
+### Test Tagging
+
+Tests use tag annotations in their title strings to control which projects run them:
+
+- **(no tag)** or `@smoke` — runs on chromium only (PR gate default)
+- `@cross-browser` — runs on chromium, firefox, and webkit
+- `@mobile` — runs on mobile-chrome and mobile-safari only
+- `@quarantine` — excluded from all CI (see `docs/testing/FLAKY_TEST_POLICY.md`)
+
+### Running Cross-Browser Tests Locally
+
+Install all browsers (one-time):
+
+```bash
+cd frontend/taskdeck-web
+npx playwright install --with-deps
+```
+
+Run a specific project:
+
+```bash
+npx playwright test --project=firefox --reporter=line
+npx playwright test --project=mobile-safari --reporter=line
+```
+
+Run all projects:
+
+```bash
+npx playwright test --reporter=line
+```
+
+Run only cross-browser tagged tests across all desktop browsers:
+
+```bash
+npx playwright test --grep="@cross-browser" --reporter=line
+```
+
+Run only mobile tests:
+
+```bash
+npx playwright test --grep="@mobile" --reporter=line
+```
+
+### CI Configuration
+
+- **PR gate** (`ci-required.yml`): calls `reusable-e2e-smoke.yml` which installs and runs chromium only. This keeps PR feedback fast (~12 min timeout).
+- **Nightly** (`ci-nightly.yml`): calls `reusable-e2e-cross-browser.yml` which runs all 5 projects in a matrix with `fail-fast: false`.
+- **Extended/manual** (`ci-extended.yml`): calls `reusable-e2e-cross-browser.yml` on `testing` label or manual dispatch.
+
+### Writing New E2E Tests
+
+1. **Default tests** (no tag): run on chromium in PR gate. Use for most new tests.
+2. **Critical journeys** that must work cross-browser: add `@cross-browser` tag. These will also run on chromium in PR gate.
+3. **Mobile-specific behavior** (viewport responsiveness, touch targets, overflow): add `@mobile` tag. These only run on mobile projects.
+4. **Flaky or unstable tests**: add `@quarantine` tag and file an issue. See `docs/testing/FLAKY_TEST_POLICY.md`.
+
+### Flaky Test Policy
+
+See `docs/testing/FLAKY_TEST_POLICY.md` for the full quarantine/remediation process, SLA timelines, and prevention guidelines.
+
 ## Visual Regression Tests
 
 Visual regression tests capture baseline screenshots of key UI surfaces and compare them against future renders to catch unintended layout changes.

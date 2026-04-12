@@ -20,6 +20,7 @@
 #     ├── reusable-openapi-guardrail.yml
 #     ├── reusable-backend-solution.yml (label: testing)
 #     ├── reusable-e2e-smoke.yml (label: testing)
+#     ├── reusable-e2e-cross-browser.yml (label: testing)
 #     ├── reusable-demo-director-smoke.yml (label: automation)
 #     ├── reusable-load-concurrency-harness.yml (label: testing)
 #     └── reusable-container-integration.yml (label: testing) — Testcontainers PostgreSQL
@@ -28,6 +29,7 @@
 #     ├── reusable-openapi-guardrail.yml
 #     ├── reusable-backend-solution.yml
 #     ├── reusable-e2e-smoke.yml
+#     ├── reusable-e2e-cross-browser.yml
 #     ├── reusable-load-concurrency-harness.yml
 #     └── reusable-container-images.yml
 #
