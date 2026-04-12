@@ -31,7 +31,8 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
         var nowStr = now.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
         var affected = await _context.Database.ExecuteSqlRawAsync(
             "UPDATE OAuthAuthCodes SET IsConsumed = 1, ConsumedAt = {0}, UpdatedAt = {1} WHERE Code = {2} AND IsConsumed = 0 AND ExpiresAt > {3}",
-            nowStr, nowStr, code, nowStr);
+            [nowStr, nowStr, code, nowStr],
+            cancellationToken);
 
         return affected > 0;
     }
@@ -44,7 +45,8 @@ public class OAuthAuthCodeRepository : Repository<OAuthAuthCode>, IOAuthAuthCode
         var cutoffStr = cutoff.ToString("yyyy-MM-dd HH:mm:ss.fffffff+00:00");
         var affected = await _context.Database.ExecuteSqlRawAsync(
             "DELETE FROM OAuthAuthCodes WHERE ExpiresAt < {0} OR IsConsumed = 1",
-            cutoffStr);
+            [cutoffStr],
+            cancellationToken);
 
         return affected;
     }

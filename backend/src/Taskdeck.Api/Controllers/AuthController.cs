@@ -371,15 +371,32 @@ public class AuthController : AuthenticatedControllerBase
         if (!consumed)
             return Unauthorized(new ApiErrorResponse(ErrorCodes.AuthenticationFailed, genericError));
 
-        // Parse the provider data from the link code
+        // Parse the provider data from the link code.
+        // Wrap in try-catch to prevent 500 errors from malformed JSON (should not happen in normal
+        // operation, but defensive coding for any unexpected data corruption).
         if (string.IsNullOrWhiteSpace(authCode.ProviderData))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Link code contains no provider data"));
 
-        var providerInfo = JsonSerializer.Deserialize<JsonElement>(authCode.ProviderData);
-        var provider = providerInfo.GetProperty("provider").GetString() ?? "GitHub";
-        var providerUserId = providerInfo.GetProperty("providerUserId").GetString();
-        var displayName = providerInfo.TryGetProperty("displayName", out var dn) ? dn.GetString() : null;
-        var avatarUrl = providerInfo.TryGetProperty("avatarUrl", out var av) ? av.GetString() : null;
+        string? provider;
+        string? providerUserId;
+        string? displayName;
+        string? avatarUrl;
+        try
+        {
+            var providerInfo = JsonSerializer.Deserialize<JsonElement>(authCode.ProviderData);
+            provider = providerInfo.GetProperty("provider").GetString() ?? "GitHub";
+            providerUserId = providerInfo.GetProperty("providerUserId").GetString();
+            displayName = providerInfo.TryGetProperty("displayName", out var dn) ? dn.GetString() : null;
+            avatarUrl = providerInfo.TryGetProperty("avatarUrl", out var av) ? av.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Link code contains invalid provider data"));
+        }
+        catch (KeyNotFoundException)
+        {
+            return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Link code is missing required provider fields"));
+        }
 
         if (string.IsNullOrWhiteSpace(providerUserId))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Provider user ID is missing from link code"));

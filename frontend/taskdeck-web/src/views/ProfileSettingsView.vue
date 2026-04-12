@@ -89,8 +89,11 @@ async function handleChangePassword() {
 
 function startGitHubLink() {
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
-  const returnUrl = '/workspace/settings'
-  window.location.href = `${apiBase}/auth/github/login?mode=link&returnUrl=${encodeURIComponent(returnUrl)}`
+  // Return to the profile settings page after OAuth completes.
+  // Note: mode=link is NOT passed — the backend derives link/login mode from
+  // server-side auth state (JWT presence) to prevent user-controlled bypass.
+  const returnUrl = '/workspace/settings/profile'
+  window.location.href = `${apiBase}/auth/github/login?returnUrl=${encodeURIComponent(returnUrl)}`
 }
 
 async function handleLinkCode(code: string) {
