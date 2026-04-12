@@ -27,8 +27,8 @@ public sealed class SentrySettings
     public double TracesSampleRate { get; set; } = 0.1;
 
     /// <summary>
-    /// When true, PII scrubbing is enforced — Sentry SDK will not send
-    /// usernames, emails, IP addresses, or request bodies.
+    /// When true, Sentry SDK will send default PII (usernames, emails, IP
+    /// addresses, request bodies). Default: false (PII scrubbing enforced).
     /// </summary>
     public bool SendDefaultPii { get; set; }
 }

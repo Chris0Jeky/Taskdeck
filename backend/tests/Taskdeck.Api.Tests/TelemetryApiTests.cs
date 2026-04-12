@@ -9,10 +9,12 @@ namespace Taskdeck.Api.Tests;
 
 public class TelemetryApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     public TelemetryApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -46,9 +48,11 @@ public class TelemetryApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task PostEvents_ShouldRequireAuth()
     {
-        // _client from factory has no auth headers by default — this verifies
-        // that the endpoint rejects unauthenticated requests.
-        var response = await _client.PostAsJsonAsync("/api/telemetry/events", new
+        // Create an unauthenticated client to verify the endpoint rejects
+        // requests without auth headers. Using a fresh factory client ensures
+        // no auth state from other tests leaks in.
+        using var unauthClient = _factory.CreateClient();
+        var response = await unauthClient.PostAsJsonAsync("/api/telemetry/events", new
         {
             events = new[]
             {

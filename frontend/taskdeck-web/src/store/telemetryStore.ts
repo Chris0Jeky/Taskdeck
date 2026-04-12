@@ -68,6 +68,9 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   /** Timer ID for periodic flush */
   let flushTimerId: ReturnType<typeof setInterval> | null = null
 
+  /** Guard to prevent concurrent flushes causing duplicate sends */
+  let isFlushing = false
+
   // ── Computed ────────────────────────────────────────────────────────
 
   /** Telemetry is active only when BOTH user consents AND server enables it */
@@ -130,6 +133,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
       configLoaded.value = true
     } catch {
       // Config fetch failure is non-fatal — telemetry simply stays disabled
+      serverConfig.value = null
       configLoaded.value = true
     }
   }
@@ -170,6 +174,12 @@ export const useTelemetryStore = defineStore('telemetry', () => {
       return
     }
 
+    // Prevent concurrent flushes causing duplicate sends
+    if (isFlushing) {
+      return
+    }
+    isFlushing = true
+
     const eventsToSend = [...eventBuffer.value]
     eventBuffer.value = []
 
@@ -180,6 +190,8 @@ export const useTelemetryStore = defineStore('telemetry', () => {
       eventBuffer.value = [...eventsToSend, ...eventBuffer.value].slice(
         -MAX_BUFFER_SIZE,
       )
+    } finally {
+      isFlushing = false
     }
   }
 

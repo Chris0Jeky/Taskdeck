@@ -81,6 +81,13 @@ public sealed class TelemetryEventService : ITelemetryEventService
         var recorded = 0;
         foreach (var evt in events)
         {
+            // Guard against null elements in the batch
+            if (evt == null)
+            {
+                _logger.LogWarning("Telemetry event rejected: null element in batch");
+                continue;
+            }
+
             if (RecordEvent(evt))
             {
                 recorded++;

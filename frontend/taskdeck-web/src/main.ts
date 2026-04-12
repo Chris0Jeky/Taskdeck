@@ -19,3 +19,10 @@ import('./store/telemetryStore').then(({ useTelemetryStore }) => {
   const telemetry = useTelemetryStore()
   void telemetry.initialize()
 })
+
+// Initialize analytics script watcher after mount (non-blocking).
+// This watches the telemetry store's analyticsConfig and injects/removes
+// the analytics script based on user consent and server configuration.
+import('./composables/useAnalyticsScript').then(({ initAnalyticsScriptWatcher }) => {
+  initAnalyticsScriptWatcher()
+})

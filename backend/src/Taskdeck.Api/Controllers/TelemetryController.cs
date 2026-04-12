@@ -69,14 +69,14 @@ public class TelemetryController : ControllerBase
     /// if telemetry is disabled on the server.
     /// </summary>
     [HttpPost("events")]
-    public IActionResult RecordEvents([FromBody] TelemetryBatchRequest request)
+    public IActionResult RecordEvents([FromBody] TelemetryBatchRequest? request)
     {
         if (!_telemetryEventService.IsEnabled)
         {
             return Ok(new { recorded = 0, message = "Telemetry is disabled on this server." });
         }
 
-        if (request.Events == null || request.Events.Count == 0)
+        if (request == null || request.Events == null || request.Events.Count == 0)
         {
             return BadRequest(new { error = "No events provided." });
         }
