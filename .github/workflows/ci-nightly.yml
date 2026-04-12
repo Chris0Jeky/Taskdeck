@@ -60,6 +60,15 @@ jobs:
       k6-duration: "90s"
       k6-user-pool: "6"
 
+  e2e-cross-browser:
+    name: E2E Cross-Browser Matrix
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-e2e-cross-browser.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+
   container-images:
     name: Container Images Regression
     needs:

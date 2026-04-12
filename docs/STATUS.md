@@ -882,6 +882,7 @@ Result:
   - backend Playwright startup stays on deterministic `Mock` provider mode unless the run is an explicit demo flow that injects live-provider overrides.
   - Investigation record remains at `docs/analysis/2026-02-25_frontend-gate-port-bind-and-cors-blockers.md`.
 - 2026-03-26 manual audit confirmed the previously published raw API/E2E counts were stale; the next full end-to-end suite recertification should refresh discovery/pass totals rather than continuing to repeat the older 2026-03-06 figures.
+- 2026-04-09 cross-browser and mobile E2E matrix delivered (`#87`): Playwright config now defines 5 projects (chromium, firefox, webkit, mobile-chrome/Pixel 7, mobile-safari/iPhone 14); tag-based filtering (`@cross-browser`, `@mobile`, `@quarantine`) controls which tests run per project; 5 cross-browser + 4 mobile viewport tests added; PR gate stays chromium-only; full matrix runs nightly and on `testing` label; flaky test policy documented at `docs/testing/FLAKY_TEST_POLICY.md`
 
 ### Demo Director Smoke
 
@@ -916,6 +917,7 @@ Extended/non-blocking workflow: `.github/workflows/ci-extended.yml`
 - `dependency-review` (PR dependency risk check)
 - label/manual-triggered backend solution + E2E smoke lanes (`testing` label or `workflow_dispatch`) for PRs that touch `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`
 - label/manual-triggered demo director smoke lane (`automation` label or `workflow_dispatch`) via `.github/workflows/reusable-demo-director-smoke.yml`; docs-only PRs still need manual dispatch because `ci-extended.yml` path filters do not watch `docs/**`
+- label/manual-triggered E2E cross-browser matrix lane via `.github/workflows/reusable-e2e-cross-browser.yml` (`testing` label or `workflow_dispatch`); runs all 5 browser/device projects in parallel with `fail-fast: false`
 - label/manual-triggered load/concurrency harness lane via `.github/workflows/reusable-load-concurrency-harness.yml`
 - label/manual-triggered cross-browser E2E matrix lane via `.github/workflows/reusable-e2e-cross-browser.yml` (5-project parallel matrix: Chromium, Firefox, WebKit, mobile-chrome, mobile-safari)
 - label/manual-triggered visual regression lane via `.github/workflows/reusable-visual-regression.yml` (Playwright `toHaveScreenshot()` with diff artifact upload; `testing`/`visual` label)
@@ -945,6 +947,7 @@ Nightly workflow: `.github/workflows/ci-nightly.yml`
 
 - scheduled/manual backend solution regression
 - scheduled/manual E2E smoke (reuses `.github/workflows/reusable-e2e-smoke.yml`)
+- scheduled/manual E2E cross-browser matrix (reuses `.github/workflows/reusable-e2e-cross-browser.yml`; 5 projects: chromium, firefox, webkit, mobile-chrome, mobile-safari)
 - scheduled/manual load/concurrency harness (reuses `.github/workflows/reusable-load-concurrency-harness.yml`)
 - scheduled/manual container image regression
 
