@@ -1,0 +1,25 @@
+{
+  "stryker-config": {
+    "project": "Taskdeck.Domain.csproj",
+    "test-projects": [
+      "tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj"
+    ],
+    "solution": "Taskdeck.sln",
+    "mutation-level": "Standard",
+    "reporters": [
+      "html",
+      "json",
+      "progress",
+      "cleartext"
+    ],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 0
+    },
+    "language-version": "latest",
+    "verbosity": "info",
+    "ignored-methods": [],
+    "excluded-mutations": []
+  }
+}

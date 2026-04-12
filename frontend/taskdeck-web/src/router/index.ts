@@ -40,6 +40,9 @@ const DevToolsView = () => import('../views/DevToolsView.vue')
 const SavedViewsView = () => import('../views/SavedViewsView.vue')
 const MetricsView = () => import('../views/MetricsView.vue')
 const CalendarView = () => import('../views/CalendarView.vue')
+const AgentsView = () => import('../views/AgentsView.vue')
+const AgentRunsView = () => import('../views/AgentRunsView.vue')
+const AgentRunDetailView = () => import('../views/AgentRunDetailView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -263,6 +266,26 @@ const router = createRouter({
       path: '/workspace/notifications',
       name: 'workspace-notifications',
       component: NotificationInboxView,
+      meta: { requiresShell: true },
+    },
+
+    // Agent surfaces (visible in agent workspace mode)
+    {
+      path: '/workspace/agents',
+      name: 'workspace-agents',
+      component: AgentsView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/agents/:agentId/runs',
+      name: 'workspace-agent-runs',
+      component: AgentRunsView,
+      meta: { requiresShell: true },
+    },
+    {
+      path: '/workspace/agents/:agentId/runs/:runId',
+      name: 'workspace-agent-run-detail',
+      component: AgentRunDetailView,
       meta: { requiresShell: true },
     },
 
