@@ -293,7 +293,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     }
 
     // ─────────────────────────────────────────────────────────
-    // 3. SignalR auth
+    // 3. SignalR auth — header-based (HubConnection via AccessTokenProvider)
     // ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -353,7 +353,130 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     }
 
     // ─────────────────────────────────────────────────────────
-    // 4. GitHub OAuth config endpoints
+    // 3b. SignalR query-string auth — exercises the OnMessageReceived
+    //     handler in AuthenticationRegistration.cs that extracts
+    //     ?access_token= from the query string for WebSocket connections.
+    //     Uses raw HTTP POST to /hubs/boards/negotiate to bypass the
+    //     .NET HubConnection client (which always uses the Authorization header).
+    // ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SignalR_QueryStringAuth_ValidTokenAccepted()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "signalr-qsv");
+
+        // POST to the negotiate endpoint with the token in the query string,
+        // NOT in the Authorization header. This exercises the OnMessageReceived
+        // handler that extracts access_token from Request.Query.
+        using var rawClient = _factory.CreateClient();
+        var negotiateUrl = $"/hubs/boards/negotiate?access_token={Uri.EscapeDataString(user.Token)}";
+        var response = await rawClient.PostAsync(negotiateUrl, null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "SignalR negotiate should accept a valid JWT passed via ?access_token= query string");
+    }
+
+    [Fact]
+    public async Task SignalR_QueryStringAuth_ExpiredTokenRejected()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "signalr-qse");
+
+        var expiredToken = CreateCustomJwt(
+            userId: user.UserId,
+            username: user.Username,
+            email: user.Email,
+            secretKey: "TaskdeckDevelopmentOnlySecretKeyChangeMe123!",
+            issuer: "Taskdeck",
+            audience: "TaskdeckUsers",
+            expiresIn: TimeSpan.FromMinutes(-5));
+
+        using var rawClient = _factory.CreateClient();
+        var negotiateUrl = $"/hubs/boards/negotiate?access_token={Uri.EscapeDataString(expiredToken)}";
+        var response = await rawClient.PostAsync(negotiateUrl, null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "SignalR negotiate should reject an expired JWT passed via ?access_token= query string");
+    }
+
+    [Fact]
+    public async Task SignalR_QueryStringAuth_WrongKeyRejected()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "signalr-qsk");
+
+        var wrongKeyToken = CreateCustomJwt(
+            userId: user.UserId,
+            username: user.Username,
+            email: user.Email,
+            secretKey: "CompletelyDifferentWrongSecretKey_Padding1234!",
+            issuer: "Taskdeck",
+            audience: "TaskdeckUsers",
+            expiresIn: TimeSpan.FromMinutes(60));
+
+        using var rawClient = _factory.CreateClient();
+        var negotiateUrl = $"/hubs/boards/negotiate?access_token={Uri.EscapeDataString(wrongKeyToken)}";
+        var response = await rawClient.PostAsync(negotiateUrl, null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "SignalR negotiate should reject a JWT signed with the wrong key via ?access_token= query string");
+    }
+
+    [Fact]
+    public async Task SignalR_QueryStringAuth_NoTokenRejected()
+    {
+        // POST to negotiate without any token at all — should be rejected
+        using var rawClient = _factory.CreateClient();
+        var response = await rawClient.PostAsync("/hubs/boards/negotiate", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "SignalR negotiate should reject unauthenticated requests");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 4. Expired JWT → multiple endpoints return 401
+    //    Verifies that the 401 + ApiErrorResponse contract is
+    //    not accidental to one controller, but systemic.
+    // ─────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("/api/boards")]
+    [InlineData("/api/capture/items")]
+    [InlineData("/api/auth/change-password")]
+    public async Task ExpiredJwt_MultipleEndpoints_Return401(string endpoint)
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "tok-multi");
+
+        var expiredToken = CreateCustomJwt(
+            userId: user.UserId,
+            username: user.Username,
+            email: user.Email,
+            secretKey: "TaskdeckDevelopmentOnlySecretKeyChangeMe123!",
+            issuer: "Taskdeck",
+            audience: "TaskdeckUsers",
+            expiresIn: TimeSpan.FromMinutes(-5));
+
+        using var expiredClient = _factory.CreateClient();
+        expiredClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", expiredToken);
+
+        // Use POST for change-password; GET for everything else. Either way should 401 before body validation.
+        var response = endpoint.Contains("change-password")
+            ? await expiredClient.PostAsJsonAsync(endpoint, new
+            {
+                CurrentPassword = "password123",
+                NewPassword = "NewSecurePassword!789"
+            })
+            : await expiredClient.GetAsync(endpoint);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            $"endpoint {endpoint} should reject expired JWT");
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 5. GitHub OAuth config endpoints
     // ─────────────────────────────────────────────────────────
 
     [Fact]
