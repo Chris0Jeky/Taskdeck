@@ -16,7 +16,8 @@ public class ApiControllerBoundaryTests
     private static readonly HashSet<string> AllowedControllerBaseTypes = new(StringComparer.Ordinal)
     {
         "AuthController",
-        "HealthController"
+        "HealthController",
+        "TelemetryController"
     };
 
     [Fact]
