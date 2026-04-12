@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CalendarView from '../../views/CalendarView.vue'
 import type { CalendarData } from '../../types/workspace'
@@ -6,6 +6,9 @@ import type { CalendarData } from '../../types/workspace'
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
 }))
+
+// Freeze time to April 2026 to match mock data
+const MOCK_DATE = new Date('2026-04-05T12:00:00Z')
 
 const mockCalendarData: CalendarData = {
   from: '2026-04-01T00:00:00Z',
@@ -83,8 +86,14 @@ async function waitForUi() {
 
 describe('CalendarView', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(MOCK_DATE)
     vi.clearAllMocks()
     mockGetCalendar.mockResolvedValue(mockCalendarData)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('loads calendar data on mount', async () => {

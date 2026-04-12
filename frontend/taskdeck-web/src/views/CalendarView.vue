@@ -18,11 +18,12 @@ const viewDate = ref(startOfMonth(new Date()))
 const viewMode = ref<'calendar' | 'timeline'>('calendar')
 
 function startOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), 1))
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
 }
 
-function endOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getFullYear(), date.getMonth() + 1, 1))
+/** Returns the first day of the next month (exclusive upper bound for date range queries). */
+function startOfNextMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1))
 }
 
 const monthLabel = computed(() => {
@@ -45,7 +46,7 @@ async function fetchCalendar() {
 
   try {
     const from = viewDate.value.toISOString()
-    const to = endOfMonth(viewDate.value).toISOString()
+    const to = startOfNextMonth(viewDate.value).toISOString()
     calendarData.value = await workspaceApi.getCalendar(from, to)
   } catch (e: unknown) {
     calendarData.value = null
@@ -325,15 +326,17 @@ watch(viewDate, fetchCalendar)
             <span class="td-timeline-group__date">{{ group.dateLabel }}</span>
             <span class="td-timeline-group__count">{{ group.cards.length }} card{{ group.cards.length === 1 ? '' : 's' }}</span>
           </div>
-          <div class="td-timeline-group__cards" role="list">
-            <button
+          <ul class="td-timeline-group__cards">
+            <li
               v-for="card in group.cards"
               :key="card.cardId"
-              class="td-timeline-card td-panel"
-              :class="cardStatusClass(card)"
-              role="listitem"
-              @click="openBoard(card.boardId)"
+              class="td-timeline-card-wrapper"
             >
+              <button
+                class="td-timeline-card td-panel"
+                :class="cardStatusClass(card)"
+                @click="openBoard(card.boardId)"
+              >
               <div class="td-timeline-card__header">
                 <span class="td-timeline-card__title">{{ card.title }}</span>
                 <span
@@ -359,7 +362,8 @@ watch(viewDate, fetchCalendar)
                 Blocked: {{ card.blockReason }}
               </p>
             </button>
-          </div>
+            </li>
+          </ul>
         </div>
 
         <div v-if="timelineGroups.length === 0" class="td-panel td-calendar__empty" role="status">
@@ -626,6 +630,13 @@ watch(viewDate, fetchCalendar)
   display: flex;
   flex-direction: column;
   gap: var(--td-space-3);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.td-timeline-card-wrapper {
+  display: contents;
 }
 
 .td-timeline-card {
