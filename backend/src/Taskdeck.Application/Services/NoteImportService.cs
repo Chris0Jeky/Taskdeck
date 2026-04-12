@@ -78,15 +78,18 @@ public sealed class NoteImportService : INoteImportService
         if (sections.Count == 0)
             return Result.Failure<NoteImportResultDto>(ErrorCodes.ValidationError, "No content sections found in markdown");
 
+        var warnings = new List<string>();
+        var truncatedSectionCount = 0;
         if (sections.Count > MaxSectionsPerFile)
         {
+            truncatedSectionCount = sections.Count - MaxSectionsPerFile;
+            warnings.Add($"Content contained {sections.Count} sections but only the first {MaxSectionsPerFile} were imported. {truncatedSectionCount} section(s) were skipped.");
             sections = sections.Take(MaxSectionsPerFile).ToList();
         }
 
         var items = new List<NoteImportItemResultDto>();
-        var sectionsAttempted = 0;
-        string? lastErrorCode = null;
-        string? lastErrorMessage = null;
+        var errors = new List<NoteImportItemErrorDto>();
+        var sectionIndex = 0;
 
         foreach (var section in sections)
         {
@@ -98,9 +101,10 @@ public sealed class NoteImportService : INoteImportService
 
             var captureText = BuildCaptureText(section);
             if (string.IsNullOrWhiteSpace(captureText))
+            {
+                sectionIndex++;
                 continue;
-
-            sectionsAttempted++;
+            }
 
             // Truncate to CaptureRequestContract max if needed
             if (captureText.Length > CaptureRequestContract.MaxRawTextLength)
@@ -126,8 +130,12 @@ public sealed class NoteImportService : INoteImportService
             var result = await _captureService.CreateAsync(userId, dto, cancellationToken);
             if (!result.IsSuccess)
             {
-                lastErrorCode = result.ErrorCode;
-                lastErrorMessage = result.ErrorMessage;
+                errors.Add(new NoteImportItemErrorDto(
+                    sectionIndex,
+                    section.Heading,
+                    result.ErrorCode ?? ErrorCodes.UnexpectedError,
+                    result.ErrorMessage ?? "Unknown error"));
+                sectionIndex++;
                 continue;
             }
 
@@ -136,16 +144,23 @@ public sealed class NoteImportService : INoteImportService
                 BuildExcerpt(captureText, 200),
                 "markdown",
                 truncatedRef));
+            sectionIndex++;
         }
 
-        if (items.Count == 0 && sectionsAttempted > 0)
+        // If all sections failed, return a failure result
+        if (items.Count == 0 && errors.Count > 0)
         {
+            var lastError = errors[^1];
             return Result.Failure<NoteImportResultDto>(
-                lastErrorCode ?? ErrorCodes.UnexpectedError,
-                $"All {sectionsAttempted} section(s) failed to import. Last error: {lastErrorMessage ?? "unknown"}");
+                lastError.ErrorCode,
+                $"All {errors.Count} section(s) failed to import. Last error: {lastError.ErrorMessage}");
         }
 
-        return Result.Success(new NoteImportResultDto(items.Count, items));
+        return Result.Success(new NoteImportResultDto(
+            items.Count,
+            items,
+            warnings.Count > 0 ? warnings : null,
+            errors.Count > 0 ? errors : null));
     }
 
     public async Task<Result<NoteImportResultDto>> ImportWebClipAsync(
@@ -208,9 +223,9 @@ public sealed class NoteImportService : INoteImportService
             result.Value.Id,
             BuildExcerpt(captureText, 200),
             "webclip",
-            request.Url);
+            externalRef);
 
-        return Result.Success(new NoteImportResultDto(1, new List<NoteImportItemResultDto> { item }));
+        return Result.Success(new NoteImportResultDto(1, new List<NoteImportItemResultDto> { item }, null, null));
     }
 
     internal static List<MarkdownSection> SplitMarkdownIntoSections(string content)

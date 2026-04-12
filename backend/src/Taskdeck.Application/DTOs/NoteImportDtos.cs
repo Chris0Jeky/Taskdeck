@@ -26,7 +26,18 @@ public sealed record WebClipImportRequestDto(
 /// </summary>
 public sealed record NoteImportResultDto(
     int ItemsCreated,
-    IReadOnlyList<NoteImportItemResultDto> Items);
+    IReadOnlyList<NoteImportItemResultDto> Items,
+    IReadOnlyList<string>? Warnings = null,
+    IReadOnlyList<NoteImportItemErrorDto>? Errors = null);
+
+/// <summary>
+/// Error detail for a section that failed to import.
+/// </summary>
+public sealed record NoteImportItemErrorDto(
+    int SectionIndex,
+    string? Heading,
+    string ErrorCode,
+    string ErrorMessage);
 
 /// <summary>
 /// Result for a single capture item created from a note import.

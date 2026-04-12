@@ -251,6 +251,71 @@ public class NoteImportServiceTests
     }
 
     [Fact]
+    public async Task ImportMarkdownAsync_ShouldReturnPartialSuccess_WhenSomeSectionsFail()
+    {
+        var callCount = 0;
+        _captureServiceMock
+            .Setup(s => s.CreateAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CreateCaptureItemDto>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callCount++;
+                if (callCount == 2)
+                {
+                    return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "Access denied");
+                }
+                return Result.Success(new CaptureItemDto(
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    null,
+                    CaptureStatus.New,
+                    CaptureSource.MarkdownImport,
+                    "raw text",
+                    "excerpt",
+                    DateTimeOffset.UtcNow,
+                    null,
+                    0));
+            });
+
+        var content = "# Section One\nBody of section one\n\n# Section Two\nBody of section two\n\n# Section Three\nBody three";
+        var request = new MarkdownImportRequestDto("notes.md", content);
+
+        var result = await _sut.ImportMarkdownAsync(Guid.NewGuid(), request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ItemsCreated.Should().Be(2);
+        result.Value.Errors.Should().NotBeNull();
+        result.Value.Errors.Should().HaveCount(1);
+        result.Value.Errors![0].SectionIndex.Should().Be(1);
+        result.Value.Errors![0].Heading.Should().Be("Section Two");
+        result.Value.Errors![0].ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ImportMarkdownAsync_ShouldReturnWarning_WhenSectionsTruncated()
+    {
+        SetupCaptureServiceReturnsSuccess();
+
+        // Create content with more than MaxSectionsPerFile sections
+        var sections = Enumerable.Range(1, NoteImportService.MaxSectionsPerFile + 5)
+            .Select(i => $"# Section {i}\nBody {i}")
+            .ToList();
+        var content = string.Join("\n\n", sections);
+
+        var request = new MarkdownImportRequestDto("notes.md", content);
+
+        var result = await _sut.ImportMarkdownAsync(Guid.NewGuid(), request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ItemsCreated.Should().Be(NoteImportService.MaxSectionsPerFile);
+        result.Value.Warnings.Should().NotBeNull();
+        result.Value.Warnings.Should().HaveCount(1);
+        result.Value.Warnings![0].Should().Contain("5 section(s) were skipped");
+    }
+
+    [Fact]
     public async Task ImportMarkdownAsync_ShouldReturnTruncatedExternalRef_InResponseItems()
     {
         SetupCaptureServiceReturnsSuccess();
@@ -615,5 +680,22 @@ public class NoteImportServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task ImportWebClipAsync_ShouldReturnTruncatedRef_WhenUrlExceedsLimit()
+    {
+        SetupCaptureServiceReturnsSuccess();
+
+        // Create a URL that is longer than MaxExternalRefLength
+        var longPath = new string('a', CaptureRequestContract.MaxExternalRefLength);
+        var longUrl = $"https://example.com/{longPath}";
+        var request = new WebClipImportRequestDto(longUrl[..NoteImportService.MaxUrlLength], "content");
+
+        var result = await _sut.ImportWebClipAsync(Guid.NewGuid(), request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items[0].SourceRef.Should().NotBeNull();
+        result.Value.Items[0].SourceRef!.Length.Should().BeLessOrEqualTo(CaptureRequestContract.MaxExternalRefLength);
     }
 }

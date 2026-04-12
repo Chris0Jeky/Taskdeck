@@ -43,7 +43,7 @@ public class NoteImportController : AuthenticatedControllerBase
     /// <response code="401">Authentication required.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("markdown")]
-    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    [EnableRateLimiting(RateLimitingPolicyNames.NoteImportPerUser)]
     [ProducesResponseType(typeof(NoteImportResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
@@ -78,7 +78,7 @@ public class NoteImportController : AuthenticatedControllerBase
     /// <response code="401">Authentication required.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("webclip")]
-    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    [EnableRateLimiting(RateLimitingPolicyNames.NoteImportPerUser)]
     [ProducesResponseType(typeof(NoteImportResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
