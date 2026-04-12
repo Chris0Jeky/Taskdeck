@@ -1,3 +1,4 @@
+using Taskdeck.Api.Health;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Services;
 using Taskdeck.Application.Interfaces;
@@ -31,6 +32,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IExternalImportAdapter, CsvExternalImportAdapter>();
         services.AddScoped<LlmQueueService>();
         services.AddScoped<ICaptureService, CaptureService>();
+        services.AddScoped<INoteImportService, NoteImportService>();
         services.AddScoped<ICaptureTriageService, CaptureTriageService>();
         services.AddScoped<HistoryService>();
         services.AddScoped<IHistoryService>(sp => sp.GetRequiredService<HistoryService>());
@@ -73,6 +75,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
+        services.AddSingleton<RedisBackplaneHealthCheck>();
 
         // Agent tool registry (singleton — populated once at startup, read concurrently)
         var toolRegistry = new TaskdeckToolRegistry();

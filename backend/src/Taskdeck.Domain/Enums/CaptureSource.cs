@@ -11,5 +11,7 @@ public enum CaptureSource
     Import = 3,
     Voice = 4,
     MeetingIntegration = 5,
-    TranscriptFile = 6
+    TranscriptFile = 6,
+    MarkdownImport = 7,
+    WebClip = 8
 }

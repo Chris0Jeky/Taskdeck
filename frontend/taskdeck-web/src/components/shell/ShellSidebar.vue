@@ -112,6 +112,15 @@ const navCatalog: NavItem[] = [
     keywords: 'inbox captures triage',
   },
   {
+    id: 'agents',
+    label: 'Agents',
+    icon: 'G',
+    path: '/workspace/agents',
+    flag: null,
+    primaryModes: ['agent'],
+    keywords: 'agents profiles runs automation agent mode',
+  },
+  {
     id: 'views',
     label: 'Views',
     icon: 'V',
@@ -141,6 +150,16 @@ const navCatalog: NavItem[] = [
     primaryModes: ['workbench'],
     secondaryModes: ['guided', 'agent'],
     keywords: 'chat automation assistant board context',
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    icon: 'D',
+    path: '/workspace/calendar',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'calendar timeline planning due dates schedule deadlines',
   },
   {
     id: 'metrics',

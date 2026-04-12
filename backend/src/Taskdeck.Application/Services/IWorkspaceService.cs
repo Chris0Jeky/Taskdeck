@@ -16,4 +16,9 @@ public interface IWorkspaceService
         Guid userId,
         UpdateWorkspaceOnboardingDto dto,
         CancellationToken cancellationToken = default);
+    Task<Result<WorkspaceCalendarDto>> GetCalendarAsync(
+        Guid userId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken = default);
 }

@@ -237,4 +237,35 @@ public class CardRepository : Repository<Card>, ICardRepository
 
         return await query.ToListAsync(cancellationToken);
     }
+
+    public async Task<IEnumerable<Card>> GetByDueDateRangeAsync(
+        IEnumerable<Guid> boardIds,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken = default)
+    {
+        var materializedBoardIds = boardIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (materializedBoardIds.Count == 0)
+            return [];
+
+        const int maxResults = 500;
+
+        return await _dbSet
+            .AsNoTracking()
+            .Where(c =>
+                materializedBoardIds.Contains(c.BoardId) &&
+                c.DueDate.HasValue &&
+                c.DueDate.Value >= from &&
+                c.DueDate.Value < to)
+            .Include(c => c.Board)
+            .Include(c => c.Column)
+            .OrderBy(c => c.DueDate)
+            .ThenBy(c => c.BoardId)
+            .Take(maxResults)
+            .ToListAsync(cancellationToken);
+    }
 }
