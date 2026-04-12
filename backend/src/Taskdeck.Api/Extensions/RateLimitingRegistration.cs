@@ -6,6 +6,7 @@ using Taskdeck.Api.Contracts;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Infrastructure.Mcp;
 
 namespace Taskdeck.Api.Extensions;
 
@@ -106,11 +107,21 @@ public static class RateLimitingRegistration
 
     private static string ResolveUserOrClientIdentifier(HttpContext context)
     {
+        // Check JWT claims first (REST API path).
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? context.User.FindFirstValue("sub");
-        return !string.IsNullOrWhiteSpace(userId)
-            ? userId
-            : ResolveClientAddress(context);
+        if (!string.IsNullOrWhiteSpace(userId))
+            return userId;
+
+        // Check API key user ID from HttpContext.Items (MCP HTTP path).
+        // ApiKeyMiddleware sets this after validating the Bearer token.
+        if (context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var apiKeyUserId)
+            && apiKeyUserId is Guid apiKeyGuid)
+        {
+            return apiKeyGuid.ToString();
+        }
+
+        return ResolveClientAddress(context);
     }
 
     private static string ResolveClientAddress(HttpContext context)
