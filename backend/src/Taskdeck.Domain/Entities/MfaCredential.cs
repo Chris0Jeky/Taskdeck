@@ -69,19 +69,18 @@ public class MfaCredential : Entity
 
     /// <summary>
     /// Sets the hashed recovery codes for this credential.
+    /// Pass null or empty to clear all recovery codes (e.g., when exhausted).
     /// </summary>
-    public void SetRecoveryCodes(string hashedRecoveryCodes)
+    public void SetRecoveryCodes(string? hashedRecoveryCodes)
     {
-        if (string.IsNullOrWhiteSpace(hashedRecoveryCodes))
-            throw new DomainException(ErrorCodes.ValidationError, "Recovery codes cannot be empty");
-
-        RecoveryCodes = hashedRecoveryCodes;
+        RecoveryCodes = string.IsNullOrWhiteSpace(hashedRecoveryCodes) ? null : hashedRecoveryCodes;
         Touch();
     }
 
     /// <summary>
-    /// Revokes this MFA credential by clearing the secret and marking as unconfirmed.
-    /// The entity remains for audit trail purposes.
+    /// Revokes this MFA credential by marking as unconfirmed.
+    /// Note: The secret is intentionally preserved for audit trail purposes;
+    /// full deletion should use repository deletion instead.
     /// </summary>
     public void Revoke()
     {

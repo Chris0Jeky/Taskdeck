@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import type { OidcProviderInfo } from '../types/auth'
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import type { OidcProviderInfo } from '../types/auth'
 import { useSessionStore } from '../store/sessionStore'
 import { authApi } from '../api/authApi'
 import { sanitizeInternalRedirect } from '../utils/navigation'

@@ -16,6 +16,9 @@ namespace Taskdeck.Api.Extensions;
 
 public static class AuthenticationRegistration
 {
+    /// <summary>
+    /// Cookie scheme used for temporary external auth state (OAuth/OIDC handshake).
+    /// </summary>
     public const string ExternalAuthenticationScheme = "External";
 
     public static IServiceCollection AddTaskdeckAuthentication(

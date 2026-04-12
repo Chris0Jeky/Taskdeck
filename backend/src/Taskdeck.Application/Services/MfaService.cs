@@ -290,7 +290,7 @@ public class MfaService
             hashedCodes.RemoveAt(i);
             credential.SetRecoveryCodes(hashedCodes.Count > 0
                 ? string.Join(",", hashedCodes)
-                : "EXHAUSTED"); // Sentinel value when all recovery codes are used
+                : null); // Clear recovery codes when all are exhausted
             return true;
         }
 

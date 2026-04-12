@@ -107,12 +107,12 @@ onMounted(loadStatus)
     <!-- Setup in progress -->
     <div v-else-if="setupResponse" class="td-mfa-setup__wizard">
       <p class="td-mfa-setup__step">
-        1. Add this shared secret to your authenticator app (Google Authenticator, Authy, etc.)
+        1. Add this secret to your authenticator app (Google Authenticator, Authy, etc.)
       </p>
-      <div class="td-mfa-setup__qr">
+      <div class="td-mfa-setup__secret-container">
         <code class="td-mfa-setup__secret">{{ setupResponse.sharedSecret }}</code>
         <p class="td-mfa-setup__hint">
-          Enter this secret manually in your authenticator app.
+          Copy and paste this secret into your authenticator app.
         </p>
         <details class="td-mfa-setup__provisioning">
           <summary>Show provisioning URI</summary>
@@ -260,7 +260,7 @@ onMounted(loadStatus)
   font-size: var(--td-font-sm);
 }
 
-.td-mfa-setup__qr {
+.td-mfa-setup__secret-container {
   background: var(--td-surface-container);
   padding: var(--td-space-4);
   border-radius: var(--td-radius-md);
