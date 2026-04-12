@@ -118,12 +118,12 @@ Listed from least disruptive to most disruptive:
 
 | Priority | Action | Impact | How to execute |
 |---|---|---|---|
-| 1 | Tighten global rate limits | All users get stricter quotas | Reduce `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` globally (these are global config keys, not per-user); individual abusive users can be blocked entirely via per-user kill-switch |
-| 2 | Reduce tool-calling rounds | Fewer tool calls per conversation, less capable but cheaper | Disable tool-calling via `LlmToolCalling:Enabled = false` or ship a code change to lower `ToolCallingChatOrchestrator.MaxRounds`; there is no runtime `MaxRounds` config knob today |
+| 1 | Tighten global rate limits | All users get stricter quotas | Reduce `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` globally (these are global config keys, not per-user); individual abusive users can be blocked entirely via per-user Identity kill-switch (`POST /api/llm/killswitch` with `scope: Identity`) |
+| 2 | Reduce tool-calling rounds | Fewer tool calls per conversation, less capable but cheaper | Disable tool-calling via `LlmToolCalling:Enabled = false`; `MaxRounds` is a compile-time constant (`ToolCallingChatOrchestrator.MaxRounds = 5`) and cannot be changed at runtime -- lowering it requires a code change and redeployment |
 | 3 | Switch to cheaper model | Potentially lower quality responses | Change `Llm:OpenAi:Model` to a cheaper variant |
-| 4 | Activate surface kill-switch | One LLM surface disabled (e.g., Chat only) | `POST /api/llm/killswitch` with `{ "scope": "Surface", "target": "Chat", "enabled": true, "reason": "Cost emergency" }` (currently returns 403 until admin support exists) |
-| 5 | Activate per-user kill-switch | Specific abusive user blocked from LLM | `POST /api/llm/killswitch` with `{ "scope": "Identity", "target": "<userId>", "enabled": true, "reason": "Cost emergency" }` |
-| 6 | Activate global kill-switch | All LLM features disabled; non-LLM features unaffected | `POST /api/llm/killswitch` with `{ "scope": "Global", "target": null, "enabled": true, "reason": "Cost emergency" }` (currently returns 403 until admin support exists; use the `LlmKillSwitch__GlobalKill` config fallback where appropriate) |
+| 4 | Activate surface kill-switch | One LLM surface disabled (e.g., Chat only) | `POST /api/llm/killswitch` with `{ "scope": "Surface", "target": "Chat", "enabled": true, "reason": "Cost emergency" }` -- **Note:** Currently returns 403 until admin roles are implemented; use `LlmKillSwitch:SurfaceKills:<SurfaceName>` config as fallback |
+| 5 | Activate per-user kill-switch | Specific abusive user blocked from LLM | `POST /api/llm/killswitch` with `{ "scope": "Identity", "target": "<userId>", "enabled": true, "reason": "Cost emergency" }` -- users can only set this for themselves; admin-scoped cross-user blocking requires admin roles (not yet implemented) |
+| 6 | Activate global kill-switch | All LLM features disabled; non-LLM features unaffected | `POST /api/llm/killswitch` with `{ "scope": "Global", "target": null, "enabled": true, "reason": "Cost emergency" }` -- **Note:** Currently returns 403 until admin roles are implemented; use `LlmKillSwitch:GlobalKill=true` config as fallback |
 | 7 | Switch all users to Mock provider | LLM features return deterministic mock responses | Set `Llm:Provider` to `Mock`, restart API |
 
 ### Logging Cost Mitigation Actions
@@ -200,7 +200,7 @@ For use when immediate action is needed and there is no time for full triage:
 
 | Scenario | Immediate action | Command / Config |
 |---|---|---|
-| LLM cost runaway | Activate global kill-switch | `POST /api/llm/killswitch` - `{ "scope": "Global", "target": null, "enabled": true, "reason": "Cost emergency" }` |
+| LLM cost runaway | Activate global kill-switch | Set `LlmKillSwitch:GlobalKill=true` in config and restart API (the `POST /api/llm/killswitch` endpoint with `scope: Global` returns 403 until admin roles are implemented) |
 | Logging cost spike | Raise log level to Error | Set `Logging:LogLevel:Default` to `Error`, restart API |
 | Storage filling up | Identify and remove large files | `du -sh /var/lib/taskdeck/*` then assess |
 | Unknown cost source | Check AWS Cost Explorer | AWS Console ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Billing ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Cost Explorer ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Group by Service |
