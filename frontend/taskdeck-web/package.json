@@ -29,7 +29,8 @@
     "test:e2e:headed": "playwright test --headed",
     "mutation:test": "npx stryker run",
     "storybook": "storybook dev -p 6006",
-    "storybook:build": "storybook build -o storybook-static"
+    "storybook:build": "storybook build -o storybook-static",
+    "storybook:docs": "storybook build --docs -o storybook-docs",
     "test:visual": "playwright test --config playwright.visual.config.ts",
     "test:visual:update": "playwright test --config playwright.visual.config.ts --update-snapshots"
   },

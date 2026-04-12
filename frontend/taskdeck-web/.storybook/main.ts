@@ -13,7 +13,11 @@ function stripPwaPlugins(plugins: unknown[]): unknown[] {
 
   for (const plugin of plugins) {
     if (Array.isArray(plugin)) {
-      filtered.push(...stripPwaPlugins(plugin))
+      // Recursively filter nested arrays but preserve the array structure
+      const filteredNested = stripPwaPlugins(plugin)
+      if (filteredNested.length > 0) {
+        filtered.push(filteredNested)
+      }
       continue
     }
     if (!isPwaPlugin(plugin)) {

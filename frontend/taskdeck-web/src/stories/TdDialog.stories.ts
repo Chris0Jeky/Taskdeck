@@ -53,6 +53,10 @@ export const Default: Story = {
 }
 
 export const DangerDialog: Story = {
+  args: {
+    title: 'Delete Item',
+    description: 'This action cannot be undone.',
+  },
   render: (args) => ({
     components: { TdDialog, TdButton },
     setup() {
@@ -79,6 +83,9 @@ export const DangerDialog: Story = {
 }
 
 export const NoBackdropClose: Story = {
+  args: {
+    closeOnBackdrop: false,
+  },
   render: (args) => ({
     components: { TdDialog, TdButton },
     setup() {

@@ -49,6 +49,9 @@ export const Default: Story = {
 }
 
 export const TopPosition: Story = {
+  args: {
+    position: 'top',
+  },
   render: (args) => ({
     components: { TdPopover, TdButton },
     setup() {
@@ -70,6 +73,9 @@ export const TopPosition: Story = {
 }
 
 export const CenterAligned: Story = {
+  args: {
+    align: 'center',
+  },
   render: (args) => ({
     components: { TdPopover, TdButton },
     setup() {

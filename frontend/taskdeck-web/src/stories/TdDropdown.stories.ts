@@ -44,6 +44,9 @@ export const Default: Story = {
 }
 
 export const AlignRight: Story = {
+  args: {
+    align: 'right',
+  },
   render: (args) => ({
     components: { TdDropdown, TdButton },
     setup() {
