@@ -85,3 +85,22 @@ public record WorkspaceNextActionDto(
     string TargetSurface,
     Guid? BoardId = null,
     int? AttentionCount = null);
+
+public record WorkspaceCalendarCardDto(
+    Guid CardId,
+    Guid BoardId,
+    string BoardName,
+    Guid ColumnId,
+    string ColumnName,
+    string Title,
+    DateTimeOffset DueDate,
+    bool IsBlocked,
+    string? BlockReason,
+    bool IsOverdue,
+    DateTimeOffset UpdatedAt);
+
+public record WorkspaceCalendarDto(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    int TotalCards,
+    IReadOnlyList<WorkspaceCalendarCardDto> Cards);

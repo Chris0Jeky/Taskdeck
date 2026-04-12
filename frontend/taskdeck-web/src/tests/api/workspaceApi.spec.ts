@@ -53,4 +53,22 @@ describe('workspaceApi', () => {
 
     expect(http.put).toHaveBeenCalledWith('/workspace/onboarding', { action: 'dismiss' })
   })
+
+  it('loads calendar data with from/to parameters', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { from: '2026-04-01', to: '2026-05-01', totalCards: 0, cards: [] } })
+
+    const from = '2026-04-01T00:00:00.000Z'
+    const to = '2026-05-01T00:00:00.000Z'
+    await workspaceApi.getCalendar(from, to)
+
+    expect(http.get).toHaveBeenCalledWith(
+      expect.stringContaining('/workspace/calendar?'),
+    )
+    expect(http.get).toHaveBeenCalledWith(
+      expect.stringContaining('from='),
+    )
+    expect(http.get).toHaveBeenCalledWith(
+      expect.stringContaining('to='),
+    )
+  })
 })
