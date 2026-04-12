@@ -1,9 +1,9 @@
+using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
-using System.Text.Json;
 
 namespace Taskdeck.Application.Services;
 
@@ -156,6 +156,7 @@ public class AutomationProposalService : IAutomationProposalService
 
             proposal.Approve(decidedByUserId);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "approved", cancellationToken);
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
@@ -178,6 +179,7 @@ public class AutomationProposalService : IAutomationProposalService
 
             proposal.Reject(decidedByUserId, dto.Reason);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "rejected", cancellationToken);
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
@@ -200,6 +202,7 @@ public class AutomationProposalService : IAutomationProposalService
 
             proposal.MarkAsApplied();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "applied", cancellationToken);
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
@@ -222,6 +225,7 @@ public class AutomationProposalService : IAutomationProposalService
 
             proposal.MarkAsFailed(failureReason);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             var notifyResult = await PublishProposalOutcomeNotificationAsync(proposal, "failed", cancellationToken);
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
@@ -245,16 +249,22 @@ public class AutomationProposalService : IAutomationProposalService
             {
                 proposal.Expire();
                 count++;
-                var notifyResult = await PublishProposalOutcomeNotificationAsync(
-                    proposal,
-                    "expired",
-                    cancellationToken);
-                if (!notifyResult.IsSuccess)
-                    return Result.Failure<int>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
             }
 
             if (count > 0)
+            {
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                foreach (var proposal in expiredProposals)
+                {
+                    var notifyResult = await PublishProposalOutcomeNotificationAsync(
+                        proposal,
+                        "expired",
+                        cancellationToken);
+                    if (!notifyResult.IsSuccess)
+                        return Result.Failure<int>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
+                }
+            }
 
             return Result.Success(count);
         }

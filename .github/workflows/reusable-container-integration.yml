@@ -1,0 +1,51 @@
+name: Reusable Container Integration
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: .NET SDK version used for container-backed integration tests
+        required: false
+        default: "8.0.x"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  container-integration:
+    name: Container Integration (PostgreSQL)
+    runs-on: ubuntu-latest
+    # Docker is pre-installed on ubuntu-latest runners — required for Testcontainers
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+          cache: true
+          cache-dependency-path: |
+            backend/Taskdeck.sln
+            backend/**/*.csproj
+
+      - name: Restore backend
+        run: dotnet restore backend/Taskdeck.sln
+
+      - name: Verify Docker is available
+        run: docker info
+
+      - name: Run container-backed integration tests
+        run: dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=container-integration.trx" --results-directory "backend/TestResults/container-integration"
+
+      - name: Upload container integration test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: container-integration-trx
+          path: backend/TestResults/container-integration
+          if-no-files-found: ignore

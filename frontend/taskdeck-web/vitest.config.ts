@@ -8,7 +8,7 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: './src/tests/setup.ts',
-    exclude: [...configDefaults.exclude, 'tests/e2e/**'],
+    exclude: [...configDefaults.exclude, 'tests/e2e/**', 'tests/visual/**'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,vue}'],
@@ -67,6 +67,13 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // vite-plugin-pwa provides 'virtual:pwa-register' as a Vite virtual
+      // module at build time; vitest does not load Vite plugins, so we alias
+      // it to a no-op mock to keep component tests that import SwUpdatePrompt
+      // (e.g. AppShell.spec.ts) from failing on the unresolvable import.
+      'virtual:pwa-register': fileURLToPath(
+        new URL('./src/tests/__mocks__/virtual-pwa-register.ts', import.meta.url),
+      ),
     },
   },
 })

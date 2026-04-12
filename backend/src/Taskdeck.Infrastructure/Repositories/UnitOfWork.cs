@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.Interfaces;
-using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
@@ -108,7 +107,7 @@ public class UnitOfWork : IUnitOfWork
         {
             throw new DomainException(
                 ErrorCodes.Conflict,
-                "The requested change conflicted with a concurrent update.",
+                "Record was updated by another session. Refresh and retry your action.",
                 ex);
         }
         catch (DbUpdateException ex) when (TryResolveRecoverableUniqueConflicts(ex))

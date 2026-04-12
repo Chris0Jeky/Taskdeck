@@ -1,3 +1,4 @@
+using Taskdeck.Api.Health;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Services;
 using Taskdeck.Application.Interfaces;
@@ -80,6 +81,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<WebhookBoardMutationNotifier>();
         services.AddScoped<IBoardRealtimeNotifier, CompositeBoardRealtimeNotifier>();
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
+        services.AddSingleton<RedisBackplaneHealthCheck>();
 
         // Agent tool registry (singleton — populated once at startup, read concurrently)
         var toolRegistry = new TaskdeckToolRegistry();

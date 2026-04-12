@@ -30,3 +30,5 @@
 | [0025](ADR-0025-signalr-scaleout-redis-backplane.md) | SignalR Scale-Out — Redis Backplane | Accepted | 2026-04-09 |
 | [0026](ADR-0026-cloud-cost-observability.md) | Cloud Cost Observability and Budget Guardrails | Accepted | 2026-04-09 |
 | [0027](ADR-0027-cloud-target-topology-autoscaling.md) | Cloud Target Topology and Autoscaling Reference Architecture | Accepted | 2026-04-09 |
+| [0028](ADR-0028-staged-deployment-bluegreen-canary.md) | Staged Deployment — Blue/Green with Canary Verification | Accepted | 2026-04-09 |
+| [0029](ADR-0029-oidc-mfa-pluggable-identity.md) | OIDC/SSO Integration with Optional TOTP MFA | Accepted | 2026-04-09 |
