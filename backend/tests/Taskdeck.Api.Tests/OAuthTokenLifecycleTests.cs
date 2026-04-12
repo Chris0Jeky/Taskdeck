@@ -1,32 +1,30 @@
-using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 /// <summary>
 /// Integration tests for OAuth auth code store behavior and JWT token lifecycle.
-/// Covers scenarios from #723 (TST-55):
-///
-/// Section 1: Auth code store — exchange, replay prevention, expiry, concurrent exchange, cleanup
-/// Section 2: JWT token lifecycle — expired, wrong key, garbage, deactivated user, password reissue
-/// Section 3: SignalR auth — header-based (HubConnection) AND query-string (?access_token=) paths
-/// Section 4: Expired JWT across multiple endpoints (systemic 401 + ApiErrorResponse contract)
-/// Section 5: GitHub OAuth config endpoints (login redirect, providers)
-/// Section 6: Scaling limitation documentation — static ConcurrentDictionary is process-scoped (#676)
+/// Covers scenarios from #723 (TST-55): DB-backed auth code store, token issuance,
+/// validation, expiration, wrong-key rejection, deactivated user, SignalR query-string auth,
+/// and code cleanup semantics.
+/// Updated for #676: auth codes now stored in SQLite via OAuthAuthCode entity.
 /// </summary>
 public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
 {
@@ -47,7 +45,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "oauth-valid");
 
-        var code = InjectAuthCodeForUser(user, TimeSpan.FromSeconds(60));
+        var code = await InjectAuthCodeForUser(user, TimeSpan.FromSeconds(60));
 
         // Exchange code via the HTTP endpoint
         using var anonClient = _factory.CreateClient();
@@ -72,7 +70,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         var user = await ApiTestHarness.AuthenticateAsync(client, "oauth-expired");
 
         // Inject code that expired 10 seconds ago
-        var code = InjectAuthCodeForUser(user, TimeSpan.FromSeconds(-10));
+        var code = await InjectAuthCodeForUser(user, TimeSpan.FromSeconds(-10));
 
         using var anonClient = _factory.CreateClient();
         var response = await anonClient.PostAsJsonAsync("/api/auth/github/exchange", new { Code = code });
@@ -107,7 +105,7 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "oauth-replay");
 
-        var code = InjectAuthCodeForUser(user, TimeSpan.FromSeconds(60));
+        var code = await InjectAuthCodeForUser(user, TimeSpan.FromSeconds(60));
 
         using var anonClient = _factory.CreateClient();
 
@@ -125,10 +123,9 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "oauth-concurrent");
 
-        var code = InjectAuthCodeForUser(user, TimeSpan.FromSeconds(60));
+        var code = await InjectAuthCodeForUser(user, TimeSpan.FromSeconds(60));
 
         // Fire multiple concurrent exchange requests for the same code.
-        // HttpClient is thread-safe, so reuse a single instance to avoid handler leaks.
         using var exchangeClient = _factory.CreateClient();
         var tasks = Enumerable.Range(0, 5)
             .Select(_ => exchangeClient.PostAsJsonAsync("/api/auth/github/exchange", new { Code = code }))
@@ -144,61 +141,37 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public void AuthCodeStore_CleanupRemovesExpiredCodes()
+    public async Task AuthCodeStore_ExpiredCodesCanBeCleanedUp()
     {
-        // Insert several codes: some expired, some valid
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "oauth-cleanup");
+
         var expiredCode1 = $"cleanup-expired-1-{Guid.NewGuid():N}";
         var expiredCode2 = $"cleanup-expired-2-{Guid.NewGuid():N}";
         var validCode = $"cleanup-valid-{Guid.NewGuid():N}";
 
-        var dummyResult = CreateDummyAuthResult();
-
-        var dict = GetAuthCodesDict();
-        dict[expiredCode1] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(-30));
-        dict[expiredCode2] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(-5));
-        dict[validCode] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(60));
-
-        try
+        // Insert codes in one scope
+        using (var insertScope = _factory.Services.CreateScope())
         {
-            // Trigger cleanup by calling CleanupExpiredCodes via reflection
-            var cleanupMethod = typeof(AuthController).GetMethod("CleanupExpiredCodes",
-                BindingFlags.NonPublic | BindingFlags.Static);
-            cleanupMethod!.Invoke(null, null);
-
-            dict.ContainsKey(expiredCode1).Should().BeFalse("expired code should be cleaned up");
-            dict.ContainsKey(expiredCode2).Should().BeFalse("expired code should be cleaned up");
-            dict.ContainsKey(validCode).Should().BeTrue("valid code should survive cleanup");
+            await InsertAuthCodeDirectly(insertScope, expiredCode1, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(-30));
+            await InsertAuthCodeDirectly(insertScope, expiredCode2, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(-5));
+            await InsertAuthCodeDirectly(insertScope, validCode, user.UserId, user.Token, DateTimeOffset.UtcNow.AddSeconds(60));
         }
-        finally
+
+        // Run cleanup in a separate scope (fresh DbContext)
+        using (var cleanupScope = _factory.Services.CreateScope())
         {
-            // Clean up injected codes to avoid cross-test interference
-            dict.TryRemove(expiredCode1, out _);
-            dict.TryRemove(expiredCode2, out _);
-            dict.TryRemove(validCode, out _);
+            var uow = cleanupScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var deleted = await uow.OAuthAuthCodes.DeleteExpiredAsync(DateTimeOffset.UtcNow);
+            deleted.Should().BeGreaterThanOrEqualTo(2, "at least the two expired codes should be deleted");
         }
-    }
 
-    [Fact]
-    public void AuthCodeStore_CleanupOnlyTriggeredDuringExchange_ExpiredCodesAccumulate()
-    {
-        // Document the current behavior: expired codes persist until CleanupExpiredCodes is called.
-        // This test validates the behavior described in the issue: cleanup is not on a timer.
-        // The static ConcurrentDictionary also does not work with horizontal scaling — see #676.
-        var code = $"accumulate-{Guid.NewGuid():N}";
-        var dict = GetAuthCodesDict();
-        var dummyResult = CreateDummyAuthResult();
-
-        dict[code] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(-60));
-
-        try
+        // Verify in yet another scope
+        using (var verifyScope = _factory.Services.CreateScope())
         {
-            // Without an exchange attempt, the expired code remains in the dictionary
-            dict.ContainsKey(code).Should().BeTrue("expired codes accumulate until cleanup is triggered");
-        }
-        finally
-        {
-            // Clean up to avoid cross-test interference
-            dict.TryRemove(code, out _);
+            var uow = verifyScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var remainingCode = await uow.OAuthAuthCodes.GetByCodeAsync(validCode);
+            remainingCode.Should().NotBeNull("valid code should survive cleanup");
         }
     }
 
@@ -212,7 +185,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "tok-expired");
 
-        // Create an already-expired JWT
         var expiredToken = CreateCustomJwt(
             userId: user.UserId,
             username: user.Username,
@@ -228,7 +200,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         var response = await expiredClient.GetAsync("/api/boards");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        // Verify the response is JSON ApiErrorResponse, not HTML
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Unauthorized);
     }
 
@@ -238,7 +209,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "tok-wrongkey");
 
-        // Sign with a completely different secret key
         var wrongKeyToken = CreateCustomJwt(
             userId: user.UserId,
             username: user.Username,
@@ -286,14 +256,9 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "tok-deactivated");
 
-        // Deactivate the user account via the self-scope endpoint.
-        // After deactivation, the TokenValidationMiddleware should reject
-        // the original token because user.IsActive is false.
         var deactivateResponse = await client.PostAsync($"/api/users/{user.UserId}/deactivate", null);
         deactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // The original token is still structurally valid (not expired, correct key),
-        // but the middleware rejects it because the user is inactive.
         var response = await client.GetAsync("/api/boards");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -306,7 +271,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         var user = await ApiTestHarness.AuthenticateAsync(client, "tok-reissue");
 
-        // Change password
         var changePwdResponse = await client.PostAsJsonAsync("/api/auth/change-password", new
         {
             CurrentPassword = "password123",
@@ -314,7 +278,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         });
         changePwdResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // Login with the new password to get a fresh token
         using var freshClient = _factory.CreateClient();
         var loginResponse = await freshClient.PostAsJsonAsync("/api/auth/login", new
         {
@@ -325,7 +288,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         var freshAuth = await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
         freshClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", freshAuth!.Token);
 
-        // Fresh token should work
         var response = await freshClient.GetAsync("/api/boards");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -520,7 +482,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task GitHubLogin_WhenNotConfigured_Returns404()
     {
-        // The test factory does not configure GitHub OAuth secrets
         using var client = _factory.CreateClient();
 
         var response = await client.GetAsync("/api/auth/github/login");
@@ -544,93 +505,74 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
     }
 
     // ─────────────────────────────────────────────────────────
-    // 6. Scaling limitation documentation
+    // 5. Account linking endpoints
     // ─────────────────────────────────────────────────────────
-    //
-    // IMPORTANT: The OAuth auth code store uses a static ConcurrentDictionary<string, ...>
-    // on AuthController. This has the following implications:
-    //
-    //   1. Codes created on one application instance are invisible to other instances.
-    //      In a horizontally-scaled deployment (multiple pods/containers), a code generated
-    //      by pod A cannot be exchanged on pod B. This breaks the OAuth flow unless sticky
-    //      sessions or a shared store (Redis, database) are used.
-    //
-    //   2. CleanupExpiredCodes() is only called during ExchangeCode, not on a timer.
-    //      Expired codes accumulate indefinitely until an exchange attempt triggers cleanup.
-    //      Under low traffic this is a minor memory leak.
-    //
-    //   3. Codes persist across test runs within the same process since the dictionary
-    //      is static. Tests must use unique code values and clean up after themselves.
-    //
-    // See #676 for the tracking issue to replace this with a distributed store.
 
     [Fact]
-    public void ScalingLimitation_StaticAuthCodeStore_IsProcessScoped()
+    public async Task LinkedAccounts_ReturnsEmptyListForNewUser()
     {
-        // This test documents and verifies the process-scoped nature of the auth code store.
-        // A code injected into the static dictionary is visible within the same process but
-        // would NOT be visible on a different instance — see #676.
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "link-empty");
 
-        // Verify the dictionary is specifically a static field on AuthController.
-        // GetField with BindingFlags.Static only returns static fields, so a non-null
-        // result already proves the field is static (no separate IsStatic check needed).
-        var field = typeof(AuthController).GetField("_authCodes",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        field.Should().NotBeNull("auth code store should be a static field on AuthController");
+        var response = await client.GetAsync("/api/auth/linked-accounts");
 
-        var code = $"scaling-doc-{Guid.NewGuid():N}";
-        var dict = GetAuthCodesDict();
-        var dummyResult = CreateDummyAuthResult();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var accounts = await response.Content.ReadFromJsonAsync<LinkedAccountDto[]>();
+        accounts.Should().NotBeNull();
+        accounts!.Should().BeEmpty();
+    }
 
-        dict[code] = (dummyResult, DateTimeOffset.UtcNow.AddSeconds(60));
+    [Fact]
+    public async Task UnlinkGitHub_Returns404_WhenNotLinked()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "unlink-none");
 
-        try
-        {
-            // The code is visible in the same process (expected for single-instance deployment)
-            dict.ContainsKey(code).Should().BeTrue(
-                "codes are stored in a static ConcurrentDictionary, visible within the same process");
+        var response = await client.DeleteAsync("/api/auth/github/link");
 
-            // In a multi-instance deployment, this code would NOT be visible on another pod.
-            // The ConcurrentDictionary is process-local, not distributed.
-            // See #676 for the tracking issue to migrate to a distributed store (Redis/DB).
-        }
-        finally
-        {
-            // Clean up to avoid cross-test interference
-            dict.TryRemove(code, out _);
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task LinkGitHub_Returns401_WhenNotAuthenticated()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/github/link", new { Code = "test" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     // ─────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────
 
-    private static string InjectAuthCodeForUser(TestUserContext user, TimeSpan validFor)
+    private async Task<string> InjectAuthCodeForUser(TestUserContext user, TimeSpan validFor)
     {
         var code = $"test-code-{Guid.NewGuid():N}";
-        var authResult = new AuthResultDto(user.Token, new UserDto(
-            user.UserId, user.Username, user.Email,
-            Domain.Enums.UserRole.Editor, true,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        var expiresAt = DateTimeOffset.UtcNow.Add(validFor);
 
-        var dict = GetAuthCodesDict();
-        dict[code] = (authResult, DateTimeOffset.UtcNow.Add(validFor));
+        using var scope = _factory.Services.CreateScope();
+        await InsertAuthCodeDirectly(scope, code, user.UserId, user.Token, expiresAt);
+
         return code;
     }
 
-    private static ConcurrentDictionary<string, (AuthResultDto Result, DateTimeOffset Expiry)> GetAuthCodesDict()
+    private static async Task InsertAuthCodeDirectly(IServiceScope scope, string code, Guid userId, string token, DateTimeOffset expiresAt)
     {
-        var field = typeof(AuthController).GetField("_authCodes",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        return (ConcurrentDictionary<string, (AuthResultDto Result, DateTimeOffset Expiry)>)field!.GetValue(null)!;
-    }
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
 
-    private static AuthResultDto CreateDummyAuthResult()
-    {
-        return new AuthResultDto("dummy-token", new UserDto(
-            Guid.NewGuid(), "dummy", "dummy@test.com",
-            Domain.Enums.UserRole.Editor, true,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        // Create a valid auth code first, then adjust ExpiresAt via reflection
+        // for testing expired codes (constructor rejects past dates).
+        var futureExpiry = DateTimeOffset.UtcNow.AddSeconds(600);
+        var authCode = new OAuthAuthCode(code, userId, token, futureExpiry);
+
+        // Override ExpiresAt to the desired value (may be in the past for testing)
+        var expiresAtProp = typeof(OAuthAuthCode).GetProperty("ExpiresAt");
+        expiresAtProp!.SetValue(authCode, expiresAt);
+
+        db.OAuthAuthCodes.Add(authCode);
+        await db.SaveChangesAsync();
     }
 
     private static string CreateCustomJwt(
@@ -657,8 +599,6 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
                 ClaimValueTypes.Integer64)
         };
 
-        // For expired tokens: set notBefore far in the past and expires in the past.
-        // For valid tokens: notBefore = now, expires = now + expiresIn.
         var notBefore = expiresIn < TimeSpan.Zero
             ? now.AddMinutes(-60)
             : now;

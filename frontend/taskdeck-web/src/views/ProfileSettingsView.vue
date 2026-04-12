@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '../store/sessionStore'
 import { useFeatureFlagStore } from '../store/featureFlagStore'
+import { authApi } from '../api/authApi'
 import type { FeatureFlags } from '../types/feature-flags'
+import type { LinkedAccount } from '../types/auth'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import { normalizeBoardRole } from '../utils/roles'
+import { isDemoMode } from '../utils/demoMode'
 
+const router = useRouter()
+const route = useRoute()
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
 
@@ -15,6 +21,14 @@ const confirmNewPassword = ref('')
 const passwordError = ref<string | null>(null)
 const passwordSuccess = ref(false)
 const submitting = ref(false)
+
+// Account linking state
+const githubAvailable = ref(false)
+const linkedAccounts = ref<LinkedAccount[]>([])
+const linkingGitHub = ref(false)
+const linkError = ref<string | null>(null)
+const linkSuccess = ref<string | null>(null)
+const unlinking = ref(false)
 
 const roleLabel = computed(() => (
   session.defaultRole === null ? 'Unknown' : normalizeBoardRole(session.defaultRole)
@@ -31,6 +45,14 @@ const opsCapabilitySummary = computed(() => {
       return 'Ops CLI template access is limited; request elevated access for admin templates.'
   }
 })
+
+const isGitHubLinked = computed(() =>
+  linkedAccounts.value.some(a => a.provider === 'GitHub')
+)
+
+const gitHubAccount = computed(() =>
+  linkedAccounts.value.find(a => a.provider === 'GitHub')
+)
 
 async function handleChangePassword() {
   passwordError.value = null
@@ -64,6 +86,76 @@ async function handleChangePassword() {
     submitting.value = false
   }
 }
+
+function startGitHubLink() {
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+  // Return to the profile settings page after OAuth completes.
+  // Note: mode=link is NOT passed — the backend derives link/login mode from
+  // server-side auth state (JWT presence) to prevent user-controlled bypass.
+  const returnUrl = '/workspace/settings/profile'
+  window.location.href = `${apiBase}/auth/github/login?returnUrl=${encodeURIComponent(returnUrl)}`
+}
+
+async function handleLinkCode(code: string) {
+  linkingGitHub.value = true
+  linkError.value = null
+  linkSuccess.value = null
+  try {
+    const linked = await authApi.linkGitHub(code)
+    linkedAccounts.value.push(linked)
+    linkSuccess.value = `GitHub account linked successfully (${linked.displayName || linked.providerUserId})`
+  } catch (e: unknown) {
+    linkError.value = getErrorDisplay(e, 'Failed to link GitHub account.').message
+  } finally {
+    linkingGitHub.value = false
+  }
+}
+
+async function handleUnlinkGitHub() {
+  unlinking.value = true
+  linkError.value = null
+  linkSuccess.value = null
+  try {
+    await authApi.unlinkGitHub()
+    linkedAccounts.value = linkedAccounts.value.filter(a => a.provider !== 'GitHub')
+    linkSuccess.value = 'GitHub account unlinked successfully'
+  } catch (e: unknown) {
+    linkError.value = getErrorDisplay(e, 'Failed to unlink GitHub account.').message
+  } finally {
+    unlinking.value = false
+  }
+}
+
+async function loadLinkedAccounts() {
+  if (isDemoMode) return
+  try {
+    linkedAccounts.value = await authApi.getLinkedAccounts()
+  } catch {
+    // Non-blocking — just won't show linked accounts
+  }
+}
+
+async function loadProviders() {
+  if (isDemoMode) return
+  try {
+    const providers = await authApi.getProviders()
+    githubAvailable.value = providers.gitHub === true
+  } catch {
+    // Silently ignore
+  }
+}
+
+onMounted(async () => {
+  // Check for OAuth link code in query params
+  const linkCode = [route.query.oauth_link_code].flat()[0]
+  if (linkCode) {
+    await router.replace({ path: route.path, query: { ...route.query, oauth_link_code: undefined } })
+    await handleLinkCode(linkCode)
+  }
+
+  // Load linked accounts and provider availability in parallel
+  await Promise.all([loadLinkedAccounts(), loadProviders()])
+})
 
 const flagLabels: Record<keyof FeatureFlags, string> = {
   newShell: 'New Shell Layout',
@@ -105,6 +197,52 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
           <span class="td-info-label">Ops Access</span>
           <span class="td-info-value">{{ opsCapabilitySummary }}</span>
         </div>
+      </div>
+    </section>
+
+    <!-- Linked Accounts Section -->
+    <section v-if="githubAvailable && !isDemoMode" class="td-settings__section">
+      <h2 class="td-section-title">Linked Accounts</h2>
+      <p class="td-section-desc">Connect your GitHub account to sign in with GitHub.</p>
+
+      <div v-if="linkError" class="td-alert td-alert--error" role="alert">{{ linkError }}</div>
+      <div v-if="linkSuccess" class="td-alert td-alert--success" role="status">{{ linkSuccess }}</div>
+      <div v-if="linkingGitHub" class="td-link-loading">Linking GitHub account...</div>
+
+      <div v-if="isGitHubLinked && gitHubAccount" class="td-linked-account">
+        <div class="td-linked-account__info">
+          <img
+            v-if="gitHubAccount.avatarUrl"
+            :src="gitHubAccount.avatarUrl"
+            alt="GitHub avatar"
+            class="td-linked-account__avatar"
+          />
+          <div class="td-linked-account__details">
+            <span class="td-linked-account__provider">GitHub</span>
+            <span class="td-linked-account__name">{{ gitHubAccount.displayName || gitHubAccount.providerUserId }}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="td-btn td-btn--danger-outline"
+          :disabled="unlinking"
+          @click="handleUnlinkGitHub"
+        >
+          {{ unlinking ? 'Unlinking...' : 'Unlink' }}
+        </button>
+      </div>
+
+      <div v-else-if="!linkingGitHub" class="td-link-action">
+        <button
+          type="button"
+          class="td-btn td-btn--github"
+          @click="startGitHubLink"
+        >
+          <svg class="td-github-icon" viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+            <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+          Link GitHub Account
+        </button>
       </div>
     </section>
 
@@ -184,4 +322,58 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .td-flag-row { display: flex; justify-content: space-between; align-items: center; padding: var(--td-space-2) 0; }
 .td-flag-label { font-size: var(--td-font-sm); color: var(--td-text-primary); }
 .td-checkbox { width: 18px; height: 18px; cursor: pointer; }
+
+/* GitHub button styling */
+.td-btn--github {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--td-space-2);
+  width: 100%;
+  padding: var(--td-space-2) var(--td-space-4);
+  background: #24292f;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--td-radius-md);
+  font-size: var(--td-font-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--td-transition-fast);
+}
+.td-btn--github:hover:not(:disabled) { background: #2f363d; }
+.td-btn--github:disabled { opacity: 0.4; cursor: not-allowed; }
+.td-github-icon { flex-shrink: 0; }
+
+/* Danger outline button for unlinking */
+.td-btn--danger-outline {
+  background: transparent;
+  color: var(--td-color-error);
+  border: 1px solid var(--td-color-error);
+  padding: var(--td-space-1) var(--td-space-3);
+  border-radius: var(--td-radius-md);
+  font-size: var(--td-font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--td-transition-fast);
+}
+.td-btn--danger-outline:hover:not(:disabled) { background: var(--td-color-error-light); }
+.td-btn--danger-outline:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Linked account display */
+.td-linked-account {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--td-space-3);
+  border: 1px solid var(--td-border-default);
+  border-radius: var(--td-radius-md);
+  background: var(--td-surface-container);
+}
+.td-linked-account__info { display: flex; align-items: center; gap: var(--td-space-3); }
+.td-linked-account__avatar { width: 32px; height: 32px; border-radius: 50%; }
+.td-linked-account__details { display: flex; flex-direction: column; }
+.td-linked-account__provider { font-size: var(--td-font-xs); color: var(--td-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+.td-linked-account__name { font-size: var(--td-font-sm); font-weight: 500; color: var(--td-text-primary); }
+.td-link-action { margin-top: var(--td-space-2); }
+.td-link-loading { padding: var(--td-space-3); text-align: center; color: var(--td-text-secondary); font-size: var(--td-font-sm); }
 </style>

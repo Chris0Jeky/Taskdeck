@@ -107,3 +107,24 @@ export interface TodaySummary {
   blockedCards: TodayAgendaCard[]
   recommendedActions: HomeRecommendedAction[]
 }
+
+export interface CalendarCard {
+  cardId: string
+  boardId: string
+  boardName: string
+  columnId: string
+  columnName: string
+  title: string
+  dueDate: string
+  isBlocked: boolean
+  blockReason: string | null
+  isOverdue: boolean
+  updatedAt: string
+}
+
+export interface CalendarData {
+  from: string
+  to: string
+  totalCards: number
+  cards: CalendarCard[]
+}
