@@ -73,12 +73,11 @@ public class MfaCredentialTests
     public void SetRecoveryCodes_ShouldClearCodes_WhenEmpty()
     {
         var credential = new MfaCredential(Guid.NewGuid(), "JBSWY3DPEHPK3PXP");
-        credential.SetRecoveryCodes("hash1,hash2");
+        credential.SetRecoveryCodes("hash1,hash2,hash3");
 
         credential.SetRecoveryCodes("");
 
-        credential.RecoveryCodes.Should().BeNull(
-            "empty string should clear recovery codes (treated as exhausted)");
+        credential.RecoveryCodes.Should().BeNull();
     }
 
     [Fact]
