@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-09
+Last Updated: 2026-04-12
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -135,7 +135,7 @@ Direction guardrails (explicit):
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core 8.0.14 + SQLite (aligned to net8.0 TFM as of `#760`/`#767`)
 - Core controllers: boards, columns, cards, labels
-- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search, metrics, data-portability, note-import, telemetry, api-keys, forecast
+- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search, metrics, data-portability, note-import, telemetry, api-keys, forecast, mfa, oidc
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
@@ -296,6 +296,19 @@ Eight parallel worktree agents delivered new features, security infrastructure, 
 **Ops & Observability:**
 - **OPS-09 Staged deployment workflow** (`#101`/`#806`): ADR-0028 documents blue/green + canary deployment strategy with rollback criteria; `docs/ops/DEPLOYMENT_WORKFLOW.md` canonical 4-phase workflow (build verification Ã¢â€ â€™ staging Ã¢â€ â€™ production canary Ã¢â€ â€™ production promotion) with rollback procedures, database migration safety, emergency hotfix override, and ownership/escalation model; `docs/ops/RELEASE_CHECKLIST.md` versioned smoke verification (7 pre-deploy + 9 automated staging + 7 manual staging + 7 canary + 6 post-promotion + 5 post-release checks) with failure response matrix; `scripts/deploy/smoke-test.sh` portable smoke test (9 automated checks: health, API, auth, board auth gate, frontend, SignalR, static assets, security headers, container restart detection); `.github/workflows/cd-staging-gate.yml` with `production` environment manual approval gate; adversarial review fixed script injection in CI workflow and unscoped container checks
 - **OBS-02 Error tracking and product analytics** (`#549`/`#811`): config-gated Sentry SDK for backend (`Sentry.AspNetCore` with `BeforeSend` PII scrubbing for emails/JWTs, `ServerName` blanked) and frontend; opt-in product telemetry service (`TelemetryEventService`) aligned with `docs/product/TELEMETRY_TAXONOMY.md` Ã¢â‚¬â€ property key allowlist (15 safe keys), max 10 properties, 200-char value truncation; `TelemetryController` with anonymous config endpoint and authenticated events endpoint; Plausible/Umami analytics script injection (`useAnalyticsScript`) with HTTPS-only URL validation; Pinia `telemetryStore` with consent management, event buffering, and flush; DNT/GPC privacy signal detection prevents auto-restore of consent; telemetry consent toggle in `ProfileSettingsView`; `docs/ops/OBSERVABILITY_SETUP.md` configuration guide; all telemetry opt-in and disabled by default; 38 backend + 25 frontend tests; adversarial review fixed Sentry PII leak, arbitrary properties injection, XSS via script URL, and DNT non-compliance
+
+## Post-Merge Housekeeping (2026-04-12)
+
+Batch merge of 7 PRs (`#800`, `#805`, `#811`, `#813`, `#815`, `#819`, `#820`) with conflict resolution and documentation sweep. All features are now on `main`:
+- Resilience and degraded-mode behavior tests (PR `#820`, 34 tests across 6 files)
+- OAuth auth code store and token lifecycle tests (PR `#815`, 19+ integration tests)
+- Cross-browser E2E matrix (PR `#800`, Chromium/Firefox/WebKit/mobile-chrome/mobile-safari)
+- Error tracking and product analytics with Sentry integration (PR `#811`, telemetry events, consent management)
+- MCP HTTP transport and API key authentication (PR `#819`, CLI commands, HTTP endpoint, rate limiting)
+- SSO/OIDC integration with optional TOTP MFA (PR `#813`, MfaController, recovery codes, OIDC login)
+- Distributed caching with ICacheService (PR `#805`, InMemory/Redis/NoOp implementations, cache-aside pattern)
+
+Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing.
 
 ## Phase Progress (Reconciled)
 
@@ -895,8 +908,8 @@ Result:
 
 ### Total
 
-- Combined automated total (backend + frontend unit/build + default frontend E2E): ~4600+ passing (backend ~2990+ + frontend unit 1592 + E2E)
-- Note: backend totals are estimates after three 2026-04-04 delivery waves; full-suite recertification needed. See `docs/TESTING_GUIDE.md` for detailed breakdown.
+- Combined automated total (backend + frontend unit/build + default frontend E2E): ~6500+ passing (backend ~4279 + frontend unit ~2245 + E2E)
+- Backend and frontend totals recertified 2026-04-12 via `dotnet test --list-tests` and `npx vitest --run`. See `docs/TESTING_GUIDE.md` for detailed breakdown.
 
 ## CI Status
 
@@ -1001,9 +1014,10 @@ Observability and scalability:
 - MCP operations runbook and helper scripts are now available for credential wiring and repeatable baseline/optional MCP dry-run verification
 - MCP regression harness now provides actionable optional prerequisite diagnostics and CI-friendly status output modes (`PASS`, `PASS_WITH_WARNINGS`, `FAIL`)
 - out-of-code/platform execution is now tracked, but not yet fully shipped:
-  - production DB migration strategy (`#84`) and distributed cache strategy (`#85`)
+  - production DB migration strategy (`#84`, delivered -- ADR-0023) and ~~distributed cache strategy (`#85`)~~ **delivered** (PR `#805`): `ICacheService` with InMemory/Redis/NoOp implementations, board list cache-aside with TTL, ADR-0024
   - backup/restore disaster-recovery playbook (`#86`)
-  - staged rollout policy (`#101`), SBOM/provenance (`#103`), cost guardrails (`#104`)
+  - ~~staged rollout policy (`#101`)~~ **delivered** (PR `#806`): ADR-0028, 4-phase deployment workflow, release checklist, smoke test script
+  - SBOM/provenance (`#103`), ~~cost guardrails (`#104`)~~
   - ~~cost guardrails (`#104`)~~ **delivered** (2026-04-09): cloud cost observability framework with six cost dimensions (compute, storage, LLM API, logging, network, CI/CD), three-tier budget alert thresholds (70%/90%/100%), monthly cost review workflow with checklist, feature cost hotspot registry covering 6 high-variance features (LLM API, logging, database, SignalR, CI/CD, MCP transport), budget breach runbook with detection-triage-mitigation-review phases, Terraform budget alert template, and ADR-0026
   - cloud target topology and autoscaling ADR (`#111`, delivered - ADR-0023 defines ECS Fargate topology, autoscaling policy, SLO targets, health check contract, and cost estimates; companion reference architecture at `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md`)
 UX and operability (reconciled from product notes):
@@ -1015,8 +1029,8 @@ UX and operability (reconciled from product notes):
 Security/compliance hardening backlog added from research cross-check:
 - OWASP/security headers + CSRF/XSS baseline (`#80`, delivered)
 - API abuse/rate-limiting policy (`#81`, delivered)
-- SSO/OIDC + optional MFA (`#82`)
-- data portability/deletion workflow (`#83`)
+- SSO/OIDC + optional MFA (`#82`, delivered -- PR `#813`)
+- data portability/deletion workflow (`#83`, delivered)
 - secrets/configuration management baseline (`#110`)
 
 ## Recently Resolved (This Cycle)

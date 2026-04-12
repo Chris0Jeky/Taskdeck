@@ -899,15 +899,15 @@ Summary scope:
 5. Error payload contract verification for auth/validation/sandbox paths (B-100 to B-110)
 6. Advanced controller families: ops/logs/users/abuse/llm-quota/agents/knowledge/webhooks/external-imports (B-130 to B-175)
 
-## Z. Outstanding PR Test Backlog (2026-04-10)
+## Z. Outstanding PR Test Backlog (2026-04-12)
 
-This section captures testing tasks extracted from PR test plans (open PRs #797–#813 and closed PRs #768–#799) where items were marked unchecked at time of merge or remain pending on open PRs. Organized by category with source PR references.
+This section captures testing tasks extracted from PR test plans. All PRs (#797–#820) are now merged as of 2026-04-12. Organized by category with source PR references.
 
 Status legend: `[ ]` = not yet performed, `[x]` = verified.
 
 ---
 
-### Z1. Security: OIDC/SSO and MFA (PR #813 — open)
+### Z1. Security: OIDC/SSO and MFA (PR #813 — merged 2026-04-12)
 
 1. [ ] Verify OIDC login flow with a test provider (e.g., Entra ID or Google).
    - Precondition: configure `Oidc:Providers` in backend config with a real or test OIDC provider.
@@ -924,7 +924,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
    - Enable MFA for a user. Attempt password change or account deletion.
    - Expected: MFA challenge modal appears requiring TOTP code before proceeding.
 
-### Z2. Security: OAuth PKCE and Account Linking (PR #812 — open)
+### Z2. Security: OAuth PKCE and Account Linking (PR #812 — merged)
 
 1. [ ] Verify GitHub OAuth login still works end-to-end.
    - Precondition: `GitHubOAuth:ClientId` and `GitHubOAuth:ClientSecret` configured.
@@ -936,7 +936,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
    - Open browser dev tools Network tab. Click "Sign in with GitHub".
    - Expected: authorization URL contains `code_challenge` and `code_challenge_method=S256` parameters.
 
-### Z3. Calendar and Timeline Views (PR #810 — open)
+### Z3. Calendar and Timeline Views (PR #810 — merged)
 
 1. [ ] Navigate to `/workspace/calendar` and verify the grid renders with cards grouped by due date.
    - Expected: cards with due dates appear on the correct calendar days; cards without due dates are not shown.
@@ -949,7 +949,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 5. [ ] Verify empty state when no cards have due dates.
    - Expected: helpful empty state message (not a blank page or error).
 
-### Z4. Note Import and Web Clip Intake (PR #809 — open)
+### Z4. Note Import and Web Clip Intake (PR #809 — merged)
 
 1. [ ] Verify markdown with multiple headings creates separate capture items in inbox.
    - Import a markdown file with 3+ `## Heading` sections via the import API or UI.
@@ -960,12 +960,12 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 3. [ ] Verify imported content appears in capture inbox, not directly on board.
    - Expected: imports go through the standard capture → triage → proposal flow, not directly to board.
 
-### Z5. Storybook Tooling Validation (PR #807 — open)
+### Z5. Storybook Tooling Validation (PR #807 — merged)
 
 1. [ ] Run `npm run storybook` and verify dev server launches and all 17 stories render.
    - Expected: Storybook opens in browser, all `Td*` component stories load without errors.
 
-### Z6. Deployment and Operations (PRs #806, #798, #799 — open)
+### Z6. Deployment and Operations (PRs #806, #798, #799 — merged)
 
 **Staged Deployment (PR #806):**
 1. [ ] Verify `scripts/deploy/smoke-test.sh` runs successfully against a local Docker Compose stack.
@@ -995,7 +995,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 
 ### Z7. Testing Infrastructure and Harness (PRs #804, #800, #797, #796 — open/closed)
 
-**Testcontainers (PR #804 — open):**
+**Testcontainers (PR #804 — merged):**
 1. [ ] Verify solution builds cleanly: `dotnet build backend/Taskdeck.sln -c Release`
 2. [ ] Verify existing backend tests pass: `dotnet test backend/Taskdeck.sln -c Release -m:1`
 3. [ ] Verify container integration tests pass locally with Docker running:
@@ -1003,7 +1003,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 4. [ ] Verify CI extended workflow triggers on `testing` label.
 5. [ ] Verify cross-class isolation tests prove no data leakage between test classes.
 
-**Cross-Browser E2E Matrix (PR #800 — open):**
+**Cross-Browser E2E Matrix (PR #800 — merged):**
 6. [ ] Verify `npx playwright test --project=chromium` runs all existing tests (no `@mobile` exclusion regression).
 7. [ ] Verify `npx playwright test --project=firefox --grep="@cross-browser"` runs only tagged tests.
 8. [ ] Verify `npx playwright test --project=mobile-chrome --grep="@mobile"` runs only mobile-viewport tests.
@@ -1011,7 +1011,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 10. [ ] Verify nightly cross-browser matrix workflow YAML is valid.
 11. [ ] Review flaky test policy doc for completeness (`docs/testing/FLAKY_TEST_POLICY.md`).
 
-**Visual Regression (PR #797 — open):**
+**Visual Regression (PR #797 — merged):**
 12. [ ] Run `npm run test:visual:update` to generate initial baselines.
     - Expected: baseline screenshots created in `tests/visual/__screenshots__/`.
 13. [ ] Verify visual tests pass after baseline generation: `npx playwright test --config playwright.visual.config.ts`
@@ -1027,7 +1027,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 21. [ ] Run `npm run mutation:test` locally to validate frontend Stryker setup (after `npm install`).
 22. [ ] Run `dotnet stryker --config-file stryker-config.json` locally in `backend/` to validate backend setup.
 
-### Z8. Platform: PWA and Offline Readiness (PR #802 — open)
+### Z8. Platform: PWA and Offline Readiness (PR #802 — merged)
 
 1. [ ] Verify offline banner appears when network is disconnected.
    - Open the app, then disable network in browser DevTools.
@@ -1039,14 +1039,14 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
    - Open DevTools > Application > Manifest.
    - Expected: manifest is valid, icons are present, start_url is correct, app is installable.
 
-### Z9. Platform: SignalR Scale-Out (PR #803 — open)
+### Z9. Platform: SignalR Scale-Out (PR #803 — merged)
 
 1. [ ] Verify CI pipeline passes for PR #803.
 2. [ ] Verify `/health/ready` returns `signalrBackplane: NotConfigured` on local dev (no Redis configured).
    - Call `GET http://localhost:5000/health/ready`.
    - Expected: response includes `signalrBackplane` component with `NotConfigured` status.
 
-### Z10. Platform: PostgreSQL Migration Compatibility (PR #801 — open)
+### Z10. Platform: PostgreSQL Migration Compatibility (PR #801 — merged)
 
 1. [ ] Verify CI pipeline passes for PR #801.
    - Expected: all 20 `DatabaseProviderCompatibilityTests` pass in CI; no new warnings.
@@ -1117,6 +1117,64 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 
 1. [ ] Verify CI pipeline passes for concurrency stress tests.
    - Expected: all 13 `ConcurrencyRaceConditionStressTests` pass in CI without deadlocks or flakiness.
+
+### Z18. Error Tracking and Product Analytics (PR #811 — merged 2026-04-12)
+
+1. [ ] Verify telemetry consent toggle in Profile Settings.
+   - Navigate to Profile Settings. Toggle "Product telemetry" on/off.
+   - Expected: toggle state persists across page refreshes; no errors in console.
+2. [ ] Verify telemetry events are batched and sent when consent is given.
+   - Enable telemetry. Perform several actions (create board, capture item, navigate).
+   - Expected: `POST /api/telemetry/events` called within 30s with batched events.
+3. [ ] Verify Sentry integration captures backend errors.
+   - Configure `Sentry:Dsn` in backend config. Trigger a 500 error.
+   - Expected: error appears in Sentry dashboard with request context.
+4. [ ] Verify DNT/GPC browser signals are respected.
+   - Set `navigator.doNotTrack` or `navigator.globalPrivacyControl` to true.
+   - Expected: analytics scripts are not injected; telemetry is disabled.
+
+### Z19. MCP HTTP Transport and API Key CLI (PR #819 — merged 2026-04-12)
+
+1. [ ] Verify `taskdeck api-key create --name "test"` generates a key with `tdsk_` prefix.
+   - Expected: key displayed once, starts with `tdsk_`, stored hashed.
+2. [ ] Verify `taskdeck api-key list` shows created keys with masked values.
+   - Expected: list shows key name, created date, last-used date; value is masked.
+3. [ ] Verify `taskdeck api-key revoke <id>` removes the key.
+   - Expected: key no longer appears in list; API calls with that key return 401.
+4. [ ] Verify MCP HTTP transport accepts API key Bearer tokens.
+   - Start API with `--mcp --transport http --port 8080`.
+   - Call `POST http://localhost:8080/mcp` with `Authorization: Bearer tdsk_...`.
+   - Expected: MCP protocol response with tool listing.
+5. [ ] Verify MCP rate limiting (60 req/60s per API key).
+   - Send 61 requests within 60 seconds using the same API key.
+   - Expected: 61st request returns 429 Too Many Requests.
+
+### Z20. Distributed Caching (PR #805 — merged 2026-04-12)
+
+1. [ ] Verify board list is cached (second request faster with cache hit log).
+   - Call `GET /api/boards` twice. Check backend logs.
+   - Expected: first call logs cache miss; second logs cache hit.
+2. [ ] Verify cache invalidation on board create.
+   - Call `GET /api/boards`. Create a new board. Call `GET /api/boards` again.
+   - Expected: new board appears immediately (cache invalidated).
+3. [ ] Verify Redis fallback to InMemory when Redis is unavailable.
+   - Start backend without Redis configured.
+   - Expected: app starts with InMemory cache; no errors; cache still functions.
+4. [ ] Verify NoOp cache mode when caching is explicitly disabled.
+   - Set `Cache:Provider` to `None` in config.
+   - Expected: no caching behavior; all requests go to database.
+
+### Z21. Resilience and Degraded Mode (PR #820 — merged 2026-04-12)
+
+1. [ ] Verify board CRUD works when LLM provider is unavailable.
+   - Start backend with no LLM provider configured (mock disabled).
+   - Expected: board/card/column CRUD works normally; only LLM features degrade.
+2. [ ] Verify SignalR hub errors don't disconnect other clients.
+   - Connect two clients to the same board hub. Cause an error on client 1.
+   - Expected: client 2 remains connected and functional.
+3. [ ] Verify webhook delivery retries with exponential backoff.
+   - Create a webhook subscription pointing to an unreachable endpoint.
+   - Expected: delivery retries with increasing intervals; dead-lettered after max retries.
 
 ---
 

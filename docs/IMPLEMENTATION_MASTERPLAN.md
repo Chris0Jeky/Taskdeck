@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-09
+Last Updated: 2026-04-12
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -650,6 +650,12 @@ Delivered in the latest cycle:
     - **OPS-14** Cloud topology ADR (`#111`/`#799`): ADR-0027 (ECS Fargate), autoscaling policy, SLO targets, ~$147-152/month estimate, reference architecture; review fixed cost inconsistency, missing worker, health check accuracy
     - ADR numbering: PRs originally all created ADR-0023; canonical numbering is ADR-0023 (PLAT-01) through ADR-0027 (OPS-14); file renames needed during merge
 
+133. Post-merge housekeeping (2026-04-12):
+    - batch-merged 7 PRs (`#800`, `#805`, `#811`, `#813`, `#815`, `#819`, `#820`) with conflict resolution
+    - comprehensive documentation sweep: STATUS.md, TESTING_GUIDE.md, IMPLEMENTATION_MASTERPLAN.md, AUTHENTICATION.md updated to reflect all shipped features
+    - stale worktrees pruned and merged-PR local branches cleaned up
+    - test suite recertified: backend 4,279, frontend 2,245, combined ~6,500+ passing
+
 ## Current Planning Pivot (2026-03-07)
 
 The 2026-03-06 MVP expansion review packages change the next-cycle emphasis without invalidating the current architecture.
@@ -783,7 +789,7 @@ Focus:
 Current status:
 - tool registry, policy evaluator, and first bounded template are now delivered (`#337`): `ITaskdeckTool`/`ITaskdeckToolRegistry` domain interfaces, `AgentPolicyEvaluator` with allowlist + risk-level gating, and `InboxTriageAssistant` bounded template (proposal-only, review-first default)
 - LLM tool-calling architecture spike completed (`#618`); Phase 1 delivered (`#649`): read tools + orchestrator + provider tool-calling extension; `#674` delivered (OpenAI strict mode + loop detection with error-retry bypass, PR `#694`); `#677` delivered (card ID prefix resolution for chat-to-proposal continuity, PR `#695`); `#650` delivered (write tools + proposal integration, PR `#731`); `#672` delivered (double LLM call elimination, PR `#727`); `#651` delivered (Phase 3 refinements: cost tracking, `LlmToolCalling:Enabled` feature flag, `TruncateToolResult` byte budget with binary search Ã¢â‚¬â€ 17 new tests, PR `#773`); ~~`#673`~~ delivered (argument replay Ã¢â‚¬â€ `Arguments` field on `ToolCallResult`, OpenAI/Gemini replay uses real arguments, 6 new tests, PR `#770`)
-- MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; ~~`#653`~~ delivered (full inventory Ã¢â‚¬â€ 9 resources + 11 tools, PR `#739`); remaining: `#654` (HTTP + auth), `#655` (production hardening, deferred)
+- MCP server architecture spike completed (`#619`); Phase 1 delivered (`#652`/`#664`): minimal prototype with `taskdeck://boards` resource over stdio; ~~`#653`~~ delivered (full inventory Ã¢â‚¬â€ 9 resources + 11 tools, PR `#739`); ~~`#654`~~ delivered (HTTP transport + API key auth, PR `#792`/`#819`); remaining: `#655` (production hardening, deferred)
 - remaining work: `AgentProfile`/`AgentRun`/`AgentRunEvent` runtime primitives (`#336`), agent mode surfaces (`#338`), inspectable run detail
 
 Exit Criteria:
@@ -855,7 +861,7 @@ Master tracker: `#531`.
   - email notification delivery
   - activity feed per board
   - LLM tool-calling for chat (`#647`: ~~`#649`~~ delivered Ã¢â€ â€™ ~~`#650`~~ delivered Ã¢â€ â€™ ~~`#651`~~ delivered)
-  - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered Ã¢â€ â€™ `#653`Ã¢â€ â€™`#654`)
+  - MCP server for external agent integration (`#648`: ~~`#652`~~ delivered Ã¢â€ â€™ ~~`#653`~~ deliveredÃ¢â€ â€™~~`#654`~~ delivered)
 
 - `v0.5.0` **Power Up** (target: Week 15-20):
   - platform installers (Inno Setup, DMG, AppImage)
@@ -936,9 +942,9 @@ Master tracker: `#531`.
 
 ### Priority III (Expansion Tranche: Analytics, Security, Compliance, Premium UI Foundations)
 
-- Analytics and forecasting: `#77` (delivered Ã¢â‚¬â€ board metrics dashboard, PR `#667`; SQL-level filtering follow-up ~~`#675`~~ delivered, PR `#724`), `#78`, `#79`
-- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), `#82`, `#83` (delivered Ã¢â‚¬â€ GDPR data portability + account deletion, PR `#666`; follow-ups `#670`, ~~`#671`~~ (delivered Ã¢â‚¬â€ JWT invalidation after account deletion, PRs `#698`+`#728`, ADR-0021)), `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
-- Frontend premium UI foundations wave: `#242`, `#243` (UI-02 shared primitives delivered), `#244`, `#245` (UI-03 stack spike delivered), `#246`, `#247`, `#248`, `#249`, `#250` (PERF-08 delivered)
+- Analytics and forecasting: `#77` (delivered Ã¢â‚¬â€ board metrics dashboard, PR `#667`; SQL-level filtering follow-up ~~`#675`~~ delivered, PR `#724`), ~~`#78`~~ (delivered -- exportable analytics CSV, PR `#787`), ~~`#79`~~ (delivered -- forecasting service, PR `#790`)
+- Security/compliance expansion: `#80` (delivered), `#81` (delivered; capture scope extended), ~~`#82`~~ (delivered -- SSO/OIDC + MFA, PR `#813`), `#83` (delivered Ã¢â‚¬â€ GDPR data portability + account deletion, PR `#666`; follow-ups `#670`, ~~`#671`~~ (delivered Ã¢â‚¬â€ JWT invalidation after account deletion, PRs `#698`+`#728`, ADR-0021)), `#106`, `#110` (SEC-10 delivered), `#156`, `#212` (delivered), `#238` (SEC-18 operator tooling + groundwork delivered; live wiring follow-up pending), `#239` (SEC-19 delivered), `#240` (delivered)
+- Frontend premium UI foundations wave: `#242`, `#243` (UI-02 shared primitives delivered), `#244`, `#245` (UI-03 stack spike delivered), `#246`, `#247`, `#248`, ~~`#249`~~ (delivered -- inbox premium primitives, PR `#788`), `#250` (PERF-08 delivered)
 - Frontend premium wave reused dependencies: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization)
 - Seeded secondary MVP follow-through wave (lower priority than Wave P):
   - `#329` tracker
@@ -961,10 +967,11 @@ Master tracker: `#531`.
 - MCP server implementation wave (from completed spike `#619`):
   - `#648` tracker
   - ~~`#652` Phase 1: minimal prototype Ã¢â‚¬â€ one resource + stdio + Claude Code~~ (delivered 2026-04-01, PR `#664`)
-  - `#653` Phase 2: full resource + tool inventory (2-3 weeks)
-  - `#654` Phase 3: HTTP transport + API key auth (1-2 weeks)
+  - ~~`#653` Phase 2: full resource + tool inventory~~ (delivered 2026-04-04, PR `#739`)
+  - ~~`#654` Phase 3: HTTP transport + API key auth~~ (delivered 2026-04-08, PR `#792`)
   - `#655` Phase 4: production hardening (deferred to v0.4.0+ demand, `Priority IV`)
   - Dependency chain: ~~`#652`~~ Ã¢â€ â€™ `#653` Ã¢â€ â€™ `#654` Ã¢â€ â€™ `#655`
+  - Dependency chain: ~~`#652`~~ ~~`#653`~~ ~~`#654`~~ `#655`
   - Phase 2 mirrors LLM tool-calling tool abstractions; shared Application layer services
 
 ### Platform Expansion Wave (2026-03-29 Ã¢â‚¬â€ Priority II)

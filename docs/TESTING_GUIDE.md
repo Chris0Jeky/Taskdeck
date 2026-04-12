@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-09
+Last Updated: 2026-04-12
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,21 +10,21 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-09)
+## Current Verified Totals (2026-04-12)
 
-- Backend: ~3600+ passing (verified across individual PR test runs from `#806`–`#813` wave; PR #813 reported 3,805 tests)
+- Backend: **4,279 passing** (recertified 2026-04-12 via `dotnet test --list-tests`)
   - Domain: ~740+ (77 FsCheck adversarial entity tests + 11 ApiKey entity tests + 15 OAuthAuthCode tests + 8 MfaCredential tests + NoteImport domain)
   - Application: ~1780+ (29 JSON fuzz round-trip + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
   - API integration: ~1060+ (8 metrics export + 80 adversarial input + 20 API key + 13 concurrency stress + 9 telemetry config/integration + 4 telemetry API + 13 OIDC/auth integration + 9 OAuth token lifecycle)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: ~1984+ passing (~165+ test files; +42 agent views/store + 6 noteImportApi + 20+ CalendarView + 25 telemetry store/api + ProfileSettingsView updates)
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys): default required lane passing
-- Combined automated total: ~5600+ passing (backend ~3600+ + frontend unit ~1984+ + E2E)
+- Frontend unit: **2,245 passing** (recertified 2026-04-12 via `npx vitest --run`; ~170+ test files)
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix): default required lane passing
+- Combined automated total: **~6,500+ passing** (backend 4,279 + frontend unit 2,245 + E2E)
 
 Verification note:
-- backend totals are based on individual PR test runs from the 2026-04-09 wave (`#806`–`#813`); PR #813 reported 3,805 tests, PR #811 reported 3,800 tests; the highest reliable count is ~3,600+ across the wave; each PR verified green individually; ~138+ new backend tests from the 8-PR wave
-- frontend unit totals: **~1984+ passing** as of 2026-04-09 (up from ~1891 pre-wave); 2026-04-09 wave added: 42 agent views/store tests (`#338`/`#808`), 6 noteImportApi tests (`#334`/`#809`), 20+ CalendarView tests (`#94`/`#810`), 25 telemetry store/api tests (`#549`/`#811`), plus ProfileSettingsView and LoginView updates for MFA/OIDC/linking (`#82`/`#813`, `#676`/`#812`); verified via `npx vitest --run` after adversarial review fixes
+- backend total of 4,279 recertified 2026-04-12 via `dotnet test backend/Taskdeck.sln -c Release --list-tests 2>&1 | grep -c "^    "` on `main` after merging PRs `#800`–`#820`
+- frontend total of 2,245 recertified 2026-04-12 via `npx vitest --run --reporter=verbose 2>&1 | grep -c "✓"` on `main` after merging PRs `#800`–`#820`
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
@@ -45,6 +45,44 @@ New test categories:
 - **Staged deployment**: smoke test script with 9 automated checks (health, API, auth, frontend, SignalR, static assets, security headers, container restart)
 
 Storybook (non-test tooling): `npm run storybook` runs 17 Td* primitive stories; `npm run storybook:build` produces static output.
+
+## Post-Merge Batch Testing Notes (2026-04-12)
+
+After batch-merging PRs `#800`, `#805`, `#811`, `#813`, `#815`, `#819`, `#820`, the following additional test categories are now on `main`:
+
+### Resilience and Degraded-Mode Tests (`#720`/`#820`)
+
+34 tests (18 backend + 16 frontend) covering:
+- Backend: ChatService LLM provider failure/fallback, worker crash/retry/cancellation/max-retries
+- Frontend: store error states, SignalR reconnect polling fallback
+
+### MFA/OIDC Security Tests (`#82`/`#813`)
+
+30+ backend tests covering TOTP validation, OIDC provider isolation, email collision prevention, username deduplication, MFA policy enforcement, and recovery code lifecycle.
+
+Running MFA/OIDC tests:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Mfa"
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Oidc"
+```
+
+### Telemetry and Analytics Tests (`#549`/`#811`)
+
+63 tests (38 backend + 25 frontend):
+- Backend: opt-in enforcement, event property validation against allowlist, value truncation, TelemetryController endpoints
+- Frontend: consent management, DNT/GPC detection, store event buffering/flush, analytics script injection
+
+### Distributed Cache Tests (`#85`/`#805`)
+
+32 backend tests covering `ICacheService` implementations (InMemory sweep/cap, Redis reconnect/degradation, NoOp pass-through), board list cache-aside with TTL and write-through invalidation.
+
+### OAuth Token Lifecycle Tests (`#723`/`#815`)
+
+19+ integration tests covering DB-backed auth code store (valid exchange, expiry, replay prevention, concurrent atomicity, cleanup), JWT lifecycle (expiry, wrong key, garbage token, deactivated user), and SignalR query-string auth.
+
+### MCP HTTP Transport Tests (`#654`/`#819`)
+
+31 tests (11 domain + 20 integration) covering API key entity (`tdsk_` prefix, SHA-256 hashing), `ApiKeyMiddleware` Bearer validation, HTTP user context mapping, REST key management, and rate limiting per API key.
 
 ## Platform Expansion Testing Capabilities (2026-04-09)
 
