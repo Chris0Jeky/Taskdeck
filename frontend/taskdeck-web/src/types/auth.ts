@@ -63,3 +63,11 @@ export interface MfaSetupResponse {
 export interface MfaVerifyRequest {
   code: string
 }
+
+export interface LinkedAccount {
+  provider: string
+  providerUserId: string
+  displayName: string | null
+  avatarUrl: string | null
+  linkedAt: string
+}

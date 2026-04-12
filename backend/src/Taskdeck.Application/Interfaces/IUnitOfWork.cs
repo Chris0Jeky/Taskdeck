@@ -27,6 +27,7 @@ public interface IUnitOfWork
     IKnowledgeDocumentRepository KnowledgeDocuments { get; }
     IKnowledgeChunkRepository KnowledgeChunks { get; }
     IExternalLoginRepository ExternalLogins { get; }
+    IOAuthAuthCodeRepository OAuthAuthCodes { get; }
     IApiKeyRepository ApiKeys { get; }
     IMfaCredentialRepository MfaCredentials { get; }
 

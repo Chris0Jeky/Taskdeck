@@ -1,14 +1,5 @@
 import http from './http'
-import type {
-  LoginRequest,
-  RegisterRequest,
-  ChangePasswordRequest,
-  AuthResponse,
-  AuthProviders,
-  MfaStatus,
-  MfaSetupResponse,
-  MfaVerifyRequest,
-} from '../types/auth'
+import type { LoginRequest, RegisterRequest, ChangePasswordRequest, AuthResponse, AuthProviders, LinkedAccount } from '../types/auth'
 
 export const authApi = {
   async login(credentials: LoginRequest): Promise<AuthResponse> {
@@ -35,31 +26,17 @@ export const authApi = {
     return data
   },
 
-  async exchangeOidcCode(code: string): Promise<AuthResponse> {
-    const { data } = await http.post<AuthResponse>('/auth/oidc/exchange', { code })
+  async getLinkedAccounts(): Promise<LinkedAccount[]> {
+    const { data } = await http.get<LinkedAccount[]>('/auth/linked-accounts')
     return data
   },
 
-  // MFA endpoints
-  async getMfaStatus(): Promise<MfaStatus> {
-    const { data } = await http.get<MfaStatus>('/auth/mfa/status')
+  async linkGitHub(code: string): Promise<LinkedAccount> {
+    const { data } = await http.post<LinkedAccount>('/auth/github/link', { code })
     return data
   },
 
-  async setupMfa(): Promise<MfaSetupResponse> {
-    const { data } = await http.post<MfaSetupResponse>('/auth/mfa/setup')
-    return data
-  },
-
-  async confirmMfa(request: MfaVerifyRequest): Promise<void> {
-    await http.post('/auth/mfa/confirm', request)
-  },
-
-  async verifyMfa(request: MfaVerifyRequest): Promise<void> {
-    await http.post('/auth/mfa/verify', request)
-  },
-
-  async disableMfa(request: MfaVerifyRequest): Promise<void> {
-    await http.post('/auth/mfa/disable', request)
+  async unlinkGitHub(): Promise<void> {
+    await http.delete('/auth/github/link')
   },
 }

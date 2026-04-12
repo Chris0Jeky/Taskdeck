@@ -300,6 +300,7 @@ public class ActiveUserValidationMiddlewareTests
         public IKnowledgeDocumentRepository KnowledgeDocuments => throw new NotImplementedException();
         public IKnowledgeChunkRepository KnowledgeChunks => throw new NotImplementedException();
         public IExternalLoginRepository ExternalLogins => throw new NotImplementedException();
+        public IOAuthAuthCodeRepository OAuthAuthCodes => throw new NotImplementedException();
         public IApiKeyRepository ApiKeys => throw new NotImplementedException();
         public IMfaCredentialRepository MfaCredentials => throw new NotImplementedException();
 

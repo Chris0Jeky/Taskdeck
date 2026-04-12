@@ -122,6 +122,11 @@ public static class AuthenticationRegistration
                 options.CallbackPath = "/api/auth/github/oauth-redirect";
                 options.SaveTokens = false;
 
+                // PKCE (Proof Key for Code Exchange) — defense-in-depth against
+                // authorization code interception attacks. GitHub supports PKCE
+                // and ASP.NET Core 8+ handles code_verifier/code_challenge automatically.
+                options.UsePkce = true;
+
                 options.Scope.Add("read:user");
                 options.Scope.Add("user:email");
 

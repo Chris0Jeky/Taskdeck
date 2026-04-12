@@ -41,4 +41,14 @@ public interface ICardRepository : IRepository<Card>
         Guid boardId,
         Guid? labelId = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get cards with due dates falling within the specified date range across multiple boards.
+    /// Returns cards ordered by due date ascending.
+    /// </summary>
+    Task<IEnumerable<Card>> GetByDueDateRangeAsync(
+        IEnumerable<Guid> boardIds,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken = default);
 }

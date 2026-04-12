@@ -428,6 +428,7 @@ describe('unexpected origin and path redirect protection (#687)', () => {
     '/workspace/boards',
     '/workspace/boards/board-1',
     '/workspace/metrics',
+    '/workspace/calendar',
     '/workspace/inbox',
     '/workspace/review',
     '/workspace/activity',
