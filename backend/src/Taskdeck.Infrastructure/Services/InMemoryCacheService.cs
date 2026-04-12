@@ -16,6 +16,7 @@ public sealed class InMemoryCacheService : ICacheService, IDisposable
     private readonly ILogger<InMemoryCacheService> _logger;
     private readonly string _keyPrefix;
     private readonly Timer _sweepTimer;
+    private readonly object _evictionLock = new();
 
     /// <summary>
     /// Maximum cache entries before forced eviction of expired entries.
@@ -77,21 +78,44 @@ public sealed class InMemoryCacheService : ICacheService, IDisposable
 
         try
         {
-            if (_cache.Count >= MaxEntries)
-            {
-                SweepExpiredEntries();
+            var serialized = JsonSerializer.Serialize(value);
+            var entry = new CacheEntry(serialized, DateTime.UtcNow.Add(ttl));
 
-                // If still at capacity after sweeping expired entries, evict oldest entries
-                // to enforce the hard limit and prevent unbounded memory growth.
-                if (_cache.Count >= MaxEntries)
+            // Use AddOrUpdate with a guard: if adding would exceed MaxEntries and key doesn't exist,
+            // we need to make room first. Check under lock to prevent races.
+            if (_cache.ContainsKey(fullKey))
+            {
+                // Updating existing key — no growth
+                _cache[fullKey] = entry;
+            }
+            else
+            {
+                // Adding new key — enforce hard cap
+                lock (_evictionLock)
                 {
-                    EvictOldestEntries(MaxEntries / 10); // Evict 10% to create headroom
+                    // Re-check after acquiring lock in case another thread added
+                    if (_cache.ContainsKey(fullKey))
+                    {
+                        _cache[fullKey] = entry;
+                    }
+                    else
+                    {
+                        // Enforce hard cap before inserting
+                        while (_cache.Count >= MaxEntries)
+                        {
+                            SweepExpiredEntries();
+                            if (_cache.Count >= MaxEntries)
+                            {
+                                // Evict 10% to create headroom
+                                EvictOldestEntries(Math.Max(1, MaxEntries / 10));
+                            }
+                        }
+
+                        _cache[fullKey] = entry;
+                    }
                 }
             }
 
-            var serialized = JsonSerializer.Serialize(value);
-            var entry = new CacheEntry(serialized, DateTime.UtcNow.Add(ttl));
-            _cache[fullKey] = entry;
             _logger.LogDebug("Cache set for key {CacheKey} with TTL {Ttl}s", fullKey, ttl.TotalSeconds);
         }
         catch (Exception ex)

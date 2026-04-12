@@ -24,6 +24,17 @@ public sealed class RedisCacheService : ICacheService, IDisposable
     /// Minimum interval between reconnection attempts to avoid reconnection storms.
     /// </summary>
     private static readonly TimeSpan ReconnectMinInterval = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Maximum number of immediate retry attempts when establishing a connection.
+    /// </summary>
+    private const int MaxConnectionRetries = 3;
+
+    /// <summary>
+    /// Base delay between connection retry attempts (doubles with each retry).
+    /// </summary>
+    private static readonly TimeSpan RetryBaseDelay = TimeSpan.FromMilliseconds(500);
+
     private DateTime _lastConnectAttemptUtc = DateTime.MinValue;
 
     public RedisCacheService(string connectionString, ILogger<RedisCacheService> logger, string keyPrefix = "td")
@@ -53,7 +64,7 @@ public sealed class RedisCacheService : ICacheService, IDisposable
                 return null;
             }
 
-            var result = JsonSerializer.Deserialize<T>(value!);
+            var result = JsonSerializer.Deserialize<T>(value.ToString());
             _logger.LogDebug("Cache hit for key {CacheKey}", fullKey);
             LogCacheMetric("hit", key);
             return result;
@@ -112,17 +123,42 @@ public sealed class RedisCacheService : ICacheService, IDisposable
         try
         {
             // Use SCAN to find keys by prefix — safe for production (non-blocking).
-            // Note: This requires access to a server endpoint.
+            // Process keys in batches to avoid materializing all keys into memory at once.
+            const int batchSize = 100;
             var endpoints = connection.GetEndPoints();
+            var db = connection.GetDatabase();
+
             foreach (var endpoint in endpoints)
             {
                 var server = connection.GetServer(endpoint);
-                var keys = server.Keys(pattern: $"{fullPrefix}*").ToArray();
-                if (keys.Length > 0)
+                var keys = new List<RedisKey>(batchSize);
+                var totalRemoved = 0;
+
+                // Stream keys using IEnumerable — Keys() uses SCAN internally
+                foreach (var key in server.Keys(pattern: $"{fullPrefix}*"))
                 {
-                    var db = connection.GetDatabase();
-                    await db.KeyDeleteAsync(keys);
-                    _logger.LogDebug("Cache removed {Count} keys with prefix {CacheKeyPrefix}", keys.Length, fullPrefix);
+                    if (cancellationToken.IsCancellationRequested)
+                        break;
+
+                    keys.Add(key);
+                    if (keys.Count >= batchSize)
+                    {
+                        await db.KeyDeleteAsync(keys.ToArray());
+                        totalRemoved += keys.Count;
+                        keys.Clear();
+                    }
+                }
+
+                // Delete any remaining keys
+                if (keys.Count > 0)
+                {
+                    await db.KeyDeleteAsync(keys.ToArray());
+                    totalRemoved += keys.Count;
+                }
+
+                if (totalRemoved > 0)
+                {
+                    _logger.LogDebug("Cache removed {Count} keys with prefix {CacheKeyPrefix}", totalRemoved, fullPrefix);
                 }
             }
         }
@@ -198,32 +234,56 @@ public sealed class RedisCacheService : ICacheService, IDisposable
 
             _lastConnectAttemptUtc = DateTime.UtcNow;
 
-            try
-            {
-                // Dispose old broken connection if any
-                var old = _connection;
-                var options = ConfigurationOptions.Parse(_connectionString);
-                options.AbortOnConnectFail = false;  // Allow startup without Redis
-                options.ConnectTimeout = 3000;       // 3 second connect timeout
-                options.SyncTimeout = 1000;          // 1 second sync timeout
-                options.AsyncTimeout = 1000;         // 1 second async timeout
-                _connection = ConnectionMultiplexer.Connect(options);
-                _logger.LogInformation("Redis cache connected successfully");
+            // Dispose old broken connection before attempting reconnect
+            var old = _connection;
+            Exception? lastException = null;
 
-                // Dispose old connection after successful replacement
-                if (old is not null && !ReferenceEquals(old, _connection))
+            // Retry connection with exponential backoff
+            for (var attempt = 1; attempt <= MaxConnectionRetries; attempt++)
+            {
+                try
                 {
-                    try { old.Dispose(); }
-                    catch (Exception) { /* best-effort cleanup */ }
+                    var options = ConfigurationOptions.Parse(_connectionString);
+                    options.AbortOnConnectFail = false;  // Allow startup without Redis
+                    options.ConnectTimeout = 3000;       // 3 second connect timeout
+                    options.SyncTimeout = 1000;          // 1 second sync timeout
+                    options.AsyncTimeout = 1000;         // 1 second async timeout
+                    _connection = ConnectionMultiplexer.Connect(options);
+
+                    if (_connection.IsConnected)
+                    {
+                        _logger.LogInformation("Redis cache connected successfully on attempt {Attempt}", attempt);
+
+                        // Dispose old connection after successful replacement
+                        if (old is not null && !ReferenceEquals(old, _connection))
+                        {
+                            try { old.Dispose(); }
+                            catch (Exception) { /* best-effort cleanup */ }
+                        }
+
+                        return _connection;
+                    }
+
+                    // Connection object created but not connected — dispose and retry
+                    _connection.Dispose();
+                    _connection = null;
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    _logger.LogDebug(ex, "Redis connection attempt {Attempt}/{MaxAttempts} failed", attempt, MaxConnectionRetries);
                 }
 
-                return _connection;
+                // Wait before retry (exponential backoff: 500ms, 1s, 2s, ...)
+                if (attempt < MaxConnectionRetries)
+                {
+                    var delay = TimeSpan.FromMilliseconds(RetryBaseDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
+                    Thread.Sleep(delay);
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Redis cache connection failed — operating in degraded (no-cache) mode");
-                return null;
-            }
+
+            _logger.LogWarning(lastException, "Redis cache connection failed after {MaxAttempts} attempts — operating in degraded (no-cache) mode", MaxConnectionRetries);
+            return null;
         }
     }
 
