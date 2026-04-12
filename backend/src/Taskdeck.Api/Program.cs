@@ -163,7 +163,8 @@ builder.Services.AddTaskdeckSettings(
     out var observabilitySettings,
     out var rateLimitingSettings,
     out var jwtSettings,
-    out var gitHubOAuthSettings);
+    out var gitHubOAuthSettings,
+    out var oidcSettings);
 
 // Add Infrastructure (DbContext, Repositories)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -190,8 +191,8 @@ builder.Services.AddMcpServer()
     .WithTools<WriteTools>()
     .WithTools<ProposalTools>();
 
-// Add JWT Authentication (with optional GitHub OAuth)
-builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings);
+// Add JWT Authentication (with optional GitHub OAuth and OIDC providers)
+builder.Services.AddTaskdeckAuthentication(jwtSettings, gitHubOAuthSettings, oidcSettings);
 
 // Add OpenTelemetry observability
 builder.Services.AddTaskdeckObservability(observabilitySettings);

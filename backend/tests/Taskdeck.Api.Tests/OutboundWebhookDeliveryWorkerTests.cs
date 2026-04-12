@@ -549,6 +549,7 @@ public class OutboundWebhookDeliveryWorkerTests
         public IKnowledgeChunkRepository KnowledgeChunks => null!;
         public IExternalLoginRepository ExternalLogins => null!;
         public IApiKeyRepository ApiKeys => null!;
+        public IMfaCredentialRepository MfaCredentials => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {

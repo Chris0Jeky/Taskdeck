@@ -73,4 +73,28 @@ public class UserTests
         // Assert
         user.PasswordHash.Should().Be("new-hash");
     }
+
+    [Fact]
+    public void MfaEnabled_ShouldDefaultToFalse()
+    {
+        var user = new User("testuser", "test@example.com", "hash123");
+        user.MfaEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void EnableMfa_ShouldSetMfaEnabledToTrue()
+    {
+        var user = new User("testuser", "test@example.com", "hash123");
+        user.EnableMfa();
+        user.MfaEnabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DisableMfa_ShouldSetMfaEnabledToFalse()
+    {
+        var user = new User("testuser", "test@example.com", "hash123");
+        user.EnableMfa();
+        user.DisableMfa();
+        user.MfaEnabled.Should().BeFalse();
+    }
 }

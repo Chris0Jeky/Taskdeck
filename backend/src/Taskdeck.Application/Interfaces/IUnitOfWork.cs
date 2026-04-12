@@ -28,6 +28,7 @@ public interface IUnitOfWork
     IKnowledgeChunkRepository KnowledgeChunks { get; }
     IExternalLoginRepository ExternalLogins { get; }
     IApiKeyRepository ApiKeys { get; }
+    IMfaCredentialRepository MfaCredentials { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

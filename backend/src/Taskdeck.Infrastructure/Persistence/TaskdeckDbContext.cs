@@ -40,6 +40,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<KnowledgeChunk> KnowledgeChunks => Set<KnowledgeChunk>();
     public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<MfaCredential> MfaCredentials => Set<MfaCredential>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

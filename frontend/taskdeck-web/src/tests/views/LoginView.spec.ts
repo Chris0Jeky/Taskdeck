@@ -18,6 +18,7 @@ const sessionMock = vi.hoisted(() => ({
   loginAsDemo: vi.fn(),
   register: vi.fn(),
   exchangeOAuthCode: vi.fn(),
+  exchangeOidcCode: vi.fn(),
   error: null as string | null,
 }))
 
@@ -74,7 +75,8 @@ describe('LoginView', () => {
     sessionMock.login.mockResolvedValue(undefined)
     sessionMock.loginAsDemo.mockReturnValue(undefined)
     sessionMock.exchangeOAuthCode.mockResolvedValue(undefined)
-    authApiMock.getProviders.mockResolvedValue({ gitHub: false })
+    sessionMock.exchangeOidcCode.mockResolvedValue(undefined)
+    authApiMock.getProviders.mockResolvedValue({ gitHub: false, oidc: [] })
   })
 
   it('renders the sign-in title', async () => {
@@ -281,6 +283,21 @@ describe('LoginView', () => {
       await waitForUi()
 
       expect(wrapper.find('[role="alert"]').text()).toContain('GitHub sign-in failed.')
+    })
+  })
+
+  describe('OIDC code exchange', () => {
+    it('calls exchangeOidcCode when oauth_provider indicates an OIDC flow', async () => {
+      routeMock.query = { oauth_code: 'oidc-code-abc123', oauth_provider: 'oidc' }
+      sessionMock.exchangeOidcCode.mockResolvedValue(undefined)
+
+      mount(LoginView)
+      await waitForUi()
+      await waitForUi()
+
+      expect(sessionMock.exchangeOidcCode).toHaveBeenCalledWith('oidc-code-abc123')
+      expect(sessionMock.exchangeOAuthCode).not.toHaveBeenCalled()
+      expect(routerMocks.push).toHaveBeenCalledWith('/workspace/home')
     })
   })
 
