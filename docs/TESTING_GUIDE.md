@@ -596,6 +596,36 @@ cd frontend/taskdeck-web
 npm run test:e2e:audit:headed
 ```
 
+## Visual Regression Tests
+
+Visual regression tests capture baseline screenshots of key UI surfaces and compare them against future renders to catch unintended layout changes.
+
+**Policy document**: `docs/testing/VISUAL_REGRESSION_POLICY.md` (thresholds, false-positive mitigation, baseline management)
+
+**Test location**: `frontend/taskdeck-web/tests/visual/`
+
+**Config**: `frontend/taskdeck-web/playwright.visual.config.ts`
+
+**Covered surfaces**: board view (empty + populated), command palette (open + search), archive view, inbox/capture view, home view
+
+Run visual tests:
+
+```bash
+cd frontend/taskdeck-web
+npm run test:visual
+```
+
+Update baselines after intentional UI changes:
+
+```bash
+cd frontend/taskdeck-web
+npm run test:visual:update
+```
+
+Key settings: fixed viewport 1280x720, animations disabled, 0.5% pixel tolerance, platform-specific baselines (CI canonical platform: ubuntu-latest).
+
+CI integration: runs in CI Extended pipeline with `testing` or `visual` PR labels. Diff artifacts uploaded on failure for review.
+
 ## Demo Tooling Policy
 
 Default CI posture:

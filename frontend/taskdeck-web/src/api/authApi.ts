@@ -5,6 +5,7 @@ import type {
   ChangePasswordRequest,
   AuthResponse,
   AuthProviders,
+  LinkedAccount,
   MfaStatus,
   MfaSetupResponse,
   MfaVerifyRequest,
@@ -38,6 +39,20 @@ export const authApi = {
   async exchangeOidcCode(code: string): Promise<AuthResponse> {
     const { data } = await http.post<AuthResponse>('/auth/oidc/exchange', { code })
     return data
+  },
+
+  async getLinkedAccounts(): Promise<LinkedAccount[]> {
+    const { data } = await http.get<LinkedAccount[]>('/auth/linked-accounts')
+    return data
+  },
+
+  async linkGitHub(code: string): Promise<LinkedAccount> {
+    const { data } = await http.post<LinkedAccount>('/auth/github/link', { code })
+    return data
+  },
+
+  async unlinkGitHub(): Promise<void> {
+    await http.delete('/auth/github/link')
   },
 
   // MFA endpoints
