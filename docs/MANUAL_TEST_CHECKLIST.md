@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-10
+Last Updated: 2026-04-13
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -1175,6 +1175,27 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 3. [ ] Verify webhook delivery retries with exponential backoff.
    - Create a webhook subscription pointing to an unreachable endpoint.
    - Expected: delivery retries with increasing intervals; dead-lettered after max retries.
+
+### Z22. Supplementary Test Depth Wave (PRs #821–#826 — pending merge)
+
+1. [ ] Verify concurrency stress tests pass without deadlocks or flakiness.
+   - Run: `dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Concurrency" -m:1`
+   - Expected: all 22 concurrency tests pass; no timeouts or deadlocks; SQLite serialization behaviors documented in XML comments.
+2. [ ] Verify frontend store integration tests pass with real API client chain.
+   - Run: `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose -- src/tests/store/`
+   - Expected: all 88 store integration tests pass; HTTP mocks (not API mocks) are used.
+3. [ ] Verify E2E scenario expansion tests pass against dev server.
+   - Run: `cd frontend/taskdeck-web && npx playwright test tests/e2e/onboarding.spec.ts tests/e2e/review-proposals.spec.ts tests/e2e/capture-edge-cases.spec.ts tests/e2e/keyboard-navigation.spec.ts tests/e2e/dark-mode.spec.ts`
+   - Expected: 17+ pass, 3 gracefully skipped (dark mode toggle).
+4. [ ] Verify frontend view/component coverage tests pass.
+   - Run: `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose -- src/tests/views/`
+   - Expected: all 107 view/component tests pass.
+5. [ ] Verify property-based/adversarial tests pass and no 500 errors from random input.
+   - Run: `dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~PropertyBased|FullyQualifiedName~Fuzz|FullyQualifiedName~Adversarial" -m:1`
+   - Expected: all 162 tests pass; no 500 Internal Server Error from adversarial input.
+6. [ ] Verify resilience/degraded-mode tests pass.
+   - Run: `dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Resilience" -m:1`
+   - Expected: all 30 resilience tests pass; degraded responses are structured, not raw exceptions.
 
 ---
 

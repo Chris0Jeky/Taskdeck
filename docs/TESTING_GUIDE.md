@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-12
+Last Updated: 2026-04-13
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,21 +10,25 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-12)
+## Current Verified Totals (2026-04-13)
 
-- Backend: **4,279 passing** (recertified 2026-04-12 via `dotnet test --list-tests`)
-  - Domain: ~740+ (77 FsCheck adversarial entity tests + 11 ApiKey entity tests + 15 OAuthAuthCode tests + 8 MfaCredential tests + NoteImport domain)
-  - Application: ~1780+ (29 JSON fuzz round-trip + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
-  - API integration: ~1060+ (8 metrics export + 80 adversarial input + 20 API key + 13 concurrency stress + 9 telemetry config/integration + 4 telemetry API + 13 OIDC/auth integration + 9 OAuth token lifecycle)
+- Backend: **~4,479+ passing** (estimated after PRs `#821`–`#826` supplementary wave)
+  - Domain: ~833+ (77 prior FsCheck + 93 new property tests for ChatSession/ChatMessage/Notification/KnowledgeDocument/WebhookSubscription + 11 ApiKey + 15 OAuthAuthCode + 8 MfaCredential + NoteImport domain)
+  - Application: ~1799+ (29 prior JSON fuzz + 19 new chat/notification DTO fuzz + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
+  - API integration: ~1135+ (8 metrics export + 80 prior adversarial + 50 new adversarial input + 20 API key + 13 prior concurrency + 22 new concurrency stress + 3 queue resilience + 13 LLM provider resilience + 9 telemetry + 4 telemetry API + 13 OIDC/auth + 9 OAuth token lifecycle)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: **2,245 passing** (recertified 2026-04-12 via `npx vitest --run`; ~170+ test files)
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix): default required lane passing
-- Combined automated total: **~6,500+ passing** (backend 4,279 + frontend unit 2,245 + E2E)
+- Frontend unit: **~2,454+ passing** (estimated after PRs `#821`–`#826`; ~200+ test files)
+  - New store integration: 88 tests (chat, board, queue, session, notification, workspace)
+  - New view/component coverage: 107 tests (Archive, Metrics, Board, Review, Chat, CardItem, BoardCanvas, BoardActionRail)
+  - New resilience: 14 tests (slow API, corrupted storage, loading states)
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode): default required lane passing; +20 new scenarios in PRs `#821`–`#826`
+- Combined automated total: **~6,950+ passing** (backend ~4,479 + frontend unit ~2,454 + E2E)
 
 Verification note:
 - backend total of 4,279 recertified 2026-04-12 via `dotnet test backend/Taskdeck.sln -c Release --list-tests 2>&1 | grep -c "^    "` on `main` after merging PRs `#800`–`#820`
 - frontend total of 2,245 recertified 2026-04-12 via `npx vitest --run --reporter=verbose 2>&1 | grep -c "✓"` on `main` after merging PRs `#800`–`#820`
+- supplementary wave (PRs `#821`–`#826`) adds ~429 new tests; totals estimated pending merge and full-suite recertification
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
@@ -45,6 +49,60 @@ New test categories:
 - **Staged deployment**: smoke test script with 9 automated checks (health, API, auth, frontend, SignalR, static assets, security headers, container restart)
 
 Storybook (non-test tooling): `npm run storybook` runs 17 Td* primitive stories; `npm run storybook:build` produces static output.
+
+## Supplementary Test Depth Wave (2026-04-13, PRs `#821`–`#826`)
+
+~429 new tests across 6 PRs. Each PR received two rounds of adversarial review (self-review + independent cold review). Key review findings and fixes:
+
+### Concurrency and Race Condition Stress Tests (`#705`/`#825`)
+
+22 backend tests across 7 files in `backend/tests/Taskdeck.Api.Tests/Concurrency/`:
+- Queue claim races (4): double-claim prevention, stale timestamp, batch processing, two-worker different items
+- Card update conflicts (5): concurrent moves, stale-write 409, last-writer-wins, column reorder, concurrent creation
+- Proposal approval races (4): double-approve, approve+expire, approve+reject, double-execute
+- Webhook delivery concurrency (2), board presence (2), rate limiting (3), cross-user isolation (2)
+- Uses `SemaphoreSlim` barriers for true simultaneous execution; SQLite serialization limitations documented
+
+Running:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Concurrency"
+```
+
+### Frontend Store Integration Tests (`#711`/`#821`)
+
+88 frontend tests across 6 files in `frontend/taskdeck-web/src/tests/store/`:
+- chatApi integration (22), boardStore column reorder/conflict (11), queueStore polling (12)
+- sessionStore OIDC/SSO (14), notificationStore realtime (15), workspaceStore mode persistence (14)
+- Mocks HTTP layer (not API modules) to test full store → API → HTTP chain
+
+### E2E Scenario Expansion (`#712`/`#822`)
+
+20 Playwright scenarios across 5 spec files:
+- `onboarding.spec.ts` (5): fresh user empty states, setup dialog, starter pack structure
+- `review-proposals.spec.ts` (3): board-scoped filtering, multiple proposals, show completed toggle
+- `capture-edge-cases.spec.ts` (4): empty/whitespace rejection, Escape dismiss, board-linked capture
+- `keyboard-navigation.spec.ts` (4): keyboard board creation, command palette arrows, `?` help toggle
+- `dark-mode.spec.ts` (4): persistence across views, toggle-off restore, system `prefers-color-scheme`
+
+### Frontend View and Component Coverage (`#716`/`#826`)
+
+107 tests across 8 files covering previously untested views and components:
+- ArchiveView (11), MetricsView (16), BoardView (12), ReviewView (10)
+- AutomationChatView (16), CardItem (21), BoardCanvas (12), BoardActionRail (9)
+
+### Property-Based and Adversarial Input Tests (`#717`/`#824`)
+
+162 tests across 8 files:
+- Domain property tests (93): ChatSession, ChatMessage, Notification, KnowledgeDocument, WebhookSubscription
+- Application fuzz tests (19): JSON round-trip for chat/notification DTOs with adversarial content
+- API adversarial tests (50): raw JSON with float/overflow positions, XSS/injection payloads, unicode blocks, extra unknown fields
+
+### Resilience and Degraded-Mode Tests (`#720`/`#823`)
+
+30 tests across 3 files:
+- LLM provider resilience (13): garbage/empty/429/timeout for OpenAI/Gemini, probe unhealthy
+- Queue accumulation resilience (3): accumulation without corruption, rapid concurrent captures
+- Frontend slow-API/storage resilience (14): loading states, throttle dedup, corrupted localStorage/token
 
 ## Post-Merge Batch Testing Notes (2026-04-12)
 

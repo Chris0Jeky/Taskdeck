@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-04-12
+Last Updated: 2026-04-13
 <br>
 Planning Horizon: Next 8 to 12 weeks
 Companion Active Docs:
@@ -655,6 +655,16 @@ Delivered in the latest cycle:
     - comprehensive documentation sweep: STATUS.md, TESTING_GUIDE.md, IMPLEMENTATION_MASTERPLAN.md, AUTHENTICATION.md updated to reflect all shipped features
     - stale worktrees pruned and merged-PR local branches cleaned up
     - test suite recertified: backend 4,279, frontend 2,245, combined ~6,500+ passing
+134. Supplementary test depth wave (2026-04-13, PRs `#821`–`#826`, ~429 new tests):
+    - 6 parallel worktree agents implementing supplementary test depth for TST-54 wave topics (concurrency, store integration, E2E expansion, view coverage, property-based/adversarial, resilience)
+    - each PR received two rounds of adversarial review (self-review + independent cold review); round 2 caught and fixed: 1 critical thread-pool deadlock (`#825`), 1 critical missing baseURL (`#822`), 3 CI-blocking unused imports (`#823`, `#824`, `#826`), 12 weak assertions (`#821`), silent 500-skip (`#824`), DOM pollution (`#826`), incorrect generic type (`#826`), race conditions in test setup (`#825`), unhandled promise rejections (`#823`)
+    - concurrency stress tests (`#705`/`#825`): 22 tests across 7 files — queue claim races, card update conflicts, proposal approval races, webhook delivery, board presence, rate limiting, cross-user isolation; `SemaphoreSlim` barriers for true simultaneous execution
+    - frontend store integration tests (`#711`/`#821`): 88 tests across 6 files — chatApi, boardStore conflicts, queueStore polling, sessionStore OIDC, notificationStore realtime, workspaceStore persistence; mocks HTTP layer to test full store → API → HTTP chain
+    - E2E scenario expansion (`#712`/`#822`): 20 Playwright scenarios across 5 files — onboarding, review proposals, capture edge cases, keyboard navigation, dark mode
+    - frontend view/component coverage (`#716`/`#826`): 107 tests across 8 files — ArchiveView, MetricsView, BoardView, ReviewView, AutomationChatView, CardItem, BoardCanvas, BoardActionRail
+    - property-based/adversarial input tests (`#717`/`#824`): 162 tests across 8 files — domain property tests (93), application fuzz (19), API adversarial (50); shared adversarial string generator with ~45 vectors
+    - resilience/degraded-mode tests (`#720`/`#823`): 30 tests across 3 files — LLM provider resilience, queue accumulation, frontend slow-API/storage
+    - estimated combined total after merge: backend ~4,479+, frontend ~2,454+, combined ~6,950+
 
 ## Current Planning Pivot (2026-03-07)
 
@@ -1254,7 +1264,8 @@ Additional P1 issues from the same session (tracked in `#510`Ã¢â‚¬â€œ`
 13. **Mutation testing pilot** (`#90`): Stryker.NET (backend Domain) and Stryker JS (frontend captureStore/boardStore) configured with non-blocking weekly CI lane; policy at `docs/testing/MUTATION_TESTING_POLICY.md`; scope expansion to Application layer and additional stores planned after baseline calibration from first 3-4 runs.
 20. **Platform expansion wave (2026-04-09)**: 10 issues (`#84`, `#85`, `#87`, `#88`, `#90`, `#91`, `#95`, `#104`, `#105`, `#111`) across 10 PRs (`#796`Ã¢â‚¬â€œ`#805`) delivered platform hardening (PLAT-01/02/03), testing infrastructure (TST-02/03/05/06), PWA readiness (UX-09), and ops documentation (OPS-12/14). 5 new ADRs (ADR-0023 through ADR-0027). Two rounds of adversarial review per PR caught 22 CRITICAL + 32 HIGH issues, all resolved. New test projects: `Taskdeck.Integration.Tests` (Testcontainers). New CI workflows: cross-browser matrix, visual regression, mutation testing, container integration. New infra: `ICacheService`, SignalR Redis backplane, VitePWA service worker.
 21. **Feature, security, and ops expansion wave (2026-04-09)**: 8 issues (`#82`, `#94`, `#101`, `#251`, `#334`, `#338`, `#549`, `#676`) across 8 PRs (`#806`Ã¢â‚¬â€œ`#813`) delivered calendar/timeline views (UX-08), staged deployment workflow (OPS-09, ADR-0028), Storybook baseline (UI-12), note-style import (INT-05), agent mode surfaces (AGT-03), error tracking/analytics (OBS-02), OAuth PKCE + account linking (CLD-03), and SSO/OIDC + MFA (SEC-07, ADR-0029). Two rounds of adversarial review per PR (self + independent cold review); the independent round caught 9 CRITICAL and 11 HIGH findings Ã¢â‚¬â€ all resolved. ~231+ new tests. New controllers: NoteImport, Telemetry. New frontend views: CalendarView, AgentsView, AgentRunsView, AgentRunDetailView. New auth infra: DB-backed auth codes, PKCE, OIDC provider factory, TOTP MFA. New dev tooling: Storybook 10.3.5 with 17 primitive stories. New ops: 4-phase deployment workflow, smoke test script, CD staging gate CI workflow, observability setup guide.
-22. Test suite baseline counts recertified 2026-04-09: backend ~3,600+ passing, frontend ~1,984+ passing, combined ~5,600+.
+22. Test suite baseline counts recertified 2026-04-12: backend 4,279 passing, frontend 2,245 passing, combined ~6,500+. Supplementary depth wave (PRs `#821`–`#826`, 2026-04-13) adds ~429 new tests; estimated post-merge: backend ~4,479+, frontend ~2,454+, combined ~6,950+.
+23. **Supplementary test depth wave (2026-04-13)**: 6 parallel worktree agents delivered PRs `#821`–`#826` (~429 new tests) covering concurrency stress (22 tests), frontend store integration (88 tests), E2E scenario expansion (20 tests), frontend view/component coverage (107 tests), property-based/adversarial input (162 tests), and resilience/degraded-mode (30 tests). Two rounds of adversarial review per PR caught 1 critical deadlock, 1 critical missing baseURL, 3 CI-blocking imports, 12 weak assertions, and multiple race conditions — all fixed. Topics supplement earlier deliveries from the TST-54 wave.
 
 ## Documentation Operating Model
 Active docs:
