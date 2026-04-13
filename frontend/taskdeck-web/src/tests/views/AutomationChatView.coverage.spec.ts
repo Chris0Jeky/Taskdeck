@@ -393,7 +393,7 @@ describe('AutomationChatView — session list', () => {
   })
 
   it('shows sessions loading indicator when sessions are being fetched', async () => {
-    const deferred = createDeferred<typeof buildSession[]>()
+    const deferred = createDeferred<ReturnType<typeof buildSession>[]>()
     mocks.getMySessions.mockReturnValue(deferred.promise)
 
     const wrapper = mountView()

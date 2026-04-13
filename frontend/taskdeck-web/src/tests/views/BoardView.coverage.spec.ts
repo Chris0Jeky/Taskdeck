@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
@@ -120,8 +120,10 @@ function makeBoard(overrides: Partial<typeof mockBoardStore.currentBoard> = {}) 
   }
 }
 
+let mountedWrapper: ReturnType<typeof mount> | null = null
+
 function mountView() {
-  return mount(BoardView, {
+  const wrapper = mount(BoardView, {
     attachTo: document.body,
     global: {
       stubs: {
@@ -138,6 +140,8 @@ function mountView() {
       },
     },
   })
+  mountedWrapper = wrapper
+  return wrapper
 }
 
 describe('BoardView — loading and error states', () => {
@@ -150,6 +154,11 @@ describe('BoardView — loading and error states', () => {
     mockBoardStore.cardsByColumn = new Map()
     mockBoardStore.loading = false
     mockBoardStore.error = null
+  })
+
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
   })
 
   it('shows loading spinner when board is loading and not yet available', async () => {
@@ -195,6 +204,11 @@ describe('BoardView — column creation flow', () => {
     mockBoardStore.cardsByColumn = new Map()
     mockBoardStore.loading = false
     mockBoardStore.error = null
+  })
+
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
   })
 
   it('shows Add card button which opens column form when no columns exist', async () => {
@@ -276,6 +290,11 @@ describe('BoardView — board toolbar and columns rendering', () => {
     mockBoardStore.error = null
   })
 
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
+  })
+
   it('renders columns sorted by position', async () => {
     const wrapper = mountView()
     await waitForUi()
@@ -322,6 +341,11 @@ describe('BoardView — help callout', () => {
     mockBoardStore.cardsByColumn = new Map([['column-1', []]])
     mockBoardStore.loading = false
     mockBoardStore.error = null
+  })
+
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
   })
 
   it('shows the workspace help callout with board topic', async () => {

@@ -304,7 +304,7 @@ describe('ArchiveView — loading and empty states', () => {
     expect(restoreButton!.attributes('disabled')).toBeDefined()
   })
 
-  it('does not cancel board restore when confirm is cancelled', async () => {
+  it('does not restore board when confirm is cancelled', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
 
     mocks.getBoards.mockResolvedValue([
