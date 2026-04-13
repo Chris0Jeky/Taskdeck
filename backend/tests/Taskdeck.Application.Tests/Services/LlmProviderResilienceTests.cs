@@ -141,7 +141,7 @@ public class LlmProviderResilienceTests
     // ── OpenAI: Network Timeout ─────────────────────────────────────
 
     [Fact]
-    public async Task OpenAi_CompleteAsync_HttpClientThrowsTimeout_ReturnsDegradedResult()
+    public async Task OpenAi_CompleteAsync_HttpClientThrowsTimeout_PropagatesException()
     {
         var settings = BuildOpenAiSettings();
         var handler = new StubHttpMessageHandler((_, _) =>
@@ -150,16 +150,12 @@ public class LlmProviderResilienceTests
         var provider = new OpenAiLlmProvider(
             new HttpClient(handler), settings, logger);
 
-        // TaskCanceledException from HttpClient timeout is NOT OperationCanceledException
-        // from a caller's CancellationToken — the provider should catch it and return degraded.
-        // However, OperationCanceledException is re-thrown by the provider.
-        // TaskCanceledException IS an OperationCanceledException, so the provider re-throws.
-        // This is correct behavior — callers handle it at the HTTP/controller layer.
+        // TaskCanceledException from HttpClient timeout is an OperationCanceledException.
+        // The provider intentionally re-throws this exception so that the caller (e.g., the
+        // controller) can handle the timeout appropriately (e.g., by returning 504 Gateway Timeout).
         var act = async () => await provider.CompleteAsync(new ChatCompletionRequest(
             [new ChatCompletionMessage("User", "create a card")]));
 
-        // The provider re-throws OperationCanceledException (parent of TaskCanceledException).
-        // This is intentional — the controller layer catches it and returns an appropriate response.
         await act.Should().ThrowAsync<OperationCanceledException>(
             "timeout exceptions should propagate so the controller layer can handle them");
     }

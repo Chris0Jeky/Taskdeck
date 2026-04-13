@@ -11,7 +11,6 @@ import { useCaptureStore } from '../../store/captureStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { boardsApi } from '../../api/boardsApi'
 import { captureApi } from '../../api/captureApi'
-import { authApi } from '../../api/authApi'
 import * as tokenStorage from '../../utils/tokenStorage'
 
 // ─── global mocks ────────────────────────────────────────────────────────────
@@ -201,9 +200,12 @@ describe('boardStore — slow API response handling', () => {
     const fetchPromise = store.fetchBoards()
     expect(store.loading).toBe(true)
 
-    await vi.advanceTimersByTimeAsync(5000)
+    // Attach rejection handler BEFORE advancing timers to avoid
+    // unhandled promise rejection when the timer fires the throw.
+    const rejectExpectation = expect(fetchPromise).rejects.toThrow()
 
-    await expect(fetchPromise).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(5000)
+    await rejectExpectation
 
     expect(store.loading).toBe(false)
     expect(store.error).toBeTruthy()
@@ -233,13 +235,14 @@ describe('captureStore — slow API response handling', () => {
     const store = useCaptureStore()
     const createPromise = store.createItem({ text: 'Slow capture', boardId: null })
 
-    await vi.advanceTimersByTimeAsync(6000)
+    // Attach rejection handler BEFORE advancing timers to avoid
+    // unhandled promise rejection when the timer fires the throw.
+    const settled = createPromise.catch(() => {
+      // Expected failure -- handled here to prevent unhandled rejection
+    })
 
-    try {
-      await createPromise
-    } catch {
-      // Expected failure
-    }
+    await vi.advanceTimersByTimeAsync(6000)
+    await settled
 
     expect(toastMocks.error).toHaveBeenCalled()
   })
@@ -262,7 +265,7 @@ describe('sessionStore — localStorage corruption mid-session', () => {
     // test restoreSession which is the path that runs on app init.
 
     // First, seed localStorage with a previously valid session.
-    // Use a structurally valid but expired-like JWT.
+    // Use a structurally INVALID token (not 3 base64url segments) to test cleanup.
     localStorage.setItem('taskdeck_token', 'not-a-valid-jwt')
     localStorage.setItem('taskdeck_session', JSON.stringify({
       userId: 'u1',
