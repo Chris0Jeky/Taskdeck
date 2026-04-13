@@ -19,22 +19,6 @@ public class NotificationPropertyTests
 
     // ─────────────────────── Generators ───────────────────────
 
-    private static Gen<string> AdversarialStringGen() => Gen.OneOf(
-        Gen.Constant("\u0000"),
-        Gen.Constant("\uFEFF"),
-        Gen.Constant("\u200B"),
-        Gen.Constant("\u202E"),
-        Gen.Constant("<script>alert('xss')</script>"),
-        Gen.Constant("'; DROP TABLE notifications; --"),
-        Gen.Constant("👨‍👩‍👧‍👦"),
-        Gen.Constant("田中太郎"),
-        Gen.Constant("{\"nested\": true}"),
-        Gen.Constant(""),
-        Gen.Constant(" "),
-        Gen.Constant((string)null!),
-        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
-    );
-
     private static Gen<NotificationType> NotificationTypeGen() =>
         Gen.Elements(
             NotificationType.Mention,
@@ -67,15 +51,14 @@ public class NotificationPropertyTests
             });
     }
 
-    [Property(MaxTest = MaxTests)]
-    public Property EmptyGuidUserId_AlwaysThrows()
+    [Fact]
+    public void EmptyGuidUserId_AlwaysThrows()
     {
         var act = () => new Notification(
             Guid.Empty, NotificationType.System, NotificationCadence.Immediate,
             "Title", "Message");
         act.Should().Throw<DomainException>()
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
-        return true.ToProperty();
     }
 
     // ─────────────────────── Title boundary values ───────────────────────
@@ -138,7 +121,7 @@ public class NotificationPropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialTitle()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             title =>
             {
                 try
@@ -164,7 +147,7 @@ public class NotificationPropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialMessage()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             message =>
             {
                 try

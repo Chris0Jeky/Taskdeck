@@ -287,7 +287,10 @@ public class RawJsonAdversarialApiTests : IClassFixture<TestWebApplicationFactor
         var sessionResponse = await _client.PostAsJsonAsync("/api/llm/chat/sessions",
             new CreateChatSessionDto("Test Session", boardId));
 
-        if (!sessionResponse.IsSuccessStatusCode) return; // Skip if session creation fails
+        ((int)sessionResponse.StatusCode).Should().BeLessThan(500,
+            $"Chat session creation returned 500 for content: {messageContent}");
+
+        if (!sessionResponse.IsSuccessStatusCode) return; // Skip if session creation returns 4xx
 
         var session = await sessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
 

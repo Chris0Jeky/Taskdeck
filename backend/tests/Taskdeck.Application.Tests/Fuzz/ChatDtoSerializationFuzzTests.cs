@@ -25,28 +25,6 @@ public class ChatDtoSerializationFuzzTests
         WriteIndented = false
     };
 
-    private static Gen<string> AdversarialStringGen() => Gen.OneOf(
-        Gen.Constant("\u0000"),
-        Gen.Constant("\uFEFF"),
-        Gen.Constant("\u200B"),
-        Gen.Constant("<script>alert('xss')</script>"),
-        Gen.Constant("'; DROP TABLE chat; --"),
-        Gen.Constant("\"quoted\"string\""),
-        Gen.Constant("back\\slash"),
-        Gen.Constant("new\nline\ttab"),
-        Gen.Constant("emoji 👨‍👩‍👧‍👦"),
-        Gen.Constant("田中太郎"),
-        Gen.Constant("مرحبا"),
-        Gen.Constant("{\"nested\": true}"),
-        Gen.Constant(""),
-        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
-    );
-
-    private static Gen<string?> NullableStringGen() => Gen.OneOf(
-        Gen.Constant((string?)null),
-        AdversarialStringGen().Select(s => (string?)s)
-    );
-
     private static Gen<ChatMessageRole> RoleGen() =>
         Gen.Elements(ChatMessageRole.User, ChatMessageRole.Assistant, ChatMessageRole.System);
 
@@ -59,7 +37,7 @@ public class ChatDtoSerializationFuzzTests
     public Property ChatSessionDto_RoundTrip_PreservesAllFields()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
             Arb.From(StatusGen()),
             (title, status) =>
             {
@@ -91,9 +69,9 @@ public class ChatDtoSerializationFuzzTests
     public Property ChatMessageDto_RoundTrip_PreservesAllFields()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
             Arb.From(RoleGen()),
-            Arb.From(NullableStringGen()),
+            Arb.From(FuzzTestGenerators.NullableStringGen()),
             (content, role, degradedReason) =>
             {
                 var dto = new ChatMessageDto(
@@ -125,7 +103,7 @@ public class ChatDtoSerializationFuzzTests
     public Property CreateChatSessionDto_RoundTrip_Identity()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
             title =>
             {
                 var dto = new CreateChatSessionDto(title, Guid.NewGuid());
@@ -145,7 +123,7 @@ public class ChatDtoSerializationFuzzTests
     public Property SendChatMessageDto_RoundTrip_Identity()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
             ArbMap.Default.ArbFor<bool>(),
             (content, requestProposal) =>
             {
@@ -166,8 +144,8 @@ public class ChatDtoSerializationFuzzTests
     public Property ChatSessionDto_WithMessages_RoundTrip()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
-            Arb.From(AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
             (title, msgContent) =>
             {
                 var messages = new List<ChatMessageDto>

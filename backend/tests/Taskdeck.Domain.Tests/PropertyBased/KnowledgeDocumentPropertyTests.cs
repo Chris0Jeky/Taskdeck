@@ -19,21 +19,6 @@ public class KnowledgeDocumentPropertyTests
 
     // ─────────────────────── Generators ───────────────────────
 
-    private static Gen<string> AdversarialStringGen() => Gen.OneOf(
-        Gen.Constant("\u0000"),
-        Gen.Constant("\uFEFF"),
-        Gen.Constant("\u200B"),
-        Gen.Constant("<script>alert('xss')</script>"),
-        Gen.Constant("'; DROP TABLE knowledge; --"),
-        Gen.Constant("👨‍👩‍👧‍👦"),
-        Gen.Constant("田中太郎"),
-        Gen.Constant("{\"nested\": true}"),
-        Gen.Constant(""),
-        Gen.Constant(" "),
-        Gen.Constant((string)null!),
-        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
-    );
-
     private static Gen<string> ValidTitleGen() =>
         Gen.Choose(1, 200)
             .SelectMany(len =>
@@ -69,14 +54,13 @@ public class KnowledgeDocumentPropertyTests
             });
     }
 
-    [Property(MaxTest = MaxTests)]
-    public Property EmptyGuidUserId_AlwaysThrows()
+    [Fact]
+    public void EmptyGuidUserId_AlwaysThrows()
     {
         var act = () => new KnowledgeDocument(
             Guid.Empty, "Title", "Content", KnowledgeSourceType.Manual);
         act.Should().Throw<DomainException>()
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
-        return true.ToProperty();
     }
 
     // ─────────────────────── Title boundary values ───────────────────────
@@ -178,7 +162,7 @@ public class KnowledgeDocumentPropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialTitle()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             title =>
             {
                 try
@@ -203,7 +187,7 @@ public class KnowledgeDocumentPropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialContent()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             content =>
             {
                 try
@@ -264,8 +248,8 @@ public class KnowledgeDocumentPropertyTests
     public Property Update_WithAdversarialInputs_NeverThrowsUnhandled()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             (title, content) =>
             {
                 var doc = new KnowledgeDocument(

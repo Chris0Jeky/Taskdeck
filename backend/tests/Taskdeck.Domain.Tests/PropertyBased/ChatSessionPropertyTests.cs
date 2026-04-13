@@ -19,25 +19,6 @@ public class ChatSessionPropertyTests
 
     // ─────────────────────── Generators ───────────────────────
 
-    private static Gen<string> AdversarialStringGen() => Gen.OneOf(
-        Gen.Constant("\u0000"),
-        Gen.Constant("\uFEFF"),
-        Gen.Constant("\u200B"),
-        Gen.Constant("\u202E"),
-        Gen.Constant("<script>alert('xss')</script>"),
-        Gen.Constant("'; DROP TABLE sessions; --"),
-        Gen.Constant("👨‍👩‍👧‍👦"),
-        Gen.Constant("田中太郎"),
-        Gen.Constant("\x01\x02\x03"),
-        Gen.Constant("\x1B[31m"),
-        Gen.Constant("{\"nested\": true}"),
-        Gen.Constant(""),
-        Gen.Constant(" "),
-        Gen.Constant("\t"),
-        Gen.Constant((string)null!),
-        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
-    );
-
     private static Arbitrary<string> ValidTitleArb()
     {
         var gen = Gen.Choose(1, 200)
@@ -111,7 +92,7 @@ public class ChatSessionPropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialTitle()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             title =>
             {
                 try
@@ -137,7 +118,7 @@ public class ChatSessionPropertyTests
     public Property UpdateTitle_NeverThrowsUnhandled_OnAdversarialTitle()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             newTitle =>
             {
                 var session = new ChatSession(Guid.NewGuid(), "OriginalTitle");

@@ -19,22 +19,6 @@ public class WebhookSubscriptionPropertyTests
 
     // ─────────────────────── Generators ───────────────────────
 
-    private static Gen<string> AdversarialStringGen() => Gen.OneOf(
-        Gen.Constant("\u0000"),
-        Gen.Constant("\uFEFF"),
-        Gen.Constant("\u200B"),
-        Gen.Constant("<script>alert('xss')</script>"),
-        Gen.Constant("javascript:alert(1)"),
-        Gen.Constant("data:text/html,<script>alert(1)</script>"),
-        Gen.Constant("file:///etc/passwd"),
-        Gen.Constant("http://169.254.169.254/"),
-        Gen.Constant("'; DROP TABLE webhooks; --"),
-        Gen.Constant(""),
-        Gen.Constant(" "),
-        Gen.Constant((string)null!),
-        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
-    );
-
     private static Gen<string> ValidUrlGen() =>
         Gen.Elements(
             "https://example.com/webhook",
@@ -132,7 +116,7 @@ public class WebhookSubscriptionPropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialUrl()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             url =>
             {
                 try
@@ -158,7 +142,7 @@ public class WebhookSubscriptionPropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialSecret()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             secret =>
             {
                 try
@@ -185,7 +169,7 @@ public class WebhookSubscriptionPropertyTests
     public Property EventFilters_WithAdversarialStrings_NeverThrowUnhandled()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             filter =>
             {
                 try
@@ -231,7 +215,7 @@ public class WebhookSubscriptionPropertyTests
     public Property MatchesEvent_NeverThrowsUnhandled_OnAdversarialEventType()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             eventType =>
             {
                 var sub = new OutboundWebhookSubscription(
@@ -298,7 +282,7 @@ public class WebhookSubscriptionPropertyTests
     [InlineData("https://evil.com/'; DROP TABLE --")]
     public void DangerousUrl_StoredVerbatim(string url)
     {
-        // The domain layer stores URLs as-is; validation of schemes happens at the API layer
+        // The domain layer stores URLs after Trim(); no scheme validation at this layer
         var sub = new OutboundWebhookSubscription(
             Guid.NewGuid(), Guid.NewGuid(), url, "secret123");
         sub.EndpointUrl.Should().Be(url, "URLs should be stored verbatim at the domain level");

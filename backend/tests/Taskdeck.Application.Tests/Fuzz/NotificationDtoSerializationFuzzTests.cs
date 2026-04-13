@@ -24,27 +24,6 @@ public class NotificationDtoSerializationFuzzTests
         WriteIndented = false
     };
 
-    private static Gen<string> AdversarialStringGen() => Gen.OneOf(
-        Gen.Constant("\u0000"),
-        Gen.Constant("\uFEFF"),
-        Gen.Constant("\u200B"),
-        Gen.Constant("<script>alert('xss')</script>"),
-        Gen.Constant("'; DROP TABLE notifications; --"),
-        Gen.Constant("\"quoted\""),
-        Gen.Constant("back\\slash"),
-        Gen.Constant("new\nline"),
-        Gen.Constant("emoji 👨‍👩‍👧‍👦"),
-        Gen.Constant("田中太郎"),
-        Gen.Constant("{\"nested\": true}"),
-        Gen.Constant(""),
-        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
-    );
-
-    private static Gen<string?> NullableStringGen() => Gen.OneOf(
-        Gen.Constant((string?)null),
-        AdversarialStringGen().Select(s => (string?)s)
-    );
-
     private static Gen<NotificationType> TypeGen() =>
         Gen.Elements(
             NotificationType.Mention,
@@ -62,7 +41,7 @@ public class NotificationDtoSerializationFuzzTests
     public Property NotificationDto_RoundTrip_PreservesTitle()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
             Arb.From(TypeGen()),
             Arb.From(CadenceGen()),
             (title, type, cadence) =>
@@ -98,7 +77,7 @@ public class NotificationDtoSerializationFuzzTests
     public Property NotificationDto_RoundTrip_PreservesMessage()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
             message =>
             {
                 var dto = new NotificationDto(
@@ -131,9 +110,9 @@ public class NotificationDtoSerializationFuzzTests
     public Property CreateNotificationRequestDto_RoundTrip_Identity()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
-            Arb.From(AdversarialStringGen()),
-            Arb.From(NullableStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.AdversarialStringGen()),
+            Arb.From(FuzzTestGenerators.NullableStringGen()),
             (title, message, sourceEntityType) =>
             {
                 var dto = new CreateNotificationRequestDto(
@@ -163,7 +142,7 @@ public class NotificationDtoSerializationFuzzTests
     public Property NotificationDto_WithNullableFields_RoundTrips()
     {
         return Prop.ForAll(
-            Arb.From(NullableStringGen()),
+            Arb.From(FuzzTestGenerators.NullableStringGen()),
             ArbMap.Default.ArbFor<bool>(),
             (sourceEntityType, isRead) =>
             {

@@ -24,23 +24,6 @@ public class ChatMessagePropertyTests
 
     // ─────────────────────── Generators ───────────────────────
 
-    private static Gen<string> AdversarialStringGen() => Gen.OneOf(
-        Gen.Constant("\u0000"),
-        Gen.Constant("\uFEFF"),
-        Gen.Constant("\u200B"),
-        Gen.Constant("\u202E"),
-        Gen.Constant("<script>alert('xss')</script>"),
-        Gen.Constant("'; DROP TABLE messages; --"),
-        Gen.Constant("👨‍👩‍👧‍👦"),
-        Gen.Constant("田中太郎"),
-        Gen.Constant("{\"nested\": true}"),
-        Gen.Constant("\x01\x02\x03"),
-        Gen.Constant(""),
-        Gen.Constant(" "),
-        Gen.Constant((string)null!),
-        ArbMap.Default.ArbFor<string>().Generator.Where(s => s != null)
-    );
-
     private static Gen<string> ValidContentGen() =>
         Gen.Choose(1, 500)
             .SelectMany(len =>
@@ -108,7 +91,7 @@ public class ChatMessagePropertyTests
     public Property Constructor_NeverThrowsUnhandled_OnAdversarialContent()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             content =>
             {
                 try
@@ -221,7 +204,7 @@ public class ChatMessagePropertyTests
     public Property Constructor_WithAdversarialDegradedReason_NeverThrowsUnhandled()
     {
         return Prop.ForAll(
-            Arb.From(AdversarialStringGen()),
+            Arb.From(TestGenerators.AdversarialStringGen()),
             reason =>
             {
                 try
