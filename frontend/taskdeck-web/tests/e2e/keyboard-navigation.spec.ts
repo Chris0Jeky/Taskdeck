@@ -5,8 +5,8 @@
  * - Full keyboard-only board workflow (create board, add column, add card)
  * - Command palette: navigate with arrow keys and Enter
  * - Keyboard shortcut 'n' to add a new card
- * - Tab key focuses interactive elements in board view
- * - Escape from command palette returns focus to previous context
+ * - Shortcut help panel toggled by ? key
+ * - Escape from command palette closes it and returns to the prior view
  */
 
 import type { Page } from '@playwright/test'
@@ -59,7 +59,7 @@ test('user should create board via keyboard then add card using n shortcut', asy
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 
   // Create card using 'n' shortcut (keyboard-only card creation)
-  await page.locator('body').click() // Defocus any input
+  await page.keyboard.press('Escape') // Ensure no input is capturing keystrokes
   await page.keyboard.press('n')
   const column = columnByName(page, columnName)
   const cardInput = column.getByPlaceholder('Enter card title...')
@@ -133,8 +133,8 @@ test('question mark shortcut should toggle keyboard shortcuts help', async ({ pa
   await page.goto('/workspace/boards')
   await expect(page.getByRole('button', { name: '+ New Board' })).toBeVisible()
 
-  // Defocus any inputs
-  await page.locator('body').click()
+  // Ensure no input is capturing keystrokes
+  await page.keyboard.press('Escape')
 
   // Press ? to open shortcut help
   await page.keyboard.press('?')

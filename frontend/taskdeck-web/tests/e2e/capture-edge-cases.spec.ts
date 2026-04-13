@@ -4,8 +4,7 @@
  * Extends capture coverage with UI-driven scenarios beyond the API-level
  * edge-journey tests:
  * - UI capture from the global hotkey with empty text is rejected
- * - UI capture from the board action rail with long text
- * - Capture from home view lands in inbox
+ * - UI capture from the board action rail linked to a board
  * - Capture modal can be dismissed without saving
  * - Capture with only whitespace is rejected
  */

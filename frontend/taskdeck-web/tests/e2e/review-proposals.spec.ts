@@ -4,8 +4,7 @@
  * Extends the review/proposal coverage beyond the golden-path tests:
  * - Board-scoped proposal filtering: only shows proposals for the selected board
  * - Multiple proposals on one board: batch visibility
- * - Proposal approve then navigate: board reflects the new card immediately
- * - Expired/conflict proposals: show clear state feedback
+ * - Applied proposal appears in completed toggle: visible when Show Completed is enabled
  */
 
 import { expect, test } from '@playwright/test'
@@ -134,6 +133,6 @@ test('applied proposal should appear when Show Completed is toggled on', async (
   await expect(proposalCard).not.toBeVisible()
 
   // Toggle "Show completed" to reveal the applied proposal
-  await page.locator('.td-review__toggle-input').check()
+  await page.getByLabel('Show completed').check()
   await expect(proposalCard).toBeVisible({ timeout: 10_000 })
 })

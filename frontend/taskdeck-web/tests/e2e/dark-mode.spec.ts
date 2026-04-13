@@ -113,7 +113,7 @@ test('dark mode board view should render columns and cards without invisible tex
   const columnHeading = page.getByRole('heading', { name: `Dark Column ${seed}`, exact: true })
   await expect(columnHeading).toBeVisible()
 
-  // Verify the column heading is actually readable: text color differs from background
+  // Verify the column heading occupies real space (not collapsed/invisible)
   const columnHeadingBox = await columnHeading.boundingBox()
   expect(columnHeadingBox).not.toBeNull()
 
@@ -148,10 +148,13 @@ test('toggling dark mode off should restore light theme', async ({ page }) => {
 
 // --- System prefers-color-scheme ---
 
-test('system prefers-color-scheme dark should activate dark mode on first visit', async ({ browser }) => {
-  // Create a context with dark color scheme preference
+test('system prefers-color-scheme dark should activate dark mode on first visit', async ({ browser, baseURL }) => {
+  // Create a context with dark color scheme preference.
+  // Must pass baseURL so relative page.goto() calls resolve correctly
+  // (manually created contexts do not inherit the project use.baseURL).
   const darkContext = await browser.newContext({
     colorScheme: 'dark',
+    baseURL: baseURL ?? undefined,
   })
 
   const page = await darkContext.newPage()
