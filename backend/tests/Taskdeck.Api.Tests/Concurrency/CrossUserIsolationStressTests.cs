@@ -91,65 +91,75 @@ public class CrossUserIsolationStressTests : IClassFixture<TestWebApplicationFac
 
         // Set up users and boards sequentially (setup phase)
         var userContexts = new List<(HttpClient Client, TestUserContext User, BoardDto Board)>();
-        for (var i = 0; i < userCount; i++)
+        try
         {
-            var client = _factory.CreateClient();
-            var user = await ApiTestHarness.AuthenticateAsync(client, $"cap-iso-{i}");
-            var board = await ApiTestHarness.CreateBoardAsync(client, $"cap-iso-board-{i}");
-
-            var colResp = await client.PostAsJsonAsync(
-                $"/api/boards/{board.Id}/columns",
-                new CreateColumnDto(board.Id, "Backlog", null, null));
-            colResp.StatusCode.Should().Be(HttpStatusCode.Created);
-
-            userContexts.Add((client, user, board));
-        }
-
-        // All users create capture items concurrently
-        using var barrier = new SemaphoreSlim(0, userCount * itemsPerUser);
-        var allTasks = userContexts.SelectMany(ctx =>
-            Enumerable.Range(0, itemsPerUser).Select(async j =>
+            for (var i = 0; i < userCount; i++)
             {
-                using var raceClient = _factory.CreateClient();
-                raceClient.DefaultRequestHeaders.Authorization =
-                    ctx.Client.DefaultRequestHeaders.Authorization;
-                await barrier.WaitAsync();
-                var resp = await raceClient.PostAsJsonAsync(
-                    "/api/capture/items",
-                    new CreateCaptureItemDto(ctx.Board.Id, $"- [ ] User {ctx.User.Username} item {j}"));
-                if (resp.StatusCode != HttpStatusCode.Created)
+                var client = _factory.CreateClient();
+                var user = await ApiTestHarness.AuthenticateAsync(client, $"cap-iso-{i}");
+                var board = await ApiTestHarness.CreateBoardAsync(client, $"cap-iso-board-{i}");
+
+                var colResp = await client.PostAsJsonAsync(
+                    $"/api/boards/{board.Id}/columns",
+                    new CreateColumnDto(board.Id, "Backlog", null, null));
+                colResp.StatusCode.Should().Be(HttpStatusCode.Created);
+
+                userContexts.Add((client, user, board));
+            }
+
+            // All users create capture items concurrently
+            using var barrier = new SemaphoreSlim(0, userCount * itemsPerUser);
+            var allTasks = userContexts.SelectMany(ctx =>
+                Enumerable.Range(0, itemsPerUser).Select(async j =>
                 {
-                    errors.Add($"User {ctx.User.Username} item {j} got {resp.StatusCode}");
-                }
-            })).ToArray();
+                    using var raceClient = _factory.CreateClient();
+                    raceClient.DefaultRequestHeaders.Authorization =
+                        ctx.Client.DefaultRequestHeaders.Authorization;
+                    await barrier.WaitAsync();
+                    var resp = await raceClient.PostAsJsonAsync(
+                        "/api/capture/items",
+                        new CreateCaptureItemDto(ctx.Board.Id,
+                            $"- [ ] User {ctx.User.Username} item {j}"));
+                    if (resp.StatusCode != HttpStatusCode.Created)
+                    {
+                        errors.Add(
+                            $"User {ctx.User.Username} item {j} got {resp.StatusCode}");
+                    }
+                })).ToArray();
 
-        barrier.Release(userCount * itemsPerUser);
-        await Task.WhenAll(allTasks);
+            barrier.Release(userCount * itemsPerUser);
+            await Task.WhenAll(allTasks);
 
-        errors.Should().BeEmpty("all concurrent capture item creations should succeed");
+            errors.Should().BeEmpty("all concurrent capture item creations should succeed");
 
-        // Verify each user only sees their own capture items
-        foreach (var ctx in userContexts)
-        {
-            var captureResp = await ctx.Client.GetAsync(
-                $"/api/capture/items?boardId={ctx.Board.Id}");
-            captureResp.StatusCode.Should().Be(HttpStatusCode.OK);
-            var items = await captureResp.Content.ReadFromJsonAsync<List<CaptureItemDto>>();
-
-            items.Should().NotBeNull();
-            items!.Should().HaveCount(itemsPerUser,
-                $"user {ctx.User.Username} should see exactly {itemsPerUser} capture items");
-
-            // Verify none of the items belong to other users
-            foreach (var item in items)
+            // Verify each user only sees their own capture items
+            foreach (var ctx in userContexts)
             {
-                item.BoardId.Should().Be(ctx.Board.Id,
-                    $"user {ctx.User.Username} should only see items from their own board");
+                var captureResp = await ctx.Client.GetAsync(
+                    $"/api/capture/items?boardId={ctx.Board.Id}");
+                captureResp.StatusCode.Should().Be(HttpStatusCode.OK);
+                var items = await captureResp.Content
+                    .ReadFromJsonAsync<List<CaptureItemDto>>();
+
+                items.Should().NotBeNull();
+                items!.Should().HaveCount(itemsPerUser,
+                    $"user {ctx.User.Username} should see exactly " +
+                    $"{itemsPerUser} capture items");
+
+                // Verify none of the items belong to other users
+                foreach (var item in items)
+                {
+                    item.BoardId.Should().Be(ctx.Board.Id,
+                        $"user {ctx.User.Username} should only see items " +
+                        $"from their own board");
+                }
             }
         }
-
-        // Dispose clients
-        foreach (var ctx in userContexts)
-            ctx.Client.Dispose();
+        finally
+        {
+            // Dispose clients even if assertions fail
+            foreach (var ctx in userContexts)
+                ctx.Client.Dispose();
+        }
     }
 }

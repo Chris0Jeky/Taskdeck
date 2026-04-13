@@ -214,12 +214,20 @@ public class QueueClaimRaceTests : IClassFixture<TestWebApplicationFactory>
             s.Should().BeOneOf(HttpStatusCode.Accepted, HttpStatusCode.OK),
             "each distinct capture item should triage without conflict");
 
-        // Wait for proposals to be created, then verify no duplicates
-        await Task.Delay(2000);
+        // Poll for proposals to settle, then verify no duplicates.
+        // Use PollUntilAsync-style polling instead of Task.Delay to avoid flakiness.
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(15);
+        List<ProposalDto>? proposals = null;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var proposalsResp = await client.GetAsync($"/api/automation/proposals?boardId={board.Id}");
+            proposalsResp.StatusCode.Should().Be(HttpStatusCode.OK);
+            proposals = await proposalsResp.Content.ReadFromJsonAsync<List<ProposalDto>>();
+            if (proposals != null && proposals.Count >= captureIds.Count)
+                break;
+            await Task.Delay(200);
+        }
 
-        var proposalsResp = await client.GetAsync($"/api/automation/proposals?boardId={board.Id}");
-        proposalsResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var proposals = await proposalsResp.Content.ReadFromJsonAsync<List<ProposalDto>>();
         proposals.Should().NotBeNull();
 
         // Each capture item should have at most one proposal
