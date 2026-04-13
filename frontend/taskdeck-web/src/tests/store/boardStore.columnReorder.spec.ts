@@ -171,6 +171,8 @@ describe('boardStore — column reorder and stale reconciliation', () => {
       // On failure, columns must not be mutated to the new order
       // (the API call is atomic — either it succeeds and we update, or it fails and we keep original)
       expect(store.currentBoard?.columns).toHaveLength(2)
+      expect(store.currentBoard?.columns[0].id).toBe('col-a')
+      expect(store.currentBoard?.columns[1].id).toBe('col-b')
     })
   })
 

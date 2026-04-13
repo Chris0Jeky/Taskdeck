@@ -155,7 +155,7 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       expect(localStorage.getItem('taskdeck_session')).toBeNull()
     })
 
-    it('clears error state on logout', async () => {
+    it('does not leave authentication artifacts after logout following a failed login', async () => {
       vi.mocked(http.post).mockRejectedValue({
         response: { data: { message: 'Login failed' } },
       })
@@ -164,10 +164,14 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       await expect(store.login({ usernameOrEmail: 'bad', password: 'bad' })).rejects.toBeDefined()
       expect(store.error).toBe('Login failed')
 
-      // After logout, error should be cleared (logout calls clearSession)
       store.logout()
-      // error is not explicitly cleared by clearSession, but the session state should be clean
+
+      // clearSession does not explicitly null out error, but all auth artifacts must be gone
       expect(store.isAuthenticated).toBe(false)
+      expect(store.token).toBeNull()
+      expect(store.userId).toBeNull()
+      // Note: store.error persists through logout — this is current behavior, not a bug.
+      // The error is from the login attempt and will be cleared on the next login/register call.
     })
   })
 
