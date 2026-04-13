@@ -102,7 +102,9 @@ describe('chatApi — integration (mocked HTTP)', () => {
         response: { status: 503, data: { message: 'Provider unavailable' } },
       })
 
-      await expect(chatApi.createSession({ title: 'Fail' })).rejects.toBeDefined()
+      await expect(chatApi.createSession({ title: 'Fail' })).rejects.toMatchObject({
+        response: { status: 503 },
+      })
     })
   })
 
@@ -172,7 +174,9 @@ describe('chatApi — integration (mocked HTTP)', () => {
         response: { status: 404, data: { message: 'Session not found' } },
       })
 
-      await expect(chatApi.getSession('missing')).rejects.toBeDefined()
+      await expect(chatApi.getSession('missing')).rejects.toMatchObject({
+        response: { status: 404 },
+      })
     })
   })
 
@@ -266,7 +270,9 @@ describe('chatApi — integration (mocked HTTP)', () => {
 
       await expect(
         chatApi.sendMessage('session-1', { content: 'test' }),
-      ).rejects.toBeDefined()
+      ).rejects.toMatchObject({
+        response: { status: 503 },
+      })
     })
   })
 

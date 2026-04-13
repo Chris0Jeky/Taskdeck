@@ -261,7 +261,9 @@ describe('queueStore — polling and state transitions', () => {
         response: { status: 409, data: { message: 'Cannot cancel a processing request' } },
       })
 
-      await expect(store.cancelRequest('req-cant-cancel')).rejects.toBeDefined()
+      await expect(store.cancelRequest('req-cant-cancel')).rejects.toMatchObject({
+        response: { status: 409 },
+      })
 
       // Item must still be in the list
       expect(store.requests).toHaveLength(1)

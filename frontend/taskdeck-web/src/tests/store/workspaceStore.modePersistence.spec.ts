@@ -314,7 +314,7 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
   // ── resetForLogout ────────────────────────────────────────────────────────
 
   describe('resetForLogout preserves localStorage mode', () => {
-    it('reads the localStorage fallback mode after reset', async () => {
+    it('restores mode from localStorage after reset', async () => {
       localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, 'workbench')
 
       vi.mocked(http.get).mockResolvedValue({
@@ -325,13 +325,30 @@ describe('workspaceStore — mode persistence and extended scenarios', () => {
       await store.fetchHomeSummary()
       expect(store.mode).toBe('agent')
 
+      // fetchHomeSummary calls applyMode('agent') which persists 'agent' to localStorage,
+      // overwriting the original 'workbench' value. So after resetForLogout, mode reads
+      // from localStorage which now contains 'agent'.
       store.resetForLogout()
 
-      // After logout, mode should read from localStorage which has 'workbench'
-      // (resetForLogout calls applyMode(getLocalWorkspaceMode()) which re-persists)
+      expect(store.mode).toBe('agent')
       expect(store.homeSummary).toBeNull()
       expect(store.todaySummary).toBeNull()
       expect(store.preferencesHydrated).toBe(false)
+    })
+
+    it('falls back to localStorage mode that was not overwritten by server sync', async () => {
+      localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, 'workbench')
+
+      const store = useWorkspaceStore()
+      expect(store.mode).toBe('workbench')
+
+      // Directly change in-memory mode without persisting (simulating a partial state)
+      // Actually, updateMode persists, so we test the normal flow:
+      // the store initializes from localStorage, and resetForLogout re-reads it.
+      store.resetForLogout()
+
+      expect(store.mode).toBe('workbench')
+      expect(localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY)).toBe('workbench')
     })
   })
 

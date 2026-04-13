@@ -166,7 +166,9 @@ describe('boardStore — column reorder and stale reconciliation', () => {
 
       await expect(
         store.reorderColumns('board-1', ['col-b', 'col-a']),
-      ).rejects.toBeDefined()
+      ).rejects.toMatchObject({
+        response: { status: 409 },
+      })
 
       // On failure, columns must not be mutated to the new order
       // (the API call is atomic — either it succeeds and we update, or it fails and we keep original)
@@ -201,7 +203,9 @@ describe('boardStore — column reorder and stale reconciliation', () => {
           blockReason: null,
           labelIds: null,
         }),
-      ).rejects.toBeDefined()
+      ).rejects.toMatchObject({
+        response: { status: 409 },
+      })
 
       // Card must retain its original title — no partial update applied
       const stored = store.currentBoardCards.find(c => c.id === 'card-conflict')
@@ -353,7 +357,9 @@ describe('boardStore — column reorder and stale reconciliation', () => {
 
       await expect(
         store.updateColumn('board-1', 'col-safe', { name: 'Will fail' }),
-      ).rejects.toBeDefined()
+      ).rejects.toMatchObject({
+        response: { status: 500 },
+      })
 
       // Column must retain original name
       expect(store.currentBoard?.columns[0].name).toBe('Original')

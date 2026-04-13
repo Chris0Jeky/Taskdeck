@@ -96,7 +96,9 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       })
 
       const store = useSessionStore()
-      await expect(store.exchangeOidcCode('expired-code')).rejects.toBeDefined()
+      await expect(store.exchangeOidcCode('expired-code')).rejects.toMatchObject({
+        response: { data: { message: 'OIDC code expired or invalid' } },
+      })
 
       expect(store.isAuthenticated).toBe(false)
       expect(store.error).toBe('OIDC code expired or invalid')
@@ -106,7 +108,7 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       vi.mocked(http.post).mockRejectedValue(new Error('Network timeout'))
 
       const store = useSessionStore()
-      await expect(store.exchangeOidcCode('bad-code')).rejects.toBeDefined()
+      await expect(store.exchangeOidcCode('bad-code')).rejects.toThrow('Network timeout')
 
       expect(store.isAuthenticated).toBe(false)
       expect(store.error).toBe('Network timeout')
@@ -125,7 +127,7 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       vi.mocked(http.post).mockRejectedValue(new Error('fail'))
 
       const store = useSessionStore()
-      await expect(store.exchangeOidcCode('bad')).rejects.toBeDefined()
+      await expect(store.exchangeOidcCode('bad')).rejects.toThrow('fail')
 
       expect(store.loading).toBe(false)
     })
@@ -161,7 +163,9 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       })
 
       const store = useSessionStore()
-      await expect(store.login({ usernameOrEmail: 'bad', password: 'bad' })).rejects.toBeDefined()
+      await expect(store.login({ usernameOrEmail: 'bad', password: 'bad' })).rejects.toMatchObject({
+        response: { data: { message: 'Login failed' } },
+      })
       expect(store.error).toBe('Login failed')
 
       store.logout()
@@ -239,7 +243,7 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
   // ── token validation ──────────────────────────────────────────────────────
 
   describe('token validation edge cases', () => {
-    it('does not persist session when token has invalid JWT structure', async () => {
+    it('does not establish a session when token has invalid JWT structure', async () => {
       const badAuth = {
         token: 'not-a-jwt',
         user: {
@@ -257,9 +261,11 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       const store = useSessionStore()
       await store.login({ usernameOrEmail: 'user', password: 'pass' })
 
-      // With an invalid JWT structure, setSession should guard against persistence
-      // The token is still set in-memory but may not validate as authenticated
-      // depending on isTokenExpired behavior with malformed tokens
+      // setSession returns early before assigning any in-memory state when the
+      // token has an invalid JWT structure, so the store stays unauthenticated.
+      expect(store.isAuthenticated).toBe(false)
+      expect(store.token).toBeNull()
+      expect(store.userId).toBeNull()
       expect(localStorage.getItem('taskdeck_token')).toBeNull()
     })
   })
@@ -288,7 +294,9 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       })
 
       const store = useSessionStore()
-      await expect(store.register({ username: 'dup', email: 'dup@example.com', password: 'pass' })).rejects.toBeDefined()
+      await expect(store.register({ username: 'dup', email: 'dup@example.com', password: 'pass' })).rejects.toMatchObject({
+        response: { data: { message: 'Email already taken' } },
+      })
 
       expect(store.loading).toBe(false)
     })
