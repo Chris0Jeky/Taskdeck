@@ -230,12 +230,12 @@ public class QueueClaimRaceTests : IClassFixture<TestWebApplicationFactory>
 
         proposals.Should().NotBeNull();
 
-        // Each capture item should have at most one proposal
+        // Each capture item should have exactly one proposal (no duplicates, no data loss)
         foreach (var captureId in captureIds)
         {
             var matching = proposals!.Count(p => p.SourceReferenceId == captureId.ToString());
-            matching.Should().BeLessOrEqualTo(1,
-                $"capture item {captureId} should have at most one proposal (no duplicate processing)");
+            matching.Should().Be(1,
+                $"capture item {captureId} should have exactly one proposal (no duplicate processing, no data loss)");
         }
     }
 
@@ -278,8 +278,21 @@ public class QueueClaimRaceTests : IClassFixture<TestWebApplicationFactory>
         barrier.Release(2);
         await Task.WhenAll(workerTasks);
 
+        var responses = responseData.ToList();
+
         // No 500 errors
-        responseData.Should().NotContain(r => r.Status == HttpStatusCode.InternalServerError,
+        responses.Should().NotContain(r => r.Status == HttpStatusCode.InternalServerError,
             "no internal server errors during concurrent processing");
+
+        // At least one worker should succeed (with 2 items, ideally both succeed)
+        var successResponses = responses.Where(r => r.Status == HttpStatusCode.OK).ToList();
+        successResponses.Should().NotBeEmpty(
+            "at least one worker should successfully claim an item");
+
+        // All responses should be well-formed (OK or 404, not unexpected errors)
+        responses.Should().OnlyContain(
+            r => r.Status == HttpStatusCode.OK || r.Status == HttpStatusCode.NotFound
+                 || r.Status == HttpStatusCode.BadRequest,
+            "workers should only get OK, 404, or 400 -- not unexpected errors");
     }
 }

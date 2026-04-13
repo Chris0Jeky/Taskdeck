@@ -65,8 +65,9 @@ public class WebhookDeliveryConcurrencyTests : IClassFixture<TestWebApplicationF
             .ReadFromJsonAsync<OutboundWebhookSubscriptionSecretDto>();
         webhookSub.Should().NotBeNull();
 
-        // Create multiple cards concurrently using Barrier
-        using var barrier = new Barrier(mutationCount + 1);
+        // Create multiple cards concurrently using SemaphoreSlim (async-safe,
+        // unlike Barrier.SignalAndWait which blocks thread-pool threads)
+        using var barrier = new SemaphoreSlim(0, mutationCount);
         var statusCodes = new ConcurrentBag<HttpStatusCode>();
 
         var mutationTasks = Enumerable.Range(0, mutationCount).Select(async i =>
@@ -74,14 +75,14 @@ public class WebhookDeliveryConcurrencyTests : IClassFixture<TestWebApplicationF
             using var raceClient = _factory.CreateClient();
             raceClient.DefaultRequestHeaders.Authorization =
                 client.DefaultRequestHeaders.Authorization;
-            barrier.SignalAndWait(TimeSpan.FromSeconds(10));
+            await barrier.WaitAsync();
             var resp = await raceClient.PostAsJsonAsync(
                 $"/api/boards/{board.Id}/cards",
                 new CreateCardDto(board.Id, col!.Id, $"Webhook card {i}", null, null, null));
             statusCodes.Add(resp.StatusCode);
         }).ToArray();
 
-        barrier.SignalAndWait(TimeSpan.FromSeconds(10));
+        barrier.Release(mutationCount);
         await Task.WhenAll(mutationTasks);
 
         // All card creations should succeed
@@ -135,7 +136,7 @@ public class WebhookDeliveryConcurrencyTests : IClassFixture<TestWebApplicationF
         await ApiTestHarness.AuthenticateAsync(client, "webhook-concurrent-sub");
         var board = await ApiTestHarness.CreateBoardAsync(client, "webhook-sub-board");
 
-        using var barrier = new Barrier(subscriptionCount + 1);
+        using var barrier = new SemaphoreSlim(0, subscriptionCount);
         var results = new ConcurrentBag<(HttpStatusCode Status, OutboundWebhookSubscriptionSecretDto? Sub)>();
 
         var tasks = Enumerable.Range(0, subscriptionCount).Select(async i =>
@@ -143,7 +144,7 @@ public class WebhookDeliveryConcurrencyTests : IClassFixture<TestWebApplicationF
             using var raceClient = _factory.CreateClient();
             raceClient.DefaultRequestHeaders.Authorization =
                 client.DefaultRequestHeaders.Authorization;
-            barrier.SignalAndWait(TimeSpan.FromSeconds(10));
+            await barrier.WaitAsync();
             var resp = await raceClient.PostAsJsonAsync(
                 $"/api/boards/{board.Id}/webhooks",
                 new CreateOutboundWebhookSubscriptionDto(
@@ -155,7 +156,7 @@ public class WebhookDeliveryConcurrencyTests : IClassFixture<TestWebApplicationF
             results.Add((resp.StatusCode, sub));
         }).ToArray();
 
-        barrier.SignalAndWait(TimeSpan.FromSeconds(10));
+        barrier.Release(subscriptionCount);
         await Task.WhenAll(tasks);
 
         // All should succeed

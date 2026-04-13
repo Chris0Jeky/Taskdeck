@@ -95,22 +95,23 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
         await SignalRTestHelper.WaitForEventsAsync(observerEvents, 1);
         observerEvents.Clear();
 
-        // All users join simultaneously via Barrier
+        // All users join simultaneously via SemaphoreSlim (async-safe,
+        // unlike Barrier.SignalAndWait which blocks thread-pool threads)
         var connections = new List<HubConnection>();
         try
         {
-            using var joinBarrier = new Barrier(connectionCount + 1);
+            using var joinBarrier = new SemaphoreSlim(0, connectionCount);
             var joinTasks = users.Select(async user =>
             {
                 var conn = SignalRTestHelper.CreateBoardsHubConnection(_factory, user.Token);
                 conn.On<BoardPresenceSnapshot>("boardPresence", _ => { });
                 await conn.StartAsync();
                 lock (connections) { connections.Add(conn); }
-                joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
+                await joinBarrier.WaitAsync(TimeSpan.FromSeconds(10));
                 await conn.InvokeAsync("JoinBoard", board.Id);
             }).ToArray();
 
-            joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
+            joinBarrier.Release(connectionCount);
             await Task.WhenAll(joinTasks);
 
             // Wait for all joins to settle
@@ -122,14 +123,14 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
             // First half leave rapidly
             observerEvents.Clear();
             var leavingCount = connectionCount / 2;
-            using var leaveBarrier = new Barrier(leavingCount + 1);
+            using var leaveBarrier = new SemaphoreSlim(0, leavingCount);
             var leaveTasks = connections.Take(leavingCount).Select(async conn =>
             {
-                leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
+                await leaveBarrier.WaitAsync(TimeSpan.FromSeconds(10));
                 await conn.InvokeAsync("LeaveBoard", board.Id);
             }).ToArray();
 
-            leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
+            leaveBarrier.Release(leavingCount);
             await Task.WhenAll(leaveTasks);
 
             // Wait for leaves to settle

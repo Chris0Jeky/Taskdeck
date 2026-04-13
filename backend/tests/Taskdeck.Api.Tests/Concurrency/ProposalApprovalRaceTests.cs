@@ -322,12 +322,12 @@ public class ProposalApprovalRaceTests : IClassFixture<TestWebApplicationFactory
         proposal!.Status.Should().Be(ProposalStatus.Applied,
             "proposal should be in Applied state after execution");
 
-        // Verify at most one card was created (not duplicated)
+        // Verify exactly one card was created (not duplicated, not lost)
         var cardsResp = await client.GetAsync($"/api/boards/{board.Id}/cards");
         cardsResp.StatusCode.Should().Be(HttpStatusCode.OK);
         var cards = await cardsResp.Content.ReadFromJsonAsync<List<CardDto>>();
         var matchingCards = cards!.Count(c => c.Title.Contains("Double execute item"));
-        matchingCards.Should().BeInRange(0, 1,
-            "double execute should not create duplicate cards");
+        matchingCards.Should().Be(1,
+            "double execute should create exactly one card (no duplicates, no data loss)");
     }
 }

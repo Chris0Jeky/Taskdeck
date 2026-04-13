@@ -35,13 +35,14 @@ public class CrossUserIsolationStressTests : IClassFixture<TestWebApplicationFac
     public async Task ConcurrentBoardCreation_NoCrossUserContamination()
     {
         const int userCount = 5;
-        var userBoards = new ConcurrentDictionary<string, Guid>();
+        var userBoards = new ConcurrentDictionary<string, (Guid BoardId, HttpClient Client)>();
         var errors = new ConcurrentBag<string>();
 
+        // Phase 1: All users create boards concurrently
         using var barrier = new SemaphoreSlim(0, userCount);
         var tasks = Enumerable.Range(0, userCount).Select(async i =>
         {
-            using var client = _factory.CreateClient();
+            var client = _factory.CreateClient();
             var user = await ApiTestHarness.AuthenticateAsync(client, $"isolation-{i}");
             await barrier.WaitAsync();
 
@@ -53,29 +54,41 @@ public class CrossUserIsolationStressTests : IClassFixture<TestWebApplicationFac
             if (resp.StatusCode != HttpStatusCode.Created)
             {
                 errors.Add($"User {i} got {resp.StatusCode}");
+                client.Dispose();
                 return;
             }
 
             var board = await resp.Content.ReadFromJsonAsync<BoardDto>();
-            userBoards[user.Username] = board!.Id;
-
-            // Verify user only sees their own board
-            var listResp = await client.GetAsync("/api/boards");
-            var boards = await listResp.Content.ReadFromJsonAsync<List<BoardDto>>();
-            var otherUserBoards = boards!.Where(b =>
-                userBoards.Any(kv => kv.Key != user.Username && kv.Value == b.Id));
-            if (otherUserBoards.Any())
-            {
-                errors.Add($"User {user.Username} can see another user's board");
-            }
+            userBoards[user.Username] = (board!.Id, client);
         }).ToArray();
 
         barrier.Release(userCount);
         await Task.WhenAll(tasks);
 
-        errors.Should().BeEmpty("no cross-user board contamination should occur");
-        userBoards.Should().HaveCount(userCount,
-            "all users should have created their boards successfully");
+        try
+        {
+            errors.Should().BeEmpty("all users should create boards successfully");
+            userBoards.Should().HaveCount(userCount,
+                "all users should have created their boards successfully");
+
+            // Phase 2: After all boards exist, verify isolation with the
+            // complete set of known board IDs (no race against concurrent inserts)
+            var allBoardIds = userBoards.Values.Select(v => v.BoardId).ToHashSet();
+            foreach (var (username, (boardId, client)) in userBoards)
+            {
+                var listResp = await client.GetAsync("/api/boards");
+                var boards = await listResp.Content.ReadFromJsonAsync<List<BoardDto>>();
+                var visibleOtherBoards = boards!.Where(b =>
+                    allBoardIds.Contains(b.Id) && b.Id != boardId).ToList();
+                visibleOtherBoards.Should().BeEmpty(
+                    $"user {username} should not see other users' boards");
+            }
+        }
+        finally
+        {
+            foreach (var (_, (_, client)) in userBoards)
+                client.Dispose();
+        }
     }
 
     /// <summary>

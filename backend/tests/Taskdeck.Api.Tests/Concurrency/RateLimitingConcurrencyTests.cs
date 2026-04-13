@@ -145,11 +145,12 @@ public class RateLimitingConcurrencyTests : IClassFixture<TestWebApplicationFact
             "/api/auth/login",
             new LoginDto("retry-header-user-2", "wrong-pass"));
 
-        if (second.StatusCode == (HttpStatusCode)429)
-        {
-            // Retry-After header should be present on 429 responses
-            second.Headers.Contains("Retry-After").Should().BeTrue(
-                "429 responses should include a Retry-After header");
-        }
+        // Assert the rate limiter actually kicks in before checking headers
+        second.StatusCode.Should().Be((HttpStatusCode)429,
+            "the second request should be throttled (permit limit is 1)");
+
+        // Retry-After header should be present on 429 responses
+        second.Headers.Contains("Retry-After").Should().BeTrue(
+            "429 responses should include a Retry-After header");
     }
 }
