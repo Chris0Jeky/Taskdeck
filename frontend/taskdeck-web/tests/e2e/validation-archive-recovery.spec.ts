@@ -181,6 +181,16 @@ test.describe('TST11-SC-012: Restore archived board', () => {
     // Board should reappear in boards list
     const boards = await listBoards(request)
     expect(boards.some((b) => b.id === boardId)).toBeTruthy()
+
+    // Verify seeded column still exists after restore
+    const columnsResponse = await request.get(
+      `${API_BASE_URL}/boards/${boardId}/columns`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    expect(columnsResponse.ok()).toBeTruthy()
+    const columns = (await columnsResponse.json()) as Array<{ id: string; name: string }>
+    expect(columns.length).toBeGreaterThanOrEqual(1)
+    expect(columns.some((c) => c.name.startsWith('Todo'))).toBeTruthy()
   })
 })
 
@@ -200,6 +210,14 @@ test.describe('TST11-SC-013: State preservation through archive/restore', () => 
       })
     }
 
+    // Add a label
+    const labelResponse = await request.post(`${API_BASE_URL}/boards/${boardId}/labels`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      data: { boardId, name: 'preserve-test', colorHex: '#10B981' },
+    })
+    expect(labelResponse.ok()).toBeTruthy()
+    const createdLabel = (await labelResponse.json()) as { id: string; name: string }
+
     // Get columns to find IDs
     const columnsResponse = await request.get(`${API_BASE_URL}/boards/${boardId}/columns`, {
       headers: { Authorization: `Bearer ${auth.token}` },
@@ -207,7 +225,7 @@ test.describe('TST11-SC-013: State preservation through archive/restore', () => 
     const columns = (await columnsResponse.json()) as Array<{ id: string; name: string; position: number }>
     const todoCol = columns.find((c) => c.name === 'Todo')!
 
-    // Add a card
+    // Add a card with label
     const cardResponse = await request.post(`${API_BASE_URL}/boards/${boardId}/cards`, {
       headers: { Authorization: `Bearer ${auth.token}` },
       data: {
@@ -216,30 +234,36 @@ test.describe('TST11-SC-013: State preservation through archive/restore', () => 
         title: 'Preserved Card',
         description: 'This card should survive archive/restore.',
         position: 0,
+        labelIds: [createdLabel.id],
       },
     })
     expect(cardResponse.ok()).toBeTruthy()
+    const createdCard = (await cardResponse.json()) as { id: string; title: string; columnId: string; position: number }
 
     // Capture baseline
     const baselineCards = await request.get(`${API_BASE_URL}/boards/${boardId}/cards`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     })
-    const cardsBefore = (await baselineCards.json()) as Array<{ id: string; title: string; columnId: string }>
+    const cardsBefore = (await baselineCards.json()) as Array<{ id: string; title: string; columnId: string; position: number }>
 
     // Archive and restore
     await archiveBoard(request, boardId)
     await unarchiveBoard(request, boardId)
 
-    // Verify state
+    // Verify cards state -- find by ID, not by array index
     const restoredCards = await request.get(`${API_BASE_URL}/boards/${boardId}/cards`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     })
-    const cardsAfter = (await restoredCards.json()) as Array<{ id: string; title: string; columnId: string }>
+    const cardsAfter = (await restoredCards.json()) as Array<{ id: string; title: string; columnId: string; position: number }>
 
     expect(cardsAfter).toHaveLength(cardsBefore.length)
-    expect(cardsAfter[0].title).toBe('Preserved Card')
-    expect(cardsAfter[0].columnId).toBe(cardsBefore[0].columnId)
+    const restoredCard = cardsAfter.find((c) => c.id === createdCard.id)
+    expect(restoredCard).toBeTruthy()
+    expect(restoredCard!.title).toBe('Preserved Card')
+    expect(restoredCard!.columnId).toBe(todoCol.id)
+    expect(restoredCard!.position).toBe(createdCard.position)
 
+    // Verify columns state
     const restoredCols = await request.get(`${API_BASE_URL}/boards/${boardId}/columns`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     })
@@ -248,6 +272,13 @@ test.describe('TST11-SC-013: State preservation through archive/restore', () => 
     expect(columnsAfter.map((c) => `${c.position}:${c.name}`).sort()).toEqual(
       columns.map((c) => `${c.position}:${c.name}`).sort(),
     )
+
+    // Verify labels survived
+    const restoredLabels = await request.get(`${API_BASE_URL}/boards/${boardId}/labels`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    })
+    const labelsAfter = (await restoredLabels.json()) as Array<{ id: string; name: string }>
+    expect(labelsAfter.some((l) => l.name === 'preserve-test')).toBeTruthy()
   })
 })
 
