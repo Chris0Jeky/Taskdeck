@@ -220,13 +220,6 @@ test.describe('TST11-SC-023: Activity view mode switching', () => {
     await page.goto('/workspace/activity')
     await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
 
-    // Mode selector should exist with board/entity/user options
-    const modeSelector = page.locator('[data-testid="activity-mode-selector"]').or(
-      page.getByRole('combobox').first(),
-    ).or(
-      page.locator('select').first(),
-    )
-
     // Verify the view loads with content
     await expect(page.getByText('Activity')).toBeVisible()
 
