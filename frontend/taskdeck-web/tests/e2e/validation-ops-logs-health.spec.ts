@@ -13,9 +13,9 @@ test.describe('Ops Console — CLI Runner', () => {
     await page.goto('/workspace/ops/cli')
 
     await expect(page.getByRole('heading', { name: 'Ops Console' })).toBeVisible()
-    await expect(page.getByText('CLI Runner')).toBeVisible()
-    await expect(page.getByText('Endpoint Explorer')).toBeVisible()
-    await expect(page.getByText('Logs')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'CLI Runner' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Endpoint Explorer' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Logs' })).toBeVisible()
 
     // Role context panel should be visible
     await expect(page.getByText('Current role:')).toBeVisible()
@@ -44,8 +44,10 @@ test.describe('Ops Console — CLI Runner', () => {
     await page.locator('#cli-parameters').fill('{"unexpected": "value"}')
     await page.getByRole('button', { name: 'Run Template' }).click()
 
-    // Should show error in output or toast
-    await expect(page.getByText('Error').first()).toBeVisible()
+    // Should show error in output or toast notification
+    await expect(
+      page.locator('.td-cli-output, .td-toast').getByText(/error/i).first(),
+    ).toBeVisible()
   })
 
   test('should reload templates without error', async ({ page }) => {
@@ -62,10 +64,11 @@ test.describe('Ops Console — CLI Runner', () => {
 test.describe('Ops Console — Logs Tab', () => {
   test('should load logs tab and display entries after command run', async ({ page, request }) => {
     // First run a command to ensure log entries exist
-    await request.post(`${API_BASE_URL}/ops/cli/run`, {
+    const setupResponse = await request.post(`${API_BASE_URL}/ops/cli/run`, {
       headers: { Authorization: `Bearer ${auth.token}` },
       data: { templateName: 'health.check' },
     })
+    await assertOk(setupResponse, 'setup: run health.check for logs')
 
     await page.goto('/workspace/ops/logs')
 
@@ -78,21 +81,23 @@ test.describe('Ops Console — Logs Tab', () => {
 
   test('should filter logs by level', async ({ page, request }) => {
     // Ensure some log entries exist
-    await request.post(`${API_BASE_URL}/ops/cli/run`, {
+    const setupResponse = await request.post(`${API_BASE_URL}/ops/cli/run`, {
       headers: { Authorization: `Bearer ${auth.token}` },
       data: { templateName: 'health.check' },
     })
+    await assertOk(setupResponse, 'setup: run health.check for level filter')
 
     await page.goto('/workspace/ops/logs')
     await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     // Filter by Info level
     await page.getByLabel('Log level filter').selectOption('Info')
-    await page.getByRole('button', { name: 'Refresh' }).click()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
-    // All visible entries should be Info level (or empty)
+    // All visible entries should be Info level
     const entries = page.locator('.td-log-entry')
     const count = await entries.count()
+    expect(count).toBeGreaterThan(0)
     for (let i = 0; i < count; i++) {
       await expect(entries.nth(i).locator('.td-log-level')).toContainText('Info')
     }
@@ -100,20 +105,22 @@ test.describe('Ops Console — Logs Tab', () => {
 
   test('should filter logs by source', async ({ page, request }) => {
     // Ensure some log entries exist
-    await request.post(`${API_BASE_URL}/ops/cli/run`, {
+    const setupResponse = await request.post(`${API_BASE_URL}/ops/cli/run`, {
       headers: { Authorization: `Bearer ${auth.token}` },
       data: { templateName: 'health.check' },
     })
+    await assertOk(setupResponse, 'setup: run health.check for source filter')
 
     await page.goto('/workspace/ops/logs')
     await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     // Filter by OpsCliService source
     await page.getByLabel('Source filter').fill('OpsCliService')
-    await page.getByRole('button', { name: 'Refresh' }).click()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
     const entries = page.locator('.td-log-entry')
     const count = await entries.count()
+    expect(count).toBeGreaterThan(0)
     for (let i = 0; i < count; i++) {
       await expect(entries.nth(i).locator('.td-log-source')).toContainText('OpsCliService')
     }
@@ -123,7 +130,7 @@ test.describe('Ops Console — Logs Tab', () => {
     await page.goto('/workspace/ops/logs')
 
     await page.getByLabel('Source filter').fill('NonexistentSource12345')
-    await page.getByRole('button', { name: 'Refresh' }).click()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
     await expect(page.getByText('No logs match the current filters')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Clear Filters' })).toBeVisible()
@@ -133,24 +140,25 @@ test.describe('Ops Console — Logs Tab', () => {
     await page.goto('/workspace/ops/logs')
 
     await page.getByLabel('Correlation ID').fill('00000000000000000000000000000000')
-    await page.getByRole('button', { name: 'Refresh' }).click()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
     await expect(page.getByText('No logs for this correlation ID')).toBeVisible()
   })
 
   test('should clear filters and restore entries', async ({ page, request }) => {
     // Ensure some log entries exist
-    await request.post(`${API_BASE_URL}/ops/cli/run`, {
+    const setupResponse = await request.post(`${API_BASE_URL}/ops/cli/run`, {
       headers: { Authorization: `Bearer ${auth.token}` },
       data: { templateName: 'health.check' },
     })
+    await assertOk(setupResponse, 'setup: run health.check for clear filters')
 
     await page.goto('/workspace/ops/logs')
     await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     // Apply a filter that yields no results
     await page.getByLabel('Source filter').fill('NonexistentSource12345')
-    await page.getByRole('button', { name: 'Refresh' }).click()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
     await expect(page.getByText('No logs match the current filters')).toBeVisible()
 
     // Clear filters
@@ -170,8 +178,13 @@ test.describe('Ops Console — Correlation ID Propagation', () => {
     })
     await assertOk(runResponse, 'run health.check')
 
+    // Verify X-Request-Id header matches correlation ID (TST10-SC-010)
+    const xRequestId = runResponse.headers()['x-request-id']
+    expect(xRequestId).toBeDefined()
+
     const run = await runResponse.json() as { id: string; correlationId: string; status: string }
     expect(run.correlationId).toBeTruthy()
+    expect(run.correlationId).toBe(xRequestId)
 
     // Query logs by correlation ID via API
     const logsResponse = await request.get(
@@ -189,7 +202,7 @@ test.describe('Ops Console — Correlation ID Propagation', () => {
     // Verify the same correlation works in the UI
     await page.goto('/workspace/ops/logs')
     await page.getByLabel('Correlation ID').fill(run.correlationId)
-    await page.getByRole('button', { name: 'Refresh' }).click()
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
     await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
     await expect(page.locator('.td-log-correlation').first()).toContainText(run.correlationId)
@@ -205,7 +218,7 @@ test.describe('Ops Console — Correlation ID Propagation', () => {
     const run = await runResponse.json() as { correlationId: string }
 
     // Register User B
-    const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const unique = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const regResponse = await request.post(`${API_BASE_URL}/auth/register`, {
       data: {
         username: `e2e-isolation-${unique}`,
@@ -213,6 +226,7 @@ test.describe('Ops Console — Correlation ID Propagation', () => {
         password: 'E2ePassword123!',
       },
     })
+    await assertOk(regResponse, 'register user B')
     const userB = await regResponse.json() as { token: string }
 
     // User B tries to access User A's correlation
@@ -232,12 +246,12 @@ test.describe('Ops Console — Tab Navigation', () => {
     await expect(page.locator('.td-tab--active')).toContainText('CLI Runner')
 
     // Click Endpoint Explorer tab
-    await page.getByText('Endpoint Explorer').click()
+    await page.getByRole('button', { name: 'Endpoint Explorer' }).click()
     await expect(page).toHaveURL(/\/workspace\/ops\/endpoints/)
     await expect(page.locator('.td-tab--active')).toContainText('Endpoint Explorer')
 
     // Click Logs tab
-    await page.getByText('Logs').click()
+    await page.getByRole('button', { name: 'Logs' }).click()
     await expect(page).toHaveURL(/\/workspace\/ops\/logs/)
     await expect(page.locator('.td-tab--active')).toContainText('Logs')
 
@@ -325,12 +339,21 @@ test.describe('Health Endpoints', () => {
   })
 
   test('/health/ready should separate capture backlog from automation queue depth', async ({ request }) => {
+    // Record baseline queue depths before creating capture items
+    const baselineResponse = await request.get(`${API_ORIGIN}/health/ready`)
+    expect([200, 503]).toContain(baselineResponse.status())
+    const baseline = await baselineResponse.json() as {
+      checks: { queue: { captureDepth: number } }
+    }
+    const baselineCaptureDepth = baseline.checks.queue.captureDepth
+
     // Create some capture items to increase capture depth
     for (let i = 0; i < 2; i++) {
-      await request.post(`${API_BASE_URL}/capture/items`, {
+      const captureResponse = await request.post(`${API_BASE_URL}/capture/items`, {
         headers: { Authorization: `Bearer ${auth.token}` },
         data: { boardId: null, text: `health e2e capture ${i} ${Date.now()}` },
       })
+      await assertOk(captureResponse, `create capture item ${i}`)
     }
 
     const response = await request.get(`${API_ORIGIN}/health/ready`)
@@ -344,7 +367,7 @@ test.describe('Health Endpoints', () => {
 
     // Automation depth should be separate from capture depth
     expect(body.checks.queue.depth).toBeGreaterThanOrEqual(0)
-    expect(body.checks.queue.captureDepth).toBeGreaterThanOrEqual(0)
+    expect(body.checks.queue.captureDepth).toBeGreaterThan(baselineCaptureDepth)
     expect(body.checks.queue.totalDepth).toBe(
       body.checks.queue.depth + body.checks.queue.captureDepth,
     )
