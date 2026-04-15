@@ -16,9 +16,38 @@
  */
 
 import { expect, test } from '@playwright/test'
+import type { StarterPackManifest } from '../../src/types/starter-packs'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, waitForProposalCreated, waitForCardWithTitle, listBoardCards } from './support/captureFlow'
+
+/**
+ * Minimal starter pack manifest for V-03 integration test.
+ * Uses the actual API contract: ApplyStarterPackDto expects { manifest, dryRun }.
+ */
+const ENGINEERING_SPRINT_MANIFEST: StarterPackManifest = {
+  schemaVersion: '1.0',
+  packId: 'engineering-sprint',
+  displayName: 'Engineering Sprint',
+  description: 'Board layout for engineering sprint workflows.',
+  compatibility: {
+    minTaskdeckVersion: '1.0.0',
+    requiredFeatures: ['boards', 'labels'],
+  },
+  tags: ['engineering', 'sprint'],
+  labels: [
+    { name: 'bug', color: '#DC2626', description: 'Defect tracking' },
+    { name: 'feature', color: '#2563EB', description: 'New feature work' },
+  ],
+  columns: [
+    { name: 'Backlog', position: 0 },
+    { name: 'In Progress', position: 1, wipLimit: 3 },
+    { name: 'Review', position: 2, wipLimit: 2 },
+    { name: 'Done', position: 3 },
+  ],
+  templates: [],
+  seedCards: [],
+}
 
 let auth: AuthResult
 
@@ -127,30 +156,31 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
   const boardId = boardIdMatch![1]
 
   // Step 2: Apply a starter pack via API (S5 starter packs + S1 board)
+  // Uses a fixture manifest matching the ApplyStarterPackDto contract: { manifest, dryRun }
   const applyResponse = await request.post(
     `${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/starter-packs/apply`,
     {
       headers: { Authorization: `Bearer ${auth.token}` },
-      data: { packId: 'engineering-sprint', dryRun: false },
+      data: { manifest: ENGINEERING_SPRINT_MANIFEST, dryRun: false },
     },
   )
 
-  // Starter pack may or may not be available; handle both cases
-  if (applyResponse.ok()) {
-    // Step 3: Verify board has columns from the starter pack
-    await page.reload()
-    await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
-    // Starter pack should have added at least one column
-    const columnHeadings = page.locator('[data-column-dnd-id] h3')
-    const columnCount = await columnHeadings.count()
-    expect(columnCount).toBeGreaterThan(0)
-  } else {
-    // If starter pack is not available, add a column manually so archive/restore has content
-    await page.getByRole('button', { name: '+ Add Column' }).click()
-    await page.getByPlaceholder('Column name').fill(`Manual Column ${seed}`)
-    await page.getByRole('button', { name: 'Create', exact: true }).click()
-    await expect(page.getByRole('heading', { name: `Manual Column ${seed}`, exact: true })).toBeVisible()
-  }
+  // Assert the apply succeeded -- do not silently swallow failures
+  expect(
+    applyResponse.ok(),
+    `Starter pack apply should succeed (got ${applyResponse.status()}: ${await applyResponse.text()})`,
+  ).toBeTruthy()
+
+  const applyResult = await applyResponse.json()
+  expect(applyResult.applied).toBeTruthy()
+
+  // Step 3: Verify board has columns from the starter pack
+  await page.reload()
+  await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
+  // Starter pack should have added at least one column
+  const columnHeadings = page.locator('[data-column-dnd-id] h3')
+  const columnCount = await columnHeadings.count()
+  expect(columnCount).toBeGreaterThan(0)
 
   // Step 4: Archive the board via Board Settings (S5 archive)
   await page.locator('button[title="Board Settings"]').click()
@@ -179,8 +209,8 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
   // Step 9: Verify board content survived the archive/restore cycle (S1 board state)
   await page.goto(boardUrl)
   await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
-  const columnCount = await page.locator('[data-column-dnd-id] h3').count()
-  expect(columnCount).toBeGreaterThan(0)
+  const restoredColumnCount = await page.locator('[data-column-dnd-id] h3').count()
+  expect(restoredColumnCount).toBeGreaterThan(0)
 })
 
 // ─── Journey 3 (V-06): Workspace exploration and navigation coherence ───────
@@ -265,7 +295,8 @@ test('V-04: unauthenticated access should be denied across all protected endpoin
   ]
 
   for (const endpoint of unauthenticatedEndpoints) {
-    const response = await request.get(`${API_BASE_URL}${endpoint.path}`, {
+    const response = await request.fetch(`${API_BASE_URL}${endpoint.path}`, {
+      method: endpoint.method,
       // Explicitly no Authorization header
       headers: {},
     })
