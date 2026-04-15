@@ -371,13 +371,15 @@ This slice covers Section F of the parent checklist and extends it with edge cas
 
 **Goal:** Verify operators can probe health endpoints through the explorer.
 
+**Caveat:** The endpoint explorer uses the axios HTTP client with `baseURL` set to `http://localhost:5000/api`. Paths entered in the explorer are relative to this base. Health endpoints live at `/health/*` (not under `/api/`), so probing `/health/ready` from the explorer sends the request to `http://localhost:5000/api/health/ready` which returns 404. To probe health endpoints, use curl or the browser address bar directly. This is a known UX limitation of the endpoint explorer.
+
 | Step | Action | Expected Outcome |
 |---|---|---|
-| 1 | Set method to GET, path to `/health/ready` | Path entered (note: explorer normalizes `/api/` prefix) |
-| 2 | Click "Send" | Health response appears |
-| 3 | Verify response contains `checks` object | Full health payload visible |
+| 1 | Set method to GET, path to `/boards` | Path entered (a path that works under `/api/`) |
+| 2 | Click "Send" | Response appears with valid JSON |
+| 3 | For health endpoints, use curl: `curl http://localhost:5000/health/ready` | Full health payload visible |
 
-**Evidence:** Screenshot of health response in endpoint explorer.
+**Evidence:** Screenshot of endpoint explorer response and/or curl output for health.
 
 ---
 

@@ -303,13 +303,16 @@ Checkpoint:
 
 **Step 5.2: Health endpoint probing**
 
-1. Method: GET, Path: `/health/ready` (note: the explorer may or may not strip `/api` prefix -- try both `/health/ready` and `http://localhost:5000/health/ready`).
-2. Click "Send".
+Note: The endpoint explorer's HTTP client uses `baseURL` of `http://localhost:5000/api`, so paths like `/health/ready` resolve to `http://localhost:5000/api/health/ready` (404). Health endpoints live at the server root, not under `/api/`. Use curl or the browser address bar instead:
+
+```bash
+curl -s http://localhost:5000/health/ready | python -m json.tool
+```
 
 Checkpoint:
-- [ ] Health response visible in the response panel
+- [ ] Health response visible (via curl or browser, not the explorer)
 
-Evidence: Screenshot `evidence/endpoint-explorer.png`.
+Evidence: Save curl output or screenshot as `evidence/health-via-curl.json`.
 
 ---
 

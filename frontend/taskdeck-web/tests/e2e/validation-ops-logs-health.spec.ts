@@ -329,7 +329,7 @@ test.describe('Health Endpoints', () => {
     for (let i = 0; i < 2; i++) {
       await request.post(`${API_BASE_URL}/capture/items`, {
         headers: { Authorization: `Bearer ${auth.token}` },
-        data: { boardId: null, rawInput: `health e2e capture ${i} ${Date.now()}` },
+        data: { boardId: null, text: `health e2e capture ${i} ${Date.now()}` },
       })
     }
 
