@@ -34,12 +34,27 @@ interface CardDto {
 
 interface AuditEntryDto {
   id: string
-  action: string
+  action: number
   entityType: string
   entityId: string
   timestamp: string
-  [key: string]: unknown
+  userName?: string | null
+  changes?: string | null
+  userId?: string | null
 }
+
+/**
+ * AuditAction enum values from backend Domain/Enums/AuditAction.cs.
+ * The API serializes these as integers (System.Text.Json default).
+ */
+const AuditAction = {
+  Created: 0,
+  Updated: 1,
+  Deleted: 2,
+  Archived: 3,
+  Unarchived: 4,
+  Moved: 5,
+} as const
 
 let auth: AuthResult
 
@@ -146,13 +161,19 @@ test.describe('TST11-SC-018: Board-scoped activity timeline', () => {
     await addCard(request, boardId, colId, 'Audit Card 1')
 
     const history = await getBoardHistory(request, boardId)
-    expect(history.length).toBeGreaterThan(0)
+    // Board creation + column creation + card creation = at least 3 entries
+    expect(history.length).toBeGreaterThanOrEqual(3)
 
     // Entries should have required fields
     for (const entry of history) {
-      expect(entry.action).toBeTruthy()
+      expect(typeof entry.action).toBe('number')
+      expect(entry.action).toBeGreaterThanOrEqual(0)
       expect(entry.timestamp).toBeTruthy()
+      expect(entry.entityType).toBeTruthy()
     }
+
+    // Verify a Created action exists
+    expect(history.some((e) => e.action === AuditAction.Created)).toBeTruthy()
   })
 })
 
@@ -165,10 +186,8 @@ test.describe('TST11-SC-019: Entity-scoped activity (card level)', () => {
     const history = await getEntityHistory(request, 'card', cardId)
     expect(history.length).toBeGreaterThan(0)
 
-    // Should include a creation event
-    const hasCreateAction = history.some((e) =>
-      e.action.toLowerCase().includes('creat') || e.action.toLowerCase().includes('add'),
-    )
+    // Should include a creation event (action === 0 is AuditAction.Created)
+    const hasCreateAction = history.some((e) => e.action === AuditAction.Created)
     expect(hasCreateAction).toBeTruthy()
   })
 })
@@ -208,7 +227,17 @@ test.describe('TST11-SC-021: Audit entries for board mutations', () => {
 
     const history = await getBoardHistory(request, boardId)
     // Should have at least entries for create + rename + archive + restore
-    expect(history.length).toBeGreaterThanOrEqual(1)
+    expect(history.length).toBeGreaterThanOrEqual(4)
+
+    const actionTypes = new Set(history.map((e) => e.action))
+    // Created (0) should be present from board creation
+    expect(actionTypes.has(AuditAction.Created)).toBeTruthy()
+    // Updated (1) should be present from rename
+    expect(actionTypes.has(AuditAction.Updated)).toBeTruthy()
+    // Archived (3) should be present from archive
+    expect(actionTypes.has(AuditAction.Archived)).toBeTruthy()
+    // Unarchived (4) should be present from restore
+    expect(actionTypes.has(AuditAction.Unarchived)).toBeTruthy()
   })
 })
 
@@ -220,12 +249,40 @@ test.describe('TST11-SC-023: Activity view mode switching', () => {
     await page.goto('/workspace/activity')
     await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
 
-    // Verify the view loads with content
-    await expect(page.getByText('Activity')).toBeVisible()
-
     // Verify the hero actions are present
     await expect(page.getByRole('button', { name: 'Open Review' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Open Boards' })).toBeVisible()
+
+    // Locate the mode selector dropdown
+    const modeSelector = page.locator('select[aria-label="Activity view mode"]')
+    await expect(modeSelector).toBeVisible()
+
+    // Verify all three options exist
+    const options = modeSelector.locator('option')
+    await expect(options).toHaveCount(3)
+    await expect(options.nth(0)).toHaveText('Board History')
+    await expect(options.nth(1)).toHaveText('Entity History')
+    await expect(options.nth(2)).toHaveText('User History')
+
+    // Default mode should be 'board'
+    await expect(modeSelector).toHaveValue('board')
+
+    // Switch to 'entity' mode and verify entity-specific controls appear
+    await modeSelector.selectOption('entity')
+    await expect(modeSelector).toHaveValue('entity')
+    const entityTypeSelector = page.locator('select[aria-label="Select entity type"]')
+    await expect(entityTypeSelector).toBeVisible()
+
+    // Switch to 'user' mode and verify user-specific content appears
+    await modeSelector.selectOption('user')
+    await expect(modeSelector).toHaveValue('user')
+    await expect(page.getByText('Current user:')).toBeVisible()
+
+    // Switch back to 'board' mode and verify board selector reappears
+    await modeSelector.selectOption('board')
+    await expect(modeSelector).toHaveValue('board')
+    const boardSelector = page.locator('select[aria-label="Select board"]')
+    await expect(boardSelector).toBeVisible()
   })
 })
 
