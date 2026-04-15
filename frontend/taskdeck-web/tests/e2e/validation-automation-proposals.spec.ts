@@ -1,4 +1,4 @@
-import type { APIRequestContext } from '@playwright/test'
+import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
@@ -36,8 +36,7 @@ async function createBoardScoped(
 }
 
 async function createChatSessionAndSendProposal(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  page: any,
+  page: Page,
   request: APIRequestContext,
   auth: AuthResult,
   boardId: string,
@@ -108,12 +107,12 @@ test.beforeEach(async ({ page, request }) => {
 
 test.describe('TST09 Proposal Lifecycle', () => {
   test('SC-015: approve then execute golden path — board state updates', async ({ page, request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
     const uniqueCardTitle = `Proposal Card ${seed}`
 
     const { proposalId } = await createChatSessionAndSendProposal(
-      page as any,
+      page,
       request,
       auth,
       boardId,
@@ -163,7 +162,7 @@ test.describe('TST09 Proposal Lifecycle', () => {
   })
 
   test('SC-016/017: reject proposal — board state unchanged', async ({ page, request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
     const uniqueCardTitle = `Rejected Card ${seed}`
 
@@ -177,7 +176,7 @@ test.describe('TST09 Proposal Lifecycle', () => {
     const initialCount = initialCards.length
 
     const { proposalId } = await createChatSessionAndSendProposal(
-      page as any,
+      page,
       request,
       auth,
       boardId,
@@ -211,7 +210,7 @@ test.describe('TST09 Proposal Lifecycle', () => {
   })
 
   test('SC-018: double-approve returns error', async ({ request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
 
     // Create a proposal via API (chat session)
@@ -250,7 +249,7 @@ test.describe('TST09 Proposal Lifecycle', () => {
   })
 
   test('SC-019: double-execute prevention', async ({ request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
 
     // Create, approve, and execute a proposal
@@ -306,7 +305,7 @@ test.describe('TST09 Proposal Lifecycle', () => {
   })
 
   test('SC-020: execute without Idempotency-Key returns 400', async ({ request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
 
     // Create and approve a proposal
@@ -348,7 +347,7 @@ test.describe('TST09 Proposal Lifecycle', () => {
   })
 
   test('SC-043: execute without prior approve returns error', async ({ request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
 
     const sessionResponse = await request.post(`${API_BASE_URL}/llm/chat/sessions`, {
@@ -385,8 +384,8 @@ test.describe('TST09 Proposal Lifecycle', () => {
 })
 
 test.describe('TST09 Cross-User Proposal Isolation', () => {
-  test('SC-028/029: UserB cannot see or approve UserA proposals', async ({ page, request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  test('SC-028/029: UserB cannot see or approve UserA proposals', async ({ request }) => {
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
 
     // Create a proposal as UserA
@@ -409,7 +408,7 @@ test.describe('TST09 Cross-User Proposal Isolation', () => {
     const proposalId = await waitForProposalInSession(request, auth.token, session.id)
 
     // Register UserB
-    const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const unique = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const userBRegResponse = await request.post(`${API_BASE_URL}/auth/register`, {
       data: {
         username: `e2e-slicec-userb-${unique}`,
@@ -428,16 +427,16 @@ test.describe('TST09 Cross-User Proposal Isolation', () => {
     const proposalList = (await userBProposals.json()) as ProposalDto[]
     expect(proposalList.find((p) => p.id === proposalId)).toBeUndefined()
 
-    // UserB attempts to approve UserA's proposal — should get 404
+    // UserB attempts to approve UserA's proposal — should get 403 (authenticated but unauthorized)
     const approveAsB = await request.post(
       `${API_BASE_URL}/automation/proposals/${encodeURIComponent(proposalId)}/approve`,
       { headers: { Authorization: `Bearer ${userB.token}` } },
     )
-    expect(approveAsB.status()).toBe(404)
+    expect(approveAsB.status()).toBe(403)
   })
 
   test('SC-030: UserB cannot see UserA chat sessions', async ({ request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
 
     // Create a session as UserA
     const sessionResponse = await request.post(`${API_BASE_URL}/llm/chat/sessions`, {
@@ -448,7 +447,7 @@ test.describe('TST09 Cross-User Proposal Isolation', () => {
     const session = (await sessionResponse.json()) as { id: string }
 
     // Register UserB
-    const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const unique = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const userBRegResponse = await request.post(`${API_BASE_URL}/auth/register`, {
       data: {
         username: `e2e-slicec-chat-${unique}`,
@@ -471,7 +470,7 @@ test.describe('TST09 Cross-User Proposal Isolation', () => {
 
 test.describe('TST09 Execution Safety', () => {
   test('SC-042: cannot re-approve a rejected proposal', async ({ request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardScoped(request, auth, seed)
 
     const sessionResponse = await request.post(`${API_BASE_URL}/llm/chat/sessions`, {

@@ -34,7 +34,7 @@ test.describe('TST09 Chat Session Behavior', () => {
   })
 
   test('SC-002: create board-scoped chat session', async ({ page, request }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardWithColumn(request, auth, seed, {
       boardNamePrefix: 'SliceC Chat',
       description: 'chat bootstrap validation board',
@@ -51,7 +51,7 @@ test.describe('TST09 Chat Session Behavior', () => {
     await expect(page.getByText(sessionTitle).first()).toBeVisible()
   })
 
-  test('SC-003: non-actionable greeting returns assistant response, no proposal', async ({ page, request }) => {
+  test('SC-003: non-actionable greeting returns assistant response, no proposal', async ({ page }) => {
     await page.goto('/workspace/automations/chat')
 
     await page.getByPlaceholder('Session title').fill(`Greeting ${Date.now()}`)
@@ -73,7 +73,7 @@ test.describe('TST09 Chat Session Behavior', () => {
     page,
     request,
   }) => {
-    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardWithColumn(request, auth, seed, {
       boardNamePrefix: 'SliceC Actionable',
       description: 'actionable prompt validation board',
@@ -132,16 +132,12 @@ test.describe('TST09 Adversarial Chat Inputs', () => {
     await page.getByPlaceholder('Describe an automation instruction...').fill(xssPayload)
     await page.getByRole('button', { name: 'Send Message' }).click()
 
-    // Wait for assistant response
+    // Wait for assistant response (also gives time for any deferred script execution)
     await expect(page.getByText('Assistant').first()).toBeVisible()
-
-    // Give a moment for any deferred script execution
-    await page.waitForTimeout(1000)
     expect(dialogTriggered).toBeFalsy()
 
-    // The raw text should be visible in the page (escaped, not executed)
-    const pageContent = await page.content()
-    expect(pageContent).not.toContain('<script>alert')
+    // The XSS payload should be rendered as literal text, not executed as HTML
+    await expect(page.getByText(xssPayload)).toBeVisible()
   })
 
   test('SC-012: SQL injection payload stored as plain text', async ({ page, request }) => {
@@ -180,11 +176,11 @@ test.describe('TST09 Adversarial Chat Inputs', () => {
     await page.getByPlaceholder('Session title').fill(htmlPayload)
     await page.getByRole('button', { name: 'Create Session' }).click()
 
-    // Allow time for any onerror handlers to fire
-    await page.waitForTimeout(1000)
+    // Wait for the session title to appear in the UI (confirms rendering is complete)
+    await expect(page.getByText(htmlPayload)).toBeVisible()
     expect(dialogTriggered).toBeFalsy()
 
-    // The session should exist in the list (verify the title text is rendered, not executed)
+    // Verify via API that the session title was stored as plain text
     const sessionsResponse = await page.request.get(`${API_BASE_URL}/llm/chat/sessions`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     })
@@ -221,7 +217,7 @@ test.describe('TST09 Adversarial Chat Inputs', () => {
 })
 
 test.describe('TST09 Chat Session Cross-User Isolation', () => {
-  test('SC-030: different users see only their own sessions', async ({ page, request }) => {
+  test('SC-030: different users see only their own sessions', async ({ request }) => {
     // UserA creates a session
     const sessionATitle = `UserA Session ${Date.now()}`
     const sessionAResponse = await request.post(`${API_BASE_URL}/llm/chat/sessions`, {
@@ -231,7 +227,7 @@ test.describe('TST09 Chat Session Cross-User Isolation', () => {
     await assertOk(sessionAResponse, 'create session as UserA')
 
     // Register UserB
-    const unique = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const unique = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const userBRegResponse = await request.post(`${API_BASE_URL}/auth/register`, {
       data: {
         username: `e2e-slicec-chatiso-${unique}`,
