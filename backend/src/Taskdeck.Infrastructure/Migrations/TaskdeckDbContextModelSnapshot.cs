@@ -938,6 +938,37 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("CommandRunLogs", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ConnectorEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ConnectorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EventType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Payload")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConnectorId");
+
+                    b.HasIndex("ConnectorId", "CreatedAt");
+
+                    b.ToTable("ConnectorEvents", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.ExternalLogin", b =>
                 {
                     b.Property<Guid>("Id")
@@ -979,6 +1010,50 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("ExternalLogins", (string)null);
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.IntegrationConnector", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Configuration")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ConnectorType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Direction")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "Status");
+
+                    b.ToTable("IntegrationConnectors", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.KnowledgeChunk", b =>
@@ -1800,11 +1875,11 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("CommandRun");
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ExternalLogin", b =>
+            modelBuilder.Entity("Taskdeck.Domain.Entities.ConnectorEvent", b =>
                 {
-                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                    b.HasOne("Taskdeck.Domain.Entities.IntegrationConnector", null)
                         .WithMany()
-                        .HasForeignKey("UserId")
+                        .HasForeignKey("ConnectorId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
