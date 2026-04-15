@@ -34,7 +34,7 @@ Each scenario crosses at least two subsystems and is rated by severity (impact i
 
 | ID | Scenario | Subsystems | Severity | Automated | Manual |
 |----|----------|------------|----------|-----------|--------|
-| V-01 | Capture to triage to proposal to approve to board state change to audit trail | S1, S3 | Critical | Yes (`first-run.spec.ts`, `capture-loop.spec.ts`, `integrated-verification.spec.ts`) | Verify provenance links are human-legible |
+| V-01 | Capture to triage to proposal to approve to board state change to audit trail | S1, S3 | Critical | Yes (`first-run.spec.ts`, `capture-loop.spec.ts`) | Verify provenance links are human-legible |
 | V-02 | Register to create board to capture input to verify inbox to triage to verify proposal to approve to verify board state | S1, S2, S3 | Critical | Yes (`integrated-verification.spec.ts`) | Verify under-10-second capture speed |
 | V-03 | Login to board to apply starter pack to verify board state to archive to verify archived to restore to verify restored | S1, S2, S5 | Critical | Yes (`integrated-verification.spec.ts`, `starter-pack-fixtures.spec.ts`) | Verify archive/restore UI transitions |
 | V-04 | Unauthenticated access denial across all protected endpoints | S1, S2, S3, S4, S5 | Critical | Yes (API integration tests, `error-recovery.spec.ts`) | Spot-check 3 endpoints manually |
@@ -46,7 +46,7 @@ Each scenario crosses at least two subsystems and is rated by severity (impact i
 | V-05 | Chat message to tool call to proposal to approve to board update to notification | S1, S3, S4 | High | Partial (unit/integration tests cover tool-calling + proposal creation; E2E covers chat UI) | Full end-to-end with live LLM provider |
 | V-06 | Multi-board workspace navigation coherence: home to today to review to board | S1, S2, S5 | High | Yes (`integrated-verification.spec.ts`) | Verify no stale board context leakage |
 | V-07 | Cross-user data isolation: User A board/capture/proposal invisible to User B | S1, S2, S3 | High | Yes (38 backend integration tests in `CrossUserDataIsolationTests`) | Two-browser manual check |
-| V-08 | Board metrics accuracy after card lifecycle (create, move, block, complete) | S1, S5 | High | Yes (61 backend tests in `BoardMetricsTests`) | Verify counts match manual card count |
+| V-08 | Board metrics accuracy after card lifecycle (create, move, block, complete) | S1, S5 | High | Yes (backend tests in `BoardMetricsAccuracyTests`, `BoardMetricsServiceTests`, `MetricsApiTests`, `MetricsControllerAccuracyTests`) | Verify counts match manual card count |
 | V-09 | Webhook delivery on board mutation with HMAC signature verification | S1, S4 | High | Yes (78 webhook tests across 9 files) | Configure real webhook endpoint |
 | V-10 | SignalR realtime: card created on tab A appears on tab B without refresh | S1, S4 | High | Yes (`smoke.spec.ts` realtime test) | Multi-browser manual check |
 
