@@ -116,6 +116,13 @@ test.describe('TST09 Chat Session Behavior', () => {
 
 test.describe('TST09 Adversarial Chat Inputs', () => {
   test('SC-011: XSS payload is escaped, not executed', async ({ page }) => {
+    // Register dialog handler BEFORE any navigation to catch all dialogs
+    let dialogTriggered = false
+    page.on('dialog', async (dialog: { dismiss: () => Promise<void> }) => {
+      dialogTriggered = true
+      await dialog.dismiss()
+    })
+
     await page.goto('/workspace/automations/chat')
 
     await page.getByPlaceholder('Session title').fill(`XSS Test ${Date.now()}`)
@@ -128,14 +135,7 @@ test.describe('TST09 Adversarial Chat Inputs', () => {
     // Wait for assistant response
     await expect(page.getByText('Assistant').first()).toBeVisible()
 
-    // Verify the script tag text is visible as escaped text, not executed
-    // Check that no alert dialog was triggered (page.on('dialog') would catch it)
-    let dialogTriggered = false
-    page.on('dialog', () => {
-      dialogTriggered = true
-    })
-
-    // Give a moment for any script execution
+    // Give a moment for any deferred script execution
     await page.waitForTimeout(1000)
     expect(dialogTriggered).toBeFalsy()
 
@@ -167,17 +167,20 @@ test.describe('TST09 Adversarial Chat Inputs', () => {
   })
 
   test('SC-013: HTML injection in session title is escaped', async ({ page }) => {
+    // Register dialog handler BEFORE navigation to catch onerror-triggered alerts
+    let dialogTriggered = false
+    page.on('dialog', async (dialog: { dismiss: () => Promise<void> }) => {
+      dialogTriggered = true
+      await dialog.dismiss()
+    })
+
     await page.goto('/workspace/automations/chat')
 
     const htmlPayload = '<img src=x onerror=alert(1)>'
     await page.getByPlaceholder('Session title').fill(htmlPayload)
     await page.getByRole('button', { name: 'Create Session' }).click()
 
-    // Check no alert fires
-    let dialogTriggered = false
-    page.on('dialog', () => {
-      dialogTriggered = true
-    })
+    // Allow time for any onerror handlers to fire
     await page.waitForTimeout(1000)
     expect(dialogTriggered).toBeFalsy()
 

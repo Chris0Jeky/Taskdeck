@@ -35,39 +35,9 @@ async function createBoardScoped(
   })
 }
 
-async function createBoardWithCard(
-  request: APIRequestContext,
-  auth: AuthResult,
-  seed: string,
-): Promise<{ boardId: string; cardTitle: string }> {
-  const boardId = await createBoardScoped(request, auth, seed)
-  const cardTitle = `Existing Card ${seed}`
-
-  // List columns to find the first column
-  const colResponse = await request.get(
-    `${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/columns`,
-    { headers: { Authorization: `Bearer ${auth.token}` } },
-  )
-  await assertOk(colResponse, 'list columns')
-  const columns = (await colResponse.json()) as Array<{ id: string }>
-  const columnId = columns[0]?.id
-  if (!columnId) throw new Error('No column found on board')
-
-  // Create a card
-  const cardResponse = await request.post(
-    `${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`,
-    {
-      headers: { Authorization: `Bearer ${auth.token}` },
-      data: { title: cardTitle, columnId },
-    },
-  )
-  await assertOk(cardResponse, 'create card')
-
-  return { boardId, cardTitle }
-}
-
 async function createChatSessionAndSendProposal(
-  page: ReturnType<typeof test.info>['_'] extends never ? never : Awaited<ReturnType<typeof import('@playwright/test').chromium.launch>>['newPage'] extends () => Promise<infer P> ? P : never,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  page: any,
   request: APIRequestContext,
   auth: AuthResult,
   boardId: string,
