@@ -210,8 +210,12 @@ Evidence: Screenshots `evidence/logs-source-filter.png` and `evidence/logs-empty
 
 **Step 3.4: Correlation ID lookup**
 
-1. Enter the correlation ID from Step 2.2 (the run ID or correlation ID from the health.check output).
-2. Click "Refresh".
+1. Obtain a correlation ID for the health.check run from Step 2.2 using one of these methods:
+   - In browser DevTools Network tab, inspect the `POST /api/ops/cli/run` request and copy the `X-Request-Id` response header or the `correlationId` from the response body.
+   - Or switch to Logs tab, do a broad refresh, find a row from the health.check run, and copy the correlation ID from that row.
+   Note: The "Last run ID" displayed in the CLI output is a run ID, not the correlation ID -- do not use it here.
+2. Enter that correlation ID in the correlation ID filter.
+3. Click "Refresh".
 
 Checkpoint:
 - [ ] Entries filtered to only those matching the correlation ID

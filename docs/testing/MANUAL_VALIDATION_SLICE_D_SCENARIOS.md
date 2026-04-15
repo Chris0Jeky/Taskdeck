@@ -162,13 +162,13 @@ This slice covers Section F of the parent checklist and extends it with edge cas
 
 | Step | Action | Expected Outcome |
 |---|---|---|
-| 1 | Run a `health.check` from CLI tab | Note the "Last run ID" displayed |
-| 2 | Switch to Logs tab | Logs panel loads |
-| 3 | Enter the correlation ID from the command run output into the correlation ID field | ID pasted |
+| 1 | Run a `health.check` from CLI tab | Command executes; "Last run ID" is displayed |
+| 2 | Obtain the correlation ID using one of: (a) open DevTools Network tab, inspect the `POST /api/ops/cli/run` response, and copy the `correlationId` field or the `X-Request-Id` header; or (b) switch to Logs tab, do a broad refresh, and copy the correlation ID from a matching row | Correlation ID is available (note: this is different from the run ID) |
+| 3 | In the Logs tab, paste the correlation ID into the correlation ID field | ID pasted |
 | 4 | Click "Refresh" | Entries filtered to only those matching the correlation ID |
 | 5 | Verify all returned entries share the same correlation ID | Correlation ID column matches on every row |
 
-**Evidence:** Screenshot of correlation-filtered log entries.
+**Evidence:** Screenshot of correlation-filtered log entries, plus the source showing where the correlation ID was obtained.
 
 ---
 
