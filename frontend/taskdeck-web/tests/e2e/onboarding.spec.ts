@@ -68,11 +68,6 @@ test('setup dialog should require a board name before creation', async ({ page }
   // The Create Board button should be disabled or clicking it should not navigate
   const createButton = setupDialog.getByRole('button', { name: 'Create Board' })
   await expect(createButton).toBeDisabled()
-    // If not disabled, clicking with empty name should not navigate away
-    await createButton.click()
-    // Dialog should remain open (name validation failed)
-    await expect(setupDialog).toBeVisible()
-  }
 })
 
 // --- Starter pack template creates board with expected structure ---
