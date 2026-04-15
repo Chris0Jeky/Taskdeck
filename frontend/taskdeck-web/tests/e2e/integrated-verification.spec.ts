@@ -16,10 +16,9 @@
  */
 
 import { expect, test } from '@playwright/test'
-import { API_BASE_URL, API_ORIGIN, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
-import { createCaptureItem, waitForProposalCreated, triageCaptureItem, waitForCardWithTitle, listBoardCards } from './support/captureFlow'
-import { assertOk } from './support/httpAsserts'
+import { createCaptureItem, waitForProposalCreated, waitForCardWithTitle, listBoardCards } from './support/captureFlow'
 
 let auth: AuthResult
 
@@ -33,8 +32,6 @@ test('V-02: register to create board to capture to triage to approve to board st
   test.setTimeout(90_000)
 
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
-  const boardName = `Integration Board ${seed}`
-  const columnName = `Backlog ${seed}`
   const cardTitle = `Integration card ${seed}`
   const captureText = `- [ ] ${cardTitle}`
 
