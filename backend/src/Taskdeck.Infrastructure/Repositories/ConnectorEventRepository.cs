@@ -16,6 +16,14 @@ public sealed class ConnectorEventRepository : Repository<ConnectorEvent>, IConn
         int limit = 20,
         CancellationToken cancellationToken = default)
     {
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.ConnectorEvents
+                .FromSqlInterpolated(
+                    $"SELECT * FROM ConnectorEvents WHERE ConnectorId = {connectorId} ORDER BY CreatedAt DESC LIMIT {limit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await _context.ConnectorEvents
             .Where(e => e.ConnectorId == connectorId)
             .OrderByDescending(e => e.CreatedAt)

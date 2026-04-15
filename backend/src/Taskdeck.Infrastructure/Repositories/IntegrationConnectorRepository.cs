@@ -15,6 +15,14 @@ public sealed class IntegrationConnectorRepository : Repository<IntegrationConne
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.IntegrationConnectors
+                .FromSqlInterpolated(
+                    $"SELECT * FROM IntegrationConnectors WHERE UserId = {userId} ORDER BY CreatedAt DESC")
+                .ToListAsync(cancellationToken);
+        }
+
         return await _context.IntegrationConnectors
             .Where(c => c.UserId == userId)
             .OrderByDescending(c => c.CreatedAt)
