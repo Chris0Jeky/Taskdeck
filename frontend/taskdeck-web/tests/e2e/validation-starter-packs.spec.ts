@@ -195,12 +195,15 @@ test.describe('TST11-SC-002: Dry-run preview without mutation', () => {
     expect(Array.isArray(result.actions)).toBeTruthy()
     expect(result.actions.length).toBeGreaterThan(0)
 
-    // Board should be unchanged
+    // Board should be unchanged -- no columns, labels, or cards created
     const columns = await getColumns(request, boardId)
     expect(columns).toHaveLength(0)
 
     const labels = await getLabels(request, boardId)
     expect(labels).toHaveLength(0)
+
+    const cards = await getCards(request, boardId)
+    expect(cards).toHaveLength(0)
   })
 })
 
@@ -313,9 +316,20 @@ test.describe('TST11-SC-005: Conflict detection with existing content', () => {
       },
     )
 
-    // 409 Conflict or 200 with hasBlockingConflicts
+    // Controller returns 409 Conflict when non-dry-run has blocking conflicts
+    const applyStatus = applyResponse.status()
+    expect([200, 409]).toContain(applyStatus)
+
     const applyResult = await applyResponse.json()
-    expect(applyResult.applied).toBeFalsy()
+    expect(applyResult.applied).toBe(false)
+
+    if (applyStatus === 200) {
+      // If 200, the result must explicitly flag blocking conflicts
+      expect(applyResult.hasBlockingConflicts).toBe(true)
+    }
+    // Either way, conflicts array must be populated
+    expect(Array.isArray(applyResult.conflicts)).toBe(true)
+    expect(applyResult.conflicts.length).toBeGreaterThan(0)
   })
 })
 
@@ -340,13 +354,14 @@ test.describe('TST11-SC-006: Dry-run conflict severity', () => {
     expect(response.ok()).toBeTruthy()
     const result = await response.json()
 
+    expect(result.conflicts.length).toBeGreaterThan(0)
+
     for (const conflict of result.conflicts) {
       expect(conflict.code).toBeTruthy()
       expect(conflict.message).toBeTruthy()
-      // Severity should be present (blocking or warning)
-      if (conflict.severity) {
-        expect(['blocking', 'warning']).toContain(conflict.severity.toLowerCase())
-      }
+      // Severity MUST be present on every conflict (blocking or warning)
+      expect(conflict.severity).toBeTruthy()
+      expect(['blocking', 'warning']).toContain(conflict.severity.toLowerCase())
     }
   })
 })
