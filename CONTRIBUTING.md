@@ -125,3 +125,138 @@ fine outside PowerShell.
 | Backend API | `http://localhost:5000` |
 | Swagger | `http://localhost:5000/swagger` |
 | Docker reverse proxy | `http://localhost:8080` |
+
+---
+
+## Running Tests
+
+All commands assume you are in the repo root unless noted otherwise.
+These are the exact commands CI runs; keep them green locally before pushing.
+
+### Backend tests (xUnit)
+
+```bash
+dotnet test backend/Taskdeck.sln -c Release -m:1
+```
+
+Run a single backend test class:
+
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~MyTestClassName"
+```
+
+### Frontend checks
+
+From `frontend/taskdeck-web`:
+
+```bash
+npm run typecheck                       # vue-tsc type checking
+npm run build                           # typecheck + vite build
+npx vitest --run --reporter=verbose     # unit tests
+npx vitest --run -t "test name"         # run a single test by name
+npm run lint                            # eslint
+```
+
+On Windows PowerShell, chain with `;` and `$LASTEXITCODE` instead of `&&` (see
+the Windows section above).
+
+### End-to-end tests (Playwright)
+
+From `frontend/taskdeck-web`:
+
+```bash
+TASKDECK_E2E_DB=taskdeck.e2e.local.db npx playwright test --reporter=line
+npx playwright test tests/e2e/some-spec.spec.ts   # run a single E2E file
+```
+
+On Windows PowerShell, set the env var before the command:
+
+```powershell
+$env:TASKDECK_E2E_DB = "taskdeck.e2e.local.db"; npx playwright test --reporter=line
+```
+
+For full test operations, fixtures, and troubleshooting, see
+[docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).
+
+---
+
+## Commit Message Conventions
+
+- Use **present-tense, imperative** messages.
+  Example: `Add booking validation to application layer`.
+- Keep commits **small and focused** — avoid large mixed-topic commits.
+- **One commit per file** is the default when a change spans multiple files,
+  with a short file-specific description per commit.
+- If a single logical change must touch multiple files, keep the smallest
+  practical commit set and briefly explain why in the commit message body.
+- **Exception:** pure file move/rename batches with no content changes may land
+  as a single grouped commit — that is preferred.
+
+Examples of good commit messages:
+
+```
+Add CONTRIBUTING.md with prerequisites and setup
+Link CONTRIBUTING from README
+Fix null reference in ReviewController.Approve
+```
+
+See `AGENTS.md` (Commit & Pull Request Guidelines) for the authoritative rules.
+
+---
+
+## Pull Request Process and Review Expectations
+
+1. **Pick or file an issue first** for anything beyond a trivial fix. This
+   keeps scope explicit and avoids wasted effort.
+2. **Branch off `main`.** Name branches descriptively
+   (e.g. `docs/doc-06-contributing-md`, `fix/review-null-ref`).
+3. **Keep PRs scoped and small.** If you find a tangential refactor, open a
+   follow-up PR rather than folding it in.
+4. **Include verification evidence** in the PR description:
+   - Commands run (tests, lint, typecheck) and their results.
+   - Screenshots or short clips for user-visible UI changes.
+5. **Link the issue** the PR closes or addresses (e.g. `Closes #873`).
+6. **Wait for CI.** The required gate is `ci-required.yml`. PRs touching CI
+   workflows (`.github/workflows/`), infrastructure (`deploy/`, `scripts/`),
+   or project files (`*.csproj`) also trigger CI Extended — that must be green
+   before merging those PRs.
+7. **Self-review the diff** before requesting review. A deliberate
+   reviewer-style pass on your own PR catches most avoidable feedback.
+
+The full definition of done, required output format, and review protocol live
+in [AGENTS.md](AGENTS.md). Read it before your first PR.
+
+---
+
+## Good First Issues
+
+New to the repo? Start here:
+
+- Browse [`good first issue`](https://github.com/Chris0Jeky/Taskdeck/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  issues when any are open. These are scoped to be approachable without deep
+  architecture context.
+- Otherwise, look at open
+  [`Priority III`](https://github.com/Chris0Jeky/Taskdeck/issues?q=is%3Aissue+is%3Aopen+label%3A%22Priority+III%22)
+  issues — medium-priority work that is well-defined but not urgent, which
+  makes it a good fit for a first contribution.
+- Docs-labeled issues (e.g. `docs`) are also a low-risk entry point and help
+  you learn the repo layout while contributing real value.
+
+If you are unsure whether an issue is a good fit, comment on it and ask before
+starting — we would rather redirect you early than have you burn time on
+something that has shifted scope.
+
+---
+
+## Where to Go Next
+
+- [AGENTS.md](AGENTS.md) — full contributor protocol and definition of done
+- [README.md](README.md) — product overview and quickstart
+- [docs/STATUS.md](docs/STATUS.md) — current shipped reality (read before non-trivial changes)
+- [docs/IMPLEMENTATION_MASTERPLAN.md](docs/IMPLEMENTATION_MASTERPLAN.md) — delivery history and roadmap
+- [docs/GOLDEN_PRINCIPLES.md](docs/GOLDEN_PRINCIPLES.md) — stable invariants
+- [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) — test operations reference
+- [docs/START_HERE.md](docs/START_HERE.md) — guided first-15-minutes walkthrough
+- [docs/decisions/INDEX.md](docs/decisions/INDEX.md) — architecture decision records
+
+Thanks for contributing.
