@@ -43,7 +43,6 @@ export function reportToSentry(err: unknown, hint?: unknown): boolean {
 /** Install `app.config.errorHandler` as a last-resort logger/reporter. */
 export function installVueErrorHandler(app: App): void {
   app.config.errorHandler = (err, _instance, info) => {
-    // eslint-disable-next-line no-console
     console.error('[vue:errorHandler]', err, info)
     reportToSentry(err, { info })
   }
@@ -59,7 +58,6 @@ type DisposeFn = () => void
 export function installWindowErrorListeners(target: Window = window): DisposeFn {
   const onRejection = (event: PromiseRejectionEvent) => {
     const reason = event?.reason
-    // eslint-disable-next-line no-console
     console.error('[window:unhandledrejection]', reason)
     reportToSentry(reason, { source: 'unhandledrejection' })
   }
@@ -67,7 +65,6 @@ export function installWindowErrorListeners(target: Window = window): DisposeFn 
   const onError = (event: ErrorEvent) => {
     // Prefer event.error (the real Error instance) over event.message.
     const err = event?.error ?? event?.message ?? event
-    // eslint-disable-next-line no-console
     console.error('[window:error]', err)
     reportToSentry(err, { source: 'window.error' })
   }

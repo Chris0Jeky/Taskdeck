@@ -96,7 +96,6 @@ onErrorCaptured((err, _instance, info) => {
   crashInfo.value = info
 
   // Always log so errors are not silently swallowed.
-  // eslint-disable-next-line no-console
   console.error('[ErrorBoundary] caught error', err, info)
 
   // Forward to Sentry if the host page has installed it (no hard dependency).
