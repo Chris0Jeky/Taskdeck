@@ -209,3 +209,109 @@ Bound to `AbuseDetectionSettings`.
 | `AbuseDetection:BlockedSignalThreshold` | `int` | `10` | Signal count to escalate from Restricted to Blocked. | No |
 | `AbuseDetection:EvaluationWindowMinutes` | `int` | `60` | Sliding window, in minutes, for signal accumulation. | No |
 
+## Workers
+
+### `Workers`
+
+Bound to `WorkerSettings`. Registered in
+`WorkerRegistration.AddTaskdeckWorkers` and consumed by the hosted services
+`LlmQueueToProposalWorker`, `ProposalHousekeepingWorker`, and
+`OutboundWebhookDeliveryWorker`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Workers:QueuePollIntervalSeconds` | `int` | `5` | Poll interval for the LLM queue worker. | No |
+| `Workers:MaxBatchSize` | `int` | `5` | Max queue items claimed per tick. | No |
+| `Workers:MaxConcurrency` | `int` | `2` | Max concurrent worker slots. | No |
+| `Workers:MaxRetries` | `int` | `3` | Max retries before a queue item is failed. | No |
+| `Workers:RetryBackoffSeconds` | `int[]` | `[10, 30, 90]` | Delay per retry attempt. Length should be at least `MaxRetries`. | No |
+| `Workers:ProcessingLeaseSeconds` | `int` | `120` | Visibility lease held by a worker while processing a queue item. | No |
+| `Workers:ProposalExpiryMinutes` | `int` | `1440` (24h) | How long pending proposals remain before being marked expired by the housekeeping worker. | No |
+| `Workers:EnableAutoQueueProcessing` | `bool` | `true` | When false, the background queue worker is registered but does not pull work (manual/CI scenarios). | No |
+
+### `OutboundWebhooks:Security`
+
+Bound to `OutboundWebhookSecuritySettings`. In Development the
+`AllowLocalhostEndpoints` flag defaults to `true` when unset, so local
+webhook testing works without extra config
+(`WorkerRegistration.AddTaskdeckWorkers`).
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `OutboundWebhooks:Security:AllowLocalhostEndpoints` | `bool` | `false` in non-Development; `true` in Development when unset | When false, the outbound webhook HTTP handler refuses to connect to localhost/loopback targets. Defense against SSRF from user-supplied URLs. | No |
+
+## CORS and HTTP
+
+### `Cors`
+
+Consumed directly from configuration by `CorsRegistration.AddTaskdeckCors`.
+Values may be supplied as a JSON array or a comma-separated string. Each
+origin must be an absolute `http` or `https` URL (host + scheme), otherwise
+startup fails with `InvalidOperationException`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Cors:AllowedOrigins` | `string[]` | `["http://localhost:5173", "http://localhost:5174"]` (fallback when unset in production) | Production CORS origins. Used only outside the Development environment. | Recommended in production |
+| `Cors:DevelopmentAllowedOrigins` | `string[]` | `[]` | Additional origins permitted only in Development. Merged with the localhost defaults and `http://localhost:4173`, `http://localhost:5001`. | No |
+
+### `ForwardedHeaders`
+
+Consumed directly by `PipelineConfiguration.BuildForwardedHeadersOptions`.
+If both `KnownProxies` and `KnownNetworks` are empty, forwarded-header
+handling is left disabled and a warning is logged when rate limiting is
+enabled.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `ForwardedHeaders:ForwardLimit` | `int` | `1` | Number of proxy hops whose headers are honored. Must be a positive integer when set. | No |
+| `ForwardedHeaders:KnownProxies` | `string[]` (IPs) | `[]` | IP addresses of trusted reverse proxies. Invalid addresses throw on startup. | Recommended behind a proxy |
+| `ForwardedHeaders:KnownNetworks` | `string[]` (CIDR) | `[]` | Trusted networks in CIDR form (e.g. `10.0.0.0/24`). Invalid CIDR throws on startup. | Recommended behind a proxy |
+
+### `AllowedHosts`
+
+ASP.NET Core built-in. Defaults to `*` in `appsettings.json`. Restrict to
+your deployed host name(s) for defense-in-depth against host-header attacks.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `AllowedHosts` | `string` | `*` | Semicolon-separated list of allowed `Host` header values. `*` accepts all. | No |
+
+## Rate limiting
+
+Bound to `RateLimitingSettings`. Consumed by
+`PipelineConfiguration.ConfigureTaskdeckPipeline` and the
+`AddTaskdeckRateLimiting` extension. `Enabled = false` short-circuits the
+middleware and `UseRateLimiter` is not added. Each policy is a
+`RateLimitPolicySettings { PermitLimit, WindowSeconds }` pair. **Production
+defaults** come from `RateLimitingSettings` constructors; the
+`appsettings.json` file overrides `AuthPerIp`, `HotPathPerUser`, and
+`CaptureWritePerUser`. `appsettings.Development.json` raises those limits.
+
+| Key | Type | Default (prod, from `appsettings.json`) | Development override | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `RateLimiting:Enabled` | `bool` | `true` | `true` | Master switch. | No |
+| `RateLimiting:AuthPerIp:PermitLimit` | `int` | `20` | `120` | Permits per window for the per-IP auth policy. | No |
+| `RateLimiting:AuthPerIp:WindowSeconds` | `int` | `60` | `60` | Window length in seconds. | No |
+| `RateLimiting:HotPathPerUser:PermitLimit` | `int` | `30` | `120` | Permits per window for the per-user hot-path policy. | No |
+| `RateLimiting:HotPathPerUser:WindowSeconds` | `int` | `60` | `60` | Window length in seconds. | No |
+| `RateLimiting:CaptureWritePerUser:PermitLimit` | `int` | `10` | `60` | Permits per window for capture writes per user. | No |
+| `RateLimiting:CaptureWritePerUser:WindowSeconds` | `int` | `60` | `60` | Window length in seconds. | No |
+| `RateLimiting:NoteImportPerUser:PermitLimit` | `int` | `5` (class default; not overridden in `appsettings.json`) | same | Per-user permits for note-import endpoints. Lower because each import may create up to 50 captures. | No |
+| `RateLimiting:NoteImportPerUser:WindowSeconds` | `int` | `60` | same | Window length in seconds. | No |
+| `RateLimiting:McpPerApiKey:PermitLimit` | `int` | `60` (class default) | same | Per-API-key permits for the MCP HTTP transport. | No |
+| `RateLimiting:McpPerApiKey:WindowSeconds` | `int` | `60` (class default) | same | Window length in seconds. | No |
+
+## Cache
+
+Bound to `CacheSettings`. Consumed by
+`Taskdeck.Infrastructure.DependencyInjection.AddCacheService`. Unknown
+provider values fall back to `InMemory` with a warning log.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Cache:Provider` | `string` | `InMemory` | One of `InMemory`, `Redis`, or `None`. Case-insensitive. | No |
+| `Cache:RedisConnectionString` | `string?` | `null` | StackExchange.Redis connection string. When `Provider = Redis` and this is blank, the service falls back to `InMemory`. | Only for `Cache:Provider = Redis` |
+| `Cache:KeyPrefix` | `string` | `td` | Global key prefix used by cache entries. | No |
+| `Cache:BoardListTtlSeconds` | `int` | `60` | TTL for the board-list cache entries, in seconds. | No |
+
+
