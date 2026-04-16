@@ -12,6 +12,7 @@
  */
 import { onErrorCaptured, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { reportToSentry } from '../utils/errorReporting'
 
 const props = withDefaults(
   defineProps<{
@@ -28,7 +29,10 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-const crashedError = ref<unknown>(null)
+// Track crash state with an explicit boolean so we do not collide with
+// descendants that throw `null`/`undefined` — Vue errors can be any value.
+const hasCrashed = ref(false)
+const crashedError = ref<unknown>(undefined)
 const crashInfo = ref<string>('')
 
 // useRoute/useRouter can be undefined in isolated unit tests where no router
@@ -69,7 +73,8 @@ function getStack(err: unknown): string | null {
 }
 
 function reset() {
-  crashedError.value = null
+  hasCrashed.value = false
+  crashedError.value = undefined
   crashInfo.value = ''
   emit('reset')
 }
@@ -92,21 +97,17 @@ function goHome() {
 }
 
 onErrorCaptured((err, _instance, info) => {
+  hasCrashed.value = true
   crashedError.value = err
   crashInfo.value = info
 
   // Always log so errors are not silently swallowed.
   console.error('[ErrorBoundary] caught error', err, info)
 
-  // Forward to Sentry if the host page has installed it (no hard dependency).
-  const sentry = (globalThis as unknown as { Sentry?: { captureException?: (e: unknown) => void } }).Sentry
-  if (sentry && typeof sentry.captureException === 'function') {
-    try {
-      sentry.captureException(err)
-    } catch {
-      // Never let reporting failures bubble out of the boundary.
-    }
-  }
+  // Forward to Sentry via the centralized utility so the lifecycle `info`
+  // string is preserved and reporting behavior stays consistent across the
+  // app. `reportToSentry` never throws.
+  reportToSentry(err, { source: 'ErrorBoundary', info })
 
   emit('error', err, info)
 
@@ -120,7 +121,7 @@ if (route) {
   watch(
     () => route.fullPath,
     (next, prev) => {
-      if (props.resetOnRouteChange && crashedError.value !== null && next !== prev) {
+      if (props.resetOnRouteChange && hasCrashed.value && next !== prev) {
         reset()
       }
     },
@@ -140,7 +141,7 @@ const isDev = (() => {
 </script>
 
 <template>
-  <slot v-if="crashedError === null" />
+  <slot v-if="!hasCrashed" />
   <div
     v-else
     class="td-error-boundary"
