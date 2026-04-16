@@ -6,8 +6,6 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Tools;
 using Taskdeck.Domain.Agents;
-using Taskdeck.Domain.Connectors;
-using Taskdeck.Infrastructure.Connectors;
 
 namespace Taskdeck.Api.Extensions;
 
@@ -89,16 +87,7 @@ public static class ApplicationServiceRegistration
         services.AddSingleton<IBoardPresenceTracker, InMemoryBoardPresenceTracker>();
         services.AddSingleton<RedisBackplaneHealthCheck>();
 
-        // Connector provider framework
-        services.AddHttpClient<GitHubConnectorProvider>(client =>
-        {
-            client.DefaultRequestHeaders.Add("User-Agent", "Taskdeck-Connector/1.0");
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
-        services.AddSingleton<IConnectorProvider>(sp =>
-            sp.GetRequiredService<GitHubConnectorProvider>());
-        services.AddSingleton<IConnectorProviderRegistry>(sp =>
-            new ConnectorProviderRegistry(sp.GetServices<IConnectorProvider>()));
+        // Connector services (provider registration is in Infrastructure DI)
         services.AddScoped<ConnectorExecutionService>();
         services.AddScoped<IConnectorCredentialService, ConnectorCredentialService>();
 
