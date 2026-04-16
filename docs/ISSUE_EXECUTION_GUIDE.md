@@ -386,6 +386,19 @@ Maintainability hotspot refactor wave (analysis-driven, all delivered):
 4. ~~`#341`~~ TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through (**delivered** `#741`)
 5. Closed historical issues remain `Priority V` for archival consistency.
 
+### PROD-00 Production-Readiness Wave (2026-04-16, delivered)
+
+Tracker: `#881` (PROD-00). Delivered via eight parallel PRs on 2026-04-16 with two rounds of adversarial review each:
+
+- ~~`#853`~~ SEC-28 SECURITY.md vulnerability disclosure policy (**delivered** `#884`)
+- ~~`#873`~~ DOC-06 CONTRIBUTING.md external-contributor onramp (**delivered** `#885`)
+- ~~`#874`~~ DOC-07 CONFIGURATION_REFERENCE.md appsettings schema (**delivered** `#887`)
+- ~~`#845`~~ PERF-09 gzip/brotli response compression (**delivered** `#886`; BREACH-aware level downgrade in round-2)
+- ~~`#846`~~ PERF-10 composite DB indexes for AuditLog and Card (**delivered** `#888`; migration `20260416161303_AddPerfIndexes`; documented AC deviations: uses polymorphic `EntityId` instead of aspirational `BoardId`; `IX_LlmRequests_UserId_Status` was pre-existing)
+- ~~`#866`~~ OPS-29 Docker container hardening — non-root, healthchecks, resource limits (**delivered** `#889`; round-2 IPv6/IPv4 healthcheck fix and `setpriv` entrypoint for upgrade-safe volume ownership)
+- ~~`#854`~~ FE-15 HTTP retry with exponential backoff (**delivered** `#890`; round-2 introduced `skipRetry` opt-out and fixed `parseRetryAfter('-5')` letter-guard)
+- ~~`#852`~~ FE-14 Vue error boundary for crash prevention (**delivered** `#891`; round-2 replaced null-sentinel with `hasCrashed` boolean; outer + inner `ErrorBoundary` three-layer pattern)
+
 ## Per-Issue Delivery Checklist
 
 1. Branch from latest `main`.
