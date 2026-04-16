@@ -53,13 +53,15 @@ Source files used to build this reference:
   - [`ExportImport`](#exportimport)
   - [`FirstRun`](#firstrun)
   - [`DevelopmentSandbox`](#developmentsandbox)
+- [MCP server](#mcp-server)
 - [Logging](#logging)
 - [Environment variable overrides](#environment-variable-overrides)
 - [Docker Compose environment variables](#docker-compose-environment-variables)
 
 ## Conventions
 
-- **Type** columns use C# types (`string`, `int`, `bool`, `double`, `int[]`).
+- **Type** columns use C# types (`string`, `int`, `long`, `bool`, `double`,
+  `int[]`, `string[]`, `object`).
 - **Default** is the value applied when the key is absent from every
   configuration source. Defaults are sourced from the settings class
   constructor unless noted otherwise.
@@ -84,11 +86,17 @@ Registered in
 `AuthenticationRegistration.AddTaskdeckAuthentication`.
 
 If `SecretKey` is missing, shorter than 32 characters, or `Issuer`/`Audience`
-is blank, **JWT authentication is not registered** and all authenticated
-endpoints return 401 (`AuthenticationRegistration.cs`). In packaged
-non-development runs, `FirstRunBootstrapper.EnsureJwtSecret` generates a
-random 32-byte base64 secret into `appsettings.local.json` when the key is
-missing or equal to the development placeholder.
+is blank, `AddTaskdeckAuthentication` returns without registering the
+authentication services (`AuthenticationRegistration.cs`). Because
+`PipelineConfiguration.ConfigureTaskdeckPipeline` always calls
+`app.UseAuthentication()`, this results in a startup failure (the pipeline
+cannot resolve the missing authentication services) rather than authenticated
+endpoints simply returning 401. In packaged non-development runs,
+`FirstRunBootstrapper.EnsureJwtSecret` generates a random 32-byte base64
+secret into `appsettings.local.json` when the key is missing or equal to the
+development placeholder, so this startup failure is normally only reached
+when operators explicitly set an invalid value (for example, deleting the
+Development placeholder without providing a replacement).
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
@@ -155,11 +163,11 @@ default and the only one that ships enabled. See
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
 | `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Override for compatible gateways. | No |
 | `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
-| `Llm:OpenAi:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the OpenAI provider. Values `<= 0` fall back to 30. | No |
+| `Llm:OpenAi:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the OpenAI provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateOpenAiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
 | `Llm:Gemini:ApiKey` | `string` | `""` | Gemini API key. Required to use the Gemini provider. Store as a secret. | Only for `Llm:Provider = Gemini` |
 | `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
 | `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |
-| `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Values `<= 0` fall back to 30. | No |
+| `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateGeminiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
 
 ### `LlmToolCalling`
 
@@ -437,6 +445,18 @@ sandbox is force-disabled outside the `Development` environment
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. | No |
+
+## MCP server
+
+Read directly from configuration by
+`Taskdeck.Infrastructure.Mcp.StdioUserContextProvider`. Only consulted when
+the API is launched as a local MCP server over stdio (`--mcp` flag, default
+stdio transport). HTTP MCP transport (`--mcp --transport http`) uses the API
+key → user mapping via `HttpUserContextProvider` and does not read these keys.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `McpServer:DefaultUserId` | `string` (GUID) | unset | User ID used to identify the MCP stdio caller. When unset, the provider falls back to the first local user in the database — which is safe for single-user installs but risks routing actions to the wrong account in multi-user databases. When set to a GUID that no longer exists, the provider logs a warning and falls back to the first local user. | Recommended for multi-user installs running MCP stdio |
 
 ## Logging
 
