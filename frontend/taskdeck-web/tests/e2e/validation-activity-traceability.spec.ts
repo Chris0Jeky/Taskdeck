@@ -249,9 +249,10 @@ test.describe('TST11-SC-023: Activity view mode switching', () => {
     await page.goto('/workspace/activity')
     await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
 
-    // Verify the hero actions are present
-    await expect(page.getByRole('button', { name: 'Open Review' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Open Boards' })).toBeVisible()
+    // Verify the hero actions are present (use .first() since the button also
+    // appears inside the WorkspaceHelpCallout actions slot)
+    await expect(page.getByRole('button', { name: 'Open Review' }).first()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open Boards' }).first()).toBeVisible()
 
     // Locate the mode selector dropdown
     const modeSelector = page.locator('select[aria-label="Activity view mode"]')
