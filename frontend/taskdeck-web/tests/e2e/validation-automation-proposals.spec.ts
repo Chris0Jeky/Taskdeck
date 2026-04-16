@@ -240,13 +240,12 @@ test.describe('TST09 Proposal Lifecycle', () => {
     )
     await assertOk(approve1, 'first approve')
 
-    // Second approve — should fail
+    // Second approve — should return 409 (InvalidOperation: already approved)
     const approve2 = await request.post(
       `${API_BASE_URL}/automation/proposals/${encodeURIComponent(proposalId)}/approve`,
       { headers: { Authorization: `Bearer ${auth.token}` } },
     )
-    expect(approve2.status()).toBeGreaterThanOrEqual(400)
-    expect(approve2.status()).toBeLessThan(500)
+    expect(approve2.status()).toBe(409)
   })
 
   test('SC-019: double-execute prevention', async ({ request }) => {
@@ -309,6 +308,17 @@ test.describe('TST09 Proposal Lifecycle', () => {
     const afterSecondExec = await fetchProposal(request, auth.token, proposalId)
     const appliedStatus = String(afterSecondExec.status)
     expect(appliedStatus).toMatch(/applied|3/i)
+
+    // Verify board mutations were not duplicated — card count should match
+    // what the first execute created (idempotent re-execute must be a no-op)
+    const cardsAfter = await request.get(
+      `${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    await assertOk(cardsAfter, 'list cards after double-execute')
+    const cardList = (await cardsAfter.json()) as Array<{ title: string }>
+    const matchingCards = cardList.filter((c) => c.title.includes(`DoubleExec Card ${seed}`))
+    expect(matchingCards).toHaveLength(1)
   })
 
   test('SC-020: execute without Idempotency-Key returns 400', async ({ request }) => {
