@@ -61,8 +61,8 @@ public class IntegrationRegistryService : IIntegrationRegistryService
         CancellationToken cancellationToken = default)
     {
         var connectors = await _connectorRepository.GetByUserIdAsync(userId, cancellationToken);
-        var dtos = connectors.Select(MapToDto).ToList() as IReadOnlyList<IntegrationConnectorDto>;
-        return Result.Success(dtos);
+        var dtos = connectors.Select(MapToDto).ToList();
+        return Result.Success<IReadOnlyList<IntegrationConnectorDto>>(dtos);
     }
 
     public async Task<Result<IntegrationConnectorDetailDto>> GetConnectorAsync(
@@ -75,7 +75,7 @@ public class IntegrationRegistryService : IIntegrationRegistryService
             return Result.Failure<IntegrationConnectorDetailDto>(ErrorCodes.NotFound, "Connector not found.");
 
         var events = await _eventRepository.GetRecentByConnectorIdAsync(connectorId, 20, cancellationToken);
-        var recentEvents = events.Select(MapToEventDto).ToList() as IReadOnlyList<ConnectorEventDto>;
+        var recentEvents = events.Select(MapToEventDto).ToList();
 
         return Result.Success(MapToDetailDto(connector, recentEvents));
     }
@@ -95,8 +95,8 @@ public class IntegrationRegistryService : IIntegrationRegistryService
             if (dto.Name != null)
                 connector.UpdateName(dto.Name);
 
-            if (dto.Configuration != null)
-                connector.UpdateConfiguration(dto.Configuration);
+            // Always update configuration (null means "clear it")
+            connector.UpdateConfiguration(dto.Configuration);
 
             await _connectorRepository.UpdateAsync(connector, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
