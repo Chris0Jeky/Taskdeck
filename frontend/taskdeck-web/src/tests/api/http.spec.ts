@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import MockAdapter from 'axios-mock-adapter'
+import axios from 'axios'
 
 // ─── JWT helpers ────────────────────────────────────────────────────────────
 
@@ -245,7 +246,11 @@ describe('http interceptors (#725)', () => {
       })
       mock.onGet('/test').reply(500, { message: 'Internal Server Error' })
 
-      await expect(http.get('/test')).rejects.toThrow()
+      // `skipRetry: true` opts out of the retry interceptor (#854). Without
+      // it a 500 would trigger 3 retries with 1s/2s/4s backoffs and blow past
+      // the default 5s vitest timeout. Retry behaviour is covered by the
+      // dedicated `retry interceptor (#854)` suite below.
+      await expect(http.get('/test', { skipRetry: true })).rejects.toThrow()
 
       expect(clearSpy).not.toHaveBeenCalled()
       expect(window.location.href).toBe('')
@@ -279,7 +284,8 @@ describe('http interceptors (#725)', () => {
       vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
       mock.onGet('/test').networkError()
 
-      await expect(http.get('/test')).rejects.toThrow('Network Error')
+      // skipRetry avoids the 1s+2s+4s retry path (see 500 test above).
+      await expect(http.get('/test', { skipRetry: true })).rejects.toThrow('Network Error')
     })
 
     it('does not clear storage or redirect on network error', async () => {
@@ -292,7 +298,7 @@ describe('http interceptors (#725)', () => {
       })
       mock.onGet('/test').networkError()
 
-      await expect(http.get('/test')).rejects.toThrow()
+      await expect(http.get('/test', { skipRetry: true })).rejects.toThrow()
 
       expect(clearSpy).not.toHaveBeenCalled()
       expect(window.location.href).toBe('')
@@ -306,7 +312,7 @@ describe('http interceptors (#725)', () => {
       vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
       mock.onGet('/test').timeout()
 
-      await expect(http.get('/test')).rejects.toThrow()
+      await expect(http.get('/test', { skipRetry: true })).rejects.toThrow()
     })
   })
 
@@ -347,15 +353,27 @@ describe('http interceptors (#725)', () => {
     })
 
     // Drive the retry loop: advance fake timers until axios-mock-adapter has
-    // seen `expectedRequests` total requests (or until we time out). Works
-    // whether delays are 1s, 2s, 4s, Retry-After, etc.
-    async function drainRetries(expectedRequests: number, options: { maxTicks?: number; tickMs?: number } = {}) {
+    // seen `expectedRequests` of the given method (default GET), or throw an
+    // explicit error if not reached within the budget. Throwing prevents
+    // silent hangs (Copilot feedback on PR #890) — a stalled retry loop now
+    // fails fast at drainRetries rather than waiting for the outer test
+    // timeout.
+    async function drainRetries(
+      expectedRequests: number,
+      options: { maxTicks?: number; tickMs?: number; method?: keyof typeof mock.history } = {},
+    ) {
       const maxTicks = options.maxTicks ?? 200
       const tickMs = options.tickMs ?? 100
+      const method = options.method ?? 'get'
+      const seen = () => mock.history[method].length
       for (let i = 0; i < maxTicks; i++) {
-        if (mock.history.get.length >= expectedRequests) return
+        if (seen() >= expectedRequests) return
         await vi.advanceTimersByTimeAsync(tickMs)
       }
+      throw new Error(
+        `drainRetries: expected ${expectedRequests} ${method.toUpperCase()} request(s) within ` +
+          `${maxTicks * tickMs}ms, observed ${seen()}`,
+      )
     }
 
     it('retries GET 500 three times then fails (4 total requests)', async () => {
@@ -412,11 +430,7 @@ describe('http interceptors (#725)', () => {
       const expectation = expect(pending).rejects.toMatchObject({
         response: { status: 500 },
       })
-      await drainRetries(4, { tickMs: 1000, maxTicks: 30 })
-      // drainRetries tracks only GET; use history.put instead for this case
-      for (let i = 0; i < 30 && mock.history.put.length < 4; i++) {
-        await vi.advanceTimersByTimeAsync(1000)
-      }
+      await drainRetries(4, { tickMs: 1000, maxTicks: 30, method: 'put' })
       await expectation
 
       expect(mock.history.put.length).toBe(4)
@@ -500,10 +514,48 @@ describe('http interceptors (#725)', () => {
       expect(mock.history.get.length).toBe(2)
     })
 
+    it('skipRetry opt-out disables the retry loop for a single request', async () => {
+      // Verifies the opt-out path used by the baseline tests above — a 500
+      // with skipRetry must reject immediately after one request, NOT after
+      // the 1s/2s/4s retry schedule.
+      mock.onGet('/once').reply(500, { error: 'boom' })
+      await expect(http.get('/once', { skipRetry: true })).rejects.toMatchObject({
+        response: { status: 500 },
+      })
+      expect(mock.history.get.length).toBe(1)
+    })
+
+    it('does not retry non-transient 5xx (501 Not Implemented)', async () => {
+      mock.onGet('/not-implemented').reply(501, { error: 'nope' })
+      await expect(http.get('/not-implemented')).rejects.toMatchObject({
+        response: { status: 501 },
+      })
+      expect(mock.history.get.length).toBe(1)
+    })
+
+    it('retries GET 408 Request Timeout', async () => {
+      mock.onGet('/timeout-status').reply(408, { error: 'timeout' })
+      const pending = http.get('/timeout-status')
+      const expectation = expect(pending).rejects.toMatchObject({
+        response: { status: 408 },
+      })
+      await drainRetries(4, { tickMs: 1000, maxTicks: 30 })
+      await expectation
+      expect(mock.history.get.length).toBe(4)
+    })
+
     it('aborts retry loop when request is cancelled mid-wait', async () => {
       mock.onGet('/slow').reply(500, { error: 'boom' })
       const controller = new AbortController()
       const pending = http.get('/slow', { signal: controller.signal })
+      // Attach the rejection expectation BEFORE we drive timers forward so
+      // the promise is already being awaited when it settles. Previously the
+      // raw `pending` sat unobserved and Vitest flagged the rejection as
+      // unhandled (PR #890 self-review finding).
+      const expectation = expect(pending).rejects.toSatisfy((err: unknown) => {
+        // Cancellation should surface via axios.isCancel, NOT the original 500.
+        return axios.isCancel(err)
+      })
 
       // Let first attempt fail and enter the retry wait.
       await vi.advanceTimersByTimeAsync(1)
@@ -513,7 +565,7 @@ describe('http interceptors (#725)', () => {
       // Advance past the backoff; should NOT re-issue.
       await vi.advanceTimersByTimeAsync(10_000)
 
-      await expect(pending).rejects.toBeDefined()
+      await expectation
       expect(mock.history.get.length).toBe(1)
     })
   })
