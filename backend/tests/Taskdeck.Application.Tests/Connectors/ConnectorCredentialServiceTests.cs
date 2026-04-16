@@ -179,4 +179,108 @@ public class ConnectorCredentialServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be("NotFound");
     }
+
+    // --- Cross-user isolation tests ---
+
+    [Fact]
+    public async Task GetCredentialAsync_UserA_CannotSeeUserB_Credential()
+    {
+        var connectorId = Guid.NewGuid();
+        var userA = Guid.NewGuid();
+        var userB = Guid.NewGuid();
+
+        // User B owns the credential
+        var credentialB = new ConnectorCredential(
+            connectorId, userB,
+            ConnectorAuthMethod.PersonalAccessToken,
+            "B's Token",
+            "encrypted-B");
+
+        // Repository returns credential only when userId matches the owner
+        _credentialRepoMock
+            .Setup(r => r.GetByConnectorIdForUserAsync(connectorId, userB, default))
+            .ReturnsAsync(credentialB);
+        _credentialRepoMock
+            .Setup(r => r.GetByConnectorIdForUserAsync(connectorId, userA, default))
+            .ReturnsAsync((ConnectorCredential?)null);
+
+        // User A tries to get User B's credential — must fail
+        var resultA = await _service.GetCredentialAsync(connectorId, userA);
+        resultA.IsSuccess.Should().BeFalse();
+        resultA.ErrorCode.Should().Be("NotFound");
+
+        // User B can see their own credential
+        var resultB = await _service.GetCredentialAsync(connectorId, userB);
+        resultB.IsSuccess.Should().BeTrue();
+        resultB.Value.Label.Should().Be("B's Token");
+    }
+
+    [Fact]
+    public async Task DeleteCredentialAsync_UserA_CannotDeleteUserB_Credential()
+    {
+        var connectorId = Guid.NewGuid();
+        var userA = Guid.NewGuid();
+        var userB = Guid.NewGuid();
+
+        var credentialB = new ConnectorCredential(
+            connectorId, userB,
+            ConnectorAuthMethod.ApiKey,
+            "B's Key",
+            "encrypted-B");
+
+        _credentialRepoMock
+            .Setup(r => r.GetByConnectorIdForUserAsync(connectorId, userB, default))
+            .ReturnsAsync(credentialB);
+        _credentialRepoMock
+            .Setup(r => r.GetByConnectorIdForUserAsync(connectorId, userA, default))
+            .ReturnsAsync((ConnectorCredential?)null);
+
+        // User A tries to delete User B's credential — must fail
+        var resultA = await _service.DeleteCredentialAsync(connectorId, userA);
+        resultA.IsSuccess.Should().BeFalse();
+        resultA.ErrorCode.Should().Be("NotFound");
+
+        // Verify no delete was called
+        _credentialRepoMock.Verify(
+            r => r.DeleteAsync(It.IsAny<ConnectorCredential>(), default),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task StoreCredentialAsync_UserA_CannotStoreOnUserB_Connector()
+    {
+        var connectorId = Guid.NewGuid();
+        var userA = Guid.NewGuid();
+        var userB = Guid.NewGuid();
+
+        // Connector belongs to User B
+        var connectorB = new IntegrationConnector(
+            "B's Connector", ConnectorType.GitHubIssueIntake, ConnectorDirection.Context, userB);
+
+        // Repository only returns connector when userId matches the owner
+        _connectorRepoMock
+            .Setup(r => r.GetByIdForUserAsync(connectorId, userB, default))
+            .ReturnsAsync(connectorB);
+        _connectorRepoMock
+            .Setup(r => r.GetByIdForUserAsync(connectorId, userA, default))
+            .ReturnsAsync((IntegrationConnector?)null);
+
+        // User A tries to store credential on User B's connector — must fail
+        var resultA = await _service.StoreCredentialAsync(
+            connectorId, userA,
+            ConnectorAuthMethod.PersonalAccessToken,
+            "Stolen Token",
+            "secret-value");
+
+        resultA.IsSuccess.Should().BeFalse();
+        resultA.ErrorCode.Should().Be("NotFound");
+
+        // Verify no credential was stored
+        _credentialRepoMock.Verify(
+            r => r.AddAsync(It.IsAny<ConnectorCredential>(), default),
+            Times.Never);
+        _unitOfWorkMock.Verify(
+            u => u.SaveChangesAsync(default),
+            Times.Never);
+    }
 }
