@@ -4,13 +4,13 @@ Taskdeck is a local-first execution workspace in active pre-1.0 development. We 
 
 ## Supported Versions
 
-Taskdeck has not yet shipped a stable release. The only supported version for security fixes is the latest commit on the `main` branch. Forks, archived branches, and prerelease builds are not supported.
+Taskdeck has not yet shipped a stable release. The latest commit on the `main` branch is the only version guaranteed to receive security fixes. The latest tagged pre-1.0 release may be reviewed on a best-effort basis, but support for that tag is not guaranteed. Older tags, forks, archived branches, and other prerelease builds are not supported.
 
 | Version | Supported |
 |---------|-----------|
-| Latest `main`           | Yes |
-| Tagged pre-1.0 releases | Best-effort (latest tag only) |
-| Older tags or forks     | No  |
+| Latest `main`                 | Yes (guaranteed) |
+| Latest tagged pre-1.0 release | Best-effort only (not guaranteed) |
+| Older tags, forks, archived branches, other prerelease builds | No |
 
 Once a 1.0 release ships, this table will be updated to reflect a formal supported-version window.
 
