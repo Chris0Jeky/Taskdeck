@@ -4,11 +4,16 @@ using Taskdeck.Application.Connectors;
 namespace Taskdeck.Infrastructure.Services;
 
 /// <summary>
-/// AES-256-CBC encryption service for connector credentials.
+/// AES-256-GCM (AEAD) encryption service for connector credentials.
 /// Key material is sourced from configuration; plaintext secrets never reach the DB.
+///
+/// Storage format (base64-encoded): [12-byte nonce][16-byte tag][ciphertext]
 /// </summary>
 public sealed class AesCredentialEncryptionService : ICredentialEncryptionService
 {
+    private const int NonceSize = 12; // AES-GCM standard nonce size
+    private const int TagSize = 16;   // AES-GCM standard tag size (128-bit)
+
     private readonly byte[] _key;
 
     /// <summary>
@@ -30,20 +35,21 @@ public sealed class AesCredentialEncryptionService : ICredentialEncryptionServic
         if (string.IsNullOrEmpty(plaintext))
             throw new ArgumentException("Plaintext must not be empty.", nameof(plaintext));
 
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.GenerateIV();
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        using var encryptor = aes.CreateEncryptor();
         var plaintextBytes = System.Text.Encoding.UTF8.GetBytes(plaintext);
-        var cipherBytes = encryptor.TransformFinalBlock(plaintextBytes, 0, plaintextBytes.Length);
+        var nonce = new byte[NonceSize];
+        RandomNumberGenerator.Fill(nonce);
 
-        // Prepend IV to ciphertext for self-contained storage.
-        var combined = new byte[aes.IV.Length + cipherBytes.Length];
-        Buffer.BlockCopy(aes.IV, 0, combined, 0, aes.IV.Length);
-        Buffer.BlockCopy(cipherBytes, 0, combined, aes.IV.Length, cipherBytes.Length);
+        var cipherBytes = new byte[plaintextBytes.Length];
+        var tag = new byte[TagSize];
+
+        using var aesGcm = new AesGcm(_key, TagSize);
+        aesGcm.Encrypt(nonce, plaintextBytes, cipherBytes, tag);
+
+        // Combined format: [nonce][tag][ciphertext]
+        var combined = new byte[NonceSize + TagSize + cipherBytes.Length];
+        Buffer.BlockCopy(nonce, 0, combined, 0, NonceSize);
+        Buffer.BlockCopy(tag, 0, combined, NonceSize, TagSize);
+        Buffer.BlockCopy(cipherBytes, 0, combined, NonceSize + TagSize, cipherBytes.Length);
 
         return Convert.ToBase64String(combined);
     }
@@ -55,24 +61,22 @@ public sealed class AesCredentialEncryptionService : ICredentialEncryptionServic
 
         var combined = Convert.FromBase64String(ciphertext);
 
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
+        if (combined.Length < NonceSize + TagSize + 1)
+            throw new CryptographicException("Ciphertext is too short to contain nonce, tag, and data.");
 
-        const int ivLength = 16; // AES block size
-        if (combined.Length < ivLength + 1)
-            throw new CryptographicException("Ciphertext is too short to contain IV and data.");
+        var nonce = new byte[NonceSize];
+        var tag = new byte[TagSize];
+        var cipherBytes = new byte[combined.Length - NonceSize - TagSize];
 
-        var iv = new byte[ivLength];
-        Buffer.BlockCopy(combined, 0, iv, 0, ivLength);
-        aes.IV = iv;
+        Buffer.BlockCopy(combined, 0, nonce, 0, NonceSize);
+        Buffer.BlockCopy(combined, NonceSize, tag, 0, TagSize);
+        Buffer.BlockCopy(combined, NonceSize + TagSize, cipherBytes, 0, cipherBytes.Length);
 
-        var cipherBytes = new byte[combined.Length - ivLength];
-        Buffer.BlockCopy(combined, ivLength, cipherBytes, 0, cipherBytes.Length);
+        var plaintextBytes = new byte[cipherBytes.Length];
 
-        using var decryptor = aes.CreateDecryptor();
-        var plaintextBytes = decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
+        using var aesGcm = new AesGcm(_key, TagSize);
+        aesGcm.Decrypt(nonce, cipherBytes, tag, plaintextBytes);
+
         return System.Text.Encoding.UTF8.GetString(plaintextBytes);
     }
 }
