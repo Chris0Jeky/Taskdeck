@@ -71,8 +71,11 @@ RUN dotnet publish backend/src/Taskdeck.Api/Taskdeck.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
-# Install curl for Docker HEALTHCHECK probe
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install curl for Docker HEALTHCHECK probe and gosu for entrypoint user switching.
+# gosu is needed because Railway mounts volumes as root, overwriting build-time
+# chown. The entrypoint script uses gosu to fix permissions then re-exec as
+# the non-root taskdeck user.
+RUN apt-get update && apt-get install -y --no-install-recommends curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -88,6 +91,10 @@ COPY --from=backend-build /app/publish ./
 # Copy frontend build output into wwwroot/ so the .NET app serves it
 # (PipelineConfiguration.cs: UseDefaultFiles + UseStaticFiles + MapFallbackToFile)
 COPY --from=frontend-build /app/dist ./wwwroot/
+
+# Copy the entrypoint script that fixes volume permissions at runtime
+COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Environment defaults for production.
 # Railway/Render inject a PORT env var at runtime. The entrypoint script
@@ -110,9 +117,16 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${PORT:-5000}/health/ready || exit 1
 
-# Switch to non-root user
-USER taskdeck
+# The entrypoint script handles user switching: if started as root (e.g.
+# Railway with RAILWAY_RUN_UID=0), it fixes /app/data ownership then re-execs
+# as the taskdeck user via gosu. If already running as taskdeck, it verifies
+# the data dir is writable and proceeds directly.
+#
+# We do NOT set USER here because the entrypoint needs to run as root first
+# when the platform starts the container as root. The entrypoint drops
+# privileges to the taskdeck user after fixing permissions.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
-# Shell form entrypoint so that $PORT is evaluated at container start.
+# Shell form CMD so that $PORT is evaluated at container start.
 # Railway and Render inject PORT; if absent, defaults to 5000.
-CMD ASPNETCORE_URLS="http://+:${PORT:-5000}" exec dotnet Taskdeck.Api.dll
+CMD ["sh", "-c", "ASPNETCORE_URLS=http://+:${PORT:-5000} exec dotnet Taskdeck.Api.dll"]
