@@ -150,6 +150,8 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 - `docs/MCP_TOOLING_GUIDE.md` -- MCP tool selection rules
 - `docs/platform/CONFIGURATION_REFERENCE.md` -- appsettings/env var/Docker Compose reference for every backend setting
 - `AGENTS.md` -- full contributor protocol
+- `CONTRIBUTING.md` -- external-contributor onramp (prerequisites, setup, commit conventions)
+- `SECURITY.md` -- vulnerability disclosure policy
 
 ## Worktree Isolation for Parallel Agents
 
