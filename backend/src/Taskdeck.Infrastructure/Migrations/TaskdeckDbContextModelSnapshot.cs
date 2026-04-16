@@ -1884,6 +1884,15 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.IntegrationConnector", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.KnowledgeChunk", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.KnowledgeDocument", null)
