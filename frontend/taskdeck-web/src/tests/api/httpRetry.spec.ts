@@ -79,6 +79,22 @@ describe('httpRetry — parseRetryAfter', () => {
 
   it('rejects negative numeric values', () => {
     expect(parseRetryAfter('-5')).toBeNull()
+    expect(parseRetryAfter('-1')).toBeNull()
+    expect(parseRetryAfter('-0.1')).toBeNull()
+  })
+
+  it('rejects numeric-ish forms that the strict numeric regex rejects', () => {
+    // Date.parse accepts several pseudo-numeric forms ("-5", "+5", "1e3")
+    // as valid dates, which we must NOT treat as Retry-After values. Real
+    // HTTP-dates always include day/month names, so require at least one
+    // ASCII letter before falling through to Date.parse.
+    expect(parseRetryAfter('+5')).toBeNull()
+    expect(parseRetryAfter('1e3')).toBeNull()
+    expect(parseRetryAfter('.5')).toBeNull()
+    // Pure positive integers like '2026' are legal numeric seconds per the
+    // HTTP Retry-After spec and are NOT rejected — they're capped at
+    // MAX_DELAY_MS by the numeric branch.
+    expect(parseRetryAfter('2026')).toBe(MAX_DELAY_MS)
   })
 
   it('parses RFC 1123 HTTP-date relative to now', () => {
@@ -145,6 +161,23 @@ describe('httpRetry — isRetryableError', () => {
     }
   })
 
+  it('retries GET 408 (request timeout — classic transient)', () => {
+    expect(isRetryableError(makeError({ status: 408, method: 'get' }))).toBe(true)
+  })
+
+  it('does not retry GET 501 or 505 (non-transient server errors)', () => {
+    // 501 Not Implemented and 505 HTTP Version Not Supported indicate a
+    // permanent server/protocol capability mismatch — no point retrying.
+    expect(isRetryableError(makeError({ status: 501, method: 'get' }))).toBe(false)
+    expect(isRetryableError(makeError({ status: 505, method: 'get' }))).toBe(false)
+  })
+
+  it('does not retry when config.skipRetry is set', () => {
+    const err = makeError({ status: 500, method: 'get' })
+    ;(err.config as { skipRetry?: boolean }).skipRetry = true
+    expect(isRetryableError(err)).toBe(false)
+  })
+
   it('does not retry POST even on 500', () => {
     expect(isRetryableError(makeError({ status: 500, method: 'post' }))).toBe(false)
   })
@@ -184,6 +217,30 @@ describe('httpRetry — computeRetryDelay', () => {
   it('uses exponential backoff on 5xx (no Retry-After)', () => {
     const err = makeError({ status: 500, method: 'get' })
     expect(computeRetryDelay(err, 2, { random: () => 0.5 })).toBe(BASE_DELAY_MS * 2)
+  })
+
+  it('honours Retry-After on 503 (Service Unavailable)', () => {
+    // 503 is the other standard status for Retry-After, often seen during
+    // rolling deploys or maintenance windows.
+    const err = makeError({ status: 503, headers: { 'retry-after': '5' }, method: 'get' })
+    expect(computeRetryDelay(err, 1, { random: () => 0.5 })).toBe(5000)
+  })
+
+  it('reads Retry-After case-insensitively via AxiosHeaders instance', async () => {
+    const { AxiosHeaders } = await import('axios')
+    const headers = new AxiosHeaders()
+    headers.set('Retry-After', '3')
+    const err = makeError({ status: 429, method: 'get' })
+    // Replace the plain-object headers with an AxiosHeaders instance.
+    ;(err.response as { headers: unknown }).headers = headers
+    expect(computeRetryDelay(err, 1, { random: () => 0.5 })).toBe(3000)
+  })
+
+  it('reads Retry-After from mixed-case plain-object headers', () => {
+    // Some adapters (axios-mock-adapter) hand the interceptor a plain object
+    // with whatever case the test used. We must still find the value.
+    const err = makeError({ status: 429, headers: { 'Retry-After': '2' }, method: 'get' })
+    expect(computeRetryDelay(err, 1, { random: () => 0.5 })).toBe(2000)
   })
 })
 
