@@ -160,7 +160,7 @@ Execution note (manual product audit wave):
 - route the review raw-ID finding through existing issue `#326` instead of creating a duplicate
 - `#369` headed manual-audit Playwright follow-through is intentionally lower priority and should not block the Priority I runtime fixes above
 
-### Stage 2: Priority II - Foundation Wave (Post-Phase-4) — All Delivered
+### Stage 2: Priority II - Foundation Wave (Post-Phase-4) (all delivered)
 
 Execution note (2026-02-22, updated 2026-03-28):
 - `#168` CI topology expansion is complete: required-lane reusable extraction, non-blocking (`ci-extended`), scheduled (`ci-nightly`, `nightly-quality`), release (`ci-release`, `release-security`) orchestrators, topology documentation in `ci-required.yml` header, and `CODEOWNERS` governance are all delivered. Remaining hardening tracks continue independently.
@@ -258,7 +258,7 @@ Execution note (demo rehearsal runtime issues):
 - polish: `#391`, `#392`, `#393` lowest priority
 - analysis: `docs/analysis/2026-03-27_demo-rehearsal-runtime-issues.md`
 
-### Stage 3: Priority III - Expansion Wave (all delivered except noted)
+### Stage 3: Priority III - Expansion Wave (all delivered)
 
 1. `#77` ANL-01 metrics dashboard (delivered `#667`)
 2. `#78` ANL-02 exportable reports (delivered `#787`)
