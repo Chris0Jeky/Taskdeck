@@ -164,6 +164,10 @@ We are looking for developers and small-team leads who manage their own boards a
 - Keep PRs scoped and include verification evidence.
 - For contribution guidance and repo rules, see `AGENTS.md`.
 
+## Security
+
+Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md) for our responsible-disclosure policy, supported-version scope, and response timeline. Do not open a public issue or discussion for suspected security issues.
+
 ## License
 
 Taskdeck is released under the [MIT License](LICENSE).
