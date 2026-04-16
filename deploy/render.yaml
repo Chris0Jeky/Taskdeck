@@ -47,6 +47,9 @@ services:
         value: "false"
       - key: DevelopmentSandbox__Enabled
         value: "false"
+      # Headless mode prevents ephemeral JWT secret generation on restart
+      - key: TASKDECK_HEADLESS
+        value: "true"
 
       # --- Optional: LLM providers (Mock is default) ---
       - key: Llm__EnableLiveProviders

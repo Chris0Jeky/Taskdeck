@@ -103,6 +103,7 @@ In the Railway dashboard, go to **Variables** and add:
 | `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | `true` | Yes |
 | `FirstRun__AutoOpenBrowser` | `false` | Yes |
 | `FirstRun__ResolveAppDataDbPath` | `false` | Yes |
+| `TASKDECK_HEADLESS` | `true` | Yes |
 
 See `deploy/.env.production.template` for the full variable reference including optional LLM provider and observability settings.
 
@@ -199,6 +200,7 @@ See `deploy/.env.production.template` for the authoritative list with descriptio
 | `FirstRun__AutoOpenBrowser` | `false` | No browser to open in containers |
 | `FirstRun__ResolveAppDataDbPath` | `false` | Use explicit DB path, not OS AppData |
 | `DevelopmentSandbox__Enabled` | `false` | Disable sandbox mode |
+| `TASKDECK_HEADLESS` | `true` | Prevent ephemeral JWT secret generation on restart |
 
 ### Optional variables
 
