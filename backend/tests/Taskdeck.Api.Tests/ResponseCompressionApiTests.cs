@@ -3,7 +3,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
-using Taskdeck.Application.DTOs;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -31,7 +30,7 @@ public class ResponseCompressionApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task BoardsList_WithGzipAcceptEncoding_ReturnsGzipContentEncoding()
     {
-        var client = _factory.CreateClient();
+        using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "compression-gzip");
 
         // Seed enough content to comfortably exceed ASP.NET Core's 2 KB default
@@ -71,7 +70,7 @@ public class ResponseCompressionApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task BoardsList_WithBrotliAcceptEncoding_ReturnsBrotliContentEncoding()
     {
-        var client = _factory.CreateClient();
+        using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "compression-br");
 
         for (var i = 0; i < 8; i++)
@@ -107,7 +106,7 @@ public class ResponseCompressionApiTests : IClassFixture<TestWebApplicationFacto
     [Fact]
     public async Task BoardsList_WithoutAcceptEncoding_ReturnsUncompressedBody()
     {
-        var client = _factory.CreateClient();
+        using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "compression-none");
         await ApiTestHarness.CreateBoardAsync(client, stem: "compress-none", description: "plain");
 
