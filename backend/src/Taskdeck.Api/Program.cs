@@ -345,6 +345,10 @@ builder.Services.AddTaskdeckCors(builder.Configuration, builder.Environment.IsDe
 // Add rate limiting
 builder.Services.AddTaskdeckRateLimiting(rateLimitingSettings);
 
+// Add response compression (Brotli + Gzip, Optimal level, enabled over HTTPS).
+// See ResponseCompressionRegistration for BREACH/SignalR considerations.
+builder.Services.AddTaskdeckResponseCompression();
+
 // Register first-run settings and service
 var firstRunSettings = builder.Configuration
     .GetSection("FirstRun")
