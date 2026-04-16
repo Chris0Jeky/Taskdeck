@@ -94,6 +94,9 @@ test.describe('Ops Console — Logs Tab', () => {
     await page.getByLabel('Log level filter').selectOption('Info')
     await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
+    // Wait for filtered entries to load after refresh
+    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+
     // All visible entries should be Info level
     const entries = page.locator('.td-log-entry')
     const count = await entries.count()
@@ -117,6 +120,9 @@ test.describe('Ops Console — Logs Tab', () => {
     // Filter by OpsCliService source
     await page.getByLabel('Source filter').fill('OpsCliService')
     await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+
+    // Wait for filtered entries to load after refresh
+    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     const entries = page.locator('.td-log-entry')
     const count = await entries.count()
