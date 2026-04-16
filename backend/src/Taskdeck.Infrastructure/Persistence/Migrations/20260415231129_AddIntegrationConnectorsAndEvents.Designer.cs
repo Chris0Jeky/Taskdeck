@@ -1880,6 +1880,15 @@ namespace Taskdeck.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.IntegrationConnector", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.ExternalLogin", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", null)

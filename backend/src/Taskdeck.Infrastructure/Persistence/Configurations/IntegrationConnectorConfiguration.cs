@@ -34,6 +34,12 @@ public sealed class IntegrationConnectorConfiguration : IEntityTypeConfiguration
         builder.Property(c => c.UserId)
             .IsRequired();
 
+        // Foreign key to Users with cascading delete
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(c => c.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.Property(c => c.CreatedAt)
             .IsRequired();
 
