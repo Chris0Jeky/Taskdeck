@@ -79,6 +79,7 @@ public sealed class ToolCallingChatOrchestrator
             .ToList();
         var totalTokensUsed = 0;
         var toolCallLog = new List<ToolCallLogEntry>();
+        Guid? detectedProposalId = null;
         var stopwatch = Stopwatch.StartNew();
         string provider = "Unknown";
         string model = "unknown";
@@ -96,7 +97,7 @@ public sealed class ToolCallingChatOrchestrator
             {
                 _logger.LogWarning("Tool-calling orchestration exceeded total timeout of {Timeout}s at round {Round}.",
                     TotalTimeoutSeconds, round);
-                return BuildTimeoutResult(totalTokensUsed, toolCallLog, provider, model);
+                return BuildTimeoutResult(totalTokensUsed, toolCallLog, provider, model, detectedProposalId);
             }
 
             LlmToolCompletionResult llmResult;
@@ -112,20 +113,20 @@ public sealed class ToolCallingChatOrchestrator
             {
                 _logger.LogWarning("Tool-calling round {Round} timed out after {Timeout}s.",
                     round, PerRoundTimeoutSeconds);
-                return BuildTimeoutResult(totalTokensUsed, toolCallLog, provider, model);
+                return BuildTimeoutResult(totalTokensUsed, toolCallLog, provider, model, detectedProposalId);
             }
             catch (NotSupportedException)
             {
                 _logger.LogWarning("Provider does not support tool calling; falling back to single-turn.");
                 return BuildDegradedResult(provider, model, totalTokensUsed, round, toolCallLog,
-                    "Provider does not support tool calling.");
+                    "Provider does not support tool calling.", detectedProposalId);
             }
             catch (Exception ex)
             {
                 _logger.LogError("Tool-calling round {Round} failed. {ExceptionSummary}",
                     round, SensitiveDataRedactor.SummarizeException(ex));
                 return BuildDegradedResult(provider, model, totalTokensUsed, round, toolCallLog,
-                    "Tool-calling round failed due to an internal error.");
+                    "Tool-calling round failed due to an internal error.", detectedProposalId);
             }
 
             totalTokensUsed += llmResult.TokensUsed;
@@ -143,7 +144,8 @@ public sealed class ToolCallingChatOrchestrator
                     Rounds: round,
                     ToolCallLog: toolCallLog,
                     IsDegraded: true,
-                    DegradedReason: llmResult.DegradedReason);
+                    DegradedReason: llmResult.DegradedReason,
+                    ProposalId: detectedProposalId);
             }
 
             // If the response is complete (no tool calls), we're done
@@ -155,7 +157,8 @@ public sealed class ToolCallingChatOrchestrator
                     Provider: provider,
                     Model: model,
                     Rounds: round,
-                    ToolCallLog: toolCallLog);
+                    ToolCallLog: toolCallLog,
+                    ProposalId: detectedProposalId);
             }
 
             // Process tool calls
@@ -170,7 +173,8 @@ public sealed class ToolCallingChatOrchestrator
                     Rounds: round,
                     ToolCallLog: toolCallLog,
                     IsDegraded: true,
-                    DegradedReason: "Unexpected empty tool call list.");
+                    DegradedReason: "Unexpected empty tool call list.",
+                    ProposalId: detectedProposalId);
             }
 
             // Infinite loop detection: abort if the LLM issues the exact same
@@ -185,7 +189,7 @@ public sealed class ToolCallingChatOrchestrator
                 _logger.LogWarning(
                     "Tool-calling loop detected at round {Round}: identical tool calls as previous round. Aborting.",
                     round);
-                return BuildLoopDetectedResult(totalTokensUsed, toolCallLog, provider, model, round);
+                return BuildLoopDetectedResult(totalTokensUsed, toolCallLog, provider, model, round, detectedProposalId);
             }
             previousRoundFingerprint = currentFingerprint;
 
@@ -235,6 +239,16 @@ public sealed class ToolCallingChatOrchestrator
                     }
                 }
 
+                // Extract proposal ID from full result before any truncation.
+                // Write tools (propose_*) return JSON with a full_proposal_id
+                // field. We capture the first one found so callers don't have
+                // to re-parse potentially truncated log summaries.
+                if (!isError && detectedProposalId == null
+                    && toolCall.ToolName.StartsWith("propose_", StringComparison.Ordinal))
+                {
+                    detectedProposalId = TryExtractProposalId(resultContent);
+                }
+
                 // Enforce token budget: truncate oversized tool results before they
                 // are fed back to the LLM.  This keeps the conversation within the
                 // provider's context window even when a tool returns a large payload.
@@ -254,7 +268,7 @@ public sealed class ToolCallingChatOrchestrator
 
         // Exhausted all rounds without a final response
         _logger.LogWarning("Tool-calling exhausted {MaxRounds} rounds without final response.", MaxRounds);
-        return BuildExhaustedResult(totalTokensUsed, toolCallLog, provider, model);
+        return BuildExhaustedResult(totalTokensUsed, toolCallLog, provider, model, detectedProposalId);
     }
 
     private static string BuildStatusMessage(string toolName, JsonElement arguments)
@@ -321,7 +335,8 @@ public sealed class ToolCallingChatOrchestrator
     }
 
     private static ToolCallingResult BuildTimeoutResult(
-        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model)
+        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model,
+        Guid? proposalId = null)
     {
         var partialSummary = log.Count > 0
             ? " Here is what I found so far: " + string.Join("; ",
@@ -336,11 +351,13 @@ public sealed class ToolCallingChatOrchestrator
             Rounds: log.Count > 0 ? log.Max(e => e.Round) : 0,
             ToolCallLog: log,
             IsDegraded: true,
-            DegradedReason: "Orchestration timeout exceeded.");
+            DegradedReason: "Orchestration timeout exceeded.",
+            ProposalId: proposalId);
     }
 
     private static ToolCallingResult BuildLoopDetectedResult(
-        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model, int round)
+        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model, int round,
+        Guid? proposalId = null)
     {
         var partialSummary = log.Count > 0
             ? " Here is what I found so far: " + string.Join("; ",
@@ -355,7 +372,8 @@ public sealed class ToolCallingChatOrchestrator
             Rounds: round,
             ToolCallLog: log,
             IsDegraded: true,
-            DegradedReason: "Tool-calling loop detected: identical tool calls in consecutive rounds.");
+            DegradedReason: "Tool-calling loop detected: identical tool calls in consecutive rounds.",
+            ProposalId: proposalId);
     }
 
     /// <summary>
@@ -382,7 +400,8 @@ public sealed class ToolCallingChatOrchestrator
     }
 
     private static ToolCallingResult BuildExhaustedResult(
-        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model)
+        int tokensUsed, List<ToolCallLogEntry> log, string provider, string model,
+        Guid? proposalId = null)
     {
         var partialSummary = log.Count > 0
             ? " Here is what I found: " + string.Join("; ",
@@ -397,14 +416,16 @@ public sealed class ToolCallingChatOrchestrator
             Rounds: MaxRounds,
             ToolCallLog: log,
             IsDegraded: true,
-            DegradedReason: "Maximum tool-calling rounds exceeded.");
+            DegradedReason: "Maximum tool-calling rounds exceeded.",
+            ProposalId: proposalId);
     }
 
     private static ToolCallingResult BuildDegradedResult(
         string provider, string model,
         int tokensUsed = 0, int round = 0,
         List<ToolCallLogEntry>? log = null,
-        string? reason = null)
+        string? reason = null,
+        Guid? proposalId = null)
     {
         return new ToolCallingResult(
             Content: null,
@@ -414,7 +435,8 @@ public sealed class ToolCallingChatOrchestrator
             Rounds: round,
             ToolCallLog: log ?? new List<ToolCallLogEntry>(),
             IsDegraded: true,
-            DegradedReason: reason ?? "Tool calling is not available; falling back to single-turn.");
+            DegradedReason: reason ?? "Tool calling is not available; falling back to single-turn.",
+            ProposalId: proposalId);
     }
 
     /// <summary>
@@ -497,6 +519,30 @@ public sealed class ToolCallingChatOrchestrator
             return content;
         return content[..maxLength] + "...(truncated)";
     }
+
+    /// <summary>
+    /// Extracts a proposal GUID from the full (un-truncated) tool result JSON.
+    /// Write tools (propose_*) return a <c>full_proposal_id</c> field on success.
+    /// Returns null when the result is not valid JSON or the field is absent.
+    /// </summary>
+    internal static Guid? TryExtractProposalId(string resultContent)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(resultContent);
+            if (doc.RootElement.TryGetProperty("full_proposal_id", out var pidElement)
+                && pidElement.TryGetGuid(out var guid))
+            {
+                return guid;
+            }
+        }
+        catch (JsonException)
+        {
+            // Result may not be valid JSON (error case)
+        }
+
+        return null;
+    }
 }
 
 /// <summary>
@@ -511,7 +557,8 @@ public record ToolCallingResult(
     int Rounds,
     IReadOnlyList<ToolCallLogEntry> ToolCallLog,
     bool IsDegraded = false,
-    string? DegradedReason = null
+    string? DegradedReason = null,
+    Guid? ProposalId = null
 );
 
 /// <summary>
