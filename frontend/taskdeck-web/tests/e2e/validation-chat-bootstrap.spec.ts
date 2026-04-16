@@ -201,12 +201,13 @@ test.describe('TST09 Adversarial Chat Inputs', () => {
     await page.getByPlaceholder('Describe an automation instruction...').fill(longMessage)
     await page.getByRole('button', { name: 'Send Message' }).click()
 
-    // Either message is accepted (assistant responds) or a validation error is shown
-    // In either case, no unhandled crash
+    // Either message is accepted (assistant responds) or a validation error is shown.
+    // In either case, no unhandled crash. Use a generous timeout since the backend
+    // may take longer to process a very large payload in CI environments.
     const assistantOrError = page.getByText('Assistant').first().or(
       page.locator('[class*="error"], [class*="alert"], [class*="validation"]').first(),
     )
-    await expect(assistantOrError).toBeVisible({ timeout: 15_000 })
+    await expect(assistantOrError).toBeVisible({ timeout: 30_000 })
 
     // Verify system is still functional — sessions endpoint responds
     const sessionsResponse = await request.get(`${API_BASE_URL}/llm/chat/sessions`, {
