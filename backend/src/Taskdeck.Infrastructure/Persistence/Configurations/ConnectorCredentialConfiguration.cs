@@ -49,5 +49,15 @@ public class ConnectorCredentialConfiguration : IEntityTypeConfiguration<Connect
             .WithMany()
             .HasForeignKey(c => c.ConnectorId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // FK to Users (cascade delete: credential removed when user is deleted).
+        // Explicit FK prevents orphaned credentials if the user is deleted
+        // outside the IntegrationConnector cascade chain.
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(c => c.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(c => c.UserId);
     }
 }
