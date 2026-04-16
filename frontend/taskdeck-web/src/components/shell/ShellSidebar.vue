@@ -205,6 +205,16 @@ const navCatalog: NavItem[] = [
     keywords: 'settings profile password account',
   },
   {
+    id: 'api-keys',
+    label: 'API Keys',
+    icon: 'K',
+    path: '/workspace/settings/api-keys',
+    flag: null,
+    primaryModes: ['workbench'],
+    secondaryModes: ['guided', 'agent'],
+    keywords: 'api keys mcp tokens authentication',
+  },
+  {
     id: 'preferences',
     label: 'Preferences',
     icon: 'P',
