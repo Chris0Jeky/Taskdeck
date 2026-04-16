@@ -8,7 +8,7 @@
  *
  * Kept framework-free so it is trivially unit-testable.
  */
-import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
+import axios, { type AxiosError, type AxiosRequestConfig } from 'axios'
 
 /** Maximum number of retry attempts per request (not counting the original). */
 export const MAX_RETRIES = 3
@@ -25,9 +25,22 @@ export const MAX_DELAY_MS = 60_000
 /** Idempotent HTTP methods safe to retry without risking duplicate side effects. */
 const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'])
 
+/**
+ * Non-transient 5xx codes. 501 Not Implemented and 505 HTTP Version Not
+ * Supported indicate a permanent server/protocol-level mismatch — retrying
+ * will not change the outcome and only wastes time and quota.
+ */
+const NON_TRANSIENT_5XX = new Set([501, 505])
+
 /** Extended config type that tracks retry attempt count on the request. */
 export interface RetryableRequestConfig extends AxiosRequestConfig {
   __retryCount?: number
+  /**
+   * Opt out of the retry interceptor for this specific request. Useful for
+   * tests that deliberately mock terminal failures and for callers that want
+   * fail-fast semantics (e.g. background polls that have their own cadence).
+   */
+  skipRetry?: boolean
 }
 
 /** Decide whether a method may be safely retried. Case-insensitive. */
@@ -56,6 +69,12 @@ export function parseRetryAfter(
     if (!Number.isFinite(seconds) || seconds < 0) return null
     return Math.min(seconds * 1000, MAX_DELAY_MS)
   }
+
+  // Reject obvious numeric forms that the regex above did not match
+  // (e.g. negative numbers, "+5", "1e3"). Real HTTP-dates always contain
+  // day/month names, so require at least one ASCII letter for the
+  // HTTP-date branch.
+  if (!/[A-Za-z]/.test(trimmed)) return null
 
   // HTTP-date form.
   const parsed = Date.parse(trimmed)
@@ -95,6 +114,9 @@ export function isRetryableError(error: AxiosError): boolean {
   const config = error.config as RetryableRequestConfig | undefined
   if (!config || !isIdempotent(config.method)) return false
 
+  // Caller-requested opt-out (e.g. tests mocking terminal failures).
+  if (config.skipRetry) return false
+
   // Network / timeout errors: no response object.
   if (!error.response) {
     // Axios sets code === 'ECONNABORTED' for timeouts; both should retry.
@@ -102,9 +124,32 @@ export function isRetryableError(error: AxiosError): boolean {
   }
 
   const status = error.response.status
-  if (status === 429) return true
-  if (status >= 500 && status < 600) return true
+  if (status === 429 || status === 408) return true
+  if (status >= 500 && status < 600 && !NON_TRANSIENT_5XX.has(status)) return true
   return false
+}
+
+/**
+ * Extract a header value in a case-insensitive way, handling both Axios 1.x
+ * `AxiosHeaders` instances (which expose `.get()` with case-insensitive
+ * lookup) and plain header objects (as used by `axios-mock-adapter` and some
+ * non-conforming adapters, where arbitrary casing can leak through).
+ */
+function getHeader(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined
+  if (headers instanceof axios.AxiosHeaders) {
+    const value = headers.get(name)
+    return typeof value === 'string' ? value : undefined
+  }
+  const lower = name.toLowerCase()
+  const record = headers as Record<string, unknown>
+  for (const key of Object.keys(record)) {
+    if (key.toLowerCase() === lower) {
+      const value = record[key]
+      if (typeof value === 'string') return value
+    }
+  }
+  return undefined
 }
 
 /** Compute delay for a given error/attempt, honouring Retry-After on 429. */
@@ -116,10 +161,8 @@ export function computeRetryDelay(
   const now = options.now ?? Date.now()
   const random = options.random ?? Math.random
   const status = error.response?.status
-  if (status === 429) {
-    const header =
-      (error.response?.headers?.['retry-after'] as string | undefined) ??
-      (error.response?.headers?.['Retry-After'] as string | undefined)
+  if (status === 429 || status === 503) {
+    const header = getHeader(error.response?.headers, 'retry-after')
     const parsed = parseRetryAfter(header, now)
     if (parsed !== null) return parsed
   }
