@@ -214,4 +214,47 @@ public class McpOperationLoggerTests
         _logger.Entries.Should().Contain(e => e.Message.Contains("resource"));
         _logger.Entries.Should().Contain(e => e.Message.Contains("board_detail"));
     }
+
+    [Fact]
+    public void Fail_WithException_ThenDispose_DoesNotOverwriteFailure()
+    {
+        var operationLogger = new McpOperationLogger(_logger);
+        var exception = new InvalidOperationException("test error");
+
+        var scope = operationLogger.BeginOperation("tool", "search_cards");
+        scope.Fail(exception);
+        scope.Dispose(); // should not record a second "completed" entry
+
+        var failEntries = _logger.Entries
+            .Where(e => e.Message.Contains("failed"))
+            .ToList();
+        var completionEntries = _logger.Entries
+            .Where(e => e.Message.Contains("completed"))
+            .ToList();
+
+        failEntries.Should().HaveCount(1, "Fail should be recorded once");
+        completionEntries.Should().BeEmpty(
+            "Dispose after Fail should not overwrite the failure with a completion");
+    }
+
+    [Fact]
+    public void Fail_WithString_ThenDispose_DoesNotOverwriteFailure()
+    {
+        var operationLogger = new McpOperationLogger(_logger);
+
+        var scope = operationLogger.BeginOperation("tool", "create_card");
+        scope.Fail("validation error");
+        scope.Dispose(); // should not record a second "completed" entry
+
+        var failEntries = _logger.Entries
+            .Where(e => e.Message.Contains("failed"))
+            .ToList();
+        var completionEntries = _logger.Entries
+            .Where(e => e.Message.Contains("completed"))
+            .ToList();
+
+        failEntries.Should().HaveCount(1, "Fail(string) should be recorded once");
+        completionEntries.Should().BeEmpty(
+            "Dispose after Fail(string) should not overwrite the failure with a completion");
+    }
 }
