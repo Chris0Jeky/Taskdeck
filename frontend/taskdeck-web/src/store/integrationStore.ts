@@ -37,6 +37,7 @@ export const useIntegrationStore = defineStore('integration', () => {
       error.value = null
       connectors.value = await integrationsApi.listConnectors()
     } catch (e: unknown) {
+      connectors.value = []
       const msg = getErrorDisplay(e, 'Failed to fetch integrations').message
       error.value = msg
       toast.error(msg)
