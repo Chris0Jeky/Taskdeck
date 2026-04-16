@@ -9,9 +9,15 @@ namespace Taskdeck.Api.Extensions;
 /// <para>
 /// Security note: <c>EnableForHttps = true</c> is safe for this API because responses
 /// do not mix long-lived secrets with user-controlled text in the same response body
-/// (no BREACH oracle surface). JWTs live in the <c>Authorization</c> header and CSRF
-/// double-submit tokens are not used — the threat model for BREACH-style compression
-/// side channels does not apply here.
+/// in a way that creates a BREACH oracle. A few endpoints (<c>/api/auth/login</c>,
+/// <c>/api/auth/register</c>) do return a JWT alongside server-generated JSON that
+/// echoes the caller's own <c>Username</c>/<c>Email</c>, but: (1) the echoed fields
+/// are the caller's own input, not an attacker-controlled reflection from a third
+/// party; (2) JWTs are high-entropy, short-lived bearer tokens rather than
+/// long-lived session cookies; and (3) CSRF double-submit tokens are not used.
+/// Classic BREACH exploitation (cross-site chosen-prefix + persistent secret) does
+/// not apply. If we later add endpoints that reflect attacker-controlled content
+/// alongside a long-lived secret, revisit this decision.
 /// </para>
 ///
 /// <para>
@@ -24,10 +30,10 @@ namespace Taskdeck.Api.Extensions;
 /// </summary>
 public static class ResponseCompressionRegistration
 {
-    // application/problem+json is the RFC 7807 error content type used by the API's
-    // error contract middleware. Explicitly compressing it ensures error-heavy
-    // response surfaces (validation failures, auth errors) benefit from compression
-    // alongside the default application/json.
+    // application/problem+json is included for compatibility with framework-generated
+    // RFC 7807 ProblemDetails responses (e.g. automatic 400 validation errors from
+    // [ApiController] model binding). Taskdeck's own inline error middlewares emit
+    // application/json, which is already covered by ResponseCompressionDefaults.
     private static readonly string[] AdditionalMimeTypes =
     [
         "application/problem+json"
@@ -43,14 +49,18 @@ public static class ResponseCompressionRegistration
             options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(AdditionalMimeTypes);
         });
 
+        // CompressionLevel.Fastest is the recommended trade-off for dynamic API
+        // responses: Brotli.Optimal maps to level 11 (seconds of CPU per MB) and
+        // Gzip.Optimal to level 9. Fastest (Brotli ~level 1, Gzip level 1) keeps
+        // TTFB low while still cutting ~70%+ off typical JSON payloads.
         services.Configure<BrotliCompressionProviderOptions>(options =>
         {
-            options.Level = CompressionLevel.Optimal;
+            options.Level = CompressionLevel.Fastest;
         });
 
         services.Configure<GzipCompressionProviderOptions>(options =>
         {
-            options.Level = CompressionLevel.Optimal;
+            options.Level = CompressionLevel.Fastest;
         });
 
         return services;
