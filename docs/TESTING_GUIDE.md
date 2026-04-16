@@ -374,7 +374,7 @@ See `docs/testing/MUTATION_TESTING_POLICY.md` for threshold strategy, report int
 - Extends `#89` (property/fuzz pilot, delivered)
 - Complements `#90` (mutation testing pilot)
 - Complements `#91` (Testcontainers for isolation)
-- Feeds into `#135` (integrated multi-component verification program)
+- Feeds into `#135` (integrated multi-component verification program) — **delivered** as `docs/testing/INTEGRATED_VERIFICATION_STRATEGY.md`
 
 ### Delivered: Infrastructure Repository Integration Tests (`#699`/`#730`)
 
@@ -1162,6 +1162,7 @@ Planned quality expectations when implementation starts:
   - Includes deterministic starter-pack fixture bootstrap coverage for `small`, `medium`, and `edge` manifest scenarios
   - Includes unauthenticated SignalR negotiate rejection coverage aligned with the runtime client handshake path
   - Includes dedicated multi-session concurrency regression coverage (`tests/e2e/concurrency.spec.ts`)
+  - Includes integrated multi-component verification journeys (`tests/e2e/integrated-verification.spec.ts`) — see `docs/testing/INTEGRATED_VERIFICATION_STRATEGY.md`
   - Includes manual validation slice C E2E coverage: `tests/e2e/validation-automation-proposals.spec.ts` (8 tests), `tests/e2e/validation-chat-bootstrap.spec.ts` (9 tests)
   - Includes manual validation slice D E2E coverage: `tests/e2e/validation-ops-logs-health.spec.ts` (17 tests)
   - Includes manual validation slice E E2E coverage: `tests/e2e/validation-starter-packs.spec.ts`, `tests/e2e/validation-archive-recovery.spec.ts`, `tests/e2e/validation-activity-traceability.spec.ts` (23+ tests)
@@ -1170,10 +1171,25 @@ Planned quality expectations when implementation starts:
   - `tests/load/k6/board-heavy-load.js`
   - Includes seeded-user board-heavy read/write load mix and threshold-based regression diagnostics
 
+## Integrated Multi-Component Verification
+
+The integrated verification program ties automated and manual testing into cross-component scenarios that validate subsystem interactions end-to-end.
+
+Key resources:
+- `docs/testing/INTEGRATED_VERIFICATION_STRATEGY.md` — scenario matrix, release gating criteria, automated/manual split
+- `docs/testing/MANUAL_REHEARSAL_TEMPLATE.md` — standard template for manual verification cycles
+- `frontend/taskdeck-web/tests/e2e/integrated-verification.spec.ts` — automated cross-component E2E journeys
+
+The strategy defines 18 verification scenarios (V-01 through V-18) across 5 subsystem areas. Scenarios are tiered by severity:
+- **Tier 1** (V-01 to V-04): Critical path — must pass for any release
+- **Tier 2** (V-05 to V-10): High-value cross-cutting — must pass for feature releases
+- **Tier 3** (V-11 to V-18): Extended coverage — recommended for major releases
+
 ## Manual Verification
 
 Use `docs/MANUAL_TEST_CHECKLIST.md` for action-by-action manual validation.
 Use `docs/ops/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline and observability smoke validation.
+Use `docs/testing/MANUAL_REHEARSAL_TEMPLATE.md` for structured manual rehearsal cycles with evidence capture.
 
 Detailed step-indexed validation checklists:
 - Slice A — workspace shell, board lifecycle, keyboard UX: `docs/testing/manual-validation-a-workspace-board-ux.md`
