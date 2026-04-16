@@ -5,7 +5,7 @@
  * - Dark mode applies across multiple views (home, boards, inbox, today)
  * - Dark mode with board content (columns, cards) renders without
  *   white-on-white or invisible elements
- * - System prefers-color-scheme: dark triggers dark mode on first visit
+ * - System prefers-color-scheme: dark (stub -- test.fixme until feature ships)
  * - Toggling dark mode off restores light theme
  */
 
