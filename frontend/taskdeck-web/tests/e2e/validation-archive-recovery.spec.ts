@@ -140,7 +140,7 @@ test.describe('TST11-SC-011: View archived boards in archive workspace', () => {
 
     await page.goto('/workspace/archive')
     await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
-    await expect(page.getByText('Archived Boards')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Archived Boards' })).toBeVisible()
 
     // Archived board should appear in the list
     await expect(page.getByText(boardName)).toBeVisible()

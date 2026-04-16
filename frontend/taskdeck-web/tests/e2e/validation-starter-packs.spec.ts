@@ -435,12 +435,15 @@ test.describe('TST11-SC-008: Multiple packs on same board', () => {
     expect(firstResponse.ok()).toBeTruthy()
     expect((await firstResponse.json()).applied).toBeTruthy()
 
-    // Second manifest with non-overlapping positions
+    // Second manifest adds only labels (no columns) to avoid position
+    // conflicts. Column positions must be contiguous starting at 0 per
+    // schema validation, so a second pack cannot define non-overlapping
+    // column positions. Labels accumulate without conflict.
     const secondManifest = {
       schemaVersion: '1.0',
       packId: 'val-second',
       displayName: 'Validation Second',
-      description: 'Non-overlapping second pack.',
+      description: 'Label-only second pack.',
       compatibility: {
         minTaskdeckVersion: '1.0.0',
         requiredFeatures: ['boards'],
@@ -449,10 +452,7 @@ test.describe('TST11-SC-008: Multiple packs on same board', () => {
       labels: [
         { name: 'feature', color: '#10B981', description: 'Feature work' },
       ],
-      columns: [
-        { name: 'In Progress', position: 2 },
-        { name: 'Review', position: 3 },
-      ],
+      columns: [],
       templates: [],
       seedCards: [],
     }
@@ -468,9 +468,11 @@ test.describe('TST11-SC-008: Multiple packs on same board', () => {
     expect(secondResponse.ok()).toBeTruthy()
     expect((await secondResponse.json()).applied).toBeTruthy()
 
+    // First pack's columns are preserved
     const columns = await getColumns(request, boardId)
-    expect(columns).toHaveLength(4)
+    expect(columns).toHaveLength(2)
 
+    // Labels from both packs accumulated
     const labels = await getLabels(request, boardId)
     expect(labels.map((l) => l.name).sort()).toEqual(['feature', 'urgent'])
   })
