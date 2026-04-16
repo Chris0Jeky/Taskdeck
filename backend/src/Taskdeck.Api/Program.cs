@@ -104,8 +104,8 @@ if (args.Contains("--mcp"))
             mcpHttpBuilder.Services.AddTaskdeckRateLimiting(mcpRateLimitingSettings);
         }
 
-        // MCP operation logger for per-tool/resource telemetry.
-        mcpHttpBuilder.Services.AddSingleton<McpOperationLogger>();
+        // MCP telemetry (operation logger, etc.).
+        mcpHttpBuilder.Services.AddMcpTelemetry();
 
         // MCP server: HTTP transport + all resources and tools.
         mcpHttpBuilder.Services.AddMcpServer()
@@ -125,6 +125,9 @@ if (args.Contains("--mcp"))
             var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
             dbContext.Database.Migrate();
         }
+
+        // Correlation ID propagation: honours client X-Request-Id header.
+        mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
 
         // API key authentication for MCP requests.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
@@ -201,8 +204,8 @@ if (args.Contains("--mcp"))
             // Stdio identity: maps the OS process owner to the local default user.
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
 
-            // MCP operation logger for per-tool/resource telemetry.
-            services.AddSingleton<McpOperationLogger>();
+            // MCP telemetry (operation logger, etc.).
+            services.AddMcpTelemetry();
 
             // MCP server: stdio transport + all resources and tools.
             services.AddMcpServer()
@@ -327,7 +330,7 @@ builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdec
 // Register MCP HTTP transport (Streamable HTTP alongside REST on the same Kestrel instance).
 // The HttpUserContextProvider resolves user identity from the API key set by ApiKeyMiddleware.
 builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
-builder.Services.AddSingleton<McpOperationLogger>();
+builder.Services.AddMcpTelemetry();
 builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithResources<BoardResources>()
