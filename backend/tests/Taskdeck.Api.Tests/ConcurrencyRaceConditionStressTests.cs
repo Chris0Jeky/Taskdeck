@@ -212,12 +212,13 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // All distinct items should triage successfully. Under SQLite's
         // file-level write lock, concurrent connections may see transient 500s
         // due to DB contention — this is a known test-environment limitation,
-        // not a production bug. We assert most succeed and none return
-        // unexpected client errors.
+        // not a production bug. We require at least 2 out of 5 to succeed so
+        // that a genuine regression (most requests failing) is still caught,
+        // while tolerating the expected SQLite contention.
         var succeeded = results.Values.Count(s =>
             s is HttpStatusCode.Accepted or HttpStatusCode.OK);
-        succeeded.Should().BeGreaterOrEqualTo(1,
-            "at least one concurrent triage of distinct items should succeed");
+        succeeded.Should().BeGreaterOrEqualTo(2,
+            "at least 2 out of 5 concurrent triage operations should succeed");
         results.Values.Should().AllSatisfy(s =>
             s.Should().BeOneOf(
                 HttpStatusCode.Accepted,
