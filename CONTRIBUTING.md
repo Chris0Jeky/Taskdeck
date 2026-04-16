@@ -99,12 +99,19 @@ real gotchas baked into the repo's workflow.
   - adding `C:\Program Files\Git\cmd` to the **front** of your `PATH`, or
   - invoking `C:\Program Files\Git\cmd\git.exe` explicitly.
 
-- **PowerShell command chaining:** do **not** chain with `&&`. Use `;` and
-  check `$LASTEXITCODE` when you need to stop on failure. Example:
+- **PowerShell command chaining:** do **not** chain with `&&` on Windows
+  PowerShell 5.1 (it is not supported there). PowerShell 7+ does support `&&`,
+  but to keep examples portable across both shells, chain with `;` and a
+  success check instead. A non-terminating pattern suitable for an interactive
+  shell:
 
   ```powershell
-  npm run typecheck; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run build
+  npm run typecheck; if ($LASTEXITCODE -eq 0) { npm run build }
   ```
+
+  Automated scripts that should abort on the first failure can use
+  `exit $LASTEXITCODE` (see the pattern in `AGENTS.md`), but avoid `exit` in
+  interactive shells — it closes the terminal window.
 
 - **Stale `index.lock`:** if a commit fails with an `index.lock` error, first
   check for active `git` processes before deleting the lock.
