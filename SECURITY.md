@@ -70,7 +70,7 @@ Out of scope:
 
 - We do **not** currently run a paid bug bounty program.
 - We cannot guarantee 24/7 response times. Taskdeck is maintained by a small team.
-- We do not provide CVE assignment directly; we will coordinate with GitHub Security Advisories and, where appropriate, MITRE.
+- We do not assign CVEs directly. Where appropriate, we will request a CVE through GitHub Security Advisories (GitHub is a CVE Numbering Authority).
 
 ## Safe Harbor
 
