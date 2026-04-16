@@ -25,5 +25,9 @@ COPY --from=build --chown=nginx:nginx /app/dist ./
 
 EXPOSE 8080
 
+# NOTE: use 127.0.0.1 rather than `localhost`. Inside this alpine-based image,
+# `localhost` resolves to [::1] first and our nginx only binds 0.0.0.0:8080,
+# so a `localhost` probe fails with Connection refused and the container is
+# reported permanently unhealthy. IPv4 literal avoids the resolver path.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget --spider -q http://localhost:8080/healthz || exit 1
+    CMD wget --spider -q http://127.0.0.1:8080/healthz || exit 1
