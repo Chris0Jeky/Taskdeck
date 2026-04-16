@@ -139,7 +139,7 @@ test.describe('TST11-SC-011: View archived boards in archive workspace', () => {
     await archiveBoard(request, boardId)
 
     await page.goto('/workspace/archive')
-    await expect(page.getByRole('heading', { name: 'Archive' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
     await expect(page.getByText('Archived Boards')).toBeVisible()
 
     // Archived board should appear in the list
@@ -165,7 +165,7 @@ test.describe('TST11-SC-012: Restore archived board', () => {
 
     // Navigate to archive and restore
     await page.goto('/workspace/archive')
-    await expect(page.getByRole('heading', { name: 'Archive' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
 
     // Find and click restore for this board
     const boardRow = page.locator('.td-archive-row').filter({ hasText: `Restore Test ${seed}` })
