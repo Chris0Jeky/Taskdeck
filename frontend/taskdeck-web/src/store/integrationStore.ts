@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { integrationsApi } from '../api/integrationsApi'
 import { useToastStore } from './toastStore'
-import { isDemoMode } from '../utils/demoMode'
+import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import type {
   IntegrationConnector,
@@ -18,6 +18,13 @@ export const useIntegrationStore = defineStore('integration', () => {
   const selectedConnector = ref<IntegrationConnectorDetail | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  function guardDemoMutation(): never | void {
+    if (isDemoMode) {
+      toast.info('This action is view-only in demo mode.')
+      throw new DemoModeError()
+    }
+  }
 
   async function fetchConnectors() {
     if (isDemoMode) {
@@ -50,6 +57,7 @@ export const useIntegrationStore = defineStore('integration', () => {
     } catch (e: unknown) {
       const msg = getErrorDisplay(e, 'Failed to fetch connector details').message
       error.value = msg
+      selectedConnector.value = null
       toast.error(msg)
     } finally {
       loading.value = false
@@ -57,6 +65,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   async function registerConnector(request: CreateIntegrationConnectorRequest) {
+    guardDemoMutation()
     try {
       error.value = null
       const connector = await integrationsApi.registerConnector(request)
@@ -72,6 +81,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   async function updateConnector(id: string, request: UpdateIntegrationConnectorRequest) {
+    guardDemoMutation()
     try {
       error.value = null
       const updated = await integrationsApi.updateConnector(id, request)
@@ -90,6 +100,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   async function deleteConnector(id: string) {
+    guardDemoMutation()
     try {
       error.value = null
       await integrationsApi.deleteConnector(id)
@@ -107,6 +118,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   async function enableConnector(id: string) {
+    guardDemoMutation()
     try {
       error.value = null
       const updated = await integrationsApi.enableConnector(id)
@@ -124,6 +136,7 @@ export const useIntegrationStore = defineStore('integration', () => {
   }
 
   async function disableConnector(id: string) {
+    guardDemoMutation()
     try {
       error.value = null
       const updated = await integrationsApi.disableConnector(id)
