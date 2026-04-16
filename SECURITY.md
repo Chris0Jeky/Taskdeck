@@ -18,12 +18,17 @@ Once a 1.0 release ships, this table will be updated to reflect a formal support
 
 Please report suspected vulnerabilities privately. Do **not** open a public GitHub issue, discussion, or pull request that describes the vulnerability.
 
-Preferred channels, in order:
+Preferred channel:
 
-1. **GitHub private vulnerability reporting** — use the [Report a vulnerability](https://github.com/Chris0Jeky/Taskdeck/security/advisories/new) button on the repository Security tab. This is the fastest path and is monitored by the maintainers.
-2. **Email** — `security@taskdeck.dev` (placeholder address; see note below). If you do not receive an acknowledgment within the timeline below, please fall back to the GitHub private advisory channel above.
+- **GitHub private vulnerability reporting** — use the [Report a vulnerability](https://github.com/Chris0Jeky/Taskdeck/security/advisories/new) button on the repository Security tab. This is the authoritative channel, is encrypted in transit and at rest, and is the only path we actively monitor today.
 
-> Note: `security@taskdeck.dev` is a placeholder while the `taskdeck.dev` domain is being secured. Until this note is removed, GitHub private vulnerability reporting is the authoritative channel.
+Fallback channel (best-effort):
+
+- **Email** — `security@taskdeck.dev` (placeholder address; see note below).
+
+> Note: `security@taskdeck.dev` is a placeholder while the `taskdeck.dev` domain is being secured, and this inbox may not be actively monitored. Please prefer the GitHub private advisory channel above. This note will be removed once a monitored email address is available.
+
+We do not currently publish a PGP key. If your report includes sensitive payloads, GitHub's private advisory channel is sufficient (TLS in transit, encrypted at rest); use pseudonymized data if you are uncomfortable sharing raw captures.
 
 When reporting, please include:
 
