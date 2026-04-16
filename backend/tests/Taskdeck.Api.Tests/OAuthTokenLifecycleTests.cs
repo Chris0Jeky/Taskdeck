@@ -136,18 +136,10 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         var successCount = responses.Count(r => r.StatusCode == HttpStatusCode.OK);
         var failCount = responses.Count(r => r.StatusCode == HttpStatusCode.Unauthorized);
 
-        // Under SQLite's WAL mode with concurrent connections, the atomic UPDATE
-        // may allow a narrow window where two requests both see IsConsumed = 0.
-        // We assert meaningful invariants rather than exact counts:
-        // - At least one exchange must succeed (code is valid)
-        // - At most one should succeed (single-use semantics), but we tolerate
-        //   up to 2 due to SQLite concurrency limitations in test environments
-        // - All responses are either OK or Unauthorized (no unexpected errors)
-        successCount.Should().BeGreaterOrEqualTo(1,
-            "at least one concurrent exchange should succeed (code is valid)");
-        successCount.Should().BeLessThanOrEqualTo(2,
-            "at most two concurrent exchanges should succeed (single-use code, " +
-            "allowing for SQLite WAL concurrency window)");
+        // The production code uses an atomic UPDATE ... WHERE IsConsumed = 0,
+        // so exactly one concurrent exchange must succeed regardless of load.
+        successCount.Should().Be(1, "only one concurrent exchange should succeed (single-use code)");
+        failCount.Should().Be(4, "the other concurrent exchanges should be rejected");
         (successCount + failCount).Should().Be(5,
             "all responses should be either OK or Unauthorized");
     }
