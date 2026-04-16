@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useIntegrationStore } from '../store/integrationStore'
 import type {
   IntegrationConnector,
-  IntegrationConnectorDetail,
   ConnectorType,
   ConnectorDirection,
   CreateIntegrationConnectorRequest,
@@ -25,12 +24,16 @@ const newConfig = ref('')
 const registering = ref(false)
 
 const selectedId = ref<string | null>(null)
-const detail = ref<IntegrationConnectorDetail | null>(null)
 const detailLoading = ref(false)
 
 const connectors = computed(() => store.connectors)
 const loading = computed(() => store.loading)
 const error = computed(() => store.error)
+
+// Reactive detail: reads directly from store so enable/disable changes are reflected immediately
+const detail = computed(() =>
+  store.selectedConnector?.id === selectedId.value ? store.selectedConnector : null,
+)
 
 const connectorTypes: ConnectorType[] = [
   'BrowserClipper',
@@ -103,14 +106,16 @@ async function handleRegister() {
 async function handleSelectConnector(connector: IntegrationConnector) {
   if (selectedId.value === connector.id) {
     selectedId.value = null
-    detail.value = null
     return
   }
-  selectedId.value = connector.id
+  const targetId = connector.id
+  selectedId.value = targetId
   detailLoading.value = true
   try {
-    await store.fetchConnectorDetail(connector.id)
-    detail.value = store.selectedConnector
+    await store.fetchConnectorDetail(targetId)
+    // Guard against out-of-order async completion: if user clicked
+    // another connector while we were loading, discard this result.
+    if (selectedId.value !== targetId) return
   } finally {
     detailLoading.value = false
   }
@@ -133,7 +138,6 @@ async function handleDelete(connector: IntegrationConnector) {
     await store.deleteConnector(connector.id)
     if (selectedId.value === connector.id) {
       selectedId.value = null
-      detail.value = null
     }
   } catch {
     // Error handled by store

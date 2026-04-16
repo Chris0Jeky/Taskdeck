@@ -95,8 +95,11 @@ public class IntegrationRegistryService : IIntegrationRegistryService
             if (dto.Name != null)
                 connector.UpdateName(dto.Name);
 
-            // Always update configuration (null means "clear it")
-            connector.UpdateConfiguration(dto.Configuration);
+            // Only update configuration when explicitly provided.
+            // Limitation: callers cannot explicitly clear config to null via this DTO
+            // (null is indistinguishable from "not sent"). Acceptable for v1.
+            if (dto.Configuration != null)
+                connector.UpdateConfiguration(dto.Configuration);
 
             await _connectorRepository.UpdateAsync(connector, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
