@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Contracts;
@@ -74,10 +75,18 @@ public class ConnectorProvidersController : AuthenticatedControllerBase
     [ProducesResponseType(typeof(ConnectorProviderHealthDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> CheckProviderHealth(string providerId)
+    public async Task<IActionResult> CheckProviderHealth(
+        [StringLength(100, MinimumLength = 1)] string providerId)
     {
         if (!TryGetCurrentUserId(out _, out var errorResult))
             return errorResult!;
+
+        if (string.IsNullOrWhiteSpace(providerId) || providerId.Length > 100)
+        {
+            return BadRequest(new ApiErrorResponse(
+                "ValidationError",
+                "Provider ID must be between 1 and 100 characters."));
+        }
 
         var result = await _executionService.CheckProviderHealthAsync(providerId);
 
@@ -113,6 +122,18 @@ public class ConnectorProvidersController : AuthenticatedControllerBase
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
+
+        if (string.IsNullOrWhiteSpace(dto.Label))
+        {
+            return BadRequest(new ApiErrorResponse("ValidationError", "Credential label must not be empty."));
+        }
+
+        if (dto.Label.Trim().Length > 100)
+        {
+            return BadRequest(new ApiErrorResponse(
+                "ValidationError",
+                "Credential label cannot exceed 100 characters."));
+        }
 
         if (string.IsNullOrWhiteSpace(dto.Value))
         {
