@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Net.Http.Headers;
+using Taskdeck.Api.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -10,14 +11,6 @@ namespace Taskdeck.Api.Tests;
 public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private const string ReferrerPolicyHeaderName = "Referrer-Policy";
-
-    /// <summary>
-    /// A non-placeholder JWT secret used when tests override the environment
-    /// to Production. Required because Production mode validates that the
-    /// secret is not a known placeholder (see FirstRunBootstrapper).
-    /// </summary>
-    private const string ProductionTestJwtSecret =
-        "VGVzdE9ubHlKd3RTZWNyZXRGb3JQcm9kdWN0aW9uTW9kZVRlc3Rz";
 
     private readonly TestWebApplicationFactory _factory;
 
@@ -75,7 +68,7 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
         using var factory = _factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("Jwt:SecretKey", ProductionTestJwtSecret);
+            builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
