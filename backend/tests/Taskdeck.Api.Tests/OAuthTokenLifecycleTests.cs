@@ -136,8 +136,12 @@ public class OAuthTokenLifecycleTests : IClassFixture<TestWebApplicationFactory>
         var successCount = responses.Count(r => r.StatusCode == HttpStatusCode.OK);
         var failCount = responses.Count(r => r.StatusCode == HttpStatusCode.Unauthorized);
 
+        // The production code uses an atomic UPDATE ... WHERE IsConsumed = 0,
+        // so exactly one concurrent exchange must succeed regardless of load.
         successCount.Should().Be(1, "only one concurrent exchange should succeed (single-use code)");
         failCount.Should().Be(4, "the other concurrent exchanges should be rejected");
+        (successCount + failCount).Should().Be(5,
+            "all responses should be either OK or Unauthorized");
     }
 
     [Fact]
