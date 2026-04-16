@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.RateLimiting;
@@ -901,9 +902,9 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
         // errors (e.g., SQLite contention). We track join successes to set
         // correct expectations for the eventual-consistency assertion.
         var connections = new List<HubConnection>();
+        var joinedConnections = new ConcurrentBag<HubConnection>();
         try
         {
-            var joinSuccessCount = 0;
             using var joinBarrier = new Barrier(connectionCount + 1);
             var joinTasks = users.Select(async user =>
             {
@@ -915,20 +916,20 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                 try
                 {
                     await conn.InvokeAsync("JoinBoard", board.Id);
-                    Interlocked.Increment(ref joinSuccessCount);
+                    joinedConnections.Add(conn);
                 }
-                catch (Exception)
+                catch (HubException)
                 {
-                    // Tolerate transient failures (500s) under rapid-fire stress.
-                    // The eventual-consistency check below will use the actual
-                    // success count rather than assuming all joins succeeded.
+                    // Tolerate transient HubException (e.g., SQLite contention
+                    // under rapid-fire stress). The eventual-consistency check
+                    // below uses the actual success count.
                 }
             }).ToArray();
 
             joinBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
             await Task.WhenAll(joinTasks);
 
-            var actualJoined = Interlocked.CompareExchange(ref joinSuccessCount, 0, 0);
+            var actualJoined = joinedConnections.Count;
             actualJoined.Should().BeGreaterOrEqualTo(1,
                 "at least one concurrent join should succeed under stress");
 
@@ -939,12 +940,12 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             afterJoin.Members.Should().HaveCount(actualJoined + 1,
                 "all successfully-joined users plus the observer owner should be present");
 
-            // Now have the first half leave rapidly
+            // First half of successfully-joined connections leave rapidly
             observerEvents.Clear();
-            var leavingCount = Math.Min(connectionCount / 2, actualJoined);
+            var leavingConns = joinedConnections.Take(joinedConnections.Count / 2).ToList();
             var leaveSuccessCount = 0;
-            using var leaveBarrier = new Barrier(leavingCount + 1);
-            var leaveTasks = connections.Take(leavingCount).Select(async conn =>
+            using var leaveBarrier = new Barrier(leavingConns.Count + 1);
+            var leaveTasks = leavingConns.Select(async conn =>
             {
                 leaveBarrier.SignalAndWait(TimeSpan.FromSeconds(10));
                 try
@@ -952,9 +953,9 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
                     await conn.InvokeAsync("LeaveBoard", board.Id);
                     Interlocked.Increment(ref leaveSuccessCount);
                 }
-                catch (Exception)
+                catch (HubException)
                 {
-                    // Tolerate transient failures during rapid leave
+                    // Tolerate transient HubException during rapid leave
                 }
             }).ToArray();
 
@@ -962,7 +963,6 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             await Task.WhenAll(leaveTasks);
 
             var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
-            // Poll until the snapshot settles at the expected remaining count
             var remaining = actualJoined - actualLeft;
             var afterLeave = await WaitForPresenceCountAsync(
                 observerEvents, remaining + 1, TimeSpan.FromSeconds(10));

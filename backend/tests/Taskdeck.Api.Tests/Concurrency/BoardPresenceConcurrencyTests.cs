@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Taskdeck.Api.Realtime;
 using Taskdeck.Api.Tests.Support;
@@ -101,9 +102,9 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
         // errors (e.g., SQLite contention). We track join successes to set
         // correct expectations for the eventual-consistency assertion.
         var connections = new List<HubConnection>();
+        var joinedConnections = new ConcurrentBag<HubConnection>();
         try
         {
-            var joinSuccessCount = 0;
             using var joinBarrier = new SemaphoreSlim(0, connectionCount);
             var joinTasks = users.Select(async user =>
             {
@@ -115,20 +116,20 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
                 try
                 {
                     await conn.InvokeAsync("JoinBoard", board.Id);
-                    Interlocked.Increment(ref joinSuccessCount);
+                    joinedConnections.Add(conn);
                 }
-                catch (Exception)
+                catch (HubException)
                 {
-                    // Tolerate transient failures (500s) under rapid-fire stress.
-                    // The eventual-consistency check below will use the actual
-                    // success count rather than assuming all joins succeeded.
+                    // Tolerate transient HubException (e.g., SQLite contention
+                    // under rapid-fire stress). The eventual-consistency check
+                    // below uses the actual success count.
                 }
             }).ToArray();
 
             joinBarrier.Release(connectionCount);
             await Task.WhenAll(joinTasks);
 
-            var actualJoined = Interlocked.CompareExchange(ref joinSuccessCount, 0, 0);
+            var actualJoined = joinedConnections.Count;
             actualJoined.Should().BeGreaterOrEqualTo(1,
                 "at least one concurrent join should succeed under stress");
 
@@ -140,10 +141,10 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
 
             // First half of successfully-joined connections leave rapidly
             observerEvents.Clear();
-            var leavingCount = Math.Min(connectionCount / 2, actualJoined);
+            var leavingConns = joinedConnections.Take(joinedConnections.Count / 2).ToList();
             var leaveSuccessCount = 0;
-            using var leaveBarrier = new SemaphoreSlim(0, leavingCount);
-            var leaveTasks = connections.Take(leavingCount).Select(async conn =>
+            using var leaveBarrier = new SemaphoreSlim(0, leavingConns.Count);
+            var leaveTasks = leavingConns.Select(async conn =>
             {
                 await leaveBarrier.WaitAsync(TimeSpan.FromSeconds(10));
                 try
@@ -151,17 +152,16 @@ public class BoardPresenceConcurrencyTests : IClassFixture<TestWebApplicationFac
                     await conn.InvokeAsync("LeaveBoard", board.Id);
                     Interlocked.Increment(ref leaveSuccessCount);
                 }
-                catch (Exception)
+                catch (HubException)
                 {
-                    // Tolerate transient failures during rapid leave
+                    // Tolerate transient HubException during rapid leave
                 }
             }).ToArray();
 
-            leaveBarrier.Release(leavingCount);
+            leaveBarrier.Release(leavingConns.Count);
             await Task.WhenAll(leaveTasks);
 
             var actualLeft = Interlocked.CompareExchange(ref leaveSuccessCount, 0, 0);
-            // Wait for leaves to settle — remaining = joined - actually left
             var remaining = actualJoined - actualLeft;
             var afterLeave = await WaitForPresenceCountAsync(
                 observerEvents, remaining + 1, TimeSpan.FromSeconds(10));
