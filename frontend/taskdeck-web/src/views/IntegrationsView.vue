@@ -274,8 +274,8 @@ onMounted(() => {
           tabindex="0"
           :aria-expanded="selectedId === connector.id"
           @click="handleSelectConnector(connector)"
-          @keydown.enter="handleSelectConnector(connector)"
-          @keydown.space.prevent="handleSelectConnector(connector)"
+          @keydown.enter.self="handleSelectConnector(connector)"
+          @keydown.space.self.prevent="handleSelectConnector(connector)"
         >
           <div class="td-int__card-info">
             <h3 class="td-int__card-name">{{ connector.name }}</h3>
