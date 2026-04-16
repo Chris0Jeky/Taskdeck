@@ -540,6 +540,7 @@ public class OutboundWebhookHmacDeliveryTests
         public IMfaCredentialRepository MfaCredentials => null!;
         public IIntegrationConnectorRepository IntegrationConnectors => null!;
         public IConnectorEventRepository ConnectorEvents => null!;
+        public IConnectorCredentialRepository ConnectorCredentials => null!;
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(0);

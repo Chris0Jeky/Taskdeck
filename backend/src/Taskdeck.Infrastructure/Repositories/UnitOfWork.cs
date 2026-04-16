@@ -43,7 +43,8 @@ public class UnitOfWork : IUnitOfWork
         IApiKeyRepository apiKeys,
         IMfaCredentialRepository mfaCredentials,
         IIntegrationConnectorRepository integrationConnectors,
-        IConnectorEventRepository connectorEvents)
+        IConnectorEventRepository connectorEvents,
+        IConnectorCredentialRepository connectorCredentials)
     {
         _context = context;
         Boards = boards;
@@ -76,6 +77,7 @@ public class UnitOfWork : IUnitOfWork
         MfaCredentials = mfaCredentials;
         IntegrationConnectors = integrationConnectors;
         ConnectorEvents = connectorEvents;
+        ConnectorCredentials = connectorCredentials;
     }
 
     public IBoardRepository Boards { get; }
@@ -108,6 +110,7 @@ public class UnitOfWork : IUnitOfWork
     public IMfaCredentialRepository MfaCredentials { get; }
     public IIntegrationConnectorRepository IntegrationConnectors { get; }
     public IConnectorEventRepository ConnectorEvents { get; }
+    public IConnectorCredentialRepository ConnectorCredentials { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

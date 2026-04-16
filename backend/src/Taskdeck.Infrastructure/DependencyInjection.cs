@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
@@ -50,7 +51,19 @@ public static class DependencyInjection
         services.AddScoped<IMfaCredentialRepository, MfaCredentialRepository>();
         services.AddScoped<IIntegrationConnectorRepository, IntegrationConnectorRepository>();
         services.AddScoped<IConnectorEventRepository, ConnectorEventRepository>();
+        services.AddScoped<IConnectorCredentialRepository, ConnectorCredentialRepository>();
         services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
+
+        // Credential encryption — uses a configurable AES-256 key.
+        // Falls back to a deterministic development-only key if none is configured.
+        var credentialEncryptionKey = configuration["Connectors:EncryptionKey"];
+        if (string.IsNullOrWhiteSpace(credentialEncryptionKey))
+        {
+            // 256-bit development-only key. Production MUST override via config.
+            credentialEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        }
+        services.AddSingleton<ICredentialEncryptionService>(
+            new AesCredentialEncryptionService(credentialEncryptionKey));
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // Cache service registration

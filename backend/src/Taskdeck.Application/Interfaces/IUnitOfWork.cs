@@ -32,6 +32,7 @@ public interface IUnitOfWork
     IMfaCredentialRepository MfaCredentials { get; }
     IIntegrationConnectorRepository IntegrationConnectors { get; }
     IConnectorEventRepository ConnectorEvents { get; }
+    IConnectorCredentialRepository ConnectorCredentials { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

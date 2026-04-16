@@ -44,6 +44,7 @@ public class TaskdeckDbContext : DbContext
     public DbSet<MfaCredential> MfaCredentials => Set<MfaCredential>();
     public DbSet<IntegrationConnector> IntegrationConnectors => Set<IntegrationConnector>();
     public DbSet<ConnectorEvent> ConnectorEvents => Set<ConnectorEvent>();
+    public DbSet<ConnectorCredential> ConnectorCredentials => Set<ConnectorCredential>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
