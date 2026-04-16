@@ -1,9 +1,15 @@
-import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosHeaders, type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { isTokenExpired } from '../utils/jwt'
 import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
 import * as tokenStorage from '../utils/tokenStorage'
+import {
+  MAX_RETRIES,
+  computeRetryDelay,
+  isRetryableError,
+  type RetryableRequestConfig,
+} from './httpRetry'
 
 const REQUEST_ID_HEADER = 'X-Request-Id'
 
@@ -63,6 +69,49 @@ http.interceptors.response.use(
     }
     return Promise.reject(error)
   }
+)
+
+/**
+ * Retry interceptor (issue #854 / FE-15).
+ *
+ * Response rejection handlers fire in registration order, so this handler
+ * runs AFTER the 401/error-logging handler above — the 401 handler sees the
+ * original transient failure first (harmless logging, no-op since it is not
+ * a 401), then we decide whether to retry. On a retryable transient failure
+ * (5xx, 429, network/timeout) against an idempotent method, we wait with
+ * exponential backoff (honouring Retry-After for 429) and re-issue the
+ * request via `http.request(config)`. Non-retryable errors (4xx other than
+ * 429, non-idempotent methods, exhausted retries, cancellations) reject,
+ * so the caller sees the terminal error. 401 handling is preserved because
+ * 401 is never retryable, so the first handler's redirect logic runs
+ * normally before we pass the rejection through.
+ */
+http.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const config = error.config as (RetryableRequestConfig & InternalAxiosRequestConfig) | undefined
+    if (!config) return Promise.reject(error)
+
+    if (!isRetryableError(error)) return Promise.reject(error)
+
+    const attempt = (config.__retryCount ?? 0) + 1
+    if (attempt > MAX_RETRIES) return Promise.reject(error)
+    config.__retryCount = attempt
+
+    const delay = computeRetryDelay(error, attempt)
+    if (import.meta.env.DEV) {
+      const status = error.response?.status ?? 'network'
+      console.warn(
+        `[http] retry ${attempt}/${MAX_RETRIES} for ${config.method?.toUpperCase()} ${config.url} ` +
+          `after ${delay}ms (status=${status})`,
+      )
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, delay))
+    // Bail out if the caller cancelled the request while we were waiting.
+    if (config.signal?.aborted) return Promise.reject(error)
+    return http.request(config)
+  },
 )
 
 export default http
