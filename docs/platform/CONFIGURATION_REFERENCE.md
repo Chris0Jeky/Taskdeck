@@ -314,4 +314,209 @@ provider values fall back to `InMemory` with a warning log.
 | `Cache:KeyPrefix` | `string` | `td` | Global key prefix used by cache entries. | No |
 | `Cache:BoardListTtlSeconds` | `int` | `60` | TTL for the board-list cache entries, in seconds. | No |
 
+## SignalR
+
+Consumed directly by `SignalRRegistration.AddTaskdeckSignalR`. When a Redis
+connection string is configured, the backplane uses channel prefix
+`taskdeck`; otherwise SignalR falls back to in-memory transport. See
+`docs/platform/SIGNALR_SCALEOUT_RUNBOOK.md` for operational guidance.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `SignalR:Redis:ConnectionString` | `string` | `""` | StackExchange.Redis connection string used as the SignalR backplane. Leave blank for single-instance / in-memory mode. | Only for multi-instance deployments |
+
+## Security headers
+
+Bound to `SecurityHeadersSettings`. `EnableHsts` is forced to `false` in
+Development when the key is unset (`SettingsRegistration.cs`). Consumed by
+`SecurityHeadersMiddleware`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `SecurityHeaders:Enabled` | `bool` | `true` | Master switch for the header middleware. | No |
+| `SecurityHeaders:EnableContentSecurityPolicy` | `bool` | `true` | Emit `Content-Security-Policy` header. | No |
+| `SecurityHeaders:EnableXFrameOptions` | `bool` | `true` | Emit `X-Frame-Options`. | No |
+| `SecurityHeaders:EnableXContentTypeOptions` | `bool` | `true` | Emit `X-Content-Type-Options: nosniff`. | No |
+| `SecurityHeaders:EnableReferrerPolicy` | `bool` | `true` | Emit `Referrer-Policy`. | No |
+| `SecurityHeaders:EnableHsts` | `bool` | `true` (production), `false` (Development unless explicitly set) | Emit `Strict-Transport-Security`. | No |
+| `SecurityHeaders:ExcludeSwaggerFromContentSecurityPolicy` | `bool` | `true` | Omit CSP on `/swagger` so Swagger UI can load its assets. | No |
+| `SecurityHeaders:HstsMaxAgeDays` | `int` | `365` | `max-age` value for HSTS in days. | No |
+| `SecurityHeaders:HstsIncludeSubDomains` | `bool` | `false` | Include `includeSubDomains` in HSTS. | No |
+| `SecurityHeaders:HstsPreload` | `bool` | `false` | Include `preload` in HSTS. | No |
+| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'` | Raw CSP string. | No |
+| `SecurityHeaders:XFrameOptions` | `string` | `DENY` | Value for `X-Frame-Options`. | No |
+| `SecurityHeaders:ReferrerPolicy` | `string` | `no-referrer` | Value for `Referrer-Policy`. | No |
+
+## Telemetry, observability, and analytics
+
+### `Observability`
+
+Bound to `ObservabilitySettings`. Consumed by `AddTaskdeckObservability`.
+
+| Key | Type | Default (prod) | Development override | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `Observability:EnableOpenTelemetry` | `bool` | `true` | `true` | Enables OpenTelemetry tracing and metrics. | No |
+| `Observability:ServiceName` | `string` | `Taskdeck.Api` | same | `service.name` resource attribute. | No |
+| `Observability:OtlpEndpoint` | `string?` | `""` (no OTLP exporter) | `""` | OTLP endpoint URL (e.g. `http://collector:4317`). When blank, no OTLP exporter is added. | No |
+| `Observability:EnableConsoleExporter` | `bool` | `false` | `false` | Emit spans and metrics to the console. Useful for debugging. | No |
+| `Observability:MetricExportIntervalSeconds` | `int` | `30` | `10` | Metric export interval in seconds. | No |
+
+### `Sentry`
+
+Bound to `SentrySettings`. Consumed by `AddTaskdeckSentry`. Defaults mean
+Sentry is fully off until explicitly opted in.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Sentry:Enabled` | `bool` | `false` | Master switch. | No |
+| `Sentry:Dsn` | `string` | `""` | Sentry DSN. Required when `Enabled = true`. | Only for `Sentry:Enabled = true` |
+| `Sentry:Environment` | `string` | `production` | Environment tag sent with events. | No |
+| `Sentry:TracesSampleRate` | `double` | `0.1` | Performance tracing sample rate (0.0–1.0). | No |
+| `Sentry:SendDefaultPii` | `bool` | `false` | When true, Sentry forwards default PII (usernames, emails, IPs). Leave false to preserve PII scrubbing. | No |
+
+### `Telemetry`
+
+Bound to `TelemetrySettings`. Controls the opt-in product-event batch
+endpoint.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Telemetry:Enabled` | `bool` | `false` | Master switch — events are discarded when false. | No |
+| `Telemetry:MaxBatchSize` | `int` | `100` | Max events accepted in a single batch request. | No |
+
+### `Analytics`
+
+Bound to `AnalyticsSettings`. Controls the self-hosted analytics script the
+frontend reads from the public config endpoint.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `Analytics:Enabled` | `bool` | `false` | Master switch. | No |
+| `Analytics:Provider` | `string` | `""` | `plausible` or `umami`. Case-insensitive. | Only for `Analytics:Enabled = true` |
+| `Analytics:ScriptUrl` | `string` | `""` | Absolute URL to the analytics script. | Only for `Analytics:Enabled = true` |
+| `Analytics:SiteId` | `string` | `""` | Site identifier used by the analytics provider. | Only for `Analytics:Enabled = true` |
+
+## Persistence and first run
+
+### `ConnectionStrings`
+
+Consumed in two places:
+`Taskdeck.Infrastructure.DependencyInjection.AddInfrastructure` (EF Core
+DbContext) and
+`SettingsRegistration.cs` (`DatabaseExportImportSettings.ConnectionString`).
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `ConnectionStrings:DefaultConnection` | `string` | `Data Source=taskdeck.db` | SQLite connection string. When `FirstRun:ResolveAppDataDbPath` is true and the path is relative, first-run resolves it into the OS LocalAppData directory (`%LOCALAPPDATA%/Taskdeck` on Windows, XDG equivalent on Linux). | Yes (but a default is always supplied) |
+
+### `ExportImport`
+
+Consumed directly by `SettingsRegistration.cs`. Backs
+`DatabaseExportImportSettings.MaxImportBytes`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `ExportImport:MaxDatabaseImportBytes` | `int` | `52428800` (50 MiB) | Maximum accepted size of a SQLite database file on import. | No |
+
+### `FirstRun`
+
+Bound to `FirstRunSettings` (`Taskdeck.Api.FirstRun.FirstRunSettings`).
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `FirstRun:AutoOpenBrowser` | `bool` | `false` | When true, the API process opens a browser window to the local URL after startup. Intended for the packaged desktop distribution; never use in CI or server deployments. | No |
+| `FirstRun:Port` | `int` | `5000` | Port used to construct the browser URL shown in logs. | No |
+| `FirstRun:ResolveAppDataDbPath` | `bool` | `true` | When true, first-run rewrites a relative SQLite `Data Source` path into the OS LocalAppData directory. | No |
+
+### `DevelopmentSandbox`
+
+Bound to `DevelopmentSandboxSettings`. Even when `Enabled = true`, the
+sandbox is force-disabled outside the `Development` environment
+(`SettingsRegistration.cs`).
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. | No |
+
+## Logging
+
+Standard ASP.NET Core logging configuration. These keys are read by the
+default `Microsoft.Extensions.Logging` providers (no Taskdeck-specific
+class).
+
+| Key | Type | Default (prod) | Development override | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `Logging:LogLevel:Default` | `string` | `Information` | `Debug` | Default minimum log level. | No |
+| `Logging:LogLevel:Microsoft.AspNetCore` | `string` | `Warning` | `Information` | Minimum level for ASP.NET Core framework logs. | No |
+
+## Environment variable overrides
+
+Standard ASP.NET Core conventions apply — any configuration key may be
+overridden by an environment variable that replaces JSON colons with double
+underscores.
+
+Rules:
+
+- Nested key `Section:SubKey` becomes environment variable `Section__SubKey`.
+- Array indices use numeric segments, e.g. `Oidc:Providers:0:ClientId` →
+  `Oidc__Providers__0__ClientId`.
+- Environment variables have higher precedence than `appsettings.local.json`
+  (see `FirstRunBootstrapper.AddLocalConfigFile`), so operators can always
+  override generated values.
+- `ConnectionStrings:DefaultConnection` may also be provided via the
+  `ConnectionStrings__DefaultConnection` env var or the ASP.NET Core
+  `CUSTOMCONNSTR_*` / `SQLAZURECONNSTR_*` fallbacks.
+- ASP.NET Core host variables (not Taskdeck-specific but required in
+  containerized runs):
+  - `ASPNETCORE_ENVIRONMENT` — selects which `appsettings.{env}.json`
+    file is loaded. `Production` in Docker, `Development` via
+    `launchSettings.json` locally.
+  - `ASPNETCORE_URLS` — e.g. `http://+:8080` inside the container.
+  - `ASPNETCORE_FORWARDEDHEADERS_ENABLED` — when `true`, ASP.NET Core
+    enables forwarded-header processing. The Taskdeck pipeline still
+    requires `ForwardedHeaders:KnownProxies` / `KnownNetworks` to be
+    populated before proxy headers are honored.
+
+Examples:
+
+| JSON key | Environment variable |
+| --- | --- |
+| `Jwt:SecretKey` | `Jwt__SecretKey` |
+| `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
+| `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
+| `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
+| `SignalR:Redis:ConnectionString` | `SignalR__Redis__ConnectionString` |
+| `Cors:AllowedOrigins` (as comma-separated string) | `Cors__AllowedOrigins` |
+
+## Docker Compose environment variables
+
+`deploy/docker-compose.yml` wires the following operator-facing variables
+(sourced from `deploy/.env.example`). Values are injected into the `api`
+container as standard ASP.NET Core environment variables.
+
+| Compose variable | Maps to | Default | Required? |
+| --- | --- | --- | --- |
+| `TASKDECK_JWT_SECRET` | `Jwt__SecretKey` | — (compose uses `?` so the container fails to start when unset) | Yes |
+| `TASKDECK_JWT_ISSUER` | `Jwt__Issuer` | `Taskdeck` | No |
+| `TASKDECK_JWT_AUDIENCE` | `Jwt__Audience` | `TaskdeckUsers` | No |
+| `TASKDECK_JWT_EXPIRATION_MINUTES` | `Jwt__ExpirationMinutes` | `1440` | No |
+| `TASKDECK_LLM_ENABLE_LIVE_PROVIDERS` | `Llm__EnableLiveProviders` | `false` | No |
+| `TASKDECK_LLM_PROVIDER` | `Llm__Provider` | `Mock` | No |
+| `TASKDECK_LLM_OPENAI_API_KEY` | `Llm__OpenAi__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAi` |
+| `TASKDECK_LLM_GEMINI_API_KEY` | `Llm__Gemini__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=Gemini` |
+| `TASKDECK_PROXY_PORT` | Host port mapped to the nginx reverse proxy | `8080` | No |
+| `TASKDECK_VITE_API_BASE_URL` | Build-time `VITE_API_BASE_URL` for the web image | `/api` | No |
+
+Additional environment variables hard-coded in `docker-compose.yml`:
+
+- `ASPNETCORE_ENVIRONMENT=Production`
+- `ASPNETCORE_URLS=http://+:8080`
+- `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`
+- `ConnectionStrings__DefaultConnection=Data Source=/app/data/taskdeck.db`
+  (backed by the `taskdeck-db` named volume)
+- `DevelopmentSandbox__Enabled=false`
+
+For rotation and secrets handling guidance, see
+`docs/security/SECRETS_MANAGEMENT_BASELINE.md`.
+
 
