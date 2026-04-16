@@ -1,0 +1,118 @@
+# =============================================================================
+# Taskdeck Production Dockerfile — single container serving API + SPA
+# =============================================================================
+# Multi-stage build:
+#   1. frontend-build: Node.js → Vite → static dist
+#   2. backend-build:  .NET 8 SDK → restore → publish
+#   3. runtime:        ASP.NET 8 runtime + SPA in wwwroot
+#
+# The .NET API serves the Vue SPA from wwwroot/ (UseStaticFiles +
+# MapFallbackToFile) so no separate nginx or frontend container is needed.
+#
+# Build:
+#   docker build -f deploy/Dockerfile.production -t taskdeck-prod .
+#
+# Run:
+#   docker run -p 5000:5000 \
+#     -e Jwt__SecretKey=<your-secret> \
+#     -e Cors__AllowedOrigins=https://your-domain.com \
+#     -v taskdeck-data:/app/data \
+#     taskdeck-prod
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build the Vue/Vite frontend
+# ---------------------------------------------------------------------------
+FROM node:24-bookworm-slim AS frontend-build
+WORKDIR /app
+
+# Install dependencies first (layer cache)
+COPY frontend/taskdeck-web/package.json frontend/taskdeck-web/package-lock.json ./
+RUN npm ci --ignore-scripts=false
+
+# Copy source and build
+COPY frontend/taskdeck-web/ ./
+
+# In the production single-container setup, the frontend makes requests to the
+# same origin (no /api prefix rewrite needed — the API serves at /api/*).
+ARG VITE_API_BASE_URL=/api
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Stage 2: Build the .NET backend
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS backend-build
+WORKDIR /src
+
+# Copy solution and project files first for restore layer caching
+COPY backend/Taskdeck.sln backend/
+COPY backend/src/Taskdeck.Domain/Taskdeck.Domain.csproj backend/src/Taskdeck.Domain/
+COPY backend/src/Taskdeck.Application/Taskdeck.Application.csproj backend/src/Taskdeck.Application/
+COPY backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj backend/src/Taskdeck.Infrastructure/
+COPY backend/src/Taskdeck.Api/Taskdeck.Api.csproj backend/src/Taskdeck.Api/
+
+# Restore from .csproj layer (cached if deps haven't changed)
+RUN dotnet restore backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+
+# Copy all backend source
+COPY backend/ backend/
+
+# Publish release build
+RUN dotnet publish backend/src/Taskdeck.Api/Taskdeck.Api.csproj \
+    -c Release \
+    -o /app/publish \
+    /p:UseAppHost=false
+
+# ---------------------------------------------------------------------------
+# Stage 3: Production runtime
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+
+# Install curl for Docker HEALTHCHECK probe
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd --gid 1001 taskdeck \
+    && useradd --uid 1001 --gid taskdeck --shell /bin/false --create-home taskdeck
+
+# Create persistent data directory (mounted volume in production)
+RUN mkdir -p /app/data && chown taskdeck:taskdeck /app/data
+
+# Copy published .NET application
+COPY --from=backend-build /app/publish ./
+
+# Copy frontend build output into wwwroot/ so the .NET app serves it
+# (PipelineConfiguration.cs: UseDefaultFiles + UseStaticFiles + MapFallbackToFile)
+COPY --from=frontend-build /app/dist ./wwwroot/
+
+# Environment defaults for production.
+# Railway/Render inject a PORT env var at runtime. The entrypoint script
+# translates PORT into ASPNETCORE_URLS so the .NET app binds to the right port.
+# When PORT is not set (local Docker), it defaults to 5000.
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+# SQLite database on persistent volume
+ENV ConnectionStrings__DefaultConnection="Data Source=/app/data/taskdeck.db"
+# Disable first-run browser auto-open in containers
+ENV FirstRun__AutoOpenBrowser=false
+ENV FirstRun__ResolveAppDataDbPath=false
+# Development sandbox disabled in production
+ENV DevelopmentSandbox__Enabled=false
+
+EXPOSE 5000
+
+# Health check: verify the API is ready (DB connected, workers healthy).
+# Uses shell form so PORT is evaluated at runtime (not build time).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-5000}/health/ready || exit 1
+
+# Switch to non-root user
+USER taskdeck
+
+# Shell form entrypoint so that $PORT is evaluated at container start.
+# Railway and Render inject PORT; if absent, defaults to 5000.
+CMD ASPNETCORE_URLS="http://+:${PORT:-5000}" exec dotnet Taskdeck.Api.dll
