@@ -333,4 +333,188 @@ describe('http interceptors (#725)', () => {
       expect(response.data).toEqual({ id: 'new-1' })
     })
   })
+
+  // ── Retry interceptor (#854) ───────────────────────────────────────────
+
+  describe('retry interceptor (#854)', () => {
+    // Use fake timers so the 1s/2s/4s backoffs don't actually wait.
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    // Drive the retry loop: advance fake timers until axios-mock-adapter has
+    // seen `expectedRequests` total requests (or until we time out). Works
+    // whether delays are 1s, 2s, 4s, Retry-After, etc.
+    async function drainRetries(expectedRequests: number, options: { maxTicks?: number; tickMs?: number } = {}) {
+      const maxTicks = options.maxTicks ?? 200
+      const tickMs = options.tickMs ?? 100
+      for (let i = 0; i < maxTicks; i++) {
+        if (mock.history.get.length >= expectedRequests) return
+        await vi.advanceTimersByTimeAsync(tickMs)
+      }
+    }
+
+    it('retries GET 500 three times then fails (4 total requests)', async () => {
+      mock.onGet('/flaky').reply(500, { error: 'boom' })
+
+      const pending = http.get('/flaky')
+      const expectation = expect(pending).rejects.toMatchObject({
+        response: { status: 500 },
+      })
+      await drainRetries(4, { tickMs: 1000, maxTicks: 30 })
+      await expectation
+
+      expect(mock.history.get.length).toBe(4)
+    })
+
+    it('succeeds on retry when GET 500 then 200', async () => {
+      let call = 0
+      mock.onGet('/eventually').reply(() => {
+        call++
+        return call === 1 ? [500, { error: 'temp' }] : [200, { ok: true }]
+      })
+
+      const pending = http.get('/eventually')
+      await drainRetries(2, { tickMs: 1000, maxTicks: 10 })
+      const response = await pending
+
+      expect(response.status).toBe(200)
+      expect(response.data).toEqual({ ok: true })
+      expect(mock.history.get.length).toBe(2)
+    })
+
+    it('does not retry POST on 500 (single request)', async () => {
+      mock.onPost('/write').reply(500, { error: 'boom' })
+
+      await expect(http.post('/write', { k: 'v' })).rejects.toMatchObject({
+        response: { status: 500 },
+      })
+      expect(mock.history.post.length).toBe(1)
+    })
+
+    it('does not retry PATCH on 500 (single request)', async () => {
+      mock.onPatch('/update').reply(500, { error: 'boom' })
+
+      await expect(http.patch('/update', { k: 'v' })).rejects.toMatchObject({
+        response: { status: 500 },
+      })
+      expect(mock.history.patch.length).toBe(1)
+    })
+
+    it('retries PUT on 500', async () => {
+      mock.onPut('/put').reply(500, { error: 'boom' })
+
+      const pending = http.put('/put', { k: 'v' })
+      const expectation = expect(pending).rejects.toMatchObject({
+        response: { status: 500 },
+      })
+      await drainRetries(4, { tickMs: 1000, maxTicks: 30 })
+      // drainRetries tracks only GET; use history.put instead for this case
+      for (let i = 0; i < 30 && mock.history.put.length < 4; i++) {
+        await vi.advanceTimersByTimeAsync(1000)
+      }
+      await expectation
+
+      expect(mock.history.put.length).toBe(4)
+    })
+
+    it('does not retry GET 404 (4xx client error)', async () => {
+      mock.onGet('/missing').reply(404, { error: 'nope' })
+
+      await expect(http.get('/missing')).rejects.toMatchObject({
+        response: { status: 404 },
+      })
+      expect(mock.history.get.length).toBe(1)
+    })
+
+    it('does not retry GET 401 (preserves session redirect flow)', async () => {
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/workspace/home', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      const clearSpy = vi.spyOn(tokenStorage, 'clearAll')
+      mock.onGet('/auth').reply(401, { error: 'nope' })
+
+      await expect(http.get('/auth')).rejects.toMatchObject({
+        response: { status: 401 },
+      })
+      expect(mock.history.get.length).toBe(1)
+      // Existing 401 handler must still fire.
+      expect(clearSpy).toHaveBeenCalled()
+    })
+
+    it('retries GET on network error', async () => {
+      mock.onGet('/offline').networkError()
+
+      const pending = http.get('/offline')
+      const expectation = expect(pending).rejects.toThrow()
+      await drainRetries(4, { tickMs: 1000, maxTicks: 30 })
+      await expectation
+
+      expect(mock.history.get.length).toBe(4)
+    })
+
+    it('honours numeric Retry-After on 429', async () => {
+      // First call: 429 with Retry-After: 2 (seconds). Second call: 200.
+      let call = 0
+      mock.onGet('/throttled').reply(() => {
+        call++
+        if (call === 1) return [429, { error: 'slow down' }, { 'retry-after': '2' }]
+        return [200, { ok: true }]
+      })
+
+      const pending = http.get('/throttled')
+      // Advance 1.9s — retry should NOT have fired yet.
+      await vi.advanceTimersByTimeAsync(1900)
+      expect(mock.history.get.length).toBe(1)
+      // Advance past the 2s mark.
+      await vi.advanceTimersByTimeAsync(200)
+      const response = await pending
+
+      expect(response.status).toBe(200)
+      expect(mock.history.get.length).toBe(2)
+    })
+
+    it('honours HTTP-date Retry-After on 429', async () => {
+      const fixedNow = Date.parse('2026-04-16T12:00:00Z')
+      vi.setSystemTime(fixedNow)
+      const target = new Date(fixedNow + 3000).toUTCString() // 3s in the future
+
+      let call = 0
+      mock.onGet('/throttled-date').reply(() => {
+        call++
+        if (call === 1) return [429, { error: 'slow down' }, { 'retry-after': target }]
+        return [200, { ok: true }]
+      })
+
+      const pending = http.get('/throttled-date')
+      await drainRetries(2, { tickMs: 500, maxTicks: 20 })
+      const response = await pending
+
+      expect(response.status).toBe(200)
+      expect(mock.history.get.length).toBe(2)
+    })
+
+    it('aborts retry loop when request is cancelled mid-wait', async () => {
+      mock.onGet('/slow').reply(500, { error: 'boom' })
+      const controller = new AbortController()
+      const pending = http.get('/slow', { signal: controller.signal })
+
+      // Let first attempt fail and enter the retry wait.
+      await vi.advanceTimersByTimeAsync(1)
+      expect(mock.history.get.length).toBe(1)
+
+      controller.abort()
+      // Advance past the backoff; should NOT re-issue.
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      await expect(pending).rejects.toBeDefined()
+      expect(mock.history.get.length).toBe(1)
+    })
+  })
 })
