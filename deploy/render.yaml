@@ -1,14 +1,18 @@
 # =============================================================================
 # Render Blueprint specification for Taskdeck
 # =============================================================================
-# Render reads render.yaml from the repo root to auto-configure services.
+# NOTE: Render auto-detects render.yaml only at the repo root. Because this
+# file lives under deploy/, you must set the Blueprint Sync Path to "deploy"
+# in the Render dashboard (Account Settings > Blueprints). See the deployment
+# guide for details.
 #
 # Deployment steps:
 #   1. Create a Render account at https://render.com
 #   2. Click "New" → "Blueprint" and connect this repo
-#   3. Render reads this file and provisions the service + disk
-#   4. Set environment variables in the Render dashboard
-#   5. Deploy
+#   3. Set the Blueprint path to "deploy" in the Render dashboard
+#   4. Render reads this file and provisions the service + disk
+#   5. Set environment variables in the Render dashboard
+#   6. Deploy
 #
 # See docs/platform/CLOUD_DEPLOYMENT_GUIDE.md for full instructions.
 # =============================================================================

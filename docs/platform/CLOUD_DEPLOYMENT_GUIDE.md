@@ -127,10 +127,20 @@ Railway deploys automatically on push to the connected branch. Verify deployment
 
 ### Step 1: Create a Render service
 
+> **Blueprint path**: Render auto-detects `render.yaml` only at the repo root.
+> Since Taskdeck keeps it at `deploy/render.yaml`, you must set the
+> **Blueprint Sync Path** in the Render dashboard:
+> 1. Go to **Account Settings** > **Blueprints**
+> 2. Click **Sync** next to the connected repo
+> 3. Set **Root Directory** (or "Blueprint Path") to `deploy`
+>
+> Alternatively, use the manual Web Service setup below.
+
 1. Go to [render.com](https://render.com) and sign in
 2. Click **New** > **Blueprint**
 3. Connect the Taskdeck repository
-4. Render reads `deploy/render.yaml` and provisions the service and disk
+4. Set the Blueprint path to `deploy` (see note above)
+5. Render reads `deploy/render.yaml` and provisions the service and disk
 
 Alternatively, create a **Web Service** manually:
 1. Click **New** > **Web Service**
