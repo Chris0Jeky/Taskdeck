@@ -16,6 +16,17 @@ public sealed class ConnectorEventRepository : Repository<ConnectorEvent>, IConn
         int limit = 20,
         CancellationToken cancellationToken = default)
     {
+        // Raw SQL required for SQLite: EF Core's LINQ provider cannot correctly
+        // translate OrderByDescending + Take on DateTimeOffset columns stored as text.
+        // This pattern is used consistently across all repositories in this codebase.
+        if (_context.Database.IsSqlite())
+        {
+            return await _context.ConnectorEvents
+                .FromSqlInterpolated(
+                    $"SELECT * FROM ConnectorEvents WHERE ConnectorId = {connectorId} ORDER BY CreatedAt DESC LIMIT {limit}")
+                .ToListAsync(cancellationToken);
+        }
+
         return await _context.ConnectorEvents
             .Where(e => e.ConnectorId == connectorId)
             .OrderByDescending(e => e.CreatedAt)
