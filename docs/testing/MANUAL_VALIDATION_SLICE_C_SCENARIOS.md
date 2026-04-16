@@ -487,9 +487,9 @@ cat /tmp/sc019.json | jq .
 ```
 
 **Expected Outcome:**
-- HTTP 409 (Conflict) or 400 (InvalidOperation).
+- HTTP 200 (idempotent success) — the execute endpoint is idempotent by design.
 - Board state unchanged (no duplicate card creation, no duplicate move).
-- Error message indicates the proposal has already been applied.
+- Proposal remains in `Applied` status.
 
 ---
 
