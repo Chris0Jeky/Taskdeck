@@ -1,12 +1,12 @@
 /**
  * E2E: Keyboard Navigation Scenarios
  *
- * Covers keyboard-driven workflows beyond the basic escape tests:
- * - Full keyboard-only board workflow (create board, add column, add card)
- * - Command palette: navigate with arrow keys and Enter
- * - Keyboard shortcut 'n' to add a new card
- * - Shortcut help panel toggled by ? key
+ * Covers keyboard-driven workflows:
+ * - Board creation and column management via keyboard shortcuts
+ * - Card creation with keyboard-driven workflow
+ * - Command palette navigation
  * - Escape from command palette closes it and returns to the prior view
+ * - Shortcuts help overlay toggle
  */
 
 import type { Page } from '@playwright/test'

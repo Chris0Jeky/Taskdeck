@@ -1,10 +1,10 @@
 /**
  * E2E: Review and Proposal Journey Expansion
  *
- * Extends the review/proposal coverage beyond the golden-path tests:
- * - Board-scoped proposal filtering: only shows proposals for the selected board
- * - Multiple proposals on one board: batch visibility
- * - Applied proposal appears in completed toggle: visible when Show Completed is enabled
+ * Covers review/proposal scenarios:
+ * - Board-scoped proposal filtering (boardId query parameter)
+ * - Multiple pending proposals displayed for the same board
+ * - Applied proposal visibility via the Show Completed toggle
  */
 
 import { expect, test } from '@playwright/test'

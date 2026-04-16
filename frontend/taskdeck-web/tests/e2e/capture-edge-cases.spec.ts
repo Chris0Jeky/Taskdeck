@@ -1,12 +1,11 @@
 /**
  * E2E: Capture Edge Cases
  *
- * Extends capture coverage with UI-driven scenarios beyond the API-level
- * edge-journey tests:
- * - UI capture from the global hotkey with empty text is rejected
- * - UI capture from the board action rail linked to a board
- * - Capture modal can be dismissed without saving
- * - Capture with only whitespace is rejected
+ * Covers UI-driven capture edge-case scenarios:
+ * - Empty text rejection (submit with no input)
+ * - Whitespace-only text rejection
+ * - Escape dismissal without saving
+ * - Board-linked capture from the board action rail
  */
 
 import type { Page } from '@playwright/test'

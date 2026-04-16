@@ -11,7 +11,7 @@
 
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
-import { registerAndAttachSession, registerUserSession, attachSessionToPage, type AuthResult } from './support/authSession'
+import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 
 let auth: AuthResult
@@ -148,39 +148,6 @@ test('toggling dark mode off should restore light theme', async ({ page }) => {
 
 // --- System prefers-color-scheme ---
 
-test('system prefers-color-scheme dark should activate dark mode on first visit', async ({ browser, baseURL }) => {
-  // Create a context with dark color scheme preference.
-  // Must pass baseURL so relative page.goto() calls resolve correctly
-  // (manually created contexts do not inherit the project use.baseURL).
-  const darkContext = await browser.newContext({
-    colorScheme: 'dark',
-    baseURL: baseURL ?? undefined,
-  })
-
-  const page = await darkContext.newPage()
-
-  // Register and attach session for this new context
-  const contextRequest = darkContext.request
-  const contextAuth = await registerUserSession(contextRequest, 'dark-mode-system')
-  await attachSessionToPage(page, contextAuth)
-
-  try {
-    await page.goto('/workspace/home')
-    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
-
-    // Check if the app respects system dark mode preference
-    const hasDark = await isDarkMode(page)
-
-    // If the app respects system preference, dark mode should be active.
-    // If not implemented, we still pass the test (graceful degradation).
-    // This test documents the expected behavior.
-    if (!hasDark) {
-      test.info().annotations.push({
-        type: 'note',
-        description: 'App does not automatically respect system prefers-color-scheme:dark. Consider implementing this.',
-      })
-    }
-  } finally {
-    await darkContext.close()
-  }
+test.fixme('system prefers-color-scheme dark should activate dark mode on first visit', async () => {
+  // TODO: implement once automatic system dark mode detection is shipped
 })
