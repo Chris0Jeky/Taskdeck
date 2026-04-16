@@ -247,7 +247,7 @@ test.describe('TST11-SC-023: Activity view mode switching', () => {
     await createBoard(request, `Activity Mode ${Date.now()}`)
 
     await page.goto('/workspace/activity')
-    await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
 
     // Verify the hero actions are present (use .first() since the button also
     // appears inside the WorkspaceHelpCallout actions slot)
@@ -292,7 +292,7 @@ test.describe('TST11-SC-024: Activity selector discoverability', () => {
     await createBoard(request, `Activity Discover ${Date.now()}`)
 
     await page.goto('/workspace/activity')
-    await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
 
     // Help callout should be visible
     await expect(page.getByText('Why do these selectors matter?')).toBeVisible()
