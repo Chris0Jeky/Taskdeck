@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-04-13
+Last Updated: 2026-04-15
 <br>
 Status Owner: Repository maintainers
 Authoritative Scope: Current implementation, verified test execution, and active phase progress
@@ -127,6 +127,14 @@ Current constraints are mostly hardening and consistency:
   - **Concurrency and race condition stress tests** (`#705`/`#825`): 22 new tests across 7 files — queue claim races (4), card update conflicts (5), proposal approval races (4), webhook delivery concurrency (2), board presence concurrency (2), rate limiting (3), cross-user isolation stress (2); uses `SemaphoreSlim` barriers for true simultaneous execution; SQLite write serialization limitations documented; round 2 review fixed critical thread-pool deadlock (blocking `Barrier.SignalAndWait` in async lambdas), cross-user isolation race condition, silent pass on broken rate limiting, and 2 data-loss-hiding weak assertions
   - **Frontend view and component coverage gaps** (`#716`/`#826`): 107 new tests across 8 files — ArchiveView (11), MetricsView (16), BoardView (12), ReviewView (10), AutomationChatView (16), CardItem (21), BoardCanvas (12), BoardActionRail (9); covers loading/error/empty states, user interactions, ARIA attributes, drag events; round 2 review fixed CI-blocking unused import, DOM pollution (missing afterEach cleanup), incorrect generic type, and misleading test name
 
+- Manual validation and verification program delivery (2026-04-15, PRs `#837`–`#841`):
+  - **TST-09 manual validation slice C** (`#132`/`#839`): 45-scenario catalog for automation proposals, chat bootstrap, and execution safety in `docs/testing/MANUAL_VALIDATION_SLICE_C_SCENARIOS.md`; 17 Playwright E2E tests across 2 spec files (`validation-automation-proposals.spec.ts` with 8 tests, `validation-chat-bootstrap.spec.ts` with 9 tests); manual rehearsal runbook at `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_C.md`
+  - **TST-10 manual validation slice D** (`#133`/`#837`): 25-scenario catalog for ops CLI, log query/correlation, and health telemetry in `docs/testing/MANUAL_VALIDATION_SLICE_D_SCENARIOS.md`; 17 Playwright E2E tests in `validation-ops-logs-health.spec.ts`; operator rehearsal runbook at `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_D.md`
+  - **TST-11 manual validation slice E** (`#134`/`#840`): 25-scenario catalog for starter packs, archive recovery, and activity traceability in `docs/testing/MANUAL_VALIDATION_SLICE_E_SCENARIOS.md`; 23+ Playwright E2E tests across 3 spec files (`validation-starter-packs.spec.ts`, `validation-archive-recovery.spec.ts`, `validation-activity-traceability.spec.ts`); rehearsal runbook at `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_E.md`
+  - **TST-12 integrated verification program** (`#135`/`#838`): 18-scenario cross-component verification strategy in `docs/testing/INTEGRATED_VERIFICATION_STRATEGY.md`; 4 Playwright E2E tests in `integrated-verification.spec.ts` covering full capture-to-board pipeline, board bootstrap, workspace navigation, and auth denial; manual rehearsal template at `docs/testing/MANUAL_REHEARSAL_TEMPLATE.md`; release gating criteria documented; `docs/TESTING_GUIDE.md` updated with cross-references
+  - **INT-06 integrations registry foundation** (`#340`/`#841`): full-stack integrations registry with domain entities (`IntegrationConnector`, `ConnectorEvent` with `ConnectorType`/`ConnectorDirection`/`ConnectorStatus` enums), application service (`IntegrationRegistryService` with `IIntegrationConnectorRepository`/`IConnectorEventRepository`), EF Core infrastructure (repositories + `AddIntegrationConnectorsAndEvents` migration), API (`IntegrationsController` with 7 endpoints — CRUD + enable/disable, all `[Authorize]`), frontend (`IntegrationsView.vue` at `/workspace/integrations` with `integrationStore` and `integrationsApi` with enum normalization), connector taxonomy (inbound/context/outbound per GP-06 — inbound connectors route through capture), architecture documentation at `docs/architecture/INTEGRATIONS_REGISTRY.md`; 60 new tests (24 domain + 12 application + 15 API + 9 frontend)
+  - Tracker closures: 6 completed trackers closed — `#721` (TST-54 rigorous test expansion wave), `#647` (LLM-05 tool-calling), `#648` (MCP-00 server), `#329` (MVP-03 secondary follow-through), `#242` (UI-00 premium UI wave), `#235` (SEC-15 managed-key threat model)
+
 Target experience metrics for the capture direction:
 - capture action to saved artifact should feel under 10 seconds in normal use
 - capture artifact to reviewed/applicable proposal should be achievable inside a ~60-second loop
@@ -143,7 +151,7 @@ Direction guardrails (explicit):
 - Architecture: Clean Architecture (`Domain`, `Application`, `Infrastructure`, `Api`)
 - Persistence: EF Core 8.0.14 + SQLite (aligned to net8.0 TFM as of `#760`/`#767`)
 - Core controllers: boards, columns, cards, labels
-- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search, metrics, data-portability, note-import, telemetry, api-keys, forecast, mfa, oidc
+- Extended controllers: auth, users, board-access, audit, export/import, external-imports, llm-queue, automation proposals, archive, chat, notifications, ops-cli, logs, health, starter-packs, search, metrics, data-portability, note-import, telemetry, api-keys, forecast, mfa, oidc, integrations
 - Worker runtime:
   - `LlmQueueToProposalWorker`
   - `ProposalHousekeepingWorker`
@@ -166,6 +174,7 @@ Direction guardrails (explicit):
   - `BoardMetricsService` (throughput, cycle time, WIP, blocked Ã¢â‚¬â€ audit-log-based completion tracking, done column name heuristic, SQL-level filtering via dedicated repository methods) + `MetricsController` with date/board/label filters + `MetricsExportService` for schema-versioned CSV export with CSV injection protection (`#78`/`#787`)
   - `ForecastingService` (heuristic completion forecasting using rolling-average throughput from audit log card-move events, standard-deviation confidence bands, cycle time tracking) + `ForecastController` with `GET /api/forecast/board/{boardId}` endpoint (`#79`/`#790`)
   - MCP server: `ModelContextProtocol` v1.2.0 with full resource and tool inventory (`#653`/`#739`); 9 resources under `taskdeck://` URI scheme (boards, board detail, columns, cards, card detail, captures, proposals, board labels); 11 tools (2 read: `search_cards`, `get_board_summary`; 6 write: `create_card`, `move_card`, `update_card`, `archive_card`, `create_capture`, `create_column` Ã¢â‚¬â€ all produce proposals per GP-06; 3 proposal management: `get_proposal_status`, `list_proposals`, `dismiss_proposal`; `approve_proposal` intentionally excluded); `--mcp` startup flag for stdio transport; `StdioUserContextProvider` for local user mapping; user-scoped proposal access enforced; **MCP HTTP transport** (`#654`/`#792`): `ModelContextProtocol.AspNetCore` adds `MapMcp()` HTTP endpoint alongside REST routes; `ApiKey` entity with `tdsk_` prefix and SHA-256 hashing at rest; `ApiKeyMiddleware` validates Bearer tokens on `/mcp` path; `HttpUserContextProvider` maps API key Ã¢â€ â€™ user identity; REST key management (create/list/revoke); rate limiting per API key (60 req/60s)
+  - `IntegrationRegistryService` with connector CRUD, enable/disable lifecycle, and event logging; `IntegrationConnector` and `ConnectorEvent` domain entities with connector taxonomy (inbound/context/outbound); inbound connectors route through capture per GP-06; `IntegrationsController` with 7 endpoints (`#340`/`#841`)
   - `NotificationService` with per-user preference filtering and deduplication safeguards
   - outbound webhook integration baseline: board-scoped webhook subscriptions (endpoint + event filters + secret rotation/revocation), mutation-event delivery queueing, and signed delivery worker retries/dead-letter transitions
   - `OpsCliService` + `LogQueryService`
@@ -195,11 +204,12 @@ Direction guardrails (explicit):
   - metrics (board throughput, cycle time, WIP, blocked trends, CSV export, heuristic forecasting with confidence bands)
   - calendar (monthly grid + timeline modes for due-date cards with overdue/blocked indicators)
   - agents (agent profiles, runs, run-detail timeline Ã¢â‚¬â€ visible in agent workspace mode only)
+  - integrations (connector registry with CRUD, enable/disable lifecycle, and event log — `/workspace/integrations`)
   - settings (profile/preferences/access/export-import/linked-accounts/mfa-setup/telemetry-consent)
   - archive
 - Current navigation is now partially product-shaped:
   - `Home` is the default landing route, backed by persisted `guided` / `workbench` / `agent` workspace modes and a product-shaped workspace summary API
-  - `Today` is now shipped as the daily agenda route, while `Agents`, `Runs`, `Knowledge`, and `Integrations` remain planned but not shipped
+  - `Today` is now shipped as the daily agenda route; `Integrations` is now shipped at `/workspace/integrations` with connector registry UI; `Agents`, `Runs`, and `Knowledge` remain planned but not shipped
   - a static frontend-only UI mock now exists at `frontend/taskdeck-web/public/mock/` for lightweight GitHub Pages-style walkthroughs of the current `Home` / `Today` / `Review` / `Inbox` / `Board` feel using local example data only, and GitHub Pages now deploys that folder through a dedicated Actions workflow instead of the old branch-based `main` + `/docs` path
 - Feature slices integrated end to end:
   - workspace home summary shell with server-backed workspace mode persistence
@@ -317,6 +327,8 @@ Batch merge of 7 PRs (`#800`, `#805`, `#811`, `#813`, `#815`, `#819`, `#820`) wi
 - Distributed caching with ICacheService (PR `#805`, InMemory/Redis/NoOp implementations, cache-aside pattern)
 
 Test suite recertified: backend 4,279 tests, frontend 2,245 tests, combined ~6,500+ passing.
+
+Estimated totals after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave: backend ~4,530+, frontend ~2,463+, E2E 61+ new scenarios, combined ~7,070+ passing.
 
 ## Phase Progress (Reconciled)
 

@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-13
+Last Updated: 2026-04-15
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -898,6 +898,31 @@ Summary scope:
 4. True-missing vs cross-user denial indistinguishability (B-90 to B-96)
 5. Error payload contract verification for auth/validation/sandbox paths (B-100 to B-110)
 6. Advanced controller families: ops/logs/users/abuse/llm-quota/agents/knowledge/webhooks/external-imports (B-130 to B-175)
+
+## Z-pre. Manual Validation Slices C, D, E and Integrated Verification (PRs `#837`–`#840`, `#838`)
+
+Slices C, D, and E now have dedicated scenario catalogs, E2E test coverage, and manual rehearsal runbooks. The integrated verification program provides cross-component release gating.
+
+**Slice C — Automation Proposals, Chat Bootstrap, Execution Safety (TST-09, `#132`/`#839`):**
+- 45-scenario catalog: `docs/testing/MANUAL_VALIDATION_SLICE_C_SCENARIOS.md`
+- 17 Playwright E2E tests: `validation-automation-proposals.spec.ts` (8), `validation-chat-bootstrap.spec.ts` (9)
+- Rehearsal runbook: `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_C.md`
+
+**Slice D — Ops CLI, Log Query, Health Telemetry (TST-10, `#133`/`#837`):**
+- 25-scenario catalog: `docs/testing/MANUAL_VALIDATION_SLICE_D_SCENARIOS.md`
+- 17 Playwright E2E tests: `validation-ops-logs-health.spec.ts`
+- Rehearsal runbook: `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_D.md`
+
+**Slice E — Starter Packs, Archive Recovery, Activity Traceability (TST-11, `#134`/`#840`):**
+- 25-scenario catalog: `docs/testing/MANUAL_VALIDATION_SLICE_E_SCENARIOS.md`
+- 23+ Playwright E2E tests: `validation-starter-packs.spec.ts`, `validation-archive-recovery.spec.ts`, `validation-activity-traceability.spec.ts`
+- Rehearsal runbook: `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_E.md`
+
+**Integrated Multi-Component Verification (TST-12, `#135`/`#838`):**
+- 18-scenario cross-component verification strategy: `docs/testing/INTEGRATED_VERIFICATION_STRATEGY.md`
+- 4 Playwright E2E tests: `integrated-verification.spec.ts` (capture-to-board pipeline, board bootstrap, workspace navigation, auth denial)
+- Manual rehearsal template: `docs/testing/MANUAL_REHEARSAL_TEMPLATE.md`
+- Release gating criteria documented in strategy doc
 
 ## Z. Outstanding PR Test Backlog (2026-04-12)
 
