@@ -163,7 +163,8 @@ public sealed class McpOperationScope : IDisposable
 
         try
         {
-            _activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+            // Use exception type name only to avoid leaking user content in trace exports.
+            _activity?.SetStatus(ActivityStatusCode.Error, LogSanitizer.SafeExceptionDescription(exception));
             _activity?.SetTag(TaskdeckTelemetryTags.McpSuccess, false);
             _activity?.SetTag(TaskdeckTelemetryTags.McpErrorType, exception.GetType().Name);
 
@@ -208,7 +209,8 @@ public sealed class McpOperationScope : IDisposable
 
         try
         {
-            _activity?.SetStatus(ActivityStatusCode.Error, errorMessage);
+            // Use a fixed description to avoid leaking user content in trace exports.
+            _activity?.SetStatus(ActivityStatusCode.Error, "ApplicationError");
             _activity?.SetTag(TaskdeckTelemetryTags.McpSuccess, false);
             _activity?.SetTag(TaskdeckTelemetryTags.McpErrorType, "ApplicationError");
 
