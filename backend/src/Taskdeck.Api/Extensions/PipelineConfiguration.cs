@@ -88,6 +88,10 @@ public static class PipelineConfiguration
         // not JWT auth. Non-MCP requests pass through unaffected.
         app.UseMiddleware<ApiKeyMiddleware>();
 
+        // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
+        // Runs after ApiKeyMiddleware so the authenticated user ID is available.
+        app.UseMiddleware<Taskdeck.Api.Mcp.McpTelemetryMiddleware>();
+
         app.UseAuthentication();
         // Reject tokens for deleted/deactivated users or tokens issued before invalidation.
         // Must run after UseAuthentication (so JWT is parsed) and before UseAuthorization.

@@ -104,6 +104,9 @@ if (args.Contains("--mcp"))
             mcpHttpBuilder.Services.AddTaskdeckRateLimiting(mcpRateLimitingSettings);
         }
 
+        // MCP operation logger for per-tool/resource telemetry.
+        mcpHttpBuilder.Services.AddSingleton<McpOperationLogger>();
+
         // MCP server: HTTP transport + all resources and tools.
         mcpHttpBuilder.Services.AddMcpServer()
             .WithHttpTransport()
@@ -125,6 +128,9 @@ if (args.Contains("--mcp"))
 
         // API key authentication for MCP requests.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.ApiKeyMiddleware>();
+
+        // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
+        mcpHttpApp.UseMiddleware<McpTelemetryMiddleware>();
 
         // Apply rate limiting before endpoint routing.
         if (mcpRateLimitingSettings.Enabled)
@@ -194,6 +200,9 @@ if (args.Contains("--mcp"))
 
             // Stdio identity: maps the OS process owner to the local default user.
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
+
+            // MCP operation logger for per-tool/resource telemetry.
+            services.AddSingleton<McpOperationLogger>();
 
             // MCP server: stdio transport + all resources and tools.
             services.AddMcpServer()
@@ -318,6 +327,7 @@ builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdec
 // Register MCP HTTP transport (Streamable HTTP alongside REST on the same Kestrel instance).
 // The HttpUserContextProvider resolves user identity from the API key set by ApiKeyMiddleware.
 builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
+builder.Services.AddSingleton<McpOperationLogger>();
 builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithResources<BoardResources>()

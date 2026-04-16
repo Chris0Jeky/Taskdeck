@@ -32,7 +32,8 @@ public static class ObservabilityRegistration
                     options.RecordException = false;
                 })
                 .AddHttpClientInstrumentation()
-                .AddSource(TaskdeckTelemetry.ActivitySourceName);
+                .AddSource(TaskdeckTelemetry.ActivitySourceName)
+                .AddSource(TaskdeckTelemetry.McpActivitySourceName);
 
             if (!string.IsNullOrWhiteSpace(observabilitySettings.OtlpEndpoint) &&
                 Uri.TryCreate(observabilitySettings.OtlpEndpoint, UriKind.Absolute, out var traceEndpoint))
@@ -55,7 +56,8 @@ public static class ObservabilityRegistration
             metrics
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
-                .AddMeter(TaskdeckTelemetry.MeterName);
+                .AddMeter(TaskdeckTelemetry.MeterName)
+                .AddMeter(TaskdeckTelemetry.McpMeterName);
 
             if (!string.IsNullOrWhiteSpace(observabilitySettings.OtlpEndpoint) &&
                 Uri.TryCreate(observabilitySettings.OtlpEndpoint, UriKind.Absolute, out var metricEndpoint))
