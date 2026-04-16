@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-15
+Last Updated: 2026-04-16
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,26 +10,27 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-15)
+## Current Verified Totals (2026-04-16)
 
-- Backend: **~4,530+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave)
+- Backend: **~4,535+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave + PRs `#884`–`#891` PROD-00 round-2 wave with +3 ResponseCompressionApiTests)
   - Domain: ~833+ (77 prior FsCheck + 93 new property tests for ChatSession/ChatMessage/Notification/KnowledgeDocument/WebhookSubscription + 11 ApiKey + 15 OAuthAuthCode + 8 MfaCredential + NoteImport domain)
   - Application: ~1799+ (29 prior JSON fuzz + 19 new chat/notification DTO fuzz + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
   - API integration: ~1135+ (8 metrics export + 80 prior adversarial + 50 new adversarial input + 20 API key + 13 prior concurrency + 22 new concurrency stress + 3 queue resilience + 13 LLM provider resilience + 9 telemetry + 4 telemetry API + 13 OIDC/auth + 9 OAuth token lifecycle)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: **~2,463+ passing** (estimated after PRs `#821`–`#826` + `#841`; ~200+ test files)
+- Frontend unit: **~2,533+ passing** (estimated after PRs `#821`–`#826` + `#841` + PROD-00 round-2 wave `#890`/`#891` with approximately +70 tests across retry interceptor + ErrorBoundary + errorReporting; ~200+ test files)
   - New store integration: 88 tests (chat, board, queue, session, notification, workspace)
   - New view/component coverage: 107 tests (Archive, Metrics, Board, Review, Chat, CardItem, BoardCanvas, BoardActionRail)
   - New resilience: 14 tests (slow API, corrupted storage, loading states)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
-- Combined automated total: **~7,070+ passing** (backend ~4,530 + frontend unit ~2,463 + E2E)
+- Combined automated total: **~7,140+ passing** (backend ~4,535 + frontend unit ~2,533 + E2E)
 
 Verification note:
 - backend total of 4,279 recertified 2026-04-12 via `dotnet test backend/Taskdeck.sln -c Release --list-tests 2>&1 | grep -c "^    "` on `main` after merging PRs `#800`–`#820`
 - frontend total of 2,245 recertified 2026-04-12 via `npx vitest --run --reporter=verbose 2>&1 | grep -c "✓"` on `main` after merging PRs `#800`–`#820`
 - supplementary wave (PRs `#821`–`#826`) adds ~429 new tests; totals estimated pending merge and full-suite recertification
 - validation/integrations wave (PRs `#837`–`#841`) adds ~121 new tests (60 integrations + 61 E2E validation/verification); totals estimated pending full-suite recertification
+- PROD-00 round-2 wave (PRs `#884`–`#891`) adds ~73 new tests (3 backend ResponseCompressionApiTests + ~70 frontend retry/ErrorBoundary/errorReporting) plus migration-only `#888`, docs-only `#884`/`#885`/`#887`, and hardening-only `#889`; 2 existing Playwright specs updated with retry-aware `skipRetry` mocks; totals remain estimates pending full-suite recertification
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
@@ -50,6 +51,97 @@ New test categories:
 - **Staged deployment**: smoke test script with 9 automated checks (health, API, auth, frontend, SignalR, static assets, security headers, container restart)
 
 Storybook (non-test tooling): `npm run storybook` runs 17 Td* primitive stories; `npm run storybook:build` produces static output.
+
+## PROD-00 Production-Readiness Round-2 Wave (2026-04-16, PRs `#884`–`#891`)
+
+Eight PROD-00 PRs delivered disclosure policy, contributor onramp, configuration reference, response compression, DB indexes, container hardening, frontend crash prevention, and HTTP retry. Test deltas and noteworthy testing patterns:
+
+### Response Compression (`#845`/`#886`)
+
+3 integration tests in `backend/tests/Taskdeck.Api.Tests/ResponseCompressionApiTests.cs`:
+- gzip request returns `Content-Encoding: gzip` with a real decompress-larger-than-compressed delta
+- brotli analogue
+- no compression emitted when the client omits `Accept-Encoding`
+
+Round-2 BREACH threat-model review caught that JWTs are in fact returned in `/api/auth/login` and `/api/auth/register` response bodies (contradicting the original inline assumption). Compression level was downgraded from `CompressionLevel.Optimal` to `CompressionLevel.Fastest` to reduce BREACH/CRIME oracle surface while preserving bandwidth wins.
+
+Running:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ResponseCompression"
+```
+
+### Composite DB Indexes (`#846`/`#888`)
+
+No new tests — migration-only change. Migration `20260416161303_AddPerfIndexes` adds three composite indexes and is exercised by existing `AuditLogRepository` and `CardRepository` tests plus the architecture boundary tests.
+
+Verification context:
+- `IX_Cards_BoardId_ColumnId` replaces the single-column `IX_Cards_BoardId` (SQLite satisfies leftmost-prefix via the composite; `FK_Cards_Boards_BoardId` remains enforced by the FOREIGN KEY schema)
+- `IX_AuditLogs_UserId_Timestamp` accelerates `GetByUserAsync`
+- `IX_AuditLogs_EntityId_Timestamp` accelerates `GetByBoardAsync` — uses polymorphic `EntityId`, not the aspirational `BoardId` from the issue AC (documented deviation)
+- `IX_LlmRequests_UserId_Status` was confirmed pre-existing, so no new migration was required
+
+Running architecture + repository tests (covers migration shape via EF model validation):
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~AuditLogRepository|FullyQualifiedName~CardRepository|FullyQualifiedName~Architecture"
+```
+
+### Container Hardening (`#866`/`#889`)
+
+No unit/integration tests added — hardening is verified through `docker compose -f deploy/docker-compose.yml config`, `docker inspect` status checks for healthy transitions, and the existing container baseline CI workflow. Round-2 review caught that the frontend HEALTHCHECK was using `localhost` (BusyBox resolver preferred IPv6 `::1` while nginx bound IPv4 only), making the probe never transition to healthy. Fixed by pinning the probe to `127.0.0.1`. The backend `setpriv` entrypoint is upgrade-safe for existing root-owned `taskdeck-db` volumes.
+
+### HTTP Retry with Backoff (`#854`/`#890`)
+
+New tests in `frontend/taskdeck-web/src/tests/api/httpRetry.spec.ts` (primary suite) plus extensions to `http.spec.ts`; round-2 also updated two existing Playwright specs (`error-recovery.spec.ts`, `first-run.spec.ts`) to align with retry-aware mocks.
+
+Key behavioural coverage:
+- 5xx + network + 408/429/503 retryable; 501/505 explicitly excluded
+- idempotent methods only (GET/HEAD/OPTIONS/PUT/DELETE — POST/PATCH never retried)
+- 429 honours `Retry-After` (seconds + HTTP-date, case-insensitive via `AxiosHeaders`, capped at a sane upper bound)
+- no retry on 401/403/404/409/422
+- `parseRetryAfter('-5')` returns `null` (HTTP-date branch now requires a proper letter-guard)
+- `skipRetry` opt-out on `RetryableRequestConfig` for test baselines
+- `axios.isCancel` aborts pending retries; backoff races against `AbortSignal`
+
+**`skipRetry` opt-out pattern for future test authors**: when a test or E2E mock asserts retry-less 5xx semantics (or mocks the first request to fail deterministically), pass `{ skipRetry: true }` on the request config to prevent the interceptor from silently retrying and hiding the intended error state. This pattern preserved the PR `#725` baseline suite and the two Playwright error-state specs during PR `#890` delivery.
+
+Running:
+```bash
+cd frontend/taskdeck-web && npx vitest --run -t retry
+```
+
+### Vue Error Boundary (`#852`/`#891`)
+
+New tests in `frontend/taskdeck-web/src/tests/components/ErrorBoundary.spec.ts` and `frontend/taskdeck-web/src/tests/utils/errorReporting.spec.ts` covering:
+- render fallback UI on descendant render/lifecycle errors
+- Reload and Go-to-Home recovery actions
+- `hasCrashed` boolean sentinel correctness when a descendant throws literal `null` (round-2 fix replacing the prior `crashedError === null` sentinel collision)
+- `window.error` / `unhandledrejection` listener coverage for async rejections `onErrorCaptured` cannot see
+- optional Sentry passthrough via `window.Sentry?.captureException` with info-context mapping
+- dev-only stack trace visibility, prod-safe messaging
+
+**Three-layer error coverage pattern for future contributors**: Taskdeck now relies on three complementary error-handling layers:
+1. **Outer `ErrorBoundary` in `App.vue`** wraps `<RouterView />` as a backstop for any crash that escapes nested boundaries
+2. **Inner `ErrorBoundary` in `AppShell.vue`** wraps the inner `<router-view />` so a crashed workspace view does not take down the shell chrome (nav, topbar, command palette remain usable)
+3. **`main.ts` installs `app.config.errorHandler`** plus `window` listeners for `error` and `unhandledrejection` so async rejections (which `onErrorCaptured` does not see) and top-level unhandled errors still reach the Sentry passthrough
+
+When adding a new long-lived modal, workspace section, or nested router outlet that can fail independently, follow the same pattern: wrap the failure-prone subtree in a dedicated `ErrorBoundary` so the crash stays scoped.
+
+Running:
+```bash
+cd frontend/taskdeck-web && npx vitest --run ErrorBoundary
+cd frontend/taskdeck-web && npx vitest --run errorReporting
+```
+
+### Total Wave Test Delta (Estimated)
+
+- Backend: +3 tests (ResponseCompressionApiTests)
+- Frontend: approximately +70 tests (retry interceptor coverage + ErrorBoundary/errorReporting + http.spec additions)
+- E2E: 2 existing Playwright specs updated to align with retry semantics (`skipRetry` pattern)
+- Migration-only (no new tests): PR `#888`
+- Docs-only (no new tests): PRs `#884`, `#885`, `#887`
+- Hardening-only (no new tests): PR `#889`
+
+Exact counts are approximate; see `gh pr diff` on each PR for authoritative deltas.
 
 ## Supplementary Test Depth Wave (2026-04-13, PRs `#821`–`#826`)
 
