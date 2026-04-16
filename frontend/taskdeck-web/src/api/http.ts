@@ -92,6 +92,10 @@ http.interceptors.response.use(
     const config = error.config as (RetryableRequestConfig & InternalAxiosRequestConfig) | undefined
     if (!config) return Promise.reject(error)
 
+    // Short-circuit: caller opted out explicitly. Keeps the interceptor
+    // transparent for tests and for fail-fast background polls.
+    if (config.skipRetry) return Promise.reject(error)
+
     if (!isRetryableError(error)) return Promise.reject(error)
 
     const attempt = (config.__retryCount ?? 0) + 1
@@ -107,9 +111,34 @@ http.interceptors.response.use(
       )
     }
 
-    await new Promise<void>((resolve) => setTimeout(resolve, delay))
-    // Bail out if the caller cancelled the request while we were waiting.
-    if (config.signal?.aborted) return Promise.reject(error)
+    // Race the backoff wait against the request's AbortSignal so we don't
+    // hold the promise open for up to 60s on a cancelled request. Reject
+    // with axios.CanceledError so callers can discriminate via
+    // axios.isCancel(err) instead of treating a stale 5xx as user error.
+    const signal = config.signal as AbortSignal | undefined
+    if (signal?.aborted) {
+      return Promise.reject(new axios.CanceledError('Request aborted before retry'))
+    }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, delay)
+        if (signal) {
+          const onAbort = () => {
+            clearTimeout(timer)
+            signal.removeEventListener('abort', onAbort)
+            reject(new axios.CanceledError('Request aborted while waiting to retry'))
+          }
+          signal.addEventListener('abort', onAbort, { once: true })
+        }
+      })
+    } catch (abortErr) {
+      return Promise.reject(abortErr)
+    }
+    // Double-check (defensive): some adapters may fire abort synchronously
+    // right at the edge of the timer resolving.
+    if (signal?.aborted) {
+      return Promise.reject(new axios.CanceledError('Request aborted while waiting to retry'))
+    }
     return http.request(config)
   },
 )
