@@ -48,6 +48,12 @@ public class IntegrationConnector : Entity
         if (userId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "User ID cannot be empty.");
 
+        if (!Enum.IsDefined(connectorType))
+            throw new DomainException(ErrorCodes.ValidationError, $"Invalid connector type: {connectorType}.");
+
+        if (!Enum.IsDefined(direction))
+            throw new DomainException(ErrorCodes.ValidationError, $"Invalid connector direction: {direction}.");
+
         Name = name;
         ConnectorType = connectorType;
         Direction = direction;
