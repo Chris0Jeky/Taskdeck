@@ -23,6 +23,7 @@ const creating = ref(false)
 const createError = ref<string | null>(null)
 const createdKey = ref<CreateApiKeyResponse | null>(null)
 const keyCopied = ref(false)
+const createdKeyValueRef = ref<HTMLElement | null>(null)
 
 // ── Revoke dialog state ──
 const showRevokeDialog = ref(false)
@@ -31,7 +32,8 @@ const revokeError = ref<string | null>(null)
 const keyToRevoke = ref<ApiKeyListItem | null>(null)
 
 const activeKeys = computed(() => keys.value.filter(k => k.isActive))
-const revokedKeys = computed(() => keys.value.filter(k => !k.isActive))
+const revokedKeys = computed(() => keys.value.filter(k => !k.isActive && k.revokedAt !== null))
+const expiredKeys = computed(() => keys.value.filter(k => !k.isActive && k.revokedAt === null))
 
 async function loadKeys() {
   loading.value = true
@@ -85,7 +87,7 @@ async function copyKeyToClipboard() {
     keyCopied.value = true
   } catch {
     // Fallback: select the text in the code element for manual copy
-    const codeEl = document.querySelector('[data-testid="created-key-value"]')
+    const codeEl = createdKeyValueRef.value
     if (codeEl) {
       const range = document.createRange()
       range.selectNodeContents(codeEl)
@@ -125,7 +127,8 @@ async function handleRevokeKey() {
 function formatDate(dateString: string | null): string {
   if (!dateString) return 'Never'
   const date = new Date(dateString)
-  return date.toLocaleDateString(undefined, {
+  if (isNaN(date.getTime())) return 'Invalid date'
+  return date.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -231,6 +234,33 @@ onMounted(loadKeys)
         </div>
       </section>
 
+      <section v-if="expiredKeys.length > 0" class="td-settings__section td-settings__section--muted">
+        <h2 class="td-section-title">Expired Keys</h2>
+        <div class="td-keys-list" role="list" aria-label="Expired API keys">
+          <div
+            v-for="key in expiredKeys"
+            :key="key.id"
+            class="td-key-card td-key-card--inactive"
+            role="listitem"
+          >
+            <div class="td-key-card__header">
+              <span class="td-key-card__name">{{ key.name }}</span>
+              <TdBadge variant="warning" size="sm">Expired</TdBadge>
+            </div>
+            <div class="td-key-card__meta">
+              <span class="td-key-meta">
+                <span class="td-key-meta__label">Prefix:</span>
+                <code class="td-code-inline">{{ key.keyPrefix }}...</code>
+              </span>
+              <span class="td-key-meta">
+                <span class="td-key-meta__label">Expired:</span>
+                {{ formatDate(key.expiresAt) }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section v-if="revokedKeys.length > 0" class="td-settings__section td-settings__section--muted">
         <h2 class="td-section-title">Revoked Keys</h2>
         <div class="td-keys-list" role="list" aria-label="Revoked API keys">
@@ -272,10 +302,10 @@ onMounted(loadKeys)
         </TdInlineAlert>
 
         <div class="td-created-key">
-          <label class="td-created-key__label" for="created-key-display">Your new API key</label>
-          <div class="td-created-key__display">
+          <p id="created-key-description" class="td-created-key__label">Your new API key</p>
+          <div class="td-created-key__display" aria-describedby="created-key-description">
             <code
-              id="created-key-display"
+              ref="createdKeyValueRef"
               class="td-created-key__value"
               data-testid="created-key-value"
             >{{ createdKey.key }}</code>
@@ -428,7 +458,8 @@ onMounted(loadKeys)
   gap: var(--td-space-2);
 }
 
-.td-key-card--revoked {
+.td-key-card--revoked,
+.td-key-card--inactive {
   opacity: 0.6;
 }
 
@@ -486,6 +517,7 @@ onMounted(loadKeys)
   font-size: var(--td-font-sm);
   font-weight: 500;
   color: var(--td-text-secondary);
+  margin: 0;
 }
 
 .td-created-key__display {

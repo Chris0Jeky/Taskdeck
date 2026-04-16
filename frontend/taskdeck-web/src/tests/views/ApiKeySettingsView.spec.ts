@@ -61,6 +61,17 @@ const revokedKey = {
   isActive: false,
 }
 
+const expiredKey = {
+  id: 'key-3',
+  keyPrefix: 'tdsk_exp',
+  name: 'Expired Key',
+  createdAt: '2024-01-01T00:00:00Z',
+  expiresAt: '2024-06-01T00:00:00Z',
+  revokedAt: null,
+  lastUsedAt: '2024-05-30T00:00:00Z',
+  isActive: false,
+}
+
 describe('ApiKeySettingsView', () => {
   let wrapper: VueWrapper
 
@@ -101,8 +112,8 @@ describe('ApiKeySettingsView', () => {
     expect(findBodyButton('Retry')).toBeDefined()
   })
 
-  it('renders active and revoked keys in separate sections', async () => {
-    mocks.listKeys.mockResolvedValue([activeKey, revokedKey])
+  it('renders active, expired, and revoked keys in separate sections', async () => {
+    mocks.listKeys.mockResolvedValue([activeKey, revokedKey, expiredKey])
 
     wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
     await waitForUi()
@@ -111,8 +122,25 @@ describe('ApiKeySettingsView', () => {
     expect(bodyText()).toContain('Active')
     expect(bodyText()).toContain('Old Key')
     expect(bodyText()).toContain('Revoked')
+    expect(bodyText()).toContain('Expired Key')
+    expect(bodyText()).toContain('Expired')
     expect(bodyText()).toContain('tdsk_abc...')
     expect(bodyText()).toContain('tdsk_xyz...')
+    expect(bodyText()).toContain('tdsk_exp...')
+  })
+
+  it('shows expired key with Expired badge and expiry date, not Revoked', async () => {
+    mocks.listKeys.mockResolvedValue([expiredKey])
+
+    wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
+    await waitForUi()
+
+    expect(bodyText()).toContain('Expired Key')
+    expect(bodyText()).toContain('Expired')
+    expect(bodyText()).toContain('Expired:')
+    expect(bodyText()).toContain('tdsk_exp...')
+    // Should NOT show "Revoked" badge or "Revoked:" label for expired keys
+    expect(bodyText()).not.toContain('Revoked')
   })
 
   it('shows key prefix, created date, and last used date for active keys', async () => {
