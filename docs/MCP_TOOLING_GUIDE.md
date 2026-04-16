@@ -211,6 +211,21 @@ UI verification:
 
 ---
 
+## Taskdeck MCP Server Production Hardening (as of 2026-04-16)
+
+The Taskdeck MCP server (`#648`) has production-hardening work tracked under `#655` (MCP-04). Current delivery status:
+
+**Delivered:**
+- **Structured logging and observability** (`#655`/`#879`): `McpOperationLogger` emits structured `ILogger` entries for all MCP tool calls and resource access; `McpTelemetryMiddleware` adds OpenTelemetry spans via `TaskdeckTelemetry` ActivitySource, plus request/error counters and duration histograms; `LogSanitizer` ensures API keys and request bodies are never logged. Test coverage in `McpOperationLoggerTests` and `McpTelemetryMiddlewareTests`.
+- **API key management UI** (`#655`/`#877`): frontend settings page at `/workspace/settings/api-keys` for managing MCP API keys (list active/revoked, create with optional expiry, one-time key display + clipboard copy, revoke with confirmation); uses Td* design system primitives. 19 tests (6 API client + 13 view component).
+
+**Pending** (not yet delivered from `#655` scope):
+- Rate limiting dashboard/visibility
+- Key rotation workflow
+- Usage analytics per key
+
+---
+
 ## Shell Command Chaining (Windows)
 
 The shell environment depends on the agent runtime:
