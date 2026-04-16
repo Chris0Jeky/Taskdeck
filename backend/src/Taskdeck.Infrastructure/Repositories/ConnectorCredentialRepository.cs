@@ -20,9 +20,11 @@ public class ConnectorCredentialRepository : IConnectorCredentialRepository
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 
-    public async Task<IEnumerable<ConnectorCredential>> GetAllAsync(CancellationToken cancellationToken = default)
+    public Task<IEnumerable<ConnectorCredential>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        return await _context.ConnectorCredentials.ToListAsync(cancellationToken);
+        // Credential queries MUST be user-scoped. Use GetByUserIdAsync or GetByConnectorIdForUserAsync instead.
+        throw new NotSupportedException(
+            "Unfiltered credential access is not permitted. Use GetByUserIdAsync or GetByConnectorIdForUserAsync.");
     }
 
     public async Task<ConnectorCredential> AddAsync(ConnectorCredential entity, CancellationToken cancellationToken = default)
@@ -43,14 +45,13 @@ public class ConnectorCredentialRepository : IConnectorCredentialRepository
         return Task.CompletedTask;
     }
 
-    public async Task<IReadOnlyList<ConnectorCredential>> GetByConnectorIdAsync(
+    public Task<IReadOnlyList<ConnectorCredential>> GetByConnectorIdAsync(
         Guid connectorId,
         CancellationToken cancellationToken = default)
     {
-        return await _context.ConnectorCredentials
-            .Where(c => c.ConnectorId == connectorId)
-            .OrderByDescending(c => c.CreatedAt)
-            .ToListAsync(cancellationToken);
+        // Credential queries MUST be user-scoped. Use GetByConnectorIdForUserAsync instead.
+        throw new NotSupportedException(
+            "Unfiltered credential access by connector ID is not permitted. Use GetByConnectorIdForUserAsync.");
     }
 
     public async Task<ConnectorCredential?> GetByConnectorIdForUserAsync(
