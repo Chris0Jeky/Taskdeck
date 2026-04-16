@@ -172,14 +172,21 @@ test('first-run path should guide home to capture to review to execute to board'
 
 test('home should recover from loading and error states on first-run summary refresh', async ({ page }) => {
   let requestCount = 0
+  // The FE-15 retry interceptor retries idempotent 5xx up to 3 times, so the
+  // initial load plus its 3 retries (4 total) must fail to surface the error
+  // state. Only the first request is gated — subsequent retries fail
+  // immediately so backoff is the only delay.
+  const MAX_FAILED_REQUESTS = 4 // 1 initial + 3 retries (MAX_RETRIES)
   let releaseFirstRequest: (() => void) | null = null
   const firstRequestGate = new Promise<void>((resolve) => { releaseFirstRequest = resolve })
 
   await page.route('**/api/workspace/home', async (route) => {
     requestCount += 1
 
-    if (requestCount === 1) {
-      await firstRequestGate
+    if (requestCount <= MAX_FAILED_REQUESTS) {
+      if (requestCount === 1) {
+        await firstRequestGate
+      }
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -197,7 +204,9 @@ test('home should recover from loading and error states on first-run summary ref
   await page.goto('/workspace/home')
   await expect(page.getByText('Loading your workspace summary...')).toBeVisible()
   releaseFirstRequest!()
-  await expect(page.getByRole('alert')).toContainText('Temporary home summary failure')
+  // Generous timeout because the retry interceptor waits 1s+2s+4s between
+  // attempts before surfacing the terminal rejection.
+  await expect(page.getByRole('alert')).toContainText('Temporary home summary failure', { timeout: 20_000 })
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible()
