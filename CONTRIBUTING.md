@@ -138,7 +138,12 @@ fine outside PowerShell.
 ## Running Tests
 
 All commands assume you are in the repo root unless noted otherwise.
-These are the exact commands CI runs; keep them green locally before pushing.
+Treat these as the recommended local equivalents / minimum gates to keep
+green before pushing. CI uses a few variants (e.g. `npm ci` instead of
+`npm install`, `npm run test:coverage` with coverage thresholds instead of
+plain `vitest --run`) — see `.github/workflows/` for the exact CI gate. If
+you want to mirror CI's frontend gate precisely, run `npm run test:coverage`
+locally as well.
 
 ### Backend tests (xUnit)
 
