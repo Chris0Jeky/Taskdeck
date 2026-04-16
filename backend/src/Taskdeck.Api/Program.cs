@@ -229,6 +229,8 @@ using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
 {
     var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("FirstRun");
     builder.RunFirstRunChecks(bootstrapLogger);
+    // Hard-fail if a placeholder JWT secret reaches Production (cloud containers).
+    builder.ValidateProductionSecrets(bootstrapLogger);
 }
 // -----------------------------------------------------------------------------
 
