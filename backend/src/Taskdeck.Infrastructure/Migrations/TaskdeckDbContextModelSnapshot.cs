@@ -956,6 +956,11 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("KeyVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasMaxLength(100)

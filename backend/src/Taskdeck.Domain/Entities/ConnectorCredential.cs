@@ -43,6 +43,13 @@ public class ConnectorCredential : Entity
     public string EncryptedValue { get; private set; } = string.Empty;
 
     /// <summary>
+    /// Version of the encryption key used to encrypt this credential.
+    /// Enables key rotation: new credentials use the current key version,
+    /// existing credentials can be re-encrypted when the key is rotated.
+    /// </summary>
+    public int KeyVersion { get; private set; } = 1;
+
+    /// <summary>
     /// When the credential was last rotated.
     /// </summary>
     public DateTimeOffset? RotatedAt { get; private set; }
@@ -60,7 +67,8 @@ public class ConnectorCredential : Entity
         ConnectorAuthMethod authMethod,
         string label,
         string encryptedValue,
-        DateTimeOffset? expiresAt = null)
+        DateTimeOffset? expiresAt = null,
+        int keyVersion = 1)
         : base()
     {
         if (connectorId == Guid.Empty)
@@ -73,6 +81,8 @@ public class ConnectorCredential : Entity
             throw new DomainException(
                 ErrorCodes.ValidationError,
                 $"Encrypted value cannot exceed {MaxEncryptedValueLength} characters.");
+        if (keyVersion < 1)
+            throw new DomainException(ErrorCodes.ValidationError, "Key version must be at least 1.");
 
         ConnectorId = connectorId;
         UserId = userId;
@@ -80,9 +90,10 @@ public class ConnectorCredential : Entity
         Label = label;
         EncryptedValue = encryptedValue;
         ExpiresAt = expiresAt;
+        KeyVersion = keyVersion;
     }
 
-    public void Rotate(string newEncryptedValue, DateTimeOffset? newExpiresAt = null)
+    public void Rotate(string newEncryptedValue, DateTimeOffset? newExpiresAt = null, int? newKeyVersion = null)
     {
         if (string.IsNullOrWhiteSpace(newEncryptedValue))
             throw new DomainException(ErrorCodes.ValidationError, "Encrypted value cannot be empty.");
@@ -93,6 +104,12 @@ public class ConnectorCredential : Entity
 
         EncryptedValue = newEncryptedValue;
         ExpiresAt = newExpiresAt;
+        if (newKeyVersion.HasValue)
+        {
+            if (newKeyVersion.Value < 1)
+                throw new DomainException(ErrorCodes.ValidationError, "Key version must be at least 1.");
+            KeyVersion = newKeyVersion.Value;
+        }
         RotatedAt = DateTimeOffset.UtcNow;
         Touch();
     }

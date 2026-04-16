@@ -21,6 +21,7 @@ namespace Taskdeck.Infrastructure.Migrations
                     AuthMethod = table.Column<string>(type: "TEXT", maxLength: 50, nullable: false),
                     Label = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
                     EncryptedValue = table.Column<string>(type: "TEXT", maxLength: 8000, nullable: false),
+                    KeyVersion = table.Column<int>(type: "INTEGER", nullable: false, defaultValue: 1),
                     RotatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
                     ExpiresAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),

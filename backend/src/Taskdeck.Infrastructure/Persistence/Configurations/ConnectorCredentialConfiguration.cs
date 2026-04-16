@@ -31,6 +31,10 @@ public class ConnectorCredentialConfiguration : IEntityTypeConfiguration<Connect
             .IsRequired()
             .HasMaxLength(8000);
 
+        builder.Property(c => c.KeyVersion)
+            .IsRequired()
+            .HasDefaultValue(1);
+
         builder.Property(c => c.RotatedAt);
         builder.Property(c => c.ExpiresAt);
         builder.Property(c => c.CreatedAt).IsRequired();
