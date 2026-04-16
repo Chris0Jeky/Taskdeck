@@ -273,9 +273,15 @@ test.describe('TST11-SC-004: Re-apply same pack (idempotency)', () => {
     // Should detect conflicts (columns at same positions already exist)
     expect(dryRunResult.conflicts.length).toBeGreaterThan(0)
 
-    // Board state unchanged
+    // Board state unchanged — verify columns, labels, and cards
     const columnsAfterDryRun = await getColumns(request, boardId)
     expect(columnsAfterDryRun).toHaveLength(columnsAfterFirst.length)
+
+    const labelsAfterDryRun = await getLabels(request, boardId)
+    expect(labelsAfterDryRun).toHaveLength(1) // only 'urgent' from first apply
+
+    const cardsAfterDryRun = await getCards(request, boardId)
+    expect(cardsAfterDryRun).toHaveLength(1) // only seed card from first apply
   })
 })
 
@@ -506,6 +512,6 @@ test.describe('TST11-SC-009: Manifest validation endpoint', () => {
       },
     )
 
-    expect(response.status()).toBeGreaterThanOrEqual(400)
+    expect(response.status()).toBe(400)
   })
 })
