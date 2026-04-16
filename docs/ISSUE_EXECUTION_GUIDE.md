@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-03-26
+Last Updated: 2026-04-15
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -382,7 +382,7 @@ Maintainability hotspot refactor wave (analysis-driven):
 
 1. `#107` OPS-13 future expansion wave index
 2. `#338` AGT-03 agent mode surfaces and run-detail timeline
-3. `#340` INT-06 integrations registry and supervised inbound connector foundation
+3. ~~`#340`~~ INT-06 integrations registry and supervised inbound connector foundation (**delivered** `#841`)
 4. `#341` TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through
 5. Closed historical issues remain `Priority V` for archival consistency.
 
