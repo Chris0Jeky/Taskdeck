@@ -100,7 +100,7 @@ describe('ErrorBoundary', () => {
     expect(allCalls).toContain('ErrorBoundary')
   })
 
-  it('forwards the error to window.Sentry.captureException when present', async () => {
+  it('forwards the error to window.Sentry.captureException with ErrorBoundary source and info', async () => {
     const captureException = vi.fn()
     ;(globalThis as { Sentry?: unknown }).Sentry = { captureException }
 
@@ -117,9 +117,13 @@ describe('ErrorBoundary', () => {
     await flushPromises()
 
     expect(captureException).toHaveBeenCalledTimes(1)
-    const err = captureException.mock.calls[0][0]
+    const [err, hint] = captureException.mock.calls[0]
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).message).toBe('to-sentry')
+    // The hint must carry the ErrorBoundary source and the Vue lifecycle info
+    // string so Sentry context stays consistent across reporting paths.
+    expect(hint).toMatchObject({ source: 'ErrorBoundary' })
+    expect((hint as { info?: string }).info).toEqual(expect.any(String))
   })
 
   it('does not throw when Sentry.captureException itself throws', async () => {
@@ -287,5 +291,31 @@ describe('ErrorBoundary', () => {
       slots: { default: () => h(ThrowingChild, { shouldThrow: false }) },
     })
     expect(wrapper.text()).toContain('child is healthy')
+  })
+
+  it('renders fallback when a descendant throws a falsy value (null)', async () => {
+    // Guards against the sentinel-collision bug: if crash state were tracked
+    // as `crashedError === null`, a child that throws `null` would be treated
+    // as healthy. We track crash state with an explicit boolean to avoid this.
+    const NullThrower = defineComponent({
+      name: 'NullThrower',
+      setup() {
+        return () => {
+          throw null
+        }
+      },
+    })
+
+    const router = makeRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(ErrorBoundary, {
+      global: { plugins: [router] },
+      slots: { default: () => h(NullThrower) },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="error-boundary-fallback"]').exists()).toBe(true)
   })
 })
