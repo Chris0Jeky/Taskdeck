@@ -13,6 +13,22 @@ public interface IConnectorCredentialRepository : IRepository<ConnectorCredentia
         Guid userId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Get all credentials belonging to a specific user.
+    /// </summary>
+    Task<IReadOnlyList<ConnectorCredential>> GetByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get a single credential by connector ID and user ID (user-scoped single-credential access).
+    /// Alias for GetByConnectorIdForUserAsync for explicit naming clarity.
+    /// </summary>
+    Task<ConnectorCredential?> GetByConnectorIdAndUserIdAsync(
+        Guid connectorId,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task DeleteByConnectorIdAsync(
         Guid connectorId,
         Guid userId,

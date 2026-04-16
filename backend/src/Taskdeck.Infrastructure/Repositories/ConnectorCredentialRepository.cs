@@ -62,6 +62,25 @@ public class ConnectorCredentialRepository : IConnectorCredentialRepository
             .FirstOrDefaultAsync(c => c.ConnectorId == connectorId && c.UserId == userId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ConnectorCredential>> GetByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.ConnectorCredentials
+            .Where(c => c.UserId == userId)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<ConnectorCredential?> GetByConnectorIdAndUserIdAsync(
+        Guid connectorId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.ConnectorCredentials
+            .FirstOrDefaultAsync(c => c.ConnectorId == connectorId && c.UserId == userId, cancellationToken);
+    }
+
     public async Task DeleteByConnectorIdAsync(
         Guid connectorId,
         Guid userId,
