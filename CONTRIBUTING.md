@@ -162,15 +162,19 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~MyTestC
 From `frontend/taskdeck-web`:
 
 ```bash
-npm run typecheck                       # vue-tsc type checking
-npm run build                           # typecheck + vite build
-npx vitest --run --reporter=verbose     # unit tests
-npx vitest --run -t "test name"         # run a single test by name
 npm run lint                            # eslint
+npm run typecheck                       # vue-tsc type checking
+npx vite build                          # production build (matches CI)
+npm run test:coverage                   # unit tests with coverage thresholds (matches CI)
+npx vitest --run -t "test name"         # run a single test by name (dev-only)
 ```
 
-On Windows PowerShell, chain with `;` and `$LASTEXITCODE` instead of `&&` (see
-the Windows section above).
+`npm run build` also works locally — it runs typecheck followed by `vite build`
+— but listing it alongside `npm run typecheck` would run typecheck twice, so
+the list above mirrors CI (separate typecheck and `vite build` steps).
+
+On Windows PowerShell, chain with `;` and a success check instead of `&&`
+(see the Windows section above).
 
 ### End-to-end tests (Playwright)
 
