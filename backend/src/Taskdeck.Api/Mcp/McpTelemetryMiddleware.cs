@@ -42,6 +42,9 @@ public sealed class McpTelemetryMiddleware
             : null;
         var method = context.Request.Method;
 
+        // Sanitize user-controlled path to prevent log injection (CWE-117).
+        var sanitizedPath = LogSanitizer.SanitizeForLog(context.Request.Path.Value);
+
         using var activity = TaskdeckTelemetry.McpActivitySource.StartActivity(
             "mcp.request",
             ActivityKind.Server);
@@ -59,7 +62,7 @@ public sealed class McpTelemetryMiddleware
             _logger.LogInformation(
                 "MCP HTTP request started: Method={Method} Path={Path} CorrelationId={CorrelationId} UserId={UserId}",
                 method,
-                context.Request.Path.Value,
+                sanitizedPath,
                 correlationId,
                 userId);
 
@@ -93,7 +96,8 @@ public sealed class McpTelemetryMiddleware
         {
             stopwatch.Stop();
 
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            // Use exception type name only to avoid leaking user content in trace exports.
+            activity?.SetStatus(ActivityStatusCode.Error, LogSanitizer.SafeExceptionDescription(ex));
             activity?.SetTag(TaskdeckTelemetryTags.McpSuccess, false);
             activity?.SetTag(TaskdeckTelemetryTags.McpErrorType, ex.GetType().Name);
 
@@ -105,6 +109,11 @@ public sealed class McpTelemetryMiddleware
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, "http_request"),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, "http"),
                 new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpSuccess, false));
+
+            // Record duration for failed requests too, to avoid biasing latency metrics.
+            TaskdeckTelemetry.McpRequestDurationMs.Record(stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpOperationType, "http_request"),
+                new KeyValuePair<string, object?>(TaskdeckTelemetryTags.McpTransport, "http"));
 
             _logger.LogError(ex,
                 "MCP HTTP request failed: Method={Method} DurationMs={DurationMs} ErrorType={ErrorType} CorrelationId={CorrelationId} UserId={UserId}",
