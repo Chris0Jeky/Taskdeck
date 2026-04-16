@@ -176,8 +176,9 @@ test.describe('TST09 Adversarial Chat Inputs', () => {
     await page.getByPlaceholder('Session title').fill(htmlPayload)
     await page.getByRole('button', { name: 'Create Session' }).click()
 
-    // Wait for the session title to appear in the UI (confirms rendering is complete)
-    await expect(page.getByText(htmlPayload)).toBeVisible()
+    // Wait for the session title to appear in the UI (confirms rendering is complete).
+    // Use .first() because the title renders in both the sidebar and the header.
+    await expect(page.getByText(htmlPayload).first()).toBeVisible()
     expect(dialogTriggered).toBeFalsy()
 
     // Verify via API that the session title was stored as plain text
