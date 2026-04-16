@@ -20,14 +20,12 @@ if [ "$(id -u)" = "0" ]; then
     echo "[entrypoint] Running as root — fixing ${DATA_DIR} ownership for taskdeck user"
     mkdir -p "${DATA_DIR}"
     chown -R taskdeck:taskdeck "${DATA_DIR}"
-    # Re-exec the entrypoint as the taskdeck user
-    exec su-exec taskdeck "$0" "$@" 2>/dev/null \
-      || exec gosu taskdeck "$0" "$@" 2>/dev/null \
-      || {
-        # Neither su-exec nor gosu available; run as root with a warning
-        echo "[entrypoint] WARNING: su-exec/gosu not found; running as root"
-        exec "$@"
-      }
+    # Re-exec the entrypoint as the non-root taskdeck user.
+    # gosu is installed in the Dockerfile runtime stage. We invoke it directly
+    # rather than chaining exec fallbacks (exec su-exec || exec gosu) because
+    # a failed exec of a missing binary can abort the shell under set -e before
+    # the || fallback is reached, depending on the /bin/sh implementation.
+    exec gosu taskdeck "$0" "$@"
 fi
 
 # Running as non-root (taskdeck user). Verify the data directory is writable.

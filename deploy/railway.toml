@@ -17,8 +17,9 @@
 # Use the production Dockerfile (single container: API + SPA)
 dockerfilePath = "deploy/Dockerfile.production"
 
-# Build context is the repo root
-watchPatterns = ["backend/**", "frontend/**", "deploy/Dockerfile.production"]
+# Build context is the repo root. Include deploy/ so entrypoint or config
+# changes trigger a redeploy (not just app source changes).
+watchPatterns = ["backend/**", "frontend/**", "deploy/**"]
 
 [deploy]
 # Railway injects PORT env var; ASPNETCORE_URLS in the Dockerfile reads it

@@ -85,12 +85,13 @@ RUN groupadd --gid 1001 taskdeck \
 # Create persistent data directory (mounted volume in production)
 RUN mkdir -p /app/data && chown taskdeck:taskdeck /app/data
 
-# Copy published .NET application
-COPY --from=backend-build /app/publish ./
+# Copy published .NET application (owned by taskdeck so the non-root user can
+# read everything; also allows future writes to AppContext.BaseDirectory if needed).
+COPY --chown=taskdeck:taskdeck --from=backend-build /app/publish ./
 
 # Copy frontend build output into wwwroot/ so the .NET app serves it
 # (PipelineConfiguration.cs: UseDefaultFiles + UseStaticFiles + MapFallbackToFile)
-COPY --from=frontend-build /app/dist ./wwwroot/
+COPY --chown=taskdeck:taskdeck --from=frontend-build /app/dist ./wwwroot/
 
 # Copy the entrypoint script that fixes volume permissions at runtime
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
