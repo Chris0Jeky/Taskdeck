@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-13
+Last Updated: 2026-04-15
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,25 +10,26 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-13)
+## Current Verified Totals (2026-04-15)
 
-- Backend: **~4,479+ passing** (estimated after PRs `#821`–`#826` supplementary wave)
+- Backend: **~4,530+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave)
   - Domain: ~833+ (77 prior FsCheck + 93 new property tests for ChatSession/ChatMessage/Notification/KnowledgeDocument/WebhookSubscription + 11 ApiKey + 15 OAuthAuthCode + 8 MfaCredential + NoteImport domain)
   - Application: ~1799+ (29 prior JSON fuzz + 19 new chat/notification DTO fuzz + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
   - API integration: ~1135+ (8 metrics export + 80 prior adversarial + 50 new adversarial input + 20 API key + 13 prior concurrency + 22 new concurrency stress + 3 queue resilience + 13 LLM provider resilience + 9 telemetry + 4 telemetry API + 13 OIDC/auth + 9 OAuth token lifecycle)
   - CLI contract: 4
   - Architecture boundaries: 8
-- Frontend unit: **~2,454+ passing** (estimated after PRs `#821`–`#826`; ~200+ test files)
+- Frontend unit: **~2,463+ passing** (estimated after PRs `#821`–`#826` + `#841`; ~200+ test files)
   - New store integration: 88 tests (chat, board, queue, session, notification, workspace)
   - New view/component coverage: 107 tests (Archive, Metrics, Board, Review, Chat, CardItem, BoardCanvas, BoardActionRail)
   - New resilience: 14 tests (slow API, corrupted storage, loading states)
-- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode): default required lane passing; +20 new scenarios in PRs `#821`–`#826`
-- Combined automated total: **~6,950+ passing** (backend ~4,479 + frontend unit ~2,454 + E2E)
+- Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing; +20 new scenarios in PRs `#821`–`#826`; +61 new validation/verification scenarios in PRs `#837`–`#840` + `#838`
+- Combined automated total: **~7,070+ passing** (backend ~4,530 + frontend unit ~2,463 + E2E)
 
 Verification note:
 - backend total of 4,279 recertified 2026-04-12 via `dotnet test backend/Taskdeck.sln -c Release --list-tests 2>&1 | grep -c "^    "` on `main` after merging PRs `#800`–`#820`
 - frontend total of 2,245 recertified 2026-04-12 via `npx vitest --run --reporter=verbose 2>&1 | grep -c "✓"` on `main` after merging PRs `#800`–`#820`
 - supplementary wave (PRs `#821`–`#826`) adds ~429 new tests; totals estimated pending merge and full-suite recertification
+- validation/integrations wave (PRs `#837`–`#841`) adds ~121 new tests (60 integrations + 61 E2E validation/verification); totals estimated pending full-suite recertification
 - significant test growth in 2026-04-04 wave 1: ChangePassword fix (5 tests), golden-path integration (7), cross-user isolation (38), worker integration (24), controller HTTP (67), proposal lifecycle (74), OAuth/auth edge cases (44), MCP full inventory (42)
 - significant test growth in 2026-04-04 wave 2: domain state machines (174), SignalR integration (19), LLM tool-calling edge cases (101), export/import round-trip (64), API error contract (57), archive lifecycle (74), board metrics accuracy (61), notification delivery (36); all 8 PRs received two rounds of adversarial review with 47 review-fix commits addressing false-positive tests, weak assertions, and missing edge cases
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
@@ -1127,6 +1128,7 @@ Planned quality expectations when implementation starts:
   - Includes GDPR data export service (user-scoped completeness, versioned payload) and account deletion service (re-auth, confirmation phrase, PII anonymization)
   - Includes board metrics service coverage (aggregation, date range, label grouping)
   - Includes MCP board resource coverage (listing, phantom-user fallback, multi-user scoping)
+  - Includes integrations registry service coverage (connector CRUD, enable/disable lifecycle, event logging)
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
   - Includes core + automation/archive/chat/ops/log/health controllers
@@ -1135,6 +1137,7 @@ Planned quality expectations when implementation starts:
   - Includes board-scoped external import endpoint coverage (authz, malformed input, duplicate handling, apply/update flow, rollback safety)
   - Includes outbound webhook API and worker coverage (`OutboundWebhooksApiTests`, `OutboundWebhookDeliveryWorkerTests`) for claim/reload handling, cancellation requeue, and non-success HTTP retry/dead-letter branches
   - Includes `ResultExtensions` mapping tests for standardized API error/status behavior
+  - Includes integrations controller coverage (7 endpoints: CRUD + enable/disable, auth enforcement)
 - CLI contracts:
   - `backend/tests/Taskdeck.Cli.Tests`
 - Architecture boundaries:
@@ -1159,6 +1162,10 @@ Planned quality expectations when implementation starts:
   - Includes deterministic starter-pack fixture bootstrap coverage for `small`, `medium`, and `edge` manifest scenarios
   - Includes unauthenticated SignalR negotiate rejection coverage aligned with the runtime client handshake path
   - Includes dedicated multi-session concurrency regression coverage (`tests/e2e/concurrency.spec.ts`)
+  - Includes manual validation slice C E2E coverage: `tests/e2e/validation-automation-proposals.spec.ts` (8 tests), `tests/e2e/validation-chat-bootstrap.spec.ts` (9 tests)
+  - Includes manual validation slice D E2E coverage: `tests/e2e/validation-ops-logs-health.spec.ts` (17 tests)
+  - Includes manual validation slice E E2E coverage: `tests/e2e/validation-starter-packs.spec.ts`, `tests/e2e/validation-archive-recovery.spec.ts`, `tests/e2e/validation-activity-traceability.spec.ts` (23+ tests)
+  - Includes integrated verification E2E coverage: `tests/e2e/integrated-verification.spec.ts` (4 tests covering capture-to-board pipeline, board bootstrap, workspace navigation, auth denial)
 - Load and concurrency API profile:
   - `tests/load/k6/board-heavy-load.js`
   - Includes seeded-user board-heavy read/write load mix and threshold-based regression diagnostics
@@ -1171,6 +1178,13 @@ Use `docs/ops/OBSERVABILITY_BASELINE.md` for telemetry dashboard/alert baseline 
 Detailed step-indexed validation checklists:
 - Slice A — workspace shell, board lifecycle, keyboard UX: `docs/testing/manual-validation-a-workspace-board-ux.md`
 - Slice B — authz policy, cross-user isolation, API error contracts: `docs/testing/manual-validation-b-authz-contracts.md`
+- Slice C — automation proposals, chat bootstrap, execution safety (45 scenarios): `docs/testing/MANUAL_VALIDATION_SLICE_C_SCENARIOS.md`; rehearsal runbook: `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_C.md`
+- Slice D — ops CLI, log query/correlation, health telemetry (25 scenarios): `docs/testing/MANUAL_VALIDATION_SLICE_D_SCENARIOS.md`; rehearsal runbook: `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_D.md`
+- Slice E — starter packs, archive recovery, activity traceability (25 scenarios): `docs/testing/MANUAL_VALIDATION_SLICE_E_SCENARIOS.md`; rehearsal runbook: `docs/testing/MANUAL_REHEARSAL_RUNBOOK_SLICE_E.md`
+
+Integrated verification program:
+- Cross-component verification strategy (18 scenarios): `docs/testing/INTEGRATED_VERIFICATION_STRATEGY.md`
+- Manual rehearsal template: `docs/testing/MANUAL_REHEARSAL_TEMPLATE.md`
 
 ## Thesis Alignment Validation (Capture Realignment)
 
