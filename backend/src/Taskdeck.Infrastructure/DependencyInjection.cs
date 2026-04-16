@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Connectors;
+using Taskdeck.Infrastructure.Connectors;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
 using Taskdeck.Infrastructure.Services;
@@ -54,16 +56,31 @@ public static class DependencyInjection
         services.AddScoped<IConnectorCredentialRepository, ConnectorCredentialRepository>();
         services.AddScoped<IKnowledgeSearchService, Taskdeck.Infrastructure.Services.KnowledgeFtsSearchService>();
 
-        // Credential encryption — uses a configurable AES-256 key.
-        // Falls back to a deterministic development-only key if none is configured.
+        // Credential encryption — requires a configured AES-256 key.
+        // Fail-fast: the service refuses to start without a valid encryption key.
         var credentialEncryptionKey = configuration["Connectors:EncryptionKey"];
         if (string.IsNullOrWhiteSpace(credentialEncryptionKey))
         {
-            // 256-bit development-only key. Production MUST override via config.
-            credentialEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+            throw new InvalidOperationException(
+                "Connectors:EncryptionKey is not configured. " +
+                "Set a base64-encoded 256-bit key via configuration or the " +
+                "TASKDECK_CONNECTORS__ENCRYPTIONKEY environment variable. " +
+                "Generate one with: openssl rand -base64 32");
         }
         services.AddSingleton<ICredentialEncryptionService>(
             new AesCredentialEncryptionService(credentialEncryptionKey));
+
+        // Connector provider framework (concrete providers registered in Infrastructure)
+        services.AddHttpClient<GitHubConnectorProvider>(client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "Taskdeck-Connector/1.0");
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddSingleton<IConnectorProvider>(sp =>
+            sp.GetRequiredService<GitHubConnectorProvider>());
+        services.AddSingleton<IConnectorProviderRegistry>(sp =>
+            new ConnectorProviderRegistry(sp.GetServices<IConnectorProvider>()));
+
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // Cache service registration
