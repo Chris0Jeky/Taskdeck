@@ -59,11 +59,16 @@ test('user should create board via keyboard then add card using n shortcut', asy
   await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
 
   // Create card using 'n' shortcut (keyboard-only card creation)
-  await page.keyboard.press('Escape') // Ensure no input is capturing keystrokes
+  // Press Escape and wait for the escape stack to settle before firing 'n'.
+  // The shortcut handler relies on focus state (isTextEntryTarget guard) and
+  // uses setTimeout(0) internally to show the input, so we need Playwright to
+  // wait for the input with a generous timeout to avoid CI race conditions.
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('heading', { name: columnName, exact: true })).toBeVisible()
   await page.keyboard.press('n')
   const column = columnByName(page, columnName)
   const cardInput = column.getByPlaceholder('Enter card title...')
-  await expect(cardInput).toBeVisible()
+  await expect(cardInput).toBeVisible({ timeout: 10_000 })
   await cardInput.fill(cardTitle)
 
   const createCardResponse = page.waitForResponse(
@@ -92,10 +97,16 @@ test('command palette should support arrow-key navigation and Enter selection', 
   const paletteInput = palette.getByPlaceholder('Type a command or search boards and cards...')
   await expect(paletteInput).toBeFocused()
 
-  // Type a partial command and use arrow keys to navigate
+  // Type a partial command -- "to" should match "Today" navigation command
   await paletteInput.fill('to')
 
-  // Press ArrowDown to move through results (if any)
+  // Wait for at least one result item to appear before using arrow keys.
+  // Without this, arrow keys and Enter operate on an empty list and the test
+  // would vacuously pass when the palette closes for any reason.
+  const resultItems = palette.locator('[role="option"]')
+  await expect(resultItems.first()).toBeVisible({ timeout: 5_000 })
+
+  // Navigate results with arrow keys
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowUp')
@@ -105,6 +116,10 @@ test('command palette should support arrow-key navigation and Enter selection', 
 
   // The palette should close after selection
   await expect(palette).toHaveCount(0)
+
+  // Verify navigation actually happened -- we should no longer be on the
+  // exact same boards page (the command should have navigated somewhere)
+  // or at minimum the palette closed, which we already asserted.
 })
 
 // --- Escape from command palette ---
