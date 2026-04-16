@@ -76,3 +76,71 @@ export const ConnectorDirectionLabels: Record<ConnectorDirection, string> = {
   Context: 'Context (Knowledge)',
   Outbound: 'Outbound (Events)',
 }
+
+// --- Enum normalization (backend sends numeric enums) ---
+
+/** Raw value from backend -- may be a numeric enum index or a string */
+export type ConnectorTypeValue = ConnectorType | number
+export type ConnectorDirectionValue = ConnectorDirection | number
+export type ConnectorStatusValue = ConnectorStatus | number
+export type ConnectorEventTypeValue = ConnectorEventType | number
+
+const connectorTypeByIndex: readonly ConnectorType[] = [
+  'BrowserClipper',
+  'MarkdownImport',
+  'WebClip',
+  'GitHubIssueIntake',
+  'WebhookInbound',
+  'Custom',
+] as const
+
+const connectorDirectionByIndex: readonly ConnectorDirection[] = [
+  'Inbound',
+  'Context',
+  'Outbound',
+] as const
+
+const connectorStatusByIndex: readonly ConnectorStatus[] = [
+  'Active',
+  'Disabled',
+  'Error',
+] as const
+
+const connectorEventTypeByIndex: readonly ConnectorEventType[] = [
+  'Connected',
+  'Disconnected',
+  'DataReceived',
+  'Error',
+] as const
+
+export function normalizeConnectorType(value: ConnectorTypeValue): ConnectorType {
+  if (typeof value === 'number') {
+    return connectorTypeByIndex[value] ?? 'Custom'
+  }
+  const found = connectorTypeByIndex.find((v) => v.toLowerCase() === value.toLowerCase())
+  return found ?? 'Custom'
+}
+
+export function normalizeConnectorDirection(value: ConnectorDirectionValue): ConnectorDirection {
+  if (typeof value === 'number') {
+    return connectorDirectionByIndex[value] ?? 'Inbound'
+  }
+  const found = connectorDirectionByIndex.find((v) => v.toLowerCase() === value.toLowerCase())
+  return found ?? 'Inbound'
+}
+
+export function normalizeConnectorStatus(value: ConnectorStatusValue): ConnectorStatus {
+  if (typeof value === 'number') {
+    return connectorStatusByIndex[value] ?? 'Active'
+  }
+  const found = connectorStatusByIndex.find((v) => v.toLowerCase() === value.toLowerCase())
+  return found ?? 'Active'
+}
+
+export function normalizeConnectorEventType(value: ConnectorEventTypeValue): ConnectorEventType {
+  if (typeof value === 'number') {
+    return connectorEventTypeByIndex[value] ?? 'Connected'
+  }
+  const found = connectorEventTypeByIndex.find((v) => v.toLowerCase() === value.toLowerCase())
+  return found ?? 'Connected'
+}
