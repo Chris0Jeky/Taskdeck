@@ -40,9 +40,8 @@ public sealed class McpTelemetryMiddleware
         var userId = context.Items.TryGetValue(HttpUserContextProvider.UserIdItemKey, out var uid)
             ? uid?.ToString()
             : null;
-        var method = context.Request.Method;
-
-        // Sanitize user-controlled path to prevent log injection (CWE-117).
+        // Sanitize user-controlled method/path to prevent log injection (CWE-117).
+        var method = LogSanitizer.SanitizeForLog(context.Request.Method);
         var sanitizedPath = LogSanitizer.SanitizeForLog(context.Request.Path.Value);
 
         using var activity = TaskdeckTelemetry.McpActivitySource.StartActivity(
