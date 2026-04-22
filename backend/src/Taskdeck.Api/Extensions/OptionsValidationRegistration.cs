@@ -21,81 +21,29 @@ public static class OptionsValidationRegistration
     {
         // ── Settings from SettingsRegistration ──────────────────────────────
 
-        services.AddOptions<JwtSettings>()
-            .Bind(configuration.GetSection("Jwt"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<ObservabilitySettings>()
-            .Bind(configuration.GetSection("Observability"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<RateLimitingSettings>()
-            .Bind(configuration.GetSection("RateLimiting"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<SecurityHeadersSettings>()
-            .Bind(configuration.GetSection("SecurityHeaders"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<SentrySettings>()
-            .Bind(configuration.GetSection("Sentry"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<TelemetrySettings>()
-            .Bind(configuration.GetSection("Telemetry"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<AnalyticsSettings>()
-            .Bind(configuration.GetSection("Analytics"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<MfaPolicySettings>()
-            .Bind(configuration.GetSection("MfaPolicy"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        services.RegisterValidatedOptions<JwtSettings>(configuration, "Jwt");
+        services.RegisterValidatedOptions<ObservabilitySettings>(configuration, "Observability");
+        services.RegisterValidatedOptions<RateLimitingSettings>(configuration, "RateLimiting");
+        services.RegisterValidatedOptions<SecurityHeadersSettings>(configuration, "SecurityHeaders");
+        services.RegisterValidatedOptions<SentrySettings>(configuration, "Sentry");
+        services.RegisterValidatedOptions<TelemetrySettings>(configuration, "Telemetry");
+        services.RegisterValidatedOptions<AnalyticsSettings>(configuration, "Analytics");
+        services.RegisterValidatedOptions<MfaPolicySettings>(configuration, "MfaPolicy");
 
         // ── Settings from LlmProviderRegistration ──────────────────────────
 
-        services.AddOptions<LlmProviderSettings>()
-            .Bind(configuration.GetSection("Llm"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<LlmQuotaSettings>()
-            .Bind(configuration.GetSection("LlmQuota"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<LlmToolCallingSettings>()
-            .Bind(configuration.GetSection("LlmToolCalling"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-
-        services.AddOptions<AbuseDetectionSettings>()
-            .Bind(configuration.GetSection("AbuseDetection"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        services.RegisterValidatedOptions<LlmProviderSettings>(configuration, "Llm");
+        services.RegisterValidatedOptions<LlmQuotaSettings>(configuration, "LlmQuota");
+        services.RegisterValidatedOptions<LlmToolCallingSettings>(configuration, "LlmToolCalling");
+        services.RegisterValidatedOptions<AbuseDetectionSettings>(configuration, "AbuseDetection");
 
         // ── Settings from WorkerRegistration ────────────────────────────────
 
-        services.AddOptions<WorkerSettings>()
-            .Bind(configuration.GetSection("Workers"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        services.RegisterValidatedOptions<WorkerSettings>(configuration, "Workers");
 
         // ── Settings from CorsRegistration (Cache is used in infrastructure) ─
 
-        services.AddOptions<CacheSettings>()
-            .Bind(configuration.GetSection("Cache"))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        services.RegisterValidatedOptions<CacheSettings>(configuration, "Cache");
 
         // ── Cross-property validators (IValidateOptions<T>) ─────────────────
 
@@ -105,5 +53,16 @@ public static class OptionsValidationRegistration
         services.AddSingleton<IValidateOptions<RateLimitingSettings>, RateLimitingSettingsValidator>();
 
         return services;
+    }
+
+    private static void RegisterValidatedOptions<T>(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionName) where T : class
+    {
+        services.AddOptions<T>()
+            .Bind(configuration.GetSection(sectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
     }
 }
