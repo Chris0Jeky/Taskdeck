@@ -28,7 +28,9 @@ test.beforeEach(async ({ page, request }) => {
 // ─── Scenario 1: Board load failure → error state shown → retry succeeds ─────
 
 test('board load failure should display error state and allow retry', async ({ page }) => {
-  let callCount = 0
+  let failedLoads = 0
+  const MAX_FAILED_LOADS = 4 // 1 initial + 3 retries from httpRetry.ts MAX_RETRIES
+  let firstGotoDone = false
 
   await page.route('**/api/boards/**', async (route) => {
     // Only intercept GET requests for board details (not cards, not list)
@@ -39,8 +41,13 @@ test('board load failure should display error state and allow retry', async ({ p
       return
     }
 
-    callCount += 1
-    if (callCount === 1) {
+    // The FE-15 retry interceptor retries idempotent 5xx up to 3 times, so we
+    // must fail the initial load AND all retries to actually surface the
+    // error state. After the first `page.goto` has settled on that error
+    // state, `firstGotoDone` flips and we let subsequent loads (post-reload)
+    // succeed to prove the retry button / reload recovers.
+    if (!firstGotoDone && failedLoads < MAX_FAILED_LOADS) {
+      failedLoads += 1
       await route.fulfill({
         status: 503,
         contentType: 'application/json',
@@ -62,14 +69,18 @@ test('board load failure should display error state and allow retry', async ({ p
     columnNamePrefix: 'Backlog',
   })
 
-  // First visit: 503 should be served
+  // First visit: 503 should be served on every attempt (initial + 3 retries)
+  // so the terminal error state surfaces.
   await page.goto(`/workspace/boards/${boardId}`)
 
-  // Expect the error state to be visible — any role=alert or error-related text
+  // Expect the error state to be visible — any role=alert or error-related text.
+  // Timeout is generous because the retry interceptor waits 1s+2s+4s
+  // between attempts before surfacing the terminal rejection.
   const errorState = page.getByRole('alert').first()
-  await expect(errorState).toBeVisible({ timeout: 10_000 })
+  await expect(errorState).toBeVisible({ timeout: 20_000 })
+  firstGotoDone = true
 
-  // After a reload the route continues normally (callCount > 1)
+  // After a reload the route continues normally
   await page.reload()
 
   // Board heading should now be visible
