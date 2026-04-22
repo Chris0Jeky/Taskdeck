@@ -42,6 +42,8 @@ public class TaskdeckDbContext : DbContext
     public DbSet<OAuthAuthCode> OAuthAuthCodes => Set<OAuthAuthCode>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<MfaCredential> MfaCredentials => Set<MfaCredential>();
+    public DbSet<IntegrationConnector> IntegrationConnectors => Set<IntegrationConnector>();
+    public DbSet<ConnectorEvent> ConnectorEvents => Set<ConnectorEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

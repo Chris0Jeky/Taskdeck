@@ -11,6 +11,7 @@ import ShellSidebar from './ShellSidebar.vue'
 import ShellTopbar from './ShellTopbar.vue'
 import ShellCommandPalette from './ShellCommandPalette.vue'
 import ShellKeyboardHelp from './ShellKeyboardHelp.vue'
+import ErrorBoundary from '../ErrorBoundary.vue'
 import type { CommandItem } from './ShellCommandPalette.vue'
 
 const router = useRouter()
@@ -191,7 +192,14 @@ onUnmounted(() => {
       <ShellTopbar @open-command-palette="openCommandPalette" />
 
       <main id="td-main-content" class="td-content">
-        <router-view />
+        <!--
+          Per-view ErrorBoundary keeps the sidebar and topbar usable when a
+          single route component crashes. The outer boundary in App.vue is
+          the last-resort backstop for crashes in AppShell itself.
+        -->
+        <ErrorBoundary>
+          <router-view />
+        </ErrorBoundary>
       </main>
     </div>
 

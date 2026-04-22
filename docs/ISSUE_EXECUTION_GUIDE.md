@@ -1,6 +1,6 @@
 # Issue Execution Guide
 
-Last Updated: 2026-04-15
+Last Updated: 2026-04-22
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
 ## Purpose
@@ -160,77 +160,77 @@ Execution note (manual product audit wave):
 - route the review raw-ID finding through existing issue `#326` instead of creating a duplicate
 - `#369` headed manual-audit Playwright follow-through is intentionally lower priority and should not block the Priority I runtime fixes above
 
-### Stage 2: Priority II - Foundation Wave (Post-Phase-4)
+### Stage 2: Priority II - Foundation Wave (Post-Phase-4) (all delivered)
 
 Execution note (2026-02-22, updated 2026-03-28):
 - `#168` CI topology expansion is complete: required-lane reusable extraction, non-blocking (`ci-extended`), scheduled (`ci-nightly`, `nightly-quality`), release (`ci-release`, `release-security`) orchestrators, topology documentation in `ci-required.yml` header, and `CODEOWNERS` governance are all delivered. Remaining hardening tracks continue independently.
 
-Analysis follow-through, CI topology, and hardening:
-1. `#151` ANL-2026-02-21 analysis follow-through umbrella (tracking)
-2. `#168` OPS-19 CI workflow topology expansion and governance hardening
-3. `#153` API-06 centralized exception handling/fallback error-contract uniformity
-4. `#154` FE-11 frontend linting baseline + CI gate
-5. `#155` FE-12 frontend coverage thresholds
-6. `#157` TST-14 architecture-guard expansion
+Analysis follow-through, CI topology, and hardening (all delivered):
+1. `#151` ANL-2026-02-21 analysis follow-through umbrella (delivered)
+2. `#168` OPS-19 CI workflow topology expansion and governance hardening (delivered)
+3. `#153` API-06 centralized exception handling/fallback error-contract uniformity (delivered)
+4. `#154` FE-11 frontend linting baseline + CI gate (delivered)
+5. `#155` FE-12 frontend coverage thresholds (delivered)
+6. `#157` TST-14 architecture-guard expansion (delivered)
 
-Foundation wave:
-7. `#67` COL-01 realtime SignalR updates
-8. `#68` OBS-01 observability baseline
-9. `#70` TST-01 load/concurrency harness
-10. `#71` ARCH-01 multi-tenancy strategy ADR
-11. `#72` COL-02 notifications framework
-12. `#73` COL-03 presence/conflict policy
-13. `#74` COL-04 comments/mentions workflow
-14. `#75` INT-01 import adapters foundation
-15. `#76` INT-02 webhooks/integration security model
+Foundation wave (all delivered):
+7. `#67` COL-01 realtime SignalR updates (delivered)
+8. `#68` OBS-01 observability baseline (delivered)
+9. `#70` TST-01 load/concurrency harness (delivered)
+10. `#71` ARCH-01 multi-tenancy strategy ADR (delivered)
+11. `#72` COL-02 notifications framework (delivered)
+12. `#73` COL-03 presence/conflict policy (delivered)
+13. `#74` COL-04 comments/mentions workflow (delivered)
+14. `#75` INT-01 import adapters foundation (delivered)
+15. `#76` INT-02 webhooks/integration security model (delivered)
 
-Capture realignment wave (2026-02-23):
-16. `#199` CAP-00 capture wave tracker (tracking)
-17. `#200` CAP-01 capture persistence model/domain contract
-18. `#201` CAP-02 capture API slice
-19. `#202` CAP-03 queue proposal provenance fix
-20. `#203` CAP-04 triage enqueue + status transitions
-21. `#204` CAP-05 worker triage path -> proposal generation
-22. `#205` CAP-06 strict triage schema + prompt versioning
-23. `#206` CAP-07 inbox frontend route/list/detail
-24. `#207` CAP-08 capture modal + command palette integration
-25. `#208` CAP-09 triage trigger + proposal-linking UX
-26. `#209` CAP-10 card/proposal provenance UX
-27. `#210` CAP-11 capture loop E2E regression
-28. `#211` CAP-12 canonical docs promotion
+Capture realignment wave (2026-02-23, all delivered):
+16. `#199` CAP-00 capture wave tracker (delivered)
+17. `#200` CAP-01 capture persistence model/domain contract (delivered)
+18. `#201` CAP-02 capture API slice (delivered)
+19. `#202` CAP-03 queue proposal provenance fix (delivered)
+20. `#203` CAP-04 triage enqueue + status transitions (delivered)
+21. `#204` CAP-05 worker triage path -> proposal generation (delivered)
+22. `#205` CAP-06 strict triage schema + prompt versioning (delivered)
+23. `#206` CAP-07 inbox frontend route/list/detail (delivered)
+24. `#207` CAP-08 capture modal + command palette integration (delivered)
+25. `#208` CAP-09 triage trigger + proposal-linking UX (delivered)
+26. `#209` CAP-10 card/proposal provenance UX (delivered)
+27. `#210` CAP-11 capture loop E2E regression (delivered)
+28. `#211` CAP-12 canonical docs promotion (delivered)
 
-Testing harness guardrails wave (2026-02-23):
-29. `#254` TST-15 testing harness wave tracker
-30. `#255` TST-16 remove residual wall-clock flake patterns + centralize E2E polling helpers
-31. `#256` TST-17 drag/drop persistence regression coverage (refresh-stable)
-32. `#257` TST-18 API error-contract completeness expansion (`400/401/403/404/409`)
-33. `#258` TST-19 OpenAPI generation + parse-validation CI artifact guardrail
-34. `#259` DOC-06 golden principles baseline + minimal enforcement script
-35. `#260` OPS-20 non-blocking nightly quality workflow (coverage + dependency/security signals)
+Testing harness guardrails wave (2026-02-23, all delivered):
+29. `#254` TST-15 testing harness wave tracker (delivered)
+30. `#255` TST-16 remove residual wall-clock flake patterns + centralize E2E polling helpers (delivered)
+31. `#256` TST-17 drag/drop persistence regression coverage (refresh-stable) (delivered)
+32. `#257` TST-18 API error-contract completeness expansion (`400/401/403/404/409`) (delivered)
+33. `#258` TST-19 OpenAPI generation + parse-validation CI artifact guardrail (delivered)
+34. `#259` DOC-06 golden principles baseline + minimal enforcement script (delivered)
+35. `#260` OPS-20 non-blocking nightly quality workflow (coverage + dependency/security signals) (delivered)
 
-Provider runtime expansion (2026-02-23):
-36. `#232` AUTO-03 provider-agnostic LLM runtime (`OpenAI` + `Gemini`) with demo-first setup and safe `Mock` fallback
-37. `#235` SEC-15 managed-key threat-model/control-plane tracker
-38. `#236` SEC-16 managed-key identity attribution contract
-39. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails
+Provider runtime expansion (2026-02-23, all delivered):
+36. `#232` AUTO-03 provider-agnostic LLM runtime (`OpenAI` + `Gemini`) with demo-first setup and safe `Mock` fallback (delivered)
+37. `#235` SEC-15 managed-key threat-model/control-plane tracker (delivered)
+38. `#236` SEC-16 managed-key identity attribution contract (delivered)
+39. `#237` SEC-17 managed-key quota/budget/kill-switch guardrails (delivered)
 
-MVP productization wave seeded from the 2026-03-07 integration:
-40. `#318` `UX-13` MVP productization wave tracker
-41. `#320` `UX-14` workspace mode foundation + `Home` summary shell
-42. `#322` `UX-15` `Review`-first routing + empty/help states + board selectors
-43. `#324` `UX-16` `Today` agenda + first-run onboarding path
-44. `#326` `UX-17` proposal readability + board-centered action flow
-45. `#96` `UX-10` interactive onboarding/help (reused and reprioritized to `Priority II`)
-46. `#100` `DOC-04` user guides/tutorials/FAQ (reused and reprioritized to `Priority II`)
-47. `#328` `TST-20` product first-run smoke + launch-criteria guardrail
+MVP productization wave seeded from the 2026-03-07 integration (all delivered):
+40. `#318` `UX-13` MVP productization wave tracker (delivered)
+41. `#320` `UX-14` workspace mode foundation + `Home` summary shell (delivered)
+42. `#322` `UX-15` `Review`-first routing + empty/help states + board selectors (delivered)
+43. `#324` `UX-16` `Today` agenda + first-run onboarding path (delivered)
+44. `#326` `UX-17` proposal readability + board-centered action flow (delivered)
+45. `#96` `UX-10` interactive onboarding/help (delivered)
+46. `#100` `DOC-04` user guides/tutorials/FAQ (delivered)
+47. `#328` `TST-20` product first-run smoke + launch-criteria guardrail (delivered)
 
-Saul-facing demo alignment wave seeded from the 2026-03-26 reconciliation:
-48. `#356` `DEMO-00` Saul-facing demo alignment tracker
-49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario
-50. `#326` `UX-17` proposal readability and trust-cue hardening (demo-critical Saul-facing subset)
-51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (demo-critical Saul-facing subset)
-52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (current execution step)
-53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (run only after `#355` lands)
+Saul-facing demo alignment wave seeded from the 2026-03-26 reconciliation (all delivered):
+48. `#356` `DEMO-00` Saul-facing demo alignment tracker (delivered)
+49. `#354` `PACK-08` Saul-facing client-onboarding starter pack and deterministic demo scenario (delivered)
+50. `#326` `UX-17` proposal readability and trust-cue hardening (demo-critical Saul-facing subset) (delivered)
+51. `#330` `UX-18` in-app demoability surfaces and hero-board quality (demo-critical Saul-facing subset) (delivered)
+52. `#355` `TST-24` Saul-facing demo rehearsal contract, acceptance checklist, and artifact guide (delivered)
+53. `#216` `GTM-01` thesis-aligned demo script / landing baseline (delivered)
 
 Execution note (Saul-facing demo wave):
 - use `docs/WIP/Taskdeck_Demo_Capability_Specification.md` together with `docs/analysis/2026-03-26_saul-demo-capability-reconciliation.md`
@@ -240,16 +240,16 @@ Execution note (Saul-facing demo wave):
 - current execution order remains strict: `#354` -> demo-critical `#326` -> demo-critical `#330` -> `#355` -> `#216`
 - Saul-facing demo wave items (`#354`, `#326`, `#330`, `#355`, `#216`) are now all delivered; `#356` tracker is closed
 
-Demo rehearsal runtime issues wave (seeded from 2026-03-27 walkthrough):
-54. `#395` `DEMO-01` demo rehearsal runtime issues tracker
-55. `#387` `SEED-01` demo:seed fails on re-run with starter pack conflicts (blocker)
-56. `#389` `SEED-03` demo:run --skip-llm fails — proposal alias never resolves (blocker)
-57. `#388` `SEED-02` add --reset and --help flags to demo:seed
-58. `#390` `DX-01` document canonical SQLite DB path and add demo:reset-db script
-59. `#394` `SEED-04` seeded demo state narrative mismatch
-60. `#391` `DX-02` health endpoint not under /api prefix (docs)
-61. `#392` `DX-03` login returns 400 for non-existent user
-62. `#393` `UX-22` Inbox items lack data-testid attributes
+Demo rehearsal runtime issues wave (seeded from 2026-03-27 walkthrough, all delivered):
+54. `#395` `DEMO-01` demo rehearsal runtime issues tracker (delivered)
+55. `#387` `SEED-01` demo:seed fails on re-run with starter pack conflicts (delivered)
+56. `#389` `SEED-03` demo:run --skip-llm fails — proposal alias never resolves (delivered)
+57. `#388` `SEED-02` add --reset and --help flags to demo:seed (delivered)
+58. `#390` `DX-01` document canonical SQLite DB path and add demo:reset-db script (delivered)
+59. `#394` `SEED-04` seeded demo state narrative mismatch (delivered)
+60. `#391` `DX-02` health endpoint not under /api prefix (docs) (delivered)
+61. `#392` `DX-03` login returns 400 for non-existent user (delivered)
+62. `#393` `UX-22` Inbox items lack data-testid attributes (delivered)
 
 Execution note (demo rehearsal runtime issues):
 - blockers first: `#387` and `#389` can be parallel
@@ -258,86 +258,86 @@ Execution note (demo rehearsal runtime issues):
 - polish: `#391`, `#392`, `#393` lowest priority
 - analysis: `docs/analysis/2026-03-27_demo-rehearsal-runtime-issues.md`
 
-### Stage 3: Priority III - Expansion Wave
+### Stage 3: Priority III - Expansion Wave (all delivered)
 
-1. `#77` ANL-01 metrics dashboard
+1. `#77` ANL-01 metrics dashboard (delivered `#667`)
 2. `#78` ANL-02 exportable reports (delivered `#787`)
 3. `#79` ANL-03 forecasting/capacity heuristics (delivered `#790`)
 4. `#80` SEC-05 OWASP baseline hardening (delivered)
 5. `#81` SEC-06 API rate limiting (includes capture endpoint scope extension, delivered)
-6. `#82` SEC-07 SSO/OIDC + optional MFA
-7. `#83` SEC-08 data portability/deletion flow
-8. `#106` SEC-09 dependency vulnerability policy
-9. `#110` SEC-10 secrets/configuration management baseline
-10. `#156` SEC-12 session-token storage hardening plan
-11. `#212` SEC-14 logging redaction guardrails
-12. `#238` SEC-18 managed-key abuse detection and automated containment
-13. `#239` SEC-19 managed-key incident response and key-rotation drills
-14. `#240` DOC-05 managed-key fair-use policy and abuse consequence disclosures
-15. `#242` UI-00 frontend premium UI wave tracker
-16. `#243` UI-01 design tokens/theme-density-motion foundations
-17. `#245` UI-03: Decision spike for frontend primitive stack (Radix Vue vs shadcn-vue vs Headless UI)
-18. `#244` UI-02 shared UI primitives foundation
-19. `#246` UI-04 AppShell premium reskin (no behavior changes)
-20. `#247` UI-05 board card/surface polish pass
+6. `#82` SEC-07 SSO/OIDC + optional MFA (delivered)
+7. `#83` SEC-08 data portability/deletion flow (delivered `#666`)
+8. `#106` SEC-09 dependency vulnerability policy (delivered)
+9. `#110` SEC-10 secrets/configuration management baseline (delivered)
+10. `#156` SEC-12 session-token storage hardening plan (delivered)
+11. `#212` SEC-14 logging redaction guardrails (delivered)
+12. `#238` SEC-18 managed-key abuse detection and automated containment (delivered)
+13. `#239` SEC-19 managed-key incident response and key-rotation drills (delivered)
+14. `#240` DOC-05 managed-key fair-use policy and abuse consequence disclosures (delivered)
+15. `#242` UI-00 frontend premium UI wave tracker (delivered)
+16. `#243` UI-01 design tokens/theme-density-motion foundations (delivered)
+17. `#245` UI-03: Decision spike for frontend primitive stack (Radix Vue vs shadcn-vue vs Headless UI) (delivered)
+18. `#244` UI-02 shared UI primitives foundation (delivered)
+19. `#246` UI-04 AppShell premium reskin (no behavior changes) (delivered)
+20. `#247` UI-05 board card/surface polish pass (delivered)
 21. `#249` UI-07 inbox premium primitives pass (delivered `#788`)
-22. `#248` UI-06 drag/drop premium behavior + keyboard alternatives
-23. `#250` PERF-08 frontend interaction latency budgets + instrumentation
-24. `#329` MVP-03 lower-priority secondary MVP follow-through tracker
-25. `#330` UX-18 in-app demoability and live attention cues
-26. `#331` TST-21 demo director reporting/assertions/presets/soak follow-through
-27. `#332` TST-22 replay-from-trace and scenario-authoring follow-through
+22. `#248` UI-06 drag/drop premium behavior + keyboard alternatives (delivered)
+23. `#250` PERF-08 frontend interaction latency budgets + instrumentation (delivered)
+24. `#329` MVP-03 lower-priority secondary MVP follow-through tracker (delivered)
+25. `#330` UX-18 in-app demoability and live attention cues (delivered)
+26. `#331` TST-21 demo director reporting/assertions/presets/soak follow-through (delivered)
+27. `#332` TST-22 replay-from-trace and scenario-authoring follow-through (delivered)
 
 Execution note (premium UI wave):
 - Reused dependencies are intentionally not re-seeded as duplicates: `#154` (lint/CI), `#88` (visual regression), `#92` (a11y remediation), `#213` (virtualization).
 - Do not promote agent/knowledge/integrations breadth ahead of the seeded `Priority II` productization wave (`#318`, `#320`, `#322`, `#324`, `#326`, `#96`, `#100`, `#328`).
 
-### Stage 4: Priority IV - Maturity Wave
+### Stage 4: Priority IV - Maturity Wave (all delivered except #98, #217, #219)
 
 Platform/ops:
-1. `#84` PLAT-01 DB migration strategy
-2. `#85` PLAT-02 distributed cache strategy
-3. `#86` OPS-08 backup/restore DR playbook
-4. `#101` OPS-09 staged deployment workflow
-5. `#102` OPS-10 IaC baseline
-6. `#103` OPS-11 SBOM/provenance
-7. `#104` OPS-12 cost guardrails
-8. `#105` PLAT-03 SignalR scale-out readiness
-9. `#111` OPS-14 cloud topology/autoscaling ADR
+1. `#84` PLAT-01 DB migration strategy (delivered)
+2. `#85` PLAT-02 distributed cache strategy (delivered)
+3. `#86` OPS-08 backup/restore DR playbook (delivered)
+4. `#101` OPS-09 staged deployment workflow (delivered)
+5. `#102` OPS-10 IaC baseline (delivered)
+6. `#103` OPS-11 SBOM/provenance (delivered)
+7. `#104` OPS-12 cost guardrails (delivered)
+8. `#105` PLAT-03 SignalR scale-out readiness (delivered)
+9. `#111` OPS-14 cloud topology/autoscaling ADR (delivered)
 
 Testing/UX/docs:
-10. `#87` TST-02 cross-browser/mobile E2E
-11. `#88` TST-03 visual regression
-12. `#89` TST-04 property/fuzz pilot
-13. `#90` TST-05 mutation pilot
-14. `#91` TST-06 ephemeral integration DBs
-15. `#92` UX-06 accessibility remediation
-16. `#93` UX-07 global search/actions
-17. `#94` UX-08 calendar/timeline views
-18. `#95` UX-09 PWA/offline readiness
-19. `#213` PERF-07 long-list virtualization
-20. `#97` INT-03 plugin architecture RFC
+10. `#87` TST-02 cross-browser/mobile E2E (delivered)
+11. `#88` TST-03 visual regression (delivered)
+12. `#89` TST-04 property/fuzz pilot (delivered)
+13. `#90` TST-05 mutation pilot (delivered)
+14. `#91` TST-06 ephemeral integration DBs (delivered)
+15. `#92` UX-06 accessibility remediation (delivered)
+16. `#93` UX-07 global search/actions (delivered)
+17. `#94` UX-08 calendar/timeline views (delivered)
+18. `#95` UX-09 PWA/offline readiness (delivered)
+19. `#213` PERF-07 long-list virtualization (delivered)
+20. `#97` INT-03 plugin architecture RFC (delivered)
 21. `#98` INT-04 connector framework
-22. `#99` DOC-03 developer portal generation
+22. `#99` DOC-03 developer portal generation (delivered)
 23. `#216` GTM-01 thesis-aligned demo/landing baseline (delivered)
 24. `#217` RES-01 user-research execution slice
-25. `#218` CAP-20 transcript capture source
+25. `#218` CAP-20 transcript capture source (delivered)
 26. `#219` CAP-21 voice capture/transcription (opt-in)
-27. `#220` CAP-22 batch triage + suggestion editing
-28. `#251` UI-12 optional Storybook baseline for primitives
-29. `#262` OUT-00 outreach CRM deferred wave tracker
-30. `#263` OUT-01 JSON manifest import path for starter packs
-31. `#264` OUT-02 contact-card YAML parser/serializer contract
-32. `#265` OUT-03 structured contact detail + timeline logging UX
-33. `#266` OUT-04 cadence scheduling proposal flow + throughput controls
-34. `#267` OUT-05 daily outreach dashboard (keyboard-first)
-35. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime
-36. `#333` UX-19 saved views and post-Wave-P productivity shortcuts
-37. `#334` INT-05 note-style import and clip intake follow-through
-38. `#335` MVP-04 expanded blueprint architecture tracker
-39. `#336` AGT-01 agent profile/run/event foundation and manual-run API
-40. `#337` AGT-02 tool registry, policy evaluator, and bounded inbox-triage template
-41. `#339` KNOW-01 knowledge document and SQLite FTS search foundation
+27. `#220` CAP-22 batch triage + suggestion editing (delivered)
+28. `#251` UI-12 optional Storybook baseline for primitives (delivered)
+29. `#262` OUT-00 outreach CRM deferred wave tracker (delivered)
+30. `#263` OUT-01 JSON manifest import path for starter packs (delivered)
+31. `#264` OUT-02 contact-card YAML parser/serializer contract (delivered)
+32. `#265` OUT-03 structured contact detail + timeline logging UX (delivered)
+33. `#266` OUT-04 cadence scheduling proposal flow + throughput controls (delivered)
+34. `#267` OUT-05 daily outreach dashboard (keyboard-first) (delivered)
+35. `#268` OUT-06 outreach draft-generation templates in proposal/chat runtime (delivered)
+36. `#333` UX-19 saved views and post-Wave-P productivity shortcuts (delivered)
+37. `#334` INT-05 note-style import and clip intake follow-through (delivered)
+38. `#335` MVP-04 expanded blueprint architecture tracker (delivered)
+39. `#336` AGT-01 agent profile/run/event foundation and manual-run API (delivered)
+40. `#337` AGT-02 tool registry, policy evaluator, and bounded inbox-triage template (delivered)
+41. `#339` KNOW-01 knowledge document and SQLite FTS search foundation (delivered)
 
 Execution note (testing harness knowledge-transfer):
 - Existing Priority IV items were updated with pack-derived scope clarifications:
@@ -366,25 +366,48 @@ Execution note (testing harness knowledge-transfer):
   - `#218`, `#219` transcript/voice capture overlap
   - `#328` first-run smoke and launch-criteria baseline
 
-Maintainability hotspot refactor wave (analysis-driven):
-42. `#158` REF-11 decompose `AppShell.vue`
-43. `#159` REF-12 modularize `boardStore.ts` (depends on `#154`, `#155`, `#158`)
-44. `#160` REF-13 decompose `BoardView.vue` (depends on `#159`, `#45`, `#46`)
-45. `#161` REF-14 decompose `ActivityView.vue` (depends on `#37`, `#160`)
-46. `#162` REF-15 modularize API `Program.cs` composition root (depends on `#68`, `#153`)
-47. `#163` REF-16 decompose `AutomationExecutorService` (depends on `#40`, `#153`)
-48. `#164` REF-17 split `ExportImportService` (depends on `#54`, `#153`)
-49. `#165` REF-18 decompose `ArchiveRecoveryService` (depends on `#35`, `#164`)
-50. `#166` REF-19 decompose starter-pack validator/apply services (depends on `#47`, `#48`, `#49`, `#50`, `#51`)
-51. `#167` REF-20 decompose CLI `Program.cs` command host (depends on `#153`)
+Maintainability hotspot refactor wave (analysis-driven, all delivered):
+42. `#158` REF-11 decompose `AppShell.vue` (delivered)
+43. `#159` REF-12 modularize `boardStore.ts` (delivered)
+44. `#160` REF-13 decompose `BoardView.vue` (delivered)
+45. `#161` REF-14 decompose `ActivityView.vue` (delivered)
+46. `#162` REF-15 modularize API `Program.cs` composition root (delivered)
+47. `#163` REF-16 decompose `AutomationExecutorService` (delivered)
+48. `#164` REF-17 split `ExportImportService` (delivered)
+49. `#165` REF-18 decompose `ArchiveRecoveryService` (delivered)
+50. `#166` REF-19 decompose starter-pack validator/apply services (delivered)
+51. `#167` REF-20 decompose CLI `Program.cs` command host (delivered)
 
 ### Stage 5: Priority V - Meta/Historical
 
-1. `#107` OPS-13 future expansion wave index
-2. `#338` AGT-03 agent mode surfaces and run-detail timeline
+1. `#107` OPS-13 future expansion wave index (living tracker, remains open)
+2. ~~`#338`~~ AGT-03 agent mode surfaces and run-detail timeline (**delivered**)
 3. ~~`#340`~~ INT-06 integrations registry and supervised inbound connector foundation (**delivered** `#841`)
-4. `#341` TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through
+4. ~~`#341`~~ TST-23 product telemetry taxonomy and `R1` / `R2` / `R3` launch-gate follow-through (**delivered** `#741`)
 5. Closed historical issues remain `Priority V` for archival consistency.
+
+### Stage 6: Audit follow-through wave (seeded from `docs/AUDIT.md` 2026-04-16, delivered 2026-04-22)
+
+Production hardening issues seeded from the 2026-04-16 audit. All 10 items delivered on 2026-04-22 across PRs `#902`–`#913`:
+
+1. ~~`#847`~~ PERF-11 WorkspaceService sync-over-async removal (**delivered** PR `#904`)
+2. ~~`#849`~~ PERF-13 push AuditLog userId/boardId/source filters into SQL (**delivered** PR `#903`)
+3. ~~`#850`~~ SEC-26 SSRF protection for webhook and LLM provider URLs (**delivered** PR `#905`)
+4. ~~`#851`~~ SEC-27 remove dev JWT secret; `FirstRunBootstrapper` generates unconditionally (**delivered** PR `#911`)
+5. ~~`#853`~~ TST-58 fix missing test attributes in CLI tests; shared `CliTestHarness` (**delivered** PR `#906`)
+6. ~~`#858`~~ OPS-27 startup configuration validation with `ValidateOnStart` (**delivered** PR `#908`)
+7. ~~`#859`~~ PERF-12 offset/limit pagination on board list endpoint (**delivered** PR `#909`)
+8. ~~`#860`~~ SEC-30 file import content validation (text/JSON/SQLite magic bytes + CJK-safe limits) (**delivered** PR `#910`)
+9. ~~`#864`~~ OPS-28 EF Core migration bootstrap tests + workflow guide (**delivered** PR `#907`)
+10. ~~`#871`~~ CI-02 Gitleaks secrets detection in CI pipeline (**delivered** PR `#902`)
+
+CI stabilisation fixes landed alongside the wave (no issue ID):
+- PR `#912` — ActivityView test flake on Windows (deterministic timestamps)
+- PR `#913` — serialise `FirstRunBootstrapper.PersistValue` across processes (named mutex + atomic rename)
+
+Execution note:
+- Two Tier 1 items from `docs/AUDIT.md` remain open after this wave: response compression and missing database indexes
+- Three Tier 2 items from `docs/AUDIT.md` remain open: view decomposition (ReviewView/InboxView/AutomationChatView), Vue error boundary, `SECURITY.md` vulnerability disclosure policy
 
 ## Per-Issue Delivery Checklist
 

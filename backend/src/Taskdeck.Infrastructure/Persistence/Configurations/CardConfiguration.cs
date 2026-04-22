@@ -44,5 +44,15 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
             .WithOne(cl => cl.Card)
             .HasForeignKey(cl => cl.CardId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // PERF-10: composite index for board+column lookups (the default board
+        // load path filters by BoardId and then groups by ColumnId). SQLite can
+        // also satisfy single-column filters on BoardId from the leftmost prefix
+        // of this composite index, so the redundant single-column IX_Cards_BoardId
+        // is dropped by the AddPerfIndexes migration. The FK on Cards.BoardId is
+        // still enforced by SQLite via the FOREIGN KEY constraint itself (not the
+        // index), and IX_Cards_ColumnId remains unchanged as an FK convention index.
+        builder.HasIndex(c => new { c.BoardId, c.ColumnId })
+            .HasDatabaseName("IX_Cards_BoardId_ColumnId");
     }
 }

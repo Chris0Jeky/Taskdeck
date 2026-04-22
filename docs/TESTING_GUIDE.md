@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-04-15
+Last Updated: 2026-04-22
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,9 +10,9 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Current Verified Totals (2026-04-15)
+## Current Verified Totals (2026-04-22)
 
-- Backend: **~4,530+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave)
+- Backend: **~4,740+ passing** (estimated after PRs `#821`–`#826` supplementary wave + PRs `#837`–`#841` validation/integrations wave + PRs `#902`–`#913` production hardening wave adds ~210 new tests across SSRF, content validation, migration bootstrap, options validation, board pagination, and CLI discovery)
   - Domain: ~833+ (77 prior FsCheck + 93 new property tests for ChatSession/ChatMessage/Notification/KnowledgeDocument/WebhookSubscription + 11 ApiKey + 15 OAuthAuthCode + 8 MfaCredential + NoteImport domain)
   - Application: ~1799+ (29 prior JSON fuzz + 19 new chat/notification DTO fuzz + 21 metrics export + 32 forecasting + 22 clarification detector + 7 ChatService clarification + 38 NoteImportService + 25 TelemetryEventService + 21 MfaService + 8 WorkspaceService calendar)
   - API integration: ~1135+ (8 metrics export + 80 prior adversarial + 50 new adversarial input + 20 API key + 13 prior concurrency + 22 new concurrency stress + 3 queue resilience + 13 LLM provider resilience + 9 telemetry + 4 telemetry API + 13 OIDC/auth + 9 OAuth token lifecycle)
@@ -35,6 +35,101 @@ Verification note:
 - significant test growth in 2026-04-04 wave 3 (PRs `#741`–`#756`, 9 issues): webhook HMAC verification (11 backend tests, `#726`/`#750`), webhook SSRF/delivery reliability (78 total webhook tests across 9 files including pre-existing, `#710`/`#756`), frontend regression suite expansion (+96 tests: `#744` +3, `#754` +4, `#745` +7, `#742` +20, `#748` +route/workspace tests, `#743` +21)
 - significant test growth in 2026-04-04 wave 4 (PRs `#765`–`#770`, `#776`, 7 issues): OAuth token lifecycle integration (19 backend tests, `#723`/`#769`), tool argument replay (6 backend tests, `#673`/`#770`), streaming chat token usage (4 backend tests, `#763`/`#768`), DataExport exception logging (3 backend tests, `#759`/`#766`), Agent API 500 fix (2 un-skipped tests, `#758`/`#776`), frontend HTTP interceptor + router auth guard tests (33 new tests, `#725`/`#765`); all 7 PRs received two rounds of adversarial review with review-fix commits addressing CI failures, performance bugs, resource leaks, misleading test names, and weak assertions
 - significant test growth in 2026-04-04 wave 5 (PRs `#771`–`#779`, 8 issues, ~258 new tests): tool-calling Phase 3 refinements (17 backend tests, `#651`/`#773`), export streaming (15 backend tests, `#670`/`#774`), resilience/degraded-mode (34 tests: 18 backend + 16 frontend, `#720`/`#778`), frontend view vitest coverage (83 tests across 6 views, `#716`/`#775`), Pinia store integration (91 tests across 6 stores, `#711`/`#777`), E2E error state expansion (25 Playwright scenarios, `#712`/`#772`), accessibility lint (105 warnings → 0, `#762`/`#779`), vendored dependency cleanup (`#761`/`#771`); all 8 PRs received two rounds of adversarial review
+
+## Production Hardening Wave Testing (2026-04-22, PRs `#902`–`#913`)
+
+The 2026-04-22 production hardening wave (PRs `#902`–`#913`) added ~210+ new tests across 10 tracked audit issues plus 2 CI stabilisation fixes. Each PR received self-review plus bot reviews; review-fix commits addressed CI failures, false-positive tests, performance bugs, and test-flake root causes.
+
+### SSRF Protection Tests (SEC-26, `#850`/`#905`)
+
+`backend/tests/Taskdeck.Application.Tests/Services/SsrfProtectionServiceTests.cs` — **40 `[Fact]`/`[Theory]` entries expanding to 83 test cases**:
+- Private IPv4 ranges: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
+- IPv6 ranges: `::1`, `fc00::/7`, `fe80::/10`, IPv4-mapped IPv6
+- Cloud metadata: AWS `169.254.169.254`, GCP `metadata.google.internal`, Azure `169.254.169.254`, Alibaba `100.100.100.200`, AWS IMDSv2 IPv6 `fd00:ec2::254`
+- Bypass attempts: decimal (`2130706433`), hex (`0x7f000001`), octal (`0177.0.0.1`), short-form (`127.1`) — all normalised by `.NET Uri` before the IP range check
+- Scheme validation: non-HTTP/HTTPS rejected; credential-bearing URLs stripped
+- LLM provider URL HTTPS enforcement (except with `allowLocalhostEndpoints`)
+
+Plus expanded `OutboundWebhookEndpointGuardTests` with cloud metadata hostname coverage and LLM provider selection policy tests for private IP, IPv6 loopback, IPv4-mapped IPv6, and cloud metadata `BaseUrl`.
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~SsrfProtectionService"
+```
+
+### File Content Validation Tests (SEC-30, `#860`/`#910`)
+
+`backend/tests/Taskdeck.Application.Tests/Services/FileContentValidatorTests.cs` — **52 `[Fact]`/`[Theory]` entries** covering:
+- Valid/invalid text with BOM
+- Binary content detection (null bytes, C1 control characters `0x80-0x9F`)
+- Unicode smart quotes (`U+2018-U+201D`) and dashes (`U+2013-U+2014`) pass correctly (they are above `0x9F`)
+- Character-based limits (maxChars parameter) for CJK/emoji safety
+- JSON structure validation with BOM-aware parsing
+- SQLite magic byte detection (`SQLite format 3\0`)
+- Size limits: `maxBytes: 0` disables the cap (used by `ExportController` for round-trip)
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~FileContentValidator"
+```
+
+### Migration Bootstrap Tests (OPS-28, `#864`/`#907`)
+
+`backend/tests/Taskdeck.Api.Tests/MigrationBootstrapTests.cs` — **5 tests** ensuring the EF Core migration chain remains unbroken:
+- Migrations apply cleanly to a fresh SQLite database
+- All expected tables are created (verified via reflection against `DbContext` DbSets, not a hardcoded list)
+- Re-running `Migrate()` is idempotent
+- `HasPendingModelChanges()` reports no drift (detects real model/snapshot divergence, not just missing migration files — surfaced the missing `ExternalLogins.UserId` FK)
+- All migration timestamps are distinct
+
+`GetUserTables()` uses `OpenConnection()`/`CloseConnection()` instead of disposing the `DbContext`-owned connection. Workflow guide at `docs/platform/EF_MIGRATION_WORKFLOW.md`.
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~MigrationBootstrap"
+```
+
+### Options Validation Tests (OPS-27, `#858`/`#908`)
+
+`backend/tests/Taskdeck.Api.Tests/Validation/OptionsValidationTests.cs` — **34 `[Fact]`/`[Theory]` entries** covering data-annotation boundaries for 15 settings classes, 4 cross-property validators (`WorkerSettings`, `JwtSettings`, `SentrySettings`, `RateLimitingSettings`), case-insensitive regex for `Llm:Provider`/`Cache:Provider`, and an integration test proving the app starts with valid defaults.
+
+Run:
+```bash
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~OptionsValidation"
+```
+
+### Board Pagination API Tests (PERF-12, `#859`/`#909`)
+
+`backend/tests/Taskdeck.Api.Tests/BoardPaginationApiTests.cs` — **11 integration tests** covering default pagination, empty list, limit enforcement, offset skipping, partial page, limit clamped to 200, negative offset, offset beyond total, zero limit clamped to 1, full page iteration, and cross-user isolation with pagination metadata. Existing tests that deserialised `List<BoardDto>` from `GET /api/boards` migrated to use the new `PaginatedResult<BoardDto>` shape via `ApiTestHarness.ListBoardsAsync`/`ListBoardsPaginatedAsync` helpers.
+
+### CLI Tests Restored (TST-58, `#853`/`#906`)
+
+CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite now totals approximately **78 tests across 10 files**:
+
+| File | Tests |
+|------|-------|
+| `ArgParserTests.cs` | 15 |
+| `ApiKeyCommandTests.cs` | 12 |
+| `CardsCommandTests.cs` | 11 |
+| `ColumnsCommandTests.cs` | 10 |
+| `BoardsCommandTests.cs` | 7 |
+| `ConsoleOutputTests.cs` | 7 |
+| `CliActorIdentityTests.cs` | 5 |
+| `ExitCodesTests.cs` | 4 |
+| `CliJsonContractTests.cs` | 4 |
+| `CommandDispatcherTests.cs` | 3 |
+
+Harness improvements: `AppContext.BaseDirectory` dll lookup replaces the fragile repo-tree walk, 30-second process timeout via `CancellationTokenSource` prevents hang, `[Collection("Console Tests")]` on `ConsoleOutputTests` for `Console.Out` thread safety when xUnit runs classes in parallel, and `InternalsVisibleTo` on `Taskdeck.Cli` lets `Cli.Tests` unit-test internal types directly.
+
+Run:
+```bash
+dotnet test backend/tests/Taskdeck.Cli.Tests/Taskdeck.Cli.Tests.csproj -c Release
+```
+
+### CI Stabilisation Tests
+
+- `#912` (ActivityView Windows flake): `ActivityView.spec.ts` `seedBoards()` now assigns deterministic ordered ISO timestamps so the component's `updatedAt DESC` sort is stable across platforms regardless of `Date` resolution. Verified 10/10 consecutive runs green locally.
+- `#913` (FirstRunBootstrapper cross-process race): serialised via named cross-process mutex + atomic rename. Guards the parallel xUnit-process JSON-corruption race that `#911` surfaced.
 
 ## Feature/Security Expansion Wave Testing (2026-04-09, PRs `#806`–`#813`)
 

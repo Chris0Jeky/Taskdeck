@@ -1,0 +1,42 @@
+# =============================================================================
+# Semgrep ignore patterns for Taskdeck
+# Excludes generated code, test fixtures, and vendored dependencies.
+# =============================================================================
+
+# Build output and artifacts
+**/bin/
+**/obj/
+**/dist/
+**/node_modules/
+**/coverage/
+**/artifacts/
+
+# Generated / scaffolded files
+**/Migrations/
+**/wwwroot/
+
+# Test fixtures and mock data (not production code)
+**/tests/**/Fixtures/
+**/tests/**/TestData/
+**/__snapshots__/
+
+# Documentation
+docs/
+*.md
+
+# Config and lock files
+**/package-lock.json
+**/packages.lock.json
+**/*.csproj
+**/*.sln
+
+# Scripts (CI helpers, not production code)
+scripts/
+
+# Deploy configuration
+deploy/
+
+# IDE and tooling
+.vs/
+.vscode/
+.idea/

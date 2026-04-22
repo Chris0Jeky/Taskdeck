@@ -82,6 +82,46 @@ All workspace views are lazy-loaded via dynamic `import()` in the router (`src/r
 
 Large lists in Inbox and Activity views already use `@tanstack/vue-virtual` via the `useVirtualList` composable, limiting the number of reactive DOM nodes to the visible window plus overscan. This prevents Vue reactivity overhead from scaling linearly with list size.
 
+## CI Enforcement (Performance Regression Gate)
+
+The performance regression gate runs in ci-extended (label: `performance`) and nightly CI. It enforces two categories of budgets.
+
+### k6 API Thresholds
+
+Enforced via `tests/load/k6/board-heavy-load.js` thresholds:
+
+| Metric | Gate (fail) | Aspirational |
+|---|---|---|
+| HTTP p95 latency | < 2000 ms | < 1200 ms |
+| HTTP p99 latency | < 2500 ms | — |
+| HTTP error rate | < 1% | — |
+| Check pass rate | > 99% | — |
+| Board-read p95 | < 900 ms | — |
+| Board-write p95 | < 1500 ms | — |
+
+k6 exits non-zero on threshold breach, failing the CI step. The `scripts/ci/check-k6-thresholds.mjs` script parses the k6 JSON summary and emits `::warning` annotations when metrics are within 20% of limits.
+
+### Frontend Bundle Size Thresholds
+
+Enforced via `scripts/ci/check-bundle-size.mjs`:
+
+| Metric | Warning | Error |
+|---|---|---|
+| Entry chunk (index-*.js) | > 120 KB | > 150 KB |
+| Largest single chunk | > 200 KB | > 250 KB |
+| Total JS size | > 1000 KB | > 1200 KB |
+
+Override thresholds with environment variables: `BUNDLE_MAX_ENTRY_KB`, `BUNDLE_MAX_SINGLE_KB`, `BUNDLE_MAX_TOTAL_JS_KB`, `BUNDLE_WARN_ENTRY_KB`, `BUNDLE_WARN_SINGLE_KB`, `BUNDLE_WARN_TOTAL_JS_KB`.
+
+### Artifacts
+
+Both checks produce JSON reports uploaded as the `performance-regression-gate-results` artifact:
+- `bundle-size-report.json` — chunk inventory and threshold results
+- `k6-summary.json` — raw k6 metrics
+- `k6-threshold-report.json` — parsed threshold analysis
+
+These artifacts enable historical trend tracking when downloaded across runs.
+
 ## Verification Workflow
 
 ### Automated

@@ -45,6 +45,20 @@ public static class PipelineConfiguration
             app.UseForwardedHeaders(forwardedHeadersOptions);
         }
 
+        // Response compression must run before the application middlewares that produce
+        // compressible payloads (controllers, static files, SPA fallback, SignalR
+        // negotiation JSON) so their responses are emitted with the negotiated
+        // Content-Encoding when the client sends Accept-Encoding. Swagger UI
+        // (Development-only, above) serves its own bundled assets before this point and
+        // is intentionally left uncompressed — it is a dev-convenience surface and its
+        // latency is not worth the extra CPU.
+        //
+        // Placed before CORS/security headers so downstream middlewares can still
+        // append response headers: ASP.NET Core's response compression buffers the body
+        // and flushes headers together, so later `Headers[...] = ...` calls on the
+        // HttpResponse still take effect.
+        app.UseResponseCompression();
+
         app.UseCors("AllowFrontend");
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<UnhandledExceptionMiddleware>();

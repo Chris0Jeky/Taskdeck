@@ -1,0 +1,67 @@
+# =============================================================================
+# Gitleaks Configuration — secrets detection for Taskdeck CI
+# =============================================================================
+#
+# This config extends the default Gitleaks ruleset with project-specific
+# allowlists for test fixtures, documentation examples, and development
+# placeholder values.
+#
+# References:
+#   - https://github.com/gitleaks/gitleaks#configuration
+#   - Issue #871 (CI-02: Add secrets detection to CI)
+# =============================================================================
+
+title = "Taskdeck Gitleaks Configuration"
+
+# Use the default built-in rules (generic-api-key, AWS, GCP, GitHub, etc.)
+# and layer project-specific allowlist on top.
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Global allowlist — patterns that are safe across the entire repository
+# ---------------------------------------------------------------------------
+[allowlist]
+
+  description = "Taskdeck global allowlist for test fixtures and documentation"
+
+  # Paths that are inherently safe (test code only).
+  # Note: docs/, scripts/deploy/, and .github/workflows/ are NOT blanket-excluded.
+  # Those directories can contain real secrets (pasted tokens in runbooks,
+  # hardcoded keys in deploy scripts, secrets in workflow env blocks). The
+  # regex allowlist below covers known false-positive values specifically.
+  paths = [
+    '''backend/tests/.*''',
+    '''frontend/taskdeck-web/tests/.*''',
+    '''frontend/taskdeck-web/src/.*\.spec\.ts$''',
+  ]
+
+  # Regex patterns for known-safe values that appear in config/code.
+  # Patterns are anchored where possible to avoid masking real secrets.
+  regexes = [
+    # Development-only JWT secret (clearly labeled as non-production)
+    '''TaskdeckDevelopmentOnlySecretKeyChangeMe123!''',
+    # Test-only JWT secrets used in integration/unit tests
+    '''TaskdeckTestsOnlySecretKeyMustBeLongEnough123!''',
+    '''TestKeyMustBeAtLeast32CharactersLong!''',
+    '''ThisIsATestSecretKeyThatIsAtLeast32CharactersLong!''',
+    # CI placeholder secret for Docker Compose validation
+    '''ci-placeholder-secret''',
+    '''local-test-secret''',
+    # Example API key in documentation (not a real key, exact value)
+    '''tdsk_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6''',
+    # Example GitHub PAT placeholder in ops docs (ellipsis format)
+    '''ghp_\.\.\.''',
+    # Docker Compose env var references (not actual secrets)
+    '''\$\{TASKDECK_[A-Z_]+\}''',
+    # Placeholder password strings (exact matches for test fixtures)
+    '''NewPassword!456''',
+    '''Hacked!456''',
+    # Documentation placeholder patterns (anchored)
+    '''your-secret-key-here''',
+    # Test fixture LLM API key values (clearly fake, exact matches)
+    '''gemini-key''',
+    '''openai-key''',
+    '''shell-gemini-key''',
+  ]

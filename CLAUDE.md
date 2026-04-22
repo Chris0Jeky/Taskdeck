@@ -71,7 +71,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 - **Taskdeck.Api**: ASP.NET Core HTTP endpoints, integration layer, auth, SignalR hubs. Wires everything up via DI.
 - **Taskdeck.Cli**: CLI entry point (separate from API).
 
-Tests mirror this layout in `backend/tests/` with an additional `Taskdeck.Architecture.Tests` project for structural enforcement.
+Tests mirror this layout in `backend/tests/` (`Domain.Tests`, `Application.Tests`, `Api.Tests`, `Cli.Tests`, `Integration.Tests`, `Architecture.Tests`).
 
 ### Frontend -- `frontend/taskdeck-web/src/`
 
@@ -148,6 +148,8 @@ ADRs live in `docs/decisions/`. See `docs/decisions/README.md` for the template 
 - `docs/TESTING_GUIDE.md` -- test operations reference
 - `docs/ISSUE_EXECUTION_GUIDE.md` -- dependency-aware issue execution order
 - `docs/MCP_TOOLING_GUIDE.md` -- MCP tool selection rules
+- `docs/platform/CONFIGURATION_REFERENCE.md` -- appsettings/env var/Docker Compose reference for every backend setting
+- `docs/platform/EF_MIGRATION_WORKFLOW.md` -- EF Core migration operations and best practices
 - `AGENTS.md` -- full contributor protocol
 
 ## Worktree Isolation for Parallel Agents

@@ -1,13 +1,25 @@
 import http from './http'
-import type { Board, BoardDetail, CreateBoardDto, UpdateBoardDto } from '../types/board'
+import type { Board, BoardDetail, CreateBoardDto, UpdateBoardDto, PaginatedBoards } from '../types/board'
 
 export const boardsApi = {
   async getBoards(search?: string, includeArchived = false): Promise<Board[]> {
+    const result = await boardsApi.getBoardsPaginated(search, includeArchived, 0, 200)
+    return result.items
+  },
+
+  async getBoardsPaginated(
+    search?: string,
+    includeArchived = false,
+    offset = 0,
+    limit?: number,
+  ): Promise<PaginatedBoards> {
     const params = new URLSearchParams()
     if (search) params.append('search', search)
     if (includeArchived) params.append('includeArchived', 'true')
+    if (offset > 0) params.append('offset', String(offset))
+    if (limit !== undefined) params.append('limit', String(limit))
 
-    const { data } = await http.get<Board[]>(`/boards?${params}`)
+    const { data } = await http.get<PaginatedBoards>(`/boards?${params}`)
     return data
   },
 

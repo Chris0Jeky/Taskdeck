@@ -47,5 +47,18 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
         builder.HasIndex(al => new { al.EntityType, al.EntityId });
         builder.HasIndex(al => al.Timestamp);
         builder.HasIndex(al => al.UserId);
+
+        // PERF-10: composite indexes for common history/audit queries.
+        // (UserId, Timestamp) accelerates per-user audit reads ordered by recency
+        // (AuditLogRepository.GetByUserAsync).
+        builder.HasIndex(al => new { al.UserId, al.Timestamp })
+            .HasDatabaseName("IX_AuditLogs_UserId_Timestamp");
+
+        // Note: AuditLog has no BoardId column; board scope is resolved via
+        // EntityId (see AuditLogRepository.GetByBoardAsync). A composite on
+        // (EntityId, Timestamp) accelerates that ORDER BY Timestamp DESC pattern
+        // and serves as the board-scoped analogue named for in PERF-10.
+        builder.HasIndex(al => new { al.EntityId, al.Timestamp })
+            .HasDatabaseName("IX_AuditLogs_EntityId_Timestamp");
     }
 }

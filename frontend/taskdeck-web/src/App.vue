@@ -2,7 +2,9 @@
 import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ToastContainer from './components/common/ToastContainer.vue'
+import SessionTimeoutWarning from './components/common/SessionTimeoutWarning.vue'
 import AppShell from './components/shell/AppShell.vue'
+import ErrorBoundary from './components/ErrorBoundary.vue'
 import { useSessionStore } from './store/sessionStore'
 import { useFeatureFlagStore } from './store/featureFlagStore'
 import { useWorkspaceStore } from './store/workspaceStore'
@@ -39,10 +41,15 @@ watch(
   <div id="app">
     <a href="#td-main-content" class="td-skip-link">Skip to main content</a>
     <!-- Shell layout for workspace routes -->
-    <AppShell v-if="showShell" />
+    <ErrorBoundary v-if="showShell">
+      <AppShell />
+    </ErrorBoundary>
     <!-- Direct render for public routes (login/register) -->
-    <router-view v-else />
+    <ErrorBoundary v-else>
+      <router-view />
+    </ErrorBoundary>
     <ToastContainer />
+    <SessionTimeoutWarning />
   </div>
 </template>
 
