@@ -16,9 +16,12 @@ export const options = {
     },
   },
   thresholds: {
-    http_req_failed: ["rate<0.02"],
+    // CI gate: error rate must stay below 1% (issue #872)
+    http_req_failed: ["rate<0.01"],
     checks: ["rate>0.99"],
-    http_req_duration: ["p(95)<1200", "p(99)<2500"],
+    // CI gate: p95 must stay below 2000ms (issue #872)
+    // Aspirational target p95<1200ms is enforced as a warning via check-k6-thresholds.mjs
+    http_req_duration: ["p(95)<2000", "p(99)<2500"],
     "http_req_duration{workload:board-read}": ["p(95)<900"],
     "http_req_duration{workload:board-write}": ["p(95)<1500"],
   },

@@ -9,6 +9,7 @@
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
+#     ├── reusable-migration-validation.yml    EF Core migration chain validation (TST-61)
 #     ├── reusable-frontend-unit.yml           lint + typecheck + build + unit tests (Ubuntu + Windows)
 #     ├── reusable-container-images.yml        compose validation + image build + artifact export
 #     └── reusable-e2e-smoke.yml               Playwright smoke (depends on all above)
@@ -23,7 +24,9 @@
 #     ├── reusable-e2e-cross-browser.yml (label: testing)
 #     ├── reusable-demo-director-smoke.yml (label: automation)
 #     ├── reusable-load-concurrency-harness.yml (label: testing)
-#     └── reusable-container-integration.yml (label: testing) — Testcontainers PostgreSQL
+#     ├── reusable-performance-regression-gate.yml (label: performance) — k6 thresholds + bundle size (#872)
+#     ├── reusable-container-integration.yml (label: testing) — Testcontainers PostgreSQL
+#     └── reusable-gitleaks.yml (non-blocking secrets detection, #871)
 #
 #   ci-nightly.yml           scheduled regression (03:25 UTC daily)
 #     ├── reusable-openapi-guardrail.yml
@@ -41,6 +44,7 @@
 #   ci-release.yml           release lane (tag/release/manual)
 #     ├── release build verification (backend + frontend)
 #     ├── reusable-sbom-provenance.yml  (CycloneDX SBOM + SLSA provenance, #103)
+#     ├── reusable-gitleaks.yml (blocking secrets detection, #871)
 #     └── reusable-container-images.yml
 #
 #   release-security.yml     release security deep scan (tag/release/manual)
@@ -102,6 +106,12 @@ jobs:
     with:
       dotnet-version: 8.0.x
 
+  migration-validation:
+    name: Migration Validation
+    uses: ./.github/workflows/reusable-migration-validation.yml
+    with:
+      dotnet-version: 8.0.x
+
   frontend-unit:
     name: Frontend Unit
     uses: ./.github/workflows/reusable-frontend-unit.yml
@@ -119,6 +129,7 @@ jobs:
       - backend-architecture
       - backend-unit
       - api-integration
+      - migration-validation
       - frontend-unit
     uses: ./.github/workflows/reusable-e2e-smoke.yml
     with:

@@ -1,4 +1,4 @@
-# ADR-0031: Polly Circuit Breaker for External API Calls
+# ADR-0032: Polly Circuit Breaker for External API Calls
 
 **Status:** Accepted  
 **Date:** 2026-04-22

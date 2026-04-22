@@ -140,9 +140,41 @@ jobs:
       k6-duration: "90s"
       k6-user-pool: "6"
 
+  performance-regression-gate:
+    name: Performance Regression Gate
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'performance'))
+    needs:
+      - backend-solution
+    uses: ./.github/workflows/reusable-performance-regression-gate.yml
+    with:
+      dotnet-version: 8.0.x
+      node-version: 24.13.1
+      k6-vus: "20"
+      k6-duration: "90s"
+      k6-user-pool: "6"
+
   container-integration:
     name: Container Integration (Testcontainers)
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'testing'))
     uses: ./.github/workflows/reusable-container-integration.yml
     with:
       dotnet-version: 8.0.x
+
+  sast-scanning:
+    name: SAST Scanning (Semgrep)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'security'))
+    uses: ./.github/workflows/reusable-sast-scanning.yml
+    with:
+      summary-title: CI Extended SAST Summary
+      workflow-context: ci-extended
+      artifact-name: ci-extended-sast-scanning
+      retention-days: 14
+      enforce-findings: false
+      node-version: 24.13.1
+
+  gitleaks:
+    name: Secrets Detection (Gitleaks)
+    uses: ./.github/workflows/reusable-gitleaks.yml
+    with:
+      scan-mode: pr
+      fail-on-findings: false
