@@ -56,8 +56,8 @@ function openCreateDialog() {
 }
 
 function closeCreateDialog() {
+  if (creating.value) return
   showCreateDialog.value = false
-  // If a key was created, refresh the list
   if (createdKey.value) {
     createdKey.value = null
     loadKeys()
@@ -127,7 +127,7 @@ async function handleRevokeKey() {
 function formatDate(dateString: string | null): string {
   if (!dateString) return 'Never'
   const date = new Date(dateString)
-  if (isNaN(date.getTime())) return 'Invalid date'
+  if (isNaN(date.getTime())) return '—'
   return date.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
