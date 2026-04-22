@@ -108,7 +108,7 @@ public sealed class ConnectorExecutionService
                 // Timeout — may be transient.
                 lastException = ex;
                 _logger.LogWarning(
-                    "Operation {Operation} timed out (attempt {Attempt}/{MaxRetries})",
+                    "Operation {Operation} timed out (attempt {Attempt}/{TotalAttempts})",
                     operationName, attempt + 1, MaxRetries + 1);
             }
             catch (HttpRequestException ex)
@@ -116,7 +116,7 @@ public sealed class ConnectorExecutionService
                 // Network error — transient, retry.
                 lastException = ex;
                 _logger.LogWarning(ex,
-                    "Operation {Operation} failed with HTTP error (attempt {Attempt}/{MaxRetries})",
+                    "Operation {Operation} failed with HTTP error (attempt {Attempt}/{TotalAttempts})",
                     operationName, attempt + 1, MaxRetries + 1);
             }
             catch (Exception ex)
@@ -134,8 +134,8 @@ public sealed class ConnectorExecutionService
         }
 
         _logger.LogError(lastException,
-            "Operation {Operation} exhausted all {MaxRetries} retries",
-            operationName, MaxRetries + 1);
+            "Operation {Operation} exhausted all {MaxRetries} retries ({TotalAttempts} total attempts)",
+            operationName, MaxRetries, MaxRetries + 1);
 
         return Result.Failure<T>(ErrorCodes.UnexpectedError, "Provider operation failed after retries.");
     }
