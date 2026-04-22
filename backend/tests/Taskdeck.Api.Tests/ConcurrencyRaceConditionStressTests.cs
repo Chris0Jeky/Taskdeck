@@ -809,9 +809,8 @@ public class ConcurrencyRaceConditionStressTests : IClassFixture<TestWebApplicat
             userBoards[user.Username] = board!.Id;
 
             // Verify user only sees their own board
-            var listResp = await client.GetAsync("/api/boards");
-            var boards = await listResp.Content.ReadFromJsonAsync<List<BoardDto>>();
-            var otherUserBoards = boards!.Where(b =>
+            var boards = await ApiTestHarness.ListBoardsAsync(client);
+            var otherUserBoards = boards.Where(b =>
                 userBoards.Any(kv => kv.Key != user.Username && kv.Value == b.Id));
             if (otherUserBoards.Any())
             {
